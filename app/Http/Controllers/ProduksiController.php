@@ -629,4 +629,15 @@ class ProduksiController extends Controller
         
         return view('produksi.show', compact('produksi', 'namaGudang'));
     }
+
+    public function cetakPdf($id)
+    {
+        $produksi = Produksi::with(['details.produk', 'pesanan.customer'])->findOrFail($id);
+        $gudangHasil = DB::table('master_gudang')->where('id', $produksi->gudang_hasil_id)->first();
+        $namaGudang = $gudangHasil ? $gudangHasil->nama : 'Gudang Tidak Diketahui';
+
+        $pdf = app('dompdf.wrapper');
+        $pdf->loadView('produksi.show-pdf', compact('produksi', 'namaGudang'));
+        return $pdf->download('produksi-' . $produksi->kode_produksi . '.pdf');
+    }
 }

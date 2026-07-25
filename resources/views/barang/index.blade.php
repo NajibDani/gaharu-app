@@ -224,9 +224,24 @@
                             <label class="custom-label">Jenis Barang</label>
                             <select name="jenis_utama" id="jenis" class="form-control custom-input @error('jenis_utama') is-invalid @enderror" required>
                                 <option value="">-- Pilih Jenis --</option>
-                                <option value="BAHAN_BAKU" {{ old('jenis_utama') == 'BAHAN_BAKU' ? 'selected' : '' }}>Bahan Baku</option>
-                                <option value="BARANG_JADI" {{ old('jenis_utama') == 'BARANG_JADI' ? 'selected' : '' }}>Barang Jadi</option>
-                                <option value="OPERATIONAL" {{ old('jenis_utama') == 'OPERATIONAL' ? 'selected' : '' }}>Operational</option>
+                                @if($gudangRole === 'Kepala Gudang')
+                                    <option value="BAHAN_BAKU" {{ old('jenis_utama') == 'BAHAN_BAKU' ? 'selected' : '' }}>
+                                        Bahan Baku
+                                    </option>
+                                    <option value="OPERATIONAL" {{ old('jenis_utama') == 'OPERATIONAL' ? 'selected' : '' }}>
+                                        Operational
+                                    </option>
+                                @else
+                                    <option value="BAHAN_BAKU" {{ old('jenis_utama') == 'BAHAN_BAKU' ? 'selected' : '' }}>
+                                        Bahan Baku
+                                    </option>
+                                    <option value="BARANG_JADI" {{ old('jenis_utama') == 'BARANG_JADI' ? 'selected' : '' }}>
+                                        Barang Jadi
+                                    </option>
+                                    <option value="OPERATIONAL" {{ old('jenis_utama') == 'OPERATIONAL' ? 'selected' : '' }}>
+                                        Operational
+                                    </option>
+                                @endif
                             </select>
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>

@@ -126,11 +126,10 @@
                                     <i class="bi bi-check2-all me-1"></i> Setujui & Proses Stok (Approve)
                                 </button>
                             </form>
-                        @else
-                            <button onclick="window.print()" class="btn btn-outline-dark shadow-sm px-4">
-                                <i class="bi bi-printer me-1"></i> Cetak Dokumen
-                            </button>
                         @endif
+                        <a href="{{ route('produksi.cetak-pdf', $produksi->id) }}" class="btn btn-danger shadow-sm px-4 fw-bold">
+                            <i class="bi bi-file-pdf me-1"></i> Cetak PDF
+                        </a>
                     </div>
                 </div>
 

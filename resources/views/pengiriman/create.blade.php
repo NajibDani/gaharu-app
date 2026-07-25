@@ -37,6 +37,15 @@
     @endif
     {{-- -------------------------------------------------- --}}
 
+    {{-- NOTIFIKASI AKHIR BULAN --}}
+    <div class="alert alert-warning d-flex align-items-center rounded-3 shadow-sm border-0 mb-4" role="alert" style="background-color: #fff3cd; color: #664d03; border-left: 5px solid #ffc107 !important; padding: 16px 20px;">
+        <i class="bi bi-exclamation-circle-fill me-3 fs-5 flex-shrink-0" style="color: #ffc107;"></i>
+        <div>
+            <strong class="d-block" style="font-size: 0.95rem;">Pemberitahuan Batas Akhir Bulan</strong>
+            <span style="font-size: 0.85rem;">Harap segera lakukan penginputan dan penyelesaian (Approval) seluruh pengiriman barang sebelum akhir bulan ini. Transaksi pada periode bulan berjalan tidak akan bisa diinput atau diubah setelah penutupan buku (Closing Jurnal) dilakukan.</span>
+        </div>
+    </div>
+
     <div class="card shadow-sm border-0 p-4">
         <form action="{{ route('pengiriman.store') }}" method="POST">
             @csrf

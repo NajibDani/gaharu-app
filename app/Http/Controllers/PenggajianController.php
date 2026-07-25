@@ -20,21 +20,33 @@ class PenggajianController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = Penggajian::with('karyawan');
+
+        // Paginate by unique periods
+        $periodsQuery = Penggajian::select('periode_bulan_tahun')
+            ->groupBy('periode_bulan_tahun')
+            ->orderBy('periode_bulan_tahun', 'desc');
 
         if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('periode', 'like', '%' . $search . '%')
+            $periodsQuery->where(function($q) use ($search) {
+                $q->where('periode_bulan_tahun', 'like', '%' . $search . '%')
                   ->orWhereHas('karyawan', function($kq) use ($search) {
                       $kq->where('nama_karyawan', 'like', '%' . $search . '%');
                   });
             });
         }
 
-        $payrolls = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
+        $periods = $periodsQuery->paginate(10)->withQueryString();
+        $periodNames = $periods->pluck('periode_bulan_tahun')->toArray();
+
+        // Get all payrolls for the paginated periods
+        $payrolls = Penggajian::with('karyawan')
+            ->whereIn('periode_bulan_tahun', $periodNames)
+            ->orderBy('periode_bulan_tahun', 'desc')
+            ->get();
+
         $karyawans = Karyawan::all();
 
-        return view('penggajian.index', compact('payrolls', 'karyawans'));
+        return view('penggajian.index', compact('payrolls', 'periods', 'karyawans'));
     }
 
     public function create(Request $request): View

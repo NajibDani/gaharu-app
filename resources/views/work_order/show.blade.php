@@ -28,9 +28,14 @@
             </nav>
             <h4 class="fw-bold text-dark">Detail Work Order: <span class="text-primary">{{ $wo->kode_wo }}</span></h4>
         </div>
-        <a href="{{ route('wo.index') }}" class="btn btn-secondary btn-sm shadow-sm">
-            <i class="bi bi-arrow-left"></i> Kembali
-        </a>
+        <div class="d-flex gap-2">
+            <a href="{{ route('wo.cetak-pdf', $wo->id) }}" class="btn btn-danger btn-sm shadow-sm fw-bold">
+                <i class="bi bi-file-pdf me-1"></i> Cetak PDF
+            </a>
+            <a href="{{ route('wo.index') }}" class="btn btn-secondary btn-sm shadow-sm">
+                <i class="bi bi-arrow-left"></i> Kembali
+            </a>
+        </div>
     </div>
 
     <div class="row">
