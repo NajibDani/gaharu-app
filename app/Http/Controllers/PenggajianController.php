@@ -296,6 +296,7 @@ class PenggajianController extends Controller
             'source_type' => 'jurnal_umum',
             'source_id'   => 0,
             'created_by'  => auth()->id() ?? 1,
+            'status'      => 'approved', // Langsung approved (posted), tidak perlu draft
         ]);
 
         // Item baris DEBIT (Beban Gaji)

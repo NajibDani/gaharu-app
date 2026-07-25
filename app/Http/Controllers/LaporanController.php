@@ -20,10 +20,6 @@ class LaporanController extends Controller
         $startOfMonth = "$tahun-$bulan-01";
         $endOfMonth = date('Y-m-t', strtotime($startOfMonth));
 
-        // =========================================================================
-        // PENTING: KASUR MAPPING NAMA TABEL MIGRATION KAMU DI SINI
-        // Cocokkan 'journal_type' (kiri) dengan nama tabel di database (kanan)
-        // =========================================================================
         $tableMapping = [
             'jurnal_penjualan_pos' => 'jurnal_penjualan_pos', 
             'penjualan_b2b' => 'jurnal_penjualan_b2b', 
@@ -38,12 +34,12 @@ class LaporanController extends Controller
             ->get()
             ->keyBy('account_id');
 
-        // 2. AMBIL MUTASI LALU BULK (Transaksi sebelum bulan berjalan, mengecualikan 'opening')
+        // 2. AMBIL MUTASI LALU BULK (Transaksi sebelum bulan berjalan, termasuk closing)
         $mutasiLaluBalances = \App\Models\JournalItem::where('journal_type', '!=', 'opening')
             ->where(function ($q) use ($startOfMonth, $tableMapping) {
-                // A. Jurnal Umum (Manual)
+                // A. Jurnal Umum, Jurnal Manual, & Jurnal Penutup (Closing)
                 $q->where(function ($queryManual) use ($startOfMonth) {
-                    $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal'])
+                    $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal', 'closing'])
                         ->whereHas('journal', function ($j) use ($startOfMonth) {
                             $j->where('tanggal', '<', $startOfMonth)
                                 ->where('status', 'approved');
@@ -184,115 +180,115 @@ class LaporanController extends Controller
 
 
     public function labaRugiIndex(Request $request)
-{
-    $bulan = $request->get('bulan', date('m'));
-    $tahun = $request->get('tahun', date('Y'));
+    {
+        $bulan = $request->get('bulan', date('m'));
+        $tahun = $request->get('tahun', date('Y'));
 
-    // 1. Ambil detail Pendapatan (Kredit - Debit)
-    $detailsPendapatan = ChartOfAccount::where('tipe', 'Pendapatan')
-        ->addSelect([
-            'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
-                ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
-                ->where(function ($q) use ($bulan, $tahun) {
+        // 1. Ambil detail Pendapatan (Kredit - Debit)
+        $detailsPendapatan = ChartOfAccount::where('tipe', 'Pendapatan')
+            ->addSelect([
+                'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
+                    ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+                    ->where(function ($q) use ($bulan, $tahun) {
 
-                    // Jurnal Umum (Perlu Approved)
-                    $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun)
-                          ->where('status', 'approved');
+                        // Jurnal Umum (Perlu Approved)
+                        $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun)
+                            ->where('status', 'approved');
+                        })
+
+                        // Jurnal Penyesuaian (Perlu Approved)
+                        ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun)
+                            ->where('status', 'approved');
+                        })
+
+                        // Jurnal Pembelian (Tanpa status approval)
+                        ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun);
+                        })
+
+                        // Jurnal Penjualan B2B (Tanpa status approval)
+                        ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun);
+                        })
+
+                        // Jurnal Penjualan POS (Tanpa status approval)
+                        ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun);
+                        });
                     })
+            ])
+            ->get()
+            ->filter(fn($coa) => $coa->saldo != 0);
 
-                    // Jurnal Penyesuaian (Perlu Approved)
-                    ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun)
-                          ->where('status', 'approved');
+        // 2. Ambil detail Beban (Debit - Kredit)
+        $detailsBeban = ChartOfAccount::where('tipe', 'Beban')
+            ->addSelect([
+                'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(debit - kredit), 0)')
+                    ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+                    ->where(function ($q) use ($bulan, $tahun) {
+
+                        // Jurnal Umum (Perlu Approved)
+                        $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun)
+                            ->where('status', 'approved');
+                        })
+
+                        // Jurnal Penyesuaian (Perlu Approved)
+                        ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun)
+                            ->where('status', 'approved');
+                        })
+
+                        // Jurnal Pembelian (Tanpa status approval)
+                        ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun);
+                        })
+
+                        // Jurnal Penjualan B2B (Tanpa status approval)
+                        ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun);
+                        })
+
+                        // Jurnal Penjualan POS (Tanpa status approval)
+                        ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
+                            $j->whereMonth('tanggal', $bulan)
+                            ->whereYear('tanggal', $tahun);
+                        });
                     })
+            ])
+            ->get()
+            ->filter(fn($coa) => $coa->saldo != 0);
 
-                    // Jurnal Pembelian (Tanpa status approval)
-                    ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun);
-                    })
+        $totalPendapatan = $detailsPendapatan->sum('saldo');
+        $totalBeban = $detailsBeban->sum('saldo');
 
-                    // Jurnal Penjualan B2B (Tanpa status approval)
-                    ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun);
-                    })
+        if ($request->format === 'pdf') {
+            $pdf = app('dompdf.wrapper')->setPaper('a4', 'landscape');
+            $pdf->loadView('laporan.laba-rugi.pdf', compact(
+                'detailsPendapatan', 'detailsBeban', 'totalPendapatan', 'totalBeban', 'bulan', 'tahun'
+            ));
+            return $pdf->download('laporan-laba-rugi-' . now()->format('Ymd') . '.pdf');
+        }
 
-                    // Jurnal Penjualan POS (Tanpa status approval)
-                    ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun);
-                    });
-                })
-        ])
-        ->get()
-        ->filter(fn($coa) => $coa->saldo != 0);
+        if ($request->format === 'excel') {
+            return $this->exportExcelLabaRugi($detailsPendapatan, $detailsBeban, $totalPendapatan, $totalBeban, $bulan, $tahun);
+        }
 
-    // 2. Ambil detail Beban (Debit - Kredit)
-    $detailsBeban = ChartOfAccount::where('tipe', 'Beban')
-        ->addSelect([
-            'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(debit - kredit), 0)')
-                ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
-                ->where(function ($q) use ($bulan, $tahun) {
-
-                    // Jurnal Umum (Perlu Approved)
-                    $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun)
-                          ->where('status', 'approved');
-                    })
-
-                    // Jurnal Penyesuaian (Perlu Approved)
-                    ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun)
-                          ->where('status', 'approved');
-                    })
-
-                    // Jurnal Pembelian (Tanpa status approval)
-                    ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun);
-                    })
-
-                    // Jurnal Penjualan B2B (Tanpa status approval)
-                    ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun);
-                    })
-
-                    // Jurnal Penjualan POS (Tanpa status approval)
-                    ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
-                        $j->whereMonth('tanggal', $bulan)
-                          ->whereYear('tanggal', $tahun);
-                    });
-                })
-        ])
-        ->get()
-        ->filter(fn($coa) => $coa->saldo != 0);
-
-    $totalPendapatan = $detailsPendapatan->sum('saldo');
-    $totalBeban = $detailsBeban->sum('saldo');
-
-    if ($request->format === 'pdf') {
-        $pdf = app('dompdf.wrapper')->setPaper('a4', 'landscape');
-        $pdf->loadView('laporan.laba-rugi.pdf', compact(
+        return view('laporan.laba-rugi.index', compact(
             'detailsPendapatan', 'detailsBeban', 'totalPendapatan', 'totalBeban', 'bulan', 'tahun'
         ));
-        return $pdf->download('laporan-laba-rugi-' . now()->format('Ymd') . '.pdf');
     }
-
-    if ($request->format === 'excel') {
-        return $this->exportExcelLabaRugi($detailsPendapatan, $detailsBeban, $totalPendapatan, $totalBeban, $bulan, $tahun);
-    }
-
-    return view('laporan.laba-rugi.index', compact(
-        'detailsPendapatan', 'detailsBeban', 'totalPendapatan', 'totalBeban', 'bulan', 'tahun'
-    ));
-}
 
     public function neracaIndex(Request $request)
     {
@@ -413,18 +409,18 @@ class LaporanController extends Controller
 
     // Export Excel
     if ($request->format === 'excel') {
+        $aktiva = $asetLancar->merge($asetTetap);
         return $this->exportExcelNeraca(
-            $asetLancar, $asetTetap, $totalAsetLancar, $totalAsetTetap, $totalAktiva,
-            $passiva, $totalKewajiban, $labaBerjalan, $totalPrive, $modalAkhir, $totalPassiva,
-            $bulan, $tahun, $tanggalCutoff
+            $aktiva, $passiva, $labaBerjalan, $totalPrive, $modalAkhir, $bulan, $tahun
         );
     }
 
     // Export PDF
     if ($request->format === 'pdf') {
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'landscape');
+        $aktiva = $asetLancar->merge($asetTetap);
         $pdf->loadView('laporan.neraca.pdf', compact(
-            'asetLancar', 'asetTetap', 'totalAsetLancar', 'totalAsetTetap', 'totalAktiva',
+            'aktiva', 'asetLancar', 'asetTetap', 'totalAsetLancar', 'totalAsetTetap', 'totalAktiva',
             'passiva', 'totalKewajiban', 'labaBerjalan', 'totalPrive', 'modalAkhir', 'totalPassiva',
             'bulan', 'tahun', 'tanggalCutoff'
         ));
@@ -456,13 +452,7 @@ class LaporanController extends Controller
 
         // 3. Export Excel
         if ($request->format === 'excel') {
-            if (class_exists(ArusKasExport::class)) {
-                return Excel::download(new ArusKasExport($data), 'laporan-arus-kas-' . $tahun . $bulan . '.xlsx');
-            }
-
-            return response()->view('laporan.arus-kas.excel', $data)
-                ->header('Content-Type', 'application/vnd.ms-excel')
-                ->header('Content-Disposition', 'attachment; filename="laporan-arus-kas-'.$tahun.$bulan.'.xls"');
+            return $this->exportExcelArusKas($data, $bulan, $tahun);
         }
 
         // 4. Return View Web
@@ -691,44 +681,51 @@ class LaporanController extends Controller
 
     private function getSaldoAkumulasiKasToDate($kasBankCoaIds, $bulanTarget, $tahunTarget)
     {
+        // Pastikan bulanTarget berbentuk integer
+        $bulanTarget = (int) $bulanTarget;
+        $tahunTarget = (int) $tahunTarget;
+
+        // Jika bulan target adalah 0 (pilihan Januari), maka mundur ke Desember tahun sebelumnya
         if ($bulanTarget <= 0) {
             $bulanTarget = 12;
             $tahunTarget = $tahunTarget - 1;
         }
 
+        // Buat tanggal batas akhir bulan sebelumnya secara presisi (contoh: 2026-07-31)
         $tanggalBatas = Carbon::createFromDate($tahunTarget, $bulanTarget, 1)->endOfMonth()->format('Y-m-d');
 
-        // 1. Saldo Opening Master
+        // 1. Ambil nilai dari Jurnal Saldo Awal Master (journal_type = 'opening')
         $saldoMasterOpening = JournalItem::whereIn('account_id', $kasBankCoaIds)
             ->where('journal_type', 'opening')
             ->selectRaw('SUM(debit) - SUM(kredit) as total')
             ->value('total') ?? 0;
 
-        // 2. Akumulasi Mutasi Historis
+        // 2. Ambil akumulasi mutasi transaksi regular sebelum atau sama dengan tanggal batas (<= $tanggalBatas)
         $queryMutasiHistoris = JournalItem::whereIn('account_id', $kasBankCoaIds)
             ->where('journal_type', '!=', 'opening')
             ->where(function ($q) use ($tanggalBatas) {
-                $q->whereHas('journal', fn($j) => $j->where('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPembelianHeader', fn($j) => $j->where('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPenjualanB2bHeader', fn($j) => $j->where('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPenjualanPosHeader', fn($j) => $j->where('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPenyesuaianHeader', fn($j) => $j->where('tanggal', '<=', $tanggalBatas));
+                $q->whereHas('journal', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                ->orWhereHas('jurnalPembelianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                ->orWhereHas('jurnalPenjualanB2bHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                ->orWhereHas('jurnalPenjualanPosHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                ->orWhereHas('jurnalPenyesuaianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas));
             });
 
-        $mutasiHistoris = $queryMutasiHistoris->sum('debit') - $queryMutasiHistoris->sum('kredit');
+        $debitHistoris  = $queryMutasiHistoris->sum('debit');
+        $kreditHistoris = $queryMutasiHistoris->sum('kredit');
+
+        $mutasiHistoris = $debitHistoris - $kreditHistoris;
 
         return $saldoMasterOpening + $mutasiHistoris;
     }
 
     public function bukuBesar(Request $request)
     {
-        // Ambil periode dari request, default ke bulan/tahun sekarang
         $bulan = $request->get('bulan', date('m'));
         $tahun = $request->get('tahun', date('Y'));
         $firstDayOfMonth = "$tahun-$bulan-01";
 
-        // 1. HITUNG SALDO AWAL (Semua transaksi sebelum tanggal 1 bulan ini)
-        // Saldo awal = Saldo Opening + Akumulasi seluruh mutasi transaksi sebelum $firstDayOfMonth
+        // 1. HITUNG SALDO AWAL (Murni mengambil opening + seluruh mutasi & closing sebelum tanggal 1 bulan ini)
         $beginningBalances = DB::table('journal_items')
             ->leftJoin('journals', function ($join) {
                 $join->on('journal_items.journal_id', '=', 'journals.id')
@@ -762,11 +759,11 @@ class LaporanController extends Controller
             ->get()
             ->keyBy('account_id');
 
-        // 2. TARIK MUTASI BERJALAN (Transaksi khusus bulan/tahun ini, TIDAK TERMASUK SALDO AWAL / OPENING)
+        // 2. TARIK MUTASI BERJALAN (Abaikan 'opening' dan 'closing' di bulan berjalan)
         $mutasiItems = DB::table('journal_items')
             ->leftJoin('journals', function ($join) {
                 $join->on('journal_items.journal_id', '=', 'journals.id')
-                     ->whereIn('journal_items.journal_type', ['jurnal_umum', 'jurnal', 'closing']);
+                     ->whereIn('journal_items.journal_type', ['jurnal_umum', 'jurnal']);
             })
             ->leftJoin('jurnal_pembelian', function ($join) {
                 $join->on('journal_items.journal_id', '=', 'jurnal_pembelian.id')
@@ -788,7 +785,7 @@ class LaporanController extends Controller
             ->selectRaw("COALESCE(journals.tanggal, jurnal_pembelian.tanggal, jurnal_penjualan_pos.tanggal, jurnal_penjualan_b2b.tanggal, jurnal_penyesuaian.tanggal) as tanggal")
             ->selectRaw("COALESCE(journals.deskripsi, jurnal_pembelian.deskripsi, jurnal_penjualan_pos.deskripsi, jurnal_penjualan_b2b.deskripsi, jurnal_penyesuaian.deskripsi) as deskripsi")
             ->selectRaw("COALESCE(journals.no_ref, jurnal_pembelian.no_ref, jurnal_penjualan_pos.no_ref, jurnal_penjualan_b2b.no_ref, jurnal_penyesuaian.no_ref) as no_ref")
-            ->where('journal_items.journal_type', '!=', 'opening')
+            ->whereNotIn('journal_items.journal_type', ['opening', 'closing']) // <-- PERBAIKAN DI SINI
             ->whereRaw('MONTH(COALESCE(journals.tanggal, jurnal_pembelian.tanggal, jurnal_penjualan_pos.tanggal, jurnal_penjualan_b2b.tanggal, jurnal_penyesuaian.tanggal)) = ?', [(int)$bulan])
             ->whereRaw('YEAR(COALESCE(journals.tanggal, jurnal_pembelian.tanggal, jurnal_penjualan_pos.tanggal, jurnal_penjualan_b2b.tanggal, jurnal_penyesuaian.tanggal)) = ?', [(int)$tahun])
             ->orderBy('tanggal', 'asc')
@@ -798,12 +795,10 @@ class LaporanController extends Controller
         // 3. MAP DATA KE MODEL COA
         $accountsData = ChartOfAccount::all()
             ->map(function ($coa) use ($beginningBalances, $mutasiItems) {
-                // Ambil saldo awal
                 $balanceData = $beginningBalances->get($coa->id);
                 $initialDebit = $balanceData ? $balanceData->total_debit : 0;
                 $initialKredit = $balanceData ? $balanceData->total_kredit : 0;
 
-                // Hitung saldo awal berdasarkan tipe saldo normal COA
                 $saldoNormal = strtolower($coa->saldo_normal);
                 if ($saldoNormal === 'kredit') {
                     $coa->beginning_balance = $initialKredit - $initialDebit;
@@ -811,13 +806,11 @@ class LaporanController extends Controller
                     $coa->beginning_balance = $initialDebit - $initialKredit;
                 }
 
-                // Tempelkan item transaksi bulan ini
                 $coa->items = $mutasiItems->get($coa->id, collect());
 
                 return $coa;
             })
             ->filter(function ($coa) {
-                // Tampilkan jika punya transaksi bulan ini ATAU punya saldo awal tidak nol
                 return $coa->items->count() > 0 || $coa->beginning_balance != 0;
             });
 
@@ -960,7 +953,7 @@ class LaporanController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
-    private function exportExcelArusKas($operasional, $investasi, $pendanaan, $bulan, $tahun)
+    private function exportExcelArusKas($data, $bulan, $tahun)
     {
         $filename = 'laporan-arus-kas-' . now()->format('Ymd') . '.csv';
         $headers  = [
@@ -968,45 +961,66 @@ class LaporanController extends Controller
             'Content-Disposition' => "attachment; filename=\"$filename\"",
         ];
 
-        $callback = function () use ($operasional, $investasi, $pendanaan, $bulan, $tahun) {
+        $callback = function () use ($data, $bulan, $tahun) {
             $f = fopen('php://output', 'w');
-            fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF)); // UTF-8 BOM
             fputcsv($f, ['CV GAHARU AGUNG SEJAHTERA']);
-            fputcsv($f, ['LAPORAN ARUS KAS']);
-            fputcsv($f, ["Periode: " . date('F', mktime(0,0,0,$bulan,1)) . " " . $tahun]);
+            fputcsv($f, ['LAPORAN ARUS KAS (METODE LANGSUNG)']);
+            fputcsv($f, ["Periode: " . date('F', mktime(0, 0, 0, $bulan, 1)) . " " . $tahun]);
             fputcsv($f, []);
 
+            // 1. Aktivitas Operasional
             fputcsv($f, ['ARUS KAS DARI AKTIVITAS OPERASIONAL']);
-            $totalOps = 0;
-            foreach ($operasional as $item) {
-                $amt = $item->kredit - $item->debit;
-                $totalOps += $amt;
-                fputcsv($f, [$item->coa->kode, $item->coa->nama, $amt]);
+            fputcsv($f, ['Penerimaan Kas dari Pelanggan:']);
+            foreach ($data['penerimaanPelanggan'] as $item) {
+                fputcsv($f, ['', $item['keterangan'], $item['nominal']]);
             }
-            fputcsv($f, ['Total Arus Kas Aktivitas Operasional', '', $totalOps]);
+            if (count($data['penerimaanPelanggan']) == 0) {
+                fputcsv($f, ['', '- Tidak ada penerimaan kas dari pelanggan -', 0]);
+            }
+
+            fputcsv($f, ['Pengeluaran Kas untuk Operasional:']);
+            foreach ($data['pengeluaranBahanBaku'] as $item) {
+                fputcsv($f, ['', $item['keterangan'], $item['nominal']]);
+            }
+            foreach ($data['pengeluaranBebanOp'] as $item) {
+                fputcsv($f, ['', $item['keterangan'], $item['nominal']]);
+            }
+            if (count($data['pengeluaranBahanBaku']) == 0 && count($data['pengeluaranBebanOp']) == 0) {
+                fputcsv($f, ['', '- Tidak ada pengeluaran kas operasional -', 0]);
+            }
+
+            fputcsv($f, ['Arus Kas Bersih Dari Aktivitas Operasional', '', $data['kasBersihOperasional']]);
             fputcsv($f, []);
 
+            // 2. Aktivitas Investasi
             fputcsv($f, ['ARUS KAS DARI AKTIVITAS INVESTASI']);
-            $totalInv = 0;
-            foreach ($investasi as $item) {
-                $amt = $item->kredit - $item->debit;
-                $totalInv += $amt;
-                fputcsv($f, [$item->coa->kode, $item->coa->nama, $amt]);
+            foreach ($data['investasi'] as $item) {
+                fputcsv($f, ['', $item['keterangan'], $item['nominal']]);
             }
-            fputcsv($f, ['Total Arus Kas Aktivitas Investasi', '', $totalInv]);
+            if (count($data['investasi']) == 0) {
+                fputcsv($f, ['', '- Tidak ada transaksi kas dari aktivitas investasi -', 0]);
+            }
+            fputcsv($f, ['Arus Kas Bersih Dari Aktivitas Investasi', '', $data['kasBersihInvestasi']]);
             fputcsv($f, []);
 
+            // 3. Aktivitas Pendanaan
             fputcsv($f, ['ARUS KAS DARI AKTIVITAS PENDANAAN']);
-            $totalPen = 0;
-            foreach ($pendanaan as $item) {
-                $amt = $item->kredit - $item->debit;
-                $totalPen += $amt;
-                fputcsv($f, [$item->coa->kode, $item->coa->nama, $amt]);
+            foreach ($data['pendanaan'] as $item) {
+                fputcsv($f, ['', $item['keterangan'], $item['nominal']]);
             }
-            fputcsv($f, ['Total Arus Kas Aktivitas Pendanaan', '', $totalPen]);
+            if (count($data['pendanaan']) == 0) {
+                fputcsv($f, ['', '- Tidak ada transaksi kas dari aktivitas pendanaan -', 0]);
+            }
+            fputcsv($f, ['Arus Kas Bersih Dari Aktivitas Pendanaan', '', $data['kasBersihPendanaan']]);
             fputcsv($f, []);
 
-            fputcsv($f, ['KENAIKAN / PENURUNAN KAS BERSIH', '', $totalOps + $totalInv + $totalPen]);
+            // 4. Rekonsiliasi
+            fputcsv($f, ['REKONSILIASI KAS DAN BANK']);
+            fputcsv($f, ['KENAIKAN (PENURUNAN) BERSIH KAS DAN BANK', '', $data['kenaikanPenurunanKas']]);
+            fputcsv($f, ['KAS DAN BANK AWAL PERIODE', '', $data['saldoAwalKas']]);
+            fputcsv($f, ['KAS DAN BANK AKHIR PERIODE', '', $data['saldoAkhirKas']]);
+
             fclose($f);
         };
 

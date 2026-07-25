@@ -181,6 +181,12 @@ class PesananController extends Controller
      */
     public function update(Request $request, string $id)
     {
+        $pesanan = Pesanan::findOrFail($id);
+
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->back()->withErrors(['tanggal' => 'Pesanan ini berada pada periode akuntansi yang sudah ditutup buku. Tidak dapat mengubah pesanan.'])->withInput();
+        }
+
         $request->validate([
             'customer_id' => 'required',
             'tanggal' => 'required',
@@ -191,6 +197,10 @@ class PesananController extends Controller
             'subtotal' => 'required|array|min:1',
             'tax_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
+
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal)) {
+            return redirect()->back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku. Tidak dapat mengubah tanggal transaksi ke periode yang ditutup.'])->withInput();
+        }
 
         if (date('Y-m-d', strtotime($request->tanggal)) < date('Y-m-d')) {
             return redirect()->back()->withErrors(['tanggal' => 'Tanggal transaksi tidak boleh sebelum hari ini.'])->withInput();
@@ -292,6 +302,15 @@ class PesananController extends Controller
     public function simpanPembayaran(Request $request, $id)
     {
         $pesanan = Pesanan::findOrFail($id);
+        
+        $request->validate([
+            'tanggal_bayar' => 'required|date',
+        ]);
+
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal_bayar)) {
+            return redirect()->back()->with('error', 'Gagal menyimpan: Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal_bayar)) . ' sudah ditutup buku.')->withInput();
+        }
+
         $totalBayarSebelumnya = $pesanan->pembayaran()->sum('jumlah_bayar');
         $sisaTagihan = $pesanan->total_pesanan - $totalBayarSebelumnya;
     
@@ -301,7 +320,6 @@ class PesananController extends Controller
         }
     
         $request->validate([
-            'tanggal_bayar' => 'required|date',
             'jumlah_bayar' => 'required|numeric|min:' . $minBayar . '|max:' . $sisaTagihan,
             'metode_pembayaran' => 'required|string',
             'bukti_file'        => 'nullable|array',
@@ -345,6 +363,10 @@ class PesananController extends Controller
     {
         $pesanan = Pesanan::findOrFail($id);
 
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->route('pesanan.index')->with('error', 'Gagal menghapus: Kontrak pesanan berada pada periode akuntansi yang sudah ditutup buku.');
+        }
+
         // PROTEKSI NYATA: Jika sudah masuk WO, tidak boleh dihapus sama sekali
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
         if ($sudahWO) {
@@ -364,6 +386,10 @@ class PesananController extends Controller
     public function batal($id)
     {
         $pesanan = Pesanan::findOrFail($id);
+    
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->route('pesanan.index')->with('error', 'Gagal membatalkan: Kontrak pesanan berada pada periode akuntansi yang sudah ditutup buku.');
+        }
     
         $woDetail = WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
         if ($woDetail) {
