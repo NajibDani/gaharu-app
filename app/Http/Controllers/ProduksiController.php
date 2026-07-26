@@ -519,17 +519,52 @@ class ProduksiController extends Controller
                     'created_by'       => auth()->id() ?? 1,
                 ]);
 
-                // E. DISTRIBUSI ALOKASI PESANAN DALAM WO (PRO-RATA/SEQUENTIAL)
-                $sisaBarangSiapBagi = $qtyHasil; 
+                // E. DISTRIBUSI ALOKASI PESANAN DALAM WO
+                // Prioritas: pesanan dengan estimasi_kirim PALING DEKAT/sudah lewat
+                // dialokasikan lebih dulu. Detail tanpa relasi pesanan (mis. WO
+                // gabungan tanpa referensi pesanan spesifik) ditaruh paling akhir.
+                //
+                // Sisa kebutuhan dihitung dari (qty_rencana - qty yang SUDAH
+                // teralokasi dari batch produksi sebelumnya), bukan qty_rencana
+                // mentah. Ini penting untuk input produksi parsial/bertahap:
+                // batch baru tidak boleh menumpuk alokasi ke pesanan yang qty
+                // rencananya sudah terpenuhi di batch-batch sebelumnya.
+                $sisaBarangSiapBagi = $qtyHasil;
 
-                $detailPesananWO = WorkOrderDetail::where('work_order_id', $workOrderId)
+                $detailPesananWO = WorkOrderDetail::with('pesanan')
+                    ->where('work_order_id', $workOrderId)
                     ->where('produk_id', $produkId)
-                    ->orderBy('id', 'asc')
-                    ->get();
+                    ->get()
+                    ->sort(function ($a, $b) {
+                        $tglA = optional($a->pesanan)->estimasi_kirim;
+                        $tglB = optional($b->pesanan)->estimasi_kirim;
+
+                        if (is_null($tglA) && is_null($tglB)) {
+                            return $a->id <=> $b->id;
+                        }
+                        if (is_null($tglA)) return 1;  // tanpa pesanan -> ke belakang
+                        if (is_null($tglB)) return -1;
+
+                        return $tglA <=> $tglB ?: $a->id <=> $b->id;
+                    })
+                    ->values();
 
                 foreach ($detailPesananWO as $detailWO) {
+                    if ($sisaBarangSiapBagi <= 0) break;
+
                     $qtyRencanaWO = floatval($detailWO->qty_rencana);
-                    $qtyAlokasi = min($qtyRencanaWO, $sisaBarangSiapBagi);
+
+                    // Qty yang sudah teralokasi ke pesanan+produk ini dari
+                    // batch-batch produksi sebelumnya (jika ada).
+                    $sudahTeralokasi = DB::table('alokasi_produksi_pesanan')
+                        ->where('pesanan_id', $detailWO->pesanan_id)
+                        ->where('produk_id', $produkId)
+                        ->sum('qty_alokasi');
+
+                    $sisaKebutuhanDetail = $qtyRencanaWO - $sudahTeralokasi;
+                    if ($sisaKebutuhanDetail <= 0) continue;
+
+                    $qtyAlokasi = min($sisaKebutuhanDetail, $sisaBarangSiapBagi);
 
                     if ($qtyAlokasi > 0) {
                         ProduksiPesanan::create([
