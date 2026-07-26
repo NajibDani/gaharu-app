@@ -189,6 +189,7 @@ class LaporanController extends Controller
             ->addSelect([
                 'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
                     ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+                    ->where('journal_items.journal_type', '!=', 'closing')
                     ->where(function ($q) use ($bulan, $tahun) {
 
                         // Jurnal Umum (Perlu Approved)
@@ -232,6 +233,7 @@ class LaporanController extends Controller
             ->addSelect([
                 'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(debit - kredit), 0)')
                     ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+                    ->where('journal_items.journal_type', '!=', 'closing')
                     ->where(function ($q) use ($bulan, $tahun) {
 
                         // Jurnal Umum (Perlu Approved)
