@@ -1655,14 +1655,18 @@ class JurnalController extends Controller
             case 'um-pembelian':
                 $targetAccountId = ($jenis === 'utang') ? $idUtang : $idUangMukaPemb;
 
+                $jurnalSubquery = DB::table('jurnal_pembelian as j')
+                    ->leftJoin('penerimaan_pembelian as rcv', function ($join) {
+                        $join->on('j.source_id', '=', 'rcv.id')
+                             ->where('j.source_type', '=', 'penerimaan_pembelian');
+                    })
+                    ->select('j.id', DB::raw('COALESCE(CASE WHEN j.source_type = "pembelian" THEN j.source_id END, rcv.pembelian_id) as pembelian_id'));
+
                 $entities = DB::table('suppliers')
                     ->leftJoin('pembelian', 'suppliers.id', '=', 'pembelian.supplier_id')
-                    ->leftJoin('jurnal_pembelian', function ($join) {
-                        $join->on('jurnal_pembelian.source_id', '=', 'pembelian.id')
-                            ->where('jurnal_pembelian.source_type', '=', 'pembelian');
-                    })
+                    ->leftJoinSub($jurnalSubquery, 'j_sub', 'pembelian.id', '=', 'j_sub.pembelian_id')
                     ->leftJoin('journal_items', function ($join) use ($targetAccountId) {
-                        $join->on('journal_items.journal_id', '=', 'jurnal_pembelian.id')
+                        $join->on('journal_items.journal_id', '=', 'j_sub.id')
                             ->where('journal_items.journal_type', '=', 'jurnal_pembelian')
                             ->where('journal_items.account_id', '=', $targetAccountId);
                     })
@@ -1816,9 +1820,17 @@ class JurnalController extends Controller
                 $entity = DB::table('suppliers')->where('id', $id)->first();
                 if (!$entity) abort(404, 'Supplier tidak ditemukan.');
 
+                $jurnalSubquery = DB::table('jurnal_pembelian as j')
+                    ->leftJoin('penerimaan_pembelian as rcv', function ($join) {
+                        $join->on('j.source_id', '=', 'rcv.id')
+                             ->where('j.source_type', '=', 'penerimaan_pembelian');
+                    })
+                    ->select('j.id', DB::raw('COALESCE(CASE WHEN j.source_type = "pembelian" THEN j.source_id END, rcv.pembelian_id) as pembelian_id'));
+
                 $mutasi = DB::table('journal_items')
-                    ->join('jurnal_pembelian', 'journal_items.journal_id', '=', 'jurnal_pembelian.id')
-                    ->join('pembelian', 'jurnal_pembelian.source_id', '=', 'pembelian.id')
+                    ->joinSub($jurnalSubquery, 'j_sub', 'journal_items.journal_id', '=', 'j_sub.id')
+                    ->join('jurnal_pembelian', 'j_sub.id', '=', 'jurnal_pembelian.id')
+                    ->join('pembelian', 'j_sub.pembelian_id', '=', 'pembelian.id')
                     ->where('journal_items.journal_type', '=', 'jurnal_pembelian')
                     ->where('journal_items.account_id', '=', $targetAccountId)
                     ->where('pembelian.supplier_id', '=', $id)
