@@ -124,6 +124,9 @@
                         </tbody>
                     </table>
                 </div>
+                <div class="mt-3 px-3 pb-3">
+                    {{ $pesanan->links() }}
+                </div>
             </div>
         </div>
     </form>
@@ -203,7 +206,7 @@
                 </table>
             </div>
         </div>
-        <div class="mt-3">
+        <div class="mt-3 px-3 pb-3">
             {{ $wo->links() }}
         </div>
     </div>

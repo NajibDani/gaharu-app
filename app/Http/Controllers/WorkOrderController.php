@@ -26,15 +26,18 @@ class WorkOrderController extends Controller
             $query->where('no_wo', 'like', '%' . $search . '%');
         }
 
-        $wo = $query->latest()->paginate(10)->withQueryString(); 
-    
+        // Page param dibedakan (wo_page) supaya tidak bentrok dengan pagination tabel pesanan
+        $wo = $query->latest()->paginate(10, ['*'], 'wo_page')->withQueryString();
+
         // Tampilkan pesanan yang status bayarnya DP atau Lunas untuk dibuatkan WO
+        // Diurutkan dari estimasi_kirim PALING MEPET (tanggal paling dekat/sudah lewat) di paling atas
         $pesanan = Pesanan::with(['details.produk', 'customer'])
                     ->where('status_pesanan', 'pending')
                     ->whereIn('status_pembayaran', ['DP', 'Lunas']) 
-                    ->latest()
-                    ->get();
-    
+                    ->orderBy('estimasi_kirim', 'asc')
+                    ->paginate(10, ['*'], 'pesanan_page')
+                    ->withQueryString();
+
         return view('work_order.index', compact('wo', 'pesanan'));
     }
 
@@ -145,7 +148,12 @@ public function show($id)
         'details.produk.resep.bahan' // Harus memuat urutan ini
     ])->findOrFail($id);
 
-    return view('work_order.show', compact('wo'));
+    // Kelompokkan detail berdasarkan produk, supaya produk yang sama
+    // (walau berasal dari pesanan/customer berbeda) tampil sebagai satu
+    // baris dengan qty gabungan & satu kalkulasi resep, bukan per pesanan.
+    $groupedDetails = $wo->details->groupBy('produk_id');
+
+    return view('work_order.show', compact('wo', 'groupedDetails'));
 }
 
     /**
@@ -201,7 +209,14 @@ public function show($id)
         |--------------------------------------------------------------------------
         | DETAIL BAHAN BAKU DARI RESEP
         |--------------------------------------------------------------------------
+        | Digabung (agregasi) per barang_id dulu, supaya kalau ada beberapa
+        | pesanan yang minta produk yang sama, kebutuhan bahannya dijumlah
+        | menjadi satu baris permintaan per bahan, bukan baris terpisah
+        | per pesanan. Ini hanya penggabungan angka kebutuhan, TIDAK
+        | mengubah logika pengambilan stok (FIFO) yang terjadi di proses lain.
         */
+
+        $agregatBahan = [];
 
         foreach ($wo->details as $detail) {
 
@@ -215,13 +230,27 @@ public function show($id)
 
             foreach ($detail->produk->resep as $resep) {
 
-                \App\Models\PengeluaranBahanBakuDetail::create([
-                    'pengeluaran_id' => $pengeluaran->id,
-                    'barang_id'      => $resep->bahan_id,
-                    'qty'            => $resep->qty_bahan * $detail->qty_rencana,
-                    'satuan'         => $resep->bahan->satuan ?? '-',
-                ]);
+                $qtyKebutuhan = $resep->qty_bahan * $detail->qty_rencana;
+
+                if (!isset($agregatBahan[$resep->bahan_id])) {
+                    $agregatBahan[$resep->bahan_id] = [
+                        'qty'    => 0,
+                        'satuan' => $resep->bahan->satuan ?? '-',
+                    ];
+                }
+
+                $agregatBahan[$resep->bahan_id]['qty'] += $qtyKebutuhan;
             }
+        }
+
+        foreach ($agregatBahan as $bahanId => $data) {
+
+            \App\Models\PengeluaranBahanBakuDetail::create([
+                'pengeluaran_id' => $pengeluaran->id,
+                'barang_id'      => $bahanId,
+                'qty'            => $data['qty'],
+                'satuan'         => $data['satuan'],
+            ]);
         }
 
         /*

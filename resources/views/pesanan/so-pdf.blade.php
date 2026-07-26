@@ -130,11 +130,7 @@
     </div>
 
     <div class="signature-section">
-        <div class="signature-box">
-            Dibuat Oleh,<br>
-            <div class="signature-space"></div>
-            <strong>({{ $pesanan->creator->name ?? 'Sales Admin' }})</strong>
-        </div>
+        
         <div class="signature-box" style="margin-left: 5%;">
             Disetujui Oleh,<br>
             <div class="signature-space"></div>

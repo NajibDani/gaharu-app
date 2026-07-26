@@ -84,28 +84,45 @@
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th class="ps-4">Customer</th>
+                                    <th class="ps-4">Pesanan / Customer</th>
                                     <th>Produk</th>
-                                    <th class="text-center pe-4">Qty Rencana</th>
+                                    <th class="text-center pe-4">Total Qty Rencana</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach($wo->details as $detail)
+                                {{-- Dikelompokkan per produk: kalau produk yang sama dipesan --}}
+                                {{-- oleh beberapa customer/pesanan berbeda, tetap 1 baris & --}}
+                                {{-- 1 kalkulasi resep dengan qty gabungan. --}}
+                                @foreach($groupedDetails as $produkId => $items)
+                                @php
+                                    $produk = $items->first()->produk;
+                                    $totalQty = $items->sum('qty_rencana');
+                                @endphp
                                 <tr>
                                     <td class="ps-4">
-                                        <div class="fw-bold text-dark">{{ $detail->pesanan->customer->nama ?? 'Customer' }}</div>
-                                        <small class="text-muted">{{ $detail->pesanan->kode_pesanan ?? '-' }}</small>
+                                        @foreach($items as $item)
+                                            <div class="{{ !$loop->last ? 'mb-2 pb-2 border-bottom' : '' }}">
+                                                <span class="fw-bold text-dark d-block">{{ $item->pesanan->customer->nama ?? 'Customer' }}</span>
+                                                <small class="text-muted">
+                                                    {{ $item->pesanan->kode_pesanan ?? '-' }}
+                                                    &middot; {{ number_format($item->qty_rencana, 0) }} {{ $produk->satuan ?? '' }}
+                                                </small>
+                                            </div>
+                                        @endforeach
                                     </td>
                                     <td>
-                                        <div class="fw-bold text-primary">{{ $detail->produk->nama ?? 'Produk' }}</div>
+                                        <div class="fw-bold text-primary">{{ $produk->nama ?? 'Produk' }}</div>
+                                        @if($items->count() > 1)
+                                            <span class="badge bg-light text-dark border small mt-1">{{ $items->count() }} pesanan digabung</span>
+                                        @endif
                                         <button type="button" class="btn btn-sm btn-info text-white py-0 px-2 mt-1 shadow-sm" 
-                                                data-bs-toggle="modal" data-bs-target="#modalResep{{ $detail->id }}">
+                                                data-bs-toggle="modal" data-bs-target="#modalResep{{ $produkId }}">
                                             <i class="bi bi-journal-text me-1"></i> Resep
                                         </button>
                                     </td>
                                     <td class="text-center pe-4">
-                                        <span class="fs-5 fw-bold text-dark">{{ number_format($detail->qty_rencana, 0) }}</span>
-                                        <small class="text-muted d-block">{{ $detail->produk->satuan ?? 'Unit' }}</small>
+                                        <span class="fs-5 fw-bold text-dark">{{ number_format($totalQty, 0) }}</span>
+                                        <small class="text-muted d-block">{{ $produk->satuan ?? 'Unit' }}</small>
                                     </td>
                                 </tr>
                                 @endforeach
@@ -118,24 +135,40 @@
     </div>
 </div>
 
-{{-- MODAL RESEP --}}
-@foreach($wo->details as $detail)
-<div class="modal fade" id="modalResep{{ $detail->id }}" tabindex="-1" aria-hidden="true">
+{{-- MODAL RESEP (per produk, qty sudah digabung dari semua pesanan) --}}
+@foreach($groupedDetails as $produkId => $items)
+@php
+    $produk = $items->first()->produk;
+    $totalQty = $items->sum('qty_rencana');
+@endphp
+<div class="modal fade" id="modalResep{{ $produkId }}" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-info text-white">
                 <h5 class="modal-title fw-bold">
-                    <i class="bi bi-receipt me-2"></i>Resep: {{ $detail->produk->nama ?? '' }}
+                    <i class="bi bi-receipt me-2"></i>Resep: {{ $produk->nama ?? '' }}
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-0">
                 <div class="p-3 bg-light border-bottom">
-                    <small class="text-muted d-block">Estimasi Bahan untuk Produksi:</small>
-                    <span class="fw-bold fs-5 text-dark">{{ number_format($detail->qty_rencana, 0) }} {{ $detail->produk->satuan }}</span>
+                    <small class="text-muted d-block">Estimasi Bahan untuk Produksi (gabungan {{ $items->count() }} pesanan):</small>
+                    <span class="fw-bold fs-5 text-dark">{{ number_format($totalQty, 0) }} {{ $produk->satuan }}</span>
+
+                    @if($items->count() > 1)
+                        <ul class="small text-muted mb-0 mt-2 ps-3">
+                            @foreach($items as $item)
+                                <li>
+                                    {{ $item->pesanan->customer->nama ?? 'Customer' }}
+                                    ({{ $item->pesanan->kode_pesanan ?? '-' }})
+                                    &mdash; {{ number_format($item->qty_rencana, 0) }} {{ $produk->satuan }}
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
                 </div>
                 <ul class="list-group list-group-flush">
-                    @forelse($detail->produk->resep as $r)
+                    @forelse($produk->resep as $r)
                         <li class="list-group-item d-flex justify-content-between align-items-center py-3">
                             <div>
                                 <span class="fw-bold d-block text-dark">{{ $r->bahan->nama ?? 'Bahan' }}</span>
@@ -143,7 +176,7 @@
                             </div>
                             <div class="text-end">
                                 <span class="badge bg-primary fs-6 rounded-pill">
-                                    {{ number_format($r->qty_bahan * $detail->qty_rencana, 2) }} {{ $r->satuan }}
+                                    {{ number_format($r->qty_bahan * $totalQty, 2) }} {{ $r->satuan }}
                                 </span>
                             </div>
                         </li>
