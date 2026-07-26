@@ -13,6 +13,9 @@ class BarangController extends Controller
 
     public function index(Request $request)
     {
+        $user = auth()->user();
+        $roleName = $user->role->nama ?? '';
+        $gudangRole = $roleName === 'Kepala Gudang' ? 'Kepala Gudang' : null;
         $kategoriId = $request->query('kategori_id');
         $search     = $request->query('search');
 
@@ -34,7 +37,7 @@ class BarangController extends Controller
         $kategori = Kategori::all();
         $reseps   = ResepBtklBop::all(); 
 
-        return view('barang.index', compact('data', 'kategori', 'reseps'));
+        return view('barang.index', compact('data', 'kategori', 'reseps', 'gudangRole'));
     }
 
     public function checkNama(Request $request)

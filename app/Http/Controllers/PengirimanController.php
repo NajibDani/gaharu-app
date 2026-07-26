@@ -91,6 +91,10 @@ class PengirimanController extends Controller
             'details.*.qty_kirim' => 'required|numeric|min:1',
         ]);
 
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal_pengiriman)) {
+            return back()->with('error', 'Gagal menyimpan: Periode akuntansi untuk tanggal pengiriman ' . date('d/m/Y', strtotime($request->tanggal_pengiriman)) . ' sudah ditutup buku (closing).')->withInput();
+        }
+
         $pesanan = DB::table('pesanan')->where('id', $request->pesanan_id)->first();
         if (!$pesanan) {
             return back()->with('error', 'Data pesanan tidak ditemukan.');
@@ -169,6 +173,10 @@ class PengirimanController extends Controller
             'details.*.qty_kirim' => 'required|numeric|min:1',
         ]);
 
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal_pengiriman)) {
+            return back()->with('error', 'Gagal memperbarui: Periode akuntansi untuk tanggal pengiriman ' . date('d/m/Y', strtotime($request->tanggal_pengiriman)) . ' sudah ditutup buku (closing).')->withInput();
+        }
+
         DB::beginTransaction();
         try {
             $pengiriman->update([
@@ -216,8 +224,8 @@ class PengirimanController extends Controller
     {
         $pengiriman = Pengiriman::with('details')->findOrFail($id);
 
-        if (\App\Models\Journal::isPeriodClosed($pengiriman->tanggal)) {
-            return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($pengiriman->tanggal)) . ' sudah ditutup buku. Tidak dapat memproses pengiriman B2B pada periode yang sudah ditutup.');
+        if (\App\Models\Journal::isPeriodClosed($pengiriman->tanggal_pengiriman)) {
+            return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($pengiriman->tanggal_pengiriman)) . ' sudah ditutup buku. Tidak dapat memproses pengiriman B2B pada periode yang sudah ditutup.');
         }
 
         if ($pengiriman->status_pengiriman !== 'Draft') {

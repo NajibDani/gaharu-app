@@ -228,7 +228,6 @@
                     <a href="{{ route('laporan.neraca.index', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-danger">
                         Export pdf
                     </a>
-                    <button type="button" onclick="window.print()" class="btn btn-dark">Cetak</button>
                 </form>
             </div>
 

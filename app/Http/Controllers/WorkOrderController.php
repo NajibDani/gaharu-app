@@ -156,6 +156,18 @@ public function show($id)
     return view('work_order.show', compact('wo', 'groupedDetails'));
 }
 
+public function cetakPdf($id)
+{
+    $wo = WorkOrder::with([
+        'details.pesanan.customer', 
+        'details.produk.resep.bahan'
+    ])->findOrFail($id);
+
+    $pdf = app('dompdf.wrapper');
+    $pdf->loadView('work_order.show-pdf', compact('wo'));
+    return $pdf->download('work-order-' . $wo->kode_wo . '.pdf');
+}
+
     /**
      * FUNGSI KRUSIAL: Kirim Produksi & Transfer Stok Bahan Baku
      * Dari Gudang Utama (ID: 1) ke Gudang Produksi (ID: 2)

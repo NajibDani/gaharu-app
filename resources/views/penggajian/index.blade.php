@@ -166,7 +166,7 @@
                     </form>
                 </div>
                 <div class="mt-4">
-                    {{ $payrolls->links() }}
+                    {{ $periods->links() }}
                 </div>
             </div>
         </div>

@@ -89,7 +89,7 @@
                                         <option value="">-- Klik untuk memilih nomor WO pabrik --</option>
                                         @foreach($workOrders as $wo)
                                             <option value="{{ $wo->id }}" {{ $selectedWoId == $wo->id ? 'selected' : '' }}>
-                                                {{ $wo->kode_wo }} — (Pelanggan Terkait: Multi-Customer WO)
+                                                {{ $wo->kode_wo }}
                                             </option>
                                         @endforeach
                                     </select>

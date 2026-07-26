@@ -568,7 +568,7 @@ class PengeluaranBahanBakuController extends Controller
                             $barang = \App\Models\MasterBarang::find($detail->barang_id);
                             $isOperational = $barang && ($barang->is_operational || !$barang->is_bahan_baku);
                             $coaCode = $isOperational ? '1501' : '1301';
-                            $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 20 : 19);
+                            $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
 
                             $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
                                 ?? DB::table('chart_of_accounts')->where('kode', '5104')->value('id') 

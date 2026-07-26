@@ -239,9 +239,6 @@
                     <a href="{{ route('laporan.arus-kas.index', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-pdf">
                         📕 Export PDF
                     </a>
-                    <button type="button" onclick="window.print()" class="btn btn-print">
-                        🖨️ Cetak
-                    </button>
                 </form>
             </div>
 

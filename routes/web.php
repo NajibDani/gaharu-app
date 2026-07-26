@@ -221,6 +221,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/create/{id}', [WorkOrderController::class, 'create'])->name('create');
             Route::post('/store', [WorkOrderController::class, 'store'])->name('store');
             Route::get('/show/{id}', [WorkOrderController::class, 'show'])->name('show');
+            Route::get('/{id}/cetak-pdf', [WorkOrderController::class, 'cetakPdf'])->name('cetak-pdf');
             Route::post('/massal/review', [WorkOrderController::class, 'reviewMassal'])->name('review_massal');
             Route::post('/massal/store', [WorkOrderController::class, 'storeMassal'])->name('store_massal');
             Route::get('/massal/review', function () {
@@ -233,6 +234,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/produksi/create', [ProduksiController::class, 'create'])->name('produksi.create');
         Route::post('/produksi', [ProduksiController::class, 'store'])->name('produksi.store');
         Route::get('/produksi/get-wo-detail/{id}', [ProduksiController::class, 'getWoDetail'])->name('produksi.getWoDetail');
+        Route::get('/produksi/{id}/cetak-pdf', [ProduksiController::class, 'cetakPdf'])->name('produksi.cetak-pdf');
         Route::resource('produksi', ProduksiController::class);
         Route::post('/produksi/{id}/approve', [ProduksiController::class, 'approve'])->name('produksi.approve');
     });

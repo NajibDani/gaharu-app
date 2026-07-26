@@ -833,14 +833,13 @@ class JurnalController extends Controller
         $dppTotal     = floatval($pembelian->total);
         $persenDP     = floatval($pembelian->persen_dp ?? 0);
         $dpMurni      = floatval($pembelian->nominal_dp ?? ($dppTotal * ($persenDP / 100)));
-        $ppnDP        = round($dpMurni * 0.10, 2);
+        $ppnDP        = 0; // Kasus 1: PPN DP dihilangkan
         $kasDP        = $dpMurni + $ppnDP;
 
         $sisaDpp      = max(0, $dppTotal - $dpMurni);
-        $ppnPelunasan = round($sisaDpp * 0.10, 2);
+        $ppnPelunasan = floatval($pembelian->tax_service ?? 0); // Kasus 2: PPN Pelunasan mengambil tax pembelian
         $kasPelunasan = $sisaDpp + $ppnPelunasan;
 
-        // Pastikan format string kecil dan bersih dari spasi gantung
         $tahapClean = trim(strtolower((string)$tahapBerikutnya));
 
         if ($tahapClean === 'dp') {
@@ -852,11 +851,22 @@ class JurnalController extends Controller
         }
 
         if ($tahapClean === 'reklas_lunas') {
-            return 0; // Reklas murni tidak mengeluarkan kas lagi
+            // Cek apakah sudah ada jurnal pelunasan
+            $hasPelunasanJournal = DB::table('jurnal_pembelian')
+                ->where('source_id', $pembelian->id)
+                ->where('source_type', 'pembelian')
+                ->where('tahap', 'pelunasan')
+                ->exists();
+
+            if ($hasPelunasanJournal) {
+                return 0; // Reklas murni tidak mengeluarkan kas lagi
+            } else {
+                return $kasPelunasan; // Gabungan pelunasan + penerimaan barang
+            }
         }
 
         if ($tahapClean === 'cod') {
-            return $dppTotal + round($dppTotal * 0.10, 2);
+            return $dppTotal + $ppnPelunasan; // Kasus 4: PPN mengambil tax di pembelian
         }
 
         return 0;
@@ -886,14 +896,13 @@ class JurnalController extends Controller
             }
         }
 
-        $debitCoaCode = $hasOperational ? '1302' : '1301'; // 1302 = Persediaan Perlengkapan Operasional & ATK, 1301 = Persediaan Bahan Baku
+        $debitCoaCode = $hasOperational ? '1501' : '1301'; // 1501 = Perlengkapan Operasional dan ATK, 1301 = Persediaan Bahan Baku
 
         $idKasBank        = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
         $idPersediaan     = DB::table('chart_of_accounts')->where('kode', $debitCoaCode)->value('id') ?? ($hasOperational ? 27 : 19);
         $idUangMukaPemb   = DB::table('chart_of_accounts')->where('kode', '1202')->value('id') ?? 17;
         $idPPNMasukan     = DB::table('chart_of_accounts')->where('kode', '1203')->value('id') ?? 18;
 
-        $tarifPpn = 0.10;
         $defaultDetails = [];
 
         if (in_array($tahap, ['reklas_lunas', 'cod'])) {
@@ -902,16 +911,40 @@ class JurnalController extends Controller
             foreach ($penerimaan->details as $det) {
                 $dppTotal += floatval($det->qty) * floatval($det->harga_per_qty);
             }
-            $ppnTotal     = round($dppTotal * $tarifPpn, 2);
-            $totalContracts = $dppTotal + $ppnTotal;
 
             if ($tahap === 'reklas_lunas') {
-                $defaultDetails = [
-                    ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
-                    ['account_id' => $idUangMukaPemb, 'debit' => 0, 'kredit' => $dppTotal]
-                ];
+                // Cek apakah sudah ada jurnal pelunasan
+                $hasPelunasanJournal = DB::table('jurnal_pembelian')
+                    ->where('source_id', $pembelian->id)
+                    ->where('source_type', 'pembelian')
+                    ->where('tahap', 'pelunasan')
+                    ->exists();
+
+                if ($hasPelunasanJournal) {
+                    // Skema Reklas Murni (Pelunasan terpisah sudah dilakukan)
+                    $defaultDetails = [
+                        ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
+                        ['account_id' => $idUangMukaPemb, 'debit' => 0, 'kredit' => $dppTotal]
+                    ];
+                } else {
+                    // Skema Pelunasan + Penerimaan Barang
+                    $dpMurni = floatval($pembelian->nominal_dp ?? (floatval($pembelian->total) * (floatval($pembelian->persen_dp ?? 0) / 100)));
+                    $sisaDpp = max(0, floatval($pembelian->total) - $dpMurni);
+                    $ppnTotal = floatval($pembelian->tax_service ?? 0);
+                    $totalKasPelunasan = $sisaDpp + $ppnTotal;
+
+                    $defaultDetails = [
+                        ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
+                        ['account_id' => $idPPNMasukan, 'debit' => $ppnTotal, 'kredit' => 0],
+                        ['account_id' => $idUangMukaPemb, 'debit' => 0, 'kredit' => $dpMurni],
+                        ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $totalKasPelunasan]
+                    ];
+                }
             } else {
                 // cod
+                $ppnTotal = floatval($pembelian->tax_service ?? 0); // Kasus 4: PPN mengambil tax di pembelian
+                $totalContracts = $dppTotal + $ppnTotal;
+
                 $defaultDetails = [
                     ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
                     ['account_id' => $idPPNMasukan, 'debit' => $ppnTotal, 'kredit' => 0],
@@ -922,17 +955,16 @@ class JurnalController extends Controller
             $dppTotal = floatval($pembelian->total);
             $persenDP   = floatval($pembelian->persen_dp ?? 0);
             $dpMurni    = floatval($pembelian->nominal_dp ?? ($dppTotal * ($persenDP / 100)));
-            $ppnDP      = round($dpMurni * $tarifPpn, 2);
+            $ppnDP      = 0; // Kasus 1: PPN DP dihilangkan
             $kasDP      = $dpMurni + $ppnDP;
 
             $sisaDpp      = max(0, $dppTotal - $dpMurni);
-            $ppnPelunasan = round($sisaDpp * $tarifPpn, 2);
+            $ppnPelunasan = floatval($pembelian->tax_service ?? 0); // Kasus 2: PPN mengambil tax di pembelian
             $kasPelunasan = $sisaDpp + $ppnPelunasan;
 
             if ($tahap === 'dp') {
                 $defaultDetails = [
                     ['account_id' => $idUangMukaPemb, 'debit' => $dpMurni, 'kredit' => 0],
-                    ['account_id' => $idPPNMasukan, 'debit' => $ppnDP, 'kredit' => 0],
                     ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $kasDP]
                 ];
             } else {
