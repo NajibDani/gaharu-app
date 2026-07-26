@@ -830,7 +830,7 @@ class JurnalController extends Controller
     // PERBAIKAN: Menambahkan parameter kedua $tahapBerikutnya langsung ke fungsi
     private function hitungTotalKeluar($pembelian, $tahapBerikutnya = null): float
     {
-        $dppTotal     = floatval($pembelian->total);
+        $dppTotal     = floatval($pembelian->total) - floatval($pembelian->tax_service ?? 0);
         $persenDP     = floatval($pembelian->persen_dp ?? 0);
         $dpMurni      = floatval($pembelian->nominal_dp ?? ($dppTotal * ($persenDP / 100)));
         $ppnDP        = 0; // Kasus 1: PPN DP dihilangkan
@@ -928,8 +928,9 @@ class JurnalController extends Controller
                     ];
                 } else {
                     // Skema Pelunasan + Penerimaan Barang
-                    $dpMurni = floatval($pembelian->nominal_dp ?? (floatval($pembelian->total) * (floatval($pembelian->persen_dp ?? 0) / 100)));
-                    $sisaDpp = max(0, floatval($pembelian->total) - $dpMurni);
+                    $pembelianDppTotal = floatval($pembelian->total) - floatval($pembelian->tax_service ?? 0);
+                    $dpMurni = floatval($pembelian->nominal_dp ?? ($pembelianDppTotal * (floatval($pembelian->persen_dp ?? 0) / 100)));
+                    $sisaDpp = max(0, $pembelianDppTotal - $dpMurni);
                     $ppnTotal = floatval($pembelian->tax_service ?? 0);
                     $totalKasPelunasan = $sisaDpp + $ppnTotal;
 
@@ -952,7 +953,7 @@ class JurnalController extends Controller
                 ];
             }
         } else {
-            $dppTotal = floatval($pembelian->total);
+            $dppTotal = floatval($pembelian->total) - floatval($pembelian->tax_service ?? 0);
             $persenDP   = floatval($pembelian->persen_dp ?? 0);
             $dpMurni    = floatval($pembelian->nominal_dp ?? ($dppTotal * ($persenDP / 100)));
             $ppnDP      = 0; // Kasus 1: PPN DP dihilangkan
@@ -1396,6 +1397,7 @@ class JurnalController extends Controller
 
         // 2. Antrean: Pembayaran Kas (Uang Muka / Pelunasan)
         $pembayaranBelum = \App\Models\Pembayaran::with(['pesanan.customer'])
+            ->whereNotNull('pesanan_id')
             ->whereNotIn('id', $pembayaranDijurnal)
             ->get()
             ->map(function ($item) {
