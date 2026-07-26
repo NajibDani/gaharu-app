@@ -310,11 +310,13 @@ class JurnalController extends Controller
             $tabelManual = [
                 'jurnal_umum'                        => 'journals',
                 \App\Models\JurnalPenyesuaian::class => 'jurnal_penyesuaian',
+                'jurnal_penyesuaian'                 => 'jurnal_penyesuaian',
             ];
 
             $tabelOtomatis = [
                 'jurnal_penjualan_pos' => 'jurnal_penjualan_pos', 
                 'jurnal_penjualan_b2b' => 'jurnal_penjualan_b2b', 
+                'penjualan_b2b'        => 'jurnal_penjualan_b2b',
                 'jurnal_pembelian'     => 'jurnal_pembelian',     
             ];
 
