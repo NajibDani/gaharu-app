@@ -246,17 +246,26 @@ class PengirimanController extends Controller
                 $barangId = $detail->barang_id;
                 $qtyKirim = floatval($detail->qty_kirim);
 
-                // 1. Ambil & Kunci Alokasi Produksi Pesanan
-                $alokasi = ProduksiPesanan::where('pesanan_id', $pengiriman->pesanan_id)
+                // 1. Ambil & Kunci SEMUA baris Alokasi Produksi Pesanan untuk pesanan+produk ini.
+                // Bisa lebih dari satu baris kalau produksi barang ini dilakukan
+                // bertahap/multi-batch (tiap batch produksi bikin baris alokasi
+                // sendiri, bukan menumpuk ke baris yang sama). Diurutkan dari
+                // yang paling lama (id asc) supaya pengurangan qty_terkirim
+                // dilakukan berurutan sesuai batch produksinya (FIFO alokasi).
+                $alokasiList = ProduksiPesanan::where('pesanan_id', $pengiriman->pesanan_id)
                     ->where('produk_id', $barangId)
+                    ->orderBy('id', 'asc')
                     ->lockForUpdate()
-                    ->first();
+                    ->get();
 
-                if (!$alokasi) {
+                if ($alokasiList->isEmpty()) {
                     throw new \Exception('Alokasi produksi untuk produk ini belum tersedia.');
                 }
 
-                $sisaAlokasi = floatval($alokasi->qty_alokasi) - floatval($alokasi->qty_terkirim);
+                $sisaAlokasi = $alokasiList->sum(function ($a) {
+                    return floatval($a->qty_alokasi) - floatval($a->qty_terkirim);
+                });
+
                 if ($qtyKirim > $sisaAlokasi) {
                     throw new \Exception('Qty kirim (' . $qtyKirim . ') melebihi sisa alokasi barang jadi (' . $sisaAlokasi . ').');
                 }
@@ -272,8 +281,21 @@ class PengirimanController extends Controller
                     throw new \Exception('Stok barang jadi di gudang tidak mencukupi.');
                 }
 
-                // Jalankan Increment Alokasi & Decrement Stok Gudang
-                $alokasi->increment('qty_terkirim', $qtyKirim);
+                // Jalankan Increment Alokasi (didistribusikan ke tiap baris alokasi
+                // secara berurutan, baris paling lama diisi/dihabiskan dulu) &
+                // Decrement Stok Gudang
+                $qtySisaUntukDikurangi = $qtyKirim;
+                foreach ($alokasiList as $alokasi) {
+                    if ($qtySisaUntukDikurangi <= 0) break;
+
+                    $sisaBarisIni = floatval($alokasi->qty_alokasi) - floatval($alokasi->qty_terkirim);
+                    if ($sisaBarisIni <= 0) continue;
+
+                    $ambil = min($sisaBarisIni, $qtySisaUntukDikurangi);
+                    $alokasi->increment('qty_terkirim', $ambil);
+                    $qtySisaUntukDikurangi -= $ambil;
+                }
+
                 DB::table('stok_gudang')->where('id', $stok->id)->decrement('jumlah', $qtyKirim);
 
                 // Potong Stok Batch (FIFO)
