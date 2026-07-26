@@ -265,14 +265,14 @@ class PenggajianController extends Controller
 
     $totalGajiBersih = $payrolls->sum('total_gaji_bersih');
 
-    // 2. Pencarian akun COA
-    $akunBebanGaji = \App\Models\ChartOfAccount::where('nama', 'like', '%Beban Gaji%')
-        ->orWhere('nama', 'like', '%Gaji%')
-        ->first();
+    // 2. Pencarian akun COA secara spesifik
+    $akunBebanGaji = \App\Models\ChartOfAccount::where('kode', '6101')->first()
+        ?? \App\Models\ChartOfAccount::where('kode', '6100')->first()
+        ?? \App\Models\ChartOfAccount::where('nama', 'like', '%Beban Gaji%')->first();
 
-    $akunKas = \App\Models\ChartOfAccount::where('nama', 'like', '%Kas%')
-        ->orWhere('nama', 'like', '%Bank%')
-        ->first();
+    $akunKas = \App\Models\ChartOfAccount::where('kode', '1101')->first()
+        ?? \App\Models\ChartOfAccount::where('kode', '1100')->first()
+        ?? \App\Models\ChartOfAccount::where('nama', 'like', '%Kas di Bank%')->first();
 
     if (!$akunBebanGaji || !$akunKas) {
         return redirect()->back()->with('error', 'Gagal memposting. Akun Beban Gaji atau Kas tidak ditemukan di Chart of Accounts.');
