@@ -92,8 +92,7 @@
     </div>
 
     <div class="footer-note">
-        <strong>Terima kasih atas kunjungan & transaksi Anda!</strong><br>
-        Struk ini merupakan bukti sah transaksi Sales Order Retail POS.
+        Struk ini merupakan bukti sah rekapitulasi transaksi Retail POS.
     </div>
 
 </body>

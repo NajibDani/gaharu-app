@@ -10,6 +10,7 @@ use App\Models\MasterBarang;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderDetail;
 use App\Models\Pembayaran;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PesananController extends Controller
 {

@@ -4,61 +4,97 @@
 
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
-        .table-custom-header th { background-color: #6a4126 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.85rem; padding: 14px 12px; }
-        .table-custom-body td { font-size: 0.85rem; padding: 14px 12px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
+
+        /* ===== TABLE - lebih padat ===== */
+        .table-custom-header th {
+            background-color: #6a4126 !important;
+            color: #ffffff !important;
+            font-weight: 600;
+            border-bottom: none;
+            font-size: 0.78rem;
+            padding: 10px 10px;
+            white-space: nowrap;
+        }
+        .table-custom-body td {
+            font-size: 0.8rem;
+            padding: 8px 10px;
+            vertical-align: middle;
+            border-bottom: 1px solid #f1f5f9;
+            line-height: 1.3;
+        }
+        .table-custom-body tr:hover td { background-color: #fafafa; }
+
         .btn-custom-orange { background-color: #db7946; color: white; border: none; font-weight: 600; font-size: 0.85rem; padding: 8px 16px; border-radius: 8px; transition: all 0.2s; }
         .btn-custom-orange:hover { background-color: #c06535; color: white; }
-        .summary-card { border-radius: 12px; border: 1px solid #eaeaea; background: #ffffff; padding: 16px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-        
-        /* Badge Status Subtle Modern & Clean */
-        .badge-subtle { border-radius: 6px; padding: 5px 12px; font-weight: 600; font-size: 0.75rem; display: inline-block; text-transform: capitalize; }
+        .summary-card { border-radius: 12px; border: 1px solid #eaeaea; background: #ffffff; padding: 14px 18px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+
+        /* ===== BADGE - lebih tipis ===== */
+        .badge-subtle { border-radius: 6px; padding: 3px 9px; font-weight: 600; font-size: 0.7rem; display: inline-block; text-transform: capitalize; line-height: 1.4; }
         .badge-status-pending { background-color: #fef3c7; color: #d97706; }
         .badge-status-proses { background-color: #e0f2fe; color: #0369a1; }
         .badge-status-ready { background-color: #e0e7ff; color: #4338ca; }
         .badge-status-selesai { background-color: #dcfce7; color: #15803d; }
         .badge-status-batal { background-color: #fee2e2; color: #b91c1c; }
-        
-        /* Action Buttons Group Styling */
-        .action-btn-group { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .btn-action-base { border-radius: 8px; width: 32px; height: 32px; font-size: 0.85rem; border: none; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: all 0.2s; background-color: transparent; }
-        
+
+        /* ===== ACTION BUTTONS - dipadatkan, dropdown untuk aksi sekunder ===== */
+        .action-btn-group { display: flex; justify-content: center; align-items: center; gap: 4px; flex-wrap: nowrap; }
+        .btn-action-base {
+            border-radius: 7px; width: 26px; height: 26px; font-size: 0.78rem;
+            border: none; display: inline-flex; align-items: center; justify-content: center;
+            text-decoration: none; transition: all 0.2s; background-color: transparent; flex-shrink: 0;
+        }
+
         .btn-action-eye { background-color: #f0f9ff; color: #0369a1 !important; border: 1px solid #e0f2fe; }
         .btn-action-eye:hover { background-color: #0369a1; color: white !important; }
-        
+
         .btn-action-edit { background-color: #fffbec; color: #b45309 !important; border: 1px solid #fef3c7; }
         .btn-action-edit:hover { background-color: #b45309; color: white !important; }
-        
+
         .btn-action-delete { background-color: #fef2f2; color: #b91c1c !important; border: 1px solid #fee2e2; cursor: pointer; }
         .btn-action-delete:hover { background-color: #b91c1c; color: white !important; }
 
         .btn-action-print { background-color: #f0fdf4; color: #15803d !important; border: 1px solid #dcfce7; }
         .btn-action-print:hover { background-color: #15803d; color: white !important; }
 
-        /* Tombol Bayar Soft Orange */
-        .btn-pay-small { 
-            background-color: #fff7ed; 
-            color: #db7946; 
-            font-weight: 700; 
-            font-size: 0.75rem; 
-            border-radius: 6px; 
-            padding: 5px 10px; 
-            border: 1px solid #fdba74; 
-            transition: all 0.2s; 
+        .btn-action-pdf { background-color: #fee2e2; color: #b91c1c !important; border: 1px solid #fca5a5; }
+        .btn-action-pdf:hover { background-color: #b91c1c; color: white !important; }
+
+        /* Kebab / dropdown "aksi lain" */
+        .btn-action-more { background-color: #f8fafc; color: #64748b !important; border: 1px solid #e2e8f0; }
+        .btn-action-more:hover, .btn-action-more.show { background-color: #64748b; color: white !important; }
+        .dropdown-menu-actions { min-width: 170px; padding: 6px; border-radius: 10px; border: 1px solid #eaeaea; box-shadow: 0 8px 24px rgba(0,0,0,0.08); z-index: 1080; }
+        .dropdown-menu-actions .dropdown-item { border-radius: 6px; font-size: 0.8rem; padding: 7px 10px; display: flex; align-items: center; gap: 8px; }
+        .dropdown-menu-actions .dropdown-item i { width: 16px; text-align: center; }
+        .dropdown-menu-actions .dropdown-item:hover { background-color: #f8fafc; }
+        .dropdown-menu-actions .dropdown-item.text-danger:hover { background-color: #fef2f2; }
+
+        /* Tombol Bayar - kecil, kompak, muat di satu baris */
+        .btn-pay-small {
+            background-color: #fff7ed;
+            color: #db7946;
+            font-weight: 700;
+            font-size: 0.7rem;
+            border-radius: 6px;
+            padding: 4px 8px;
+            border: 1px solid #fdba74;
+            transition: all 0.2s;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 4px;
+            gap: 3px;
             text-decoration: none;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
-        .btn-pay-small:hover { 
-            background-color: #db7946; 
-            color: white !important; 
+        .btn-pay-small:hover {
+            background-color: #db7946;
+            color: white !important;
             border-color: #db7946;
         }
     </style>
 
     <div class="container py-4" style="margin-top: 5.5rem !important;">
-        
+
         {{-- HEADER SECTION --}}
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <div>
@@ -82,7 +118,7 @@
         {{-- DEFINISI VARIABEL --}}
         @php
             $dataPesanan = $pesanans ?? $pesanan ?? collect();
-            
+
             $totalPesanan = $totalPesanan ?? $dataPesanan->count();
             $totalProses = $totalProses ?? $dataPesanan->whereIn('status_pesanan', ['Draft', 'Proses', 'Siap kirim', 'pending', 'ready'])->count();
             $totalSelesai = $totalSelesai ?? $dataPesanan->where('status_pesanan', 'Selesai')->count();
@@ -139,14 +175,14 @@
                 <table class="table table-hover align-middle mb-0 table-custom-body w-100">
                     <thead class="table-custom-header text-center">
                         <tr>
-                            <th width="5%">No</th>
-                            <th width="15%" class="text-start">Kode Pesanan</th>
-                            <th width="20%" class="text-start">Pelanggan</th>
-                            <th width="12%">Tanggal Input</th>
-                            <th width="15%" class="text-end">Total Nilai</th>
-                            <th width="10%">Status Pesanan</th>
-                            <th width="10%">Status Bayar</th>
-                            <th width="13%">Panel Kendali Aksi</th>
+                            <th width="4%">No</th>
+                            <th width="13%" class="text-start">Kode Pesanan</th>
+                            <th width="18%" class="text-start">Pelanggan</th>
+                            <th width="10%">Tanggal</th>
+                            <th width="13%" class="text-end">Total Nilai</th>
+                            <th width="10%">Status</th>
+                            <th width="9%">Bayar</th>
+                            <th width="15%">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="bg-white">
@@ -158,7 +194,7 @@
                                 <td class="text-start">
                                     <div class="fw-semibold text-dark mb-0">{{ $item->customer->nama ?? $item->customer->name ?? 'Umum / Tanpa Nama' }}</div>
                                     @if(isset($item->customer->telepon))
-                                        <span class="text-muted d-inline-flex align-items-center gap-1" style="font-size: 0.75rem;"><i class="bi bi-telephone text-secondary"></i> {{ $item->customer->telepon }}</span>
+                                        <span class="text-muted d-inline-flex align-items-center gap-1" style="font-size: 0.7rem;"><i class="bi bi-telephone text-secondary"></i> {{ $item->customer->telepon }}</span>
                                     @endif
                                 </td>
                                 <td class="text-center text-secondary">
@@ -183,82 +219,93 @@
                                         {{ $item->status_pesanan }}
                                     </span>
                                 </td>
-                                
-                                {{-- KOLOM STATUS BAYAR DIKEMBALIKAN --}}
+
+                                {{-- KOLOM STATUS BAYAR --}}
                                 <td class="text-center">
                                     @if(isset($item->status_pembayaran))
                                         @if($item->status_pembayaran == 'Belum Bayar')
-                                            <span class="badge-subtle badge-status-batal">Belum Bayar</span>
+                                            <span class="badge-subtle badge-status-batal">Belum</span>
                                         @elseif($item->status_pembayaran == 'DP')
                                             <span class="badge-subtle badge-status-pending">DP 60%</span>
                                         @else
                                             <span class="badge-subtle badge-status-selesai">Lunas</span>
                                         @endif
                                     @else
-                                        <span class="badge-subtle badge-status-batal">Belum Bayar</span>
+                                        <span class="badge-subtle badge-status-batal">Belum</span>
                                     @endif
                                 </td>
-                                
+
+                                {{-- PANEL AKSI - dipadatkan: Eye + Bayar selalu tampil, sisanya masuk dropdown --}}
                                 <td class="text-center">
                                     <div class="action-btn-group">
-                                        
+
                                         {{-- 1. TOMBOL DETAIL (Selalu Ada) --}}
                                         <a href="{{ route('pesanan.show', $item->id) }}" class="btn-action-base btn-action-eye" data-bs-toggle="tooltip" title="Lihat Detail">
                                             <i class="bi bi-eye-fill"></i>
                                         </a>
 
-                                        {{-- TOMBOL PRINT KWITANSI --}}
-                                        <a href="{{ route('pesanan.kwitansi', $item->id) }}" class="btn-action-base btn-action-print" data-bs-toggle="tooltip" title="Cetak Kwitansi" target="_blank">
-                                            <i class="bi bi-printer-fill"></i>
-                                        </a>
-
-                                        {{-- TOMBOL PRINT SALES ORDER PDF --}}
-                                        <a href="{{ route('pesanan.cetak-pdf', $item->id) }}" class="btn-action-base text-danger" style="background:#fee2e2; border-color:#fca5a5;" data-bs-toggle="tooltip" title="Cetak Sales Order (PDF)" target="_blank">
-                                            <i class="bi bi-file-earmark-pdf-fill"></i>
-                                        </a>
-
-                                        {{-- 2. TOMBOL EDIT (Hanya Muncul Jika Belum Masuk WO) --}}
-                                        @if(!isset($item->wo_status) || $item->wo_status === null)
-                                            <a href="{{ route('pesanan.edit', $item->id) }}" class="btn-action-base btn-action-edit" data-bs-toggle="tooltip" title="Edit Pesanan">
-                                                <i class="bi bi-pencil-fill"></i>
-                                            </a>
-                                        @endif
-
-                                        {{-- 3. TOMBOL BATAL (Hanya Muncul Jika Belum Batal & Belum Diproses WO) --}}
-                                        @if(strtolower($item->status_pesanan ?? '') !== 'dibatalkan' && strtolower($item->status_pesanan ?? '') !== 'batal')
-                                            @if(!isset($item->wo_status) || $item->wo_status === null || $item->wo_status === 'draft')
-                                                <form action="{{ route('pesanan.batal', $item->id) }}" method="POST" class="d-inline m-0 p-0" onsubmit="return confirm('Batalkan pesanan ini?')">
-                                                    @csrf
-                                                    <button type="submit" class="btn-action-base btn-action-delete" data-bs-toggle="tooltip" title="Batalkan Transaksi">
-                                                        <i class="bi bi-x-circle-fill"></i>
-                                                    </button>
-                                                </form>
-                                            @endif
-                                        @endif
-
-                                        {{-- 4. TOMBOL HAPUS (Hanya Muncul Jika Belum Masuk WO) --}}
-                                        @if(!isset($item->wo_status) || $item->wo_status === null)
-                                            <form action="{{ route('pesanan.destroy', $item->id) }}" method="POST" class="d-inline m-0 p-0" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?')">
-                                                @csrf 
-                                                @method('DELETE')
-                                                <button type="submit" class="btn-action-base btn-action-delete" data-bs-toggle="tooltip" title="Hapus Permanen">
-                                                    <i class="bi bi-trash3-fill"></i>
-                                                </button>
-                                            </form>
-                                        @endif
-
-                                        {{-- 5. TOMBOL KASIR / BAYAR CEPAT MODAL --}}
+                                        {{-- 2. TOMBOL BAYAR CEPAT (jika belum lunas) --}}
                                         @if(isset($item->status_pembayaran) && $item->status_pembayaran != 'Lunas' && strtolower($item->status_pesanan ?? '') != 'dibatalkan' && strtolower($item->status_pesanan ?? '') != 'batal')
-                                            <div class="ms-1">
-                                                <button type="button" class="btn-pay-small" data-bs-toggle="modal" data-bs-target="#modalBayar{{ $item->id }}">
-                                                    <i class="bi bi-wallet2"></i> Bayar
-                                                </button>
-                                            </div>
+                                            <button type="button" class="btn-pay-small" data-bs-toggle="modal" data-bs-target="#modalBayar{{ $item->id }}">
+                                                <i class="bi bi-wallet2"></i> Bayar
+                                            </button>
                                         @endif
+
+                                        {{-- 3. DROPDOWN AKSI LAIN (print, pdf, edit, batal, hapus) --}}
+                                        <div class="dropdown dropup">
+                                            <button class="btn-action-base btn-action-more" type="button" data-bs-toggle="dropdown" data-bs-strategy="fixed" data-bs-boundary="viewport" aria-expanded="false" title="Aksi lainnya">
+                                                <i class="bi bi-three-dots-vertical"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-actions">
+                                                <li>
+                                                    <a class="dropdown-item" href="{{ route('pesanan.kwitansi', $item->id) }}" target="_blank">
+                                                        <i class="bi bi-printer-fill text-success"></i> Cetak Kwitansi
+                                                    </a>
+                                                </li>
+                                                <li>
+                                                    <a class="dropdown-item" href="{{ route('pesanan.cetak-pdf', $item->id) }}" target="_blank">
+                                                        <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Cetak Sales Order
+                                                    </a>
+                                                </li>
+
+                                                @if(!isset($item->wo_status) || $item->wo_status === null)
+                                                    <li>
+                                                        <a class="dropdown-item" href="{{ route('pesanan.edit', $item->id) }}">
+                                                            <i class="bi bi-pencil-fill text-warning"></i> Edit Pesanan
+                                                        </a>
+                                                    </li>
+                                                @endif
+
+                                                @if(strtolower($item->status_pesanan ?? '') !== 'dibatalkan' && strtolower($item->status_pesanan ?? '') !== 'batal')
+                                                    @if(!isset($item->wo_status) || $item->wo_status === null || $item->wo_status === 'draft')
+                                                        <li>
+                                                            <form action="{{ route('pesanan.batal', $item->id) }}" method="POST" class="m-0 p-0" onsubmit="return confirm('Batalkan pesanan ini?')">
+                                                                @csrf
+                                                                <button type="submit" class="dropdown-item text-danger">
+                                                                    <i class="bi bi-x-circle-fill"></i> Batalkan Transaksi
+                                                                </button>
+                                                            </form>
+                                                        </li>
+                                                    @endif
+                                                @endif
+
+                                                @if(!isset($item->wo_status) || $item->wo_status === null)
+                                                    <li>
+                                                        <form action="{{ route('pesanan.destroy', $item->id) }}" method="POST" class="m-0 p-0" onsubmit="return confirm('Apakah Anda yakin ingin menghapus data ini?')">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="dropdown-item text-danger">
+                                                                <i class="bi bi-trash3-fill"></i> Hapus Permanen
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                @endif
+                                            </ul>
+                                        </div>
 
                                     </div>
 
-                                    {{-- MODAL PEMBAYARAN UTUH ASLI DARI KODE ANDA --}}
+                                    {{-- MODAL PEMBAYARAN (utuh, tidak diubah) --}}
                                     @if(isset($item->status_pembayaran) && $item->status_pembayaran != 'Lunas' && strtolower($item->status_pesanan ?? '') != 'dibatalkan' && strtolower($item->status_pesanan ?? '') != 'batal')
                                     <div class="modal fade text-start" id="modalBayar{{ $item->id }}" tabindex="-1" aria-hidden="true">
                                         <div class="modal-dialog modal-dialog-centered">
@@ -359,6 +406,26 @@
             var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
                 return new bootstrap.Tooltip(tooltipTriggerEl)
             });
+        });
+
+        // Pindahkan dropdown-menu aksi ke <body> saat dibuka, supaya tidak
+        // ke-crop oleh "overflow-hidden" pada card pembungkus tabel.
+        // Dikembalikan ke posisi semula saat ditutup agar struktur DOM tetap rapi.
+        document.addEventListener('show.bs.dropdown', function (e) {
+            var button = e.target;
+            var menu = button.nextElementSibling;
+            if (!menu || !menu.classList.contains('dropdown-menu-actions')) return;
+            menu._originalNextSibling = menu.nextSibling;
+            menu._originalParent = menu.parentNode;
+            button._dropdownMenuRef = menu;
+            document.body.appendChild(menu);
+        });
+
+        document.addEventListener('hidden.bs.dropdown', function (e) {
+            var button = e.target;
+            var menu = button._dropdownMenuRef;
+            if (!menu || !menu._originalParent) return;
+            menu._originalParent.insertBefore(menu, menu._originalNextSibling);
         });
     </script>
 </x-app-layout>
