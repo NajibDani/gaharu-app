@@ -98,16 +98,26 @@ class BarangController extends Controller
 
     public function store(Request $request)
     {
+        $namaClean = trim($request->nama);
+        $request->merge([
+            'nama' => $namaClean,
+            'kode_barang' => trim($request->kode_barang),
+        ]);
+
         $request->validate([
             'kategori_id' => 'required',
             'kode_barang' => 'required|unique:master_barang,kode_barang',
-            'nama'        => 'required|unique:master_barang,nama',
+            'nama'        => 'required',
             'jenis_utama' => 'required',
             'tipe_penjualan' => 'required_if:jenis_utama,BARANG_JADI|nullable|in:POS Kejingga,POS Gaharu,B2B',
         ], [
             'kode_barang.unique' => 'Kode barang sudah digunakan, harap gunakan kode barang yang unik.',
-            'nama.unique'        => 'Nama barang sudah ada di sistem. Nama barang harus unik.'
         ]);
+
+        $nameExists = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])->exists();
+        if ($nameExists) {
+            return back()->withErrors(['nama' => 'Nama barang sudah ada di sistem. Nama barang harus unik (tidak sensitif huruf besar/kecil).'])->withInput();
+        }
 
         $user = auth()->user();
         if ($user && $user->role) {
@@ -176,16 +186,28 @@ class BarangController extends Controller
 
     public function update(Request $request, $id)
     {
+        $namaClean = trim($request->nama);
+        $request->merge([
+            'nama' => $namaClean,
+            'kode_barang' => trim($request->kode_barang),
+        ]);
+
         $request->validate([
             'kategori_id' => 'required',
             'kode_barang' => 'required|unique:master_barang,kode_barang,' . $id,
-            'nama'        => 'required|unique:master_barang,nama,' . $id,
+            'nama'        => 'required',
             'jenis_utama' => 'required',
             'tipe_penjualan' => 'required_if:jenis_utama,BARANG_JADI|nullable|in:POS Kejingga,POS Gaharu,B2B',
         ], [
             'kode_barang.unique' => 'Kode barang sudah digunakan, harap gunakan kode barang yang unik.',
-            'nama.unique'        => 'Nama barang sudah ada di sistem. Nama barang harus unik.'
         ]);
+
+        $nameExists = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])
+            ->where('id', '!=', $id)
+            ->exists();
+        if ($nameExists) {
+            return back()->withErrors(['nama' => 'Nama barang sudah ada di sistem. Nama barang harus unik (tidak sensitif huruf besar/kecil).'])->withInput();
+        }
 
         $user = auth()->user();
         if ($user && $user->role) {

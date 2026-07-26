@@ -17,7 +17,7 @@ class ResepBahanBakuController extends Controller
 
     public function show($id)
     {
-        $resep = ResepBtklBop::with('produk')->findOrFail($id);
+        $resep = ResepBtklBop::whereHas('produk')->with('produk')->findOrFail($id);
 
         $bahan = ResepBahanBaku::with('bahan')
                     ->where('resep_id', $id)
@@ -30,6 +30,7 @@ class ResepBahanBakuController extends Controller
 
     public function store(Request $request, $id)
     {
+        $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
         $request->validate([
             'bahan_id' => 'required|array',
             'bahan_id.*' => 'required|exists:master_barang,id',
@@ -73,7 +74,7 @@ class ResepBahanBakuController extends Controller
             'qty_bahan' => 'required|numeric|min:0.01',
         ]);
     
-        $bahan = ResepBahanBaku::findOrFail($id);
+        $bahan = ResepBahanBaku::whereHas('resep.produk')->findOrFail($id);
     
         $bahan->update([
             'qty_bahan' => $request->qty_bahan,
@@ -84,7 +85,7 @@ class ResepBahanBakuController extends Controller
 
     public function destroy($id)
     {
-        $bahan = ResepBahanBaku::findOrFail($id);
+        $bahan = ResepBahanBaku::whereHas('resep.produk')->findOrFail($id);
         $bahan->delete();
 
         return back()->with('success', 'Bahan berhasil dihapus');

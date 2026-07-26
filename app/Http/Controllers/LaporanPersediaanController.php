@@ -89,7 +89,25 @@ class LaporanPersediaanController extends Controller
     {
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';
-        $gudangs   = MasterGudang::orderBy('nama')->get();
+
+        // Auto filter warehouse based on role
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $request->merge(['gudang_id' => 4]);
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $request->merge(['gudang_id' => 2]);
+        } elseif ($roleName === 'Kepala Gudang') {
+            $request->merge(['gudang_id' => 1]);
+        }
+
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangs = MasterGudang::where('id', 4)->get();
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangs = MasterGudang::where('id', 2)->get();
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangs = MasterGudang::where('id', 1)->get();
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
         $kategoris = DB::table('kategori')->orderBy('nama')->get();
 
         $query = StokGudang::with(['barang.kategori', 'gudang'])
@@ -166,7 +184,27 @@ class LaporanPersediaanController extends Controller
     */
     public function pengeluaranBahanBaku(Request $request)
     {
-        $gudangs = MasterGudang::orderBy('nama')->get();
+        $user = auth()->user();
+        $roleName = $user->role->nama ?? '';
+
+        // Auto filter warehouse based on role
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $request->merge(['gudang_id' => 4]);
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $request->merge(['gudang_id' => 2]);
+        } elseif ($roleName === 'Kepala Gudang') {
+            $request->merge(['gudang_id' => 1]);
+        }
+
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangs = MasterGudang::where('id', 4)->get();
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangs = MasterGudang::where('id', 2)->get();
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangs = MasterGudang::where('id', 1)->get();
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
 
         $query = PengeluaranBahanBaku::with(['gudang', 'details.barang'])
             ->orderBy('tanggal', 'desc');
@@ -249,7 +287,27 @@ return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
     */
     public function stockOpname(Request $request)
     {
-        $gudangs = MasterGudang::orderBy('nama')->get();
+        $user = auth()->user();
+        $roleName = $user->role->nama ?? '';
+
+        // Auto filter warehouse based on role
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $request->merge(['gudang_id' => 4]);
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $request->merge(['gudang_id' => 2]);
+        } elseif ($roleName === 'Kepala Gudang') {
+            $request->merge(['gudang_id' => 1]);
+        }
+
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangs = MasterGudang::where('id', 4)->get();
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangs = MasterGudang::where('id', 2)->get();
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangs = MasterGudang::where('id', 1)->get();
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
 
         $query = StockOpname::with(['gudang', 'user', 'details.barang'])
             ->orderBy('tanggal', 'desc');

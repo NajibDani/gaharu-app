@@ -442,8 +442,17 @@ function renderDetailOpname(data) {
                 <h6 class="fw-bold mt-1">${data.gudang}</h6>
             </div>
             <div class="col-md-3">
-                <small class="text-muted">Tanggal</small>
-                <h6 class="fw-bold mt-1">${data.tanggal}</h6>
+                <small class="text-muted d-block mb-1">Tanggal</small>
+                ${data.status === 'draft' ? `
+                    <form action="/stock-opname/${data.id}" method="POST" class="d-flex align-items-center gap-1">
+                        <input type="hidden" name="_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="_method" value="PUT">
+                        <input type="date" name="tanggal" class="form-control form-control-sm fw-bold" value="${data.tanggal_raw}" required style="padding: 0.25rem 0.5rem; font-size: 0.875rem;">
+                        <button type="submit" class="btn btn-sm btn-primary px-2" title="Simpan Tanggal"><i class="bi bi-check-lg"></i></button>
+                    </form>
+                ` : `
+                    <h6 class="fw-bold mt-1">${data.tanggal}</h6>
+                `}
             </div>
             <div class="col-md-3">
                 <small class="text-muted">Status</small>

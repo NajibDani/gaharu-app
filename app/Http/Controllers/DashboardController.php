@@ -39,6 +39,7 @@ class DashboardController extends Controller
         $hasB2bAccess = in_array($roleName, ['Kepala Outlet Gaharu', 'Direktur Keuangan', 'Super Admin', 'Administrator']);
         $hasProductionAccess = in_array($roleName, ['Kepala Outlet Gaharu', 'Bagian Produksi', 'Direktur Keuangan', 'Super Admin', 'Administrator']);
         $hasPurchaseAccess = in_array($roleName, ['Kepala Outlet Gaharu', 'Kepala Gudang', 'Direktur Keuangan', 'Super Admin', 'Administrator']);
+        $hasPosAccess = in_array($roleName, ['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan', 'Super Admin', 'Administrator']);
 
         $totalPesanan = $hasB2bAccess ? Pesanan::whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])->count() : 0;
         $totalWO = $hasProductionAccess ? WorkOrder::whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])->count() : 0;
@@ -143,26 +144,28 @@ class DashboardController extends Controller
         */
         $labelsPos = [];
         $dataPos = [];
-        $chartPosQuery = PenjualanPos::whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->whereIn('status', ['SUKSES', 'Approved', 'Completed']);
+        if ($hasPosAccess) {
+            $chartPosQuery = PenjualanPos::whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+                ->whereIn('status', ['SUKSES', 'Approved', 'Completed']);
 
-        if ($roleName === 'Kepala Outlet Gaharu') {
-            $chartPosQuery->where('gudang_id', 2);
-        } elseif ($roleName === 'Kepala Outlet Kejingga') {
-            $chartPosQuery->where('gudang_id', 4);
-        }
+            if ($roleName === 'Kepala Outlet Gaharu') {
+                $chartPosQuery->where('gudang_id', 2);
+            } elseif ($roleName === 'Kepala Outlet Kejingga') {
+                $chartPosQuery->where('gudang_id', 4);
+            }
 
-        $chartPosData = $chartPosQuery
-            ->selectRaw('DATE(tanggal) as date_label, SUM(total) as daily_total')
-            ->groupBy('date_label')
-            ->get()
-            ->pluck('daily_total', 'date_label');
+            $chartPosData = $chartPosQuery
+                ->selectRaw('DATE(tanggal) as date_label, SUM(total) as daily_total')
+                ->groupBy('date_label')
+                ->get()
+                ->pluck('daily_total', 'date_label');
 
-        $periode = CarbonPeriod::create($startDate, $endDate);
-        foreach ($periode as $tanggal) {
-            $dateStr = $tanggal->format('Y-m-d');
-            $labelsPos[] = $tanggal->format('d M');
-            $dataPos[] = (float) ($chartPosData->get($dateStr) ?? 0);
+            $periode = CarbonPeriod::create($startDate, $endDate);
+            foreach ($periode as $tanggal) {
+                $dateStr = $tanggal->format('Y-m-d');
+                $labelsPos[] = $tanggal->format('d M');
+                $dataPos[] = (float) ($chartPosData->get($dateStr) ?? 0);
+            }
         }
 
         /*
@@ -211,23 +214,26 @@ class DashboardController extends Controller
         | TOP 3 BAHAN SERING DIBELI (Role-Based)
         |--------------------------------------------------------------------------
         */
-        $bahanSeringDibeliQuery = DB::table('pembelian_detail')
-            ->join('master_barang', 'pembelian_detail.barang_id', '=', 'master_barang.id')
-            ->join('pembelian', 'pembelian_detail.pembelian_id', '=', 'pembelian.id')
-            ->whereBetween('pembelian.tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->select('master_barang.nama', 'master_barang.satuan', DB::raw('SUM(pembelian_detail.qty) as total_qty'));
+        $bahanSeringDibeli = collect();
+        if ($hasPosAccess) {
+            $bahanSeringDibeliQuery = DB::table('pembelian_detail')
+                ->join('master_barang', 'pembelian_detail.barang_id', '=', 'master_barang.id')
+                ->join('pembelian', 'pembelian_detail.pembelian_id', '=', 'pembelian.id')
+                ->whereBetween('pembelian.tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+                ->select('master_barang.nama', 'master_barang.satuan', DB::raw('SUM(pembelian_detail.qty) as total_qty'));
 
-        if ($roleName === 'Kepala Outlet Gaharu') {
-            $bahanSeringDibeliQuery->where('pembelian.gudang_id', 2);
-        } elseif ($roleName === 'Kepala Gudang') {
-            $bahanSeringDibeliQuery->where('pembelian.gudang_id', 1);
+            if ($roleName === 'Kepala Outlet Gaharu') {
+                $bahanSeringDibeliQuery->where('pembelian.gudang_id', 2);
+            } elseif ($roleName === 'Kepala Gudang') {
+                $bahanSeringDibeliQuery->where('pembelian.gudang_id', 1);
+            }
+
+            $bahanSeringDibeli = $bahanSeringDibeliQuery
+                ->groupBy('master_barang.id', 'master_barang.nama', 'master_barang.satuan')
+                ->orderByDesc('total_qty')
+                ->limit(3)
+                ->get();
         }
-
-        $bahanSeringDibeli = $bahanSeringDibeliQuery
-            ->groupBy('master_barang.id', 'master_barang.nama', 'master_barang.satuan')
-            ->orderByDesc('total_qty')
-            ->limit(3)
-            ->get();
 
         /*
         |--------------------------------------------------------------------------
@@ -272,7 +278,8 @@ class DashboardController extends Controller
             'supplierTeratas',
             'hasB2bAccess',
             'hasProductionAccess',
-            'hasPurchaseAccess'
+            'hasPurchaseAccess',
+            'hasPosAccess'
         ));
     }
 

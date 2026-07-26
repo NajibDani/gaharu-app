@@ -39,7 +39,7 @@
 
                                     <option
                                         value="{{ $gudang->id }}"
-                                        {{ request('gudang_id') == $gudang->id ? 'selected' : '' }}>
+                                        {{ $gudangId == $gudang->id ? 'selected' : '' }}>
 
                                         {{ $gudang->nama }}
 
@@ -69,7 +69,7 @@
 
                                     <option
                                         value="{{ $barang->id }}"
-                                        {{ request('barang_id') == $barang->id ? 'selected' : '' }}>
+                                        {{ $barangId == $barang->id ? 'selected' : '' }}>
 
                                         {{ $barang->kode_barang }}
                                         -

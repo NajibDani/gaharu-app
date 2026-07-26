@@ -214,9 +214,11 @@ public function detailJson(string $id)
     });
 
     return response()->json([
+        'id'          => $stockOpname->id,
         'kode_opname' => $stockOpname->kode_opname,
         'gudang'      => $stockOpname->gudang->nama ?? '-',
         'tanggal'     => \Carbon\Carbon::parse($stockOpname->tanggal)->format('d M Y H:i'),
+        'tanggal_raw' => \Carbon\Carbon::parse($stockOpname->tanggal)->format('Y-m-d'),
         'status'      => $stockOpname->status,
         'keterangan'  => $stockOpname->keterangan ?: '-',
         'details'     => $details,

@@ -25,7 +25,7 @@
             default => 'col-md-12'
         };
 
-        $row1ChartColClass = $hasB2bAccess ? 'col-md-6' : 'col-md-12';
+        $row1ChartColClass = ($hasPosAccess && $hasB2bAccess) ? 'col-md-6' : 'col-md-12';
         $row2ChartColClass = ($hasPurchaseAccess && $hasProductionAccess) ? 'col-md-6' : 'col-md-12';
     @endphp
 
@@ -113,7 +113,7 @@
                 
                 {{-- ROW CHARTS 1: POS & B2B --}}
                 <div class="row gx-3">
-                    @if($hasPurchaseAccess)
+                    @if($hasPosAccess)
                     <div class="{{ $row1ChartColClass }} mb-3 mb-md-0">
                         <div class="card border-0 shadow-sm h-100">
                             <div class="card-body p-3">
@@ -172,9 +172,11 @@
                 @endif
 
                 {{-- STATS SUMMARY (BAHAN & SUPPLIERS) --}}
-                @if($hasPurchaseAccess)
+                {{-- STATS SUMMARY (BAHAN & SUPPLIERS) --}}
+                @if($hasPosAccess || $hasPurchaseAccess)
                 <div class="row gx-3">
-                    <div class="col-sm-6 mb-3 mb-sm-0">
+                    @if($hasPosAccess)
+                    <div class="{{ ($hasPosAccess && $hasPurchaseAccess) ? 'col-sm-6' : 'col-12' }} mb-3 mb-sm-0">
                         <div class="card border-0 shadow-sm h-100">
                             <div class="card-body p-3">
                                 <h6 class="fw-bold mb-2 text-dark" style="font-size: 0.8rem;">📦 Kuantitas Bahan Terbanyak (Top 3)</h6>
@@ -205,8 +207,10 @@
                             </div>
                         </div>
                     </div>
+                    @endif
 
-                    <div class="col-sm-6">
+                    @if($hasPurchaseAccess)
+                    <div class="{{ ($hasPosAccess && $hasPurchaseAccess) ? 'col-sm-6' : 'col-12' }}">
                         <div class="card border-0 shadow-sm h-100">
                             <div class="card-body p-3">
                                 <h6 class="fw-bold mb-2 text-dark" style="font-size: 0.8rem;">🏆 Supplier Teratas (Top 3)</h6>
@@ -237,6 +241,7 @@
                             </div>
                         </div>
                     </div>
+                    @endif
                 </div>
                 @endif
             </div>
@@ -287,6 +292,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Chart Penjualan POS
+        @if($hasPosAccess)
         const ctxPos = document.getElementById('grafikPos');
         new Chart(ctxPos, {
             type: 'line',
@@ -320,6 +326,7 @@
                 }
             }
         });
+        @endif
 
         // Chart Penjualan B2B
         @if($hasB2bAccess)

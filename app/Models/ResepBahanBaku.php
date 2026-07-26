@@ -15,4 +15,9 @@ class ResepBahanBaku extends Model
         // Menghubungkan bahan_id kembali ke MasterBarang untuk ambil Nama Barang
         return $this->belongsTo(MasterBarang::class, 'bahan_id', 'id');
     }
+
+    public function resep()
+    {
+        return $this->belongsTo(ResepBtklBop::class, 'resep_id');
+    }
 }

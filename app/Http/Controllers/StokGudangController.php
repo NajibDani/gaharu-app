@@ -11,8 +11,20 @@ class StokGudangController extends Controller
 {
     public function index(Request $request)
     {
+        $user = auth()->user();
+        $roleName = $user->role->nama ?? '';
+
         $gudangId = $request->gudang_id;
         $barangId = $request->barang_id;
+
+        // Auto filter warehouse based on role
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangId = 4;
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangId = 2;
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangId = 1;
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -140,12 +152,20 @@ class StokGudangController extends Controller
         |--------------------------------------------------------------------------
         */
 
-        $gudangs = MasterGudang::orderBy('nama')->get();
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangs = MasterGudang::where('id', 4)->get();
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangs = MasterGudang::where('id', 2)->get();
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangs = MasterGudang::where('id', 1)->get();
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
         $barangs = MasterBarang::orderBy('nama')->get();
 
         return view(
             'stok-gudang.index',
-            compact('stokGudang', 'gudangs', 'barangs')
+            compact('stokGudang', 'gudangs', 'barangs', 'gudangId', 'barangId')
         );
     }
 }

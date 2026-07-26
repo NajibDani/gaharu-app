@@ -12,7 +12,7 @@ class ResepBtklBopController extends Controller
     public function index()
     {
         // 1. Mengambil data utama resep beserta relasinya untuk tabel list
-        $data = ResepBtklBop::with(['produk', 'bahanbaku'])->get();
+        $data = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku'])->get();
 
         $produk = MasterBarang::where('is_barang_jadi', '1')->where('is_active', true)->orderBy('nama')->get();
         $bahan  = MasterBarang::where('is_bahan_baku', '1')->where('is_active', true)->orderBy('nama')->get();
@@ -24,7 +24,7 @@ class ResepBtklBopController extends Controller
     public function show($id)
 {
     // Kita ubah nama variabelnya menjadi $resep agar singkron dengan view
-    $resep = ResepBtklBop::with(['produk', 'bahanbaku.bahan'])->findOrFail($id);
+    $resep = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku.bahan'])->findOrFail($id);
 
     return view('resep.show', compact('resep'));
 }
@@ -103,7 +103,7 @@ class ResepBtklBopController extends Controller
 
     public function edit($id)
     {
-        $data = ResepBtklBop::with('bahanbaku.bahan')->findOrFail($id);
+        $data = ResepBtklBop::whereHas('produk')->with('bahanbaku.bahan')->findOrFail($id);
         $produk = MasterBarang::where('is_barang_jadi', 1)->where('is_active', true)->orderBy('nama')->get();
         $bahan  = MasterBarang::where('is_bahan_baku', 1)->where('is_active', true)->orderBy('nama')->get();
     
@@ -123,7 +123,7 @@ class ResepBtklBopController extends Controller
             'qty_bahan.*' => 'required|numeric|min:0.01',
         ]);
 
-        $resep = ResepBtklBop::findOrFail($id);
+        $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
 
         // 1. Update header
         $resep->update([
@@ -167,7 +167,7 @@ class ResepBtklBopController extends Controller
 
     public function destroy($id)
     {
-        $resep = ResepBtklBop::findOrFail($id);
+        $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
 
         // 🎯 SINKRONISASI: Sebelum resep dihapus, set resep_id di master_barang jadi NULL lagi
         MasterBarang::where('resep_id', $id)->update(['resep_id' => null]);
