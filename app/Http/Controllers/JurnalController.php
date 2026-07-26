@@ -1689,14 +1689,22 @@ class JurnalController extends Controller
             case 'um-penjualan':
                 $targetAccountId = ($jenis === 'piutang') ? $idPiutang : $idUangMukaPenj;
 
+                $jurnalSubquery = DB::table('jurnal_penjualan_b2b as j')
+                    ->leftJoin('pembayaran as p', function ($join) {
+                        $join->on('j.source_id', '=', 'p.id')
+                             ->where('j.source_type', '=', 'pembayaran');
+                    })
+                    ->leftJoin('pengiriman as sh', function ($join) {
+                        $join->on('j.source_id', '=', 'sh.id')
+                             ->where('j.source_type', '=', 'pengiriman');
+                    })
+                    ->select('j.id', DB::raw('COALESCE(p.pesanan_id, sh.pesanan_id) as pesanan_id'));
+
                 $entities = DB::table('customers')
                     ->leftJoin('pesanan', 'customers.id', '=', 'pesanan.customer_id')
-                    ->leftJoin('jurnal_penjualan_b2b', function ($join) {
-                        $join->on('jurnal_penjualan_b2b.source_id', '=', 'pesanan.id')
-                            ->whereIn('jurnal_penjualan_b2b.source_type', ['pembayaran', 'pengiriman']);
-                    })
+                    ->leftJoinSub($jurnalSubquery, 'j_sub', 'pesanan.id', '=', 'j_sub.pesanan_id')
                     ->leftJoin('journal_items', function ($join) use ($targetAccountId) {
-                        $join->on('journal_items.journal_id', '=', 'jurnal_penjualan_b2b.id')
+                        $join->on('journal_items.journal_id', '=', 'j_sub.id')
                             ->whereIn('journal_items.journal_type', ['penjualan_b2b', 'jurnal_penjualan_b2b'])
                             ->where('journal_items.account_id', '=', $targetAccountId);
                     })
@@ -1719,12 +1727,64 @@ class JurnalController extends Controller
                 break;
         }
 
-        // 4. Transformasi Data untuk Tampilan Blade
-        $entities = $entities->map(function ($item) {
-            $item->status = ($item->saldo <= 0) ? 'Lunas' : 'Belum Lunas';
-            $item->keterangan_sub = ($item->saldo <= 0) 
-                ? 'Semua transaksi sudah selesai' 
-                : 'Terdapat transaksi aktif / belum tuntas';
+        // 4. Transformasi Data untuk Tampilan Blade dengan logika penyelarasan status terima sebagian / selesai
+        $entities = $entities->map(function ($item) use ($jenis) {
+            $isCompleted = false;
+
+            if (in_array($jenis, ['utang', 'um-pembelian'])) {
+                $purchases = DB::table('pembelian')
+                    ->where('supplier_id', $item->entity_id)
+                    ->get();
+
+                if ($purchases->isEmpty()) {
+                    $isCompleted = true;
+                } else {
+                    $allMatch = true;
+                    foreach ($purchases as $p) {
+                        $hasReceipt = DB::table('penerimaan_pembelian')->where('pembelian_id', $p->id)->exists();
+                        $ok = ($p->is_lunas == 1) && ($p->is_diterima == 1 || $hasReceipt);
+                        if (!$ok) {
+                            $allMatch = false;
+                            break;
+                        }
+                    }
+                    $isCompleted = $allMatch;
+                }
+            } else {
+                $orders = DB::table('pesanan')
+                    ->where('customer_id', $item->entity_id)
+                    ->get();
+
+                if ($orders->isEmpty()) {
+                    $isCompleted = true;
+                } else {
+                    $allMatch = true;
+                    foreach ($orders as $o) {
+                        $hasShipment = DB::table('pengiriman')
+                            ->where('pesanan_id', $o->id)
+                            ->where('status_pengiriman', 'Selesai')
+                            ->exists();
+                        $ok = ($o->status_pembayaran === 'Lunas') && ($o->status_pesanan === 'Selesai' || $hasShipment);
+                        if (!$ok) {
+                            $allMatch = false;
+                            break;
+                        }
+                    }
+                    $isCompleted = $allMatch;
+                }
+            }
+
+            if ($isCompleted) {
+                $item->saldo = 0;
+                $item->status = 'Lunas';
+                $item->keterangan_sub = 'Semua transaksi sudah selesai';
+            } else {
+                $item->status = ($item->saldo <= 0) ? 'Lunas' : 'Belum Lunas';
+                $item->keterangan_sub = ($item->saldo <= 0) 
+                    ? 'Semua transaksi sudah selesai' 
+                    : 'Terdapat transaksi aktif / belum tuntas';
+            }
+
             return $item;
         });
 
@@ -1781,9 +1841,21 @@ class JurnalController extends Controller
                 $entity = DB::table('customers')->where('id', $id)->first();
                 if (!$entity) abort(404, 'Customer tidak ditemukan.');
 
+                $jurnalSubquery = DB::table('jurnal_penjualan_b2b as j')
+                    ->leftJoin('pembayaran as p', function ($join) {
+                        $join->on('j.source_id', '=', 'p.id')
+                             ->where('j.source_type', '=', 'pembayaran');
+                    })
+                    ->leftJoin('pengiriman as sh', function ($join) {
+                        $join->on('j.source_id', '=', 'sh.id')
+                             ->where('j.source_type', '=', 'pengiriman');
+                    })
+                    ->select('j.id', DB::raw('COALESCE(p.pesanan_id, sh.pesanan_id) as pesanan_id'));
+
                 $mutasi = DB::table('journal_items')
-                    ->join('jurnal_penjualan_b2b', 'journal_items.journal_id', '=', 'jurnal_penjualan_b2b.id')
-                    ->join('pesanan', 'jurnal_penjualan_b2b.source_id', '=', 'pesanan.id')
+                    ->joinSub($jurnalSubquery, 'j_sub', 'journal_items.journal_id', '=', 'j_sub.id')
+                    ->join('jurnal_penjualan_b2b', 'j_sub.id', '=', 'jurnal_penjualan_b2b.id')
+                    ->join('pesanan', 'j_sub.pesanan_id', '=', 'pesanan.id')
                     ->whereIn('journal_items.journal_type', ['penjualan_b2b', 'jurnal_penjualan_b2b'])
                     ->where('journal_items.account_id', '=', $targetAccountId)
                     ->where('pesanan.customer_id', '=', $id)
@@ -1816,7 +1888,46 @@ class JurnalController extends Controller
             return $row;
         });
 
-        $saldoAkhir = $runningSaldo;
+        // Penyelarasan saldoAkhir dengan logika "terima sebagian" / transaksi selesai
+        $isCompleted = false;
+        if (in_array($jenis, ['utang', 'um-pembelian'])) {
+            $purchases = DB::table('pembelian')->where('supplier_id', $id)->get();
+            if ($purchases->isEmpty()) {
+                $isCompleted = true;
+            } else {
+                $allMatch = true;
+                foreach ($purchases as $p) {
+                    $hasReceipt = DB::table('penerimaan_pembelian')->where('pembelian_id', $p->id)->exists();
+                    $ok = ($p->is_lunas == 1) && ($p->is_diterima == 1 || $hasReceipt);
+                    if (!$ok) {
+                        $allMatch = false;
+                        break;
+                    }
+                }
+                $isCompleted = $allMatch;
+            }
+        } else {
+            $orders = DB::table('pesanan')->where('customer_id', $id)->get();
+            if ($orders->isEmpty()) {
+                $isCompleted = true;
+            } else {
+                $allMatch = true;
+                foreach ($orders as $o) {
+                    $hasShipment = DB::table('pengiriman')
+                        ->where('pesanan_id', $o->id)
+                        ->where('status_pengiriman', 'Selesai')
+                        ->exists();
+                    $ok = ($o->status_pembayaran === 'Lunas') && ($o->status_pesanan === 'Selesai' || $hasShipment);
+                    if (!$ok) {
+                        $allMatch = false;
+                        break;
+                    }
+                }
+                $isCompleted = $allMatch;
+            }
+        }
+
+        $saldoAkhir = $isCompleted ? 0 : $runningSaldo;
 
         return view('buku-pembantu.show', compact('jenis', 'entity', 'mutasi', 'saldoAkhir'));
     }
