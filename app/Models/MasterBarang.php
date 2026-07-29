@@ -14,6 +14,8 @@ class MasterBarang extends Model
         'kode_barang',
         'nama',
         'satuan',
+        'satuan_pembelian',
+        'konversi_pembelian',
         'is_bahan_baku',
         'is_barang_jadi',
         'is_operational',

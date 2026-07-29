@@ -78,7 +78,6 @@
         .btn-primary { background: #1a56db; }
         .btn-excel   { background: #198754; }
         .btn-pdf     { background: #dc3545; }
-        .btn-print   { background: #374151; }
 
         /* ===== Report Header ===== */
         .report-header {
@@ -126,9 +125,21 @@
             border-top: 1px solid #e5e7eb;
             text-align: left;
         }
+        .subkategori-header {
+            background: #f1f5f9;
+            padding: 8px 14px;
+            font-weight: 700;
+            font-size: 12px;
+            color: #475569;
+            border-bottom: 1px solid #e2e8f0;
+            text-align: left;
+        }
         .laporan-table td {
             padding: 10px 14px;
             border-bottom: 1px solid #f1f2f4;
+        }
+        .indent-item {
+            padding-left: 28px !important;
         }
         .laporan-table tbody tr:hover td {
             background: #fafbfc;
@@ -139,6 +150,23 @@
             font-weight: 600;
             color: #1f2937;
         }
+        .text-center {
+            text-align: center;
+        }
+        .empty-row {
+            color: #9ca3af;
+            font-style: italic;
+            font-size: 13px;
+            padding: 12px 14px;
+        }
+        .row-subtotal td {
+            background: #f8fafc;
+            font-weight: 600;
+            font-size: 13px;
+            border-top: 1px dashed #cbd5e1;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
         .row-total td {
             background: #f8f9fb;
             font-weight: 700;
@@ -148,6 +176,147 @@
         .row-spacer td {
             border: none;
             padding: 10px 0;
+        }
+
+        /* ===== Row Laba Kotor ===== */
+        .row-laba-kotor td {
+            background: #ebf8ff;
+            font-weight: 800;
+            font-size: 15px;
+            color: #2b6cb0;
+            border-top: 2px solid #3182ce;
+            border-bottom: 2px solid #3182ce;
+            padding: 12px 14px;
+        }
+
+        /* ===== Button Formula & Modal ===== */
+        .btn-formula {
+            font-size: 11px;
+            background-color: #feebc8;
+            color: #9c4221;
+            border: 1px solid #fbd38d;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 8px;
+            font-weight: 600;
+        }
+        .btn-formula:hover {
+            background-color: #fbd38d;
+        }
+
+        .btn-b2b-detail {
+            font-size: 11px;
+            background-color: #ebf8ff;
+            color: #2b6cb0;
+            border: 1px solid #bee3f8;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 8px;
+            font-weight: 600;
+        }
+        .btn-b2b-detail:hover {
+            background-color: #bee3f8;
+        }
+
+        .box-formula-hpp {
+            background-color: #fffaf0;
+            border: 1px solid #feebc8;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 12px 0 20px 0;
+        }
+        .box-formula-hpp h4 {
+            margin: 0 0 10px 0;
+            color: #9c4221;
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+        .table-formula {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .table-formula th {
+            background-color: #feebc8;
+            color: #7b341e;
+            text-align: left;
+            padding: 6px 10px;
+        }
+        .table-formula td {
+            padding: 6px 10px;
+            border-bottom: 1px solid #feebc8;
+            color: #4a5568;
+        }
+
+        /* ===== Modal Styling ===== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(2px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background: #ffffff;
+            width: 90%;
+            max-width: 750px;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 12px;
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+        }
+        .modal-close-btn {
+            border: none;
+            background: transparent;
+            font-size: 22px;
+            color: #9ca3af;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .modal-close-btn:hover {
+            color: #374151;
+        }
+        .table-modal {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .table-modal th {
+            background-color: #f1f5f9;
+            color: #334155;
+            text-align: left;
+            padding: 8px 12px;
+            border-bottom: 1px solid #cbd5e1;
+            font-weight: 600;
+        }
+        .table-modal td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #475569;
         }
 
         /* ===== Footer Laba/Rugi ===== */
@@ -211,6 +380,7 @@
     <div class="py-12">
         <div class="container-laporan">
 
+            <!-- Card Filter -->
             <div class="card no-print">
                 <h3 class="filter-title">Filter Laporan Laba Rugi</h3>
                 <form action="{{ route('laporan.laba-rugi.index') }}" method="GET" class="filter-group">
@@ -240,6 +410,7 @@
                 </form>
             </div>
 
+            <!-- Card Laporan Utama -->
             <div class="card">
                 <div class="report-header">
                     <h1>CV GAHARU AGUNG SEJAHTERA</h1>
@@ -248,42 +419,158 @@
                 </div>
 
                 <table class="laporan-table">
+                    <!-- 1. PENDAPATAN -->
                     <tr>
-                        <th colspan="2" class="kategori-header">Pendapatan</th>
+                        <th colspan="2" class="kategori-header" style="color: #2b6cb0;">Pendapatan</th>
                     </tr>
-                    @foreach($detailsPendapatan as $item)
+
+                    <!-- 1a. Penjualan B2B -->
                     <tr>
-                        <td>{{ $item->kode }} &ndash; {{ $item->nama }}</td>
+                        <td colspan="2" class="subkategori-header">Penjualan B2B</td>
+                    </tr>
+                    @forelse($detailsPenjualanB2b as $item)
+                    <tr>
+                        <td class="indent-item">{{ $item->kode_akun }} &ndash; {{ $item->nama_akun }}</td>
+                        <td class="text-right">Rp {{ number_format($item->total, 0, ',', '.') }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="2" class="text-center empty-row indent-item">Tidak ada transaksi penjualan B2B pada periode ini.</td>
+                    </tr>
+                    @endforelse
+                    <tr class="row-subtotal">
+                        <td class="indent-item">
+                            Subtotal Penjualan B2B
+                            <button type="button" class="btn-b2b-detail no-print" onclick="openModalB2b()">
+                                🔍 Lihat Detail Invoice
+                            </button>
+                        </td>
+                        <td class="text-right">Rp {{ number_format($totalPenjualanB2b ?? 0, 0, ',', '.') }}</td>
+                    </tr>
+
+                    <!-- 1b. Pendapatan Lainnya -->
+                    <tr>
+                        <td colspan="2" class="subkategori-header">Pendapatan Lainnya</td>
+                    </tr>
+                    @forelse($detailsPendapatanLain as $item)
+                    <tr>
+                        <td class="indent-item">{{ $item->kode }} &ndash; {{ $item->nama }}</td>
                         <td class="text-right">Rp {{ number_format($item->saldo, 0, ',', '.') }}</td>
                     </tr>
-                    @endforeach
+                    @empty
+                    <tr>
+                        <td colspan="2" class="text-center empty-row indent-item">Tidak ada transaksi pendapatan lainnya pada periode ini.</td>
+                    </tr>
+                    @endforelse
+                    <tr class="row-subtotal">
+                        <td class="indent-item">Subtotal Pendapatan Lainnya</td>
+                        <td class="text-right">Rp {{ number_format($totalPendapatanLain ?? 0, 0, ',', '.') }}</td>
+                    </tr>
+
+                    <!-- Total Pendapatan Overall -->
                     <tr class="row-total">
-                        <td>Total Pendapatan</td>
-                        <td class="text-right">Rp {{ number_format($totalPendapatan, 0, ',', '.') }}</td>
+                        <td style="color: #2b6cb0;">Total Pendapatan</td>
+                        <td class="text-right" style="color: #2b6cb0;">Rp {{ number_format($totalPendapatan ?? 0, 0, ',', '.') }}</td>
                     </tr>
 
                     <tr class="row-spacer">
                         <td colspan="2"></td>
                     </tr>
 
+                    <!-- 2. HARGA POKOK PENJUALAN (HPP) -->
                     <tr>
-                        <th colspan="2" class="kategori-header" style="color: #c53030;">Beban Operasional</th>
+                        <th colspan="2" class="kategori-header" style="color: #c53030;">Harga Pokok Penjualan</th>
                     </tr>
-                    @foreach($detailsBeban as $item)
+                    @forelse($detailsHpp as $item)
                     <tr>
                         <td>{{ $item->kode }} &ndash; {{ $item->nama }}</td>
                         <td class="text-right">Rp {{ number_format($item->saldo, 0, ',', '.') }}</td>
                     </tr>
-                    @endforeach
+                    @empty
+                    <tr>
+                        <td colspan="2" class="text-center empty-row">Tidak ada transaksi HPP pada periode ini.</td>
+                    </tr>
+                    @endforelse
                     <tr class="row-total">
-                        <td style="color: #c53030;">Total Beban</td>
-                        <td class="text-right" style="color: #c53030;">(Rp {{ number_format($totalBeban, 0, ',', '.') }})</td>
+                        <td style="color: #c53030;">
+                            Total Harga Pokok Penjualan
+                            <button type="button" class="btn-formula no-print" onclick="toggleFormulaHpp()">
+                                Lihat Formula HPP
+                            </button>
+                        </td>
+                        <td class="text-right" style="color: #c53030;">(Rp {{ number_format($totalHpp ?? 0, 0, ',', '.') }})</td>
                     </tr>
                 </table>
 
+                <!-- BOX RINCIAN FORMULA KALKULASI HPP -->
+                <div id="box-formula" class="box-formula-hpp" style="display: none;">
+                    <h4>Rincian Formula Perhitungan HPP (Persediaan Awal + Pembelian - Persediaan Akhir):</h4>
+                    <table class="table-formula">
+                        <thead>
+                            <tr>
+                                <th>Lini Bisnis / Kategori</th>
+                                <th class="text-right">Persed. Awal</th>
+                                <th class="text-right">Pembelian</th>
+                                <th class="text-right">Persed. Akhir</th>
+                                <th class="text-right">Total HPP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @forelse($rincianFormulaHpp ?? [] as $row)
+                            <tr>
+                                <td>{{ $row->nama_lini }}</td>
+                                <td class="text-right">Rp {{ number_format($row->persediaan_awal, 0, ',', '.') }}</td>
+                                <td class="text-right">Rp {{ number_format($row->pembelian, 0, ',', '.') }}</td>
+                                <td class="text-right">(Rp {{ number_format($row->persediaan_akhir, 0, ',', '.') }})</td>
+                                <td class="text-right"><strong>Rp {{ number_format($row->total_hpp, 0, ',', '.') }}</strong></td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="5" class="text-center empty-row">Belum ada rincian formula kalkulasi HPP untuk periode ini.</td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                <table class="laporan-table" style="margin-top: 10px;">
+                    <!-- 3. LABA KOTOR -->
+                    @php
+                        $labaKotorCalc = $labaKotor ?? (($totalPendapatan ?? 0) - ($totalHpp ?? 0));
+                    @endphp
+                    <tr class="row-laba-kotor">
+                        <td>LABA KOTOR</td>
+                        <td class="text-right">Rp {{ number_format($labaKotorCalc, 0, ',', '.') }}</td>
+                    </tr>
+
+                    <tr class="row-spacer">
+                        <td colspan="2"></td>
+                    </tr>
+
+                    <!-- 4. BEBAN OPERASIONAL -->
+                    <tr>
+                        <th colspan="2" class="kategori-header" style="color: #d69e2e;">Beban Operasional</th>
+                    </tr>
+                    @forelse($detailsBeban as $item)
+                    <tr>
+                        <td>{{ $item->kode }} &ndash; {{ $item->nama }}</td>
+                        <td class="text-right">Rp {{ number_format($item->saldo, 0, ',', '.') }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="2" class="text-center empty-row">Tidak ada transaksi beban operasional pada periode ini.</td>
+                    </tr>
+                    @endforelse
+                    <tr class="row-total">
+                        <td style="color: #d69e2e;">Total Beban Operasional</td>
+                        <td class="text-right" style="color: #d69e2e;">(Rp {{ number_format($totalBeban ?? 0, 0, ',', '.') }})</td>
+                    </tr>
+                </table>
+
+                <!-- 5. LABA / RUGI BERSIH -->
                 @php
-                    $labaBersih = $totalPendapatan - $totalBeban;
-                    $isLaba = $labaBersih >= 0;
+                    $labaBersihCalc = $labaBersih ?? ($labaKotorCalc - ($totalBeban ?? 0));
+                    $isLaba = $labaBersihCalc >= 0;
                 @endphp
                 <div class="footer-laba {{ $isLaba ? 'is-laba' : 'is-rugi' }}">
                     <span class="label">
@@ -292,11 +579,71 @@
                     </span>
                     <span class="amount">
                         <span class="arrow">{{ $isLaba ? '▲' : '▼' }}</span>
-                        Rp {{ number_format(abs($labaBersih), 0, ',', '.') }}
+                        Rp {{ number_format(abs($labaBersihCalc), 0, ',', '.') }}
                     </span>
                 </div>
             </div>
 
         </div>
     </div>
+
+    <!-- ===== MODAL POP-UP RINCIAN INVOICE B2B ===== -->
+    <div id="modal-b2b" class="modal-overlay no-print" onclick="closeModalB2bOnOverlay(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Rincian Transaksi Penjualan B2B</h3>
+                <button type="button" class="modal-close-btn" onclick="closeModalB2b()">&times;</button>
+            </div>
+            
+            <table class="table-modal">
+                <thead>
+                    <tr>
+                        <th>No. Invoice</th>
+                        <th>Tanggal</th>
+                        <th>Pelanggan / Customer</th>
+                        <th class="text-right">Total Transaksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($rincianInvoiceB2b ?? [] as $inv)
+                    <tr>
+                        <td><strong>{{ $inv->no_faktur ?? $inv->nomor_transaksi ?? '-' }}</strong></td>
+                        <td>{{ isset($inv->tanggal) ? \Carbon\Carbon::parse($inv->tanggal)->format('d/m/Y') : '-' }}</td>
+                        <td>{{ $inv->customer->nama ?? $inv->nama_pelanggan ?? 'Pelanggan B2B' }}</td>
+                        <td class="text-right">Rp {{ number_format($inv->grand_total ?? $inv->total_nominal ?? 0, 0, ',', '.') }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="4" class="text-center empty-row">Tidak ada rincian invoice B2B pada periode ini.</td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function toggleFormulaHpp() {
+            var box = document.getElementById("box-formula");
+            if (box.style.display === "none") {
+                box.style.display = "block";
+            } else {
+                box.style.display = "none";
+            }
+        }
+
+        function openModalB2b() {
+            document.getElementById('modal-b2b').style.display = 'flex';
+        }
+
+        function closeModalB2b() {
+            document.getElementById('modal-b2b').style.display = 'none';
+        }
+
+        function closeModalB2bOnOverlay(event) {
+            if (event.target.id === 'modal-b2b') {
+                closeModalB2b();
+            }
+        }
+    </script>
 </x-app-layout>

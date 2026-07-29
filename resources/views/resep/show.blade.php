@@ -20,39 +20,19 @@
         </div>
         <div class="col-md-6">
             <div class="card shadow-sm border-0 h-100">
-                <div class="card-body bg-success text-white rounded-3">
-                    <div class="row">
-                        <div class="col-6 border-end">
-                            <small class="text-uppercase fw-bold opacity-75">BTKL / Batch</small>
-                            <div class="fw-bold">Rp {{ number_format($resep->btkl_per_batch) }}</div>
-                        </div>
-                        <div class="col-6 ps-3">
-                            <small class="text-uppercase fw-bold opacity-75">BOP / Batch</small>
-                            <div class="fw-bold">Rp {{ number_format($resep->bop_per_batch) }}</div>
-                        </div>
+                <div class="card-body bg-success text-white rounded-3 d-flex align-items-center">
+                    <div>
+                        <small class="text-uppercase fw-bold opacity-75 d-block">Aturan Biaya Konversi (BTKL & BOP)</small>
+                        <span class="fw-bold">30% dari Total Biaya Bahan Baku</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    {{-- HITUNG PER PRODUK (Hanya untuk Biaya Operasional) --}}
-    @php
-        // Ditambahkan validasi pembagi nol agar sistem aman jika output_qty belum diisi
-        $btkl_per_produk = $resep->output_qty > 0 ? $resep->btkl_per_batch / $resep->output_qty : 0;
-        $bop_per_produk  = $resep->output_qty > 0 ? $resep->bop_per_batch / $resep->output_qty : 0;
-    @endphp
-
-    <div class="alert alert-light border shadow-sm d-flex justify-content-around text-center mb-4">
-        <div>
-            <span class="text-muted small text-uppercase d-block">BTKL / Produk</span>
-            <strong class="text-dark">Rp {{ number_format($btkl_per_produk) }}</strong>
-        </div>
-        <div class="vr"></div>
-        <div>
-            <span class="text-muted small text-uppercase d-block">BOP / Produk</span>
-            <strong class="text-dark">Rp {{ number_format($bop_per_produk) }}</strong>
-        </div>
+    <div class="alert alert-light border shadow-sm text-center mb-4">
+        <i class="fas fa-info-circle text-primary me-2"></i>
+        <span>Biaya Tenaga Kerja Langsung (BTKL) dan Biaya Operasional Pabrik (BOP) sekarang dihitung secara otomatis sebesar <strong>30%</strong> dari total nilai penggunaan bahan baku menggunakan harga FIFO riil.</span>
     </div>
 
     {{-- TABEL BAHAN BAKU (Fokus pada Kuantitas) --}}

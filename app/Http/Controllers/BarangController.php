@@ -110,6 +110,8 @@ class BarangController extends Controller
             'nama'        => 'required',
             'jenis_utama' => 'required',
             'tipe_penjualan' => 'required_if:jenis_utama,BARANG_JADI|nullable|in:POS Kejingga,POS Gaharu,B2B',
+            'satuan_pembelian' => 'nullable|string',
+            'konversi_pembelian' => 'nullable|numeric|min:0.01',
         ], [
             'kode_barang.unique' => 'Kode barang sudah digunakan, harap gunakan kode barang yang unik.',
         ]);
@@ -153,6 +155,8 @@ class BarangController extends Controller
                 'kode_barang'           => $request->kode_barang,
                 'nama'                  => $request->nama,
                 'satuan'                => $request->satuan,
+                'satuan_pembelian'      => $request->satuan_pembelian,
+                'konversi_pembelian'    => $request->konversi_pembelian ?? 1.00,
                 'is_bahan_baku'         => $request->jenis_utama == 'BAHAN_BAKU',
                 'is_barang_jadi'        => $request->jenis_utama == 'BARANG_JADI',
                 'is_operational'        => $request->jenis_utama == 'OPERATIONAL',
@@ -198,6 +202,8 @@ class BarangController extends Controller
             'nama'        => 'required',
             'jenis_utama' => 'required',
             'tipe_penjualan' => 'required_if:jenis_utama,BARANG_JADI|nullable|in:POS Kejingga,POS Gaharu,B2B',
+            'satuan_pembelian' => 'nullable|string',
+            'konversi_pembelian' => 'nullable|numeric|min:0.01',
         ], [
             'kode_barang.unique' => 'Kode barang sudah digunakan, harap gunakan kode barang yang unik.',
         ]);
@@ -244,6 +250,8 @@ class BarangController extends Controller
             'kode_barang' => $request->kode_barang,
             'nama'        => $request->nama,
             'satuan'      => $request->satuan,
+            'satuan_pembelian' => $request->satuan_pembelian,
+            'konversi_pembelian' => $request->konversi_pembelian ?? 1.00,
     
             'is_bahan_baku'  => $request->jenis_utama == 'BAHAN_BAKU',
             'is_barang_jadi' => $request->jenis_utama == 'BARANG_JADI',

@@ -26,6 +26,10 @@ class PembelianDetail extends Model
 
         'barang_id',
 
+        'satuan_pembelian',
+
+        'konversi_pembelian',
+
         'qty',
 
         'qty_diterima',

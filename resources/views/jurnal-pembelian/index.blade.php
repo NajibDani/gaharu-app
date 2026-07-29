@@ -58,9 +58,12 @@
                                 </td>
                                 <td class="text-end fw-bold text-dark">Rp {{ number_format($p->total_keluar, 0, ',', '.') }}</td>
                                 <td class="text-center">
-                                    <a href="{{ route('jurnal-pembelian.create', $p->id) }}?tahap={{ $p->tahap_selanjutnya }}" class="btn btn-sm btn-primary fw-bold px-3 shadow-sm">
-                                        <i class="fas fa-edit me-1"></i> Input Jurnal
-                                    </a>
+                                    <form action="{{ route('jurnal-pembelian.post-auto', $p->id) }}?tahap={{ $p->tahap_selanjutnya }}" method="POST" class="d-inline" onsubmit="return confirm('Posting jurnal khusus pembelian untuk {{ $p->label_no_invoice ?? $p->kode_pembelian }}?')">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-success fw-bold px-3 shadow-sm">
+                                            <i class="fas fa-check-circle me-1"></i> Posting Jurnal
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                             @empty
@@ -143,6 +146,11 @@
                     </table>
                 </div>
             </div>
+            @if($jurnalsSudah->hasPages())
+            <div class="card-footer bg-white py-3 d-flex justify-content-center">
+                {{ $jurnalsSudah->links() }}
+            </div>
+            @endif
         </div>
 
     </div>

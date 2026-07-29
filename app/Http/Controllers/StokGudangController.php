@@ -168,4 +168,275 @@ class StokGudangController extends Controller
             compact('stokGudang', 'gudangs', 'barangs', 'gudangId', 'barangId')
         );
     }
+
+    public function bukuPembantuIndex(Request $request)
+    {
+        $user = auth()->user();
+        $roleName = $user->role->nama ?? '';
+
+        $gudangId = $request->gudang_id;
+        $search = $request->search;
+
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangId = 4;
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangId = 2;
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangId = 1;
+        }
+
+        $startDate = $request->start_date ?: date('Y-m-01');
+        $endDate = $request->end_date ?: date('Y-m-d');
+
+        $query = MasterBarang::query()->with('kategori');
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('nama', 'like', '%' . $search . '%')
+                  ->orWhere('kode_barang', 'like', '%' . $search . '%');
+            });
+        }
+
+        $items = $query->orderBy('nama')->paginate(20)->withQueryString();
+
+        foreach ($items as $item) {
+            $item->stok_akhir = $this->calculateStockAtDate($item->id, $gudangId, $endDate);
+        }
+
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gudangs = MasterGudang::where('id', 4)->get();
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gudangs = MasterGudang::where('id', 2)->get();
+        } elseif ($roleName === 'Kepala Gudang') {
+            $gudangs = MasterGudang::where('id', 1)->get();
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
+
+        return view('stok-gudang.buku-pembantu', compact(
+            'items', 'gudangs', 'gudangId', 'startDate', 'endDate', 'search'
+        ));
+    }
+
+    private function calculateStockAtDate($barangId, $gudangId, $date)
+    {
+        $queryIn = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->where('tanggal', '<=', $date . ' 23:59:59');
+
+        $queryOut = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->where('tanggal', '<=', $date . ' 23:59:59');
+
+        if ($gudangId) {
+            $queryIn->where('gudang_tujuan_id', $gudangId);
+            $queryOut->where('gudang_asal_id', $gudangId);
+
+            $in = $queryIn->sum('qty');
+            $out = $queryOut->sum('qty');
+        } else {
+            $in = $queryIn->where('tipe', 'masuk')->sum('qty');
+            $out = $queryOut->where('tipe', 'keluar')->sum('qty');
+        }
+
+        return max(0, floatval($in) - floatval($out));
+    }
+
+    public function bukuPembantuMutasi(Request $request)
+    {
+        $barangId = $request->barang_id;
+        $gudangId = $request->gudang_id;
+        $startDate = $request->start_date ?: date('Y-m-01');
+        $endDate = $request->end_date ?: date('Y-m-d');
+
+        $saQty = 0;
+        $saNilai = 0;
+
+        $rawBefore = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->where('tanggal', '<', $startDate . ' 00:00:00');
+
+        if ($gudangId) {
+            $rawBefore->where(function ($q) use ($gudangId) {
+                $q->where('gudang_asal_id', $gudangId)
+                  ->orWhere('gudang_tujuan_id', $gudangId);
+            });
+        }
+
+        $itemsBefore = $rawBefore->orderBy('tanggal', 'asc')->orderBy('id', 'asc')->get();
+
+        foreach ($itemsBefore as $row) {
+            $qty = floatval($row->qty);
+            $totalHarga = floatval($row->total_harga);
+
+            $isMasuk = false;
+            $isKeluar = false;
+
+            if ($gudangId) {
+                if ($row->gudang_tujuan_id == $gudangId) {
+                    $isMasuk = true;
+                } elseif ($row->gudang_asal_id == $gudangId) {
+                    $isKeluar = true;
+                }
+            } else {
+                if ($row->tipe === 'masuk') {
+                    $isMasuk = true;
+                } elseif ($row->tipe === 'keluar') {
+                    $isKeluar = true;
+                }
+            }
+
+            if ($isMasuk) {
+                $saQty += $qty;
+                $saNilai += $totalHarga;
+            } elseif ($isKeluar) {
+                $saQty -= $qty;
+                $saNilai -= $totalHarga;
+            }
+        }
+
+        $rawPeriod = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+
+        if ($gudangId) {
+            $rawPeriod->where(function ($q) use ($gudangId) {
+                $q->where('gudang_asal_id', $gudangId)
+                  ->orWhere('gudang_tujuan_id', $gudangId);
+            });
+        }
+
+        $itemsPeriod = $rawPeriod->orderBy('tanggal', 'asc')->orderBy('id', 'asc')->get();
+
+        $mutations = [];
+        $runningQty = $saQty;
+        $runningNilai = $saNilai;
+
+        foreach ($itemsPeriod as $row) {
+            $qty = floatval($row->qty);
+            $totalHarga = floatval($row->total_harga);
+            $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
+
+            $isMasuk = false;
+            $isKeluar = false;
+
+            if ($gudangId) {
+                if ($row->gudang_tujuan_id == $gudangId) {
+                    $isMasuk = true;
+                } elseif ($row->gudang_asal_id == $gudangId) {
+                    $isKeluar = true;
+                }
+            } else {
+                if ($row->tipe === 'masuk') {
+                    $isMasuk = true;
+                } elseif ($row->tipe === 'keluar') {
+                    $isKeluar = true;
+                }
+            }
+
+            if ($isMasuk || $isKeluar) {
+                if ($isMasuk) {
+                    $runningQty += $qty;
+                    $runningNilai += $totalHarga;
+                } else {
+                    $runningQty -= $qty;
+                    $runningNilai -= $totalHarga;
+                }
+
+                $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id);
+                if ($row->tipe === 'transfer') {
+                    $gAsal = DB::table('master_gudang')->where('id', $row->gudang_asal_id)->value('nama');
+                    $gTujuan = DB::table('master_gudang')->where('id', $row->gudang_tujuan_id)->value('nama');
+                    $keterangan = "Transfer: dari {$gAsal} ke {$gTujuan}";
+                }
+
+                $mutations[] = [
+                    'id' => $row->id,
+                    'tanggal_formatted' => date('d/m/Y H:i', strtotime($row->tanggal)),
+                    'keterangan' => $keterangan,
+                    'is_masuk' => $isMasuk,
+                    'qty' => $qty,
+                    'harga_satuan' => $hargaSatuan,
+                    'total_harga' => $totalHarga,
+                    'saldo_qty' => $runningQty,
+                    'saldo_nilai' => $runningNilai,
+                ];
+            }
+        }
+
+        return response()->json([
+            'saldo_awal' => [
+                'qty' => $saQty,
+                'nilai' => $saNilai
+            ],
+            'mutasi' => $mutations,
+            'saldo_akhir' => [
+                'qty' => $runningQty,
+                'nilai' => $runningNilai
+            ]
+        ]);
+    }
+
+    private function formatSourceDescription($type, $id)
+    {
+        if (empty($type) || empty($id)) {
+            return 'Manual / Saldo Awal';
+        }
+
+        switch (strtolower($type)) {
+            case 'pembelian':
+                $p = \App\Models\Pembelian::with('supplier')->find($id);
+                if ($p) {
+                    $supplierName = $p->supplier->nama ?? '-';
+                    return "Pembelian: {$p->kode_pembelian} [Supplier: {$supplierName}]";
+                }
+                return "Pembelian (ID: {$id})";
+
+            case 'penerimaan_pembelian':
+                $rcv = \App\Models\PenerimaanPembelian::with('pembelian.supplier')->find($id);
+                if ($rcv) {
+                    $supplierName = $rcv->pembelian->supplier->nama ?? '-';
+                    return "Penerimaan Pembelian: {$rcv->no_penerimaan} [Supplier: {$supplierName}]";
+                }
+                return "Penerimaan Pembelian (ID: {$id})";
+
+            case 'pengeluaran_bahan_baku':
+                $out = \App\Models\PengeluaranBahanBaku::find($id);
+                if ($out) {
+                    return "Material Output: {$out->no_pengeluaran}";
+                }
+                return "Material Output (ID: {$id})";
+
+            case 'produksi':
+                $prod = \App\Models\Produksi::find($id);
+                if ($prod) {
+                    return "Produksi: {$prod->kode_produksi}";
+                }
+                return "Produksi (ID: {$id})";
+
+            case 'pengiriman':
+                $del = \App\Models\Pengiriman::find($id);
+                if ($del) {
+                    return "Pengiriman B2B: {$del->no_pengiriman}";
+                }
+                return "Pengiriman (ID: {$id})";
+
+            case 'stock_opname':
+                $opname = \App\Models\StockOpname::find($id);
+                if ($opname) {
+                    return "Stock Opname: {$opname->no_opname}";
+                }
+                return "Stock Opname (ID: {$id})";
+
+            case 'penjualan_pos':
+                $pos = \App\Models\PenjualanPos::find($id);
+                if ($pos) {
+                    return "Penjualan POS: {$pos->kode_penjualan}";
+                }
+                return "Penjualan POS (ID: {$id})";
+
+            default:
+                return ucfirst(str_replace('_', ' ', $type)) . " (ID: {$id})";
+        }
+    }
 }

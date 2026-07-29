@@ -106,6 +106,8 @@
                                             data-nama="{{ $d->nama }}"
                                             data-kategori="{{ $d->kategori->nama ?? '-' }}"
                                             data-satuan="{{ $d->satuan }}"
+                                            data-satuan-pembelian="{{ $d->satuan_pembelian }}"
+                                            data-konversi-pembelian="{{ $d->konversi_pembelian }}"
                                             data-jenis="{{ $d->jenis_utama }}"
                                             data-active="{{ $d->is_active ? '1' : '0' }}"
                                             data-min-stock="{{ $d->minimum_stock !== null ? number_format($d->minimum_stock) . ' ' . $d->satuan : '—' }}"
@@ -135,6 +137,8 @@
                                             data-kode="{{ $d->kode_barang }}"
                                             data-nama="{{ $d->nama }}"
                                             data-satuan="{{ $d->satuan }}"
+                                            data-satuan-pembelian="{{ $d->satuan_pembelian }}"
+                                            data-konversi-pembelian="{{ $d->konversi_pembelian }}"
                                             data-jenis="{{ $d->jenis_utama }}"
                                             data-min-stock="{{ $d->minimum_stock }}"
                                             data-min-order="{{ $d->minimum_order ?? 1 }}"
@@ -215,9 +219,21 @@
                         </div>
 
                         <div class="col-md-6 mb-3">
-                            <label class="custom-label">Satuan</label>
-                            <input type="text" name="satuan" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter">
+                            <label class="custom-label">Satuan Utama</label>
+                            <input type="text" name="satuan" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter, ml">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="custom-label">Satuan Pembelian (Opsional)</label>
+                            <input type="text" name="satuan_pembelian" id="satuan_pembelian" class="form-control custom-input @error('satuan_pembelian') is-invalid @enderror" value="{{ old('satuan_pembelian') }}" placeholder="Contoh: botol, dus, karton">
+                            @error('satuan_pembelian') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="custom-label">Konversi Satuan Pembelian (Opsional)</label>
+                            <input type="number" name="konversi_pembelian" id="konversi_pembelian" class="form-control custom-input @error('konversi_pembelian') is-invalid @enderror" value="{{ old('konversi_pembelian', 1) }}" placeholder="Contoh: 1000" min="1" step="0.01">
+                            @error('konversi_pembelian') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -303,8 +319,16 @@
                         <p class="fs-6 text-dark mb-0" id="detailKategori"></p>
                     </div>
                     <div class="col-md-6 mb-3">
-                        <label class="custom-label">Satuan</label>
+                        <label class="custom-label">Satuan Utama</label>
                         <p class="fs-6 text-dark mb-0" id="detailSatuan"></p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="custom-label">Satuan Pembelian</label>
+                        <p class="fs-6 text-dark mb-0" id="detailSatuanPembelian"></p>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="custom-label">Konversi Satuan Pembelian</label>
+                        <p class="fs-6 text-dark mb-0" id="detailKonversiPembelian"></p>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="custom-label">Jenis Barang</label>
@@ -377,9 +401,21 @@
                         </div>
 
                         <div class="col-md-6 mb-3">
-                            <label class="custom-label">Satuan</label>
-                            <input type="text" name="satuan" id="editSatuan" class="form-control custom-input @error('satuan') is-invalid @enderror" required>
+                            <label class="custom-label">Satuan Utama</label>
+                            <input type="text" name="satuan" id="editSatuan" class="form-control custom-input @error('satuan') is-invalid @enderror" required placeholder="Contoh: kg, pcs, liter, ml">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="custom-label">Satuan Pembelian (Opsional)</label>
+                            <input type="text" name="satuan_pembelian" id="editSatuanPembelian" class="form-control custom-input @error('satuan_pembelian') is-invalid @enderror" placeholder="Contoh: botol, dus, karton">
+                            @error('satuan_pembelian') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="custom-label">Konversi Satuan Pembelian (Opsional)</label>
+                            <input type="number" name="konversi_pembelian" id="editKonversiPembelian" class="form-control custom-input @error('konversi_pembelian') is-invalid @enderror" placeholder="Contoh: 1000" min="1" step="0.01">
+                            @error('konversi_pembelian') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -604,6 +640,10 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('detailKode').innerText = button.getAttribute('data-kode');
         document.getElementById('detailKategori').innerText = button.getAttribute('data-kategori');
         document.getElementById('detailSatuan').innerText = button.getAttribute('data-satuan');
+        document.getElementById('detailSatuanPembelian').innerText = button.getAttribute('data-satuan-pembelian') || '—';
+        document.getElementById('detailKonversiPembelian').innerText = button.getAttribute('data-konversi-pembelian') 
+            ? (Number(button.getAttribute('data-konversi-pembelian')).toLocaleString('id-ID') + ' ' + button.getAttribute('data-satuan'))
+            : '—';
         document.getElementById('detailMinOrder').innerText = button.getAttribute('data-min-order');
 
         var jenisLabel = { BAHAN_BAKU: ['Bahan Baku', 'primary'], BARANG_JADI: ['Barang Jadi', 'success'], OPERATIONAL: ['Operational', 'warning'] };
@@ -665,6 +705,8 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('editKodeBarang').value = button.getAttribute('data-kode');
         document.getElementById('editNama').value = button.getAttribute('data-nama');
         document.getElementById('editSatuan').value = button.getAttribute('data-satuan');
+        document.getElementById('editSatuanPembelian').value = button.getAttribute('data-satuan-pembelian') || '';
+        document.getElementById('editKonversiPembelian').value = button.getAttribute('data-konversi-pembelian') || '1';
         editJenis.value = button.getAttribute('data-jenis');
         editMinimumStock.value = button.getAttribute('data-min-stock');
         editTipePenjualan.value = button.getAttribute('data-tipe-penjualan');

@@ -211,9 +211,6 @@ class HargaBarangPosController extends Controller
             return $barangJadi->hpp_referensi;
         }
 
-        $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
-        $bopBtklPerPcs = (floatval($resepUtama->btkl_per_batch) + floatval($resepUtama->bop_per_batch)) / $outputQty;
-
         $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
         $totalHppBahan = 0;
 
@@ -223,6 +220,6 @@ class HargaBarangPosController extends Controller
             $totalHppBahan += ($kebutuhanPerPcs * $hppBahanIni);
         }
 
-        return $totalHppBahan + $bopBtklPerPcs;
+        return $totalHppBahan * 1.30;
     }
 }

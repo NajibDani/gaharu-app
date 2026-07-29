@@ -175,11 +175,14 @@
                                 <i class="bi bi-arrow-right-circle me-2" style="font-size:12px;"></i>Material Output
                             </a>
                         @endif
-                        <a href="{{ route('stok-gudang.index') }}" class="{{ request()->routeIs('stok-gudang.*') ? 'active' : '' }}">
+                        <a href="{{ route('stok-gudang.index') }}" class="{{ request()->routeIs('stok-gudang.*') && !request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
                             <i class="bi bi-boxes me-2" style="font-size:12px;"></i>Warehouse Stock
                         </a>
                         <a href="{{ route('stock-opname.index') }}" class="{{ request()->routeIs('stock-opname.*') ? 'active' : '' }}">
                             <i class="bi bi-clipboard-check me-2" style="font-size:12px;"></i>Stock Opname
+                        </a>
+                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
+                            <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
                         </a>
                     @endif
 
@@ -279,6 +282,9 @@
                         </a>
                         <a href="{{ route('laporan.arus-kas.index') }}" class="{{ request()->routeIs('laporan.arus-kas.*') ? 'active' : '' }}">
                             <i class="bi bi-cash-coin me-2" style="font-size:12px;"></i>Cash Flow
+                        </a>
+                        <a href="{{ route('laporan.perubahan-ekuitas.index') }}" class="{{ request()->routeIs('perubahan-ekuitas.*') ? 'active' : '' }}">
+                            <i class="bi bi-book-half me-2" style="font-size:12px;"></i>Equity Statement 
                         </a>
 
                         <div class="submenu-divider">OTHERS</div>

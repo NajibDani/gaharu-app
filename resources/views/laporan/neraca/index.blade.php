@@ -234,7 +234,7 @@
             <div class="card">
                 <div class="laporan-header">
                     <h1>CV Gaharu Agung Sejahtera</h1>
-                    <h2>Laporan Neraca</h2>
+                    <h2>Laporan Posisi Keuangan</h2>
                     <p>Periode: {{ date('F', mktime(0, 0, 0, $bulan, 1)) }} {{ $tahun }} &middot; per {{ \Carbon\Carbon::parse($tanggalCutoff)->translatedFormat('d F Y') }}</p>
                 </div>
 

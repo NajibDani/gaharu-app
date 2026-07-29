@@ -168,6 +168,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/jurnal-pembelian', [JurnalController::class, 'pembelianIndex'])->name('jurnal-pembelian.index');
         Route::get('/jurnal-pembelian/create/{id}', [JurnalController::class, 'pembelianCreate'])->name('jurnal-pembelian.create');
         Route::post('/jurnal-pembelian/store/{id}', [JurnalController::class, 'prosesJurnalPembelian'])->name('jurnal-pembelian.store');
+        Route::post('/jurnal-pembelian/post-auto/{id}', [JurnalController::class, 'pembelianPostAuto'])->name('jurnal-pembelian.post-auto');
         Route::get('/jurnal-pembelian/show/{id}', [JurnalController::class, 'pembelianShow'])->name('jurnal-pembelian.show');
 
         // Jurnal Penggajian
@@ -186,6 +187,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/jurnal-penjualanb2b', [JurnalController::class, 'penjualanb2bIndex'])->name('jurnal-penjualanb2b.index');
         Route::get('/jurnal-penjualanb2b/create/{id}', [JurnalController::class, 'penjualanb2bCreate'])->name('jurnal-penjualanb2b.create');
         Route::post('/jurnal-penjualanb2b/store/{id}', [JurnalController::class, 'penjualanB2BStore'])->name('jurnal-penjualanb2b.store');
+        Route::post('/jurnal-penjualanb2b/post-auto/{id}', [JurnalController::class, 'penjualanb2bPostAuto'])->name('jurnal-penjualanb2b.post-auto');
         Route::get('/jurnal-penjualanb2b/show/{id}', [JurnalController::class, 'penjualanB2BShow'])->name('jurnal-penjualanb2b.show');
         Route::get('/buku-pembantu', [JurnalController::class, 'bukuPembantuIndex'])->name('buku-pembantu.index');
         Route::get('/buku-pembantu/{jenis}/{id}', [JurnalController::class, 'bukuPembantuShow'])->name('buku-pembantu.show');        // Laporan Keuangan
@@ -199,6 +201,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/arus-kas/show', [LaporanController::class, 'arusKasShow'])->name('arus-kas.show');
             Route::get('/buku-besar', [LaporanController::class, 'bukuBesar'])->name('buku-besar.index');
             Route::get('/neraca-saldo', [LaporanController::class, 'neracaSaldo'])->name('neraca-saldo.index');
+            Route::get('/perubahan-ekuitas', [LaporanController::class, 'perubahanEkuitas'])->name('perubahan-ekuitas.index');
         });
     });
 
@@ -207,6 +210,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/jurnal-penjualanpos', [JurnalController::class, 'penjualanposIndex'])->name('jurnal-penjualanpos.index');
         Route::get('/jurnal-penjualanpos/create/{id}', [JurnalController::class, 'penjualanposCreate'])->name('jurnal-penjualanpos.create');
         Route::post('/jurnal-penjualanpos/store/{id}', [JurnalController::class, 'penjualanposStore'])->name('jurnal-penjualanpos.store');
+        Route::post('/jurnal-penjualanpos/post-auto/{id}', [JurnalController::class, 'penjualanposPostAuto'])->name('jurnal-penjualanpos.post-auto');
         Route::get('/jurnal-penjualanpos/show/{id}', [JurnalController::class, 'penjualanposShow'])->name('jurnal-penjualanpos.show');
     });
 
@@ -285,6 +289,9 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::middleware(['role:Kepala Gudang,Kepala Outlet Gaharu,Direktur Keuangan,Kepala Outlet Kejingga'])->group(function () {
+        Route::get('/stok-gudang/buku-pembantu', [StokGudangController::class, 'bukuPembantuIndex'])->name('stok-gudang.buku-pembantu.index');
+        Route::get('/stok-gudang/buku-pembantu/mutasi', [StokGudangController::class, 'bukuPembantuMutasi'])->name('stok-gudang.buku-pembantu.mutasi');
+
         Route::prefix('laporan')->name('laporan.')->group(function () {
             Route::get('/stok-gudang', [LaporanPersediaanController::class, 'stokGudang'])->name('stok-gudang');
             Route::get('/pengeluaran-bahan-baku', [LaporanPersediaanController::class, 'pengeluaranBahanBaku'])->name('pengeluaran-bahan-baku');

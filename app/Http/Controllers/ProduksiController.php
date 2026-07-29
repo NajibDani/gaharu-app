@@ -450,18 +450,8 @@ class ProduksiController extends Controller
                     }
                 }
 
-                // B. HITUNG BTKL & BOP
-                $totalBtklBop = 0;
-                $biayaTambahan = DB::table('resep_btkl_bop')->where('produk_id', $produkId)->first();
-
-                if ($biayaTambahan && $biayaTambahan->output_qty > 0) {
-                    $btklPerBatch = floatval($biayaTambahan->btkl_per_batch);
-                    $bopPerBatch  = floatval($biayaTambahan->bop_per_batch);
-                    $outputBatch  = floatval($biayaTambahan->output_qty);
-                    $biayaPerItem = ($btklPerBatch + $bopPerBatch) / $outputBatch;
-
-                    $totalBtklBop = $biayaPerItem * $qtyHasil;
-                }
+                // B. HITUNG BTKL & BOP (30% dari Total BBB)
+                $totalBtklBop = $totalBbbProduk * 0.30;
 
                 // C. HITUNG TOTAL HPP & UPDATE KE DETAIL PRODUKSI
                 $hppKeseluruhan = $totalBbbProduk + $totalBtklBop;

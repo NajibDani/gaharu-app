@@ -180,117 +180,136 @@ class LaporanController extends Controller
 
 
     public function labaRugiIndex(Request $request)
-    {
-        $bulan = $request->get('bulan', date('m'));
-        $tahun = $request->get('tahun', date('Y'));
+{
+    $bulan = $request->get('bulan', date('m'));
+    $tahun = $request->get('tahun', date('Y'));
 
-        // 1. Ambil detail Pendapatan (Kredit - Debit)
-        $detailsPendapatan = ChartOfAccount::where('tipe', 'Pendapatan')
-            ->addSelect([
-                'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
-                    ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
-                    ->where('journal_items.journal_type', '!=', 'closing')
-                    ->where(function ($q) use ($bulan, $tahun) {
+    // Helper Closure untuk subquery saldo umum (berdasarkan COA)
+    $getSaldoSubquery = function ($formula = 'COALESCE(SUM(debit - kredit), 0)') use ($bulan, $tahun) {
+        return \App\Models\JournalItem::selectRaw($formula)
+            ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+            ->where('journal_items.journal_type', '!=', 'closing')
+            ->where(function ($q) use ($bulan, $tahun) {
+                $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun)
+                        ->where('status', 'approved');
+                })
+                ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun)
+                        ->where('status', 'approved');
+                })
+                ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun);
+                })
+                ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun);
+                })
+                ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun);
+                });
+            });
+    };
 
-                        // Jurnal Umum (Perlu Approved)
-                        $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun)
-                            ->where('status', 'approved');
-                        })
+    // 1. Ambil Rincian Penjualan B2B per Pelanggan/Transaksi
+    // Mengambil item jurnal yang khusus terhubung ke jurnalPenjualanB2bHeader
+    $detailsPenjualanB2b = \App\Models\JournalItem::query()
+        ->selectRaw('
+            chart_of_accounts.nama as nama_akun,
+            chart_of_accounts.kode as kode_akun,
+            COALESCE(SUM(journal_items.kredit - journal_items.debit), 0) as total
+        ')
+        ->join('chart_of_accounts', 'chart_of_accounts.id', '=', 'journal_items.account_id')
+        ->whereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
+            $j->whereMonth('tanggal', $bulan)
+              ->whereYear('tanggal', $tahun);
+        })
+        ->where('chart_of_accounts.tipe', 'Pendapatan')
+        ->groupBy('chart_of_accounts.id', 'chart_of_accounts.nama', 'chart_of_accounts.kode')
+        ->get()
+        ->filter(fn($item) => $item->total != 0);
 
-                        // Jurnal Penyesuaian (Perlu Approved)
-                        ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun)
-                            ->where('status', 'approved');
-                        })
+    // 2. Ambil Pendapatan Non-B2B / Pendapatan Lainnya
+    // Mengambil COA Pendapatan tetapi mengecualikan transaksi yang berasal dari B2B
+    $detailsPendapatanLain = ChartOfAccount::where('tipe', 'Pendapatan')
+        ->addSelect(['saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
+            ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+            ->where('journal_items.journal_type', '!=', 'closing')
+            ->where(function ($q) use ($bulan, $tahun) {
+                $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun)
+                        ->where('status', 'approved');
+                })
+                ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun)
+                        ->where('status', 'approved');
+                })
+                ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
+                    $j->whereMonth('tanggal', $bulan)
+                        ->whereYear('tanggal', $tahun);
+                });
+            })
+        ])
+        ->get()
+        ->filter(fn($coa) => $coa->saldo != 0);
 
-                        // Jurnal Pembelian (Tanpa status approval)
-                        ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun);
-                        })
+    // 3. Ambil detail HPP (Harga Pokok Penjualan)
+    $detailsHpp = ChartOfAccount::where(function($q) {
+            $q->where('tipe', 'Harga Pokok Penjualan')
+              ->orWhere('tipe', 'HPP')
+              ->orWhere('kode', 'like', '5%');
+        })
+        ->addSelect(['saldo' => $getSaldoSubquery('COALESCE(SUM(debit - kredit), 0)')])
+        ->get()
+        ->filter(fn($coa) => $coa->saldo != 0);
 
-                        // Jurnal Penjualan B2B (Tanpa status approval)
-                        ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun);
-                        })
+    // 4. Ambil detail Beban Operasional
+    $detailsBeban = ChartOfAccount::where('tipe', 'Beban')
+        ->where('kode', 'not like', '5%')
+        ->addSelect(['saldo' => $getSaldoSubquery('COALESCE(SUM(debit - kredit), 0)')])
+        ->get()
+        ->filter(fn($coa) => $coa->saldo != 0);
 
-                        // Jurnal Penjualan POS (Tanpa status approval)
-                        ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun);
-                        });
-                    })
-            ])
-            ->get()
-            ->filter(fn($coa) => $coa->saldo != 0);
+    // Kalkulasi Total
+    $totalPenjualanB2b = $detailsPenjualanB2b->sum('total');
+    $totalPendapatanLain = $detailsPendapatanLain->sum('saldo');
+    $totalPendapatan = $totalPenjualanB2b + $totalPendapatanLain;
+    
+    $totalHpp = $detailsHpp->sum('saldo');
+    $labaKotor = $totalPendapatan - $totalHpp;
+    
+    $totalBeban = $detailsBeban->sum('saldo');
+    $labaBersih = $labaKotor - $totalBeban;
 
-        // 2. Ambil detail Beban (Debit - Kredit)
-        $detailsBeban = ChartOfAccount::where('tipe', 'Beban')
-            ->addSelect([
-                'saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(debit - kredit), 0)')
-                    ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
-                    ->where('journal_items.journal_type', '!=', 'closing')
-                    ->where(function ($q) use ($bulan, $tahun) {
+    // Data payload untuk dikirim ke view/pdf/excel
+    $dataCompact = compact(
+        'detailsPenjualanB2b', 'detailsPendapatanLain', 'detailsHpp', 'detailsBeban',
+        'totalPenjualanB2b', 'totalPendapatanLain', 'totalPendapatan', 
+        'totalHpp', 'labaKotor', 'totalBeban', 'labaBersih',
+        'bulan', 'tahun'
+    );
 
-                        // Jurnal Umum (Perlu Approved)
-                        $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun)
-                            ->where('status', 'approved');
-                        })
-
-                        // Jurnal Penyesuaian (Perlu Approved)
-                        ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun)
-                            ->where('status', 'approved');
-                        })
-
-                        // Jurnal Pembelian (Tanpa status approval)
-                        ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun);
-                        })
-
-                        // Jurnal Penjualan B2B (Tanpa status approval)
-                        ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun);
-                        })
-
-                        // Jurnal Penjualan POS (Tanpa status approval)
-                        ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
-                            $j->whereMonth('tanggal', $bulan)
-                            ->whereYear('tanggal', $tahun);
-                        });
-                    })
-            ])
-            ->get()
-            ->filter(fn($coa) => $coa->saldo != 0);
-
-        $totalPendapatan = $detailsPendapatan->sum('saldo');
-        $totalBeban = $detailsBeban->sum('saldo');
-
-        if ($request->format === 'pdf') {
-            $pdf = app('dompdf.wrapper')->setPaper('a4', 'landscape');
-            $pdf->loadView('laporan.laba-rugi.pdf', compact(
-                'detailsPendapatan', 'detailsBeban', 'totalPendapatan', 'totalBeban', 'bulan', 'tahun'
-            ));
-            return $pdf->download('laporan-laba-rugi-' . now()->format('Ymd') . '.pdf');
-        }
-
-        if ($request->format === 'excel') {
-            return $this->exportExcelLabaRugi($detailsPendapatan, $detailsBeban, $totalPendapatan, $totalBeban, $bulan, $tahun);
-        }
-
-        return view('laporan.laba-rugi.index', compact(
-            'detailsPendapatan', 'detailsBeban', 'totalPendapatan', 'totalBeban', 'bulan', 'tahun'
-        ));
+    // Export PDF
+    if ($request->format === 'pdf') {
+        $pdf = app('dompdf.wrapper')->setPaper('a4', 'landscape');
+        $pdf->loadView('laporan.laba-rugi.pdf', $dataCompact);
+        return $pdf->download('laporan-laba-rugi-' . now()->format('Ymd') . '.pdf');
     }
+
+    // Export Excel
+    if ($request->format === 'excel') {
+        return $this->exportExcelLabaRugi($dataCompact);
+    }
+
+    // Tampilan Web
+    return view('laporan.laba-rugi.index', $dataCompact);
+}
 
     public function neracaIndex(Request $request)
     {
@@ -454,7 +473,14 @@ class LaporanController extends Controller
 
         // 3. Export Excel
         if ($request->format === 'excel') {
-            return $this->exportExcelArusKas($data, $bulan, $tahun);
+            if (class_exists(ArusKasExport::class)) {
+                return Excel::download(new ArusKasExport($data), 'laporan-arus-kas-' . $tahun . $bulan . '.xlsx');
+            }
+
+            // Fallback Export Excel via View HTML
+            return response()->view('laporan.arus-kas.excel', $data)
+                ->header('Content-Type', 'application/vnd.ms-excel')
+                ->header('Content-Disposition', 'attachment; filename="laporan-arus-kas-'.$tahun.$bulan.'.xls"');
         }
 
         // 4. Return View Web
@@ -466,173 +492,164 @@ class LaporanController extends Controller
     // =========================================================================
 
     /**
-     * Engine Kalkulasi Arus Kas Metode Langsung (Sesuai Dokumen 2 & Buku Besar)
+     * Engine Kalkulasi Arus Kas Metode Langsung
      */
     private function getArusKasDirectData($bulan, $tahun)
-{
-    $namaBulan = Carbon::createFromDate($tahun, $bulan, 1)->locale('id')->translatedFormat('F');
+    {
+        $namaBulan = Carbon::createFromDate($tahun, $bulan, 1)->locale('id')->translatedFormat('F');
 
-    // 1. ID Akun Kas & Bank (1101 Kas di Bank BRI)
-    $kasBankCoaIds = ChartOfAccount::where('kode', '1101')
-        ->orWhere('nama', 'LIKE', '%Kas di Bank BRI%')
-        ->orWhere(function ($q) {
-            $q->where('nama', 'LIKE', '%kas%')->orWhere('nama', 'LIKE', '%bank%');
-        })
-        ->pluck('id')
-        ->toArray();
+        // 1. ID Akun Kas & Bank (1101 Kas di Bank BRI)
+        $kasBankCoaIds = ChartOfAccount::where('kode', '1101')
+            ->orWhere('nama', 'LIKE', '%Kas di Bank BRI%')
+            ->orWhere(function ($q) {
+                $q->where('nama', 'LIKE', '%kas%')->orWhere('nama', 'LIKE', '%bank%');
+            })
+            ->pluck('id')
+            ->toArray();
 
-    // 2. Transaksi Kas/Bank Periode Ini
-    $kasJournalItemsQuery = JournalItem::whereIn('account_id', $kasBankCoaIds);
-    $kasJournalItems = $this->applyFilterPeriodeArusKas($kasJournalItemsQuery, $bulan, $tahun)->get();
+        // 2. Transaksi Kas/Bank Periode Ini
+        $kasJournalItemsQuery = JournalItem::whereIn('account_id', $kasBankCoaIds);
+        $kasJournalItems = $this->applyFilterPeriodeArusKas($kasJournalItemsQuery, $bulan, $tahun)->get();
 
-    $penerimaanPelangganRaw  = collect();
-    $pengeluaranBahanBakuRaw = collect();
-    $pengeluaranBebanOpRaw   = collect();
+        $penerimaanPelangganRaw  = collect();
+        $pengeluaranBahanBakuRaw = collect();
+        $pengeluaranBebanOpRaw   = collect();
 
-    $investasi = collect();
-    $pendanaan = collect();
+        $investasi = collect();
+        $pendanaan = collect();
 
-    foreach ($kasJournalItems as $itemKas) {
-        $debit  = $itemKas->debit;
-        $kredit = $itemKas->kredit;
+        foreach ($kasJournalItems as $itemKas) {
+            $debit  = $itemKas->debit;
+            $kredit = $itemKas->kredit;
 
-        if ($debit == 0 && $kredit == 0) continue;
+            if ($debit == 0 && $kredit == 0) continue;
 
-        // Ambil header jurnal
-        $header = $this->getHeaderJurnal($itemKas);
-        $deskripsi = $header->deskripsi ?? 'Transaksi Kas';
+            // Ambil header jurnal
+            $header = $this->getHeaderJurnal($itemKas);
+            $deskripsi = $header->deskripsi ?? 'Transaksi Kas';
 
-        // =========================================================================
-        // A. PENDAPATAN / KAS MASUK (Debit Kas)
-        // =========================================================================
-        if ($debit > 0) {
-            // Cek apakah ada akun Pendapatan di lawan jurnalnya
-            $coaPenjualan = JournalItem::where('journal_id', $itemKas->journal_id)
-                ->where('journal_type', $itemKas->journal_type)
-                ->whereHas('coa', fn($q) => $q->where('tipe', 'Pendapatan')->orWhere('kode', 'LIKE', '4%'))
-                ->with('coa')
-                ->first();
+            // =========================================================================
+            // A. PENDAPATAN / KAS MASUK (Debit Kas)
+            // =========================================================================
+            if ($debit > 0) {
+                // Cek akun Pendapatan di lawan jurnalnya
+                $coaPenjualan = JournalItem::where('journal_id', $itemKas->journal_id)
+                    ->where('journal_type', $itemKas->journal_type)
+                    ->whereHas('coa', fn($q) => $q->where('tipe', 'Pendapatan')->orWhere('kode', 'LIKE', '4%'))
+                    ->with('coa')
+                    ->first();
 
-            if ($coaPenjualan && $coaPenjualan->coa) {
-                $namaCoa = strtolower($coaPenjualan->coa->nama);
-                if (str_contains($namaCoa, 'kejingga')) {
-                    $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
-                } elseif (str_contains($namaCoa, 'gaharu')) {
-                    $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
+                if ($coaPenjualan && $coaPenjualan->coa) {
+                    $namaCoa = strtolower($coaPenjualan->coa->nama);
+                    if (str_contains($namaCoa, 'kejingga')) {
+                        $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
+                    } elseif (str_contains($namaCoa, 'gaharu')) {
+                        $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
+                    } else {
+                        $kategori = 'Penerimaan ' . $coaPenjualan->coa->nama;
+                    }
                 } else {
-                    // Jika ada akun penjualan lain (misal Penjualan B2B / Outlet baru)
-                    $kategori = 'Penerimaan ' . $coaPenjualan->coa->nama;
+                    // Fallback berdasarkan deskripsi atau tipe jurnal
+                    $descLower = strtolower($deskripsi);
+                    if (str_contains($descLower, 'kejingga')) {
+                        $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
+                    } elseif (str_contains($descLower, 'gaharu')) {
+                        $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
+                    } elseif ($itemKas->journal_type === 'penjualan_b2b' || str_contains($descLower, 'b2b')) {
+                        $kategori = 'Penerimaan Penjualan B2B';
+                    } else {
+                        $kategori = 'Penerimaan Kas Lainnya (' . $deskripsi . ')';
+                    }
                 }
-            } else {
-                // Fallback berdasarkan deskripsi atau tipe jurnal
+
+                $penerimaanPelangganRaw->push([
+                    'kategori' => $kategori,
+                    'nominal'  => $debit,
+                ]);
+            }
+
+            // =========================================================================
+            // B. PENGELUARAN / KAS KELUAR (Kredit Kas)
+            // =========================================================================
+            if ($kredit > 0) {
                 $descLower = strtolower($deskripsi);
-                if (str_contains($descLower, 'kejingga')) {
-                    $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
-                } elseif (str_contains($descLower, 'gaharu')) {
-                    $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
-                } elseif ($itemKas->journal_type === 'penjualan_b2b' || str_contains($descLower, 'b2b')) {
-                    $kategori = 'Penerimaan Penjualan B2B';
+
+                // 1. Pengeluaran Pembelian Bahan Baku / Supplier (REKAPAN)
+                if ($itemKas->journal_type === 'jurnal_pembelian' || str_contains($descLower, 'pembelian') || str_contains($descLower, 'supplier')) {
+                    
+                    $kategori = 'Pembayaran Pembelian Bahan Baku';
+
+                    $pengeluaranBahanBakuRaw->push([
+                        'kategori' => $kategori,
+                        'nominal'  => $kredit * -1,
+                    ]);
+
                 } else {
-                    // Menangkap seluruh transaksi kas masuk lainnya agar tidak ada yang terlewat!
-                    $kategori = 'Penerimaan Kas Lainnya (' . $deskripsi . ')';
+                    // 2. Pengeluaran Beban Operasional
+                    if (str_contains($descLower, 'listrik') || str_contains($descLower, 'air') || str_contains($descLower, 'internet')) {
+                        $kategori = 'Pembayaran Beban Listrik, Air, & Internet';
+                    } else {
+                        $kategori = $deskripsi;
+                    }
+
+                    $pengeluaranBebanOpRaw->push([
+                        'kategori' => $kategori,
+                        'nominal'  => $kredit * -1,
+                    ]);
                 }
             }
-
-            $penerimaanPelangganRaw->push([
-                'kategori' => $kategori,
-                'nominal'  => $debit,
-            ]);
         }
 
-        // =========================================================================
-        // B. PENGELUARAN / KAS KELUAR (Kredit Kas)
-        // =========================================================================
-        if ($kredit > 0) {
-            $descLower = strtolower($deskripsi);
+        // GROUPING HASIL BERDASARKAN KATEGORI (Semua transaksi pembelian otomatis digabung)
+        $penerimaanPelanggan = $penerimaanPelangganRaw->groupBy('kategori')->map(function ($items, $kat) {
+            return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
+        })->values();
 
-            // 1. Pengeluaran Pembelian Bahan Baku / Supplier
-            if ($itemKas->journal_type === 'jurnal_pembelian' || str_contains($descLower, 'pembelian') || str_contains($descLower, 'supplier')) {
-                
-                // Cari nama supplier dari transaksi jika ada
-                if (str_contains($descLower, 'tofico')) {
-                    $kategori = 'Pembayaran Pembelian Bahan Baku (Supplier TOFICO)';
-                } else {
-                    // Dinamis mengambil deskripsi pembelian supplier lainnya
-                    $kategori = 'Pembayaran ' . $deskripsi;
-                }
+        $pengeluaranBahanBaku = $pengeluaranBahanBakuRaw->groupBy('kategori')->map(function ($items, $kat) {
+            return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
+        })->values();
 
-                $pengeluaranBahanBakuRaw->push([
-                    'kategori' => $kategori,
-                    'nominal'  => $kredit * -1,
-                ]);
+        $pengeluaranBebanOp = $pengeluaranBebanOpRaw->groupBy('kategori')->map(function ($items, $kat) {
+            return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
+        })->values();
 
-            } else {
-                // 2. Pengeluaran Beban Operasional Lainnya
-                if (str_contains($descLower, 'listrik') || str_contains($descLower, 'air') || str_contains($descLower, 'internet')) {
-                    $kategori = 'Pembayaran Beban Listrik, Air, & Internet';
-                } else {
-                    // Dinamis menangkap beban operasional lainnya (misal Beban Gaji, Beban Sewa, dll)
-                    $kategori = $deskripsi;
-                }
+        // Subtotal Operasional
+        $totalPenerimaanPelanggan  = $penerimaanPelanggan->sum('nominal');
+        $totalPengeluaranBahanBaku = $pengeluaranBahanBaku->sum('nominal');
+        $totalPengeluaranBebanOp   = $pengeluaranBebanOp->sum('nominal');
 
-                $pengeluaranBebanOpRaw->push([
-                    'kategori' => $kategori,
-                    'nominal'  => $kredit * -1,
-                ]);
-            }
-        }
+        $kasBersihOperasional = $totalPenerimaanPelanggan + $totalPengeluaranBahanBaku + $totalPengeluaranBebanOp;
+        $kasBersihInvestasi   = $investasi->sum('nominal');
+        $kasBersihPendanaan   = $pendanaan->sum('nominal');
+
+        // Rekonsiliasi Saldo Kas Awal & Akhir
+        $saldoAwalKas = $this->getSaldoAkumulasiKasToDate($kasBankCoaIds, (int)$bulan - 1, (int)$tahun);
+        $kenaikanPenurunanKas = $kasBersihOperasional + $kasBersihInvestasi + $kasBersihPendanaan;
+        $saldoAkhirKas = $saldoAwalKas + $kenaikanPenurunanKas;
+
+        return [
+            'penerimaanPelanggan'       => $penerimaanPelanggan,
+            'totalPenerimaanPelanggan'  => $totalPenerimaanPelanggan,
+            'pengeluaranBahanBaku'      => $pengeluaranBahanBaku,
+            'totalPengeluaranBahanBaku' => $totalPengeluaranBahanBaku,
+            'pengeluaranBebanOp'        => $pengeluaranBebanOp,
+            'totalPengeluaranBebanOp'   => $totalPengeluaranBebanOp,
+            'kasBersihOperasional'      => $kasBersihOperasional,
+            
+            'investasi'                 => $investasi,
+            'kasBersihInvestasi'        => $kasBersihInvestasi,
+            
+            'pendanaan'                 => $pendanaan,
+            'kasBersihPendanaan'        => $kasBersihPendanaan,
+            
+            'saldoAwalKas'              => $saldoAwalKas,
+            'kenaikanPenurunanKas'      => $kenaikanPenurunanKas,
+            'saldoAkhirKas'             => $saldoAkhirKas,
+            'bulan'                     => $bulan,
+            'tahun'                     => $tahun,
+            'namaBulan'                 => $namaBulan
+        ];
     }
-
-    // GROUPING HASIL BERDASARKAN KATEGORI
-    $penerimaanPelanggan = $penerimaanPelangganRaw->groupBy('kategori')->map(function ($items, $kat) {
-        return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
-    })->values();
-
-    $pengeluaranBahanBaku = $pengeluaranBahanBakuRaw->groupBy('kategori')->map(function ($items, $kat) {
-        return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
-    })->values();
-
-    $pengeluaranBebanOp = $pengeluaranBebanOpRaw->groupBy('kategori')->map(function ($items, $kat) {
-        return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
-    })->values();
-
-    // Subtotal Operasional
-    $totalPenerimaanPelanggan  = $penerimaanPelanggan->sum('nominal');
-    $totalPengeluaranBahanBaku = $pengeluaranBahanBaku->sum('nominal');
-    $totalPengeluaranBebanOp   = $pengeluaranBebanOp->sum('nominal');
-
-    $kasBersihOperasional = $totalPenerimaanPelanggan + $totalPengeluaranBahanBaku + $totalPengeluaranBebanOp;
-    $kasBersihInvestasi   = $investasi->sum('nominal');
-    $kasBersihPendanaan   = $pendanaan->sum('nominal');
-
-    // Rekonsiliasi Saldo Kas Awal & Akhir
-    $saldoAwalKas = $this->getSaldoAkumulasiKasToDate($kasBankCoaIds, $bulan - 1, $tahun);
-    $kenaikanPenurunanKas = $kasBersihOperasional + $kasBersihInvestasi + $kasBersihPendanaan;
-    $saldoAkhirKas = $saldoAwalKas + $kenaikanPenurunanKas;
-
-    return [
-        'penerimaanPelanggan'       => $penerimaanPelanggan,
-        'totalPenerimaanPelanggan'  => $totalPenerimaanPelanggan,
-        'pengeluaranBahanBaku'      => $pengeluaranBahanBaku,
-        'totalPengeluaranBahanBaku' => $totalPengeluaranBahanBaku,
-        'pengeluaranBebanOp'        => $pengeluaranBebanOp,
-        'totalPengeluaranBebanOp'   => $totalPengeluaranBebanOp,
-        'kasBersihOperasional'      => $kasBersihOperasional,
-        
-        'investasi'                 => $investasi,
-        'kasBersihInvestasi'        => $kasBersihInvestasi,
-        
-        'pendanaan'                 => $pendanaan,
-        'kasBersihPendanaan'        => $kasBersihPendanaan,
-        
-        'saldoAwalKas'              => $saldoAwalKas,
-        'kenaikanPenurunanKas'      => $kenaikanPenurunanKas,
-        'saldoAkhirKas'             => $saldoAkhirKas,
-        'bulan'                     => $bulan,
-        'tahun'                     => $tahun,
-        'namaBulan'                 => $namaBulan
-    ];
-}
 
     // =========================================================================
     // HELPER FUNCTIONS
@@ -683,34 +700,31 @@ class LaporanController extends Controller
 
     private function getSaldoAkumulasiKasToDate($kasBankCoaIds, $bulanTarget, $tahunTarget)
     {
-        // Pastikan bulanTarget berbentuk integer
         $bulanTarget = (int) $bulanTarget;
         $tahunTarget = (int) $tahunTarget;
 
-        // Jika bulan target adalah 0 (pilihan Januari), maka mundur ke Desember tahun sebelumnya
         if ($bulanTarget <= 0) {
             $bulanTarget = 12;
             $tahunTarget = $tahunTarget - 1;
         }
 
-        // Buat tanggal batas akhir bulan sebelumnya secara presisi (contoh: 2026-07-31)
         $tanggalBatas = Carbon::createFromDate($tahunTarget, $bulanTarget, 1)->endOfMonth()->format('Y-m-d');
 
-        // 1. Ambil nilai dari Jurnal Saldo Awal Master (journal_type = 'opening')
+        // 1. Saldo Opening Master (journal_type = 'opening')
         $saldoMasterOpening = JournalItem::whereIn('account_id', $kasBankCoaIds)
             ->where('journal_type', 'opening')
             ->selectRaw('SUM(debit) - SUM(kredit) as total')
             ->value('total') ?? 0;
 
-        // 2. Ambil akumulasi mutasi transaksi regular sebelum atau sama dengan tanggal batas (<= $tanggalBatas)
+        // 2. Akumulasi Mutasi Historis Sebelum/Sama Dengan Tanggal Batas
         $queryMutasiHistoris = JournalItem::whereIn('account_id', $kasBankCoaIds)
             ->where('journal_type', '!=', 'opening')
             ->where(function ($q) use ($tanggalBatas) {
                 $q->whereHas('journal', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                ->orWhereHas('jurnalPembelianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                ->orWhereHas('jurnalPenjualanB2bHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                ->orWhereHas('jurnalPenjualanPosHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                ->orWhereHas('jurnalPenyesuaianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas));
+                  ->orWhereHas('jurnalPembelianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                  ->orWhereHas('jurnalPenjualanB2bHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                  ->orWhereHas('jurnalPenjualanPosHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
+                  ->orWhereHas('jurnalPenyesuaianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas));
             });
 
         $debitHistoris  = $queryMutasiHistoris->sum('debit');
@@ -1074,5 +1088,72 @@ class LaporanController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    public function perubahanEkuitas(Request $request)
+    {
+        $startDate = $request->input('start_date', date('Y-01-01'));
+        $endDate = $request->input('end_date', date('Y-12-31'));
+
+        // Helper Query Dasar dengan Join ke COA dan Header Journal
+        $baseQuery = JournalItem::query()
+            ->join('chart_of_accounts', 'journal_items.account_id', '=', 'chart_of_accounts.id')
+            ->join('journals', 'journal_items.journal_id', '=', 'journals.id');
+
+        // 1. Modal Awal (Saldo sebelum startDate untuk akun 3101 & 3103)
+        $modalAwal = (clone $baseQuery)
+            ->whereIn('chart_of_accounts.kode', ['3101', '3103'])
+            ->where('journals.tanggal', '<', $startDate)
+            ->selectRaw('SUM(journal_items.kredit - journal_items.debit) as total')
+            ->value('total') ?? 0;
+
+        // 2. Setoran Modal Tambahan (Periode berjalan untuk akun 3101)
+        $penambahanModal = (clone $baseQuery)
+            ->where('chart_of_accounts.kode', '3101')
+            ->whereBetween('journals.tanggal', [$startDate, $endDate])
+            ->selectRaw('SUM(journal_items.kredit - journal_items.debit) as total')
+            ->value('total') ?? 0;
+
+        // 3. Laba / Rugi Periode Berjalan
+        // Total Pendapatan (Kode Kepala 4)
+        $totalPendapatan = (clone $baseQuery)
+            ->where('chart_of_accounts.kode', 'LIKE', '4%')
+            ->whereBetween('journals.tanggal', [$startDate, $endDate])
+            ->selectRaw('SUM(journal_items.kredit - journal_items.debit) as total')
+            ->value('total') ?? 0;
+
+        // Total Beban & HPP (Kode Kepala 5 & 6)
+        $totalHppBeban = (clone $baseQuery)
+            ->where(function ($q) {
+                $q->where('chart_of_accounts.kode', 'LIKE', '5%')
+                  ->orWhere('chart_of_accounts.kode', 'LIKE', '6%');
+            })
+            ->whereBetween('journals.tanggal', [$startDate, $endDate])
+            ->selectRaw('SUM(journal_items.debit - journal_items.kredit) as total')
+            ->value('total') ?? 0;
+
+        $labaRugiBersih = $totalPendapatan - $totalHppBeban;
+
+        // 4. Prive (Periode berjalan untuk akun 3102)
+        $prive = (clone $baseQuery)
+            ->where('chart_of_accounts.kode', '3102')
+            ->whereBetween('journals.tanggal', [$startDate, $endDate])
+            ->selectRaw('SUM(journal_items.debit - journal_items.kredit) as total')
+            ->value('total') ?? 0;
+
+        // 5. Total Perubahan & Modal Akhir
+        $perubahanEkuitas = ($penambahanModal + $labaRugiBersih) - $prive;
+        $modalAkhir = $modalAwal + $perubahanEkuitas;
+
+        return view('laporan.perubahan_ekuitas.index', compact(
+            'startDate',
+            'endDate',
+            'modalAwal',
+            'penambahanModal',
+            'labaRugiBersih',
+            'prive',
+            'perubahanEkuitas',
+            'modalAkhir'
+        ));
     }
 }

@@ -74,7 +74,7 @@ class PembelianController extends Controller
                     return [
                         'id'            => $d->id,
                         'nama'          => $d->barang->nama ?? 'Barang',
-                        'satuan'        => $d->barang->satuan ?? 'Pcs',
+                        'satuan'        => $d->satuan_pembelian ?: ($d->barang->satuan ?? 'Pcs'),
                         'qty'           => floatval($d->qty),
                         'qty_diterima'  => floatval($d->qty_diterima ?? 0),
                         'harga_per_qty' => floatval($d->harga_per_qty),
@@ -150,13 +150,17 @@ class PembelianController extends Controller
                     ? (float) $item['harga'] / (float) $item['qty']
                     : 0;
 
+                $barang = MasterBarang::withoutGlobalScopes()->find($item['barang_id']);
+
                 // Simpan detail dulu — FIFO & stok masuk saat "Terima"
                 $detail = $pembelian->details()->create([
-                    'barang_id'    => $item['barang_id'],
-                    'qty'          => $item['qty'],
-                    'harga'        => $item['harga'],
-                    'harga_per_qty'=> $hargaPerQty,
-                    'batch_number' => 'TEMP',
+                    'barang_id'          => $item['barang_id'],
+                    'satuan_pembelian'   => $barang->satuan_pembelian,
+                    'konversi_pembelian' => $barang->konversi_pembelian ?? 1.00,
+                    'qty'                => $item['qty'],
+                    'harga'              => $item['harga'],
+                    'harga_per_qty'      => $hargaPerQty,
+                    'batch_number'       => 'TEMP',
                 ]);
 
                 $detail->update([
@@ -250,6 +254,14 @@ class PembelianController extends Controller
 
                 // Create StokGudangBatch
                 $suffix = rand(10, 99) . '-' . date('His');
+                $konversi = floatval($detail->konversi_pembelian ?? 1);
+                if ($konversi <= 0) {
+                    $konversi = 1;
+                }
+
+                $qtyMasukStok = $qtyBaruInput * $konversi;
+                $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
+
                 \App\Models\StokGudangBatch::create([
                     'gudang_id' => $pembelian->gudang_id,
                     'supplier_id' => $pembelian->supplier_id,
@@ -257,10 +269,10 @@ class PembelianController extends Controller
                     'pembelian_id' => $pembelian->id,
                     'pembelian_detail_id' => $detail->id,
                     'batch_number' => $detail->batch_number . '-RCV-' . $suffix,
-                    'qty_masuk' => $qtyBaruInput,
+                    'qty_masuk' => $qtyMasukStok,
                     'qty_keluar' => 0,
-                    'qty_sisa' => $qtyBaruInput,
-                    'harga_per_qty' => $detail->harga_per_qty,
+                    'qty_sisa' => $qtyMasukStok,
+                    'harga_per_qty' => $hargaPerQtyStok,
                     'is_habis' => false,
                 ]);
 
@@ -268,7 +280,7 @@ class PembelianController extends Controller
                 $this->stockService->stockIn([
                     'barang_id'       => $detail->barang_id,
                     'gudang_tujuan_id'=> $pembelian->gudang_id,
-                    'qty'             => $qtyBaruInput,
+                    'qty'             => $qtyMasukStok,
                     'total_harga'     => $totalHargaDiterima,
                     'source_type'     => 'pembelian',
                     'source_id'       => $pembelian->id,

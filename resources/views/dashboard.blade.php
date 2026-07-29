@@ -172,7 +172,6 @@
                 @endif
 
                 {{-- STATS SUMMARY (BAHAN & SUPPLIERS) --}}
-                {{-- STATS SUMMARY (BAHAN & SUPPLIERS) --}}
                 @if($hasPosAccess || $hasPurchaseAccess)
                 <div class="row gx-3">
                     @if($hasPosAccess)

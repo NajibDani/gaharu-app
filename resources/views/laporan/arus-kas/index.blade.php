@@ -239,21 +239,25 @@
                     <a href="{{ route('laporan.arus-kas.index', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-pdf">
                         📕 Export PDF
                     </a>
+                    <button type="button" onclick="window.print()" class="btn btn-print">
+                        🖨️ Cetak
+                    </button>
                 </form>
             </div>
 
             {{-- ============ LAPORAN ============ --}}
             <div class="card">
-                <div class="report-head">
-                    <h1>CV GAHARU AGUNG SEJAHTERA</h1>
-                    <h2>Laporan Arus Kas (Metode Langsung)</h2>
-                    <p>Untuk Periode yang Berakhir pada 31 {{ $namaBulan }} {{ $tahun }}</p>
-                </div>
-
                 @php
+                    $lastDay = \Carbon\Carbon::createFromDate($tahun, $bulan, 1)->endOfMonth()->day;
                     $fmt = fn($v) => ($v < 0 ? '(' : '') . 'Rp ' . number_format(abs($v), 2, ',', '.') . ($v < 0 ? ')' : '');
                     $cls = fn($v) => $v < 0 ? 'val-negative' : 'val-positive';
                 @endphp
+
+                <div class="report-head">
+                    <h1>CV GAHARU AGUNG SEJAHTERA</h1>
+                    <h2>Laporan Arus Kas</h2>
+                    <p>Untuk Periode yang Berakhir pada {{ $lastDay }} {{ $namaBulan }} {{ $tahun }}</p>
+                </div>
 
                 {{-- ---------- Aktivitas Operasional ---------- --}}
                 <div class="section-title">ARUS KAS DARI AKTIVITAS OPERASIONAL</div>
@@ -277,18 +281,27 @@
                     <tr class="fw-bold">
                         <td colspan="2" style="padding-top: 12px;">Pengeluaran Kas untuk Operasional:</td>
                     </tr>
-                    @foreach($pengeluaranBahanBaku as $item)
+                    @forelse($pengeluaranBahanBaku as $item)
                         <tr>
                             <td class="pl-4">{{ $item['keterangan'] }}</td>
                             <td class="text-right font-mono {{ $cls($item['nominal']) }}">{{ $fmt($item['nominal']) }}</td>
                         </tr>
-                    @endforeach
-                    @foreach($pengeluaranBebanOp as $item)
+                    @empty
+                    @endforelse
+
+                    @forelse($pengeluaranBebanOp as $item)
                         <tr>
                             <td class="pl-4">{{ $item['keterangan'] }}</td>
                             <td class="text-right font-mono {{ $cls($item['nominal']) }}">{{ $fmt($item['nominal']) }}</td>
                         </tr>
-                    @endforeach
+                    @empty
+                    @endforelse
+
+                    @if($pengeluaranBahanBaku->isEmpty() && $pengeluaranBebanOp->isEmpty())
+                        <tr class="empty-row">
+                            <td colspan="2" class="pl-4">- Tidak ada pengeluaran -</td>
+                        </tr>
+                    @endif
 
                     <tr class="row-subtotal">
                         <td>Arus Kas Bersih Dari Aktivitas Operasional</td>
@@ -347,11 +360,11 @@
                 {{-- ---------- Rekonsiliasi Saldo Kas ---------- --}}
                 <div class="saldo-box">
                     <div class="saldo-card">
-                        <div class="label">KAS DAN BANK AWAL PERIODE (01/{{ $bulan }}/{{ $tahun }})</div>
+                        <div class="label">KAS DAN BANK AWAL PERIODE (01/{{ sprintf('%02d', $bulan) }}/{{ $tahun }})</div>
                         <div class="value font-mono">{{ $fmt($saldoAwalKas) }}</div>
                     </div>
                     <div class="saldo-card">
-                        <div class="label">KAS DAN BANK AKHIR PERIODE (31/{{ $bulan }}/{{ $tahun }})</div>
+                        <div class="label">KAS DAN BANK AKHIR PERIODE ({{ sprintf('%02d', $lastDay) }}/{{ sprintf('%02d', $bulan) }}/{{ $tahun }})</div>
                         <div class="value font-mono">{{ $fmt($saldoAkhirKas) }}</div>
                     </div>
                 </div>

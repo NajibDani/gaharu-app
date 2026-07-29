@@ -43,8 +43,8 @@ class ResepBtklBopController extends Controller
         $request->validate([
             'produk_id' => 'required',
             'output_qty' => 'required|numeric|min:1',
-            'btkl_per_batch' => 'required|numeric',
-            'bop_per_batch' => 'required|numeric',
+            'btkl_per_batch' => 'nullable|numeric',
+            'bop_per_batch' => 'nullable|numeric',
             'bahan_id' => 'required|array',
             'bahan_id.*' => 'required|exists:master_barang,id',
             'qty_bahan' => 'required|array',
@@ -64,8 +64,8 @@ class ResepBtklBopController extends Controller
             'produk_id' => $request->produk_id,
             'output_qty' => $request->output_qty,
             'satuan_output' => $request->satuan_output ?? 'Batch',
-            'btkl_per_batch' => $request->btkl_per_batch,
-            'bop_per_batch' => $request->bop_per_batch,
+            'btkl_per_batch' => $request->btkl_per_batch ?? 0,
+            'bop_per_batch' => $request->bop_per_batch ?? 0,
         ]);
 
         // 🎯 SINKRONISASI: Update resep_id di tabel master_barang secara otomatis
@@ -115,8 +115,8 @@ class ResepBtklBopController extends Controller
         $request->validate([
             'produk_id' => 'required',
             'output_qty' => 'required|numeric|min:1',
-            'btkl_per_batch' => 'required|numeric',
-            'bop_per_batch' => 'required|numeric',
+            'btkl_per_batch' => 'nullable|numeric',
+            'bop_per_batch' => 'nullable|numeric',
             'bahan_id' => 'required|array',
             'bahan_id.*' => 'required|exists:master_barang,id',
             'qty_bahan' => 'required|array',
@@ -130,8 +130,8 @@ class ResepBtklBopController extends Controller
             'produk_id' => $request->produk_id,
             'output_qty' => $request->output_qty,
             'satuan_output' => $request->satuan_output,
-            'btkl_per_batch' => $request->btkl_per_batch,
-            'bop_per_batch' => $request->bop_per_batch,
+            'btkl_per_batch' => $request->btkl_per_batch ?? 0,
+            'bop_per_batch' => $request->bop_per_batch ?? 0,
         ]);
 
         // 🎯 SINKRONISASI: Pastikan master_barang tetap terhubung ke resep ini

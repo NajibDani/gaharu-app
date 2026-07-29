@@ -116,7 +116,10 @@
                                     @foreach($barangs as $barang)
                                         <option
                                             value="{{ $barang->id }}"
-                                            data-kode="{{ $barang->kode_barang }}">
+                                            data-kode="{{ $barang->kode_barang }}"
+                                            data-satuan-pembelian="{{ $barang->satuan_pembelian }}"
+                                            data-konversi-pembelian="{{ $barang->konversi_pembelian }}"
+                                            data-satuan-utama="{{ $barang->satuan }}">
     
                                             {{ $barang->kode_barang }} - {{ $barang->nama }}
     
@@ -133,6 +136,7 @@
                                     name="items[0][qty]"
                                     class="form-control qty-input mask-number"
                                     required>
+                                <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
                             </td>
     
                             {{-- TOTAL HARGA --}}
@@ -240,28 +244,24 @@
                             </option>
 
                             @foreach($barangs as $barang)
-
                                 <option
                                     value="{{ $barang->id }}"
-                                    data-kode="{{ $barang->kode_barang }}">
-
-                                    {{ $barang->kode_barang }}
-                                    -
-                                    {{ $barang->nama }}
-
+                                    data-kode="{{ $barang->kode_barang }}"
+                                    data-satuan-pembelian="{{ $barang->satuan_pembelian }}"
+                                    data-konversi-pembelian="{{ $barang->konversi_pembelian }}"
+                                    data-satuan-utama="{{ $barang->satuan }}">
+                                    {{ $barang->kode_barang }} - {{ $barang->nama }}
                                 </option>
-
                             @endforeach
-
                         </select>
                     </td>
-
                     <td>
                         <input
                             type="text"
                             name="items[${rowIndex}][qty]"
                             class="form-control qty-input mask-number"
                             required>
+                        <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
                     </td>
 
                     <td>
@@ -443,7 +443,31 @@
         |--------------------------------------------------------------------------
         */
 
+        function updateQtyHint(row) {
+            const select = row.querySelector('.barang-select');
+            const opt = select.options[select.selectedIndex];
+            const hint = row.querySelector('.qty-hint');
+            if (!opt || opt.value === '') {
+                hint.textContent = '';
+                return;
+            }
+            const satuanPembelian = opt.dataset.satuanPembelian || '';
+            const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
+            const satuanUtama = opt.dataset.satuanUtama || '';
+
+            if (satuanPembelian && konversi > 1) {
+                hint.textContent = `Satuan: ${satuanPembelian} (1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})`;
+            } else {
+                hint.textContent = `Satuan: ${satuanUtama || 'Pcs'}`;
+            }
+        }
+
         document.addEventListener('change', function(e) {
+
+            if (e.target.classList.contains('barang-select')) {
+                const row = e.target.closest('.item-row');
+                updateQtyHint(row);
+            }
 
             if (
                 e.target.classList.contains('barang-select') ||

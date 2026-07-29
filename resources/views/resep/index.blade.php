@@ -37,8 +37,6 @@
                         <tr>
                             <th class="text-start ps-4 py-3">Nama Produk</th>
                             <th>Output / Batch</th>
-                            <th>BTKL / Batch</th>
-                            <th>BOP / Batch</th>
                             <th style="width: 200px;">Aksi</th>
                         </tr>
                     </thead>
@@ -53,8 +51,6 @@
                                     {{ (int) $r->output_qty }} {{ $r->satuan_output }}
                                 </span>
                             </td>
-                            <td class="text-dark fw-medium">Rp {{ number_format($r->btkl_per_batch) }}</td>
-                            <td class="text-dark fw-medium">Rp {{ number_format($r->bop_per_batch) }}</td>
                             <td>
                                 <div class="d-flex justify-content-center gap-1">
                                     <a href="{{ route('resep.show', $r->id) }}" class="btn btn-info btn-sm text-white rounded-2 px-2">
@@ -136,18 +132,6 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold small text-secondary">Satuan Output (Auto)</label>
                             <input type="text" name="satuan_output" id="satuan_output" class="form-control bg-light text-center fw-semibold" readonly placeholder="-">
-                        </div>
-                    </div>
-
-                    {{-- BIAYA TENAGA KERJA & OPERASIONAL --}}
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold small text-secondary">BTKL per Batch (Rp)</label>
-                            <input type="number" name="btkl_per_batch" id="btkl_per_batch" class="form-control" min="0" placeholder="0" required>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold small text-secondary">BOP per Batch (Rp)</label>
-                            <input type="number" name="bop_per_batch" id="bop_per_batch" class="form-control" min="0" placeholder="0" required>
                         </div>
                     </div>
 
@@ -328,8 +312,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
             document.getElementById('output_qty').value = this.dataset.output_qty;
             inputSatuanOutput.value = this.dataset.satuan_output;
-            document.getElementById('btkl_per_batch').value = this.dataset.btkl;
-            document.getElementById('bop_per_batch').value = this.dataset.bop;
 
             tbodyBahan.innerHTML = '';
             const arrayBahanBaku = JSON.parse(this.dataset.bahanbaku);

@@ -83,9 +83,9 @@
                     @foreach($pembelian->details as $detail)
                         <tr>
                             <td>{{ $detail->barang->nama ?? '-' }}</td>
-                            <td>{{ $detail->qty }}</td>
+                            <td>{{ (float)$detail->qty }} {{ $detail->satuan_pembelian ?: ($detail->barang->satuan ?? '') }}</td>
                             <td>
-                                Rp {{ number_format($detail->harga_per_qty, 0, ',', '.') }}
+                                Rp {{ number_format($detail->harga_per_qty, 0, ',', '.') }} / {{ $detail->satuan_pembelian ?: ($detail->barang->satuan ?? '') }}
                             </td>
                             <td>
                                 Rp {{ number_format($detail->harga, 0, ',', '.') }}

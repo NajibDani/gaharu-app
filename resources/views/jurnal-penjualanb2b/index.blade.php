@@ -56,9 +56,12 @@
                                 </td>
 
                                 <td class="text-center">
-                                    <a href="{{ route('jurnal-penjualanb2b.create', ['id' => $p->id, 'type' => $p->antrean_type]) }}" class="btn btn-sm btn-primary fw-bold px-3 shadow-sm">
-                                        <i class="fas fa-edit me-1"></i> Input Jurnal
-                                    </a>
+                                    <form action="{{ route('jurnal-penjualanb2b.post-auto', $p->id) }}?type={{ $p->antrean_type }}" method="POST" class="d-inline" onsubmit="return confirm('Posting jurnal khusus B2B untuk {{ $p->no_transaksi }}?')">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-success fw-bold px-3 shadow-sm">
+                                            <i class="fas fa-check-circle me-1"></i> Posting Jurnal
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                             @empty
@@ -131,6 +134,11 @@
                     </table>
                 </div>
             </div>
+            @if($jurnalsSudah->hasPages())
+            <div class="card-footer bg-white py-3 d-flex justify-content-center">
+                {{ $jurnalsSudah->links() }}
+            </div>
+            @endif
         </div>
     </div>
 </x-app-layout>

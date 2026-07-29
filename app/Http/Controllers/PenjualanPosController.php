@@ -469,26 +469,23 @@ class PenjualanPosController extends Controller
                 $produkId = $detail->produk_id;
     
                 $hppSatuanProduk = 0;
-                $bopBtklPerPcs   = 0;
                 $totalHppBahan   = 0;
 
                 $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
                 $resepUtama = ($barangJadi && $barangJadi->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first() : null;
 
                 if ($resepUtama) {
-                    $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
-                    $bopBtklPerPcs = (floatval($resepUtama->btkl_per_batch) + floatval($resepUtama->bop_per_batch)) / $outputQty;
-
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                         $hppBahanIni = $mapHppBahanAvg[$bahan->bahan_id] ?? 0;
                         $totalHppBahan += ($kebutuhanPerPcs * $hppBahanIni);
                     }
+                    $hppSatuanProduk = $totalHppBahan * 1.30;
+                } else {
+                    $hppSatuanProduk = $barangJadi ? $barangJadi->hpp_referensi : 0;
                 }
 
-                $hppSatuanProduk = $totalHppBahan + $bopBtklPerPcs;
-    
                 $detail->update([
                     'hpp_satuan' => $hppSatuanProduk
                 ]);
