@@ -110,7 +110,12 @@
                                 Rp {{ number_format($item->total, 0, ',', '.') }}
                             </td>
                             <td class="text-end text-muted">
-                                Rp {{ number_format($item->calculated_hpp, 0, ',', '.') }}
+                                <div class="d-flex justify-content-end align-items-center gap-2">
+                                    <span>Rp {{ number_format($item->calculated_hpp, 0, ',', '.') }}</span>
+                                    <button type="button" class="btn btn-link btn-sm p-0 btn-detail-hpp d-print-none" data-id="{{ $item->id }}" data-type="pos" title="Detail HPP">
+                                        <i class="bi bi-info-circle text-primary" style="font-size: 14px;"></i>
+                                    </button>
+                                </div>
                             </td>
                             <td class="text-end fw-bold text-success">
                                 Rp {{ number_format($item->calculated_laba, 0, ',', '.') }}
@@ -136,6 +141,174 @@
     </div>
 
 </div>
+
+<!-- MODAL DETAIL HPP -->
+<div class="modal fade" id="modalDetailHpp" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 12px;">
+            <div class="modal-header bg-dark text-white border-0 px-4 py-3" style="border-radius: 12px 12px 0 0;">
+                <div>
+                    <h5 class="modal-title fw-bold">Detail Komponen HPP</h5>
+                    <p class="text-white-50 mb-0 small" id="lblNoPesanan"></p>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light">
+                <!-- LOADING STATE -->
+                <div id="loadingHpp" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="text-muted mt-2 small">Memuat detail HPP...</p>
+                </div>
+
+                <!-- DATA STATE -->
+                <div id="contentHpp" class="d-none">
+                    <!-- RINGKASAN TOTAL -->
+                    <div class="card border-0 shadow-sm mb-4 rounded-3">
+                        <div class="card-body p-4">
+                            <h6 class="fw-bold text-secondary text-uppercase mb-3 small" style="font-size: 11px; letter-spacing: 0.5px;">Ringkasan HPP Keseluruhan</h6>
+                            <div class="row g-3">
+                                <div class="col-4">
+                                    <div class="p-3 bg-primary bg-opacity-10 rounded text-center border-start border-primary border-4">
+                                        <span class="d-block text-muted small text-uppercase" style="font-size: 10px;">Bahan Baku (BBB)</span>
+                                        <strong class="text-primary fs-6" id="lblTotalBbb">Rp 0</strong>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="p-3 bg-warning bg-opacity-10 rounded text-center border-start border-warning border-4">
+                                        <span class="d-block text-muted small text-uppercase" style="font-size: 10px;">BTKL (20%)</span>
+                                        <strong class="text-warning-emphasis fs-6" id="lblTotalBtkl">Rp 0</strong>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="p-3 bg-info bg-opacity-10 rounded text-center border-start border-info border-4">
+                                        <span class="d-block text-muted small text-uppercase" style="font-size: 10px;">BOP (10%)</span>
+                                        <strong class="text-info-emphasis fs-6" id="lblTotalBop">Rp 0</strong>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4 pt-3 border-top d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-dark small">TOTAL HPP TRANSAKSI</span>
+                                <strong class="text-success fs-5" id="lblTotalHpp">Rp 0</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RINCIAN PER BARANG -->
+                    <h6 class="fw-bold text-secondary text-uppercase mb-2 small" style="font-size: 11px; letter-spacing: 0.5px;">Rincian Per Item Barang</h6>
+                    <div class="table-responsive bg-white rounded-3 shadow-sm border border-light">
+                        <table class="table align-middle mb-0" style="font-size: 13px;">
+                            <thead class="table-dark small text-uppercase" style="font-size: 11px;">
+                                <tr>
+                                    <th>Nama Barang</th>
+                                    <th class="text-center" width="80">Qty</th>
+                                    <th class="text-end" width="120">HPP Satuan</th>
+                                    <th class="text-end" width="120">Bahan Baku</th>
+                                    <th class="text-end" width="110">BTKL</th>
+                                    <th class="text-end" width="110">BOP</th>
+                                    <th class="text-end" width="130">Total HPP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyDetailHpp">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 px-4 py-3 bg-light">
+                <button type="button" class="btn btn-secondary fw-semibold px-4" style="border-radius: 8px;" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const modalEl = document.getElementById('modalDetailHpp');
+        if (!modalEl) return;
+        
+        const modal = new bootstrap.Modal(modalEl);
+        const lblNoPesanan = document.getElementById('lblNoPesanan');
+        const lblTotalBbb = document.getElementById('lblTotalBbb');
+        const lblTotalBtkl = document.getElementById('lblTotalBtkl');
+        const lblTotalBop = document.getElementById('lblTotalBop');
+        const lblTotalHpp = document.getElementById('lblTotalHpp');
+        const tbodyDetailHpp = document.getElementById('tbodyDetailHpp');
+        const loadingHpp = document.getElementById('loadingHpp');
+        const contentHpp = document.getElementById('contentHpp');
+
+        function formatIDR(num) {
+            return 'Rp ' + Number(num).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        }
+
+        document.addEventListener('click', function (e) {
+            const btn = e.target.closest('.btn-detail-hpp');
+            if (!btn) return;
+
+            const id = btn.dataset.id;
+            const type = btn.dataset.type;
+
+            lblNoPesanan.textContent = 'Memuat...';
+            loadingHpp.classList.remove('d-none');
+            contentHpp.classList.add('d-none');
+            tbodyDetailHpp.innerHTML = '';
+
+            modal.show();
+
+            fetch(`{{ route('laporan.detail-hpp') }}?type=${type}&id=${id}`)
+                .then(res => {
+                    if (!res.ok) throw new Error('Gagal mengambil rincian HPP');
+                    return res.json();
+                })
+                .then(data => {
+                    lblNoPesanan.textContent = 'Nomor Transaksi: ' + data.kode;
+                    lblTotalBbb.textContent = formatIDR(data.summary.bbb);
+                    lblTotalBtkl.textContent = formatIDR(data.summary.btkl);
+                    lblTotalBop.textContent = formatIDR(data.summary.bop);
+                    lblTotalHpp.textContent = formatIDR(data.summary.total_hpp);
+
+                    let html = '';
+                    data.items.forEach(it => {
+                        html += `
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold text-dark text-start">${it.nama_barang}</div>
+                                    <div class="text-muted font-monospace text-start" style="font-size: 11px;">${it.kode_barang}</div>
+                                </td>
+                                <td class="text-center fw-bold">${Number(it.qty).toLocaleString('id-ID')} ${it.satuan}</td>
+                                <td class="text-end">${formatIDR(it.hpp_satuan)}</td>
+                                <td class="text-end text-primary">${formatIDR(it.bbb)}</td>
+                                <td class="text-end text-warning-emphasis">${formatIDR(it.btkl)}</td>
+                                <td class="text-end text-info-emphasis">${formatIDR(it.bop)}</td>
+                                <td class="text-end fw-bold text-success">${formatIDR(it.total_hpp)}</td>
+                            </tr>
+                        `;
+                    });
+
+                    tbodyDetailHpp.innerHTML = html;
+                    loadingHpp.classList.add('d-none');
+                    contentHpp.classList.remove('d-none');
+                })
+                .catch(err => {
+                    lblNoPesanan.textContent = 'Error';
+                    tbodyDetailHpp.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="text-center text-danger fw-semibold py-4">
+                                <i class="bi bi-exclamation-triangle-fill fs-4 d-block mb-2"></i>
+                                ${err.message}
+                            </td>
+                        </tr>
+                    `;
+                    loadingHpp.classList.add('d-none');
+                    contentHpp.classList.remove('d-none');
+                });
+        });
+    });
+</script>
+@endpush
 
 <style>
     /* Mengatur tampilan agar rapi saat dicetak/print ke PDF */

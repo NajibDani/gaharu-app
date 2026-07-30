@@ -22,7 +22,7 @@
 <body>
 
     <div class="header">
-        <h2>LAPORAN HARGA POKOK PRODUKSI / HPP</h2>
+        <h2>LAPORAN HARGA POKOK PRODUKSI / HPP (B2B & POS)</h2>
         <p>CV Gaharu App</p>
     </div>
 
@@ -40,11 +40,12 @@
     <table class="main-table">
         <thead>
             <tr>
-                <th width="120">Kode Barang</th>
+                <th width="100">Kode Barang</th>
                 <th>Nama Produk Jadi</th>
-                <th class="text-center" width="120">Total Qty Produksi</th>
-                <th class="text-right" width="180">Total Nilai HPP (BBB+BTKL+BOP)</th>
-                <th class="text-right" width="160">Rata-rata HPP / Satuan</th>
+                <th class="text-center" width="60">Tipe</th>
+                <th class="text-center" width="100">Total Qty</th>
+                <th class="text-right" width="160">Total Nilai HPP (BBB+BTKL+BOP)</th>
+                <th class="text-right" width="150">Rata-rata HPP / Satuan</th>
             </tr>
         </thead>
         <tbody>
@@ -57,20 +58,25 @@
             <tr>
                 <td class="fw-bold">{{ $row->kode_barang }}</td>
                 <td>{{ $row->nama_produk }}</td>
+                <td class="text-center">
+                    <span style="padding: 2px 5px; font-size: 9px; border-radius: 3px; color: #ffffff; font-weight: bold; background-color: {{ strtoupper($row->tipe ?? 'B2B') === 'POS' ? '#2563eb' : '#16a34a' }};">
+                        {{ strtoupper($row->tipe ?? 'B2B') }}
+                    </span>
+                </td>
                 <td class="text-center">{{ number_format($row->total_qty, 0, ',', '.') }} {{ $row->satuan ?? 'Pcs' }}</td>
                 <td class="text-right fw-bold">Rp {{ number_format($row->total_hpp, 2, ',', '.') }}</td>
                 <td class="text-right text-info">Rp {{ number_format($hppPerSatuan, 2, ',', '.') }} / {{ $row->satuan ?? 'Pcs' }}</td>
             </tr>
             @empty
             <tr>
-                <td colspan="5" class="text-center text-muted">Tidak ada perputaran HPP produksi pada periode ini.</td>
+                <td colspan="6" class="text-center text-muted">Tidak ada perputaran HPP pada periode ini.</td>
             </tr>
             @endforelse
         </tbody>
         @if($laporanHpp->count() > 0)
         <tfoot>
             <tr>
-                <th colspan="3" class="text-right">GRAND TOTAL BIAYA PRODUKSI:</th>
+                <th colspan="4" class="text-right">GRAND TOTAL BIAYA HPP:</th>
                 <th class="text-right text-danger" style="font-size: 12px;">Rp {{ number_format($grandTotalHpp, 2, ',', '.') }}</th>
                 <th></th>
             </tr>

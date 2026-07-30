@@ -102,21 +102,43 @@ class LaporanProduksiController extends Controller
         $startDate = $request->get('start_date', date('Y-m-01'));
         $endDate   = $request->get('end_date', date('Y-m-t'));
 
-        // Query summary HPP dikelompokkan per Produk
-        $laporanHpp = DB::table('produksi_detail')
+        // 1. Query HPP B2B (dari produksi)
+        $b2bData = DB::table('produksi_detail')
             ->join('produksi', 'produksi_detail.produksi_id', '=', 'produksi.id')
             ->leftJoin('master_barang', 'produksi_detail.produk_id', '=', 'master_barang.id')
             ->select(
+                'master_barang.id as produk_id',
                 'master_barang.kode_barang',
                 'master_barang.nama as nama_produk',
-                'master_barang.satuan', // Mengambil satuan barang (Gr, Cup, Kg, dll)
+                'master_barang.satuan',
                 DB::raw('SUM(produksi_detail.qty) as total_qty'),
-                DB::raw('SUM(produksi_detail.hpp_total) as total_hpp')
+                DB::raw('SUM(produksi_detail.hpp_total) as total_hpp'),
+                DB::raw("'B2B' as tipe")
             )
             ->whereBetween('produksi.tanggal_mulai', [$startDate, $endDate])
             ->groupBy('master_barang.id', 'master_barang.kode_barang', 'master_barang.nama', 'master_barang.satuan')
-            ->orderBy('total_hpp', 'desc')
             ->get();
+
+        // 2. Query HPP POS (dari penjualanpos_detail)
+        $posData = DB::table('penjualanpos_detail')
+            ->join('penjualan_pos', 'penjualanpos_detail.penjualan_id', '=', 'penjualan_pos.id')
+            ->leftJoin('master_barang', 'penjualanpos_detail.produk_id', '=', 'master_barang.id')
+            ->select(
+                'master_barang.id as produk_id',
+                'master_barang.kode_barang',
+                'master_barang.nama as nama_produk',
+                'master_barang.satuan',
+                DB::raw('SUM(penjualanpos_detail.qty) as total_qty'),
+                DB::raw('SUM(penjualanpos_detail.qty * penjualanpos_detail.hpp_satuan) as total_hpp'),
+                DB::raw("'POS' as tipe")
+            )
+            ->where('penjualan_pos.status', '=', 'SUKSES')
+            ->whereBetween('penjualan_pos.tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->groupBy('master_barang.id', 'master_barang.kode_barang', 'master_barang.nama', 'master_barang.satuan')
+            ->get();
+
+        // Combine collections and sort
+        $laporanHpp = $b2bData->concat($posData)->sortByDesc('total_hpp');
 
         if ($request->format === 'pdf') {
             $pdf = app('dompdf.wrapper');
@@ -144,12 +166,13 @@ class LaporanProduksiController extends Controller
         $callback = function () use ($data) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode Barang', 'Nama Produk Jadi', 'Total Qty Produksi', 'Satuan', 'Total Nilai HPP', 'Rata-rata HPP / Satuan']);
+            fputcsv($f, ['Kode Barang', 'Nama Produk Jadi', 'Tipe', 'Total Qty Produksi/Penjualan', 'Satuan', 'Total Nilai HPP', 'Rata-rata HPP / Satuan']);
             foreach ($data as $row) {
                 $hppPerSatuan = $row->total_qty > 0 ? ($row->total_hpp / $row->total_qty) : 0;
                 fputcsv($f, [
                     $row->kode_barang,
                     $row->nama_produk,
+                    $row->tipe ?? 'B2B',
                     $row->total_qty,
                     $row->satuan ?? 'Pcs',
                     $row->total_hpp,
@@ -160,6 +183,90 @@ class LaporanProduksiController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    public function hppRecipeDetail(Request $request)
+    {
+        $produkId = $request->get('produk_id');
+        $barang = \App\Models\MasterBarang::find($produkId);
+
+        if (!$barang) {
+            return response()->json(['error' => 'Produk tidak ditemukan.'], 404);
+        }
+
+        if (is_null($barang->resep_id)) {
+            return response()->json(['error' => 'Produk ini belum memiliki resep yang terdaftar.'], 404);
+        }
+
+        $resepUtama = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+        if (!$resepUtama) {
+            return response()->json(['error' => 'Resep produk tidak ditemukan.'], 404);
+        }
+
+        $resepBahan = DB::table('resep_bahanbaku')
+            ->where('resep_id', $resepUtama->id)
+            ->get();
+
+        $ingredients = [];
+        $totalBbb = 0;
+
+        foreach ($resepBahan as $bahan) {
+            $rawMaterial = \App\Models\MasterBarang::find($bahan->bahan_id);
+            
+            // Get FIFO or Average price fallback
+            $harga = DB::table('stok_gudang_batch')
+                ->where('barang_id', $bahan->bahan_id)
+                ->where('qty_sisa', '>', 0)
+                ->orderBy('id', 'asc')
+                ->value('harga_per_qty');
+            if (!$harga) {
+                $harga = DB::table('stok_gudang_batch')
+                    ->where('barang_id', $bahan->bahan_id)
+                    ->avg('harga_per_qty');
+            }
+            if (!$harga) {
+                $harga = $rawMaterial ? $rawMaterial->hpp_referensi : 0;
+            }
+
+            $qtyBahan = floatval($bahan->qty_bahan);
+            $hargaUnit = floatval($harga);
+            $subtotalCost = $qtyBahan * $hargaUnit;
+            $totalBbb += $subtotalCost;
+
+            $ingredients[] = [
+                'nama_bahan' => $rawMaterial ? $rawMaterial->nama : 'N/A',
+                'kode_bahan' => $rawMaterial ? $rawMaterial->kode_barang : 'N/A',
+                'qty_resep' => $qtyBahan,
+                'satuan' => $bahan->satuan ?? ($rawMaterial ? $rawMaterial->satuan : 'Pcs'),
+                'harga_satuan' => $hargaUnit,
+                'total_harga' => $subtotalCost
+            ];
+        }
+
+        // BTKL and BOP allocation based on 20% and 10% of BBB (Raw Material)
+        $btkl = $totalBbb * 0.20;
+        $bop = $totalBbb * 0.10;
+        $totalHpp = $totalBbb * 1.30;
+
+        $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
+
+        return response()->json([
+            'nama_produk' => $barang->nama,
+            'kode_barang' => $barang->kode_barang,
+            'satuan_output' => $resepUtama->satuan_output ?? $barang->satuan ?? 'pcs',
+            'output_qty' => $outputQty,
+            'ingredients' => $ingredients,
+            'summary' => [
+                'bbb' => $totalBbb,
+                'btkl' => $btkl,
+                'bop' => $bop,
+                'total_hpp' => $totalHpp,
+                'bbb_per_unit' => $totalBbb / $outputQty,
+                'btkl_per_unit' => $btkl / $outputQty,
+                'bop_per_unit' => $bop / $outputQty,
+                'total_hpp_per_unit' => $totalHpp / $outputQty,
+            ]
+        ]);
     }
 
     /**

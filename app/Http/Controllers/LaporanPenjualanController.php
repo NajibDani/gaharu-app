@@ -102,4 +102,105 @@ class LaporanPenjualanController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
+
+    public function detailHpp(Request $request)
+    {
+        $type = $request->get('type');
+        $id = $request->get('id');
+
+        $items = [];
+        $kode = '';
+
+        if ($type === 'b2b') {
+            $pesanan = \App\Models\Pesanan::with(['details.produk'])->find($id);
+            if (!$pesanan) {
+                return response()->json(['error' => 'Pesanan tidak ditemukan.'], 404);
+            }
+            $kode = $pesanan->kode_pesanan;
+
+            foreach ($pesanan->details as $d) {
+                $hppAlokasi = \Illuminate\Support\Facades\DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $pesanan->id)
+                    ->where('produk_id', $d->produk_id)
+                    ->value('total_hpp_alokasi');
+
+                if (is_null($hppAlokasi) || $hppAlokasi <= 0) {
+                    $hppAlokasi = floatval($d->qty) * floatval($d->produk->hpp_referensi ?? 0);
+                }
+
+                $qty = floatval($d->qty);
+                $totalHpp = floatval($hppAlokasi);
+                $hppSatuan = $qty > 0 ? ($totalHpp / $qty) : 0;
+
+                $bbb = $totalHpp / 1.3;
+                $btkl = $bbb * 0.20;
+                $bop = $bbb * 0.10;
+
+                $items[] = [
+                    'nama_barang' => $d->produk->nama ?? 'N/A',
+                    'kode_barang' => $d->produk->kode_barang ?? 'N/A',
+                    'qty' => $qty,
+                    'satuan' => $d->produk->satuan ?? 'pcs',
+                    'hpp_satuan' => $hppSatuan,
+                    'total_hpp' => $totalHpp,
+                    'bbb' => $bbb,
+                    'btkl' => $btkl,
+                    'bop' => $bop,
+                ];
+            }
+        } elseif ($type === 'pos') {
+            $penjualan = \App\Models\PenjualanPos::with(['details.produk'])->find($id);
+            if (!$penjualan) {
+                return response()->json(['error' => 'Transaksi POS tidak ditemukan.'], 404);
+            }
+            $kode = $penjualan->kode_transaksi;
+
+            foreach ($penjualan->details as $d) {
+                $qty = floatval($d->qty);
+                $hppSatuan = floatval($d->hpp_satuan);
+                $totalHpp = $qty * $hppSatuan;
+
+                $bbb = $totalHpp / 1.3;
+                $btkl = $bbb * 0.20;
+                $bop = $bbb * 0.10;
+
+                $items[] = [
+                    'nama_barang' => $d->produk->nama ?? 'N/A',
+                    'kode_barang' => $d->produk->kode_barang ?? 'N/A',
+                    'qty' => $qty,
+                    'satuan' => $d->produk->satuan ?? 'pcs',
+                    'hpp_satuan' => $hppSatuan,
+                    'total_hpp' => $totalHpp,
+                    'bbb' => $bbb,
+                    'btkl' => $btkl,
+                    'bop' => $bop,
+                ];
+            }
+        } else {
+            return response()->json(['error' => 'Tipe laporan tidak valid.'], 400);
+        }
+
+        $totalBbb = 0;
+        $totalBtkl = 0;
+        $totalBop = 0;
+        $totalHppKeseluruhan = 0;
+
+        foreach ($items as $item) {
+            $totalBbb += $item['bbb'];
+            $totalBtkl += $item['btkl'];
+            $totalBop += $item['bop'];
+            $totalHppKeseluruhan += $item['total_hpp'];
+        }
+
+        return response()->json([
+            'kode' => $kode,
+            'items' => $items,
+            'summary' => [
+                'bbb' => $totalBbb,
+                'btkl' => $totalBtkl,
+                'bop' => $totalBop,
+                'total_hpp' => $totalHppKeseluruhan,
+            ]
+        ]);
+    }
 }

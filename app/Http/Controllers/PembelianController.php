@@ -303,6 +303,13 @@ class PembelianController extends Controller
                 'diterima_at' => now(),
                 'diterima_oleh' => auth()->id()
             ]);
+
+            // Auto-post Jurnal Persediaan (reklas_lunas atau cod)
+            $tahapJurnal = 'cod';
+            if ($pembelian->metode_pembayaran === 'dp') {
+                $tahapJurnal = 'reklas_lunas';
+            }
+            \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, $tahapJurnal, $penerimaan->id);
         });
 
         return back()->with('success', 'Barang berhasil diterima secara parsial dan stok sudah diperbarui.');
@@ -357,6 +364,9 @@ class PembelianController extends Controller
                 'bukti_pembayaran' => $buktiFiles,
                 'created_by' => auth()->id()
             ]);
+
+            // Auto-post Jurnal Pelunasan
+            \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'pelunasan');
         });
 
         return back()->with('success', 'Pembayaran lunas berhasil dicatat.');
@@ -430,6 +440,11 @@ class PembelianController extends Controller
                 'bukti_pembayaran' => $buktiFiles,
                 'created_by' => auth()->id()
             ]);
+
+            // Auto-post Jurnal DP jika metodenya DP
+            if ($validated['metode_pembayaran'] === 'dp') {
+                \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'dp');
+            }
         });
 
         return redirect()

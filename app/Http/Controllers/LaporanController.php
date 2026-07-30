@@ -180,112 +180,148 @@ class LaporanController extends Controller
 
 
     public function labaRugiIndex(Request $request)
-{
-    $bulan = $request->get('bulan', date('m'));
-    $tahun = $request->get('tahun', date('Y'));
+    {
+        $bulan = $request->get('bulan', date('m'));
+        $tahun = $request->get('tahun', date('Y'));
 
-    // Helper Closure untuk subquery saldo umum (berdasarkan COA)
-    $getSaldoSubquery = function ($formula = 'COALESCE(SUM(debit - kredit), 0)') use ($bulan, $tahun) {
-        return \App\Models\JournalItem::selectRaw($formula)
-            ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
-            ->where('journal_items.journal_type', '!=', 'closing')
-            ->where(function ($q) use ($bulan, $tahun) {
-                $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun)
-                        ->where('status', 'approved');
-                })
-                ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun)
-                        ->where('status', 'approved');
-                })
-                ->orWhereHas('jurnalPembelianHeader', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun);
-                })
-                ->orWhereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun);
-                })
-                ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun);
+        $tableMapping = [
+            'jurnal_penjualan_pos' => 'jurnal_penjualan_pos', 
+            'penjualan_b2b'        => 'jurnal_penjualan_b2b', 
+            'jurnal_pembelian'     => 'jurnal_pembelian',     
+        ];
+
+        // Helper Closure untuk subquery saldo umum (berdasarkan COA) dengan checking journal_type
+        $getSaldoSubquery = function ($formula = 'COALESCE(SUM(debit - kredit), 0)') use ($bulan, $tahun, $tableMapping) {
+            return \App\Models\JournalItem::selectRaw($formula)
+                ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+                ->where('journal_items.journal_type', '!=', 'closing')
+                ->where(function ($q) use ($bulan, $tahun, $tableMapping) {
+                    // A. Jurnal Umum / Manual
+                    $q->where(function ($queryManual) use ($bulan, $tahun) {
+                        $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal'])
+                            ->whereHas('journal', function ($j) use ($bulan, $tahun) {
+                                $j->whereMonth('tanggal', $bulan)
+                                  ->whereYear('tanggal', $tahun)
+                                  ->where('status', 'approved');
+                            });
+                    });
+
+                    // B. Jurnal Penyesuaian
+                    $q->orWhere(function ($queryAjp) use ($bulan, $tahun) {
+                        $queryAjp->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
+                            ->whereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
+                                $j->whereMonth('tanggal', $bulan)
+                                  ->whereYear('tanggal', $tahun)
+                                  ->where('status', 'approved');
+                            });
+                    });
+
+                    // C. Jurnal Otomatis
+                    foreach ($tableMapping as $type => $tableName) {
+                        $q->orWhere(function ($queryOtomatis) use ($type, $tableName, $bulan, $tahun) {
+                            $queryOtomatis->where('journal_type', $type)
+                                ->whereExists(function ($sub) use ($tableName, $bulan, $tahun) {
+                                    $sub->select(\DB::raw(1))
+                                        ->from($tableName)
+                                        ->whereColumn("$tableName.id", 'journal_items.journal_id')
+                                        ->whereMonth('tanggal', $bulan)
+                                        ->whereYear('tanggal', $tahun);
+                                });
+                        });
+                    }
                 });
-            });
-    };
+        };
 
-    // 1. Ambil Rincian Penjualan B2B per Pelanggan/Transaksi
-    // Mengambil item jurnal yang khusus terhubung ke jurnalPenjualanB2bHeader
-    $detailsPenjualanB2b = \App\Models\JournalItem::query()
-        ->selectRaw('
-            chart_of_accounts.nama as nama_akun,
-            chart_of_accounts.kode as kode_akun,
-            COALESCE(SUM(journal_items.kredit - journal_items.debit), 0) as total
-        ')
-        ->join('chart_of_accounts', 'chart_of_accounts.id', '=', 'journal_items.account_id')
-        ->whereHas('jurnalPenjualanB2bHeader', function ($j) use ($bulan, $tahun) {
-            $j->whereMonth('tanggal', $bulan)
-              ->whereYear('tanggal', $tahun);
-        })
-        ->where('chart_of_accounts.tipe', 'Pendapatan')
-        ->groupBy('chart_of_accounts.id', 'chart_of_accounts.nama', 'chart_of_accounts.kode')
-        ->get()
-        ->filter(fn($item) => $item->total != 0);
-
-    // 2. Ambil Pendapatan Non-B2B / Pendapatan Lainnya
-    // Mengambil COA Pendapatan tetapi mengecualikan transaksi yang berasal dari B2B
-    $detailsPendapatanLain = ChartOfAccount::where('tipe', 'Pendapatan')
-        ->addSelect(['saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
-            ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
-            ->where('journal_items.journal_type', '!=', 'closing')
-            ->where(function ($q) use ($bulan, $tahun) {
-                $q->whereHas('journal', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun)
-                        ->where('status', 'approved');
-                })
-                ->orWhereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun)
-                        ->where('status', 'approved');
-                })
-                ->orWhereHas('jurnalPenjualanPosHeader', function ($j) use ($bulan, $tahun) {
-                    $j->whereMonth('tanggal', $bulan)
-                        ->whereYear('tanggal', $tahun);
-                });
+        // 1. Ambil Rincian Penjualan B2B per Pelanggan/Transaksi (Collision-free)
+        $detailsPenjualanB2b = \App\Models\JournalItem::query()
+            ->selectRaw('
+                chart_of_accounts.nama as nama_akun,
+                chart_of_accounts.kode as kode_akun,
+                COALESCE(SUM(journal_items.kredit - journal_items.debit), 0) as total
+            ')
+            ->join('chart_of_accounts', 'chart_of_accounts.id', '=', 'journal_items.account_id')
+            ->whereIn('journal_items.journal_type', ['penjualan_b2b', 'jurnal_penjualan_b2b'])
+            ->whereExists(function ($sub) use ($bulan, $tahun) {
+                $sub->select(\DB::raw(1))
+                    ->from('jurnal_penjualan_b2b')
+                    ->whereColumn('jurnal_penjualan_b2b.id', 'journal_items.journal_id')
+                    ->whereMonth('tanggal', $bulan)
+                    ->whereYear('tanggal', $tahun);
             })
-        ])
-        ->get()
-        ->filter(fn($coa) => $coa->saldo != 0);
+            ->where('chart_of_accounts.tipe', 'Pendapatan')
+            ->groupBy('chart_of_accounts.id', 'chart_of_accounts.nama', 'chart_of_accounts.kode')
+            ->get()
+            ->filter(fn($item) => $item->total != 0);
 
-    // 3. Ambil detail HPP (Harga Pokok Penjualan)
-    $detailsHpp = ChartOfAccount::where(function($q) {
-            $q->where('tipe', 'Harga Pokok Penjualan')
-              ->orWhere('tipe', 'HPP')
-              ->orWhere('kode', 'like', '5%');
-        })
-        ->addSelect(['saldo' => $getSaldoSubquery('COALESCE(SUM(debit - kredit), 0)')])
-        ->get()
-        ->filter(fn($coa) => $coa->saldo != 0);
+        // 2. Ambil Pendapatan Non-B2B / Pendapatan Lainnya (Collision-free)
+        $detailsPendapatanLain = ChartOfAccount::where('tipe', 'Pendapatan')
+            ->addSelect(['saldo' => \App\Models\JournalItem::selectRaw('COALESCE(SUM(kredit - debit), 0)')
+                ->whereColumn('journal_items.account_id', 'chart_of_accounts.id')
+                ->where('journal_items.journal_type', '!=', 'closing')
+                ->where(function ($q) use ($bulan, $tahun) {
+                    // A. Jurnal Umum
+                    $q->where(function ($queryManual) use ($bulan, $tahun) {
+                        $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal'])
+                            ->whereHas('journal', function ($j) use ($bulan, $tahun) {
+                                $j->whereMonth('tanggal', $bulan)
+                                  ->whereYear('tanggal', $tahun)
+                                  ->where('status', 'approved');
+                            });
+                    });
 
-    // 4. Ambil detail Beban Operasional
-    $detailsBeban = ChartOfAccount::where('tipe', 'Beban')
-        ->where('kode', 'not like', '5%')
-        ->addSelect(['saldo' => $getSaldoSubquery('COALESCE(SUM(debit - kredit), 0)')])
-        ->get()
-        ->filter(fn($coa) => $coa->saldo != 0);
+                    // B. Jurnal Penyesuaian
+                    $q->orWhere(function ($queryAjp) use ($bulan, $tahun) {
+                        $queryAjp->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
+                            ->whereHas('jurnalPenyesuaianHeader', function ($j) use ($bulan, $tahun) {
+                                $j->whereMonth('tanggal', $bulan)
+                                  ->whereYear('tanggal', $tahun)
+                                  ->where('status', 'approved');
+                            });
+                    });
 
-    // Kalkulasi Total
-    $totalPenjualanB2b = $detailsPenjualanB2b->sum('total');
-    $totalPendapatanLain = $detailsPendapatanLain->sum('saldo');
-    $totalPendapatan = $totalPenjualanB2b + $totalPendapatanLain;
-    
-    $totalHpp = $detailsHpp->sum('saldo');
-    $labaKotor = $totalPendapatan - $totalHpp;
-    
-    $totalBeban = $detailsBeban->sum('saldo');
-    $labaBersih = $labaKotor - $totalBeban;
+                    // C. Jurnal POS
+                    $q->orWhere(function ($queryPos) use ($bulan, $tahun) {
+                        $queryPos->where('journal_type', 'jurnal_penjualan_pos')
+                            ->whereExists(function ($sub) use ($bulan, $tahun) {
+                                $sub->select(\DB::raw(1))
+                                    ->from('jurnal_penjualan_pos')
+                                    ->whereColumn('jurnal_penjualan_pos.id', 'journal_items.journal_id')
+                                    ->whereMonth('tanggal', $bulan)
+                                    ->whereYear('tanggal', $tahun);
+                            });
+                    });
+                })
+            ])
+            ->get()
+            ->filter(fn($coa) => $coa->saldo != 0);
+
+        // 3. Ambil detail HPP (Harga Pokok Penjualan)
+        $detailsHpp = ChartOfAccount::where(function($q) {
+                $q->where('tipe', 'Harga Pokok Penjualan')
+                  ->orWhere('tipe', 'HPP')
+                  ->orWhere('kode', 'like', '5%');
+            })
+            ->addSelect(['saldo' => $getSaldoSubquery('COALESCE(SUM(debit - kredit), 0)')])
+            ->get()
+            ->filter(fn($coa) => $coa->saldo != 0);
+
+        // 4. Ambil detail Beban Operasional
+        $detailsBeban = ChartOfAccount::where('tipe', 'Beban')
+            ->where('kode', 'not like', '5%')
+            ->addSelect(['saldo' => $getSaldoSubquery('COALESCE(SUM(debit - kredit), 0)')])
+            ->get()
+            ->filter(fn($coa) => $coa->saldo != 0);
+
+        // Kalkulasi Total
+        $totalPenjualanB2b = $detailsPenjualanB2b->sum('total');
+        $totalPendapatanLain = $detailsPendapatanLain->sum('saldo');
+        $totalPendapatan = $totalPenjualanB2b + $totalPendapatanLain;
+        
+        $totalHpp = $detailsHpp->sum('saldo');
+        $labaKotor = $totalPendapatan - $totalHpp;
+        
+        $totalBeban = $detailsBeban->sum('saldo');
+        $labaBersih = $labaKotor - $totalBeban;
 
     // Data payload untuk dikirim ke view/pdf/excel
     $dataCompact = compact(
@@ -322,14 +358,45 @@ class LaporanController extends Controller
     // 2. Tentukan tanggal awal tahun fiskal untuk Laba Tahun Berjalan (YTD)
     $awalTahun = \Carbon\Carbon::createFromDate($tahun, 1, 1)->toDateString();
 
-    // Helper filter tanggal akumulatif (Dari awal berdiri s.d. tanggal cutoff)
-    $filterTanggalAkumulatif = function ($query) use ($tanggalCutoff) {
-        $query->where(function ($q) use ($tanggalCutoff) {
-            $q->whereHas('journal', fn($h) => $h->where('tanggal', '<=', $tanggalCutoff))
-              ->orWhereHas('jurnalPembelianHeader', fn($h) => $h->where('tanggal', '<=', $tanggalCutoff))
-              ->orWhereHas('jurnalPenjualanB2bHeader', fn($h) => $h->where('tanggal', '<=', $tanggalCutoff))
-              ->orWhereHas('jurnalPenjualanPosHeader', fn($h) => $h->where('tanggal', '<=', $tanggalCutoff))
-              ->orWhereHas('jurnalPenyesuaianHeader', fn($h) => $h->where('tanggal', '<=', $tanggalCutoff));
+    $tableMapping = [
+        'jurnal_penjualan_pos' => 'jurnal_penjualan_pos', 
+        'penjualan_b2b'        => 'jurnal_penjualan_b2b', 
+        'jurnal_pembelian'     => 'jurnal_pembelian',     
+    ];
+
+    // Helper filter tanggal akumulatif (Dari awal berdiri s.d. tanggal cutoff) dengan checking journal_type
+    $filterTanggalAkumulatif = function ($query) use ($tanggalCutoff, $tableMapping) {
+        $query->where(function ($q) use ($tanggalCutoff, $tableMapping) {
+            // A. Jurnal Umum / Manual / Closing
+            $q->where(function ($queryManual) use ($tanggalCutoff) {
+                $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal', 'closing'])
+                    ->whereHas('journal', function ($j) use ($tanggalCutoff) {
+                        $j->where('tanggal', '<=', $tanggalCutoff)
+                          ->where('status', 'approved');
+                    });
+            });
+
+            // B. Jurnal Penyesuaian
+            $q->orWhere(function ($queryAjp) use ($tanggalCutoff) {
+                $queryAjp->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
+                    ->whereHas('jurnalPenyesuaianHeader', function ($j) use ($tanggalCutoff) {
+                        $j->where('tanggal', '<=', $tanggalCutoff)
+                          ->where('status', 'approved');
+                    });
+            });
+
+            // C. Jurnal Otomatis
+            foreach ($tableMapping as $type => $tableName) {
+                $q->orWhere(function ($queryOtomatis) use ($type, $tableName, $tanggalCutoff) {
+                    $queryOtomatis->where('journal_type', $type)
+                        ->whereExists(function ($sub) use ($tableName, $tanggalCutoff) {
+                            $sub->select(\DB::raw(1))
+                                ->from($tableName)
+                                ->whereColumn("$tableName.id", 'journal_items.journal_id')
+                                ->where('tanggal', '<=', $tanggalCutoff);
+                        });
+                });
+            }
         });
     };
 
@@ -401,13 +468,39 @@ class LaporanController extends Controller
     }
 
     // --- 6. HITUNG LABA TAHUN BERJALAN (YTD: 1 JAN S.D. CUTOFF) ---
-    $filterTanggalYTD = function ($query) use ($awalTahun, $tanggalCutoff) {
-        $query->where(function ($q) use ($awalTahun, $tanggalCutoff) {
-            $q->whereHas('journal', fn($h) => $h->whereBetween('tanggal', [$awalTahun, $tanggalCutoff]))
-              ->orWhereHas('jurnalPembelianHeader', fn($h) => $h->whereBetween('tanggal', [$awalTahun, $tanggalCutoff]))
-              ->orWhereHas('jurnalPenjualanB2bHeader', fn($h) => $h->whereBetween('tanggal', [$awalTahun, $tanggalCutoff]))
-              ->orWhereHas('jurnalPenjualanPosHeader', fn($h) => $h->whereBetween('tanggal', [$awalTahun, $tanggalCutoff]))
-              ->orWhereHas('jurnalPenyesuaianHeader', fn($h) => $h->whereBetween('tanggal', [$awalTahun, $tanggalCutoff]));
+    $filterTanggalYTD = function ($query) use ($awalTahun, $tanggalCutoff, $tableMapping) {
+        $query->where(function ($q) use ($awalTahun, $tanggalCutoff, $tableMapping) {
+            // A. Jurnal Umum / Manual
+            $q->where(function ($queryManual) use ($awalTahun, $tanggalCutoff) {
+                $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal'])
+                    ->where('journal_type', '!=', 'closing')
+                    ->whereHas('journal', function ($j) use ($awalTahun, $tanggalCutoff) {
+                        $j->whereBetween('tanggal', [$awalTahun, $tanggalCutoff])
+                          ->where('status', 'approved');
+                    });
+            });
+
+            // B. Jurnal Penyesuaian
+            $q->orWhere(function ($queryAjp) use ($awalTahun, $tanggalCutoff) {
+                $queryAjp->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
+                    ->whereHas('jurnalPenyesuaianHeader', function ($j) use ($awalTahun, $tanggalCutoff) {
+                        $j->whereBetween('tanggal', [$awalTahun, $tanggalCutoff])
+                          ->where('status', 'approved');
+                    });
+            });
+
+            // C. Jurnal Otomatis
+            foreach ($tableMapping as $type => $tableName) {
+                $q->orWhere(function ($queryOtomatis) use ($type, $tableName, $awalTahun, $tanggalCutoff) {
+                    $queryOtomatis->where('journal_type', $type)
+                        ->whereExists(function ($sub) use ($tableName, $awalTahun, $tanggalCutoff) {
+                            $sub->select(\DB::raw(1))
+                                ->from($tableName)
+                                ->whereColumn("$tableName.id", 'journal_items.journal_id')
+                                ->whereBetween('tanggal', [$awalTahun, $tanggalCutoff]);
+                        });
+                });
+            }
         });
     };
 
@@ -674,27 +767,38 @@ class LaporanController extends Controller
 
     private function applyFilterPeriodeArusKas($query, $bulan, $tahun)
     {
-        return $query->where(function ($q) use ($bulan, $tahun) {
+        $tableMapping = [
+            'jurnal_penjualan_pos' => 'jurnal_penjualan_pos', 
+            'penjualan_b2b'        => 'jurnal_penjualan_b2b', 
+            'jurnal_pembelian'     => 'jurnal_pembelian',     
+        ];
+
+        return $query->where(function ($q) use ($bulan, $tahun, $tableMapping) {
+            // A. Jurnal Umum / Manual
             $q->where(function ($sub) use ($bulan, $tahun) {
                 $sub->whereIn('journal_type', ['jurnal_umum', 'jurnal'])
                     ->whereHas('journal', fn($j) => $j->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)->where('status', 'approved'));
-            })
-            ->orWhere(function ($sub) use ($bulan, $tahun) {
-                $sub->where('journal_type', 'jurnal_pembelian')
-                    ->whereHas('jurnalPembelianHeader', fn($j) => $j->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun));
-            })
-            ->orWhere(function ($sub) use ($bulan, $tahun) {
-                $sub->where('journal_type', 'penjualan_b2b')
-                    ->whereHas('jurnalPenjualanB2bHeader', fn($j) => $j->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun));
-            })
-            ->orWhere(function ($sub) use ($bulan, $tahun) {
-                $sub->where('journal_type', 'jurnal_penjualan_pos')
-                    ->whereHas('jurnalPenjualanPosHeader', fn($j) => $j->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun));
-            })
-            ->orWhere(function ($sub) use ($bulan, $tahun) {
+            });
+
+            // B. Jurnal Penyesuaian
+            $q->orWhere(function ($sub) use ($bulan, $tahun) {
                 $sub->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
                     ->whereHas('jurnalPenyesuaianHeader', fn($j) => $j->whereMonth('tanggal', $bulan)->whereYear('tanggal', $tahun)->where('status', 'approved'));
             });
+
+            // C. Jurnal Otomatis
+            foreach ($tableMapping as $type => $tableName) {
+                $q->orWhere(function ($sub) use ($type, $tableName, $bulan, $tahun) {
+                    $sub->where('journal_type', $type)
+                        ->whereExists(function ($subQ) use ($tableName, $bulan, $tahun) {
+                            $subQ->select(\DB::raw(1))
+                                ->from($tableName)
+                                ->whereColumn("$tableName.id", 'journal_items.journal_id')
+                                ->whereMonth('tanggal', $bulan)
+                                ->whereYear('tanggal', $tahun);
+                        });
+                });
+            }
         });
     }
 
@@ -716,15 +820,46 @@ class LaporanController extends Controller
             ->selectRaw('SUM(debit) - SUM(kredit) as total')
             ->value('total') ?? 0;
 
+        $tableMapping = [
+            'jurnal_penjualan_pos' => 'jurnal_penjualan_pos', 
+            'penjualan_b2b'        => 'jurnal_penjualan_b2b', 
+            'jurnal_pembelian'     => 'jurnal_pembelian',     
+        ];
+
         // 2. Akumulasi Mutasi Historis Sebelum/Sama Dengan Tanggal Batas
         $queryMutasiHistoris = JournalItem::whereIn('account_id', $kasBankCoaIds)
             ->where('journal_type', '!=', 'opening')
-            ->where(function ($q) use ($tanggalBatas) {
-                $q->whereHas('journal', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPembelianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPenjualanB2bHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPenjualanPosHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas))
-                  ->orWhereHas('jurnalPenyesuaianHeader', fn($j) => $j->whereDate('tanggal', '<=', $tanggalBatas));
+            ->where(function ($q) use ($tanggalBatas, $tableMapping) {
+                // A. Jurnal Umum / Manual
+                $q->where(function ($queryManual) use ($tanggalBatas) {
+                    $queryManual->whereIn('journal_type', ['jurnal_umum', 'jurnal', 'closing'])
+                        ->whereHas('journal', function ($j) use ($tanggalBatas) {
+                            $j->whereDate('tanggal', '<=', $tanggalBatas)
+                              ->where('status', 'approved');
+                        });
+                });
+
+                // B. Jurnal Penyesuaian
+                $q->orWhere(function ($queryAjp) use ($tanggalBatas) {
+                    $queryAjp->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
+                        ->whereHas('jurnalPenyesuaianHeader', function ($j) use ($tanggalBatas) {
+                            $j->whereDate('tanggal', '<=', $tanggalBatas)
+                              ->where('status', 'approved');
+                        });
+                });
+
+                // C. Jurnal Otomatis
+                foreach ($tableMapping as $type => $tableName) {
+                    $q->orWhere(function ($queryOtomatis) use ($type, $tableName, $tanggalBatas) {
+                        $queryOtomatis->where('journal_type', $type)
+                            ->whereExists(function ($sub) use ($tableName, $tanggalBatas) {
+                                $sub->select(\DB::raw(1))
+                                    ->from($tableName)
+                                    ->whereColumn("$tableName.id", 'journal_items.journal_id')
+                                    ->whereDate('tanggal', '<=', $tanggalBatas);
+                            });
+                    });
+                }
             });
 
         $debitHistoris  = $queryMutasiHistoris->sum('debit');

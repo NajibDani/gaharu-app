@@ -2289,4 +2289,154 @@ class JurnalController extends Controller
             return back()->with('error', 'Gagal memproses posting jurnal: ' . $e->getMessage());
         }
     }
+
+    public static function autoPostPembelian($pembelianId, $tahap, $penerimaanId = null)
+    {
+        try {
+            DB::beginTransaction();
+
+            $pembelian = \App\Models\Pembelian::with(['supplier', 'details.barang'])->findOrFail($pembelianId);
+
+            $hasOperational = false;
+            foreach ($pembelian->details as $det) {
+                if ($det->barang && ($det->barang->is_operational || !$det->barang->is_bahan_baku)) {
+                    $hasOperational = true;
+                    break;
+                }
+            }
+
+            $debitCoaCode = $hasOperational ? '1501' : '1301';
+
+            $idKasBank      = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
+            $idPersediaan   = DB::table('chart_of_accounts')->where('kode', $debitCoaCode)->value('id') ?? ($hasOperational ? 27 : 19);
+            $idUangMukaPemb = DB::table('chart_of_accounts')->where('kode', '1202')->value('id') ?? 17;
+            $idPPNMasukan   = DB::table('chart_of_accounts')->where('kode', '1203')->value('id') ?? 18;
+
+            $defaultDetails = [];
+            $sourceType = 'pembelian';
+            $sourceId = $pembelian->id;
+            $noRef = 'AJP-PB-' . strtoupper($tahap) . '-' . $pembelian->kode_pembelian;
+            $descJurnal = $pembelian->kode_pembelian;
+
+            if (in_array($tahap, ['reklas_lunas', 'cod'])) {
+                if (!$penerimaanId) {
+                    $penerimaan = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelianId)->latest()->first();
+                } else {
+                    $penerimaan = \App\Models\PenerimaanPembelian::findOrFail($penerimaanId);
+                }
+
+                if (!$penerimaan) {
+                    throw new \Exception("Penerimaan barang tidak ditemukan.");
+                }
+
+                $sourceType = 'penerimaan_pembelian';
+                $sourceId = $penerimaan->id;
+                $noRef = 'AJP-RCV-' . strtoupper($tahap) . '-' . $penerimaan->no_penerimaan;
+                $descJurnal .= ' [No. Penerimaan: ' . $penerimaan->no_penerimaan . ']';
+
+                $dppTotal = 0;
+                foreach ($penerimaan->details as $det) {
+                    $dppTotal += floatval($det->qty) * floatval($det->harga_per_qty);
+                }
+
+                if ($tahap === 'reklas_lunas') {
+                    $hasPelunasanJournal = DB::table('jurnal_pembelian')
+                        ->where('source_id', $pembelian->id)
+                        ->where('source_type', 'pembelian')
+                        ->where('tahap', 'pelunasan')
+                        ->exists();
+
+                    if ($hasPelunasanJournal) {
+                        $defaultDetails = [
+                            ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
+                            ['account_id' => $idUangMukaPemb, 'debit' => 0, 'kredit' => $dppTotal]
+                        ];
+                    } else {
+                        $pembelianDppTotal = floatval($pembelian->total) - floatval($pembelian->tax_service ?? 0);
+                        $dpMurni = floatval($pembelian->nominal_dp ?? ($pembelianDppTotal * (floatval($pembelian->persen_dp ?? 0) / 100)));
+                        $sisaDpp = max(0, $pembelianDppTotal - $dpMurni);
+                        $ppnTotal = floatval($pembelian->tax_service ?? 0);
+                        $totalKasPelunasan = $sisaDpp + $ppnTotal;
+
+                        $defaultDetails = [
+                            ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
+                            ['account_id' => $idPPNMasukan, 'debit' => $ppnTotal, 'kredit' => 0],
+                            ['account_id' => $idUangMukaPemb, 'debit' => 0, 'kredit' => $dpMurni],
+                            ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $totalKasPelunasan]
+                        ];
+                    }
+                } else {
+                    $ppnTotal = floatval($pembelian->tax_service ?? 0);
+                    $totalContracts = $dppTotal + $ppnTotal;
+
+                    $defaultDetails = [
+                        ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
+                        ['account_id' => $idPPNMasukan, 'debit' => $ppnTotal, 'kredit' => 0],
+                        ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $totalContracts]
+                    ];
+                }
+            } else {
+                $dppTotal = floatval($pembelian->total) - floatval($pembelian->tax_service ?? 0);
+                $persenDP   = floatval($pembelian->persen_dp ?? 0);
+                $dpMurni    = floatval($pembelian->nominal_dp ?? ($dppTotal * ($persenDP / 100)));
+                $ppnDP      = 0;
+                $kasDP      = $dpMurni + $ppnDP;
+
+                $sisaDpp      = max(0, $dppTotal - $dpMurni);
+                $ppnPelunasan = floatval($pembelian->tax_service ?? 0);
+                $kasPelunasan = $sisaDpp + $ppnPelunasan;
+
+                if ($tahap === 'dp') {
+                    $defaultDetails = [
+                        ['account_id' => $idUangMukaPemb, 'debit' => $dpMurni, 'kredit' => 0],
+                        ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $kasDP]
+                    ];
+                } else {
+                    $defaultDetails = [
+                        ['account_id' => $idUangMukaPemb, 'debit' => $sisaDpp, 'kredit' => 0],
+                        ['account_id' => $idPPNMasukan, 'debit' => $ppnPelunasan, 'kredit' => 0],
+                        ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $kasPelunasan]
+                    ];
+                }
+            }
+
+            $descJurnal .= ' [Supplier: ' . ($pembelian->supplier->nama ?? '-') . ']';
+
+            $tanggalJurnal = date('Y-m-d');
+            if (\App\Models\Journal::isPeriodClosed($tanggalJurnal)) {
+                throw new \Exception("Periode akuntansi tanggal " . date('d/m/Y', strtotime($tanggalJurnal)) . " sudah ditutup buku.");
+            }
+
+            $jurnalPembelianId = DB::table('jurnal_pembelian')->insertGetId([
+                'tanggal'     => $tanggalJurnal,
+                'deskripsi'   => $descJurnal,
+                'no_ref'      => $noRef,
+                'source_type' => $sourceType,
+                'source_id'   => $sourceId,
+                'tahap'       => $tahap,
+                'created_by'  => auth()->id() ?? 1,
+            ]);
+
+            foreach ($defaultDetails as $item) {
+                if (floatval($item['debit']) == 0 && floatval($item['kredit']) == 0) {
+                    continue;
+                }
+
+                DB::table('journal_items')->insert([
+                    'journal_id'   => $jurnalPembelianId,
+                    'journal_type' => 'jurnal_pembelian',
+                    'account_id'   => $item['account_id'],
+                    'debit'        => $item['debit'],
+                    'kredit'       => $item['kredit'],
+                ]);
+            }
+
+            DB::commit();
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Gagal auto-post jurnal pembelian: ' . $e->getMessage());
+            throw $e;
+        }
+    }
 }

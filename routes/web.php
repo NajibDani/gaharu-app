@@ -101,6 +101,8 @@ Route::middleware('auth')->group(function () {
         // Laporan Sales & HPP
         Route::get('/laporan-penjualan-pos', [LaporanPenjualanPosController::class, 'index'])->name('penjualan_pos.laporan');
         Route::get('/laporan-produksi/hpp', [LaporanProduksiController::class, 'hpp'])->name('laporan.hpp');
+        Route::get('/laporan-produksi/hpp-recipe-detail', [LaporanProduksiController::class, 'hppRecipeDetail'])->name('laporan.hpp-recipe-detail');
+        Route::get('/laporan/detail-hpp', [LaporanPenjualanController::class, 'detailHpp'])->name('laporan.detail-hpp');
     });
 
 
