@@ -66,13 +66,25 @@
         })->sortKeys();
     @endphp
     <div class="card shadow-sm border-0 p-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h6 class="fw-bold text-dark mb-0"><i class="bi bi-list-stars me-2 text-primary"></i>Daftar Transaksi Selesai per Customer</h6>
-            <span class="badge bg-light text-dark border py-2 px-3 small shadow-sm">Total: {{ $pesanans->count() }} Pesanan</span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge bg-light text-dark border py-2 px-3 small shadow-sm">Total: {{ $pesanans->count() }} Pesanan</span>
+                <button type="button" id="btnToggleAll" class="btn btn-sm btn-outline-secondary" data-state="collapsed">
+                    <i class="bi bi-arrows-expand me-1"></i> Buka Semua
+                </button>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <div class="input-group">
+                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                <input type="text" id="inputCariTransaksi" class="form-control" placeholder="Cari kode pesanan atau nama pelanggan...">
+            </div>
         </div>
 
         <div class="table-responsive">
-            <table class="table table-hover align-middle border text-center">
+            <table class="table table-hover align-middle border text-center" id="tabelLaporan">
                 <thead class="table-light text-uppercase small font-monospace">
                     <tr>
                         <th>Kode</th>
@@ -83,8 +95,9 @@
                 </thead>
                 <tbody>
                     @forelse($groupedPesanans as $namaCustomer => $items)
-                        <tr class="table-secondary">
+                        <tr class="table-secondary customer-group-header" role="button" data-group="group-{{ $loop->index }}" data-customer-name="{{ strtolower($namaCustomer) }}">
                             <td colspan="2" class="text-start fw-bold text-dark">
+                                <i class="bi bi-chevron-right chevron-icon me-2 text-muted" style="font-size: 11px; transition: transform .15s ease;"></i>
                                 <i class="bi bi-person-circle me-1 text-primary"></i>{{ $namaCustomer }}
                                 <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-2">{{ $items->count() }} Transaksi</span>
                             </td>
@@ -96,7 +109,7 @@
                             </td>
                         </tr>
                         @foreach($items as $p)
-                            <tr>
+                            <tr class="customer-group-row group-{{ $loop->parent->index }} d-none" data-kode="{{ strtolower($p->kode_pesanan) }}">
                                 <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
                                 <td>{{ date('d M Y', strtotime($p->tanggal)) }}</td>
                                 <td class="text-end text-muted">
@@ -122,6 +135,10 @@
                     @endforelse
                 </tbody>
             </table>
+            <div id="noSearchResult" class="text-muted py-5 text-center d-none">
+                <i class="bi bi-search fs-1 d-block mb-2 text-secondary"></i>
+                Tidak ada transaksi yang cocok dengan pencarian.
+            </div>
         </div>
     </div>
 </div>
@@ -211,6 +228,99 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // ===== Toggle buka/tutup per grup customer =====
+        const tabel = document.getElementById('tabelLaporan');
+        if (tabel) {
+            tabel.querySelectorAll('.customer-group-header').forEach(function (header) {
+                header.addEventListener('click', function () {
+                    const groupId = header.dataset.group;
+                    const chevron = header.querySelector('.chevron-icon');
+                    const rows = tabel.querySelectorAll('.' + groupId);
+                    const isOpen = rows.length && !rows[0].classList.contains('d-none');
+
+                    rows.forEach(function (row) {
+                        row.classList.toggle('d-none', isOpen);
+                    });
+                    if (chevron) {
+                        chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+                    }
+                });
+            });
+
+            // ===== Tombol Buka Semua / Tutup Semua =====
+            const btnToggleAll = document.getElementById('btnToggleAll');
+            if (btnToggleAll) {
+                btnToggleAll.addEventListener('click', function () {
+                    const shouldOpen = btnToggleAll.dataset.state === 'collapsed';
+                    tabel.querySelectorAll('.customer-group-row').forEach(function (row) {
+                        row.classList.toggle('d-none', !shouldOpen);
+                    });
+                    tabel.querySelectorAll('.chevron-icon').forEach(function (chevron) {
+                        chevron.style.transform = shouldOpen ? 'rotate(90deg)' : 'rotate(0deg)';
+                    });
+                    btnToggleAll.dataset.state = shouldOpen ? 'expanded' : 'collapsed';
+                    btnToggleAll.innerHTML = shouldOpen
+                        ? '<i class="bi bi-arrows-collapse me-1"></i> Tutup Semua'
+                        : '<i class="bi bi-arrows-expand me-1"></i> Buka Semua';
+                });
+            }
+
+            // ===== Pencarian cepat (kode pesanan / nama pelanggan) =====
+            const inputCari = document.getElementById('inputCariTransaksi');
+            const noResult = document.getElementById('noSearchResult');
+            if (inputCari) {
+                inputCari.addEventListener('input', function () {
+                    const keyword = inputCari.value.trim().toLowerCase();
+                    const headers = tabel.querySelectorAll('.customer-group-header');
+                    let adaHasil = false;
+
+                    if (keyword === '') {
+                        // Kosongkan pencarian: tampilkan semua header, tutup semua grup lagi
+                        headers.forEach(function (header) {
+                            header.classList.remove('d-none');
+                            const groupId = header.dataset.group;
+                            tabel.querySelectorAll('.' + groupId).forEach(function (row) {
+                                row.classList.add('d-none');
+                            });
+                            const chevron = header.querySelector('.chevron-icon');
+                            if (chevron) chevron.style.transform = 'rotate(0deg)';
+                        });
+                        tabel.style.display = '';
+                        noResult.classList.add('d-none');
+                        return;
+                    }
+
+                    headers.forEach(function (header) {
+                        const groupId = header.dataset.group;
+                        const customerCocok = header.dataset.customerName.includes(keyword);
+                        const groupRows = tabel.querySelectorAll('.' + groupId);
+                        let groupPunyaBarisCocok = false;
+
+                        groupRows.forEach(function (row) {
+                            const cocok = customerCocok || row.dataset.kode.includes(keyword);
+                            row.classList.toggle('d-none', !cocok);
+                            if (cocok) groupPunyaBarisCocok = true;
+                        });
+
+                        const tampilkanHeader = customerCocok || groupPunyaBarisCocok;
+                        header.classList.toggle('d-none', !tampilkanHeader);
+                        if (tampilkanHeader) adaHasil = true;
+
+                        // buka otomatis grup yang cocok saat mencari
+                        if (customerCocok) {
+                            groupRows.forEach(function (row) { row.classList.remove('d-none'); });
+                        }
+                        const chevron = header.querySelector('.chevron-icon');
+                        if (chevron && tampilkanHeader) chevron.style.transform = 'rotate(90deg)';
+                    });
+
+                    tabel.style.display = adaHasil ? '' : 'none';
+                    noResult.classList.toggle('d-none', adaHasil);
+                });
+            }
+        }
+
+        // ===== Modal Detail HPP =====
         const modalEl = document.getElementById('modalDetailHpp');
         if (!modalEl) return;
         
