@@ -492,9 +492,12 @@ class PenjualanPosController extends Controller
             }
     
             $penjualan->update(['status' => 'SUKSES']);
+
+            // Auto post POS sale journal
+            \App\Http\Controllers\JurnalController::autoPostPenjualanPos($penjualan->id);
             
             DB::commit();
-            return redirect()->route('penjualan_pos.index')->with('success', 'Transaksi berhasil di-Approve! Stok terpotong dan HPP telah tersimpan.');
+            return redirect()->route('penjualan_pos.index')->with('success', 'Transaksi berhasil di-Approve! Stok terpotong dan jurnal telah terposting secara otomatis.');
 
         } catch (\Exception $e) {
             DB::rollBack();

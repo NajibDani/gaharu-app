@@ -353,8 +353,11 @@ class PengirimanController extends Controller
                     'updated_at' => now(),
                 ]);
 
+            // Auto post B2B shipment journal (Omzet & HPP)
+            \App\Http\Controllers\JurnalController::autoPostPenjualanB2b($pengiriman->id, 'pengiriman');
+ 
             DB::commit();
-            return redirect()->route('pengiriman.index')->with('success', 'Surat Jalan berhasil disetujui! Stok gudang telah dipotong.');
+            return redirect()->route('pengiriman.index')->with('success', 'Surat Jalan berhasil disetujui! Stok gudang telah dipotong dan jurnal penjualan B2B otomatis terposting.');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal memproses Approve: ' . $e->getMessage());

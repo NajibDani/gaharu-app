@@ -2089,98 +2089,11 @@ class JurnalController extends Controller
 
     public function penjualanposPostAuto(Request $request, $id)
     {
-        $penjualan = DB::table('penjualan_pos')->where('id', $id)->first();
-        if (!$penjualan) {
-            return back()->with('error', 'Data induk penjualan POS tidak ditemukan.');
-        }
-
-        $user = auth()->user();
-        if ($user && $user->gudang_id && $penjualan->gudang_id != $user->gudang_id) {
-            abort(403, 'Anda tidak memiliki akses ke data penjualan outlet lain.');
-        }
-
-        if (($penjualan->status ?? 'Draft') !== 'SUKSES') {
-            return redirect()->route('jurnal-penjualanpos.index')->with('error', 'Transaksi POS ini belum di-approve.');
-        }
-
-        $tanggal = $penjualan->tanggal ?? now()->format('Y-m-d');
-        if (\App\Models\Journal::isPeriodClosed($tanggal)) {
-            return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku. Tidak dapat menambah jurnal pada periode yang sudah ditutup.');
-        }
-
-        $posDetails = DB::table('penjualanpos_detail')
-            ->join('master_barang', 'penjualanpos_detail.produk_id', '=', 'master_barang.id')
-            ->where('penjualanpos_detail.penjualan_id', $id)
-            ->select('penjualanpos_detail.qty', 'penjualanpos_detail.hpp_satuan', 'master_barang.hpp_referensi', 'penjualanpos_detail.subtotal')
-            ->get();
-
-        $totalHppRiil = 0;
-        $nilaiPenjualan = 0;
-        foreach ($posDetails as $pd) {
-            $hpp = floatval($pd->hpp_satuan);
-            if ($hpp <= 0) {
-                $hpp = floatval($pd->hpp_referensi);
-            }
-            $totalHppRiil += floatval($pd->qty) * $hpp;
-            $nilaiPenjualan += floatval($pd->subtotal);
-        }
-
-        $tarifPpn       = 0.10;
-        $nilaiPpn       = $nilaiPenjualan * $tarifPpn;
-        $totalKasMasuk  = $nilaiPenjualan + $nilaiPpn;
-
-        $gudang = DB::table('master_gudang')->where('id', $penjualan->gudang_id)->first();
-        $isKejingga = ($penjualan->gudang_id == 4) || ($gudang && stripos($gudang->nama, 'kejingga') !== false);
-
-        $kodeHpp       = $isKejingga ? '5102' : '5101';
-        $kodePenjualan = $isKejingga ? '4102' : '4101';
-
-        $idKasOutlet      = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 1;
-        $idHppPos         = DB::table('chart_of_accounts')->where('kode', $kodeHpp)->value('id') ?? ($isKejingga ? 16 : 5);
-        $idPenjualanPos   = DB::table('chart_of_accounts')->where('kode', $kodePenjualan)->value('id') ?? ($isKejingga ? 15 : 4);
-        $idPpnKeluaran    = DB::table('chart_of_accounts')->where('kode', '2201')->value('id') ?? 6;
-        $idPersediaanJadi = DB::table('chart_of_accounts')->where('kode', '1301')->value('id') ?? 3;
-
-        $defaultDetails = [
-            ['account_id' => $idKasOutlet, 'debit' => $totalKasMasuk, 'kredit' => 0],
-            ['account_id' => $idPenjualanPos, 'debit' => 0, 'kredit' => $nilaiPenjualan],
-            ['account_id' => $idPpnKeluaran, 'debit' => 0, 'kredit' => $nilaiPpn],
-            ['account_id' => $idHppPos, 'debit' => floatval($totalHppRiil), 'kredit' => 0],
-            ['account_id' => $idPersediaanJadi, 'debit' => 0, 'kredit' => floatval($totalHppRiil)]
-        ];
-
-        $descJurnal = 'Penjualan Harian POS dari Outlet ' . ($gudang->nama ?? 'Gudang') . ' [No. Transaksi: ' . $penjualan->kode_transaksi . ']';
-
         try {
-            DB::beginTransaction();
-
-            $jurnalId = DB::table('jurnal_penjualan_pos')->insertGetId([
-                'tanggal'     => $tanggal,
-                'no_ref'      => 'JR-POS-' . time(),
-                'deskripsi'   => $descJurnal,
-                'source_type' => 'penjualan_pos',
-                'source_id'   => $id,
-                'created_by'  => auth()->id() ?? 1,
-            ]);
-
-            foreach ($defaultDetails as $item) {
-                if (floatval($item['debit']) == 0 && floatval($item['kredit']) == 0) {
-                    continue;
-                }
-
-                DB::table('journal_items')->insert([
-                    'journal_id'   => $jurnalId,
-                    'journal_type' => 'jurnal_penjualan_pos',
-                    'account_id'   => $item['account_id'],
-                    'debit'        => $item['debit'],
-                    'kredit'       => $item['kredit'],
-                ]);
-            }
-
-            DB::commit();
-            return redirect()->route('jurnal-penjualanpos.index')->with('success', 'Jurnal khusus penjualan POS untuk transaksi ' . $penjualan->kode_transaksi . ' berhasil diposting!');
+            self::autoPostPenjualanPos($id);
+            $code = DB::table('penjualan_pos')->where('id', $id)->value('kode_transaksi');
+            return redirect()->route('jurnal-penjualanpos.index')->with('success', 'Jurnal khusus penjualan POS untuk transaksi ' . $code . ' berhasil diposting!');
         } catch (\Exception $e) {
-            DB::rollBack();
             return back()->with('error', 'Gagal memproses posting jurnal: ' . $e->getMessage());
         }
     }
@@ -2188,104 +2101,10 @@ class JurnalController extends Controller
     public function penjualanb2bPostAuto(Request $request, $id)
     {
         $type = $request->query('type', 'pembayaran');
-
-        $idKasBank        = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
-        $idUangMuka       = DB::table('chart_of_accounts')->where('kode', '2102')->value('id') ?? 29;
-        $idPendapatan     = DB::table('chart_of_accounts')->where('kode', '4103')->value('id') ?? 39;
-        $idPpnKeluaran    = DB::table('chart_of_accounts')->where('kode', '2201')->value('id') ?? 30;
-        $idPersediaanJadi = DB::table('chart_of_accounts')->where('kode', '1301')->value('id') ?? 19;
-        $idHPP            = DB::table('chart_of_accounts')->where('kode', '5103')->value('id') ?? 43;
-
-        $defaultDetails = [];
-
-        if ($type === 'pembayaran') {
-            $pembayaran = \App\Models\Pembayaran::with(['pesanan.customer'])->findOrFail($id);
-            $tanggal = $pembayaran->tanggal_bayar ?? $pembayaran->tanggal ?? now()->format('Y-m-d');
-
-            if (\App\Models\Journal::isPeriodClosed($tanggal)) {
-                return redirect()->route('jurnal-penjualanb2b.index')->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku. Tidak dapat memproses jurnal B2B pada periode yang sudah ditutup.');
-            }
-
-            $pesanan = $pembayaran->pesanan;
-            if (!$pesanan) {
-                return back()->with('error', 'Data induk pesanan untuk pembayaran ini tidak ditemukan.');
-            }
-
-            $taxPercentage = floatval($pesanan->tax_percentage ?? 0);
-            $totalKasBank = floatval($pembayaran->jumlah_bayar);
-            $dppCurrent   = round($totalKasBank / (1 + ($taxPercentage / 100)), 2);
-            $ppnCurrent   = round($totalKasBank - $dppCurrent, 2);
-
-            $defaultDetails = [
-                ['account_id' => $idKasBank, 'debit' => $totalKasBank, 'kredit' => 0],
-                ['account_id' => $idUangMuka, 'debit' => 0, 'kredit' => $dppCurrent]
-            ];
-
-            if ($ppnCurrent > 0) {
-                $defaultDetails[] = ['account_id' => $idPpnKeluaran, 'debit' => 0, 'kredit' => $ppnCurrent];
-            }
-
-            $descJurnal = 'Pembukuan penerimaan kas B2B (Uang Muka/Pelunasan) [No. Order: ' . ($pesanan->kode_pesanan ?? '-') . '] [Customer: ' . ($pesanan->customer->nama ?? '-') . ']';
-            $noRef = 'JR-B2B-PAY-' . time();
-        } else {
-            $pengiriman = DB::table('pengiriman')->where('id', $id)->first();
-            if (!$pengiriman) {
-                return back()->with('error', 'Data pengiriman tidak ditemukan.');
-            }
-
-            $tanggal = $pengiriman->tanggal_pengiriman ?? $pengiriman->tanggal ?? now()->format('Y-m-d');
-            if (\App\Models\Journal::isPeriodClosed($tanggal)) {
-                return redirect()->route('jurnal-penjualanb2b.index')->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku. Tidak dapat memproses jurnal B2B pada periode yang sudah ditutup.');
-            }
-
-            $pesanan = \App\Models\Pesanan::with('customer')->findOrFail($pengiriman->pesanan_id);
-            $taxPercentage = floatval($pesanan->tax_percentage ?? 0);
-            $totalDppPenjualan = round(floatval($pesanan->total_pesanan) / (1 + ($taxPercentage / 100)), 2);
-
-            $totalHppRiil = DB::table('alokasi_produksi_pesanan')->where('pesanan_id', $pesanan->id)->sum('total_hpp_alokasi') ?? 0;
-            if ($totalHppRiil == 0) {
-                $totalHppRiil = round($totalDppPenjualan * 0.75, 2);
-            }
-
-            $defaultDetails[] = ['account_id' => $idUangMuka, 'debit' => $totalDppPenjualan, 'kredit' => 0];
-            $defaultDetails[] = ['account_id' => $idPendapatan, 'debit' => 0, 'kredit' => $totalDppPenjualan];
-            $defaultDetails[] = ['account_id' => $idHPP, 'debit' => $totalHppRiil, 'kredit' => 0];
-            $defaultDetails[] = ['account_id' => $idPersediaanJadi, 'debit' => 0, 'kredit' => $totalHppRiil];
-
-            $descJurnal = 'Pengiriman barang & pengakuan omzet penjualan B2B [No. Surat Jalan: ' . $pengiriman->no_pengiriman . '] [Customer: ' . ($pesanan->customer->nama ?? '-') . ']';
-            $noRef = $pengiriman->no_pengiriman;
-        }
-
         try {
-            DB::beginTransaction();
-
-            $jurnalId = DB::table('jurnal_penjualan_b2b')->insertGetId([
-                'tanggal'     => $tanggal,
-                'no_ref'      => $noRef,
-                'deskripsi'   => $descJurnal,
-                'source_type' => $type,
-                'source_id'   => $id,
-                'created_by'  => auth()->id() ?? 1,
-            ]);
-
-            foreach ($defaultDetails as $item) {
-                if (floatval($item['debit']) == 0 && floatval($item['kredit']) == 0) {
-                    continue;
-                }
-
-                DB::table('journal_items')->insert([
-                    'journal_id'   => $jurnalId,
-                    'journal_type' => 'penjualan_b2b',
-                    'account_id'   => $item['account_id'],
-                    'debit'        => $item['debit'],
-                    'kredit'       => $item['kredit'],
-                ]);
-            }
-
-            DB::commit();
+            self::autoPostPenjualanB2b($id, $type);
             return redirect()->route('jurnal-penjualanb2b.index')->with('success', 'Jurnal khusus penjualan B2B untuk ' . ($type === 'pembayaran' ? 'pembayaran' : 'pengiriman') . ' berhasil diposting!');
         } catch (\Exception $e) {
-            DB::rollBack();
             return back()->with('error', 'Gagal memproses posting jurnal: ' . $e->getMessage());
         }
     }
@@ -2436,6 +2255,236 @@ class JurnalController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Gagal auto-post jurnal pembelian: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public static function autoPostPenjualanPos($id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $penjualan = DB::table('penjualan_pos')->where('id', $id)->first();
+            if (!$penjualan) {
+                throw new \Exception('Data induk penjualan POS tidak ditemukan.');
+            }
+
+            if (($penjualan->status ?? 'Draft') !== 'SUKSES') {
+                throw new \Exception('Transaksi POS ini belum di-approve.');
+            }
+
+            // Mencegah duplikasi posting jurnal POS
+            $alreadyPosted = DB::table('jurnal_penjualan_pos')
+                ->where('source_type', 'penjualan_pos')
+                ->where('source_id', $id)
+                ->exists();
+            if ($alreadyPosted) {
+                DB::rollBack();
+                return true;
+            }
+
+            $tanggal = $penjualan->tanggal ?? now()->format('Y-m-d');
+            if (\App\Models\Journal::isPeriodClosed($tanggal)) {
+                throw new \Exception('Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku.');
+            }
+
+            $posDetails = DB::table('penjualanpos_detail')
+                ->join('master_barang', 'penjualanpos_detail.produk_id', '=', 'master_barang.id')
+                ->where('penjualanpos_detail.penjualan_id', $id)
+                ->select('penjualanpos_detail.qty', 'penjualanpos_detail.hpp_satuan', 'master_barang.hpp_referensi', 'penjualanpos_detail.subtotal')
+                ->get();
+
+            $totalHppRiil = 0;
+            $nilaiPenjualan = 0;
+            foreach ($posDetails as $pd) {
+                $hpp = floatval($pd->hpp_satuan);
+                if ($hpp <= 0) {
+                    $hpp = floatval($pd->hpp_referensi);
+                }
+                $totalHppRiil += floatval($pd->qty) * $hpp;
+                $nilaiPenjualan += floatval($pd->subtotal);
+            }
+
+            $tarifPpn       = 0.10;
+            $nilaiPpn       = $nilaiPenjualan * $tarifPpn;
+            $totalKasMasuk  = $nilaiPenjualan + $nilaiPpn;
+
+            $gudang = DB::table('master_gudang')->where('id', $penjualan->gudang_id)->first();
+            $isKejingga = ($penjualan->gudang_id == 4) || ($gudang && stripos($gudang->nama, 'kejingga') !== false);
+
+            $kodeHpp       = $isKejingga ? '5102' : '5101';
+            $kodePenjualan = $isKejingga ? '4102' : '4101';
+
+            $idKasOutlet      = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
+            $idHppPos         = DB::table('chart_of_accounts')->where('kode', $kodeHpp)->value('id') ?? ($isKejingga ? 42 : 41);
+            $idPenjualanPos   = DB::table('chart_of_accounts')->where('kode', $kodePenjualan)->value('id') ?? ($isKejingga ? 38 : 37);
+            $idPpnKeluaran    = DB::table('chart_of_accounts')->where('kode', '2201')->value('id') ?? 30;
+            $idPersediaanJadi = DB::table('chart_of_accounts')->where('kode', '1301')->value('id') ?? 19;
+
+            $defaultDetails = [
+                ['account_id' => $idKasOutlet, 'debit' => $totalKasMasuk, 'kredit' => 0],
+                ['account_id' => $idPenjualanPos, 'debit' => 0, 'kredit' => $nilaiPenjualan],
+                ['account_id' => $idPpnKeluaran, 'debit' => 0, 'kredit' => $nilaiPpn],
+                ['account_id' => $idHppPos, 'debit' => floatval($totalHppRiil), 'kredit' => 0],
+                ['account_id' => $idPersediaanJadi, 'debit' => 0, 'kredit' => floatval($totalHppRiil)]
+            ];
+
+            $descJurnal = 'Penjualan Harian POS dari Outlet ' . ($gudang->nama ?? 'Gudang') . ' [No. Transaksi: ' . $penjualan->kode_transaksi . ']';
+
+            $jurnalId = DB::table('jurnal_penjualan_pos')->insertGetId([
+                'tanggal'     => $tanggal,
+                'no_ref'      => 'JR-POS-' . time(),
+                'deskripsi'   => $descJurnal,
+                'source_type' => 'penjualan_pos',
+                'source_id'   => $id,
+                'created_by'  => $penjualan->created_by ?? auth()->id() ?? 1,
+            ]);
+
+            foreach ($defaultDetails as $item) {
+                if (floatval($item['debit']) == 0 && floatval($item['kredit']) == 0) {
+                    continue;
+                }
+
+                DB::table('journal_items')->insert([
+                    'journal_id'   => $jurnalId,
+                    'journal_type' => 'jurnal_penjualan_pos',
+                    'account_id'   => $item['account_id'],
+                    'debit'        => $item['debit'],
+                    'kredit'       => $item['kredit'],
+                ]);
+            }
+
+            DB::commit();
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Gagal auto-post jurnal POS: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public static function autoPostPenjualanB2b($id, $type)
+    {
+        try {
+            DB::beginTransaction();
+
+            $idKasBank        = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
+            $idUangMuka       = DB::table('chart_of_accounts')->where('kode', '2102')->value('id') ?? 29;
+            $idPendapatan     = DB::table('chart_of_accounts')->where('kode', '4103')->value('id') ?? 39;
+            $idPpnKeluaran    = DB::table('chart_of_accounts')->where('kode', '2201')->value('id') ?? 30;
+            $idPersediaanJadi = DB::table('chart_of_accounts')->where('kode', '1301')->value('id') ?? 19;
+            $idHPP            = DB::table('chart_of_accounts')->where('kode', '5103')->value('id') ?? 43;
+
+            $defaultDetails = [];
+            $creatorId = 1;
+
+            if ($type === 'pembayaran') {
+                $pembayaran = \App\Models\Pembayaran::with(['pesanan.customer'])->findOrFail($id);
+                $creatorId = $pembayaran->created_by ?? 1;
+
+                // Mencegah duplikasi posting jurnal B2B pembayaran
+                $alreadyPosted = DB::table('jurnal_penjualan_b2b')
+                    ->where('source_type', 'pembayaran')
+                    ->where('source_id', $id)
+                    ->exists();
+                if ($alreadyPosted) {
+                    DB::rollBack();
+                    return true;
+                }
+
+                $tanggal = $pembayaran->tanggal_bayar ?? $pembayaran->tanggal ?? now()->format('Y-m-d');
+                if (\App\Models\Journal::isPeriodClosed($tanggal)) {
+                    throw new \Exception('Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku.');
+                }
+
+                $pesanan = $pembayaran->pesanan;
+                if (!$pesanan) {
+                    throw new \Exception('Data induk pesanan untuk pembayaran ini tidak ditemukan.');
+                }
+
+                $taxPercentage = floatval($pesanan->tax_percentage ?? 0);
+                $totalKasBank = floatval($pembayaran->jumlah_bayar);
+                $dppCurrent   = round($totalKasBank / (1 + ($taxPercentage / 100)), 2);
+                $ppnCurrent   = round($totalKasBank - $dppCurrent, 2);
+
+                $defaultDetails = [
+                    ['account_id' => $idKasBank, 'debit' => $totalKasBank, 'kredit' => 0],
+                    ['account_id' => $idUangMuka, 'debit' => 0, 'kredit' => $dppCurrent]
+                ];
+
+                if ($ppnCurrent > 0) {
+                    $defaultDetails[] = ['account_id' => $idPpnKeluaran, 'debit' => 0, 'kredit' => $ppnCurrent];
+                }
+
+                $descJurnal = 'Pembukuan penerimaan kas B2B (Uang Muka/Pelunasan) [No. Order: ' . ($pesanan->kode_pesanan ?? '-') . '] [Customer: ' . ($pesanan->customer->nama ?? '-') . ']';
+                $noRef = 'JR-B2B-PAY-' . time();
+            } else {
+                $pengiriman = DB::table('pengiriman')->where('id', $id)->first();
+                if (!$pengiriman) {
+                    throw new \Exception('Data pengiriman tidak ditemukan.');
+                }
+
+                // Mencegah duplikasi posting jurnal B2B pengiriman
+                $alreadyPosted = DB::table('jurnal_penjualan_b2b')
+                    ->where('source_type', 'pengiriman')
+                    ->where('source_id', $id)
+                    ->exists();
+                if ($alreadyPosted) {
+                    DB::rollBack();
+                    return true;
+                }
+
+                $tanggal = $pengiriman->tanggal_pengiriman ?? $pengiriman->tanggal ?? now()->format('Y-m-d');
+                if (\App\Models\Journal::isPeriodClosed($tanggal)) {
+                    throw new \Exception('Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku.');
+                }
+
+                $pesanan = \App\Models\Pesanan::with('customer')->findOrFail($pengiriman->pesanan_id);
+                $taxPercentage = floatval($pesanan->tax_percentage ?? 0);
+                $totalDppPenjualan = round(floatval($pesanan->total_pesanan) / (1 + ($taxPercentage / 100)), 2);
+
+                $totalHppRiil = DB::table('alokasi_produksi_pesanan')->where('pesanan_id', $pesanan->id)->sum('total_hpp_alokasi') ?? 0;
+                if ($totalHppRiil == 0) {
+                    $totalHppRiil = round($totalDppPenjualan * 0.75, 2);
+                }
+
+                $defaultDetails[] = ['account_id' => $idUangMuka, 'debit' => $totalDppPenjualan, 'kredit' => 0];
+                $defaultDetails[] = ['account_id' => $idPendapatan, 'debit' => 0, 'kredit' => $totalDppPenjualan];
+                $defaultDetails[] = ['account_id' => $idHPP, 'debit' => $totalHppRiil, 'kredit' => 0];
+                $defaultDetails[] = ['account_id' => $idPersediaanJadi, 'debit' => 0, 'kredit' => $totalHppRiil];
+
+                $descJurnal = 'Pengiriman barang & pengakuan omzet penjualan B2B [No. Surat Jalan: ' . $pengiriman->no_pengiriman . '] [Customer: ' . ($pesanan->customer->nama ?? '-') . ']';
+                $noRef = $pengiriman->no_pengiriman;
+            }
+
+            $jurnalId = DB::table('jurnal_penjualan_b2b')->insertGetId([
+                'tanggal'     => $tanggal,
+                'no_ref'      => $noRef,
+                'deskripsi'   => $descJurnal,
+                'source_type' => $type,
+                'source_id'   => $id,
+                'created_by'  => $creatorId,
+            ]);
+
+            foreach ($defaultDetails as $item) {
+                if (floatval($item['debit']) == 0 && floatval($item['kredit']) == 0) {
+                    continue;
+                }
+
+                DB::table('journal_items')->insert([
+                    'journal_id'   => $jurnalId,
+                    'journal_type' => 'penjualan_b2b',
+                    'account_id'   => $item['account_id'],
+                    'debit'        => $item['debit'],
+                    'kredit'       => $item['kredit'],
+                ]);
+            }
+
+            DB::commit();
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Gagal auto-post jurnal B2B: ' . $e->getMessage());
             throw $e;
         }
     }

@@ -335,7 +335,7 @@ class PesananController extends Controller
             }
         }
     
-        Pembayaran::create([
+        $pembayaran = Pembayaran::create([
             'pesanan_id' => $pesanan->id,
             'kategori_pembayaran' => 'penjualan',
             'tanggal_bayar' => $request->tanggal_bayar,
@@ -345,6 +345,9 @@ class PesananController extends Controller
             'bukti_pembayaran' => $buktiFiles,
             'created_by' => auth()->id()
         ]);
+
+        // Auto post B2B payment journal
+        \App\Http\Controllers\JurnalController::autoPostPenjualanB2b($pembayaran->id, 'pembayaran');
     
         $totalBayarBaru = $totalBayarSebelumnya + $request->jumlah_bayar;
     
@@ -354,7 +357,7 @@ class PesananController extends Controller
             $pesanan->update(['status_pembayaran' => 'DP']);
         }
     
-        return back()->with('success', 'Catatan kas masuk berhasil divalidasi!');
+        return back()->with('success', 'Catatan kas masuk berhasil divalidasi dan jurnal penjualan B2B telah terposting otomatis!');
     }
 
     /**
