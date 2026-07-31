@@ -7,9 +7,6 @@
             <p class="text-muted small mb-0">Pantau ringkasan omzet dan performa penjualan berkala.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <a href="{{ route('laporan.penjualan', array_merge(request()->all(), ['format' => 'excel'])) }}" class="btn btn-success">
-                📊 Export Excel
-            </a>
             <a href="{{ route('laporan.penjualan', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-danger">
                 📕 Export PDF
             </a>
@@ -53,17 +50,24 @@
             </div>
         </div>
         <div class="col-12 col-md-4">
-            <div class="card shadow-sm border-0 p-3 bg-white border-start border-warning border-4">
-                <div class="small text-muted fw-bold text-uppercase">Pesanan Pending / Proses</div>
-                <div class="fs-3 fw-bold text-warning mt-1">{{ $pesanan_pending }} <span class="fs-6 text-muted fw-normal">Transaksi</span></div>
+            <div class="card shadow-sm border-0 p-3 bg-white border-start border-info border-4">
+                <div class="small text-muted fw-bold text-uppercase">Jumlah Pelanggan</div>
+                <div class="fs-3 fw-bold text-info-emphasis mt-1">{{ $jumlah_customer }} <span class="fs-6 text-muted fw-normal">Pelanggan</span></div>
             </div>
         </div>
     </div>
 
     {{-- TABEL DETAIL TRANSAKSI --}}
+    @php
+        // $pesanans yang dikirim controller sudah difilter hanya status 'selesai',
+        // di sini tinggal dikelompokkan berdasarkan customer.
+        $groupedPesanans = $pesanans->groupBy(function ($p) {
+            return $p->customer->nama ?? 'N/A';
+        })->sortKeys();
+    @endphp
     <div class="card shadow-sm border-0 p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="fw-bold text-dark mb-0"><i class="bi bi-list-stars me-2 text-primary"></i>Daftar Transaksi Masuk</h6>
+            <h6 class="fw-bold text-dark mb-0"><i class="bi bi-list-stars me-2 text-primary"></i>Daftar Transaksi Selesai per Customer</h6>
             <span class="badge bg-light text-dark border py-2 px-3 small shadow-sm">Total: {{ $pesanans->count() }} Pesanan</span>
         </div>
 
@@ -72,56 +76,47 @@
                 <thead class="table-light text-uppercase small font-monospace">
                     <tr>
                         <th>Kode</th>
-                        <th>Customer</th>
                         <th>Tanggal</th>
-                        <th>Status Pesanan</th>
-                        <th>Status Bayar</th>
                         <th class="text-end">Total HPP</th>
                         <th class="text-end pe-4">Total Omzet</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse($pesanans as $p)
-                        <tr>
-                            <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
-                            <td>{{ $p->customer->nama ?? 'N/A' }}</td>
-                            <td>{{ date('d M Y', strtotime($p->tanggal)) }}</td>
-                            <td>
-                                {{-- Pengecekan status menggunakan strtolower agar aman dari beda huruf kapital --}}
-                                @if(strtolower($p->status_pesanan) == 'selesai')
-                                    <span class="badge bg-success rounded-pill px-3 py-1">Selesai</span>
-                                @elseif(strtolower($p->status_pesanan) == 'siap kirim' || strtolower($p->status_pesanan) == 'siap_kirim')
-                                    <span class="badge bg-info text-white rounded-pill px-3 py-1">Siap kirim</span>
-                                @else
-                                    <span class="badge bg-warning rounded-pill px-3 py-1 text-dark">Pending</span>
-                                @endif
+                    @forelse($groupedPesanans as $namaCustomer => $items)
+                        <tr class="table-secondary">
+                            <td colspan="2" class="text-start fw-bold text-dark">
+                                <i class="bi bi-person-circle me-1 text-primary"></i>{{ $namaCustomer }}
+                                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-2">{{ $items->count() }} Transaksi</span>
                             </td>
-                            <td>
-                                @if(isset($p->status_bayar) && strtolower($p->status_bayar) == 'lunas')
-                                    <span class="badge bg-success bg-opacity-10 text-success border border-success rounded-pill px-3 py-1">Lunas</span>
-                                @else
-                                    <span class="badge bg-warning bg-opacity-10 text-warning border border-warning rounded-pill px-3 py-1 text-dark">
-                                        {{ $p->status_bayar ?? 'DP 30%' }}
-                                    </span>
-                                @endif
+                            <td class="text-end text-muted small">
+                                Rp {{ number_format($items->sum('total_hpp'), 0, ',', '.') }}
                             </td>
-                            <td class="text-end text-muted">
-                                <div class="d-flex justify-content-end align-items-center gap-2">
-                                    <span>Rp {{ number_format($p->total_hpp ?? 0, 0, ',', '.') }}</span>
-                                    <button type="button" class="btn btn-link btn-sm p-0 btn-detail-hpp" data-id="{{ $p->id }}" data-type="b2b" title="Detail HPP">
-                                        <i class="bi bi-info-circle text-primary" style="font-size: 14px;"></i>
-                                    </button>
-                                </div>
-                            </td>
-                            <td class="text-end pe-4 fw-bold text-dark">
-                                Rp {{ number_format($p->details_sum_subtotal ?? 0, 0, ',', '.') }}
+                            <td class="text-end pe-4 fw-bold text-primary">
+                                Rp {{ number_format($items->sum('details_sum_subtotal'), 0, ',', '.') }}
                             </td>
                         </tr>
+                        @foreach($items as $p)
+                            <tr>
+                                <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
+                                <td>{{ date('d M Y', strtotime($p->tanggal)) }}</td>
+                                <td class="text-end text-muted">
+                                    <div class="d-flex justify-content-end align-items-center gap-2">
+                                        <span>Rp {{ number_format($p->total_hpp ?? 0, 0, ',', '.') }}</span>
+                                        <button type="button" class="btn btn-link btn-sm p-0 btn-detail-hpp" data-id="{{ $p->id }}" data-type="b2b" title="Detail HPP">
+                                            <i class="bi bi-info-circle text-primary" style="font-size: 14px;"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                                <td class="text-end pe-4 fw-bold text-dark">
+                                    Rp {{ number_format($p->details_sum_subtotal ?? 0, 0, ',', '.') }}
+                                </td>
+                            </tr>
+                        @endforeach
                     @empty
                         <tr>
-                            <td colspan="7" class="text-muted py-5 text-center">
+                            <td colspan="4" class="text-muted py-5 text-center">
                                 <i class="bi bi-folder-x fs-1 d-block mb-2 text-secondary"></i>
-                                Tidak ada data penjualan ditemukan pada periode ini.
+                                Tidak ada data penjualan selesai ditemukan pada periode ini.
                             </td>
                         </tr>
                     @endforelse

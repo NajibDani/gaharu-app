@@ -53,40 +53,49 @@
                 <strong>{{ $pesanan_selesai }} Transaksi</strong>
             </td>
             <td class="pending">
-                <span>Pesanan Pending / Proses</span>
-                <strong>{{ $pesanan_pending }} Transaksi</strong>
+                <span>Jumlah Pelanggan</span>
+                <strong>{{ $jumlah_customer }} Pelanggan</strong>
             </td>
         </tr>
     </table>
+
+    @php
+        // $pesanans yang dikirim controller sudah difilter hanya status 'selesai',
+        // di sini tinggal dikelompokkan berdasarkan customer (sama seperti tampilan web)
+        $groupedPesanans = $pesanans->groupBy(function ($p) {
+            return $p->customer->nama ?? 'N/A';
+        })->sortKeys();
+    @endphp
 
     <table class="main-table">
         <thead>
             <tr>
                 <th width="30" class="text-center">No</th>
                 <th>Kode Pesanan</th>
-                <th>Customer</th>
                 <th>Tanggal</th>
-                <th>Status Pesanan</th>
-                <th>Status Bayar</th>
                 <th class="text-right">Total HPP</th>
                 <th class="text-right">Total Omzet</th>
             </tr>
         </thead>
         <tbody>
-            @forelse($pesanans as $index => $p)
+            @forelse($groupedPesanans as $namaCustomer => $items)
+            <tr>
+                <td colspan="3" class="fw-bold" style="background-color: #eef2ff;">{{ $namaCustomer }} ({{ $items->count() }} Transaksi)</td>
+                <td class="text-right fw-bold" style="background-color: #eef2ff; color: #666;">Rp {{ number_format($items->sum('total_hpp'), 0, ',', '.') }}</td>
+                <td class="text-right fw-bold" style="background-color: #eef2ff;">Rp {{ number_format($items->sum('details_sum_subtotal'), 0, ',', '.') }}</td>
+            </tr>
+            @foreach($items as $index => $p)
             <tr>
                 <td class="text-center">{{ $index + 1 }}</td>
                 <td class="fw-bold">{{ $p->kode_pesanan }}</td>
-                <td>{{ $p->customer->nama ?? 'N/A' }}</td>
                 <td>{{ date('d M Y', strtotime($p->tanggal)) }}</td>
-                <td>{{ ucfirst($p->status_pesanan) }}</td>
-                <td>{{ $p->status_bayar ?? 'DP 30%' }}</td>
                 <td class="text-right" style="color: #666;">Rp {{ number_format($p->total_hpp ?? 0, 0, ',', '.') }}</td>
                 <td class="text-right fw-bold">Rp {{ number_format($p->details_sum_subtotal ?? 0, 0, ',', '.') }}</td>
             </tr>
+            @endforeach
             @empty
             <tr>
-                <td colspan="8" class="text-center text-muted">Tidak ada data penjualan ditemukan pada periode ini.</td>
+                <td colspan="5" class="text-center text-muted">Tidak ada data penjualan ditemukan pada periode ini.</td>
             </tr>
             @endforelse
         </tbody>

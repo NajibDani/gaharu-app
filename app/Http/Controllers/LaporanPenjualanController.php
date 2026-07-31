@@ -14,11 +14,22 @@ class LaporanPenjualanController extends Controller
         $tanggal_selesai = $request->get('tanggal_selesai', date('Y-m-t'));
 
         // 2. Ambil data pesanan beserta total subtotal dari detailnya
+        // Laporan hanya menampilkan pesanan yang sudah SELESAI (revisi dosen),
+        // sehingga statistik, export Excel, dan export PDF otomatis ikut hanya
+        // menghitung pesanan yang selesai.
         $pesanans = Pesanan::with('customer')
             ->withSum('details', 'subtotal') 
-            ->whereBetween('tanggal', [$tanggal_mulai, $tanggal_selesai])
+            // Ditambahkan jam 00:00:00 s/d 23:59:59 karena kolom 'tanggal' menyimpan
+            // jam juga, sehingga tanpa ini pesanan yang tanggalnya sama dengan
+            // $tanggal_selesai tapi jamnya > 00:00:00 akan ikut terpotong dari hasil.
+            ->whereBetween('tanggal', [$tanggal_mulai . ' 00:00:00', $tanggal_selesai . ' 23:59:59'])
             ->orderBy('tanggal', 'desc')
-            ->get();
+            ->get()
+            ->filter(function ($p) {
+                // Pengecekan status menggunakan strtolower + trim agar kebal dari beda huruf kapital/spasi
+                return strtolower(trim($p->status_pesanan)) === 'selesai';
+            })
+            ->values();
 
         // Hitung total HPP untuk setiap pesanan
         foreach ($pesanans as $row) {
@@ -37,30 +48,24 @@ class LaporanPenjualanController extends Controller
         }
 
         // 3. Hitung Ringkasan Statistik
+        // Karena $pesanans di atas sudah difilter hanya yang 'selesai',
+        // total_omzet & total_pesanan otomatis hanya menghitung pesanan selesai.
         $total_omzet = $pesanans->sum('details_sum_subtotal');
         $total_pesanan = $pesanans->count();
-        
-        // KODE ANTI-ERROR: Menggunakan filter + strtolower + trim agar kebal dari spasi/kapital
-        $pesanan_selesai = $pesanans->filter(function ($p) {
-            return strtolower(trim($p->status_pesanan)) === 'selesai';
-        })->count();
-        
-        $pesanan_pending = $pesanans->filter(function ($p) {
-            $status = strtolower(trim($p->status_pesanan));
-            return $status === 'pending' || $status === 'siap kirim' || $status === 'siap_kirim';
-        })->count();
+        $pesanan_selesai = $total_pesanan;
+
+        // Jumlah pelanggan unik yang muncul di laporan (untuk kartu ringkasan,
+        // menggantikan kartu "Pesanan Pending" yang sudah tidak relevan karena
+        // laporan ini memang khusus pesanan selesai)
+        $jumlah_customer = $pesanans->pluck('customer_id')->unique()->count();
 
         if ($request->format === 'pdf') {
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('laporan-penjualan-pdf', compact(
                 'pesanans', 'tanggal_mulai', 'tanggal_selesai',
-                'total_omzet', 'total_pesanan', 'pesanan_selesai', 'pesanan_pending'
+                'total_omzet', 'total_pesanan', 'pesanan_selesai', 'jumlah_customer'
             ));
             return $pdf->download('laporan-penjualan-b2b-' . now()->format('Ymd') . '.pdf');
-        }
-
-        if ($request->format === 'excel') {
-            return $this->exportExcel($pesanans);
         }
 
         return view('laporan-penjualan', compact(
@@ -70,37 +75,8 @@ class LaporanPenjualanController extends Controller
             'total_omzet', 
             'total_pesanan',
             'pesanan_selesai',
-            'pesanan_pending'
+            'jumlah_customer'
         ));
-    }
-
-    private function exportExcel($data)
-    {
-        $filename = 'laporan-penjualan-b2b-' . now()->format('Ymd') . '.csv';
-        $headers  = [
-            'Content-Type'        => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"$filename\"",
-        ];
-
-        $callback = function () use ($data) {
-            $f = fopen('php://output', 'w');
-            fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode Pesanan', 'Customer', 'Tanggal', 'Status Pesanan', 'Status Bayar', 'Total HPP', 'Total Omzet']);
-            foreach ($data as $row) {
-                fputcsv($f, [
-                    $row->kode_pesanan,
-                    $row->customer->nama ?? 'N/A',
-                    \Carbon\Carbon::parse($row->tanggal)->format('d-m-Y'),
-                    ucfirst($row->status_pesanan),
-                    $row->status_bayar ?? 'DP 30%',
-                    $row->total_hpp ?? 0,
-                    $row->details_sum_subtotal ?? 0,
-                ]);
-            }
-            fclose($f);
-        };
-
-        return response()->stream($callback, 200, $headers);
     }
 
     public function detailHpp(Request $request)

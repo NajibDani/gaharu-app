@@ -18,9 +18,6 @@
                         <button type="submit" class="btn btn-success shadow-sm px-4">
                             <i class="fas fa-search-dollar mr-1"></i> Filter Keuangan
                         </button>
-                        <a href="{{ route('laporan.hpp', array_merge(request()->all(), ['format' => 'excel'])) }}" class="btn btn-success shadow-sm px-4">
-                            📊 Export Excel
-                        </a>
                         <a href="{{ route('laporan.hpp', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-danger shadow-sm px-4">
                             📕 Export PDF
                         </a>
