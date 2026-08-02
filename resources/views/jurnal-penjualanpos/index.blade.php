@@ -8,53 +8,40 @@
         <div class="alert alert-success border-0 shadow-sm mb-4"><i class="fas fa-check-circle me-2"></i>{{ session('success') }}</div>
         @endif
 
-        <div class="card shadow border-0 rounded-3 mb-5">
-            <div class="card-header bg-warning text-dark py-3 d-flex align-items-center justify-content-between">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-clock me-2"></i>1. Antrean Ringkasan POS Harian (Belum Dijurnal)</h5>
-                <span class="badge bg-dark text-white">{{ count($penjualanPosBelum) }} Transaksi</span>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light text-secondary small text-uppercase fw-bold">
-                            <tr>
-                                <th class="py-3 ps-4">Tanggal Transaksi</th>
-                                <th class="py-3">Kode Ringkasan POS</th>
-                                <th class="py-3">Nama Outlet</th>
-                                <th class="py-3 text-end">Total Omzet Belum PPN</th>
-                                <th class="py-3 text-center" style="width: 180px">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($penjualanPosBelum as $p)
-                            <tr>
-                                <td class="py-3 ps-4 text-secondary">{{ \Carbon\Carbon::parse($p->tanggal)->format('d/m/Y') }}</td>
-                                <td><span class="badge bg-light text-dark border font-monospace px-2.5 py-1.5 fs-6">{{ $p->kode_transaksi }}</span></td>
-                                <td class="fw-semibold text-dark">{{ $p->nama_outlet }}</td>
-                                <td class="text-end fw-bold text-dark">Rp {{ number_format($p->total, 2, ',', '.') }}</td>
-                                <td class="text-center">
-                                    <form action="{{ route('jurnal-penjualanpos.post-auto', $p->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Posting jurnal khusus penjualan POS untuk {{ $p->kode_transaksi }}?')">
-                                        @csrf
-                                        <button type="submit" class="btn btn-sm btn-success fw-bold px-3 shadow-sm">
-                                            <i class="fas fa-check-circle me-1"></i> Posting Jurnal
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-4">Semua ringkasan transaksi omzet harian POS telah sukses dijurnal.</td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
+        <!-- FILTER & SEARCH BAR -->
+        <div class="card shadow border-0 rounded-3 mb-4">
+            <div class="card-body">
+                <form action="{{ route('jurnal-penjualanpos.index') }}" method="GET" class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label for="start_date" class="form-label small fw-bold text-secondary">Tanggal Mulai</label>
+                        <input type="date" name="start_date" id="start_date" class="form-control" value="{{ request('start_date') }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="end_date" class="form-label small fw-bold text-secondary">Tanggal Selesai</label>
+                        <input type="date" name="end_date" id="end_date" class="form-control" value="{{ request('end_date') }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="search" class="form-label small fw-bold text-secondary">Cari Transaksi</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light border-end-0 border"><i class="fas fa-search text-muted"></i></span>
+                            <input type="text" name="search" id="search" class="form-control border-start-0 border" placeholder="No. Ref atau Deskripsi..." value="{{ request('search') }}">
+                        </div>
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary w-100 fw-bold">
+                            <i class="fas fa-filter me-1"></i> Filter
+                        </button>
+                        <a href="{{ route('jurnal-penjualanpos.index') }}" class="btn btn-outline-secondary w-100 fw-bold">
+                            Reset
+                        </a>
+                    </div>
+                </form>
             </div>
         </div>
 
         <div class="card shadow border-0 rounded-3">
             <div class="card-header bg-success text-white py-3">
-                <h5 class="mb-0 fw-bold"><i class="fas fa-folder-open me-2"></i>2. Riwayat Buku Jurnal Khusus Penjualan POS</h5>
+                <h5 class="mb-0 fw-bold"><i class="fas fa-folder-open me-2"></i>Buku Jurnal Khusus Penjualan POS</h5>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -92,7 +79,7 @@
             </div>
             @if($jurnalsSudah->hasPages())
             <div class="card-footer bg-white py-3 d-flex justify-content-center">
-                {{ $jurnalsSudah->links() }}
+                {{ $jurnalsSudah->appends(request()->query())->links() }}
             </div>
             @endif
         </div>

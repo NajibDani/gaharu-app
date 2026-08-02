@@ -683,89 +683,13 @@ class JurnalController extends Controller
         }
     }
 
-    public function pembelianIndex()
+    public function pembelianIndex(Request $request)
     {
-        // 1. Ambil jurnal yang sudah tersimpan
-        $jurnalTersimpan = DB::table('jurnal_pembelian')
-            ->select('source_type', 'source_id', 'tahap')
-            ->get();
+        $startDate = $request->get('start_date');
+        $endDate   = $request->get('end_date');
+        $search    = $request->get('search');
 
-        $pembelianJurnalMap = $jurnalTersimpan->where('source_type', 'pembelian')
-            ->groupBy('source_id')
-            ->map(fn($rows) => $rows->pluck('tahap')->toArray());
-
-        $penerimaanJurnalMap = $jurnalTersimpan->where('source_type', 'penerimaan_pembelian')
-            ->pluck('source_id')
-            ->toArray();
-
-        $pembeliansBelum = collect();
-
-        // 2. Queue for Pembelian (DP dan Pelunasan)
-        $semuaPembelian = \App\Models\Pembelian::with(['supplier', 'gudang'])
-            ->orderBy('tanggal', 'desc')
-            ->get();
-
-        foreach ($semuaPembelian as $p) {
-            $persenDP = floatval($p->persen_dp ?? 0);
-            $isLunas  = (bool) $p->is_lunas;
-            $sudahAda = $pembelianJurnalMap->get($p->id, []);
-
-            // DP
-            if ($persenDP > 0 && !in_array('dp', $sudahAda)) {
-                $clone = clone $p;
-                $clone->tahap_selanjutnya = 'dp';
-                $clone->total_keluar = $this->hitungTotalKeluar($p, 'dp');
-                $clone->queue_type = 'pembelian';
-                $clone->label_no_invoice = $p->kode_pembelian;
-                $pembeliansBelum->push($clone);
-            }
-
-            // Pelunasan
-            if ($persenDP > 0 && $isLunas && !in_array('pelunasan', $sudahAda)) {
-                $clone = clone $p;
-                $clone->tahap_selanjutnya = 'pelunasan';
-                $clone->total_keluar = $this->hitungTotalKeluar($p, 'pelunasan');
-                $clone->queue_type = 'pembelian';
-                $clone->label_no_invoice = $p->kode_pembelian;
-                $pembeliansBelum->push($clone);
-            }
-        }
-
-        // 3. Queue for Penerimaan Pembelian (Reklas Persediaan / COD)
-        $semuaPenerimaan = \App\Models\PenerimaanPembelian::with(['pembelian.supplier', 'pembelian.gudang', 'details'])
-            ->orderBy('tanggal', 'desc')
-            ->get();
-
-        foreach ($semuaPenerimaan as $rcv) {
-            if (in_array($rcv->id, $penerimaanJurnalMap)) {
-                continue; // Sudah dijurnal
-            }
-
-            $p = $rcv->pembelian;
-            if (!$p) continue;
-
-            $metode = $p->metode_pembayaran;
-            $tahapSelanjutnya = ($metode === 'cod') ? 'cod' : 'reklas_lunas';
-
-            // Hitung total penerimaan ini (DPP + PPN 10% jika COD)
-            $dppReceipt = 0;
-            foreach ($rcv->details as $det) {
-                $dppReceipt += floatval($det->qty) * floatval($det->harga_per_qty);
-            }
-            $totalKeluar = ($tahapSelanjutnya === 'cod') ? ($dppReceipt + round($dppReceipt * 0.10, 2)) : $dppReceipt;
-
-            // Kloning objek pembelian agar viewnya tetap sama, tapi id-nya diganti id penerimaan!
-            $clone = clone $p;
-            $clone->id = $rcv->id; // GANTI ID KE PENERIMAAN!
-            $clone->tahap_selanjutnya = $tahapSelanjutnya;
-            $clone->total_keluar = $totalKeluar;
-            $clone->queue_type = 'penerimaan_pembelian';
-            $clone->label_no_invoice = $p->kode_pembelian . ' (' . $rcv->no_penerimaan . ')';
-            $pembeliansBelum->push($clone);
-        }
-
-        // 4. Riwayat Jurnal (termasuk yang digabung ke penerimaan_pembelian)
-        $jurnalsSudah = DB::table('jurnal_pembelian')
+        $query = DB::table('jurnal_pembelian')
             ->join('journal_items', function ($join) {
                 $join->on('journal_items.journal_id', '=', 'jurnal_pembelian.id')
                     ->where('journal_items.journal_type', '=', 'jurnal_pembelian');
@@ -779,8 +703,19 @@ class JurnalController extends Controller
                 'jurnal_pembelian.source_type',
                 'jurnal_pembelian.source_id',
                 DB::raw('SUM(journal_items.debit) as total_transaksi')
-            )
-            ->groupBy(
+            );
+
+        if ($startDate && $endDate) {
+            $query->whereBetween('jurnal_pembelian.tanggal', [$startDate, $endDate]);
+        }
+        if ($search) {
+            $query->where(function($q) use ($search) {
+                $q->where('jurnal_pembelian.no_ref', 'like', "%$search%")
+                  ->orWhere('jurnal_pembelian.deskripsi', 'like', "%$search%");
+            });
+        }
+
+        $jurnalsSudah = $query->groupBy(
                 'jurnal_pembelian.id',
                 'jurnal_pembelian.tanggal',
                 'jurnal_pembelian.no_ref',
@@ -793,7 +728,7 @@ class JurnalController extends Controller
             ->orderBy('jurnal_pembelian.id', 'desc')
             ->paginate(10);
 
-        return view('jurnal-pembelian.index', compact('pembeliansBelum', 'jurnalsSudah'));
+        return view('jurnal-pembelian.index', compact('jurnalsSudah'));
     }
 
     private function tahapSeharusnyaAda($pembelian): array
@@ -1108,37 +1043,13 @@ class JurnalController extends Controller
         return view('jurnal-pembelian.show', compact('jurnal', 'details', 'totalDebit', 'totalKredit'));
     }
 
-    public function penjualanposIndex()
+    public function penjualanposIndex(Request $request)
     {
         $user = auth()->user();
+        $startDate = $request->get('start_date');
+        $endDate   = $request->get('end_date');
+        $search    = $request->get('search');
 
-        // 1. Ambil semua ID transaksi POS yang sudah pernah dijurnal
-        $sudahDijurnal = DB::table('jurnal_penjualan_pos')
-            ->where('source_type', 'penjualan_pos')
-            ->pluck('source_id')
-            ->toArray();
-
-        // 2. Antrean Atas: Tarik data transaksi POS harian yang BELUM dijurnal dan sudah disetujui (status = 'SUKSES')
-        $queryBelum = DB::table('penjualan_pos')
-            ->leftJoin('master_gudang', 'penjualan_pos.gudang_id', '=', 'master_gudang.id')
-            ->whereNotIn('penjualan_pos.id', $sudahDijurnal)
-            ->where('penjualan_pos.status', 'SUKSES');
-
-        if ($user && $user->gudang_id) {
-            $queryBelum->where('penjualan_pos.gudang_id', $user->gudang_id);
-        }
-
-        $penjualanPosBelum = $queryBelum->select(
-                'penjualan_pos.id',
-                'penjualan_pos.tanggal',
-                'penjualan_pos.kode_transaksi',
-                'penjualan_pos.total',
-                DB::raw("COALESCE(master_gudang.nama, 'Gudang') as nama_outlet")
-            )
-            ->orderBy('penjualan_pos.tanggal', 'desc')
-            ->get();
-
-        // 3. Riwayat Bawah: Ringkas menjadi satu baris per dokumen (Group By No. Ref)
         $querySudah = DB::table('jurnal_penjualan_pos')
             ->join('journal_items', function ($join) {
                 $join->on('journal_items.journal_id', '=', 'jurnal_penjualan_pos.id')
@@ -1149,6 +1060,16 @@ class JurnalController extends Controller
 
         if ($user && $user->gudang_id) {
             $querySudah->where('penjualan_pos.gudang_id', $user->gudang_id);
+        }
+
+        if ($startDate && $endDate) {
+            $querySudah->whereBetween('jurnal_penjualan_pos.tanggal', [$startDate, $endDate]);
+        }
+        if ($search) {
+            $querySudah->where(function($q) use ($search) {
+                $q->where('jurnal_penjualan_pos.no_ref', 'like', "%$search%")
+                  ->orWhere('jurnal_penjualan_pos.deskripsi', 'like', "%$search%");
+            });
         }
 
         $jurnalsSudah = $querySudah->select(
@@ -1169,7 +1090,7 @@ class JurnalController extends Controller
             ->orderBy('jurnal_penjualan_pos.id', 'desc')
             ->paginate(10);
 
-        return view('jurnal-penjualanpos.index', compact('penjualanPosBelum', 'jurnalsSudah'));
+        return view('jurnal-penjualanpos.index', compact('jurnalsSudah'));
     }
 
     public function penjualanposCreate(Request $request, $id) // <-- Tambahkan Request $request di sini 
@@ -1392,53 +1313,13 @@ class JurnalController extends Controller
         return view('jurnal-penjualanpos.show', compact('jurnal', 'details', 'totalDebit', 'totalKredit'));
     }
 
-    public function penjualanb2bIndex()
+    public function penjualanb2bIndex(Request $request)
     {
-        // 1. Ambil ID Sumber yang sudah pernah dijurnal
-        $pembayaranDijurnal = DB::table('jurnal_penjualan_b2b')->where('source_type', 'pembayaran')->pluck('source_id')->toArray();
-        $pengirimanDijurnal = DB::table('jurnal_penjualan_b2b')->where('source_type', 'pengiriman')->pluck('source_id')->toArray();
+        $startDate = $request->get('start_date');
+        $endDate   = $request->get('end_date');
+        $search    = $request->get('search');
 
-        // 2. Antrean: Pembayaran Kas (Uang Muka / Pelunasan)
-        $pembayaranBelum = \App\Models\Pembayaran::with(['pesanan.customer'])
-            ->whereNotNull('pesanan_id')
-            ->whereNotIn('id', $pembayaranDijurnal)
-            ->get()
-            ->map(function ($item) {
-                $item->antrean_type = 'pembayaran';
-                $item->label_antrean = 'Pembayaran Kas (DP/Pelunasan)';
-                $item->tanggal_antrean = $item->tanggal_bayar;
-                $item->no_transaksi = $item->pesanan->kode_pesanan ?? '-'; // Mengisi no_transaksi dengan kode pesanan
-                $item->nominal_display = floatval($item->jumlah_bayar); // Angka murni untuk number_format
-                return $item;
-            });
-
-        // 3. Antrean: Pengiriman Barang (Logistik & HPP)
-        $pengirimanBelum = DB::table('pengiriman')
-            ->join('pesanan', 'pengiriman.pesanan_id', '=', 'pesanan.id')
-            ->join('customers', 'pesanan.customer_id', '=', 'customers.id')
-            ->whereNotIn('pengiriman.id', $pengirimanDijurnal)
-            ->select(
-                'pengiriman.id',
-                'pengiriman.no_pengiriman',
-                'pengiriman.tanggal_pengiriman as tanggal_antrean',
-                'pesanan.kode_pesanan',
-                'pesanan.total_pesanan',
-                'customers.nama as nama_customer'
-            )
-            ->get()
-            ->map(function ($item) {
-                $item->antrean_type = 'pengiriman';
-                $item->label_antrean = 'Pengiriman Barang & HPP';
-                $item->no_transaksi = $item->no_pengiriman; // Mengisi no_transaksi dengan nomor pengiriman surat jalan
-                $item->nominal_display = floatval($item->total_pesanan); // Angka murni nilai kontrak B2B (DPP)
-                return $item;
-            });
-
-        // Gabungkan kedua antrean dan urutkan berdasarkan tanggal terbaru
-        $pesananBelum = $pembayaranBelum->concat($pengirimanBelum)->sortByDesc('tanggal_antrean');
-
-        // 4. Ringkas data buku jurnal khusus penjualan B2B (Satu baris per No. Ref)
-        $jurnalsSudah = DB::table('jurnal_penjualan_b2b')
+        $querySudah = DB::table('jurnal_penjualan_b2b')
             ->join('journal_items', function ($join) {
                 $join->on('journal_items.journal_id', '=', 'jurnal_penjualan_b2b.id')
                     ->where('journal_type', '=', 'penjualan_b2b');
@@ -1450,17 +1331,29 @@ class JurnalController extends Controller
                 'jurnal_penjualan_b2b.deskripsi',
                 DB::raw('SUM(journal_items.debit) as total_debit'),
                 DB::raw('SUM(journal_items.kredit) as total_kredit')
-            )
-            ->groupBy(
+            );
+
+        if ($startDate && $endDate) {
+            $querySudah->whereBetween('jurnal_penjualan_b2b.tanggal', [$startDate, $endDate]);
+        }
+        if ($search) {
+            $querySudah->where(function($q) use ($search) {
+                $q->where('jurnal_penjualan_b2b.no_ref', 'like', "%$search%")
+                  ->orWhere('jurnal_penjualan_b2b.deskripsi', 'like', "%$search%");
+            });
+        }
+
+        $jurnalsSudah = $querySudah->groupBy(
                 'jurnal_penjualan_b2b.id',
                 'jurnal_penjualan_b2b.tanggal',
                 'jurnal_penjualan_b2b.no_ref',
                 'jurnal_penjualan_b2b.deskripsi'
             )
             ->orderBy('jurnal_penjualan_b2b.tanggal', 'desc')
+            ->orderBy('jurnal_penjualan_b2b.id', 'desc')
             ->paginate(10);
 
-        return view('jurnal-penjualanb2b.index', compact('pesananBelum', 'jurnalsSudah'));
+        return view('jurnal-penjualanb2b.index', compact('jurnalsSudah'));
     }
 
     public function penjualanb2bCreate(Request $request, $id)
@@ -2444,8 +2337,10 @@ class JurnalController extends Controller
                 $totalDppPenjualan = round(floatval($pesanan->total_pesanan) / (1 + ($taxPercentage / 100)), 2);
 
                 $totalHppRiil = DB::table('alokasi_produksi_pesanan')->where('pesanan_id', $pesanan->id)->sum('total_hpp_alokasi') ?? 0;
-                if ($totalHppRiil == 0) {
-                    $totalHppRiil = round($totalDppPenjualan * 0.75, 2);
+                if ($totalHppRiil > 0) {
+                    $totalHppRiil = round($totalHppRiil / 1.30, 2); // Hanya bahan baku saja (mengeluarkan BTKL 20% & BOP 10%)
+                } else {
+                    $totalHppRiil = round(($totalDppPenjualan * 0.75) / 1.30, 2); // Fallback HPP bahan baku saja
                 }
 
                 $defaultDetails[] = ['account_id' => $idUangMuka, 'debit' => $totalDppPenjualan, 'kredit' => 0];

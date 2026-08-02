@@ -89,6 +89,7 @@ Route::middleware('auth')->group(function () {
         Route::delete('/harga-barang-pos/{id}', [HargaBarangPosController::class, 'destroy'])->name('harga.destroy');
 
         // Transaksi POS
+        Route::post('penjualan-pos/import-moka', [PenjualanPosController::class, 'importMokaExcel'])->name('penjualan_pos.import-moka');
         Route::post('penjualan-pos/{id}/approve', [PenjualanPosController::class, 'approve'])->name('penjualan_pos.approve');
         Route::get('/penjualan_pos/get-harga/{produk_id}', [PenjualanPosController::class, 'getHargaAktif'])->name('penjualan_pos.get-harga');
         Route::get('/penjualan_pos/{id}/cetak-pdf', [PenjualanPosController::class, 'cetakNotaPdf'])->name('penjualan_pos.cetak-pdf');

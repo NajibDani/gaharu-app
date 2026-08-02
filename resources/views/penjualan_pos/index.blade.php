@@ -18,6 +18,10 @@
                📊 Lihat Laporan
             </a>
 
+            <button type="button" class="btn btn-outline-success px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#importMokaModal">
+               📥 Import Moka POS
+            </button>
+
             <a href="{{ route('penjualan_pos.create') }}"
                class="btn btn-primary px-4 shadow-sm">
                + Tambah Transaksi
@@ -129,6 +133,36 @@
         </div>
         <div class="mt-3 px-3 pb-3">
             {{ $data->links() }}
+        </div>
+    </div>
+</div>
+
+<!-- Modal Import Moka POS -->
+<div class="modal fade" id="importMokaModal" tabindex="-1" aria-labelledby="importMokaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ route('penjualan_pos.import-moka') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold" id="importMokaModalLabel">Import Excel Moka POS</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="moka_file" class="form-label fw-bold text-secondary">Pilih File Excel Moka POS (.xlsx / .xls)</label>
+                        <input type="file" name="moka_file" id="moka_file" class="form-control" accept=".xlsx,.xls" required>
+                        <div class="form-text mt-2 small text-muted">
+                            Pastikan kolom file Excel Moka Anda minimal memiliki header:
+                            <br><code>Receipt Number / No. Transaksi</code>, <code>Item Name / Nama Barang</code>, 
+                            <code>Quantity / Jumlah</code>, <code>Gross Sales / Penjualan Kotor</code>, <code>Net Sales / Penjualan Bersih</code>, <code>Tax / Pajak</code>, <code>Payment Method / Metode Pembayaran</code>.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-success fw-bold">Mulai Import</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

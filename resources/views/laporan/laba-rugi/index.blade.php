@@ -190,21 +190,6 @@
         }
 
         /* ===== Button Formula & Modal ===== */
-        .btn-formula {
-            font-size: 11px;
-            background-color: #feebc8;
-            color: #9c4221;
-            border: 1px solid #fbd38d;
-            padding: 3px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-left: 8px;
-            font-weight: 600;
-        }
-        .btn-formula:hover {
-            background-color: #fbd38d;
-        }
-
         .btn-b2b-detail {
             font-size: 11px;
             background-color: #ebf8ff;
@@ -218,37 +203,6 @@
         }
         .btn-b2b-detail:hover {
             background-color: #bee3f8;
-        }
-
-        .box-formula-hpp {
-            background-color: #fffaf0;
-            border: 1px solid #feebc8;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 12px 0 20px 0;
-        }
-        .box-formula-hpp h4 {
-            margin: 0 0 10px 0;
-            color: #9c4221;
-            font-size: 12px;
-            text-transform: uppercase;
-            font-weight: 700;
-        }
-        .table-formula {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-        .table-formula th {
-            background-color: #feebc8;
-            color: #7b341e;
-            text-align: left;
-            padding: 6px 10px;
-        }
-        .table-formula td {
-            padding: 6px 10px;
-            border-bottom: 1px solid #feebc8;
-            color: #4a5568;
         }
 
         /* ===== Modal Styling ===== */
@@ -494,44 +448,10 @@
                     <tr class="row-total">
                         <td style="color: #c53030;">
                             Total Harga Pokok Penjualan
-                            <button type="button" class="btn-formula no-print" onclick="toggleFormulaHpp()">
-                                Lihat Formula HPP
-                            </button>
                         </td>
                         <td class="text-right" style="color: #c53030;">(Rp {{ number_format($totalHpp ?? 0, 0, ',', '.') }})</td>
                     </tr>
                 </table>
-
-                <!-- BOX RINCIAN FORMULA KALKULASI HPP -->
-                <div id="box-formula" class="box-formula-hpp" style="display: none;">
-                    <h4>Rincian Formula Perhitungan HPP (Persediaan Awal + Pembelian - Persediaan Akhir):</h4>
-                    <table class="table-formula">
-                        <thead>
-                            <tr>
-                                <th>Lini Bisnis / Kategori</th>
-                                <th class="text-right">Persed. Awal</th>
-                                <th class="text-right">Pembelian</th>
-                                <th class="text-right">Persed. Akhir</th>
-                                <th class="text-right">Total HPP</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @forelse($rincianFormulaHpp ?? [] as $row)
-                            <tr>
-                                <td>{{ $row->nama_lini }}</td>
-                                <td class="text-right">Rp {{ number_format($row->persediaan_awal, 0, ',', '.') }}</td>
-                                <td class="text-right">Rp {{ number_format($row->pembelian, 0, ',', '.') }}</td>
-                                <td class="text-right">(Rp {{ number_format($row->persediaan_akhir, 0, ',', '.') }})</td>
-                                <td class="text-right"><strong>Rp {{ number_format($row->total_hpp, 0, ',', '.') }}</strong></td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="5" class="text-center empty-row">Belum ada rincian formula kalkulasi HPP untuk periode ini.</td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
 
                 <table class="laporan-table" style="margin-top: 10px;">
                     <!-- 3. LABA KOTOR -->
@@ -623,15 +543,6 @@
     </div>
 
     <script>
-        function toggleFormulaHpp() {
-            var box = document.getElementById("box-formula");
-            if (box.style.display === "none") {
-                box.style.display = "block";
-            } else {
-                box.style.display = "none";
-            }
-        }
-
         function openModalB2b() {
             document.getElementById('modal-b2b').style.display = 'flex';
         }
