@@ -615,9 +615,43 @@ class PenjualanPosController extends Controller
             $file = $request->file('moka_file');
             $selectedDate = $request->input('tanggal_transaksi');
             
-            $spreadsheet = IOFactory::load($file->getRealPath());
-            $sheet = $spreadsheet->getActiveSheet();
-            $rows = $sheet->toArray(null, true, true, true);
+            $extension = strtolower($file->getClientOriginalExtension());
+            $rows = [];
+
+            if ($extension === 'csv' || $file->getMimeType() === 'text/csv' || $file->getMimeType() === 'text/plain') {
+                // Parse CSV secara native (tidak bergantung pada PhpSpreadsheet)
+                $handle = fopen($file->getRealPath(), 'r');
+                if ($handle) {
+                    // Deteksi delimiter (koma atau titik koma)
+                    $firstLine = fgets($handle);
+                    rewind($handle);
+                    $delimiter = ',';
+                    if (str_contains($firstLine, ';') && !str_contains($firstLine, ',')) {
+                        $delimiter = ';';
+                    }
+
+                    $rowIndex = 1;
+                    while (($data = fgetcsv($handle, 4000, $delimiter)) !== false) {
+                        $row = [];
+                        foreach ($data as $colIndex => $cellValue) {
+                            $colLetter = chr(65 + $colIndex); // A, B, C, ...
+                            $row[$colLetter] = $cellValue;
+                        }
+                        $rows[$rowIndex] = $row;
+                        $rowIndex++;
+                    }
+                    fclose($handle);
+                }
+            } else {
+                // Pastikan library PhpSpreadsheet terinstall untuk file Excel (.xlsx / .xls)
+                if (!class_exists(\PhpOffice\PhpSpreadsheet\IOFactory::class)) {
+                    return back()->with('error', 'Library PhpSpreadsheet tidak terinstall di live server. Silakan simpan file Excel Anda sebagai format CSV (.csv) lalu upload kembali file CSV tersebut, atau hubungi admin untuk menjalankan "composer install".');
+                }
+
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getRealPath());
+                $sheet = $spreadsheet->getActiveSheet();
+                $rows = $sheet->toArray(null, true, true, true);
+            }
 
             // Find the header row and map columns dynamically
             $headerRowIndex = null;
