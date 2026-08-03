@@ -607,11 +607,14 @@ class PenjualanPosController extends Controller
     public function importMokaExcel(Request $request)
     {
         $request->validate([
-            'moka_file' => 'required|file|mimes:xlsx,xls'
+            'moka_file' => 'required|file',
+            'tanggal_transaksi' => 'required|date'
         ]);
 
         try {
             $file = $request->file('moka_file');
+            $selectedDate = $request->input('tanggal_transaksi');
+            
             $spreadsheet = IOFactory::load($file->getRealPath());
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, true);
@@ -622,130 +625,128 @@ class PenjualanPosController extends Controller
             foreach ($rows as $rowIndex => $row) {
                 $rowClean = array_map(fn($v) => strtolower(trim((string)$v)), $row);
                 foreach ($rowClean as $colLetter => $cellValue) {
+                    // Check for Receipt Number / transaction identifier
                     if (str_contains($cellValue, 'receipt number') || str_contains($cellValue, 'no. transaksi') || str_contains($cellValue, 'no. resi') || str_contains($cellValue, 'no. struk') || str_contains($cellValue, 'no. invoice')) {
                         $mapping['receipt'] = $colLetter;
                     }
-                    if (str_contains($cellValue, 'item name') || str_contains($cellValue, 'nama item') || str_contains($cellValue, 'nama barang') || str_contains($cellValue, 'item')) {
+                    // Check for Item name
+                    if (str_contains($cellValue, 'item name') || str_contains($cellValue, 'nama item') || str_contains($cellValue, 'nama barang') || $cellValue === 'item') {
                         $mapping['item'] = $colLetter;
                     }
-                    if (str_contains($cellValue, 'quantity') || str_contains($cellValue, 'jumlah') || str_contains($cellValue, 'qty')) {
+                    // Check for Variant name
+                    if (str_contains($cellValue, 'item variant name') || str_contains($cellValue, 'variant name') || str_contains($cellValue, 'varian') || str_contains($cellValue, 'variant')) {
+                        $mapping['variant'] = $colLetter;
+                    }
+                    // Check for Qty / Item Sold
+                    if (str_contains($cellValue, 'item sold') || str_contains($cellValue, 'quantity') || str_contains($cellValue, 'jumlah') || str_contains($cellValue, 'qty') || str_contains($cellValue, 'sold')) {
                         $mapping['qty'] = $colLetter;
                     }
+                    // Check for Net Sales
                     if (str_contains($cellValue, 'net sales') || str_contains($cellValue, 'penjualan bersih') || str_contains($cellValue, 'subtotal')) {
                         $mapping['net_sales'] = $colLetter;
                     }
+                    // Check for Gross Sales
                     if (str_contains($cellValue, 'gross sales') || str_contains($cellValue, 'penjualan kotor')) {
                         $mapping['gross_sales'] = $colLetter;
                     }
+                    // Check for Price
                     if (str_contains($cellValue, 'price') || str_contains($cellValue, 'harga')) {
                         $mapping['price'] = $colLetter;
                     }
+                    // Check for Tax
                     if (str_contains($cellValue, 'tax') || str_contains($cellValue, 'pajak')) {
                         $mapping['tax'] = $colLetter;
                     }
+                    // Check for Payment Method
                     if (str_contains($cellValue, 'payment method') || str_contains($cellValue, 'metode pembayaran') || str_contains($cellValue, 'metode')) {
                         $mapping['payment'] = $colLetter;
                     }
+                    // Check for Date
                     if (str_contains($cellValue, 'date') || str_contains($cellValue, 'tanggal')) {
                         $mapping['date'] = $colLetter;
                     }
                 }
-                if (isset($mapping['receipt']) && isset($mapping['item']) && isset($mapping['qty'])) {
+                // If we found at least Item Name and Quantity/Item Sold, we found the header row
+                if (isset($mapping['item']) && isset($mapping['qty'])) {
                     $headerRowIndex = $rowIndex;
                     break;
                 }
             }
 
             if (!$headerRowIndex) {
-                return back()->with('error', 'Format Excel Moka POS tidak dikenali. Pastikan minimal terdapat kolom: Receipt Number, Item Name, dan Quantity.');
+                return back()->with('error', 'Format file Moka POS tidak dikenali. Pastikan file minimal memiliki kolom: Item Name dan Item Sold (atau Quantity).');
             }
 
-            // Group rows by receipt number
-            $transactions = [];
-            for ($i = $headerRowIndex + 1; $i <= count($rows); $i++) {
-                $row = $rows[$i];
-                $receipt = trim((string)($row[$mapping['receipt']] ?? ''));
-                if (empty($receipt)) continue;
-
-                // Skip refunded rows
-                $isRefund = false;
-                foreach ($row as $val) {
-                    if (strtolower(trim((string)$val)) === 'refunded' || strtolower(trim((string)$val)) === 'refund') {
-                        $isRefund = true;
-                        break;
-                    }
-                }
-                if ($isRefund) continue;
-
-                $itemName = trim((string)($row[$mapping['item']] ?? ''));
-                if (empty($itemName)) continue;
-
-                $qty = floatval($row[$mapping['qty']] ?? 0);
-                if ($qty <= 0) continue;
-
-                $price = floatval($row[$mapping['price'] ?? ''] ?? 0);
-                $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? ($qty * $price));
-                $tax = floatval($row[$mapping['tax'] ?? ''] ?? 0);
-                
-                $dateVal = trim((string)($row[$mapping['date'] ?? ''] ?? ''));
-                $payment = trim((string)($row[$mapping['payment'] ?? ''] ?? 'Cash'));
-
-                if (!isset($transactions[$receipt])) {
-                    $transactions[$receipt] = [
-                        'receipt' => $receipt,
-                        'date' => !empty($dateVal) ? date('Y-m-d H:i:s', strtotime($dateVal)) : date('Y-m-d H:i:s'),
-                        'payment' => $payment,
-                        'tax' => 0,
-                        'items' => []
-                    ];
-                }
-                $transactions[$receipt]['tax'] += $tax;
-                $transactions[$receipt]['items'][] = [
-                    'item_name' => $itemName,
-                    'qty' => $qty,
-                    'price' => $price,
-                    'subtotal' => $netSales
-                ];
-            }
-
+            $isSummaryFormat = !isset($mapping['receipt']);
             $gudangId = auth()->user()->gudang_id ?? 2; // Gaharu
             $userId = auth()->id() ?? 1;
 
-            $successCount = 0;
-            $skippedCount = 0;
-
-            foreach ($transactions as $receipt => $tx) {
-                // Prevent duplicate receipts
-                $exists = DB::table('penjualan_pos')->where('kode_transaksi', $receipt)->exists();
+            if ($isSummaryFormat) {
+                // FORMAT 1: Item Sales Report (Ringkasan Penjualan Barang)
+                $receiptCode = 'MOKA-SUM-' . date('Ymd', strtotime($selectedDate));
+                
+                // Prevent duplicate imports
+                $exists = DB::table('penjualan_pos')->where('kode_transaksi', $receiptCode)->exists();
                 if ($exists) {
-                    $skippedCount++;
-                    continue;
+                    return back()->with('error', "Laporan Moka POS untuk tanggal " . date('d/m/Y', strtotime($selectedDate)) . " sudah pernah di-import (Kode: {$receiptCode}).");
+                }
+
+                $totalSales = 0;
+                $itemsToImport = [];
+                for ($i = $headerRowIndex + 1; $i <= count($rows); $i++) {
+                    $row = $rows[$i];
+                    $itemName = trim((string)($row[$mapping['item']] ?? ''));
+                    if (empty($itemName) || strtolower($itemName) === 'total') continue;
+
+                    $qty = floatval($row[$mapping['qty']] ?? 0);
+                    if ($qty <= 0) continue;
+
+                    $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? 0);
+                    $totalSales += $netSales;
+
+                    $variantName = isset($mapping['variant']) ? trim((string)($row[$mapping['variant']] ?? '')) : '';
+
+                    $itemsToImport[] = [
+                        'item_name' => $itemName,
+                        'variant_name' => $variantName,
+                        'qty' => $qty,
+                        'net_sales' => $netSales
+                    ];
+                }
+
+                if (empty($itemsToImport)) {
+                    return back()->with('error', 'Tidak ada data transaksi yang valid untuk di-import.');
                 }
 
                 DB::beginTransaction();
                 try {
-                    $totalItems = 0;
-                    foreach ($tx['items'] as $it) {
-                        $totalItems += $it['subtotal'];
-                    }
-                    $totalTx = $totalItems + $tx['tax'];
-
                     // 1. Create penjualan_pos header
                     $penjualan = PenjualanPos::create([
-                        'kode_transaksi' => $receipt,
+                        'kode_transaksi' => $receiptCode,
                         'status'         => 'Draft',
-                        'tanggal'        => $tx['date'],
+                        'tanggal'        => $selectedDate . ' ' . date('H:i:s'),
                         'gudang_id'      => $gudangId,
-                        'total'          => $totalTx,
+                        'total'          => $totalSales,
                         'created_by'     => $userId
                     ]);
 
                     // 2. Create penjualanpos_detail rows
-                    foreach ($tx['items'] as $it) {
-                        // Find matching product
-                        $product = MasterBarang::where('nama', $it['item_name'])
-                            ->where('is_barang_jadi', 1)
-                            ->first();
+                    foreach ($itemsToImport as $it) {
+                        // Match product: try full name (Item Name + Variant)
+                        $fullName = trim($it['item_name'] . ' ' . $it['variant_name']);
+                        
+                        $product = null;
+                        if (!empty($it['variant_name'])) {
+                            $product = MasterBarang::where('nama', $fullName)
+                                ->where('is_barang_jadi', 1)
+                                ->first();
+                        }
+
+                        if (!$product) {
+                            $product = MasterBarang::where('nama', $it['item_name'])
+                                ->where('is_barang_jadi', 1)
+                                ->first();
+                        }
 
                         if (!$product) {
                             $product = MasterBarang::where('nama', 'like', '%' . $it['item_name'] . '%')
@@ -761,13 +762,15 @@ class PenjualanPosController extends Controller
                             throw new \Exception("Tidak ada produk jadi terdaftar di master_barang.");
                         }
 
+                        $avgPrice = $it['qty'] > 0 ? round($it['net_sales'] / $it['qty'], 2) : 0;
+
                         PenjualanPosDetail::create([
                             'penjualan_id' => $penjualan->id,
                             'produk_id'    => $product->id,
                             'qty'          => $it['qty'],
-                            'harga'        => $it['price'],
+                            'harga'        => $avgPrice,
                             'hpp_satuan'   => 0,
-                            'subtotal'     => $it['subtotal']
+                            'subtotal'     => $it['net_sales']
                         ]);
                     }
 
@@ -775,15 +778,132 @@ class PenjualanPosController extends Controller
 
                     // 3. Approve and post automatically
                     $this->approve($penjualan->id);
-                    $successCount++;
+
+                    return redirect()->route('penjualan_pos.index')->with('success', "Import Ringkasan Moka POS berhasil! 1 transaksi gabungan (Kode: {$receiptCode}) untuk tanggal " . date('d/m/Y', strtotime($selectedDate)) . " berhasil dibuat, persediaan FIFO terpotong, dan jurnal otomatis diposting.");
                 } catch (\Exception $e) {
                     DB::rollBack();
-                    Log::error('Gagal import transaksi POS Moka: ' . $e->getMessage());
-                    throw $e;
+                    Log::error('Gagal import ringkasan POS Moka: ' . $e->getMessage());
+                    return back()->with('error', 'Gagal memproses import data: ' . $e->getMessage());
                 }
-            }
 
-            return redirect()->route('penjualan_pos.index')->with('success', "Import berhasil! {$successCount} transaksi berhasil dimasukkan dan dijurnal otomatis, {$skippedCount} transaksi dilewati (duplikat).");
+            } else {
+                // FORMAT 2: Transactions List (Daftar Struk)
+                $transactions = [];
+                for ($i = $headerRowIndex + 1; $i <= count($rows); $i++) {
+                    $row = $rows[$i];
+                    $receipt = trim((string)($row[$mapping['receipt']] ?? ''));
+                    if (empty($receipt)) continue;
+
+                    // Skip refunded rows
+                    $isRefund = false;
+                    foreach ($row as $val) {
+                        if (strtolower(trim((string)$val)) === 'refunded' || strtolower(trim((string)$val)) === 'refund') {
+                            $isRefund = true;
+                            break;
+                        }
+                    }
+                    if ($isRefund) continue;
+
+                    $itemName = trim((string)($row[$mapping['item']] ?? ''));
+                    if (empty($itemName)) continue;
+
+                    $qty = floatval($row[$mapping['qty']] ?? 0);
+                    if ($qty <= 0) continue;
+
+                    $price = floatval($row[$mapping['price'] ?? ''] ?? 0);
+                    $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? ($qty * $price));
+                    $tax = floatval($row[$mapping['tax'] ?? ''] ?? 0);
+                    
+                    $dateVal = trim((string)($row[$mapping['date'] ?? ''] ?? ''));
+                    $payment = trim((string)($row[$mapping['payment'] ?? ''] ?? 'Cash'));
+
+                    if (!isset($transactions[$receipt])) {
+                        $transactions[$receipt] = [
+                            'receipt' => $receipt,
+                            'date' => !empty($dateVal) ? date('Y-m-d H:i:s', strtotime($dateVal)) : date('Y-m-d H:i:s'),
+                            'payment' => $payment,
+                            'tax' => 0,
+                            'items' => []
+                        ];
+                    }
+                    $transactions[$receipt]['tax'] += $tax;
+                    $transactions[$receipt]['items'][] = [
+                        'item_name' => $itemName,
+                        'qty' => $qty,
+                        'price' => $price,
+                        'subtotal' => $netSales
+                    ];
+                }
+
+                $successCount = 0;
+                $skippedCount = 0;
+
+                foreach ($transactions as $receipt => $tx) {
+                    $exists = DB::table('penjualan_pos')->where('kode_transaksi', $receipt)->exists();
+                    if ($exists) {
+                        $skippedCount++;
+                        continue;
+                    }
+
+                    DB::beginTransaction();
+                    try {
+                        $totalItems = 0;
+                        foreach ($tx['items'] as $it) {
+                            $totalItems += $it['subtotal'];
+                        }
+                        $totalTx = $totalItems + $tx['tax'];
+
+                        $penjualan = PenjualanPos::create([
+                            'kode_transaksi' => $receipt,
+                            'status'         => 'Draft',
+                            'tanggal'        => $tx['date'],
+                            'gudang_id'      => $gudangId,
+                            'total'          => $totalTx,
+                            'created_by'     => $userId
+                        ]);
+
+                        foreach ($tx['items'] as $it) {
+                            $product = MasterBarang::where('nama', $it['item_name'])
+                                ->where('is_barang_jadi', 1)
+                                ->first();
+
+                            if (!$product) {
+                                $product = MasterBarang::where('nama', 'like', '%' . $it['item_name'] . '%')
+                                    ->where('is_barang_jadi', 1)
+                                    ->first();
+                            }
+
+                            if (!$product) {
+                                $product = MasterBarang::where('is_barang_jadi', 1)->first();
+                            }
+
+                            if (!$product) {
+                                throw new \Exception("Tidak ada produk jadi terdaftar di master_barang.");
+                            }
+
+                            PenjualanPosDetail::create([
+                                'penjualan_id' => $penjualan->id,
+                                'produk_id'    => $product->id,
+                                'qty'          => $it['qty'],
+                                'harga'        => $it['price'],
+                                'hpp_satuan'   => 0,
+                                'subtotal'     => $it['subtotal']
+                            ]);
+                        }
+
+                        DB::commit();
+
+                        $this->approve($penjualan->id);
+                        $successCount++;
+                    } catch (\Exception $e) {
+                        DB::rollBack();
+                        Log::error('Gagal import transaksi POS Moka: ' . $e->getMessage());
+                        throw $e;
+                    }
+                }
+
+                return redirect()->route('penjualan_pos.index')->with('success', "Import berhasil! {$successCount} transaksi berhasil dimasukkan dan dijurnal otomatis, {$skippedCount} transaksi dilewati (duplikat).");
+            }
 
         } catch (\Exception $e) {
             Log::error('Error Import Moka Excel: ' . $e->getMessage());

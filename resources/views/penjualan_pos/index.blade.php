@@ -149,12 +149,17 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="moka_file" class="form-label fw-bold text-secondary">Pilih File Excel Moka POS (.xlsx / .xls)</label>
-                        <input type="file" name="moka_file" id="moka_file" class="form-control" accept=".xlsx,.xls" required>
+                        <label for="tanggal_transaksi" class="form-label fw-bold text-secondary">Tanggal Transaksi Jurnal</label>
+                        <input type="date" name="tanggal_transaksi" id="tanggal_transaksi" class="form-control" value="{{ date('Y-m-d') }}" required>
+                        <div class="form-text mt-1 small text-muted">Tanggal pembukuan transaksi & jurnal yang di-import.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="moka_file" class="form-label fw-bold text-secondary">Pilih File Excel / CSV Moka POS</label>
+                        <input type="file" name="moka_file" id="moka_file" class="form-control" accept=".xlsx,.xls,.csv" required>
                         <div class="form-text mt-2 small text-muted">
-                            Pastikan kolom file Excel Moka Anda minimal memiliki header:
-                            <br><code>Receipt Number / No. Transaksi</code>, <code>Item Name / Nama Barang</code>, 
-                            <code>Quantity / Jumlah</code>, <code>Gross Sales / Penjualan Kotor</code>, <code>Net Sales / Penjualan Bersih</code>, <code>Tax / Pajak</code>, <code>Payment Method / Metode Pembayaran</code>.
+                            Mendukung dua format ekspor Moka POS:
+                            <br>1. **Item Sales Report (Ringkasan Penjualan Barang)**: Memiliki kolom <code>Item Name</code>, <code>Item Variant Name</code>, <code>Item Sold</code>, dan <code>Net Sales</code>.
+                            <br>2. **Transactions List (Daftar Struk)**: Memiliki kolom <code>Receipt Number / No. Transaksi</code>, <code>Item Name</code>, <code>Quantity</code>, dll.
                         </div>
                     </div>
                 </div>
