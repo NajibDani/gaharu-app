@@ -397,6 +397,9 @@ class LaporanController extends Controller
                         });
                 });
             }
+
+            // D. Saldo Awal (Opening)
+            $q->orWhere('journal_type', 'opening');
         });
     };
 
@@ -621,6 +624,8 @@ class LaporanController extends Controller
             $header = $this->getHeaderJurnal($itemKas);
             $deskripsi = $header->deskripsi ?? 'Transaksi Kas';
             $descLower = strtolower($deskripsi);
+            $typeLower = strtolower($itemKas->journal_type);
+            $refLower = strtolower($header->no_ref ?? '');
 
             // Cari akun lawan (opponent) dalam jurnal yang sama
             $opponents = JournalItem::where('journal_id', $itemKas->journal_id)
@@ -631,26 +636,66 @@ class LaporanController extends Controller
 
             $opponent = $opponents->first();
 
-            // Klasifikasi berdasarkan akun lawan
-            $activityType = 'operasional'; // fallback default
-            if ($opponent && $opponent->coa) {
-                $tipeCoa = $opponent->coa->tipe;
-                $kodeCoa = $opponent->coa->kode;
+            // Klasifikasi berdasarkan jenis jurnal sesuai instruksi user
+            $isJualBeli = (
+                in_array($typeLower, ['jurnal_penjualan_pos', 'penjualan_b2b', 'jurnal_pembelian']) ||
+                str_contains($descLower, 'penjualan') || str_contains($descLower, 'pembelian') ||
+                str_contains($descLower, 'b2b') || str_contains($descLower, 'pos') ||
+                str_contains($refLower, 'penjualan') || str_contains($refLower, 'pembelian')
+            );
 
-                if ($tipeCoa === 'Ekuitas' || str_starts_with($kodeCoa, '3')) {
-                    $activityType = 'pendanaan';
-                } elseif ($tipeCoa === 'Liabilitas' && str_starts_with($kodeCoa, '22')) {
-                    // Liabilitas jangka panjang masuk pendanaan
-                    $activityType = 'pendanaan';
-                } elseif ($tipeCoa === 'Aset' && str_starts_with($kodeCoa, '12')) {
-                    // Aset tetap masuk investasi
-                    $activityType = 'investasi';
+            $isGaji = (
+                str_contains($typeLower, 'gaji') || str_contains($typeLower, 'payroll') || str_contains($typeLower, 'penggajian') ||
+                str_contains($descLower, 'gaji') || str_contains($descLower, 'payroll') || str_contains($descLower, 'upah') ||
+                str_contains($refLower, 'gaji') || str_contains($refLower, 'payroll') || str_contains($refLower, 'upah')
+            );
+
+            $isSelisihHpp = (
+                str_contains($descLower, 'selisih hpp') || str_contains($descLower, 'penyesuaian hpp') ||
+                str_contains($descLower, 'stock opname') || str_contains($descLower, 'opname') ||
+                str_contains($refLower, 'selisih hpp') || str_contains($refLower, 'opname') ||
+                str_contains($descLower, 'hpp') || str_contains($refLower, 'hpp')
+            );
+
+            if ($isJualBeli || $isGaji || $isSelisihHpp) {
+                $activityType = 'operasional';
+            } else {
+                // Selain jurnal tersebut masuknya ke aktivitas investasi ataupun pendanaan berdasarkan akun lawan
+                $activityType = 'pendanaan'; // Default fallback
+                if ($opponent && $opponent->coa) {
+                    $tipeCoa = $opponent->coa->tipe;
+                    $kodeCoa = $opponent->coa->kode;
+
+                    if ($tipeCoa === 'Aset' && str_starts_with($kodeCoa, '12')) {
+                        // Aset tetap masuk investasi
+                        $activityType = 'investasi';
+                    } elseif ($tipeCoa === 'Ekuitas' || str_starts_with($kodeCoa, '3')) {
+                        $activityType = 'pendanaan';
+                    } elseif ($tipeCoa === 'Liabilitas' && str_starts_with($kodeCoa, '22')) {
+                        $activityType = 'pendanaan';
+                    } else {
+                        // Cek nama akun lawan untuk keyword aset tetap
+                        $namaOpponent = strtolower($opponent->coa->nama);
+                        if (str_contains($namaOpponent, 'peralatan') || 
+                            str_contains($namaOpponent, 'mesin') ||
+                            str_contains($namaOpponent, 'tanah') ||
+                            str_contains($namaOpponent, 'gedung') ||
+                            str_contains($namaOpponent, 'kendaraan')) {
+                            $activityType = 'investasi';
+                        } else {
+                            $activityType = 'pendanaan';
+                        }
+                    }
                 }
             }
 
             if ($activityType === 'pendanaan') {
                 if ($debit > 0) {
-                    $kategori = 'Setoran Modal Pemilik';
+                    if ($opponent && $opponent->coa && (str_contains(strtolower($opponent->coa->tipe), 'liabilitas') || str_starts_with($opponent->coa->kode, '2'))) {
+                        $kategori = 'Penerimaan Pinjaman / Liabilitas Jangka Panjang';
+                    } else {
+                        $kategori = 'Setoran Modal Pemilik';
+                    }
                     $pendanaanRaw->push([
                         'kategori' => $kategori,
                         'nominal'  => $debit,
@@ -658,6 +703,8 @@ class LaporanController extends Controller
                 } else {
                     if ($opponent && $opponent->coa && $opponent->coa->kode === '3102') {
                         $kategori = 'Pengambilan Prive oleh Pemilik';
+                    } elseif ($opponent && $opponent->coa && (str_contains(strtolower($opponent->coa->tipe), 'liabilitas') || str_starts_with($opponent->coa->kode, '2'))) {
+                        $kategori = 'Pembayaran Cicilan Pinjaman / Liabilitas Jangka Panjang';
                     } else {
                         $kategori = 'Pembayaran Pendanaan / Pengembalian Modal';
                     }
@@ -669,12 +716,18 @@ class LaporanController extends Controller
             } elseif ($activityType === 'investasi') {
                 if ($debit > 0) {
                     $kategori = 'Penjualan Aset Tetap';
+                    if ($opponent && $opponent->coa) {
+                        $kategori .= ' (' . $opponent->coa->nama . ')';
+                    }
                     $investasiRaw->push([
                         'kategori' => $kategori,
                         'nominal'  => $debit,
                     ]);
                 } else {
                     $kategori = 'Pembelian Aset Tetap';
+                    if ($opponent && $opponent->coa) {
+                        $kategori .= ' (' . $opponent->coa->nama . ')';
+                    }
                     $investasiRaw->push([
                         'kategori' => $kategori,
                         'nominal'  => $kredit * -1,
@@ -683,30 +736,34 @@ class LaporanController extends Controller
             } else {
                 // OPERASIONAL
                 if ($debit > 0) {
-                    // Cek akun Pendapatan di lawan jurnalnya
-                    $coaPenjualan = $opponents->filter(function ($item) {
-                        return $item->coa && ($item->coa->tipe === 'Pendapatan' || str_starts_with($item->coa->kode, '4'));
-                    })->first();
-
-                    if ($coaPenjualan && $coaPenjualan->coa) {
-                        $namaCoa = strtolower($coaPenjualan->coa->nama);
-                        if (str_contains($namaCoa, 'kejingga')) {
-                            $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
-                        } elseif (str_contains($namaCoa, 'gaharu')) {
-                            $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
-                        } else {
-                            $kategori = 'Penerimaan ' . $coaPenjualan->coa->nama;
-                        }
+                    if ($isSelisihHpp) {
+                        $kategori = 'Penerimaan Penyesuaian Selisih HPP';
                     } else {
-                        // Fallback berdasarkan deskripsi atau tipe jurnal
-                        if (str_contains($descLower, 'kejingga')) {
-                            $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
-                        } elseif (str_contains($descLower, 'gaharu')) {
-                            $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
-                        } elseif ($itemKas->journal_type === 'penjualan_b2b' || str_contains($descLower, 'b2b')) {
-                            $kategori = 'Penerimaan Penjualan B2B';
+                        // Cek akun Pendapatan di lawan jurnalnya
+                        $coaPenjualan = $opponents->filter(function ($item) {
+                            return $item->coa && ($item->coa->tipe === 'Pendapatan' || str_starts_with($item->coa->kode, '4'));
+                        })->first();
+
+                        if ($coaPenjualan && $coaPenjualan->coa) {
+                            $namaCoa = strtolower($coaPenjualan->coa->nama);
+                            if (str_contains($namaCoa, 'kejingga')) {
+                                $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
+                            } elseif (str_contains($namaCoa, 'gaharu')) {
+                                $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
+                            } else {
+                                $kategori = 'Penerimaan ' . $coaPenjualan->coa->nama;
+                            }
                         } else {
-                            $kategori = 'Penerimaan Kas Lainnya (' . $deskripsi . ')';
+                            // Fallback berdasarkan deskripsi atau tipe jurnal
+                            if (str_contains($descLower, 'kejingga')) {
+                                $kategori = 'Penerimaan Penjualan Kasir POS Kejingga & PPN Keluaran';
+                            } elseif (str_contains($descLower, 'gaharu')) {
+                                $kategori = 'Penerimaan Penjualan Kasir POS Gaharu & PPN Keluaran';
+                            } elseif ($itemKas->journal_type === 'penjualan_b2b' || str_contains($descLower, 'b2b')) {
+                                $kategori = 'Penerimaan Penjualan B2B';
+                            } else {
+                                $kategori = 'Penerimaan Kas Lainnya (' . $deskripsi . ')';
+                            }
                         }
                     }
 
@@ -717,28 +774,25 @@ class LaporanController extends Controller
                 }
 
                 if ($kredit > 0) {
-                    // 1. Pengeluaran Pembelian Bahan Baku / Supplier (REKAPAN)
-                    if ($itemKas->journal_type === 'jurnal_pembelian' || str_contains($descLower, 'pembelian') || str_contains($descLower, 'supplier')) {
+                    if ($isSelisihHpp) {
+                        $kategori = 'Penyesuaian Selisih HPP / Persediaan';
+                    } elseif ($itemKas->journal_type === 'jurnal_pembelian' || str_contains($descLower, 'pembelian') || str_contains($descLower, 'supplier')) {
                         $kategori = 'Pembayaran Pembelian Bahan Baku';
-                        $pengeluaranBahanBakuRaw->push([
-                            'kategori' => $kategori,
-                            'nominal'  => $kredit * -1,
-                        ]);
                     } else {
-                        // 2. Pengeluaran Beban Operasional
+                        // Pengeluaran Beban Operasional
                         if (str_contains($descLower, 'listrik') || str_contains($descLower, 'air') || str_contains($descLower, 'internet')) {
                             $kategori = 'Pembayaran Beban Listrik, Air, & Internet';
-                        } elseif (str_contains($descLower, 'gaji') || str_contains($descLower, 'payroll') || str_contains($descLower, 'upah')) {
+                        } elseif ($isGaji) {
                             $kategori = 'Pembayaran Gaji & Upah Karyawan';
                         } else {
                             $kategori = $deskripsi;
                         }
-
-                        $pengeluaranBebanOpRaw->push([
-                            'kategori' => $kategori,
-                            'nominal'  => $kredit * -1,
-                        ]);
                     }
+
+                    $pengeluaranBebanOpRaw->push([
+                        'kategori' => $kategori,
+                        'nominal'  => $kredit * -1,
+                    ]);
                 }
             }
         }

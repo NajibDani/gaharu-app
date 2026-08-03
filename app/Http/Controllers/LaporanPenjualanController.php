@@ -133,12 +133,16 @@ class LaporanPenjualanController extends Controller
 
             foreach ($penjualan->details as $d) {
                 $qty = floatval($d->qty);
-                $hppSatuan = floatval($d->hpp_satuan);
-                $totalHpp = $qty * $hppSatuan;
-
-                $bbb = $totalHpp / 1.3;
-                $btkl = $bbb * 0.20;
-                $bop = $bbb * 0.10;
+                $bbbSatuan = floatval($d->hpp_satuan); // Stored hpp_satuan is only BBB
+                
+                $btklSatuan = $bbbSatuan * 0.20;
+                $bopSatuan = $bbbSatuan * 0.10;
+                $hppSatuan = $bbbSatuan + $btklSatuan + $bopSatuan; // HPP Satuan = BBB + BTKL + BOP
+                
+                $bbb = $bbbSatuan * $qty;
+                $btkl = $btklSatuan * $qty;
+                $bop = $bopSatuan * $qty;
+                $totalHpp = $hppSatuan * $qty;
 
                 $items[] = [
                     'nama_barang' => $d->produk->nama ?? 'N/A',
