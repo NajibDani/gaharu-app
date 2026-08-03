@@ -65,6 +65,23 @@
                     </div>
                 </div>
 
+                <div class="row mt-2">
+                    <div class="col-6 col-md-3 mb-3">
+                        <label class="text-muted">No. HP Customer</label>
+                        <h5>{{ $pesanan->customer->no_hp ?? '-' }}</h5>
+                    </div>
+
+                    <div class="col-6 col-md-3 mb-3">
+                        <label class="text-muted">Tipe Customer</label>
+                        <h5>{{ $pesanan->customer->jenis ?? '-' }}</h5>
+                    </div>
+
+                    <div class="col-12 col-md-6 mb-3">
+                        <label class="text-muted">Alamat Customer</label>
+                        <h5>{{ $pesanan->customer->alamat ?? '-' }}</h5>
+                    </div>
+                </div>
+
                 <hr class="my-3">
 
                 <div class="row">

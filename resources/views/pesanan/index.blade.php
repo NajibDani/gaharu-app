@@ -192,9 +192,16 @@
                                 <td class="text-center text-secondary fw-medium">{{ $no++ }}</td>
                                 <td class="text-start fw-bold" style="color: #6a4126;">#{{ $item->kode_pesanan }}</td>
                                 <td class="text-start">
-                                    <div class="fw-semibold text-dark mb-0">{{ $item->customer->nama ?? $item->customer->name ?? 'Umum / Tanpa Nama' }}</div>
-                                    @if(isset($item->customer->telepon))
-                                        <span class="text-muted d-inline-flex align-items-center gap-1" style="font-size: 0.7rem;"><i class="bi bi-telephone text-secondary"></i> {{ $item->customer->telepon }}</span>
+                                    <div class="fw-semibold text-dark mb-0">{{ $item->customer->nama ?? 'Umum / Tanpa Nama' }}</div>
+                                    @if(isset($item->customer->no_hp))
+                                        <div class="text-muted d-flex align-items-center gap-1" style="font-size: 0.72rem; margin-top: 1px;">
+                                            <i class="bi bi-telephone text-secondary" style="font-size: 0.68rem;"></i> {{ $item->customer->no_hp }}
+                                        </div>
+                                    @endif
+                                    @if(isset($item->customer->alamat))
+                                        <div class="text-muted text-truncate d-block" style="font-size: 0.72rem; max-width: 250px; margin-top: 1px;" title="{{ $item->customer->alamat }}">
+                                            <i class="bi bi-geo-alt text-secondary" style="font-size: 0.68rem;"></i> {{ $item->customer->alamat }}
+                                        </div>
                                     @endif
                                 </td>
                                 <td class="text-center text-secondary">
