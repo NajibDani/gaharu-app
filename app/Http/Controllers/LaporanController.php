@@ -59,8 +59,8 @@ class LaporanController extends Controller
         $pengeluaranBahanBakuRaw = collect();
         $pengeluaranBebanOpRaw   = collect();
 
-        $investasi = collect();
-        $pendanaan = collect();
+        $investasiRaw = collect();
+        $pendanaanRaw = collect();
 
         foreach ($kasJournalItems as $itemKas) {
             $debit  = $itemKas->debit;
@@ -121,7 +121,7 @@ class LaporanController extends Controller
             // B. PENGELUARAN / KAS KELUAR (Kredit Kas)
             // =========================================================================
             if ($kredit > 0) {
-                // 1. Cek apakah lawan akunnya adalah Ekuitas / Modal (misal: Prive, Dividen)
+                // 1. Cek lawan akun Ekuitas / Modal (misal: Prive, Dividen)
                 $coaModal = JournalItem::where('journal_id', $itemKas->journal_id)
                     ->where('journal_type', $itemKas->journal_type)
                     ->whereHas('coa', fn($q) => $q->whereIn('tipe', ['Modal', 'Ekuitas'])->orWhere('kode', 'LIKE', '3%'))
@@ -129,49 +129,59 @@ class LaporanController extends Controller
                     ->first();
 
                 if ($coaModal && $coaModal->coa) {
-                    $pendanaan->push([
-                        'keterangan' => $coaModal->coa->nama,
-                        'nominal'    => $kredit * -1,
+                    $pendanaanRaw->push([
+                        'kategori' => 'Pengambilan Prive oleh Pemilik',
+                        'nominal'  => $kredit * -1,
                     ]);
                 } 
-                // Fallback pencarian kata kunci prive/dividen di deskripsi
-                elseif (str_contains($descLower, 'prive') || str_contains($descLower, 'dividen') || str_contains($descLower, 'modal')) {
-                    $pendanaan->push([
-                        'keterangan' => $deskripsi,
-                        'nominal'    => $kredit * -1,
+                // Fallback Prive via deskripsi
+                elseif (str_contains($descLower, 'prive') || str_contains($descLower, 'dividen')) {
+                    $pendanaanRaw->push([
+                        'kategori' => 'Pengambilan Prive oleh Pemilik',
+                        'nominal'  => $kredit * -1,
                     ]);
                 }
-                // 2. Deteksi Uang Muka Pembelian Supplier
-                elseif (str_contains($descLower, 'uang muka') || str_contains($descLower, 'dp') || str_contains($descLower, 'down payment')) {
-                    $kategori = 'Pembayaran Uang Muka Pembelian Supplier';
+                // 2. Cek lawan akun ASET TETAP murni (Investasi, misal COA 14xx)
+                else {
+                    $coaAsetTetap = JournalItem::where('journal_id', $itemKas->journal_id)
+                        ->where('journal_type', $itemKas->journal_type)
+                        ->whereHas('coa', fn($q) => $q->where('tipe', 'Aset Tetap')->orWhere('kode', 'LIKE', '14%'))
+                        ->with('coa')
+                        ->first();
 
-                    $pengeluaranBahanBakuRaw->push([
-                        'kategori' => $kategori,
-                        'nominal'  => $kredit * -1,
-                    ]);
-                } 
-                // 3. Pengeluaran Pembelian Bahan Baku / Supplier (Direkap)
-                elseif ($itemKas->journal_type === 'jurnal_pembelian' || str_contains($descLower, 'pembelian') || str_contains($descLower, 'supplier')) {
-                    
-                    $kategori = 'Pembayaran Pembelian Bahan Baku';
-
-                    $pengeluaranBahanBakuRaw->push([
-                        'kategori' => $kategori,
-                        'nominal'  => $kredit * -1,
-                    ]);
-
-                } else {
-                    // 4. Pengeluaran Beban Operasional
-                    if (str_contains($descLower, 'listrik') || str_contains($descLower, 'air') || str_contains($descLower, 'internet')) {
-                        $kategori = 'Pembayaran Beban Listrik, Air, & Internet';
-                    } else {
-                        $kategori = $deskripsi;
+                    if ($coaAsetTetap && $coaAsetTetap->coa) {
+                        $investasiRaw->push([
+                            'kategori' => 'Pembelian Aset Tetap (' . $coaAsetTetap->coa->nama . ')',
+                            'nominal'  => $kredit * -1,
+                        ]);
                     }
+                    // 3. Deteksi Uang Muka Pembelian Supplier
+                    elseif (str_contains($descLower, 'uang muka') || str_contains($descLower, 'dp') || str_contains($descLower, 'down payment')) {
+                        $pengeluaranBahanBakuRaw->push([
+                            'kategori' => 'Pembayaran Uang Muka Pembelian Supplier',
+                            'nominal'  => $kredit * -1,
+                        ]);
+                    } 
+                    // 4. Pengeluaran Pembelian Bahan Baku / Supplier (Direkap)
+                    elseif ($itemKas->journal_type === 'jurnal_pembelian' || str_contains($descLower, 'pembelian bahan') || str_contains($descLower, 'supplier')) {
+                        $pengeluaranBahanBakuRaw->push([
+                            'kategori' => 'Pembayaran Pembelian Bahan Baku',
+                            'nominal'  => $kredit * -1,
+                        ]);
+                    } 
+                    // 5. Pengeluaran Operasional Biasa
+                    else {
+                        if (str_contains($descLower, 'listrik') || str_contains($descLower, 'air') || str_contains($descLower, 'internet')) {
+                            $kategori = 'Pembayaran Beban Listrik, Air, & Internet';
+                        } else {
+                            $kategori = $deskripsi;
+                        }
 
-                    $pengeluaranBebanOpRaw->push([
-                        'kategori' => $kategori,
-                        'nominal'  => $kredit * -1,
-                    ]);
+                        $pengeluaranBebanOpRaw->push([
+                            'kategori' => $kategori,
+                            'nominal'  => $kredit * -1,
+                        ]);
+                    }
                 }
             }
         }
@@ -189,14 +199,22 @@ class LaporanController extends Controller
             return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
         })->values();
 
-        // Subtotal Operasional
+        $investasi = $investasiRaw->groupBy('kategori')->map(function ($items, $kat) {
+            return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
+        })->values();
+
+        $pendanaan = $pendanaanRaw->groupBy('kategori')->map(function ($items, $kat) {
+            return ['keterangan' => $kat, 'nominal' => $items->sum('nominal')];
+        })->values();
+
+        // Subtotal
         $totalPenerimaanPelanggan  = $penerimaanPelanggan->sum('nominal');
         $totalPengeluaranBahanBaku = $pengeluaranBahanBaku->sum('nominal');
         $totalPengeluaranBebanOp   = $pengeluaranBebanOp->sum('nominal');
 
         $kasBersihOperasional = $totalPenerimaanPelanggan + $totalPengeluaranBahanBaku + $totalPengeluaranBebanOp;
         $kasBersihInvestasi   = $investasi->sum('nominal');
-        $kasBersihPendanaan   = $pendanaan->sum('keterangan')->count() > 0 ? $pendanaan->sum('nominal') : $pendanaan->sum('nominal');
+        $kasBersihPendanaan   = $pendanaan->sum('nominal');
 
         // Rekonsiliasi Saldo Kas Awal & Akhir
         $saldoAwalKas = $this->getSaldoAkumulasiKasToDate($kasBankCoaIds, (int)$bulan - 1, (int)$tahun);
