@@ -183,4 +183,72 @@ class LaporanPenjualanController extends Controller
             ]
         ]);
     }
+
+    public function detailHargaJual(Request $request)
+    {
+        $type = $request->get('type');
+        $id = $request->get('id');
+
+        $items = [];
+        $kode = '';
+        $totalOmzet = 0;
+
+        if ($type === 'b2b') {
+            $pesanan = \App\Models\Pesanan::with(['details.produk'])->find($id);
+            if (!$pesanan) {
+                return response()->json(['error' => 'Pesanan tidak ditemukan.'], 404);
+            }
+            $kode = $pesanan->kode_pesanan;
+
+            foreach ($pesanan->details as $d) {
+                $qty = floatval($d->qty);
+                $harga = floatval($d->harga);
+                $subtotal = floatval($d->subtotal);
+
+                $items[] = [
+                    'nama_barang' => $d->produk->nama ?? 'N/A',
+                    'kode_barang' => $d->produk->kode_barang ?? 'N/A',
+                    'qty' => $qty,
+                    'satuan' => $d->produk->satuan ?? 'pcs',
+                    'harga' => $harga,
+                    'subtotal' => $subtotal,
+                ];
+
+                $totalOmzet += $subtotal;
+            }
+        } elseif ($type === 'pos') {
+            $penjualan = \App\Models\PenjualanPos::with(['details.produk'])->find($id);
+            if (!$penjualan) {
+                return response()->json(['error' => 'Transaksi POS tidak ditemukan.'], 404);
+            }
+            $kode = $penjualan->kode_transaksi;
+
+            foreach ($penjualan->details as $d) {
+                $qty = floatval($d->qty);
+                $harga = floatval($d->harga);
+                $subtotal = floatval($d->subtotal);
+
+                $items[] = [
+                    'nama_barang' => $d->produk->nama ?? 'N/A',
+                    'kode_barang' => $d->produk->kode_barang ?? 'N/A',
+                    'qty' => $qty,
+                    'satuan' => $d->produk->satuan ?? 'pcs',
+                    'harga' => $harga,
+                    'subtotal' => $subtotal,
+                ];
+
+                $totalOmzet += $subtotal;
+            }
+        } else {
+            return response()->json(['error' => 'Tipe laporan tidak valid.'], 400);
+        }
+
+        return response()->json([
+            'kode' => $kode,
+            'items' => $items,
+            'summary' => [
+                'total_omzet' => $totalOmzet,
+            ]
+        ]);
+    }
 }

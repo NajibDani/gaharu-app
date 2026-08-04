@@ -39,8 +39,13 @@ class LaporanPenjualanPosController extends Controller
             $total_omzet += $item->total;
             
             // Kalkulasi HPP per transaksi dari relasi detail
+            // hpp_satuan yang tersimpan di detail HANYA komponen Bahan Baku (BBB),
+            // sehingga perlu ditambah BTKL (20%) dan BOP (10%) agar konsisten
+            // dengan perhitungan pada popup "Detail Komponen HPP".
             $hpp_transaksi = $item->details ? $item->details->sum(function($d) {
-                return $d->hpp_satuan * $d->qty;
+                $bbbSatuan = floatval($d->hpp_satuan);
+                $hppSatuan = $bbbSatuan * 1.3; // BBB + BTKL(20%) + BOP(10%)
+                return $hppSatuan * $d->qty;
             }) : 0;
             
             $total_hpp += $hpp_transaksi;
@@ -105,4 +110,28 @@ class LaporanPenjualanPosController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
+
+    public function detailHargaJual(Request $request)
+    {
+        $penjualan = PenjualanPos::with('details.produk')->findOrFail($request->id);
+    
+        return response()->json([
+            'kode' => $penjualan->kode_transaksi,
+            'summary' => [
+                'total_omzet' => $penjualan->total,
+            ],
+            'items' => $penjualan->details->map(function ($d) {
+                return [
+                    'nama_barang' => $d->produk->nama,
+                    'kode_barang' => $d->produk->kode ?? '-',
+                    'qty'         => $d->qty,
+                    'satuan'      => $d->produk->satuan ?? '',
+                    'harga'       => $d->harga,
+                    'subtotal'    => $d->subtotal,
+                ];
+            }),
+        ]);
+    }
+
+
 }

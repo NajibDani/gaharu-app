@@ -130,36 +130,21 @@
                     <thead class="table-dark">
                         <tr>
                             <th class="ps-4" width="50">No</th>
-                            <th>Produk</th>
+                            <th>Nama Item</th>
                             <th class="text-center" width="80">Qty</th>
                             <th class="text-end">Harga Jual</th>
-                            <th class="text-end">HPP Satuan</th>
-                            <th class="text-end">Subtotal Jual</th>
-                            <th class="text-end">Total HPP</th>
-                            <th class="text-end pe-4">Laba</th>
+                            <th class="text-end pe-4">Total Harga Jual</th>
                         </tr>
                     </thead>
 
                     <tbody>
                         @foreach($penjualan->details as $key => $d)
-                        @php
-                            $totalHppItem = $d->hpp_satuan * $d->qty;
-                            $labaItem = $d->subtotal - $totalHppItem;
-                        @endphp
-
                         <tr>
                             <td class="ps-4 text-muted">{{ $key + 1 }}</td>
                             <td class="fw-medium">{{ $d->produk->nama }}</td>
                             <td class="text-center bg-light">{{ $d->qty }}</td>
-                            
                             <td class="text-end">Rp {{ number_format($d->harga, 0, ',', '.') }}</td>
-                            <td class="text-end text-muted">Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}</td>
-                            <td class="text-end fw-medium">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
-                            <td class="text-end text-muted">Rp {{ number_format($totalHppItem, 0, ',', '.') }}</td>
-                            
-                            <td class="text-end text-success fw-bold pe-4">
-                                Rp {{ number_format($labaItem, 0, ',', '.') }}
-                            </td>
+                            <td class="text-end fw-medium pe-4">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
                         </tr>
                         @endforeach
                     </tbody>
