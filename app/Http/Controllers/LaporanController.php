@@ -323,9 +323,41 @@ class LaporanController extends Controller
         $totalBeban = $detailsBeban->sum('saldo');
         $labaBersih = $labaKotor - $totalBeban;
 
+        // 5. Ambil Rincian Invoice/Pesanan Penjualan B2B untuk Pop-up Modal
+        $rincianInvoiceB2b = \App\Models\Pesanan::with('customer')
+            ->whereMonth('tanggal', $bulan)
+            ->whereYear('tanggal', $tahun)
+            ->whereNotIn('status_pesanan', ['batal', 'dibatalkan'])
+            ->get()
+            ->map(function ($p) {
+                $p->no_faktur = $p->kode_pesanan;
+                $p->nama_pelanggan = $p->customer->nama ?? 'Pelanggan B2B';
+                $p->grand_total = $p->total_pesanan;
+                return $p;
+            });
+
+        if ($rincianInvoiceB2b->isEmpty()) {
+            $rincianInvoiceB2b = \DB::table('jurnal_penjualan_b2b')
+                ->join('journal_items', function ($join) {
+                    $join->on('journal_items.journal_id', '=', 'jurnal_penjualan_b2b.id')
+                        ->where('journal_type', '=', 'penjualan_b2b');
+                })
+                ->select(
+                    'jurnal_penjualan_b2b.id',
+                    'jurnal_penjualan_b2b.tanggal',
+                    'jurnal_penjualan_b2b.no_ref as no_faktur',
+                    'jurnal_penjualan_b2b.deskripsi as nama_pelanggan',
+                    \DB::raw('SUM(journal_items.kredit) as grand_total')
+                )
+                ->whereMonth('jurnal_penjualan_b2b.tanggal', $bulan)
+                ->whereYear('jurnal_penjualan_b2b.tanggal', $tahun)
+                ->groupBy('jurnal_penjualan_b2b.id', 'jurnal_penjualan_b2b.tanggal', 'jurnal_penjualan_b2b.no_ref', 'jurnal_penjualan_b2b.deskripsi')
+                ->get();
+        }
+
     // Data payload untuk dikirim ke view/pdf/excel
     $dataCompact = compact(
-        'detailsPenjualanB2b', 'detailsPendapatanLain', 'detailsHpp', 'detailsBeban',
+        'detailsPenjualanB2b', 'rincianInvoiceB2b', 'detailsPendapatanLain', 'detailsHpp', 'detailsBeban',
         'totalPenjualanB2b', 'totalPendapatanLain', 'totalPendapatan', 
         'totalHpp', 'labaKotor', 'totalBeban', 'labaBersih',
         'bulan', 'tahun'
