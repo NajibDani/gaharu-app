@@ -167,6 +167,7 @@ Route::middleware('auth')->group(function () {
         Route::put('/adjustment/{id}', [JurnalController::class, 'adjustmentUpdate'])->name('adjustment.update');
         Route::put('adjustment/{id}/approve', [JurnalController::class, 'adjustmentApprove'])->name('adjustment.approve');
         Route::post('adjustment/approve-batch', [JurnalController::class, 'adjustmentApproveBatch'])->name('adjustment.approve_batch');
+        Route::delete('adjustment/{id}', [JurnalController::class, 'adjustmentDestroy'])->name('adjustment.destroy');
 
         // Jurnal Pembelian
         Route::get('/jurnal-pembelian', [JurnalController::class, 'pembelianIndex'])->name('jurnal-pembelian.index');

@@ -8,6 +8,13 @@
                 <a href="{{ route('jurnal.edit', $jurnal->id) }}" class="bg-yellow-500 text-black px-4 py-2 rounded text-sm shadow-sm hover:bg-yellow-600 transition">
                     Edit
                 </a>
+                <form action="{{ route('jurnal.destroy', $jurnal->id) }}" method="POST" class="inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Jurnal Umum No. Ref {{ $jurnal->no_ref }}? Hapus jurnal akan langsung memperbarui laporan akuntansi.')">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="bg-red-600 text-white px-4 py-2 rounded text-sm shadow-sm hover:bg-red-700 transition">
+                        Hapus
+                    </button>
+                </form>
                 <a href="{{ route('jurnal.index') }}" class="bg-gray-500 text-white px-4 py-2 rounded text-sm shadow-sm hover:bg-gray-600 transition">
                     Kembali
                 </a>

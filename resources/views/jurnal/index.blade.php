@@ -84,9 +84,18 @@
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    <a href="{{ route('jurnal.show', $j->id) }}" class="btn btn-outline-info btn-sm">
-                                        Detail
-                                    </a>
+                                    <div class="d-flex justify-content-center gap-1">
+                                        <a href="{{ route('jurnal.show', $j->id) }}" class="btn btn-outline-info btn-sm">
+                                            <i class="fas fa-eye"></i> Detail
+                                        </a>
+                                        <form action="{{ route('jurnal.destroy', $j->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Jurnal Umum No. Ref {{ $j->no_ref }}? Hapus jurnal akan langsung memperbarui laporan akuntansi.')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-outline-danger btn-sm">
+                                                <i class="fas fa-trash-alt"></i> Hapus
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                             @empty

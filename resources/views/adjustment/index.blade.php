@@ -154,6 +154,15 @@
                                                     </button>
                                                 </form>
                                             @endif
+
+                                            {{-- Tombol Hapus (Dapat menghapus baik Draft maupun Posted) --}}
+                                            <form action="{{ route('adjustment.destroy', $firstItem->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Jurnal Penyesuaian ini? Hapus jurnal akan langsung memperbarui laporan akuntansi.')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-sm btn-danger py-1 px-2" style="font-size: 0.75rem;" title="Hapus Jurnal Penyesuaian">
+                                                    <i class="fas fa-trash-alt me-1"></i> Hapus
+                                                </button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>

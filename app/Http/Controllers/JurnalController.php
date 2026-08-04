@@ -255,6 +255,48 @@ class JurnalController extends Controller
         }
     }
 
+    /**
+     * Menghapus Jurnal Umum (General Journal)
+     */
+    public function destroy($id)
+    {
+        $jurnal = Journal::findOrFail($id);
+
+        // Check Closing Period Protection
+        $latestClosing = Journal::where('source_type', 'closing')
+            ->orderBy('tanggal', 'desc')
+            ->first();
+
+        if ($latestClosing) {
+            $closingDate = \Carbon\Carbon::parse($latestClosing->tanggal)->endOfMonth();
+            $targetDate = \Carbon\Carbon::parse($jurnal->tanggal);
+
+            if ($targetDate->lte($closingDate)) {
+                return redirect()->back()->with('error', 'Gagal menghapus jurnal! Transaksi pada atau sebelum periode closing ' . \Carbon\Carbon::parse($latestClosing->tanggal)->translatedFormat('F Y') . ' sudah ditutup dan tidak dapat dihapus.');
+            }
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // 1. Hapus detail item journal_items
+            DB::table('journal_items')
+                ->where('journal_id', $jurnal->id)
+                ->where('journal_type', 'jurnal_umum')
+                ->delete();
+
+            // 2. Hapus header journal
+            $jurnal->delete();
+
+            DB::commit();
+
+            return redirect()->route('jurnal.index')->with('success', 'Jurnal Umum No. Ref ' . $jurnal->no_ref . ' berhasil dihapus permanen.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menghapus jurnal: ' . $e->getMessage());
+        }
+    }
+
     public function closingPage()
     {
         // Menampilkan halaman form penutupan dan daftar riwayat khusus closing
@@ -680,6 +722,59 @@ class JurnalController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', $e->getMessage())->withInput();
+        }
+    }
+
+    /**
+     * Menghapus Jurnal Penyesuaian (Adjustment Journal)
+     */
+    public function adjustmentDestroy($id)
+    {
+        $jurnal = JurnalPenyesuaian::findOrFail($id);
+
+        // Check Closing Period Protection
+        $latestClosing = Journal::where('source_type', 'closing')
+            ->orderBy('tanggal', 'desc')
+            ->first();
+
+        if ($latestClosing) {
+            $closingDate = \Carbon\Carbon::parse($latestClosing->tanggal)->endOfMonth();
+            $targetDate = \Carbon\Carbon::parse($jurnal->tanggal);
+
+            if ($targetDate->lte($closingDate)) {
+                return redirect()->back()->with('error', 'Gagal menghapus jurnal penyesuaian! Transaksi pada atau sebelum periode closing ' . \Carbon\Carbon::parse($latestClosing->tanggal)->translatedFormat('F Y') . ' sudah ditutup dan tidak dapat dihapus.');
+            }
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Apabila berasal dari modul otomatis (Stock Opname / Pengeluaran Bahan Baku), reset status modul sumber
+            if ($jurnal->source_type === 'pengeluaran_bahan_baku' && $jurnal->source_id) {
+                DB::table('pengeluaran_bahan_baku')
+                    ->where('id', $jurnal->source_id)
+                    ->update([
+                        'status' => 'draft',
+                        'approved_by' => null,
+                        'approved_at' => null
+                    ]);
+            }
+
+            // 1. Hapus detail item journal_items
+            DB::table('journal_items')
+                ->where('journal_id', $jurnal->id)
+                ->whereIn('journal_type', [\App\Models\JurnalPenyesuaian::class, 'jurnal_penyesuaian'])
+                ->delete();
+
+            // 2. Hapus header jurnal_penyesuaian
+            $jurnal->delete();
+
+            DB::commit();
+
+            return redirect()->route('adjustment.index')->with('success', 'Jurnal Penyesuaian No. Ref ' . $jurnal->no_ref . ' berhasil dihapus permanen.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menghapus jurnal penyesuaian: ' . $e->getMessage());
         }
     }
 
