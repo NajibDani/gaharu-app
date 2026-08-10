@@ -13,7 +13,7 @@ class DatabaseSeeder extends Seeder
             MasterGudangSeeder::class,
             UserSeeder::class,
             CoaMasterSeeder::class,
-            KaryawanSeeder::class,
+            // KaryawanSeeder::class,
         ]);
     }
 }
