@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Imports\MasterBarangImporter;
 use App\Models\MasterBarang;
 use App\Models\Kategori;
-use App\Models\ResepBtklBop; 
+use App\Models\ResepBtklBop;
 use Illuminate\Http\Request;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class BarangController extends Controller
 {
@@ -144,7 +148,7 @@ class BarangController extends Controller
             $harga_pos = str_replace('.', '', $request->harga_jual_pos ?? 0);
             $hpp       = str_replace('.', '', $request->hpp_referensi ?? 0);
     
-            if ($request->jenis_utama == 'BAHAN_BAKU' || $request->jenis_utama == 'OPERATIONAL') {
+            if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI', 'OPERATIONAL'])) {
                 $harga_b2b = 0;
                 $harga_pos = 0;
             }
@@ -158,6 +162,7 @@ class BarangController extends Controller
                 'satuan_pembelian'      => $request->satuan_pembelian,
                 'konversi_pembelian'    => $request->konversi_pembelian ?? 1.00,
                 'is_bahan_baku'         => $request->jenis_utama == 'BAHAN_BAKU',
+                'is_bahan_setengah_jadi' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI',
                 'is_barang_jadi'        => $request->jenis_utama == 'BARANG_JADI',
                 'is_operational'        => $request->jenis_utama == 'OPERATIONAL',
                 'is_direct_consumption' => false,
@@ -165,6 +170,9 @@ class BarangController extends Controller
                 'harga_jual_b2b'        => $harga_b2b,
                 'harga_jual_pos'        => $harga_pos,
                 'minimum_stock'         => $request->minimum_stock,
+                'minimum_stock_ck'      => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_ck : null,
+                'minimum_stock_kejingga' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_kejingga : null,
+                'minimum_stock_gaharu'  => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_gaharu : null,
                 'minimum_order'         => $request->minimum_order ?? 1.00,
                 'tipe_penjualan'        => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
             ]);
@@ -183,7 +191,7 @@ class BarangController extends Controller
         $kategori = Kategori::all();
         $reseps = ResepBtklBop::all(); 
 
-        $data->jenis_utama = $data->is_bahan_baku ? 'BAHAN_BAKU' : ($data->is_barang_jadi ? 'BARANG_JADI' : 'OPERATIONAL');
+        $data->jenis_utama = $data->is_bahan_baku ? 'BAHAN_BAKU' : ($data->is_bahan_setengah_jadi ? 'BAHAN_SETENGAH_JADI' : ($data->is_barang_jadi ? 'BARANG_JADI' : ($data->is_operational ? 'OPERATIONAL' : 'BAHAN_BAKU')));
 
         return view('barang.edit', compact('data', 'kategori', 'reseps'));
     }
@@ -239,7 +247,7 @@ class BarangController extends Controller
         $harga_pos = str_replace('.', '', $request->harga_jual_pos ?? 0);
         $hpp = str_replace('.', '', $request->hpp_referensi ?? 0);
     
-        if ($request->jenis_utama == 'BAHAN_BAKU' || $request->jenis_utama == 'OPERATIONAL') {
+        if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI', 'OPERATIONAL'])) {
             $harga_b2b = 0;
             $harga_pos = 0;
         }
@@ -254,6 +262,7 @@ class BarangController extends Controller
             'konversi_pembelian' => $request->konversi_pembelian ?? 1.00,
     
             'is_bahan_baku'  => $request->jenis_utama == 'BAHAN_BAKU',
+            'is_bahan_setengah_jadi' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI',
             'is_barang_jadi' => $request->jenis_utama == 'BARANG_JADI',
             'is_operational' => $request->jenis_utama == 'OPERATIONAL',
             'is_direct_consumption' => false,
@@ -262,6 +271,9 @@ class BarangController extends Controller
             'harga_jual_b2b' => $harga_b2b,
             'harga_jual_pos' => $harga_pos,
             'minimum_stock'  => $request->minimum_stock,
+            'minimum_stock_ck' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_ck : null,
+            'minimum_stock_kejingga' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_kejingga : null,
+            'minimum_stock_gaharu' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_gaharu : null,
             'minimum_order'  => $request->minimum_order ?? 1.00,
             'tipe_penjualan' => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
         ]);
@@ -306,5 +318,119 @@ class BarangController extends Controller
         ]);
 
         return back()->with('success', 'Status barang berhasil diubah.');
+    }
+
+    /**
+     * Download template Excel untuk import Master Barang.
+     * Sheet 1 "Barang" = kolom yang harus diisi + 1 baris contoh.
+     * Sheet 2 "Referensi Kategori" = daftar kategori yang tersedia saat ini di sistem,
+     * supaya kolom "kategori" di sheet 1 diisi persis sama.
+     */
+    public function importTemplate()
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Barang');
+
+        $headers = [
+            'kode_barang', 'nama', 'kategori', 'jenis_utama', 'satuan',
+            'satuan_pembelian', 'konversi_pembelian', 'tipe_penjualan',
+            'harga_jual_b2b', 'harga_jual_pos', 'hpp_referensi',
+            'minimum_stock', 'minimum_stock_ck', 'minimum_stock_kejingga', 'minimum_stock_gaharu', 'minimum_order',
+        ];
+        $sheet->fromArray($headers, null, 'A1');
+        $sheet->getStyle('A1:P1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:P1')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:P1')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('D88656');
+
+        // Baris contoh (boleh dihapus user sebelum import)
+        $sheet->fromArray([
+            'BMB003', 'SAMBAL MATAH', 'BUMBU', 'BAHAN_BAKU', 'GR',
+            'JERIGEN', '5000', '',
+            '0', '0', '0', '5000', '', '', '', '1',
+        ], null, 'A2');
+        $sheet->fromArray([
+            'BSJ001', 'SAUS BOLOGNESE JADI', 'BUMBU', 'BAHAN_SETENGAH_JADI', 'GR',
+            '', '1', '',
+            '0', '0', '0', '', '2000', '1000', '1000', '1',
+        ], null, 'A3');
+
+        foreach (range('A', 'P') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Sheet referensi kategori supaya kolom "kategori" diisi persis sesuai sistem
+        $kategoriSheet = $spreadsheet->createSheet();
+        $kategoriSheet->setTitle('Referensi Kategori');
+        $kategoriSheet->fromArray(['nama_kategori', 'prefix'], null, 'A1');
+        $kategoriSheet->getStyle('A1:B1')->getFont()->setBold(true);
+
+        $row = 2;
+        foreach (Kategori::orderBy('nama')->get() as $k) {
+            $kategoriSheet->setCellValue('A' . $row, $k->nama);
+            $kategoriSheet->setCellValue('B' . $row, $k->prefix);
+            $row++;
+        }
+        foreach (['A', 'B'] as $col) {
+            $kategoriSheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Sheet panduan singkat
+        $guide = $spreadsheet->createSheet();
+        $guide->setTitle('Panduan');
+        $guide->fromArray([
+            ['Kolom', 'Wajib?', 'Keterangan'],
+            ['kode_barang', 'Ya', 'Harus unik. Jika kode sudah ada di sistem, baris akan DILEWATI otomatis.'],
+            ['nama', 'Ya', 'Nama barang.'],
+            ['kategori', 'Ya', 'Isi persis sama dengan nama di sheet "Referensi Kategori".'],
+            ['jenis_utama', 'Ya', 'Salah satu: BAHAN_BAKU, BAHAN_SETENGAH_JADI, BARANG_JADI, OPERATIONAL. Bahan Setengah Jadi = barang olahan awal (mis. saus dasar) yang bisa punya resep sendiri sekaligus dipakai sebagai bahan di resep lain.'],
+            ['satuan', 'Ya', 'Contoh: GR, KG, PCS, LITER'],
+            ['satuan_pembelian', 'Tidak', 'Kosongkan jika tidak ada satuan pembelian berbeda.'],
+            ['konversi_pembelian', 'Tidak', 'Default 1 jika kosong.'],
+            ['tipe_penjualan', 'Wajib jika BARANG_JADI', 'Salah satu: POS Kejingga, POS Gaharu, B2B'],
+            ['harga_jual_b2b', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
+            ['harga_jual_pos', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
+            ['hpp_referensi', 'Tidak', 'Default 0 jika kosong.'],
+            ['minimum_stock', 'Tidak', 'Minimum stock umum/Bahan Baku. Boleh kosong.'],
+            ['minimum_stock_ck', 'Tidak', 'Minimum stock Central Kitchen (khusus Bahan Setengah Jadi). Boleh kosong.'],
+            ['minimum_stock_kejingga', 'Tidak', 'Minimum stock Outlet Kejingga (khusus Bahan Setengah Jadi). Boleh kosong.'],
+            ['minimum_stock_gaharu', 'Tidak', 'Minimum stock Outlet Gaharu (khusus Bahan Setengah Jadi). Boleh kosong.'],
+            ['minimum_order', 'Tidak', 'Default 1 jika kosong.'],
+        ], null, 'A1');
+        $guide->getStyle('A1:C1')->getFont()->setBold(true);
+        foreach (['A', 'B', 'C'] as $col) {
+            $guide->getColumnDimension($col)->setWidth(30);
+        }
+        $guide->getStyle('A1:C17')->getAlignment()->setWrapText(true);
+
+        $spreadsheet->setActiveSheetIndex(0);
+
+        $writer = new Xlsx($spreadsheet);
+        $fileName = 'template_import_master_barang.xlsx';
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    /**
+     * Proses upload file Excel Master Barang.
+     */
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls',
+        ]);
+
+        $importer = new MasterBarangImporter();
+        $result = $importer->import($request->file('file')->getRealPath());
+
+        return back()
+            ->with('import_result_barang', $result)
+            ->with('success', "Import Master Barang selesai. {$result['created']} barang ditambahkan, {$result['skipped']} dilewati (kode sudah ada).");
     }
 } // <-- FIX: Kurung tutup ganda yang salah sudah dihapus

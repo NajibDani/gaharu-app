@@ -68,51 +68,179 @@ class PengeluaranBahanBakuController extends Controller
 
         $data = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
 
+        // Hitung ringkasan saran restock per outlet/gudang cabang (selain Gudang Utama ID 1)
+        $outletGudangs = MasterGudang::where('id', '!=', 1)->get();
+        $outletSuggestionsSummary = [];
+
+        foreach ($outletGudangs as $g) {
+            $gudangNama = strtolower($g->nama);
+            $minStockField = null;
+            if (str_contains($gudangNama, 'gaharu')) {
+                $minStockField = 'minimum_stock_gaharu';
+            } elseif (str_contains($gudangNama, 'kejingga')) {
+                $minStockField = 'minimum_stock_kejingga';
+            } elseif (str_contains($gudangNama, 'central kitchen')) {
+                $minStockField = 'minimum_stock_ck';
+            }
+
+            $items = MasterBarang::where('is_active', true)
+                ->where(function($q) {
+                    $q->where('is_bahan_baku', 1)
+                      ->orWhere('is_bahan_setengah_jadi', 1);
+                })
+                ->get();
+
+            $criticalCount = 0;
+            foreach ($items as $it) {
+                $minStock = 0;
+                if ($minStockField && !empty($it->{$minStockField})) {
+                    $minStock = (float) $it->{$minStockField};
+                } elseif (!empty($it->minimum_stock)) {
+                    $minStock = (float) $it->minimum_stock;
+                }
+
+                if ($minStock > 0) {
+                    $currentStock = (float) (StokGudang::where('gudang_id', $g->id)
+                        ->where('barang_id', $it->id)
+                        ->value('jumlah') ?? 0);
+                    if ($currentStock < $minStock) {
+                        $criticalCount++;
+                    }
+                }
+            }
+
+            if ($criticalCount > 0) {
+                $outletSuggestionsSummary[] = [
+                    'gudang_id'   => $g->id,
+                    'gudang_nama' => $g->nama,
+                    'count'       => $criticalCount,
+                ];
+            }
+        }
+
         return view(
             'pengeluaran-bahan-baku.index',
-            compact('data')
+            compact('data', 'outletSuggestionsSummary')
         );
+    }
+
+    /**
+     * Mengambil saran Bahan Baku / BSJ di bawah batas minimum stock untuk Gudang/Outlet tertentu (JSON)
+     */
+    public function suggestions(Request $request)
+    {
+        $gudangId = $request->query('gudang_id');
+        $gudang = MasterGudang::find($gudangId);
+
+        if (!$gudang) {
+            return response()->json(['suggestions' => [], 'gudang_name' => '']);
+        }
+
+        $gudangNama = strtolower($gudang->nama);
+        $minStockField = null;
+        if (str_contains($gudangNama, 'gaharu')) {
+            $minStockField = 'minimum_stock_gaharu';
+        } elseif (str_contains($gudangNama, 'kejingga')) {
+            $minStockField = 'minimum_stock_kejingga';
+        } elseif (str_contains($gudangNama, 'central kitchen')) {
+            $minStockField = 'minimum_stock_ck';
+        }
+
+        $items = MasterBarang::where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_baku', 1)
+                  ->orWhere('is_bahan_setengah_jadi', 1);
+            })
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        $suggestions = [];
+        foreach ($items as $it) {
+            $minStock = 0;
+            if ($minStockField && !empty($it->{$minStockField})) {
+                $minStock = (float) $it->{$minStockField};
+            } elseif (!empty($it->minimum_stock)) {
+                $minStock = (float) $it->minimum_stock;
+            }
+
+            if ($minStock <= 0) {
+                continue;
+            }
+
+            $currentStock = (float) (StokGudang::where('gudang_id', $gudang->id)
+                ->where('barang_id', $it->id)
+                ->value('jumlah') ?? 0);
+
+            if ($currentStock < $minStock) {
+                $deficit = $minStock - $currentStock;
+                $suggestedQty = max(1, (float) ceil($deficit));
+
+                // Stok yang tersedia di Gudang Utama (Gudang ID 1)
+                $stokUtama = (float) (StokGudang::where('gudang_id', 1)
+                    ->where('barang_id', $it->id)
+                    ->value('jumlah') ?? 0);
+
+                $suggestions[] = [
+                    'barang_id'     => $it->id,
+                    'kode_barang'   => $it->kode_barang,
+                    'nama'          => $it->nama,
+                    'satuan'        => $it->satuan,
+                    'current_stock' => $currentStock,
+                    'min_stock'     => $minStock,
+                    'stok_utama'    => $stokUtama,
+                    'suggested_qty' => $suggestedQty,
+                ];
+            }
+        }
+
+        return response()->json([
+            'gudang_name' => $gudang->nama,
+            'suggestions' => $suggestions,
+        ]);
     }
 
     /**
      * Show the form for creating a new resource.
      */
+    public function create(Request $request)
+    {
+        $selectedGudangId = $request->query('gudang_id');
 
-    public function create()
-{
-    $barang = MasterBarang::query()
-        ->leftJoin('stok_gudang', function ($join) {
+        $barang = MasterBarang::query()
+            ->leftJoin('stok_gudang', function ($join) {
+                $join->on(
+                    'master_barang.id',
+                    '=',
+                    'stok_gudang.barang_id'
+                );
+                $join->where(
+                    'stok_gudang.gudang_id',
+                    1
+                );
+            })
+            ->where(function ($q) {
+                $q->where('master_barang.is_bahan_baku', 1)
+                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
+            })
+            ->where('master_barang.is_active', true)
+            ->select([
+                'master_barang.*',
+                DB::raw('COALESCE(stok_gudang.jumlah,0) as stok')
+            ])
+            ->orderBy('master_barang.nama')
+            ->get();
 
-            $join->on(
-                'master_barang.id',
-                '=',
-                'stok_gudang.barang_id'
-            );
+        $gudang = MasterGudang::where('id', '!=', 1)->get(); // Hanya gudang tujuan (selain Gudang Utama)
 
-            $join->where(
-                'stok_gudang.gudang_id',
-                1
-            );
-        })
-        ->where('master_barang.is_bahan_baku', 1)
-        ->where('master_barang.is_active', true)
-        ->select([
-            'master_barang.*',
-            DB::raw('COALESCE(stok_gudang.jumlah,0) as stok')
-        ])
-        ->orderBy('master_barang.nama')
-        ->get();
-
-    $gudang = MasterGudang::all();
-
-    return view(
-        'pengeluaran-bahan-baku.create',
-        compact(
-            'barang',
-            'gudang'
-        )
-    );
-}
+        return view(
+            'pengeluaran-bahan-baku.create',
+            compact(
+                'barang',
+                'gudang',
+                'selectedGudangId'
+            )
+        );
+    }
 
     /**
      * Store a newly created resource in storage.
@@ -266,30 +394,6 @@ class PengeluaranBahanBakuController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | TIDAK BOLEH EDIT JIKA DARI WORK ORDER
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-        str_contains(
-            strtolower($pengeluaran->keterangan ?? ''),
-            'permintaan bahan baku untuk'
-        )
-    ) {
-
-        return redirect()
-            ->route(
-                'pengeluaran-bahan-baku.show',
-                $pengeluaran->id
-            )
-            ->with(
-                'error',
-                'Pengeluaran dari Work Order tidak dapat diedit.'
-            );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
     | MASTER BARANG
     |--------------------------------------------------------------------------
     */
@@ -299,7 +403,10 @@ class PengeluaranBahanBakuController extends Controller
             $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
                  ->where('stok_gudang.gudang_id', 1);
         })
-        ->where('master_barang.is_bahan_baku', 1)
+        ->where(function ($q) {
+            $q->where('master_barang.is_bahan_baku', 1)
+              ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
+        })
         ->where('master_barang.is_active', true)
         ->select([
             'master_barang.*',
@@ -566,7 +673,7 @@ class PengeluaranBahanBakuController extends Controller
                         // Akumulasi jurnal penyesuaian
                         if ($hppTotal > 0) {
                             $barang = \App\Models\MasterBarang::find($detail->barang_id);
-                            $isOperational = $barang && ($barang->is_operational || !$barang->is_bahan_baku);
+                            $isOperational = $barang && ($barang->is_operational || (!$barang->is_bahan_baku && !$barang->is_bahan_setengah_jadi));
                             $coaCode = $isOperational ? '1501' : '1301';
                             $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
 

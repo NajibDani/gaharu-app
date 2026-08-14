@@ -17,6 +17,7 @@ class MasterBarang extends Model
         'satuan_pembelian',
         'konversi_pembelian',
         'is_bahan_baku',
+        'is_bahan_setengah_jadi',
         'is_barang_jadi',
         'is_operational',
         'is_direct_consumption',
@@ -25,6 +26,9 @@ class MasterBarang extends Model
         'hpp_referensi',
         'is_active',
         'minimum_stock',
+        'minimum_stock_ck',
+        'minimum_stock_kejingga',
+        'minimum_stock_gaharu',
         'minimum_order',
         'tipe_penjualan'
     ];
@@ -49,6 +53,7 @@ class MasterBarang extends Model
                 if ($roleName === 'Kepala Outlet Gaharu') {
                     $builder->where(function ($q) {
                         $q->where('is_bahan_baku', 1)
+                          ->orWhere('is_bahan_setengah_jadi', 1)
                           ->orWhere(function ($q2) {
                               $q2->where('is_barang_jadi', 1)
                                  ->whereIn('tipe_penjualan', ['POS Gaharu', 'B2B']);
@@ -57,6 +62,7 @@ class MasterBarang extends Model
                 } elseif ($roleName === 'Kepala Outlet Kejingga') {
                     $builder->where(function ($q) {
                         $q->where('is_bahan_baku', 1)
+                          ->orWhere('is_bahan_setengah_jadi', 1)
                           ->orWhere(function ($q2) {
                               $q2->where('is_barang_jadi', 1)
                                  ->where('tipe_penjualan', 'POS Kejingga');
@@ -65,6 +71,7 @@ class MasterBarang extends Model
                 } elseif ($roleName === 'Kepala Gudang') {
                     $builder->where(function ($q) {
                         $q->where('is_bahan_baku', 1)
+                          ->orWhere('is_bahan_setengah_jadi', 1)
                           ->orWhere('is_operational', 1)
                           ->orWhere(function ($q2) {
                               $q2->where('is_barang_jadi', 1)
@@ -103,6 +110,15 @@ public function firstFifoLayer()
 {
     return $this->hasOne(FifoLayer::class, 'barang_id')->orderBy('tanggal_masuk', 'asc');
 }
+    public function getJenisUtamaAttribute()
+    {
+        if ($this->is_bahan_baku) return 'BAHAN_BAKU';
+        if ($this->is_bahan_setengah_jadi) return 'BAHAN_SETENGAH_JADI';
+        if ($this->is_barang_jadi) return 'BARANG_JADI';
+        if ($this->is_operational) return 'OPERATIONAL';
+        return 'UMUM';
+    }
+
     public function resep()
     {
         // Gunakan hasMany karena satu resep_id memiliki banyak item bahan baku

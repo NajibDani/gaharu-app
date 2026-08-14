@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderDetail;
 use App\Models\MasterBarang;
+use App\Models\MasterGudang;
 use App\Models\ResepBahanBaku;
 use App\Models\StokGudang;
 use App\Models\StokGudangBatch;
@@ -19,25 +20,447 @@ class ProduksiController extends Controller
 {
     /*
     |--------------------------------------------------------------------------
-    | 1. HALAMAN RIWAYAT & DRAFT PRODUKSI
+    | 1. HALAMAN UNIFIED B2B PRODUKSI (Order Masuk, Work Orders, & Riwayat)
     |--------------------------------------------------------------------------
     */
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = Produksi::with(['details.produk', 'pesanan.customer']);
+
+        // 1. Pesanan B2B yang Pending / Siap dibuatkan WO
+        $pesananB2BPending = \App\Models\Pesanan::where(function($q) {
+                $q->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
+            })
+            ->with(['details.produk', 'customer'])
+            ->whereIn('status_pesanan', ['pending', 'Draft', 'Siap diproduksi'])
+            ->whereIn('status_pembayaran', ['DP', 'Lunas'])
+            ->orderBy('estimasi_kirim', 'asc')
+            ->paginate(10, ['*'], 'pesanan_page')
+            ->withQueryString();
+
+        // Hitung sisa kebutuhan WO per pesanan dan per detail
+        $pesananB2BPending->getCollection()->transform(function($p) {
+            $totalPesananQty = 0;
+            $totalSudahWoQty = 0;
+
+            foreach ($p->details as $detail) {
+                $sudahWo = WorkOrderDetail::where('pesanan_id', $p->id)
+                    ->where('produk_id', $detail->produk_id)
+                    ->sum('qty_rencana');
+                
+                $detail->qty_sudah_wo = floatval($sudahWo);
+                $detail->sisa_wo_qty = max(0, floatval($detail->qty) - floatval($sudahWo));
+
+                $totalPesananQty += floatval($detail->qty);
+                $totalSudahWoQty += floatval($sudahWo);
+            }
+
+            $p->total_sisa_wo = max(0, $totalPesananQty - $totalSudahWoQty);
+            $p->is_fully_wo = ($p->total_sisa_wo <= 0 && $totalPesananQty > 0);
+            $p->is_partial_wo = ($totalSudahWoQty > 0 && $p->total_sisa_wo > 0);
+
+            return $p;
+        });
+
+        // 2. Filter Work Order B2B
+        $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resep.bahan'])
+            ->where(function($q) {
+                $q->whereHas('details.pesanan', function($pq) {
+                    $pq->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
+                })->orWhereDoesntHave('details.pesanan');
+            });
 
         if ($search) {
-            $query->where('no_produksi', 'like', '%' . $search . '%');
+            $queryWo->where('kode_wo', 'like', '%' . $search . '%');
         }
 
-        $riwayatProduksi = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
+        $woList = $queryWo->latest()->paginate(10, ['*'], 'wo_page')->withQueryString();
 
-        $totalData = Produksi::count();
-        $totalDraft = Produksi::where('status_produksi', 'Draft')->count();
-        $totalApproved = Produksi::where('status_produksi', 'Selesai')->count();
+        $gudangB2BId = 3; // Gudang B2B
 
-        return view('produksi.index', compact('riwayatProduksi', 'totalData', 'totalDraft', 'totalApproved'));
+        // Hitung progress produksi & ketersediaan bahan baku untuk setiap WO
+        $woList->getCollection()->transform(function($wo) use ($gudangB2BId) {
+            $firstDetail = $wo->details->first();
+            $customer = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->customer : null;
+            $wo->customer_nama = $customer ? ($customer->nama ?? $customer->name ?? 'Customer B2B') : 'Customer B2B';
+            $wo->pesanan_kode  = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->kode_pesanan : '-';
+
+            $totalTarget = 0;
+            $totalSelesai = 0;
+            $totalSisa = 0;
+
+            $itemsProgress = [];
+            $agregatKebutuhan = [];
+
+            foreach ($wo->details as $wod) {
+                $target = floatval($wod->qty_rencana);
+                $sudah = DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $wod->pesanan_id)
+                    ->where('produk_id', $wod->produk_id)
+                    ->sum('qty_alokasi') ?? 0;
+                $sisa = max(0, $target - floatval($sudah));
+
+                $totalTarget += $target;
+                $totalSelesai += floatval($sudah);
+                $totalSisa += $sisa;
+
+                $itemsProgress[] = [
+                    'produk_id'    => $wod->produk_id,
+                    'kode_barang'  => $wod->produk->kode_barang ?? 'N/A',
+                    'nama_produk'  => $wod->produk->nama ?? 'N/A',
+                    'satuan'       => $wod->produk->satuan ?? 'pcs',
+                    'target'       => $target,
+                    'sudah'        => floatval($sudah),
+                    'sisa'         => $sisa,
+                ];
+
+                // Cek kebutuhan bahan untuk sisa target produksi
+                if ($wod->produk && $wod->produk->resep && $sisa > 0) {
+                    foreach ($wod->produk->resep as $resep) {
+                        $qtyButuh = floatval($resep->qty_bahan) * $sisa;
+                        if (!isset($agregatKebutuhan[$resep->bahan_id])) {
+                            $agregatKebutuhan[$resep->bahan_id] = [
+                                'nama'   => $resep->bahan->nama ?? 'Bahan',
+                                'butuh'  => 0,
+                                'satuan' => $resep->bahan->satuan ?? 'pcs',
+                            ];
+                        }
+                        $agregatKebutuhan[$resep->bahan_id]['butuh'] += $qtyButuh;
+                    }
+                }
+            }
+
+            // Validasi kecukupan bahan baku di Gudang B2B
+            $isBahanSufficient = true;
+            $defisitBahan = [];
+
+            foreach ($agregatKebutuhan as $bahanId => $dataBahan) {
+                $stokGudang = floatval(StokGudang::where('gudang_id', $gudangB2BId)->where('barang_id', $bahanId)->value('jumlah') ?? 0);
+                if ($stokGudang < $dataBahan['butuh']) {
+                    $isBahanSufficient = false;
+                    $defisitBahan[] = [
+                        'nama'   => $dataBahan['nama'],
+                        'butuh'  => $dataBahan['butuh'],
+                        'stok'   => $stokGudang,
+                        'kurang' => $dataBahan['butuh'] - $stokGudang,
+                        'satuan' => $dataBahan['satuan'],
+                    ];
+                }
+            }
+
+            $wo->total_target = $totalTarget;
+            $wo->total_selesai = $totalSelesai;
+            $wo->total_sisa = $totalSisa;
+            $wo->items_progress = $itemsProgress;
+            $wo->is_all_completed = ($totalSisa <= 0 && $totalTarget > 0);
+            $wo->is_bahan_sufficient = $isBahanSufficient;
+            $wo->defisit_bahan = $defisitBahan;
+
+            return $wo;
+        });
+
+        // 3. Riwayat Produksi B2B
+        $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer'])
+            ->where(function($q) {
+                $q->whereHas('pesanan', function($pq) {
+                    $pq->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
+                })->orWhereDoesntHave('pesanan');
+            });
+
+        if ($search) {
+            $queryProduksi->where('kode_produksi', 'like', '%' . $search . '%');
+        }
+
+        $riwayatProduksi = $queryProduksi->orderBy('id', 'desc')->paginate(10, ['*'], 'prod_page')->withQueryString();
+
+        $totalData = (clone $queryProduksi)->count();
+        $totalDraft = (clone $queryProduksi)->where('status_produksi', 'Draft')->count();
+        $totalApproved = (clone $queryProduksi)->where('status_produksi', 'Selesai')->count();
+
+        return view('produksi.index', compact('pesananB2BPending', 'woList', 'riwayatProduksi', 'totalData', 'totalDraft', 'totalApproved'));
+    }
+
+    /**
+     * Buat WO B2B Cepat dari Order Masuk
+     */
+    public function storeWo(Request $request)
+    {
+        $request->validate([
+            'pesanan_id'  => 'required',
+            'produk_id'   => 'required|array',
+            'qty_rencana' => 'required|array',
+        ]);
+
+        $pesanan = \App\Models\Pesanan::findOrFail($request->pesanan_id);
+        if ($pesanan->status_pembayaran === 'Belum Bayar') {
+            return back()->with('error', 'Gagal! Pesanan ini belum membayar DP / Lunas.');
+        }
+
+        DB::beginTransaction();
+        try {
+            $gudangB2BId = 3;
+
+            // Cek ketersediaan bahan baku di Gudang B2B
+            $isBahanCukup = true;
+            foreach ($request->produk_id as $key => $produkId) {
+                $qty = floatval($request->qty_rencana[$key] ?? 0);
+                if ($qty <= 0) continue;
+
+                $produk = MasterBarang::with('resep.bahan')->find($produkId);
+                if ($produk && $produk->resep) {
+                    foreach ($produk->resep as $resep) {
+                        $kebutuhan = floatval($resep->qty_bahan) * $qty;
+                        $stok = floatval(StokGudang::where('gudang_id', $gudangB2BId)->where('barang_id', $resep->bahan_id)->value('jumlah') ?? 0);
+                        if ($stok < $kebutuhan) {
+                            $isBahanCukup = false;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            $wo = WorkOrder::create([
+                'kode_wo'    => 'WO-B2B-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3))),
+                'tanggal_wo' => now(),
+                'status_wo'  => $isBahanCukup ? 'Diproses' : 'Draft',
+                'catatan'    => $request->catatan ?? ($isBahanCukup ? 'Bahan baku mencukupi di Gudang B2B' : 'Bahan baku kurang, menunggu permintaan'),
+                'created_by' => auth()->id(),
+            ]);
+
+            foreach ($request->produk_id as $key => $produkId) {
+                $qty = floatval($request->qty_rencana[$key] ?? 0);
+                if ($qty <= 0) continue;
+
+                WorkOrderDetail::create([
+                    'work_order_id' => $wo->id,
+                    'pesanan_id'    => $pesanan->id,
+                    'produk_id'     => $produkId,
+                    'qty_rencana'   => $qty,
+                ]);
+            }
+
+            DB::commit();
+            $msg = $isBahanCukup 
+                ? 'Work Order B2B (' . $wo->kode_wo . ') berhasil dibuat! Bahan baku mencukupi di Gudang B2B, siap langsung diproduksi.' 
+                : 'Work Order B2B (' . $wo->kode_wo . ') berhasil dibuat! Bahan baku belum mencukupi, silakan buat permintaan bahan jika diperlukan.';
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('success', $msg);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal membuat Work Order: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Simpan & Approve Hasil Produksi B2B Sekaligus (Mendukung Parsial & Sisa Target)
+     */
+    public function storeAndApprove(Request $request)
+    {
+        $request->validate([
+            'work_order_id'    => 'required',
+            'tanggal_produksi' => 'required|date',
+            'produk_id'        => 'required|array',
+            'qty_hasil'        => 'required|array',
+        ]);
+
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal_produksi)) {
+            return back()->with('error', 'Gagal: Periode akuntansi untuk tanggal ' . date('d/m/Y', strtotime($request->tanggal_produksi)) . ' sudah ditutup buku.')->withInput();
+        }
+
+        DB::beginTransaction();
+        try {
+            $wo = WorkOrder::with('details.produk')->findOrFail($request->work_order_id);
+            $pesananIdUtama = $wo->details->pluck('pesanan_id')->first();
+            $pesanan = \App\Models\Pesanan::find($pesananIdUtama);
+
+            $gudangBahan = MasterGudang::where('kategori', 'Produksi')->first() 
+                ?? MasterGudang::where('nama', 'like', '%Produksi%')->first()
+                ?? MasterGudang::first();
+            $gudangBahanId = $gudangBahan ? $gudangBahan->id : 3;
+
+            $gudangHasil = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first()
+                ?? MasterGudang::where('kategori', 'Produksi')->first()
+                ?? $gudangBahan;
+            $gudangHasilId = $gudangHasil ? $gudangHasil->id : 3;
+
+            $hasValidQty = false;
+            foreach ($request->produk_id as $key => $pid) {
+                if (floatval($request->qty_hasil[$key] ?? 0) > 0) {
+                    $hasValidQty = true;
+                    break;
+                }
+            }
+
+            if (!$hasValidQty) {
+                throw new \Exception('Harap masukkan minimal 1 produk dengan Qty hasil lebih dari 0.');
+            }
+
+            $kodeProduksi = 'PRD-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+            $produksiId = DB::table('produksi')->insertGetId([
+                'kode_produksi'   => $kodeProduksi,
+                'pesanan_id'      => $pesananIdUtama,
+                'tanggal_mulai'   => $request->tanggal_produksi,
+                'tanggal_selesai' => now(),
+                'status_produksi' => 'Selesai',
+                'gudang_bahan_id' => $gudangBahanId,
+                'gudang_hasil_id' => $gudangHasilId,
+                'created_by'      => auth()->id() ?? 1,
+                'created_at'      => now(),
+                'updated_at'      => now(),
+            ]);
+
+            $fifoService = app(\App\Services\FifoService::class);
+
+            foreach ($request->produk_id as $key => $produkId) {
+                $qtyHasil = floatval($request->qty_hasil[$key] ?? 0);
+                if ($qtyHasil <= 0) continue;
+
+                $produk = MasterBarang::find($produkId);
+                if (!$produk) {
+                    throw new \Exception("ID Produk {$produkId} tidak valid.");
+                }
+
+                $wod = $wo->details->where('produk_id', $produkId)->first();
+                $targetRencana = $wod ? floatval($wod->qty_rencana) : $qtyHasil;
+                $sudahAlokasi = DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $pesananIdUtama)
+                    ->where('produk_id', $produkId)
+                    ->sum('qty_alokasi') ?? 0;
+                $sisaTarget = max(0, $targetRencana - $sudahAlokasi);
+
+                if ($qtyHasil > $sisaTarget && $sisaTarget > 0) {
+                    $namaProd = $produk ? $produk->nama : 'Produk';
+                    throw new \Exception("Qty input untuk {$namaProd} ({$qtyHasil}) melebihi sisa kekurangan ({$sisaTarget}).");
+                }
+
+                $totalBbbProduk = 0;
+                if ($produk->resep_id) {
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    foreach ($resepItems as $item) {
+                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangBahanId);
+
+                        foreach ($fifoResult as $layer) {
+                            $totalBbbProduk += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                        }
+
+                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->first();
+                        if ($stokBahanGlobal) {
+                            $stokBahanGlobal->decrement('jumlah', $qtyButuh);
+                        }
+                    }
+                } else {
+                    $totalBbbProduk = floatval($produk->hpp_referensi ?? 0) * $qtyHasil;
+                }
+
+                // BTKL & BOP
+                $biayaTambahan = DB::table('resep_btkl_bop')->where('produk_id', $produkId)->first();
+                if ($biayaTambahan) {
+                    $outputQty = floatval($biayaTambahan->output_qty ?? 1) > 0 ? floatval($biayaTambahan->output_qty) : 1;
+                    $btklNominal = floatval($biayaTambahan->btkl_per_batch ?? ($biayaTambahan->btkl ?? 0));
+                    $bopNominal  = floatval($biayaTambahan->bop_per_batch ?? ($biayaTambahan->bop ?? 0));
+                    $btklPerUnit = $btklNominal / $outputQty;
+                    $bopPerUnit  = $bopNominal / $outputQty;
+                    $totalBtklBop = ($btklPerUnit + $bopPerUnit) * $qtyHasil;
+                } else {
+                    $totalBtklBop = $totalBbbProduk * 0.30;
+                }
+
+                $totalHppProduk = $totalBbbProduk + $totalBtklBop;
+                $hppPerUnit = $qtyHasil > 0 ? ($totalHppProduk / $qtyHasil) : 0;
+
+                DB::table('produksi_detail')->insert([
+                    'produksi_id' => $produksiId,
+                    'produk_id'   => $produkId,
+                    'qty'         => $qtyHasil,
+                    'hpp_total'   => $totalHppProduk,
+                    'created_at'  => now(),
+                    'updated_at'  => now(),
+                ]);
+
+                // Tambah stok hasil jadi
+                $stokJadi = StokGudang::where('gudang_id', $gudangHasilId)->where('barang_id', $produkId)->first();
+                if ($stokJadi) {
+                    $stokJadi->increment('jumlah', $qtyHasil);
+                } else {
+                    StokGudang::create([
+                        'gudang_id' => $gudangHasilId,
+                        'barang_id' => $produkId,
+                        'jumlah'    => $qtyHasil,
+                    ]);
+                }
+
+                // Buat Batch Stok Jadi
+                $supplierId  = DB::table('suppliers')->value('id') ?? 1;
+                $pembelianId = DB::table('pembelian')->value('id') ?? 1;
+                $pemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
+
+                StokGudangBatch::create([
+                    'gudang_id'           => $gudangHasilId,
+                    'supplier_id'         => $supplierId,
+                    'barang_id'           => $produkId,
+                    'pembelian_id'        => $pembelianId,
+                    'pembelian_detail_id' => $pemDetailId,
+                    'batch_number'        => 'PROD-' . $kodeProduksi,
+                    'qty_masuk'           => $qtyHasil,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qtyHasil,
+                    'harga_per_qty'       => $hppPerUnit,
+                    'is_habis'            => false,
+                ]);
+
+                // Transaksi stok masuk
+                TransaksiStok::create([
+                    'tanggal'          => $request->tanggal_produksi,
+                    'tipe'             => 'masuk',
+                    'source_type'      => 'produksi',
+                    'source_id'        => $produksiId,
+                    'gudang_tujuan_id' => $gudangHasilId,
+                    'barang_id'        => $produkId,
+                    'qty'              => $qtyHasil,
+                    'total_harga'      => $totalHppProduk,
+                    'created_by'       => auth()->id() ?? 1,
+                ]);
+
+                // Alokasi pesanan
+                if ($pesananIdUtama) {
+                    ProduksiPesanan::create([
+                        'produksi_id'       => $produksiId,
+                        'pesanan_id'        => $pesananIdUtama,
+                        'produk_id'         => $produkId,
+                        'qty_alokasi'       => $qtyHasil,
+                        'qty_terkirim'      => 0,
+                        'hpp_per_unit'      => $hppPerUnit,
+                        'total_hpp_alokasi' => $totalHppProduk,
+                    ]);
+                }
+            }
+
+            // Update status WO & Pesanan
+            $allDone = true;
+            foreach ($wo->details as $wod) {
+                $totalTarget = floatval($wod->qty_rencana);
+                $sudahAlokasi = DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $wod->pesanan_id)
+                    ->where('produk_id', $wod->produk_id)
+                    ->sum('qty_alokasi') ?? 0;
+                if ($sudahAlokasi < $totalTarget) {
+                    $allDone = false;
+                    break;
+                }
+            }
+
+            $wo->update(['status_wo' => $allDone ? 'Selesai' : 'Diproses']);
+            if ($pesanan && $allDone) {
+                $pesanan->update(['status_pesanan' => 'Siap kirim']);
+            }
+
+            DB::commit();
+            return redirect()->route('produksi.index', ['tab' => 'prod'])->with('success', 'Hasil Produksi B2B berhasil disimpan dan di-Approve! HPP dan stok telah diperbarui.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal memproses hasil produksi: ' . $e->getMessage());
+        }
     }
 
     /*

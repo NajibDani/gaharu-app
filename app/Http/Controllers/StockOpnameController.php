@@ -323,7 +323,7 @@ public function detailJson(string $id)
                     // 3. Kirim otomatis ke Jurnal Penyesuaian (Surplus)
                     $totalHargaSO = round($detail->selisih * $hargaUnit, 2);
                     if ($totalHargaSO > 0) {
-                        $isOperational = $detail->barang && ($detail->barang->is_operational || !$detail->barang->is_bahan_baku);
+                        $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
                         $coaCode = $isOperational ? '1501' : '1301';
                         $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
                         

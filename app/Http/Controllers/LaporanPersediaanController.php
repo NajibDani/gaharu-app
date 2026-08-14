@@ -119,10 +119,14 @@ class LaporanPersediaanController extends Controller
                 'master_barang.kode_barang',
                 'master_barang.satuan',
                 'master_barang.is_bahan_baku',
+                'master_barang.is_bahan_setengah_jadi',
                 'master_barang.is_barang_jadi',
                 'master_barang.is_operational',
                 'master_gudang.nama as nama_gudang',
-                'master_barang.minimum_stock' // <-- Tambahan agar kolom ini bisa dibaca
+                'master_barang.minimum_stock',
+                'master_barang.minimum_stock_ck',
+                'master_barang.minimum_stock_kejingga',
+                'master_barang.minimum_stock_gaharu'
             )
             ->orderBy('master_barang.nama');
 
@@ -134,10 +138,11 @@ class LaporanPersediaanController extends Controller
         }
         if ($request->filled('jenis_utama')) {
             $kolom = match($request->jenis_utama) {
-                'bahan_baku'  => 'master_barang.is_bahan_baku',
-                'barang_jadi' => 'master_barang.is_barang_jadi',
-                'operational' => 'master_barang.is_operational',
-                default       => null,
+                'bahan_baku'          => 'master_barang.is_bahan_baku',
+                'bahan_setengah_jadi' => 'master_barang.is_bahan_setengah_jadi',
+                'barang_jadi'         => 'master_barang.is_barang_jadi',
+                'operational'         => 'master_barang.is_operational',
+                default               => null,
             };
             if ($kolom) {
                 $query->where($kolom, true);
@@ -405,8 +410,9 @@ return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
             fputcsv($f, ['Kode Barang', 'Nama Barang', 'Jenis', 'Satuan', 'Gudang', 'Stok', 'Status']);
             foreach ($data as $row) {
                 $jenis  = $row->is_bahan_baku  ? 'Bahan Baku'
+                        : ($row->is_bahan_setengah_jadi ? 'Bahan Setengah Jadi'
                         : ($row->is_barang_jadi ? 'Barang Jadi'
-                        : ($row->is_operational ? 'Operational' : '-'));
+                        : ($row->is_operational ? 'Operational' : '-')));
                 $status = $row->jumlah == 0 ? 'Habis' : 'Tersedia';
                 fputcsv($f, [
                     $row->kode_barang,

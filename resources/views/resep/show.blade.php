@@ -2,7 +2,14 @@
 <div class="container py-4">
 
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h3 class="fw-bold text-dark">Resep: {{ $resep->produk->nama ?? 'Produk Tidak Diketahui' }}</h3>
+        <h3 class="fw-bold text-dark">
+            Resep: {{ $resep->produk->nama ?? 'Produk Tidak Diketahui' }}
+            @if($resep->produk && $resep->produk->is_bahan_setengah_jadi)
+                <span class="badge bg-info text-dark fs-6 ms-2 align-middle">Bahan Setengah Jadi</span>
+            @elseif($resep->produk && $resep->produk->is_barang_jadi)
+                <span class="badge bg-success fs-6 ms-2 align-middle">Barang Jadi</span>
+            @endif
+        </h3>
         <a href="{{ route('resep.index') }}" class="btn btn-secondary rounded-3">
             Kembali
         </a>

@@ -84,6 +84,11 @@
                 Bahan Baku
             </option>
 
+            <option value="BAHAN_SETENGAH_JADI"
+                {{ $data->jenis_utama=='BAHAN_SETENGAH_JADI'?'selected':'' }}>
+                Bahan Setengah Jadi
+            </option>
+
             <option value="BARANG_JADI"
                 {{ $data->jenis_utama=='BARANG_JADI'?'selected':'' }}>
                 Barang Jadi
@@ -98,40 +103,50 @@
 
     </div>
 
-    <div class="col-md-6 mb-3" id="group-min-stock">
+    <div class="col-md-6 mb-3"
+         id="group-min-stock">
 
-        <label>Minimum Stock (Batas Kritis)</label>
+        <label class="text-danger">Minimum Stock (Batas Kritis)</label>
 
         <input type="number"
                name="minimum_stock"
                id="minimum_stock"
                value="{{ $data->minimum_stock }}"
-               class="form-control"
-               min="0">
+               class="form-control">
 
     </div>
 
-    <div class="col-md-6 mb-3" id="group-tipe-penjualan">
+    <div class="col-12 mb-3" id="group-min-stock-bsj" style="display: none;">
+        <div class="p-3 bg-light rounded-3 border">
+            <label class="fw-bold small text-danger d-block mb-2">
+                <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock per Lokasi (Bahan Setengah Jadi - Opsional)
+            </label>
+            <div class="row g-2">
+                <div class="col-md-4">
+                    <label class="small text-secondary fw-semibold">Central Kitchen</label>
+                    <input type="number" name="minimum_stock_ck" id="minimum_stock_ck" class="form-control" placeholder="Opsional" min="0" value="{{ old('minimum_stock_ck', $data->minimum_stock_ck) }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="small text-secondary fw-semibold">Outlet Kejingga</label>
+                    <input type="number" name="minimum_stock_kejingga" id="minimum_stock_kejingga" class="form-control" placeholder="Opsional" min="0" value="{{ old('minimum_stock_kejingga', $data->minimum_stock_kejingga) }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="small text-secondary fw-semibold">Outlet Gaharu</label>
+                    <input type="number" name="minimum_stock_gaharu" id="minimum_stock_gaharu" class="form-control" placeholder="Opsional" min="0" value="{{ old('minimum_stock_gaharu', $data->minimum_stock_gaharu) }}">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-3"
+         id="group-tipe-penjualan">
 
         <label>Tipe Penjualan</label>
 
         <select name="tipe_penjualan" id="tipe_penjualan" class="form-control">
             <option value="">-- Pilih Tipe Penjualan --</option>
-            @php
-                $userRole = auth()->user()->role->nama ?? '';
-                $options = [];
-                if (in_array($userRole, ['Super Admin', 'Administrator'])) {
-                    $options = ['POS Gaharu', 'POS Kejingga', 'B2B'];
-                } elseif ($userRole === 'Kepala Outlet Gaharu') {
-                    $options = ['POS Gaharu', 'B2B'];
-                } elseif ($userRole === 'Kepala Outlet Kejingga') {
-                    $options = ['POS Kejingga'];
-                } elseif ($userRole === 'Kepala Gudang') {
-                    $options = ['B2B'];
-                }
-            @endphp
-            @foreach($options as $opt)
-                <option value="{{ $opt }}" {{ old('tipe_penjualan', $data->tipe_penjualan) == $opt ? 'selected' : '' }}>{{ $opt }}</option>
+            @foreach($tipePenjualanOptions as $opt)
+                <option value="{{ $opt }}" {{ $data->tipe_penjualan == $opt ? 'selected' : '' }}>{{ $opt }}</option>
             @endforeach
         </select>
 
@@ -139,23 +154,22 @@
 
     <div class="col-md-6 mb-3">
 
-        <label>Minimum Order (Batas Order)</label>
+        <label class="text-primary">Minimum Order (Batas Order)</label>
 
         <input type="number"
                name="minimum_order"
                id="minimum_order"
-               value="{{ $data->minimum_order ?? 1.00 }}"
-               class="form-control"
-               min="1"
-               step="0.01">
+               value="{{ $data->minimum_order ?? 1 }}"
+               class="form-control">
 
     </div>
 
 </div>
 
-<div class="mt-3">
+<div class="mt-4">
 
-    <button class="btn btn-primary">
+    <button type="submit"
+            class="btn btn-warning">
         Update
     </button>
 
@@ -179,21 +193,32 @@ document.addEventListener("DOMContentLoaded",function(){
 
     const jenis=document.getElementById("jenis");
     const group=document.getElementById("group-min-stock");
+    const groupBsj=document.getElementById("group-min-stock-bsj");
     const minimum=document.getElementById("minimum_stock");
+    const minStockCk=document.getElementById("minimum_stock_ck");
+    const minStockKejingga=document.getElementById("minimum_stock_kejingga");
+    const minStockGaharu=document.getElementById("minimum_stock_gaharu");
     const groupTipePenjualan=document.getElementById("group-tipe-penjualan");
     const tipePenjualanSelect=document.getElementById("tipe_penjualan");
 
     function toggle(){
 
-        if(jenis.value==="BAHAN_BAKU"){
-
-            group.style.display="block";
-
-        }else{
-
+        if(jenis.value==="BAHAN_SETENGAH_JADI"){
             group.style.display="none";
+            groupBsj.style.display="block";
+        }else if(jenis.value==="BAHAN_BAKU"){
+            group.style.display="block";
+            groupBsj.style.display="none";
+            if(minStockCk) minStockCk.value="";
+            if(minStockKejingga) minStockKejingga.value="";
+            if(minStockGaharu) minStockGaharu.value="";
+        }else{
+            group.style.display="none";
+            groupBsj.style.display="none";
             minimum.value="";
-
+            if(minStockCk) minStockCk.value="";
+            if(minStockKejingga) minStockKejingga.value="";
+            if(minStockGaharu) minStockGaharu.value="";
         }
 
         if(jenis.value==="BARANG_JADI"){

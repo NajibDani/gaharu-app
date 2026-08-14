@@ -40,6 +40,11 @@
                 @endif
             </form>
 
+            {{-- Tombol Import Excel membuka modal import --}}
+            <button type="button" class="btn btn-sm btn-outline-secondary" style="border-radius: 6px; padding: 5px 15px;" data-bs-toggle="modal" data-bs-target="#modalImportBarang">
+                <i class="bi bi-upload"></i> Import Excel
+            </button>
+
             {{-- Tombol Tambah membuka modal --}}
             <button type="button" class="btn btn-sm text-white" style="background-color: #d88656; border: none; border-radius: 6px; padding: 5px 15px;" data-bs-toggle="modal" data-bs-target="#modalTambahBarang">
                 + Tambah Barang
@@ -47,7 +52,51 @@
         </div>
     </div>
 
+    @if (session('import_result_barang'))
+        @php $ir = session('import_result_barang'); @endphp
+        <div class="alert alert-info mx-3 mt-3 mb-0">
+            <strong>Hasil Import:</strong>
+            {{ $ir['created'] }} barang berhasil ditambahkan,
+            {{ $ir['skipped'] }} dilewati (kode barang sudah ada).
+            @if (!empty($ir['errors']))
+                <div class="mt-2">
+                    <strong class="text-danger">{{ count($ir['errors']) }} baris bermasalah:</strong>
+                    <ul class="mb-0 small">
+                        @foreach ($ir['errors'] as $err)
+                            <li>{{ $err }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+            @if (!empty($ir['skippedRows']))
+                <details class="mt-2 small">
+                    <summary>Lihat detail baris yang dilewati</summary>
+                    <ul class="mb-0">
+                        @foreach ($ir['skippedRows'] as $sk)
+                            <li>{{ $sk }}</li>
+                        @endforeach
+                    </ul>
+                </details>
+            @endif
+        </div>
+    @endif
+
     <div class="card-body">
+        @if(session('success'))
+            <div class="alert alert-success alert-dismissible fade show d-flex align-items-center mb-3" role="alert">
+                <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                <div>{{ session('success') }}</div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
+
+        @if(session('error') || $errors->has('error'))
+            <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                <div>{{ session('error') ?? $errors->first('error') }}</div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
 
         <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle text-center mb-0">
@@ -76,6 +125,8 @@
                             <td>
                                 @if($d->is_bahan_baku)
                                     <span class="badge bg-primary-subtle text-primary px-3 py-2">Bahan Baku</span>
+                                @elseif($d->is_bahan_setengah_jadi)
+                                    <span class="badge bg-info-subtle text-info px-3 py-2">Bahan Setengah Jadi</span>
                                 @elseif($d->is_barang_jadi)
                                     <span class="badge bg-success-subtle text-success px-3 py-2">Barang Jadi</span>
                                 @elseif($d->is_operational)
@@ -83,11 +134,23 @@
                                 @endif
                             </td>
                             <td>
-                                @if($d->minimum_stock !== null)
-                                    <span class="fw-bold text-dark">{{ number_format($d->minimum_stock) }}</span>
-                                    <small class="text-muted">{{ $d->satuan }}</small>
+                                @if($d->is_bahan_setengah_jadi)
+                                    @if($d->minimum_stock_ck !== null || $d->minimum_stock_kejingga !== null || $d->minimum_stock_gaharu !== null)
+                                        <div class="small lh-sm text-start" style="font-size: 0.75rem;">
+                                            <div><span class="text-secondary">CK:</span> <strong class="text-dark">{{ $d->minimum_stock_ck !== null ? number_format($d->minimum_stock_ck) : '—' }}</strong></div>
+                                            <div><span class="text-secondary">Kejingga:</span> <strong class="text-dark">{{ $d->minimum_stock_kejingga !== null ? number_format($d->minimum_stock_kejingga) : '—' }}</strong></div>
+                                            <div><span class="text-secondary">Gaharu:</span> <strong class="text-dark">{{ $d->minimum_stock_gaharu !== null ? number_format($d->minimum_stock_gaharu) : '—' }}</strong></div>
+                                        </div>
+                                    @else
+                                        <span class="text-muted">—</span>
+                                    @endif
                                 @else
-                                    <span class="text-muted">—</span>
+                                    @if($d->minimum_stock !== null)
+                                        <span class="fw-bold text-dark">{{ number_format($d->minimum_stock) }}</span>
+                                        <small class="text-muted">{{ $d->satuan }}</small>
+                                    @else
+                                        <span class="text-muted">—</span>
+                                    @endif
                                 @endif
                             </td>
                             <td>
@@ -111,6 +174,9 @@
                                             data-jenis="{{ $d->jenis_utama }}"
                                             data-active="{{ $d->is_active ? '1' : '0' }}"
                                             data-min-stock="{{ $d->minimum_stock !== null ? number_format($d->minimum_stock) . ' ' . $d->satuan : '—' }}"
+                                            data-min-stock-ck="{{ $d->minimum_stock_ck !== null ? number_format($d->minimum_stock_ck) . ' ' . $d->satuan : '—' }}"
+                                            data-min-stock-kejingga="{{ $d->minimum_stock_kejingga !== null ? number_format($d->minimum_stock_kejingga) . ' ' . $d->satuan : '—' }}"
+                                            data-min-stock-gaharu="{{ $d->minimum_stock_gaharu !== null ? number_format($d->minimum_stock_gaharu) . ' ' . $d->satuan : '—' }}"
                                             data-min-order="{{ number_format($d->minimum_order ?? 1) }} {{ $d->satuan }}"
                                             data-tipe-penjualan="{{ $d->tipe_penjualan ?: 'Belum Diatur' }}">
                                         <i class="bi bi-eye-fill"></i>
@@ -141,6 +207,9 @@
                                             data-konversi-pembelian="{{ $d->konversi_pembelian }}"
                                             data-jenis="{{ $d->jenis_utama }}"
                                             data-min-stock="{{ $d->minimum_stock }}"
+                                            data-min-stock-ck="{{ $d->minimum_stock_ck }}"
+                                            data-min-stock-kejingga="{{ $d->minimum_stock_kejingga }}"
+                                            data-min-stock-gaharu="{{ $d->minimum_stock_gaharu }}"
                                             data-min-order="{{ $d->minimum_order ?? 1 }}"
                                             data-tipe-penjualan="{{ $d->tipe_penjualan }}"
                                             data-action="{{ route('barang.update', $d->id) }}">
@@ -244,12 +313,18 @@
                                     <option value="BAHAN_BAKU" {{ old('jenis_utama') == 'BAHAN_BAKU' ? 'selected' : '' }}>
                                         Bahan Baku
                                     </option>
+                                    <option value="BAHAN_SETENGAH_JADI" {{ old('jenis_utama') == 'BAHAN_SETENGAH_JADI' ? 'selected' : '' }}>
+                                        Bahan Setengah Jadi
+                                    </option>
                                     <option value="OPERATIONAL" {{ old('jenis_utama') == 'OPERATIONAL' ? 'selected' : '' }}>
                                         Operational
                                     </option>
                                 @else
                                     <option value="BAHAN_BAKU" {{ old('jenis_utama') == 'BAHAN_BAKU' ? 'selected' : '' }}>
                                         Bahan Baku
+                                    </option>
+                                    <option value="BAHAN_SETENGAH_JADI" {{ old('jenis_utama') == 'BAHAN_SETENGAH_JADI' ? 'selected' : '' }}>
+                                        Bahan Setengah Jadi
                                     </option>
                                     <option value="BARANG_JADI" {{ old('jenis_utama') == 'BARANG_JADI' ? 'selected' : '' }}>
                                         Barang Jadi
@@ -265,6 +340,28 @@
                         <div class="col-md-6 mb-3" id="group-min-stock">
                             <label class="custom-label text-danger">Minimum Stock (Batas Kritis)</label>
                             <input type="number" name="minimum_stock" id="minimum_stock" class="form-control custom-input" value="{{ old('minimum_stock') }}" placeholder="Contoh: 10" min="0">
+                        </div>
+
+                        <div class="col-12 mb-3" id="group-min-stock-bsj" style="display: none;">
+                            <div class="p-3 bg-light rounded-3 border">
+                                <label class="custom-label text-danger fw-bold d-block mb-2">
+                                    <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock per Lokasi (Bahan Setengah Jadi - Opsional)
+                                </label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <label class="small text-secondary fw-semibold">Central Kitchen</label>
+                                        <input type="number" name="minimum_stock_ck" id="minimum_stock_ck" class="form-control custom-input" placeholder="Opsional" min="0" value="{{ old('minimum_stock_ck') }}">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="small text-secondary fw-semibold">Outlet Kejingga</label>
+                                        <input type="number" name="minimum_stock_kejingga" id="minimum_stock_kejingga" class="form-control custom-input" placeholder="Opsional" min="0" value="{{ old('minimum_stock_kejingga') }}">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="small text-secondary fw-semibold">Outlet Gaharu</label>
+                                        <input type="number" name="minimum_stock_gaharu" id="minimum_stock_gaharu" class="form-control custom-input" placeholder="Opsional" min="0" value="{{ old('minimum_stock_gaharu') }}">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="col-md-6 mb-3" id="group-tipe-penjualan">
@@ -288,6 +385,46 @@
                 <div class="modal-footer border-0 px-4 pb-4 pt-0">
                     <button type="button" class="btn custom-btn-batal" data-bs-dismiss="modal">Kembali</button>
                     <button type="submit" class="btn text-white custom-btn-simpan">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+{{-- ================= MODAL IMPORT EXCEL BARANG ================= --}}
+<div class="modal fade" id="modalImportBarang" tabindex="-1" aria-labelledby="modalImportBarangLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 14px; border: none; overflow: hidden;">
+            <div class="modal-header text-white" style="background-color: #d88656;">
+                <h5 class="modal-title fw-bold" id="modalImportBarangLabel">Import Master Barang dari Excel</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <form action="{{ route('barang.import') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <div class="modal-body text-start">
+                    <p class="text-muted small">
+                        Baris dengan <strong>kode_barang</strong> yang sudah ada di sistem akan otomatis dilewati (tidak menimpa data lama).
+                        Jenis barang yang didukung: Bahan Baku, Bahan Setengah Jadi, Barang Jadi, Operational.
+                    </p>
+
+                    <div class="mb-3">
+                        <a href="{{ route('barang.import.template') }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-download"></i> Download Template Excel
+                        </a>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="custom-label">Pilih File Excel (.xlsx)</label>
+                        <input type="file" name="file" class="form-control custom-input @error('file') is-invalid @enderror" accept=".xlsx,.xls" required>
+                        @error('file') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                    </div>
+                </div>
+
+                <div class="modal-footer border-0 px-4 pb-4 pt-0">
+                    <button type="button" class="btn custom-btn-batal" data-bs-dismiss="modal">Kembali</button>
+                    <button type="submit" class="btn text-white custom-btn-simpan">Import</button>
                 </div>
             </form>
         </div>
@@ -345,6 +482,25 @@
                     <div class="col-md-6 mb-3" id="detailMinStockWrap">
                         <label class="custom-label">Batas Minimum Stock</label>
                         <p class="fs-6 text-danger fw-bold mb-0" id="detailMinStock"></p>
+                    </div>
+                    <div class="col-12 mb-3" id="detailMinStockBsjWrap" style="display: none;">
+                        <label class="custom-label text-danger fw-bold">Batas Minimum Stock per Lokasi</label>
+                        <div class="p-2 bg-light rounded border small">
+                            <div class="row text-center">
+                                <div class="col-4 border-end">
+                                    <span class="text-muted d-block" style="font-size: 0.75rem;">Central Kitchen</span>
+                                    <strong class="text-dark" id="detailMinStockCk">—</strong>
+                                </div>
+                                <div class="col-4 border-end">
+                                    <span class="text-muted d-block" style="font-size: 0.75rem;">Outlet Kejingga</span>
+                                    <strong class="text-dark" id="detailMinStockKejingga">—</strong>
+                                </div>
+                                <div class="col-4">
+                                    <span class="text-muted d-block" style="font-size: 0.75rem;">Outlet Gaharu</span>
+                                    <strong class="text-dark" id="detailMinStockGaharu">—</strong>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="custom-label">Batas Minimum Order</label>
@@ -422,6 +578,7 @@
                             <label class="custom-label">Jenis Barang</label>
                             <select name="jenis_utama" id="editJenis" class="form-control custom-input @error('jenis_utama') is-invalid @enderror" required>
                                 <option value="BAHAN_BAKU">Bahan Baku</option>
+                                <option value="BAHAN_SETENGAH_JADI">Bahan Setengah Jadi</option>
                                 <option value="BARANG_JADI">Barang Jadi</option>
                                 <option value="OPERATIONAL">Operational</option>
                             </select>
@@ -431,6 +588,28 @@
                         <div class="col-md-6 mb-3" id="editGroupMinStock">
                             <label class="custom-label text-danger">Minimum Stock (Batas Kritis)</label>
                             <input type="number" name="minimum_stock" id="editMinimumStock" class="form-control custom-input" min="0">
+                        </div>
+
+                        <div class="col-12 mb-3" id="editGroupMinStockBsj" style="display: none;">
+                            <div class="p-3 bg-light rounded-3 border">
+                                <label class="custom-label text-danger fw-bold d-block mb-2">
+                                    <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock per Lokasi (Bahan Setengah Jadi - Opsional)
+                                </label>
+                                <div class="row g-2">
+                                    <div class="col-md-4">
+                                        <label class="small text-secondary fw-semibold">Central Kitchen</label>
+                                        <input type="number" name="minimum_stock_ck" id="editMinimumStockCk" class="form-control custom-input" placeholder="Opsional" min="0">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="small text-secondary fw-semibold">Outlet Kejingga</label>
+                                        <input type="number" name="minimum_stock_kejingga" id="editMinimumStockKejingga" class="form-control custom-input" placeholder="Opsional" min="0">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="small text-secondary fw-semibold">Outlet Gaharu</label>
+                                        <input type="number" name="minimum_stock_gaharu" id="editMinimumStockGaharu" class="form-control custom-input" placeholder="Opsional" min="0">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="col-md-6 mb-3" id="editGroupTipePenjualan">
@@ -560,16 +739,32 @@ document.addEventListener("DOMContentLoaded", function () {
     /* ============ MODAL TAMBAH: toggle field & generate kode & cek nama duplikat ============ */
     const jenis = document.getElementById('jenis');
     const groupMinStock = document.getElementById('group-min-stock');
+    const groupMinStockBsj = document.getElementById('group-min-stock-bsj');
     const minStockInput = document.getElementById('minimum_stock');
+    const minStockCk = document.getElementById('minimum_stock_ck');
+    const minStockKejingga = document.getElementById('minimum_stock_kejingga');
+    const minStockGaharu = document.getElementById('minimum_stock_gaharu');
     const groupTipePenjualan = document.getElementById('group-tipe-penjualan');
     const tipePenjualanSelect = document.getElementById('tipe_penjualan');
 
     function toggleForm() {
-        if (jenis.value === "BAHAN_BAKU") {
+        if (jenis.value === "BAHAN_SETENGAH_JADI") {
+            groupMinStock.style.display = "none";
+            groupMinStockBsj.style.display = "block";
+            minStockInput.value = "";
+        } else if (jenis.value === "BAHAN_BAKU") {
             groupMinStock.style.display = "block";
+            groupMinStockBsj.style.display = "none";
+            if (minStockCk) minStockCk.value = "";
+            if (minStockKejingga) minStockKejingga.value = "";
+            if (minStockGaharu) minStockGaharu.value = "";
         } else {
             groupMinStock.style.display = "none";
+            groupMinStockBsj.style.display = "none";
             minStockInput.value = "";
+            if (minStockCk) minStockCk.value = "";
+            if (minStockKejingga) minStockKejingga.value = "";
+            if (minStockGaharu) minStockGaharu.value = "";
         }
 
         if (jenis.value === "BARANG_JADI") {
@@ -646,7 +841,7 @@ document.addEventListener("DOMContentLoaded", function () {
             : '—';
         document.getElementById('detailMinOrder').innerText = button.getAttribute('data-min-order');
 
-        var jenisLabel = { BAHAN_BAKU: ['Bahan Baku', 'primary'], BARANG_JADI: ['Barang Jadi', 'success'], OPERATIONAL: ['Operational', 'warning'] };
+        var jenisLabel = { BAHAN_BAKU: ['Bahan Baku', 'primary'], BAHAN_SETENGAH_JADI: ['Bahan Setengah Jadi', 'info'], BARANG_JADI: ['Barang Jadi', 'success'], OPERATIONAL: ['Operational', 'warning'] };
         var info = jenisLabel[jenisVal] || ['Umum', 'secondary'];
         document.getElementById('detailJenis').innerHTML = '<span class="badge bg-' + info[1] + '-subtle text-' + info[1] + ' px-3 py-2">' + info[0] + '</span>';
 
@@ -656,13 +851,22 @@ document.addEventListener("DOMContentLoaded", function () {
             : '<span class="badge bg-danger">Non-Aktif</span>';
 
         var minStockWrap = document.getElementById('detailMinStockWrap');
+        var minStockBsjWrap = document.getElementById('detailMinStockBsjWrap');
         var tipeWrap = document.getElementById('detailTipePenjualanWrap');
 
-        if (jenisVal === 'BAHAN_BAKU') {
+        if (jenisVal === 'BAHAN_SETENGAH_JADI') {
+            minStockWrap.style.display = 'none';
+            minStockBsjWrap.style.display = 'block';
+            document.getElementById('detailMinStockCk').innerText = button.getAttribute('data-min-stock-ck') || '—';
+            document.getElementById('detailMinStockKejingga').innerText = button.getAttribute('data-min-stock-kejingga') || '—';
+            document.getElementById('detailMinStockGaharu').innerText = button.getAttribute('data-min-stock-gaharu') || '—';
+        } else if (jenisVal === 'BAHAN_BAKU') {
             minStockWrap.style.display = 'block';
+            minStockBsjWrap.style.display = 'none';
             document.getElementById('detailMinStock').innerText = button.getAttribute('data-min-stock');
         } else {
             minStockWrap.style.display = 'none';
+            minStockBsjWrap.style.display = 'none';
         }
 
         if (jenisVal === 'BARANG_JADI') {
@@ -676,15 +880,32 @@ document.addEventListener("DOMContentLoaded", function () {
     /* ============ MODAL EDIT: isi dari data-attribute + toggle field ============ */
     var editJenis = document.getElementById('editJenis');
     var editGroupMinStock = document.getElementById('editGroupMinStock');
+    var editGroupMinStockBsj = document.getElementById('editGroupMinStockBsj');
     var editMinimumStock = document.getElementById('editMinimumStock');
+    var editMinimumStockCk = document.getElementById('editMinimumStockCk');
+    var editMinimumStockKejingga = document.getElementById('editMinimumStockKejingga');
+    var editMinimumStockGaharu = document.getElementById('editMinimumStockGaharu');
     var editGroupTipePenjualan = document.getElementById('editGroupTipePenjualan');
     var editTipePenjualan = document.getElementById('editTipePenjualan');
 
     function toggleEditForm() {
-        if (editJenis.value === "BAHAN_BAKU") {
+        if (editJenis.value === "BAHAN_SETENGAH_JADI") {
+            editGroupMinStock.style.display = "none";
+            editGroupMinStockBsj.style.display = "block";
+            editMinimumStock.value = "";
+        } else if (editJenis.value === "BAHAN_BAKU") {
             editGroupMinStock.style.display = "block";
+            editGroupMinStockBsj.style.display = "none";
+            if (editMinimumStockCk) editMinimumStockCk.value = "";
+            if (editMinimumStockKejingga) editMinimumStockKejingga.value = "";
+            if (editMinimumStockGaharu) editMinimumStockGaharu.value = "";
         } else {
             editGroupMinStock.style.display = "none";
+            editGroupMinStockBsj.style.display = "none";
+            editMinimumStock.value = "";
+            if (editMinimumStockCk) editMinimumStockCk.value = "";
+            if (editMinimumStockKejingga) editMinimumStockKejingga.value = "";
+            if (editMinimumStockGaharu) editMinimumStockGaharu.value = "";
         }
 
         if (editJenis.value === "BARANG_JADI") {
@@ -708,7 +929,10 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('editSatuanPembelian').value = button.getAttribute('data-satuan-pembelian') || '';
         document.getElementById('editKonversiPembelian').value = button.getAttribute('data-konversi-pembelian') || '1';
         editJenis.value = button.getAttribute('data-jenis');
-        editMinimumStock.value = button.getAttribute('data-min-stock');
+        editMinimumStock.value = button.getAttribute('data-min-stock') || '';
+        if (editMinimumStockCk) editMinimumStockCk.value = button.getAttribute('data-min-stock-ck') || '';
+        if (editMinimumStockKejingga) editMinimumStockKejingga.value = button.getAttribute('data-min-stock-kejingga') || '';
+        if (editMinimumStockGaharu) editMinimumStockGaharu.value = button.getAttribute('data-min-stock-gaharu') || '';
         editTipePenjualan.value = button.getAttribute('data-tipe-penjualan');
         document.getElementById('editMinimumOrder').value = button.getAttribute('data-min-order');
         document.getElementById('formEditBarang').action = button.getAttribute('data-action');

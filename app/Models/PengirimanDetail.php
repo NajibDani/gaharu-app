@@ -23,4 +23,9 @@ class PengirimanDetail extends Model
     {
         return $this->belongsTo(MasterBarang::class, 'barang_id');
     }
+
+    public function produk()
+    {
+        return $this->belongsTo(MasterBarang::class, 'barang_id');
+    }
 }

@@ -18,12 +18,14 @@
     </div>
     @endif
 
-    @if(session('error') || $errors->any())
+    @if(session('error') || (isset($errors) && $errors->any()))
     <div class="alert alert-danger alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
         <strong class="d-block mb-1"><i class="fas fa-exclamation-triangle"></i> Terjadi Kesalahan:</strong>
         <ul class="mb-0 ps-3">
             @if(session('error')) <li>{{ session('error') }}</li> @endif
-            @foreach ($errors->all() as $error) <li>{{ $error }}</li> @endforeach
+            @if(isset($errors))
+                @foreach ($errors->all() as $error) <li>{{ $error }}</li> @endforeach
+            @endif
         </ul>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
@@ -45,6 +47,11 @@
                         <tr>
                             <td class="text-start ps-4 fw-semibold text-dark">
                                 {{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}
+                                @if($r->produk && $r->produk->is_bahan_setengah_jadi)
+                                    <span class="badge bg-info-subtle text-info ms-1" style="font-size: 11px;">Bahan Setengah Jadi</span>
+                                @elseif($r->produk && $r->produk->is_barang_jadi)
+                                    <span class="badge bg-success-subtle text-success ms-1" style="font-size: 11px;">Barang Jadi</span>
+                                @endif
                             </td>
                             <td>
                                 <span class="badge bg-light text-dark border px-3 py-2 fw-medium">
@@ -99,23 +106,25 @@
     <input type="hidden" name="_method" id="form-method" value="POST">
 
     <div class="modal fade" id="modalResep" data-bs-backdrop="static" tabindex="-1" aria-labelledby="modalResepTitle" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" style="max-height: 92vh;">
-            <div class="modal-content border-0 shadow">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow" style="border-radius: 14px; overflow: visible;">
                 
-                <div class="modal-header bg-light py-3">
+                <div class="modal-header bg-light py-3" style="border-top-left-radius: 14px; border-top-right-radius: 14px;">
                     <h5 class="modal-title fw-bold text-dark" id="modalResepTitle">Tambah Resep Baru</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 
-                <div class="modal-body px-4 py-3">
+                <div class="modal-body px-4 py-3" style="overflow: visible;">
                     
-                    {{-- PILIH MASTER PRODUK BARANG JADI --}}
-                    <div class="mb-3">
+                    {{-- PILIH MASTER PRODUK BARANG JADI / BSJ --}}
+                    <div class="mb-3 position-relative" style="z-index: 1050;">
                         <label class="form-label fw-bold small text-secondary">Produk</label>
                         <select name="produk_id" id="produk_id" class="form-select produk-select" required>
                             <option value="" disabled selected>-- Pilih Produk --</option>
                             @foreach($produk as $p)
-                                <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}">{{ $p->nama }}</option>
+                                <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}">
+                                    {{ $p->nama }} {{ $p->is_bahan_setengah_jadi ? '(Bahan Setengah Jadi)' : '(Barang Jadi)' }}
+                                </option>
                             @endforeach
                         </select>
                         <small class="text-danger d-none mt-1 d-block" id="edit-produk-warning">
@@ -124,7 +133,7 @@
                     </div>
 
                     {{-- TARGET OUTPUT PROSES PRODUKSI --}}
-                    <div class="row">
+                    <div class="row position-relative" style="z-index: 100;">
                         <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold small text-secondary">Output per Batch</label>
                             <input type="number" name="output_qty" id="output_qty" class="form-control" min="1" placeholder="0" required>
@@ -139,9 +148,9 @@
                     <h6 class="fw-bold text-primary mb-3"><i class="fas fa-flask me-2"></i>Komposisi Komponen Bahan Baku</h6>
 
                     {{-- TABEL INPUT DATA BAHAN BAKU DINAMIS --}}
-                    <div class="table-responsive" style="max-height: 220px; overflow-y: auto; border: 1px solid #dee2e6; rounded: 4px;">
+                    <div class="table-responsive" style="min-height: 180px; max-height: 280px; overflow-y: auto; overflow-x: visible; border: 1px solid #dee2e6; border-radius: 8px;">
                         <table class="table table-bordered table-sm align-middle mb-0" id="table-bahan">
-                            <thead class="table-light text-center small text-secondary sticky-top" style="z-index: 10;">
+                            <thead class="table-light text-center small text-secondary">
                                 <tr>
                                     <th class="py-2">Nama Bahan Baku</th>
                                     <th style="width: 22%;" class="py-2">Qty / Produk</th>
@@ -180,7 +189,7 @@
                     </button>
                 </div>
                 
-                <div class="modal-footer bg-light border-top py-2">
+                <div class="modal-footer bg-light border-top py-2" style="border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;">
                     <button type="button" class="btn btn-secondary px-4 shadow-sm" data-bs-dismiss="modal">Batal</button>
                     <button type="submit" class="btn btn-primary px-4 shadow-sm" id="btn-submit-form">Simpan Resep</button>
                 </div>
@@ -189,6 +198,47 @@
         </div>
     </div>
 </form>
+
+<style>
+    /* Styling & Z-Index Choices.js Dropdown di dalam Modal agar tidak bertabrakan */
+    .choices {
+        margin-bottom: 0;
+        position: relative;
+    }
+    .choices.is-open {
+        z-index: 1060 !important;
+    }
+    .choices__list--dropdown {
+        z-index: 1060 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.15) !important;
+        border-radius: 8px !important;
+    }
+    .choices__list--dropdown .choices__item--selectable {
+        padding: 8px 12px !important;
+        font-size: 14px !important;
+    }
+    .choices__list--dropdown .choices__item--selectable.is-highlighted {
+        background-color: #f1f5f9 !important;
+        color: #0f172a !important;
+    }
+    .choices[data-type*="select-one"] .choices__inner {
+        padding: 5px 10px;
+        background-color: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        min-height: 38px;
+        font-size: 14px;
+    }
+    #table-bahan thead {
+        position: relative;
+        z-index: 1 !important;
+    }
+    #table-bahan tr {
+        position: relative;
+    }
+</style>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -341,19 +391,34 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // =======================================================
-    // FIX: dropdown bahan baku bisa "terpotong" karena tabel
-    // punya overflow-y:auto. Matikan clipping saat dropdown dibuka.
+    // FIX: dropdown bahan baku / produk tidak terpotong / tertabrak
     // =======================================================
     const bahanScrollContainer = document.querySelector('#table-bahan').closest('.table-responsive');
 
     document.addEventListener('showDropdown', function(e) {
-        if (bahanScrollContainer.contains(e.target)) {
+        if (bahanScrollContainer && bahanScrollContainer.contains(e.target)) {
             bahanScrollContainer.style.overflow = 'visible';
+        }
+        const choicesElem = e.target.closest('.choices');
+        if (choicesElem) {
+            choicesElem.style.zIndex = '1060';
+        }
+        const trElem = e.target.closest('tr');
+        if (trElem) {
+            trElem.style.zIndex = '1060';
         }
     });
     document.addEventListener('hideDropdown', function(e) {
-        if (bahanScrollContainer.contains(e.target)) {
+        if (bahanScrollContainer && bahanScrollContainer.contains(e.target)) {
             bahanScrollContainer.style.overflow = 'auto';
+        }
+        const choicesElem = e.target.closest('.choices');
+        if (choicesElem) {
+            choicesElem.style.zIndex = '';
+        }
+        const trElem = e.target.closest('tr');
+        if (trElem) {
+            trElem.style.zIndex = '';
         }
     });
 });

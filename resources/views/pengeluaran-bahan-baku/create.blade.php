@@ -77,6 +77,7 @@
 
                 <select
                     name="gudang_id"
+                    id="select-gudang"
                     class="form-select"
                     required>
 
@@ -86,7 +87,7 @@
 
                     @foreach($gudang as $g)
 
-                    <option value="{{ $g->id }}">
+                    <option value="{{ $g->id }}" {{ (old('gudang_id', $selectedGudangId ?? '') == $g->id) ? 'selected' : '' }}>
 
                         {{ $g->nama }}
                         -
@@ -105,6 +106,25 @@
 
                 </small>
 
+            </div>
+
+            {{-- SUGGESTION RESTOCK BOX --}}
+            <div id="suggestion-box" class="card p-3 mb-4 bg-light border-warning shadow-sm" style="display: none; border-left: 5px solid #f59e0b !important; border-radius: 12px;">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small d-flex align-items-center">
+                            <i class="bi bi-lightbulb-fill text-warning fs-6 me-2"></i>
+                            Saran Restock Bahan Baku (<span id="suggest-gudang-name"></span>)
+                        </strong>
+                        <span class="text-muted small" style="font-size: 0.75rem;">Bahan baku di bawah batas minimum stock gudang outlet tujuan</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-warning text-dark fw-bold shadow-sm" id="btn-apply-all-suggestions">
+                        <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                    </button>
+                </div>
+                <div id="suggestion-list" class="d-flex flex-wrap gap-2 pt-1">
+                    <!-- Dynamic suggestion pills -->
+                </div>
             </div>
 
             <hr>
@@ -210,8 +230,8 @@
                                     type="number"
                                     name="qty[]"
                                     class="form-control qty-input"
-                                    min="1"
-                                    step="0.01"
+                                    min="0.01"
+                                    step="any"
                                     placeholder="Qty"
                                     required>
                                 <small class="text-danger stok-warning d-block mt-1" style="display:none;"></small>
@@ -251,7 +271,7 @@
                     name="keterangan"
                     rows="4"
                     class="form-control"
-                    placeholder="Contoh: Pengeluaran bahan baku untuk produksi kopi robusta"></textarea>
+                    placeholder="Contoh: Pengeluaran bahan baku untuk produksi / restock outlet"></textarea>
 
             </div>
 
@@ -303,12 +323,24 @@
 
 <script>
 
-function tambahBaris()
+function tambahBaris(barangId = '', qty = '')
 {
     let tbody =
         document.querySelector(
             '#table-detail tbody'
         );
+
+    let rows = tbody.querySelectorAll('tr');
+    if (rows.length === 1 && barangId !== '') {
+        let firstSelect = rows[0].querySelector('.barang-select');
+        let firstQty = rows[0].querySelector('.qty-input');
+        if (!firstSelect.value && !firstQty.value) {
+            firstSelect.value = barangId;
+            if (qty !== '') firstQty.value = qty;
+            checkStok(rows[0]);
+            return rows[0];
+        }
+    }
 
     let row = `
         <tr>
@@ -335,6 +367,10 @@ function tambahBaris()
                         {{ $b->nama }}
                         ({{ $b->satuan }})
 
+                        @if($b->stok <= 0)
+                        - STOK HABIS
+                        @endif
+
                     </option>
 
                     @endforeach
@@ -349,8 +385,9 @@ function tambahBaris()
                     type="number"
                     name="qty[]"
                     class="form-control qty-input"
-                    min="1"
-                    step="0.01"
+                    min="0.01"
+                    step="any"
+                    placeholder="Qty"
                     required>
                 <small class="text-danger stok-warning d-block mt-1" style="display:none;"></small>
 
@@ -376,6 +413,16 @@ function tambahBaris()
         'beforeend',
         row
     );
+
+    let newRow = tbody.lastElementChild;
+    if (barangId) {
+        newRow.querySelector('.barang-select').value = barangId;
+    }
+    if (qty !== '') {
+        newRow.querySelector('.qty-input').value = qty;
+    }
+    checkStok(newRow);
+    return newRow;
 }
 
 function hapusBaris(button)
@@ -385,6 +432,10 @@ function hapusBaris(button)
     if(document.querySelectorAll('#table-detail tbody tr').length > 1)
     {
         row.remove();
+    } else {
+        row.querySelector('.barang-select').value = '';
+        row.querySelector('.qty-input').value = '';
+        checkStok(row);
     }
 }
 
@@ -405,12 +456,113 @@ function checkStok(row) {
     let qty = parseFloat(qtyInput.value) || 0;
 
     if (qty > stok) {
-        warning.innerHTML = `⚠️ Stok tidak mencukupi! Tersedia: <strong>${stok}</strong>`;
+        warning.innerHTML = `⚠️ Stok Gudang Utama tidak mencukupi! Tersedia: <strong>${stok}</strong>`;
         warning.style.display = "block";
     } else {
         warning.style.display = "none";
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const selectGudang = document.getElementById('select-gudang');
+    const suggestionBox = document.getElementById('suggestion-box');
+    const suggestionList = document.getElementById('suggestion-list');
+    const suggestionGudangName = document.getElementById('suggest-gudang-name');
+    const btnApplyAll = document.getElementById('btn-apply-all-suggestions');
+
+    let currentSuggestions = [];
+
+    function fetchSuggestions(gudangId) {
+        if (!gudangId) {
+            suggestionBox.style.display = 'none';
+            suggestionList.innerHTML = '';
+            currentSuggestions = [];
+            return;
+        }
+
+        fetch("{{ route('pengeluaran-bahan-baku.suggestions') }}?gudang_id=" + gudangId)
+            .then(res => res.json())
+            .then(data => {
+                currentSuggestions = data.suggestions || [];
+                suggestionGudangName.innerText = data.gudang_name || '';
+
+                if (currentSuggestions.length > 0) {
+                    suggestionBox.style.display = 'block';
+                    suggestionList.innerHTML = '';
+
+                    currentSuggestions.forEach(item => {
+                        const pill = document.createElement('div');
+                        pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                        pill.innerHTML = `
+                            <div class="text-start">
+                                <div class="fw-bold">${item.nama} <span class="text-muted small">(${item.kode_barang})</span></div>
+                                <div class="text-muted" style="font-size: 0.72rem;">
+                                    Stok Outlet: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
+                                    <span class="text-secondary ms-1">(Utama: ${item.stok_utama} ${item.satuan})</span>
+                                    <span class="text-success fw-bold ms-1">&rarr; Saran: ${item.suggested_qty} ${item.satuan}</span>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-single-suggest py-1 px-2" style="font-size: 0.75rem;" title="Tambah item ini">
+                                <i class="bi bi-plus-circle-fill"></i> Tambah
+                            </button>
+                        `;
+
+                        pill.querySelector('.btn-add-single-suggest').addEventListener('click', function() {
+                            tambahBaris(item.barang_id, item.suggested_qty);
+                            pill.classList.remove('bg-white');
+                            pill.classList.add('bg-warning-subtle');
+                            this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                            this.disabled = true;
+                        });
+
+                        suggestionList.appendChild(pill);
+                    });
+                } else {
+                    suggestionBox.style.display = 'none';
+                    suggestionList.innerHTML = '';
+                }
+            })
+            .catch(() => {
+                suggestionBox.style.display = 'none';
+            });
+    }
+
+    function applyAllSuggestions() {
+        if (!currentSuggestions.length) return;
+
+        const tbody = document.querySelector('#table-detail tbody');
+        const rows = tbody.querySelectorAll('tr');
+        rows.forEach((r, idx) => {
+            if (idx > 0) r.remove();
+        });
+        const firstRow = tbody.querySelector('tr');
+        firstRow.querySelector('.barang-select').value = '';
+        firstRow.querySelector('.qty-input').value = '';
+
+        currentSuggestions.forEach(item => {
+            tambahBaris(item.barang_id, item.suggested_qty);
+        });
+
+        suggestionList.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
+            btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+            btn.disabled = true;
+        });
+    }
+
+    if (selectGudang) {
+        selectGudang.addEventListener('change', function() {
+            fetchSuggestions(this.value);
+        });
+
+        if (selectGudang.value) {
+            fetchSuggestions(selectGudang.value);
+        }
+    }
+
+    if (btnApplyAll) {
+        btnApplyAll.addEventListener('click', applyAllSuggestions);
+    }
+});
 
 document.addEventListener('change', function(e) {
     if (e.target.classList.contains('barang-select')) {

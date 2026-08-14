@@ -100,6 +100,7 @@ class PembelianController extends Controller
             ->where('is_active', true)
             ->where(function ($q) {
                 $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true)
                   ->orWhere('is_operational', true)
                   ->orWhere('is_direct_consumption', true);
             })
@@ -484,6 +485,7 @@ class PembelianController extends Controller
             ->where('is_active', true)
             ->where(function ($q) {
                 $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true)
                   ->orWhere('is_operational', true)
                   ->orWhere('is_direct_consumption', true);
             })

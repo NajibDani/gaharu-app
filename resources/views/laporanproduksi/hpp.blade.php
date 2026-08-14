@@ -6,35 +6,97 @@
             </div>
             <div class="card-body bg-white text-dark">
                 <form action="{{ route('laporan.hpp') }}" method="GET" class="row align-items-end g-3 mb-4">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label font-weight-bold text-secondary">Tanggal Mulai</label>
                         <input type="date" name="start_date" class="form-control" value="{{ $startDate }}">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label font-weight-bold text-secondary">Tanggal Selesai</label>
                         <input type="date" name="end_date" class="form-control" value="{{ $endDate }}">
                     </div>
-                    <div class="col-md-6 d-flex gap-2">
-                        <button type="submit" class="btn btn-success shadow-sm px-4">
-                            <i class="fas fa-search-dollar mr-1"></i> Filter Keuangan
+                    <div class="col-md-2">
+                        <label class="form-label font-weight-bold text-secondary">Gudang Asal</label>
+                        <select name="gudang_asal_id" class="form-select">
+                            <option value="">— Semua Asal —</option>
+                            @foreach($daftarGudang as $g)
+                                <option value="{{ $g->id }}" {{ $gudangAsalId == $g->id ? 'selected' : '' }}>
+                                    {{ $g->nama }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label font-weight-bold text-secondary">Gudang Tujuan</label>
+                        <select name="gudang_tujuan_id" class="form-select">
+                            <option value="">— Semua Tujuan —</option>
+                            @foreach($daftarGudang as $g)
+                                <option value="{{ $g->id }}" {{ $gudangTujuanId == $g->id ? 'selected' : '' }}>
+                                    {{ $g->nama }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label font-weight-bold text-secondary">Tipe</label>
+                        <select name="tipe" class="form-select">
+                            <option value="">— Semua Tipe —</option>
+                            <option value="B2B" {{ $filterTipe === 'B2B' ? 'selected' : '' }}>B2B</option>
+                            <option value="CK" {{ $filterTipe === 'CK' ? 'selected' : '' }}>Central Kitchen</option>
+                            <option value="POS" {{ $filterTipe === 'POS' ? 'selected' : '' }}>POS (Restoran)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-success shadow-sm px-3 flex-fill">
+                            <i class="fas fa-search-dollar mr-1"></i> Filter
                         </button>
-                        <a href="{{ route('laporan.hpp', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-danger shadow-sm px-4">
-                            📕 Export PDF
+                    </div>
+                    <div class="col-12 d-flex justify-content-end gap-2 pt-2 border-top">
+                        <a href="{{ route('laporan.hpp', array_merge(request()->all(), ['format' => 'pdf'])) }}" class="btn btn-sm btn-danger shadow-sm px-3">
+                            📕 Download PDF
                         </a>
+                        <a href="{{ route('laporan.hpp', array_merge(request()->all(), ['format' => 'excel'])) }}" class="btn btn-sm btn-warning shadow-sm px-3">
+                            📊 Download Excel (CSV)
+                        </a>
+                        @if($selectedGudangAsal || $selectedGudangTujuan || $filterTipe)
+                            <a href="{{ route('laporan.hpp', ['start_date' => $startDate, 'end_date' => $endDate]) }}" class="btn btn-sm btn-outline-secondary px-3">
+                                <i class="fas fa-undo mr-1"></i> Reset Filter
+                            </a>
+                        @endif
                     </div>
                 </form>
+
+                @if($selectedGudangAsal || $selectedGudangTujuan || $filterTipe)
+                <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center justify-content-between" style="border-left: 4px solid #0dcaf0;">
+                    <div>
+                        <i class="fas fa-filter mr-1"></i>
+                        <strong>Filter Aktif:</strong>
+                        @if($selectedGudangAsal)
+                            <span class="badge bg-secondary text-white ms-1">Asal: {{ $selectedGudangAsal->nama }}</span>
+                        @endif
+                        @if($selectedGudangTujuan)
+                            <span class="badge bg-info text-dark ms-1">Tujuan: {{ $selectedGudangTujuan->nama }}</span>
+                        @endif
+                        @if($filterTipe)
+                            <span class="badge bg-primary text-white ms-1">Tipe: {{ $filterTipe }}</span>
+                        @endif
+                    </div>
+                    <a href="{{ route('laporan.hpp', ['start_date' => $startDate, 'end_date' => $endDate]) }}" class="btn btn-sm btn-outline-dark py-0">Reset</a>
+                </div>
+                @endif
 
                 <div class="table-responsive">
                     <table class="table table-bordered table-hover align-middle text-center mb-0" style="color: #212529;">
                         <thead class="bg-light text-dark font-weight-bold">
                             <tr style="background-color: #f8f9fa;">
-                                <th style="width: 12%;">Kode Barang</th>
+                                <th style="width: 10%;">Kode Barang</th>
                                 <th class="text-left">Nama Produk Jadi</th>
-                                <th style="width: 10%;">Tipe</th>
-                                <th style="width: 18%;">Total Qty</th>
-                                <th style="width: 22%;">Total Nilai HPP (BBB + BTKL + BOP)</th>
-                                <th style="width: 22%;">Rata-rata HPP / Satuan</th>
-                                <th style="width: 10%;">Aksi</th>
+                                <th style="width: 7%;">Tipe</th>
+                                <th style="width: 13%;">Gudang Asal</th>
+                                <th style="width: 13%;">Gudang Tujuan</th>
+                                <th style="width: 12%;">Total Qty</th>
+                                <th style="width: 18%;">Total Nilai HPP (BBB+BTKL+BOP)</th>
+                                <th style="width: 16%;">Rata-rata HPP / Satuan</th>
+                                <th style="width: 8%;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -43,16 +105,25 @@
                             @php 
                                 $hppPerSatuan = $row->total_qty > 0 ? ($row->total_hpp / $row->total_qty) : 0;
                                 $grandTotalHpp += $row->total_hpp;
+                                $tipe = strtoupper($row->tipe ?? 'B2B');
                             @endphp
                             <tr>
                                 <td class="align-middle font-weight-bold text-secondary">{{ $row->kode_barang }}</td>
                                 <td class="align-middle text-left text-dark font-weight-bold">{{ $row->nama_produk }}</td>
                                 <td class="align-middle">
-                                    @if(strtoupper($row->tipe ?? 'B2B') === 'POS')
+                                    @if($tipe === 'POS')
                                         <span class="badge bg-primary text-white">POS</span>
+                                    @elseif($tipe === 'CK')
+                                        <span class="badge bg-warning text-dark">CK</span>
                                     @else
                                         <span class="badge bg-success text-white">B2B</span>
                                     @endif
+                                </td>
+                                <td class="align-middle text-center">
+                                    <span class="badge bg-secondary text-white" style="font-size: 0.82em;">{{ $row->nama_gudang_asal ?? '—' }}</span>
+                                </td>
+                                <td class="align-middle text-center">
+                                    <span class="badge bg-info text-dark" style="font-size: 0.82em;">{{ $row->nama_gudang_tujuan ?? '—' }}</span>
                                 </td>
                                 <td class="align-middle text-dark font-weight-bold">
                                     {{ number_format($row->total_qty, 0, ',', '.') }} {{ $row->satuan ?? 'Pcs' }}
@@ -64,14 +135,19 @@
                                     Rp {{ number_format($hppPerSatuan, 2, ',', '.') }} / {{ $row->satuan ?? 'Pcs' }}
                                 </td>
                                 <td class="align-middle">
-                                    <button class="btn btn-sm btn-info text-white shadow-sm btn-detail-hpp" data-id="{{ $row->produk_id }}" title="Lihat Detail Komponen HPP">
+                                    <button class="btn btn-sm btn-info text-white shadow-sm btn-detail-hpp" 
+                                        data-id="{{ $row->produk_id }}" 
+                                        data-gudang-asal="{{ $row->nama_gudang_asal ?? '—' }}"
+                                        data-gudang-tujuan="{{ $row->nama_gudang_tujuan ?? '—' }}"
+                                        data-tipe="{{ $tipe }}"
+                                        title="Lihat Detail Komponen HPP">
                                         <i class="fas fa-info-circle"></i> Detail
                                     </button>
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="7" class="text-muted text-center py-4">
+                                <td colspan="9" class="text-muted text-center py-4">
                                     <i class="fas fa-exclamation-circle mr-1"></i> Tidak ada perputaran HPP produksi pada periode ini.
                                 </td>
                             </tr>
@@ -80,7 +156,7 @@
                         @if($laporanHpp->count() > 0)
                         <tfoot>
                             <tr style="background-color: #f8f9fa;">
-                                <th colspan="4" class="text-right text-dark font-weight-bold align-middle">GRAND TOTAL BIAYA HPP:</th>
+                                <th colspan="6" class="text-right text-dark font-weight-bold align-middle">GRAND TOTAL BIAYA HPP:</th>
                                 <th class="text-right text-danger font-weight-bold align-middle" style="font-size: 1.15em;">
                                     Rp {{ number_format($grandTotalHpp, 2, ',', '.') }}
                                 </th>
@@ -124,7 +200,11 @@
 
             detailButtons.forEach(btn => {
                 btn.addEventListener('click', function () {
-                    const produkId = this.getAttribute('data-id');
+                    const produkId     = this.getAttribute('data-id');
+                    const gudangAsal   = this.getAttribute('data-gudang-asal') || '—';
+                    const gudangTujuan = this.getAttribute('data-gudang-tujuan') || '—';
+                    const tipe         = this.getAttribute('data-tipe') || 'B2B';
+
                     modalBody.innerHTML = `
                         <div class="text-center py-4">
                             <div class="spinner-border text-success" role="status">
@@ -146,7 +226,7 @@
                             modalTitle.innerHTML = `<i class="fas fa-calculator mr-2"></i> Detail Resep HPP: ${data.nama_produk} (${data.kode_barang})`;
                             
                             let ingredientsHtml = '';
-                            if (data.ingredients.length === 0) {
+                            if (!data.ingredients || data.ingredients.length === 0) {
                                 ingredientsHtml = `
                                     <tr>
                                         <td colspan="6" class="text-muted text-center py-3">Tidak ada bahan baku dalam resep ini.</td>
@@ -168,9 +248,17 @@
                             }
 
                             modalBody.innerHTML = `
-                                <div class="mb-3 p-3 bg-light rounded d-flex justify-content-between align-items-center" style="border-left: 5px solid #28a745;">
+                                <div class="mb-3 p-3 bg-light rounded d-flex justify-content-between align-items-center flex-wrap gap-2" style="border-left: 5px solid #28a745;">
                                     <div>
-                                        <span class="text-secondary font-weight-bold">Target Output Resep:</span>
+                                        <span class="text-secondary font-weight-bold">Tipe:</span>
+                                        <span class="badge bg-dark">${tipe}</span>
+                                        <span class="text-secondary font-weight-bold ms-2">Gudang Asal:</span>
+                                        <span class="badge bg-secondary">${gudangAsal}</span>
+                                        <span class="text-secondary font-weight-bold ms-2">Gudang Tujuan:</span>
+                                        <span class="badge bg-info text-dark">${gudangTujuan}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-secondary font-weight-bold">Target Output:</span>
                                         <span class="badge bg-success fs-6 ml-2 px-3 py-2">${numberFormat(data.output_qty, 2)} ${data.satuan_output}</span>
                                     </div>
                                 </div>

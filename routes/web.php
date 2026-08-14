@@ -37,6 +37,8 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ReportInventoryController;
 use App\Http\Controllers\StockOpnameController;
 use App\Http\Controllers\PengirimanController;
+use App\Http\Controllers\CentralKitchenOrderController;
+use App\Http\Controllers\CentralKitchenProductionController;
 
 Route::get('/', function () {
     if (Auth::check()) {
@@ -67,7 +69,8 @@ Route::middleware('auth')->group(function () {
         Route::patch('barang/{barang}/toggle', [BarangController::class, 'toggle'])->name('barang.toggle');
         Route::get('/barang/generate-kode/{kategori}', [BarangController::class, 'generateKode'])->name('barang.generate-kode');
         Route::get('/barang/check-nama', [BarangController::class, 'checkNama'])->name('barang.check-nama');
-    });
+    Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
+    Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');});
 
 
     // =========================================================================
@@ -80,7 +83,8 @@ Route::middleware('auth')->group(function () {
         Route::get('/resep-bahan/{id}', [ResepBahanBakuController::class, 'show'])->name('resep.bahan.show');
         Route::post('/resep-bahan/{id}', [ResepBahanBakuController::class, 'store'])->name('resep.bahan.store');
         Route::delete('/resep-bahan/{id}', [ResepBahanBakuController::class, 'destroy'])->name('resep.bahan.destroy');
-
+Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemplate'])->name('resep.import.template');
+    Route::post('/resep/import', [ResepBtklBopController::class, 'import'])->name('resep.import');
         // Harga Barang POS
         Route::get('/harga-barang-pos', [HargaBarangPosController::class, 'index'])->name('harga.index');
         Route::get('/harga-barang-pos/{id}', [HargaBarangPosController::class, 'show'])->name('harga.show');
@@ -128,6 +132,7 @@ Route::middleware('auth')->group(function () {
     Route::middleware(['role:Kepala Outlet Gaharu,Kepala Gudang'])->group(function () {
         Route::resource('suppliers', SupplierController::class)->names('suppliers');
 
+        Route::get('pengeluaran-bahan-baku/suggestions', [PengeluaranBahanBakuController::class, 'suggestions'])->name('pengeluaran-bahan-baku.suggestions');
         Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
         Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
 
@@ -224,9 +229,11 @@ Route::middleware('auth')->group(function () {
     // 4. GROUP PRODUKSI
     // Hak Akses: Work Order, Pengeluaran Bahan, Barang Jadi
     // =========================================================================
-    Route::middleware(['role:Bagian Produksi'])->group(function () {
+    Route::middleware(['role:Bagian Produksi,Kepala Outlet Gaharu'])->group(function () {
         Route::prefix('work-order')->name('wo.')->group(function () {
-            Route::get('/', [WorkOrderController::class, 'index'])->name('index');
+            Route::get('/', function () {
+                return redirect()->route('produksi.index');
+            })->name('index');
             Route::get('/create/{id}', [WorkOrderController::class, 'create'])->name('create');
             Route::post('/store', [WorkOrderController::class, 'store'])->name('store');
             Route::get('/show/{id}', [WorkOrderController::class, 'show'])->name('show');
@@ -234,12 +241,14 @@ Route::middleware('auth')->group(function () {
             Route::post('/massal/review', [WorkOrderController::class, 'reviewMassal'])->name('review_massal');
             Route::post('/massal/store', [WorkOrderController::class, 'storeMassal'])->name('store_massal');
             Route::get('/massal/review', function () {
-                return redirect()->route('wo.index')->with('error', 'Sesi tidak valid, silakan ulangi.');
+                return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Sesi tidak valid, silakan ulangi.');
             });
             Route::post('/{id}/kirim-produksi', [WorkOrderController::class, 'kirimKeProduksi'])->name('kirim_produksi');
         });
 
         Route::get('/produksi', [ProduksiController::class, 'index'])->name('produksi.index');
+        Route::post('/produksi/wo', [ProduksiController::class, 'storeWo'])->name('produksi.store-wo');
+        Route::post('/produksi/store-and-approve', [ProduksiController::class, 'storeAndApprove'])->name('produksi.store-and-approve');
         Route::get('/produksi/create', [ProduksiController::class, 'create'])->name('produksi.create');
         Route::post('/produksi', [ProduksiController::class, 'store'])->name('produksi.store');
         Route::get('/produksi/get-wo-detail/{id}', [ProduksiController::class, 'getWoDetail'])->name('produksi.getWoDetail');
@@ -262,6 +271,26 @@ Route::middleware('auth')->group(function () {
     Route::middleware(['role:Bagian Produksi,Direktur Keuangan'])->group(function () {
         Route::get('/laporan-produksi/dashboard', [LaporanProduksiController::class, 'dashboard'])->name('laporan.produksi.dashboard');
         Route::get('/laporan-produksi/rekapitulasi', [LaporanProduksiController::class, 'rekapitulasi'])->name('laporan.rekapitulasi');
+    });
+
+    // =========================================================================
+    // 4B. GROUP CENTRAL KITCHEN
+    // Hak Akses: Kepala Outlet Gaharu, Kepala Outlet Kejingga, Bagian Produksi, Kepala Gudang
+    // =========================================================================
+    Route::middleware(['role:Kepala Outlet Gaharu,Kepala Outlet Kejingga,Bagian Produksi,Kepala Gudang'])->group(function () {
+        // CK Orders
+        Route::get('/central-kitchen/orders/suggestions', [CentralKitchenOrderController::class, 'suggestions'])->name('ck-orders.suggestions');
+        Route::get('/central-kitchen/orders/{id}/cetak-pdf', [CentralKitchenOrderController::class, 'cetakPdf'])->name('ck-orders.cetak-pdf');
+        Route::resource('central-kitchen/orders', CentralKitchenOrderController::class)->names('ck-orders');
+
+        // CK Production
+        Route::get('/central-kitchen/produksi', [CentralKitchenProductionController::class, 'index'])->name('ck-produksi.index');
+        Route::post('/central-kitchen/produksi/wo', [CentralKitchenProductionController::class, 'storeWo'])->name('ck-produksi.store-wo');
+        Route::post('/central-kitchen/produksi/kirim-bahan/{id}', [CentralKitchenProductionController::class, 'kirimBahanBaku'])->name('ck-produksi.kirim-bahan');
+        Route::get('/central-kitchen/produksi/create-produksi', [CentralKitchenProductionController::class, 'createProduksi'])->name('ck-produksi.create-produksi');
+        Route::post('/central-kitchen/produksi/store-produksi', [CentralKitchenProductionController::class, 'storeProduksi'])->name('ck-produksi.store-produksi');
+        Route::post('/central-kitchen/produksi/store-and-approve', [CentralKitchenProductionController::class, 'storeAndApprove'])->name('ck-produksi.store-and-approve');
+        Route::post('/central-kitchen/produksi/{id}/approve', [CentralKitchenProductionController::class, 'approveProduksi'])->name('ck-produksi.approve');
     });
 
 

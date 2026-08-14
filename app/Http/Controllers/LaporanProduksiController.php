@@ -99,13 +99,33 @@ class LaporanProduksiController extends Controller
      */
     public function hpp(Request $request)
     {
-        $startDate = $request->get('start_date', date('Y-m-01'));
-        $endDate   = $request->get('end_date', date('Y-m-t'));
+        $startDate        = $request->get('start_date', date('Y-m-01'));
+        $endDate          = $request->get('end_date', date('Y-m-t'));
+        $gudangAsalId     = $request->get('gudang_asal_id', $request->get('gudang_id', ''));
+        $gudangTujuanId   = $request->get('gudang_tujuan_id', '');
+        $filterTipe       = $request->get('tipe', ''); // 'B2B', 'POS', 'CK', or ''
 
-        // 1. Query HPP B2B (dari produksi)
-        $b2bData = DB::table('produksi_detail')
+        // Daftar gudang untuk dropdown filter
+        $daftarGudang = DB::table('master_gudang')->orderBy('nama')->get();
+
+        // 1. Query HPP B2B & Central Kitchen (dari produksi)
+        $b2bQuery = DB::table('produksi_detail')
             ->join('produksi', 'produksi_detail.produksi_id', '=', 'produksi.id')
+            ->leftJoin('pesanan', 'produksi.pesanan_id', '=', 'pesanan.id')
+            ->leftJoin('customers', 'pesanan.customer_id', '=', 'customers.id')
             ->leftJoin('master_barang', 'produksi_detail.produk_id', '=', 'master_barang.id')
+            ->leftJoin('master_gudang as g_asal', 'produksi.gudang_bahan_id', '=', 'g_asal.id')
+            ->leftJoin('master_gudang as g_hasil_default', 'produksi.gudang_hasil_id', '=', 'g_hasil_default.id')
+            ->leftJoin('master_gudang as g_outlet_match', function($join) {
+                $join->on(DB::raw("1"), '=', DB::raw("1"))
+                     ->where(function($q) {
+                         $q->whereRaw("pesanan.tipe_pesanan = 'central_kitchen' AND (
+                             (LOWER(customers.nama) LIKE '%kejingga%' AND g_outlet_match.nama LIKE '%KeJingga%')
+                             OR (LOWER(customers.nama) LIKE '%gaharu%' AND g_outlet_match.nama LIKE '%Gaharu%')
+                             OR (g_outlet_match.nama LIKE CONCAT('%', TRIM(REPLACE(customers.nama, 'Outlet', '')), '%'))
+                         )");
+                     });
+            })
             ->select(
                 'master_barang.id as produk_id',
                 'master_barang.kode_barang',
@@ -113,16 +133,44 @@ class LaporanProduksiController extends Controller
                 'master_barang.satuan',
                 DB::raw('SUM(produksi_detail.qty) as total_qty'),
                 DB::raw('SUM(produksi_detail.hpp_total) as total_hpp'),
-                DB::raw("'B2B' as tipe")
+                DB::raw("CASE WHEN pesanan.tipe_pesanan = 'central_kitchen' THEN 'CK' ELSE 'B2B' END as tipe"),
+                'produksi.gudang_bahan_id as gudang_asal_id',
+                DB::raw("COALESCE(g_outlet_match.id, produksi.gudang_hasil_id) as gudang_tujuan_id"),
+                DB::raw("COALESCE(g_asal.nama, 'Gudang Bahan') as nama_gudang_asal"),
+                DB::raw("COALESCE(g_outlet_match.nama, g_hasil_default.nama, 'Gudang Hasil') as nama_gudang_tujuan")
             )
-            ->whereBetween('produksi.tanggal_mulai', [$startDate, $endDate])
-            ->groupBy('master_barang.id', 'master_barang.kode_barang', 'master_barang.nama', 'master_barang.satuan')
-            ->get();
+            ->whereBetween('produksi.tanggal_mulai', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
 
-        // 2. Query HPP POS (dari penjualanpos_detail)
-        $posData = DB::table('penjualanpos_detail')
+        if ($gudangAsalId !== '') {
+            $b2bQuery->where('produksi.gudang_bahan_id', $gudangAsalId);
+        }
+
+        if ($gudangTujuanId !== '') {
+            $b2bQuery->whereRaw("COALESCE(g_outlet_match.id, produksi.gudang_hasil_id) = ?", [$gudangTujuanId]);
+        }
+
+        if ($filterTipe === 'B2B') {
+            $b2bQuery->where(function($q) {
+                $q->whereNull('pesanan.tipe_pesanan')->orWhere('pesanan.tipe_pesanan', '!=', 'central_kitchen');
+            });
+        } elseif ($filterTipe === 'CK') {
+            $b2bQuery->where('pesanan.tipe_pesanan', '=', 'central_kitchen');
+        }
+
+        $b2bData = ($filterTipe === 'POS') ? collect() :
+            $b2bQuery->groupBy(
+                'master_barang.id', 'master_barang.kode_barang', 'master_barang.nama', 'master_barang.satuan',
+                'produksi.gudang_bahan_id', 'g_asal.nama',
+                DB::raw("COALESCE(g_outlet_match.id, produksi.gudang_hasil_id)"),
+                DB::raw("COALESCE(g_outlet_match.nama, g_hasil_default.nama, 'Gudang Hasil')"),
+                DB::raw("CASE WHEN pesanan.tipe_pesanan = 'central_kitchen' THEN 'CK' ELSE 'B2B' END")
+            )->get();
+
+        // 2. Query HPP POS (dari penjualanpos_detail – filter gudang_asal dari penjualan_pos.gudang_id)
+        $posQuery = DB::table('penjualanpos_detail')
             ->join('penjualan_pos', 'penjualanpos_detail.penjualan_id', '=', 'penjualan_pos.id')
             ->leftJoin('master_barang', 'penjualanpos_detail.produk_id', '=', 'master_barang.id')
+            ->leftJoin('master_gudang as g_asal', 'penjualan_pos.gudang_id', '=', 'g_asal.id')
             ->select(
                 'master_barang.id as produk_id',
                 'master_barang.kode_barang',
@@ -130,32 +178,55 @@ class LaporanProduksiController extends Controller
                 'master_barang.satuan',
                 DB::raw('SUM(penjualanpos_detail.qty) as total_qty'),
                 DB::raw('SUM(penjualanpos_detail.qty * penjualanpos_detail.hpp_satuan) as total_hpp'),
-                DB::raw("'POS' as tipe")
+                DB::raw("'POS' as tipe"),
+                'penjualan_pos.gudang_id as gudang_asal_id',
+                DB::raw('NULL as gudang_tujuan_id'),
+                DB::raw("COALESCE(g_asal.nama, 'Outlet POS') as nama_gudang_asal"),
+                DB::raw("'Konsumen (POS)' as nama_gudang_tujuan")
             )
             ->where('penjualan_pos.status', '=', 'SUKSES')
-            ->whereBetween('penjualan_pos.tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->groupBy('master_barang.id', 'master_barang.kode_barang', 'master_barang.nama', 'master_barang.satuan')
-            ->get();
+            ->whereBetween('penjualan_pos.tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+
+        if ($gudangAsalId !== '') {
+            $posQuery->where('penjualan_pos.gudang_id', $gudangAsalId);
+        }
+
+        if ($gudangTujuanId !== '') {
+            // Transaksi POS langsung ke konsumen, tidak memiliki gudang tujuan internal
+            $posQuery->whereRaw('1 = 0');
+        }
+
+        $posData = ($filterTipe === 'B2B' || $filterTipe === 'CK') ? collect() :
+            $posQuery->groupBy(
+                'master_barang.id', 'master_barang.kode_barang', 'master_barang.nama', 'master_barang.satuan',
+                'penjualan_pos.gudang_id', 'g_asal.nama'
+            )->get();
 
         // Combine collections and sort
         $laporanHpp = $b2bData->concat($posData)->sortByDesc('total_hpp');
 
+        // Selected gudang labels for display
+        $selectedGudangAsal   = $gudangAsalId ? $daftarGudang->firstWhere('id', (int)$gudangAsalId) : null;
+        $selectedGudangTujuan = $gudangTujuanId ? $daftarGudang->firstWhere('id', (int)$gudangTujuanId) : null;
+
         if ($request->format === 'pdf') {
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('laporanproduksi.hpp-pdf', compact(
-                'laporanHpp', 'startDate', 'endDate'
+                'laporanHpp', 'startDate', 'endDate', 'selectedGudangAsal', 'selectedGudangTujuan', 'filterTipe'
             ));
             return $pdf->download('laporan-hpp-' . now()->format('Ymd') . '.pdf');
         }
 
         if ($request->format === 'excel') {
-            return $this->exportExcelHpp($laporanHpp);
+            return $this->exportExcelHpp($laporanHpp, $selectedGudangAsal, $selectedGudangTujuan, $filterTipe);
         }
 
-        return view('laporanproduksi.hpp', compact('laporanHpp', 'startDate', 'endDate'));
+        return view('laporanproduksi.hpp', compact(
+            'laporanHpp', 'startDate', 'endDate', 'daftarGudang', 'gudangAsalId', 'gudangTujuanId', 'filterTipe', 'selectedGudangAsal', 'selectedGudangTujuan'
+        ));
     }
 
-    private function exportExcelHpp($data)
+    private function exportExcelHpp($data, $selectedGudangAsal = null, $selectedGudangTujuan = null, $filterTipe = '')
     {
         $filename = 'laporan-hpp-' . now()->format('Ymd') . '.csv';
         $headers  = [
@@ -163,16 +234,18 @@ class LaporanProduksiController extends Controller
             'Content-Disposition' => "attachment; filename=\"$filename\"",
         ];
 
-        $callback = function () use ($data) {
+        $callback = function () use ($data, $selectedGudangAsal, $selectedGudangTujuan, $filterTipe) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode Barang', 'Nama Produk Jadi', 'Tipe', 'Total Qty Produksi/Penjualan', 'Satuan', 'Total Nilai HPP', 'Rata-rata HPP / Satuan']);
+            fputcsv($f, ['Kode Barang', 'Nama Produk Jadi', 'Tipe', 'Gudang Asal', 'Gudang Tujuan', 'Total Qty Produksi/Penjualan', 'Satuan', 'Total Nilai HPP', 'Rata-rata HPP / Satuan']);
             foreach ($data as $row) {
                 $hppPerSatuan = $row->total_qty > 0 ? ($row->total_hpp / $row->total_qty) : 0;
                 fputcsv($f, [
                     $row->kode_barang,
                     $row->nama_produk,
                     $row->tipe ?? 'B2B',
+                    $row->nama_gudang_asal ?? '—',
+                    $row->nama_gudang_tujuan ?? '—',
                     $row->total_qty,
                     $row->satuan ?? 'Pcs',
                     $row->total_hpp,
@@ -343,7 +416,10 @@ class LaporanProduksiController extends Controller
         // 3. List Bahan Baku yang Sudah Masuk ke Batas Minimum
         $bahanBakuMinimum = DB::table('master_barang')
             ->leftJoin('stok_gudang', 'master_barang.id', '=', 'stok_gudang.barang_id')
-            ->where('master_barang.is_bahan_baku', 1)
+            ->where(function ($q) {
+                $q->where('master_barang.is_bahan_baku', 1)
+                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
+            })
             ->where('master_barang.is_active', true)
             ->select(
                 'master_barang.nama',

@@ -21,8 +21,10 @@
                             </tr>
                         </thead>
                         <tbody>
+                            @php $hasEligibleItems = false; @endphp
                             @foreach($details as $detail)
                                 @if($detail->sisa_qty > 0)
+                                @php $hasEligibleItems = true; @endphp
                                 <tr>
                                     <td class="fw-bold">{{ $detail->pesanan->kode_pesanan }}</td>
                                     <td>{{ $detail->pesanan->customer?->nama ?? $detail->pesanan->customer?->name ?? '-' }}</td>
@@ -43,12 +45,23 @@
                                 </tr>
                                 @endif
                             @endforeach
+
+                            @if(!$hasEligibleItems)
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Semua item sudah dibuatkan Work Order. Tidak ada sisa kebutuhan produksi.
+                                </td>
+                            </tr>
+                            @endif
                         </tbody>
                     </table>
                 </div>
                 <div class="card-footer d-flex justify-content-end">
-                    <a href="{{ route('wo.index') }}" class="btn btn-secondary me-2">Batal</a>
-                    <button type="submit" class="btn btn-success"><i class="bi bi-save"></i> Simpan Work Order</button>
+                    <a href="{{ route('produksi.index', ['tab' => 'wo']) }}" class="btn btn-secondary me-2">Batal</a>
+                    <button type="submit" class="btn btn-success" @if(!$hasEligibleItems) disabled @endif>
+                        <i class="bi bi-save"></i> Simpan Work Order
+                    </button>
                 </div>
             </div>
         </form>

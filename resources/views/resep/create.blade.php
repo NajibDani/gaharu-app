@@ -26,7 +26,7 @@
 <option disabled selected>-- Pilih Produk --</option>
 @foreach($produk as $p)
 <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}">
-    {{ $p->nama }}
+    {{ $p->nama }} {{ $p->is_bahan_setengah_jadi ? '(Bahan Setengah Jadi)' : '(Barang Jadi)' }}
 </option>
 @endforeach
 </select>

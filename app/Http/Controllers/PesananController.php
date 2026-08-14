@@ -25,7 +25,7 @@ class PesananController extends Controller
             ->delete();
 
         $search = $request->query('search');
-        $query = Pesanan::with(['customer', 'pembayaran']);
+        $query = Pesanan::b2b()->with(['customer', 'pembayaran']);
 
         if ($search) {
             $query->where(function($q) use ($search) {

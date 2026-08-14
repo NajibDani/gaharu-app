@@ -41,6 +41,8 @@
                         <p class="fs-6">
                             @if($barang->is_bahan_baku)
                                 <span class="badge bg-primary">Bahan Baku</span>
+                            @elseif($barang->is_bahan_setengah_jadi)
+                                <span class="badge bg-info text-dark">Bahan Setengah Jadi</span>
                             @elseif($barang->is_barang_jadi)
                                 <span class="badge bg-success">Barang Jadi</span>
                             @elseif($barang->is_operational)
@@ -71,7 +73,27 @@
                         </div>
                     @endif
 
-                    @if($barang->is_bahan_baku)
+                    @if($barang->is_bahan_setengah_jadi)
+                        <div class="col-12 mb-3">
+                            <label class="fw-bold text-muted small uppercase d-block mb-1">Batas Minimum Stock per Lokasi (Bahan Setengah Jadi)</label>
+                            <div class="p-3 bg-light rounded border">
+                                <div class="row text-center g-2">
+                                    <div class="col-4 border-end">
+                                        <span class="text-muted d-block small">Central Kitchen</span>
+                                        <strong class="text-danger fs-6">{{ $barang->minimum_stock_ck !== null ? number_format($barang->minimum_stock_ck) . ' ' . $barang->satuan : '—' }}</strong>
+                                    </div>
+                                    <div class="col-4 border-end">
+                                        <span class="text-muted d-block small">Outlet Kejingga</span>
+                                        <strong class="text-danger fs-6">{{ $barang->minimum_stock_kejingga !== null ? number_format($barang->minimum_stock_kejingga) . ' ' . $barang->satuan : '—' }}</strong>
+                                    </div>
+                                    <div class="col-4">
+                                        <span class="text-muted d-block small">Outlet Gaharu</span>
+                                        <strong class="text-danger fs-6">{{ $barang->minimum_stock_gaharu !== null ? number_format($barang->minimum_stock_gaharu) . ' ' . $barang->satuan : '—' }}</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @elseif($barang->is_bahan_baku)
                         <div class="col-md-6 mb-3">
                             <label class="fw-bold text-muted small uppercase">Batas Minimum Stock (Batas Kritis)</label>
                             <p class="fs-6 text-danger fw-bold">

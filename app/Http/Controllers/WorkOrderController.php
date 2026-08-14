@@ -77,7 +77,7 @@ class WorkOrderController extends Controller
             }
 
             DB::commit();
-            return redirect()->route('wo.index')->with('success', 'Work Order berhasil dibuat');
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('success', 'Work Order berhasil dibuat');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal: ' . $e->getMessage());
@@ -104,12 +104,17 @@ class WorkOrderController extends Controller
 
     public function storeMassal(Request $request)
     {
+        // Validate that items exist
+        if (!$request->pesanan_id || !is_array($request->pesanan_id) || count($request->pesanan_id) === 0) {
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Tidak ada item yang bisa dibuatkan Work Order. Pastikan masih ada sisa kebutuhan produksi.');
+        }
+
         $cekBayar = Pesanan::whereIn('id', $request->pesanan_id)
                             ->where('status_pembayaran', 'Belum Bayar')
                             ->exists();
     
         if ($cekBayar) {
-            return redirect()->route('wo.index')->with('error', 'Salah satu pesanan belum membayar DP!');
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Salah satu pesanan belum membayar DP!');
         }
 
         DB::beginTransaction();
@@ -134,10 +139,10 @@ class WorkOrderController extends Controller
             }
 
             DB::commit();
-            return redirect()->route('wo.index')->with('success', 'Work Order Gabungan berhasil dibuat!');
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('success', 'Work Order Gabungan berhasil dibuat!');
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->route('wo.index')->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
     }
 

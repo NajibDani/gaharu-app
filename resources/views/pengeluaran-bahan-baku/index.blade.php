@@ -117,6 +117,39 @@
         </div>
     @endif
 
+    {{-- ALERT SARAN RESTOCK BAHAN BAKU OUTLET --}}
+    @if(!empty($outletSuggestionsSummary))
+        <div class="card border-0 shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-left: 5px solid #f97316 !important;">
+            <div class="card-body p-3 p-md-4">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle bg-warning text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                            <i class="bi bi-shield-exclamation"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold text-dark mb-1">
+                                Saran Restock Bahan Baku di Outlet / Cabang
+                            </h6>
+                            <p class="text-muted small mb-0">
+                                Terdapat stok Bahan Baku yang berada di bawah batas minimum stock gudang outlet. Klik tombol gudang tujuan untuk langsung membuat pengeluaran bahan baku:
+                            </p>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach($outletSuggestionsSummary as $sum)
+                            <a href="{{ route('pengeluaran-bahan-baku.create', ['gudang_id' => $sum['gudang_id']]) }}" 
+                               class="btn btn-sm btn-outline-dark bg-white fw-bold shadow-sm d-inline-flex align-items-center gap-2">
+                                <i class="bi bi-box-arrow-up-right text-warning"></i>
+                                <span>{{ $sum['gudang_nama'] }}</span>
+                                <span class="badge bg-danger text-white rounded-pill">{{ $sum['count'] }} item</span>
+                            </a>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
     <!-- TABEL -->
     <div class="card shadow-sm">
 
@@ -199,46 +232,16 @@
 
                                     </a>
 
-                                    @if(
-                                        strtolower($item->status) == 'draft'
-                                    )
-
-                                        @if(
-
-    strtolower($item->status) !== 'approved'
-
-    &&
-
-    strtolower($item->status) !== 'disetujui'
-
-    &&
-
-    !str_contains(
-        strtolower($item->keterangan ?? ''),
-        'permintaan bahan baku untuk'
-    )
-
-)
-
-    <a
-        href="{{ route('pengeluaran-bahan-baku.edit', $item->id) }}"
-        class="btn btn-warning btn-sm">
-
-        Edit
-
-    </a>
-
-@endif
-
-                                        <a
-                                            href="{{ route('pengeluaran-bahan-baku.approve',$item->id) }}"
-                                            class="btn btn-success btn-sm"
-                                            onclick="return confirm('Approve pengeluaran ini?')">
-
-                                            <i class="bi bi-check-circle"></i>
-
+                                    @if(strtolower($item->status) == 'draft')
+                                        <a href="{{ route('pengeluaran-bahan-baku.edit', $item->id) }}"
+                                           class="btn btn-warning btn-sm" title="Edit Permintaan / Pengeluaran">
+                                            <i class="bi bi-pencil"></i> Edit
                                         </a>
-
+                                        <a href="{{ route('pengeluaran-bahan-baku.approve', $item->id) }}"
+                                           class="btn btn-success btn-sm"
+                                           onclick="return confirm('Approve pengeluaran ini?')">
+                                            <i class="bi bi-check-circle"></i>
+                                        </a>
                                     @endif
 
                                 </div>

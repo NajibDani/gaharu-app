@@ -14,7 +14,7 @@
 @foreach($produk as $p)
 <option value="{{ $p->id }}"
     {{ $data->produk_id == $p->id ? 'selected' : '' }}>
-    {{ $p->nama }}
+    {{ $p->nama }} {{ $p->is_bahan_setengah_jadi ? '(Bahan Setengah Jadi)' : '(Barang Jadi)' }}
 </option>
 @endforeach
 </select>

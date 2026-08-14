@@ -166,7 +166,40 @@
             /* kompensasi border 3px */
         }
 
-        /* ── LOGOUT BTN ── */
+        /* ── STEP FLOW items (B2B, CK) ── */
+        .submenu-content a.submenu-step {
+            display: flex;
+            align-items: center;
+            padding: 8px 20px 8px 40px;
+        }
+
+        .submenu-content a.submenu-step.active {
+            padding-left: 37px; /* kompensasi border 3px */
+        }
+
+        .step-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 17px;
+            height: 17px;
+            min-width: 17px;
+            border-radius: 50%;
+            background: rgba(216, 134, 86, .25);
+            color: #d88656;
+            font-size: 9px;
+            font-weight: 700;
+            margin-right: 8px;
+            flex-shrink: 0;
+            transition: background .2s;
+        }
+
+        .submenu-content a.submenu-step:hover .step-badge,
+        .submenu-content a.submenu-step.active .step-badge {
+            background: #d88656;
+            color: #fff;
+        }
+
         .logout-btn {
             width: calc(100% - 40px);
             margin: 0 20px;

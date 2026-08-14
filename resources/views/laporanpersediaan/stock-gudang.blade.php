@@ -34,6 +34,7 @@
                         <select name="jenis_utama" class="form-select">
                             <option value="">Semua Jenis</option>
                             <option value="bahan_baku"  {{ request('jenis_utama') === 'bahan_baku'  ? 'selected' : '' }}>Bahan Baku</option>
+                            <option value="bahan_setengah_jadi" {{ request('jenis_utama') === 'bahan_setengah_jadi' ? 'selected' : '' }}>Bahan Setengah Jadi</option>
                             <option value="barang_jadi" {{ request('jenis_utama') === 'barang_jadi' ? 'selected' : '' }}>Barang Jadi</option>
                             <option value="operational" {{ request('jenis_utama') === 'operational' ? 'selected' : '' }}>Operational</option>
                         </select>
@@ -136,7 +137,21 @@
                         </thead>
                         <tbody>
                             @forelse($data as $row)
-                                <tr class="{{ $row->jumlah <= ($row->minimum_stock ?? -1) ? 'table-danger' : '' }}">
+                                @php
+                                    $minStockEffective = $row->minimum_stock;
+                                    if ($row->is_bahan_setengah_jadi) {
+                                        $gudangName = strtolower($row->nama_gudang ?? '');
+                                        if (str_contains($gudangName, 'central kitchen')) {
+                                            $minStockEffective = $row->minimum_stock_ck;
+                                        } elseif (str_contains($gudangName, 'kejingga')) {
+                                            $minStockEffective = $row->minimum_stock_kejingga;
+                                        } elseif (str_contains($gudangName, 'gaharu')) {
+                                            $minStockEffective = $row->minimum_stock_gaharu;
+                                        }
+                                    }
+                                    $isKritis = $minStockEffective !== null && $row->jumlah <= $minStockEffective;
+                                @endphp
+                                <tr class="{{ $isKritis ? 'table-danger' : '' }}">
                                     <td class="px-4 font-monospace fw-semibold" style="font-size:12px; color:#d88656;">
                                         {{ $row->kode_barang }}
                                     </td>
@@ -144,6 +159,8 @@
                                     <td>
                                         @if($row->is_bahan_baku)
                                             <span style="font-size:11px; font-weight:600; color:#6c757d;">Bahan Baku</span>
+                                        @elseif($row->is_bahan_setengah_jadi)
+                                            <span style="font-size:11px; font-weight:600; color:#0dcaf0;">Bahan Setengah Jadi</span>
                                         @elseif($row->is_barang_jadi)
                                             <span style="font-size:11px; font-weight:600; color:#d88656;">Barang Jadi</span>
                                         @elseif($row->is_operational)
@@ -154,7 +171,7 @@
                                     </td>
                                     <td class="text-muted">{{ $row->nama_gudang }}</td>
                                     <td class="text-muted">{{ $row->satuan }}</td>
-                                    <td class="text-center fw-bold" style="font-size:15px; {{ $row->jumlah <= ($row->minimum_stock ?? -1) ? 'color:#dc3545;' : 'color:#198754;' }}">
+                                    <td class="text-center fw-bold" style="font-size:15px; {{ $isKritis ? 'color:#dc3545;' : 'color:#198754;' }}">
                                         {{ number_format($row->jumlah, 2) }}
                                     </td>
                                 </tr>

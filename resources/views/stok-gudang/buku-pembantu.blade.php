@@ -88,6 +88,8 @@
                                 <td>
                                     @if($item->is_bahan_baku)
                                         <span class="badge bg-primary-subtle text-primary px-3 py-1.5">Bahan Baku</span>
+                                    @elseif($item->is_bahan_setengah_jadi)
+                                        <span class="badge bg-info-subtle text-info px-3 py-1.5">Bahan Setengah Jadi</span>
                                     @elseif($item->is_barang_jadi)
                                         <span class="badge bg-success-subtle text-success px-3 py-1.5">Barang Jadi</span>
                                     @elseif($item->is_operational)

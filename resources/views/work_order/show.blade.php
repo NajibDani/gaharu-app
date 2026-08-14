@@ -22,18 +22,18 @@
         <div>
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb mb-1">
-                    <li class="breadcrumb-item"><a href="{{ route('wo.index') }}">Work Order</a></li>
-                    <li class="breadcrumb-item active">Detail</li>
+                    <li class="breadcrumb-item"><a href="{{ route('produksi.index', ['tab' => 'wo']) }}">B2B Produksi</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ $wo->kode_wo }}</li>
                 </ol>
             </nav>
-            <h4 class="fw-bold text-dark">Detail Work Order: <span class="text-primary">{{ $wo->kode_wo }}</span></h4>
+            <h3 class="mb-0 fw-bold text-dark">Detail Work Order</h3>
         </div>
-        <div class="d-flex gap-2">
+        <div>
+            <a href="{{ route('produksi.index', ['tab' => 'wo']) }}" class="btn btn-secondary btn-sm shadow-sm">
+                <i class="bi bi-arrow-left me-1"></i> Kembali ke B2B Produksi
+            </a>
             <a href="{{ route('wo.cetak-pdf', $wo->id) }}" class="btn btn-danger btn-sm shadow-sm fw-bold">
                 <i class="bi bi-file-pdf me-1"></i> Cetak PDF
-            </a>
-            <a href="{{ route('wo.index') }}" class="btn btn-secondary btn-sm shadow-sm">
-                <i class="bi bi-arrow-left"></i> Kembali
             </a>
         </div>
     </div>

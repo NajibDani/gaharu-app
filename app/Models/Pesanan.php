@@ -11,6 +11,7 @@ class Pesanan extends Model
 
     protected $fillable = [
         'kode_pesanan',
+        'tipe_pesanan',
         'customer_id',
         'tanggal',
         'estimasi_kirim',
@@ -23,6 +24,19 @@ class Pesanan extends Model
         'created_by',
         'gudang_id'
     ];
+
+    public function scopeB2b($query)
+    {
+        return $query->where(function($q) {
+            $q->where('tipe_pesanan', 'b2b')
+              ->orWhereNull('tipe_pesanan');
+        });
+    }
+
+    public function scopeCentralKitchen($query)
+    {
+        return $query->where('tipe_pesanan', 'central_kitchen');
+    }
 
     protected $casts = [
         'total_pesanan'  => 'decimal:2',
@@ -70,5 +84,46 @@ class Pesanan extends Model
             WorkOrder::class,
             'pesanan_id'
         );
+    }
+
+    public function pengirimans()
+    {
+        return $this->hasMany(Pengiriman::class, 'pesanan_id');
+    }
+
+    public function getIsFullyShippedAttribute()
+    {
+        if ($this->details->isEmpty()) return false;
+        foreach ($this->details as $det) {
+            if ($det->qty_sisa > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public function getIsPartiallyShippedAttribute()
+    {
+        $hasShipped = false;
+        $hasRemaining = false;
+        foreach ($this->details as $det) {
+            if ($det->qty_terkirim > 0) {
+                $hasShipped = true;
+            }
+            if ($det->qty_sisa > 0) {
+                $hasRemaining = true;
+            }
+        }
+        return $hasShipped && $hasRemaining;
+    }
+
+    public function getTotalQtyPesanAttribute()
+    {
+        return $this->details->sum('qty');
+    }
+
+    public function getTotalQtyTerkirimAttribute()
+    {
+        return $this->details->sum('qty_terkirim');
     }
 }

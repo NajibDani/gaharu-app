@@ -922,7 +922,7 @@ class JurnalController extends Controller
         // Deteksi apakah pembelian berisi barang operasional / perlengkapan (bukan bahan baku)
         $hasOperational = false;
         foreach ($pembelian->details as $det) {
-            if ($det->barang && ($det->barang->is_operational || !$det->barang->is_bahan_baku)) {
+            if ($det->barang && ($det->barang->is_operational || (!$det->barang->is_bahan_baku && !$det->barang->is_bahan_setengah_jadi))) {
                 $hasOperational = true;
                 break;
             }
@@ -1954,7 +1954,7 @@ class JurnalController extends Controller
 
         $hasOperational = false;
         foreach ($pembelian->details as $det) {
-            if ($det->barang && ($det->barang->is_operational || !$det->barang->is_bahan_baku)) {
+            if ($det->barang && ($det->barang->is_operational || (!$det->barang->is_bahan_baku && !$det->barang->is_bahan_setengah_jadi))) {
                 $hasOperational = true;
                 break;
             }
@@ -2106,7 +2106,7 @@ class JurnalController extends Controller
 
             $hasOperational = false;
             foreach ($pembelian->details as $det) {
-                if ($det->barang && ($det->barang->is_operational || !$det->barang->is_bahan_baku)) {
+                if ($det->barang && ($det->barang->is_operational || (!$det->barang->is_bahan_baku && !$det->barang->is_bahan_setengah_jadi))) {
                     $hasOperational = true;
                     break;
                 }
