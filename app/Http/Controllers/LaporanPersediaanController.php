@@ -100,19 +100,20 @@ class LaporanPersediaanController extends Controller
         }
 
         if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::where('id', 4)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
         } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::where('id', 2)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
         } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::where('id', 1)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
         } else {
-            $gudangs = MasterGudang::orderBy('nama')->get();
+            $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         }
         $kategoris = DB::table('kategori')->orderBy('nama')->get();
 
-        $query = StokGudang::with(['barang.kategori', 'gudang'])
+        $query = StokGudang::with(['barang.kategori', 'gudang', 'divisi'])
             ->join('master_barang', 'stok_gudang.barang_id', '=', 'master_barang.id')
             ->join('master_gudang', 'stok_gudang.gudang_id', '=', 'master_gudang.id')
+            ->leftJoin('gudang_divisi', 'stok_gudang.divisi_id', '=', 'gudang_divisi.id')
             ->select(
                 'stok_gudang.*',
                 'master_barang.nama as nama_barang',
@@ -123,6 +124,7 @@ class LaporanPersediaanController extends Controller
                 'master_barang.is_barang_jadi',
                 'master_barang.is_operational',
                 'master_gudang.nama as nama_gudang',
+                'gudang_divisi.nama as nama_divisi',
                 'master_barang.minimum_stock',
                 'master_barang.minimum_stock_ck',
                 'master_barang.minimum_stock_kejingga',
@@ -132,6 +134,9 @@ class LaporanPersediaanController extends Controller
 
         if ($request->filled('gudang_id')) {
             $query->where('stok_gudang.gudang_id', $request->gudang_id);
+        }
+        if ($request->filled('divisi_id')) {
+            $query->where('stok_gudang.divisi_id', $request->divisi_id);
         }
         if ($request->filled('kategori_id')) {
             $query->where('master_barang.kategori_id', $request->kategori_id);
@@ -154,7 +159,6 @@ class LaporanPersediaanController extends Controller
         $totalItem = $data->count();
 
         // --- MENGAMBIL 5 DATA STOK KRITIS ---
-        // (Menggantikan stokHabis dan stokAda)
         $queryKritis = clone $query; 
         $stokKritis = $queryKritis->whereNotNull('master_barang.minimum_stock')
                                   ->whereColumn('stok_gudang.jumlah', '<=', 'master_barang.minimum_stock')
@@ -173,8 +177,6 @@ class LaporanPersediaanController extends Controller
 
         $hasPurchaseAccess = in_array($roleName, ['Kepala Outlet Gaharu', 'Kepala Gudang', 'Direktur Keuangan', 'Super Admin', 'Administrator']);
 
-        // --- PASSING DATA KE VIEW ---
-        // Menghapus stokHabis & stokAda, memasukkan stokKritis
         return view('laporanpersediaan.stock-gudang', compact(
             'data', 'gudangs', 'kategoris',
             'totalItem', 'stokKritis',
@@ -202,16 +204,16 @@ class LaporanPersediaanController extends Controller
         }
 
         if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::where('id', 4)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
         } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::where('id', 2)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
         } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::where('id', 1)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
         } else {
-            $gudangs = MasterGudang::orderBy('nama')->get();
+            $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         }
 
-        $query = PengeluaranBahanBaku::with(['gudang', 'details.barang'])
+        $query = PengeluaranBahanBaku::with(['gudang', 'divisi', 'details.barang'])
             ->orderBy('tanggal', 'desc');
 
         if ($request->filled('dari')) {
@@ -222,6 +224,9 @@ class LaporanPersediaanController extends Controller
         }
         if ($request->filled('gudang_id')) {
             $query->where('gudang_id', $request->gudang_id);
+        }
+        if ($request->filled('divisi_id')) {
+            $query->where('divisi_id', $request->divisi_id);
         }
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -254,34 +259,31 @@ class LaporanPersediaanController extends Controller
         if ($request->format === 'excel') {
             return $this->exportExcelPengeluaran($data, $request);
         }
-// Siapkan data detail untuk modal JavaScript
-$detailData = $data->mapWithKeys(function ($row) {
-    return [$row->id => [
-        'kode'    => $row->kode_pengeluaran,
-        'tanggal' => \Carbon\Carbon::parse($row->tanggal)->format('d M Y'),
-        'gudang'  => $row->gudang->nama ?? '-',
-        'status'  => $row->status,
-        'total'   => $row->details->sum('hpp_total'),
-        'items'   => $row->details->map(function ($d) {
-            return [
-                'nama'   => $d->barang->nama ?? '-',
-                'qty'    => $d->qty,
-                'satuan' => $d->satuan,
-                'hpp'    => $d->hpp_total,
-            ];
-        })->values(),
-    ]];
-});
 
-return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
-    'data', 'gudangs',
-    'totalTransaksi', 'totalNilaiHpp', 'totalQty', 'totalApproved',
-    'topBahan', 'detailData', 'request'  // ← tambah detailData
-));
+        // Siapkan data detail untuk modal JavaScript
+        $detailData = $data->mapWithKeys(function ($row) {
+            return [$row->id => [
+                'kode'    => $row->kode_pengeluaran,
+                'tanggal' => \Carbon\Carbon::parse($row->tanggal)->format('d M Y'),
+                'gudang'  => $row->gudang->nama ?? '-',
+                'divisi'  => $row->divisi->nama ?? '-',
+                'status'  => $row->status,
+                'total'   => $row->details->sum('hpp_total'),
+                'items'   => $row->details->map(function ($d) {
+                    return [
+                        'nama'   => $d->barang->nama ?? '-',
+                        'qty'    => $d->qty,
+                        'satuan' => $d->satuan,
+                        'hpp'    => $d->hpp_total,
+                    ];
+                })->values(),
+            ]];
+        });
+
         return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
             'data', 'gudangs',
             'totalTransaksi', 'totalNilaiHpp', 'totalQty', 'totalApproved',
-            'topBahan', 'request'
+            'topBahan', 'detailData', 'request'
         ));
     }
 
@@ -305,16 +307,16 @@ return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
         }
 
         if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::where('id', 4)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
         } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::where('id', 2)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
         } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::where('id', 1)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
         } else {
-            $gudangs = MasterGudang::orderBy('nama')->get();
+            $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         }
 
-        $query = StockOpname::with(['gudang', 'user', 'details.barang'])
+        $query = StockOpname::with(['gudang', 'divisi', 'user', 'details.barang'])
             ->orderBy('tanggal', 'desc');
 
         if ($request->filled('dari')) {
@@ -325,6 +327,9 @@ return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
         }
         if ($request->filled('gudang_id')) {
             $query->where('gudang_id', $request->gudang_id);
+        }
+        if ($request->filled('divisi_id')) {
+            $query->where('divisi_id', $request->divisi_id);
         }
         if ($request->filled('status')) {
             $query->where('status', $request->status);

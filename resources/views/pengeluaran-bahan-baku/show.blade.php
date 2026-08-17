@@ -104,11 +104,16 @@
         <div class="card p-3 h-100">
 
             <small class="text-muted">
-                Gudang Tujuan
+                Gudang & Divisi Tujuan
             </small>
 
             <h6 class="fw-bold mb-0">
                 {{ $pengeluaran->gudang->nama ?? '-' }}
+                @if($pengeluaran->divisi)
+                    <span class="badge bg-light text-primary border border-primary-subtle d-inline-block mt-1">
+                        <i class="bi bi-diagram-3 me-1"></i>{{ $pengeluaran->divisi->nama }}
+                    </span>
+                @endif
             </h6>
 
         </div>

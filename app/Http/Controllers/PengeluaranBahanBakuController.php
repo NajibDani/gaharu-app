@@ -57,9 +57,16 @@ class PengeluaranBahanBakuController extends Controller
                         '=',
                         'master_gudang.id'
                     )
+                    ->leftJoin(
+                        'gudang_divisi',
+                        'pengeluaran_bahan_baku.divisi_id',
+                        '=',
+                        'gudang_divisi.id'
+                    )
                     ->select(
                         'pengeluaran_bahan_baku.*',
-                        'master_gudang.nama as nama_gudang'
+                        'master_gudang.nama as nama_gudang',
+                        'gudang_divisi.nama as nama_divisi'
                     );
 
         if ($search) {
@@ -224,7 +231,7 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $gudang = MasterGudang::orderBy('nama')->get(); // Semua gudang sesuai Master Gudang
+        $gudang = MasterGudang::with('divisi')->orderBy('nama')->get(); // Semua gudang sesuai Master Gudang
 
         return view(
             'pengeluaran-bahan-baku.create',
@@ -247,6 +254,9 @@ class PengeluaranBahanBakuController extends Controller
             'gudang_id'
                 => 'required|exists:master_gudang,id',
 
+            'divisi_id'
+                => 'nullable|exists:gudang_divisi,id',
+
             'barang_id'
                 => 'required|array|min:1',
 
@@ -263,6 +273,11 @@ class PengeluaranBahanBakuController extends Controller
                 => 'nullable|string',
         ]);
 
+        $selectedGudang = MasterGudang::with('divisi')->find($request->gudang_id);
+        if ($selectedGudang && strtolower($selectedGudang->kategori) === 'operasional' && $selectedGudang->divisi->count() > 0 && empty($request->divisi_id)) {
+            return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $selectedGudang->nama . '.'])->withInput();
+        }
+
         $data = PengeluaranBahanBaku::create([
 
             'kode_pengeluaran'
@@ -273,12 +288,15 @@ class PengeluaranBahanBakuController extends Controller
 
             /*
             |--------------------------------------------------------------------------
-            | GUDANG
+            | GUDANG & DIVISI
             |--------------------------------------------------------------------------
             */
 
             'gudang_id'
                 => $request->gudang_id,
+
+            'divisi_id'
+                => $request->divisi_id,
 
             'status'
                 => 'draft',
@@ -336,7 +354,8 @@ class PengeluaranBahanBakuController extends Controller
     {
         $pengeluaran = PengeluaranBahanBaku::with([
             'details.barang',
-            'gudang'
+            'gudang',
+            'divisi',
         ])->findOrFail($id);
 
         if ($pengeluaran->status !== 'approved' && $pengeluaran->status !== 'disetujui') {
@@ -344,7 +363,8 @@ class PengeluaranBahanBakuController extends Controller
                 $est = $this->fifoService->getEstimatedHargaFIFO(
                     $detail->barang_id,
                     $detail->qty,
-                    $pengeluaran->gudang_id ?? 1
+                    $pengeluaran->gudang_id ?? 1,
+                    $pengeluaran->divisi_id
                 );
                 $detail->hpp_total = $est['total_harga'];
             }
@@ -362,9 +382,11 @@ class PengeluaranBahanBakuController extends Controller
 
     public function edit(string $id)
 {
-    $pengeluaran = PengeluaranBahanBaku::with(
-        'details'
-    )->findOrFail($id);
+    $pengeluaran = PengeluaranBahanBaku::with([
+        'details',
+        'gudang',
+        'divisi',
+    ])->findOrFail($id);
 
     /*
     |--------------------------------------------------------------------------
@@ -413,7 +435,7 @@ class PengeluaranBahanBakuController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    $gudang = MasterGudang::orderBy('nama')->get();
+    $gudang = MasterGudang::with('divisi')->orderBy('nama')->get();
 
     return view(
         'pengeluaran-bahan-baku.edit',
@@ -438,6 +460,9 @@ class PengeluaranBahanBakuController extends Controller
         'gudang_id'
             => 'required|exists:master_gudang,id',
 
+        'divisi_id'
+            => 'nullable|exists:gudang_divisi,id',
+
         'barang_id'
             => 'required|array|min:1',
 
@@ -453,6 +478,11 @@ class PengeluaranBahanBakuController extends Controller
         'keterangan'
             => 'nullable|string',
     ]);
+
+    $selectedGudang = MasterGudang::with('divisi')->find($request->gudang_id);
+    if ($selectedGudang && strtolower($selectedGudang->kategori) === 'operasional' && $selectedGudang->divisi->count() > 0 && empty($request->divisi_id)) {
+        return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $selectedGudang->nama . '.'])->withInput();
+    }
 
     DB::transaction(function () use (
         $request,
@@ -492,6 +522,9 @@ class PengeluaranBahanBakuController extends Controller
 
             'gudang_id'
                 => $request->gudang_id,
+
+            'divisi_id'
+                => $request->divisi_id,
 
             'keterangan'
                 => $request->keterangan,
@@ -618,6 +651,7 @@ class PengeluaranBahanBakuController extends Controller
                     */
 
                     $gudangOpname = $data->gudang_id;
+                    $divisiOpname = $data->divisi_id;
                     $shortageCredits = [];
                     $totalShortageDebit = 0;
                     $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
@@ -636,6 +670,7 @@ class PengeluaranBahanBakuController extends Controller
                             qtyKeluar:      $detail->qty,
                             gudangId:       $gudangOpname,
                             allowNegative:  true,
+                            divisiId:       $divisiOpname,
                         );
 
                         $hppTotal = 0;
@@ -699,37 +734,28 @@ class PengeluaranBahanBakuController extends Controller
                                 'kredit'       => $hppTotal,
                                 'journal_type' => 'jurnal_penyesuaian',
                             ]);
-                            
-                            // if (!isset($shortageCredits[$idPersediaan])) {
-                            //     $shortageCredits[$idPersediaan] = 0;
-                            // }
-                            // $shortageCredits[$idPersediaan] += $hppTotal;
-                            // $totalShortageDebit += $hppTotal;
                         }
 
                         /*
                         |------------------------------------------------------------------
                         | KURANGI STOK SUMMARY (stok_gudang)
                         |------------------------------------------------------------------
-                        |
-                        | stockOut() biasanya validasi stok_gudang dulu, tapi untuk
-                        | Stock Opname kita bypass validasi dan langsung decrement
-                        | karena selisih negatif opname memang harus tetap diproses
-                        | meski summary sudah menunjukkan 0.
-                        |
                         */
 
-                        $stokGudang = StokGudang::where('barang_id', $detail->barang_id)
-                            ->where('gudang_id', $gudangOpname)
-                            ->lockForUpdate()
-                            ->first();
+                        $stokQuery = StokGudang::where('barang_id', $detail->barang_id)
+                            ->where('gudang_id', $gudangOpname);
+
+                        if ($divisiOpname) {
+                            $stokQuery->where('divisi_id', $divisiOpname);
+                        } else {
+                            $stokQuery->whereNull('divisi_id');
+                        }
+
+                        $stokGudang = $stokQuery->lockForUpdate()->first();
 
                         if ($stokGudang) {
-                            // Decrement langsung, boleh jadi negatif untuk koreksi opname
                             $stokGudang->decrement('jumlah', $detail->qty);
                         }
-                        // Jika baris stok_gudang tidak ada, tidak perlu dibuat
-                        // (barang ini memang tidak ada di gudang — konsisten dengan opname)
 
                         TransaksiStok::create([
                             'tanggal'        => now(),
@@ -737,6 +763,7 @@ class PengeluaranBahanBakuController extends Controller
                             'source_type'    => 'pengeluaran_bahan_baku',
                             'source_id'      => $data->id,
                             'gudang_asal_id' => $gudangOpname,
+                            'divisi_asal_id' => $divisiOpname,
                             'barang_id'      => $detail->barang_id,
                             'qty'            => $detail->qty,
                             'total_harga'    => $hppTotal,

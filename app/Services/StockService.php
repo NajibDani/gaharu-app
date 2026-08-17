@@ -15,6 +15,7 @@ class StockService
      * - Pembelian
      * - Hasil produksi
      * - Retur customer
+     * - Transfer masuk ke divisi
      */
     public function stockIn(array $data)
     {
@@ -31,7 +32,7 @@ class StockService
      * Contoh:
      * - Penjualan
      * - Pemakaian produksi
-     * - Pemakaian operasional
+     * - Pemakaian operasional / divisi
      */
     public function stockOut(array $data)
     {
@@ -49,7 +50,7 @@ class StockService
     }
 
     /**
-     * TRANSFER STOCK ANTAR GUDANG
+     * TRANSFER STOCK ANTAR GUDANG / DIVISI
      */
     public function transfer(array $data)
     {
@@ -61,12 +62,14 @@ class StockService
             |--------------------------------------------------------------------------
             */
 
-            if (
-                $data['gudang_asal_id']
-                == $data['gudang_tujuan_id']
-            ) {
+            $asalGudang = $data['gudang_asal_id'] ?? null;
+            $tujuanGudang = $data['gudang_tujuan_id'] ?? null;
+            $asalDivisi = $data['divisi_asal_id'] ?? null;
+            $tujuanDivisi = $data['divisi_tujuan_id'] ?? null;
+
+            if ($asalGudang == $tujuanGudang && $asalDivisi == $tujuanDivisi) {
                 throw new RuntimeException(
-                    'Gudang asal dan tujuan tidak boleh sama'
+                    'Gudang dan divisi asal tidak boleh sama dengan tujuan'
                 );
             }
 
@@ -77,9 +80,10 @@ class StockService
             */
 
             $this->validateStock([
-                'barang_id' => $data['barang_id'],
-                'gudang_asal_id' => $data['gudang_asal_id'],
-                'qty' => $data['qty'],
+                'barang_id'      => $data['barang_id'],
+                'gudang_asal_id' => $asalGudang,
+                'divisi_asal_id' => $asalDivisi,
+                'qty'            => $data['qty'],
             ]);
 
             /*
@@ -89,9 +93,10 @@ class StockService
             */
 
             $this->decreaseStock([
-                'barang_id' => $data['barang_id'],
-                'gudang_asal_id' => $data['gudang_asal_id'],
-                'qty' => $data['qty'],
+                'barang_id'      => $data['barang_id'],
+                'gudang_asal_id' => $asalGudang,
+                'divisi_asal_id' => $asalDivisi,
+                'qty'            => $data['qty'],
             ]);
 
             /*
@@ -101,9 +106,10 @@ class StockService
             */
 
             $this->increaseStock([
-                'barang_id' => $data['barang_id'],
-                'gudang_tujuan_id' => $data['gudang_tujuan_id'],
-                'qty' => $data['qty'],
+                'barang_id'        => $data['barang_id'],
+                'gudang_tujuan_id' => $tujuanGudang,
+                'divisi_tujuan_id' => $tujuanDivisi,
+                'qty'              => $data['qty'],
             ]);
 
             /*
@@ -121,87 +127,79 @@ class StockService
      */
     protected function increaseStock(array $data): void
     {
+        $gudangId = $data['gudang_tujuan_id'] ?? $data['gudang_id'] ?? null;
+        $divisiId = $data['divisi_tujuan_id'] ?? $data['divisi_id'] ?? null;
+
         try {
-            $stok = StokGudang::where(
-                    'barang_id',
-                    $data['barang_id']
-                )
-                ->where(
-                    'gudang_id',
-                    $data['gudang_tujuan_id']
-                )
-                ->lockForUpdate()
-                ->first();
+            $query = StokGudang::where('barang_id', $data['barang_id'])
+                ->where('gudang_id', $gudangId);
+
+            if ($divisiId) {
+                $query->where('divisi_id', $divisiId);
+            } else {
+                $query->whereNull('divisi_id');
+            }
+
+            $stok = $query->lockForUpdate()->first();
 
             if ($stok) {
-                $stok->increment(
-                    'jumlah',
-                    $data['qty']
-                );
+                $stok->increment('jumlah', $data['qty']);
             } else {
                 StokGudang::create([
                     'barang_id' => $data['barang_id'],
-                    'gudang_id' => $data['gudang_tujuan_id'],
-                    'jumlah' => $data['qty'],
+                    'gudang_id' => $gudangId,
+                    'divisi_id' => $divisiId,
+                    'jumlah'    => $data['qty'],
                 ]);
             }
         } catch (\Illuminate\Database\UniqueConstraintViolationException | \Illuminate\Database\QueryException $e) {
-            // Jika thread lain mendahului menyisipkan baris baru, cari baris tersebut dan lakukan increment
-            $stok = StokGudang::where(
-                    'barang_id',
-                    $data['barang_id']
-                )
-                ->where(
-                    'gudang_id',
-                    $data['gudang_tujuan_id']
-                )
-                ->lockForUpdate()
-                ->first();
+            $query = StokGudang::where('barang_id', $data['barang_id'])
+                ->where('gudang_id', $gudangId);
+
+            if ($divisiId) {
+                $query->where('divisi_id', $divisiId);
+            } else {
+                $query->whereNull('divisi_id');
+            }
+
+            $stok = $query->lockForUpdate()->first();
 
             if ($stok) {
-                $stok->increment(
-                    'jumlah',
-                    $data['qty']
-                );
+                $stok->increment('jumlah', $data['qty']);
             } else {
                 throw $e;
             }
         }
     }
 
-
     /**
      * KURANGI STOK
      */
     protected function decreaseStock(array $data): void
     {
-        $stok = StokGudang::where(
-                'barang_id',
-                $data['barang_id']
-            )
-            ->where(
-                'gudang_id',
-                $data['gudang_asal_id']
-            )
-            ->lockForUpdate()
-            ->first();
+        $gudangId = $data['gudang_asal_id'] ?? $data['gudang_id'] ?? null;
+        $divisiId = $data['divisi_asal_id'] ?? $data['divisi_id'] ?? null;
+
+        $query = StokGudang::where('barang_id', $data['barang_id'])
+            ->where('gudang_id', $gudangId);
+
+        if ($divisiId) {
+            $query->where('divisi_id', $divisiId);
+        } else {
+            $query->whereNull('divisi_id');
+        }
+
+        $stok = $query->lockForUpdate()->first();
 
         if (!$stok) {
-            throw new RuntimeException(
-                'Stok tidak ditemukan'
-            );
+            throw new RuntimeException('Stok tidak ditemukan');
         }
 
         if ($stok->jumlah < $data['qty']) {
-            throw new RuntimeException(
-                'Stok tidak cukup'
-            );
+            throw new RuntimeException('Stok tidak cukup');
         }
 
-        $stok->decrement(
-            'jumlah',
-            $data['qty']
-        );
+        $stok->decrement('jumlah', $data['qty']);
     }
 
     /**
@@ -209,26 +207,26 @@ class StockService
      */
     protected function validateStock(array $data): void
     {
-        $stok = StokGudang::where(
-                'barang_id',
-                $data['barang_id']
-            )
-            ->where(
-                'gudang_id',
-                $data['gudang_asal_id']
-            )
-            ->first();
+        $gudangId = $data['gudang_asal_id'] ?? $data['gudang_id'] ?? null;
+        $divisiId = $data['divisi_asal_id'] ?? $data['divisi_id'] ?? null;
+
+        $query = StokGudang::where('barang_id', $data['barang_id'])
+            ->where('gudang_id', $gudangId);
+
+        if ($divisiId) {
+            $query->where('divisi_id', $divisiId);
+        } else {
+            $query->whereNull('divisi_id');
+        }
+
+        $stok = $query->first();
 
         if (!$stok) {
-            throw new RuntimeException(
-                'Stok tidak ditemukan'
-            );
+            throw new RuntimeException('Stok tidak ditemukan');
         }
 
         if ($stok->jumlah < $data['qty']) {
-            throw new RuntimeException(
-                'Stok tidak cukup'
-            );
+            throw new RuntimeException('Stok tidak cukup');
         }
     }
 
@@ -240,28 +238,18 @@ class StockService
         string $tipe
     ) {
         return TransaksiStok::create([
-
-            'tanggal' => now(),
-
-            'tipe' => $tipe,
-
-            'source_type' => $data['source_type'] ?? null,
-            'source_id' => $data['source_id'] ?? null,
-
-            'gudang_asal_id'
-                => $data['gudang_asal_id'] ?? null,
-
-            'gudang_tujuan_id'
-                => $data['gudang_tujuan_id'] ?? null,
-
-            'barang_id' => $data['barang_id'],
-
-            'qty' => $data['qty'],
-
-            'total_harga'
-                => $data['total_harga'] ?? 0,
-
-            'created_by' => $data['user_id'],
+            'tanggal'          => now(),
+            'tipe'             => $tipe,
+            'source_type'      => $data['source_type'] ?? null,
+            'source_id'        => $data['source_id'] ?? null,
+            'gudang_asal_id'   => $data['gudang_asal_id'] ?? null,
+            'divisi_asal_id'   => $data['divisi_asal_id'] ?? null,
+            'gudang_tujuan_id' => $data['gudang_tujuan_id'] ?? null,
+            'divisi_tujuan_id' => $data['divisi_tujuan_id'] ?? null,
+            'barang_id'        => $data['barang_id'],
+            'qty'              => $data['qty'],
+            'total_harga'      => $data['total_harga'] ?? 0,
+            'created_by'       => $data['user_id'],
         ]);
     }
 }

@@ -45,6 +45,12 @@
         name="gudang_id"
         value="{{ $gudang->id }}">
 
+    <input
+        type="hidden"
+        id="divisi_id"
+        name="divisi_id"
+        value="{{ $divisiId ?? '' }}">
+
 <div class="row mb-4">
 
     <div class="col-md-3">
@@ -54,12 +60,17 @@
             <div class="card-body">
 
                 <small class="text-muted">
-                    Gudang
+                    Gudang & Divisi
                 </small>
 
-                <h5 class="fw-bold mb-0">
+                <h5 class="fw-bold mb-0 text-dark">
                     {{ $gudang->nama }}
                 </h5>
+                @if($divisi)
+                    <span class="badge bg-light text-primary border border-primary-subtle mt-1 fs-6">
+                        <i class="bi bi-diagram-3 me-1"></i>{{ $divisi->nama }}
+                    </span>
+                @endif
 
             </div>
 
@@ -286,6 +297,8 @@ function loadBarang()
 {
     let gudangId =
         document.getElementById('gudang_id').value;
+    let divisiId =
+        document.getElementById('divisi_id').value;
 
     if(!gudangId)
     {
@@ -304,7 +317,8 @@ function loadBarang()
                 'application/json'
             },
             body:JSON.stringify({
-                gudang_id:gudangId
+                gudang_id: gudangId,
+                divisi_id: divisiId || null
             })
         }
     )
@@ -481,6 +495,10 @@ let gudangId =
     document.getElementById(
         'gudang_id'
     ).value;
+let divisiId =
+    document.getElementById(
+        'divisi_id'
+    ).value;
 
     fetch(
     "{{ route('stock-opname.hitung-fifo') }}",
@@ -496,6 +514,9 @@ let gudangId =
 
             gudang_id:
                 gudangId,
+
+            divisi_id:
+                divisiId || null,
 
             barang_id:
                 barangId,

@@ -9,40 +9,46 @@
                 <form method="GET" action="{{ route('laporan.stock-opname') }}" class="row g-3 align-items-end">
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">DARI TANGGAL</label>
-                        <input type="date" name="dari" class="form-control" value="{{ request('dari') }}">
+                        <input type="date" name="dari" class="form-control form-control-sm" value="{{ request('dari') }}">
                     </div>
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">SAMPAI TANGGAL</label>
-                        <input type="date" name="sampai" class="form-control" value="{{ request('sampai') }}">
+                        <input type="date" name="sampai" class="form-control form-control-sm" value="{{ request('sampai') }}">
                     </div>
-                    <div class="col-12 col-md-3">
+                    <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">GUDANG</label>
-                        <select name="gudang_id" class="form-select">
+                        <select name="gudang_id" id="report_gudang_id" class="form-select form-select-sm">
                             <option value="">Semua Gudang</option>
                             @foreach($gudangs as $g)
-                                <option value="{{ $g->id }}" {{ request('gudang_id') == $g->id ? 'selected' : '' }}>{{ $g->nama }}</option>
+                                <option value="{{ $g->id }}" {{ request('gudang_id') == $g->id ? 'selected' : '' }}>{{ $g->nama }} ({{ $g->kategori }})</option>
                             @endforeach
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2" id="report_divisi_container" style="{{ !request('divisi_id') && !request('gudang_id') ? 'display:none;' : '' }}">
+                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">DIVISI</label>
+                        <select name="divisi_id" id="report_divisi_id" class="form-select form-select-sm">
+                            <option value="">Semua Divisi</option>
                         </select>
                     </div>
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">STATUS</label>
-                        <select name="status" class="form-select">
+                        <select name="status" class="form-select form-select-sm">
                             <option value="">Semua Status</option>
                             <option value="draft"    {{ request('status') === 'draft'    ? 'selected' : '' }}>Draft</option>
                             <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approved</option>
                         </select>
                     </div>
-                    <div class="col-12 col-md-3 d-flex gap-2">
-                        <button type="submit" class="btn text-white px-4" style="background-color: #d88656; border: none;">
+                    <div class="col-12 col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-sm text-white px-3" style="background-color: #d88656; border: none;">
                             <i class="bi bi-search me-1"></i> Tampilkan
                         </button>
                         <a href="{{ route('laporan.stock-opname', array_merge(request()->all(), ['format'=>'excel'])) }}"
-                           class="btn text-white" style="background-color: #606060; border: none;">
-                            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Excel
+                           class="btn btn-sm text-white" style="background-color: #606060; border: none;">
+                            <i class="bi bi-file-earmark-spreadsheet"></i>
                         </a>
                         <a href="{{ route('laporan.stock-opname', array_merge(request()->all(), ['format'=>'pdf'])) }}"
-                           class="btn text-white" style="background-color: #606060; border: none;">
-                            <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+                           class="btn btn-sm text-white" style="background-color: #606060; border: none;">
+                            <i class="bi bi-file-earmark-pdf"></i>
                         </a>
                     </div>
                 </form>
@@ -96,18 +102,18 @@
             <div class="card-body p-0">
                 <div class="px-4 py-3" style="border-bottom:1px solid #eadfd4;">
                     <span class="fw-bold" style="color:#d88656;">Rincian Stock Opname</span>
-                    <span class="text-muted ms-2" style="font-size:13px;">{{ $data->count() }} baris barang</span>
+                    <span class="text-muted ms-2" style="font-size:13px;">{{ $data->count() }} dokumen</span>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0" style="font-size:13px;">
                         <thead style="background-color: #d88656; color: white;">
                             <tr>
                                 <th style="background-color: #d88656; color: white;" class="px-4">Dokumen</th>
+                                <th style="background-color: #d88656; color: white;">Gudang & Divisi</th>
                                 <th style="background-color: #d88656; color: white;">Barang</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Sistem</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Fisik</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Selisih</th>
-                                <th style="background-color: #d88656; color: white;" class="text-end">HPP</th>
                                 <th style="background-color: #d88656; color: white;" class="text-end">Nilai Selisih</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Status</th>
                             </tr>
@@ -121,8 +127,15 @@
                                             <div class="text-muted" style="font-size:11px;">{{ \Carbon\Carbon::parse($opname->tanggal)->format('d M Y') }}</div>
                                         </td>
                                         <td>
+                                            <div class="fw-medium text-dark">{{ $opname->gudang->nama ?? '-' }}</div>
+                                            @if($opname->divisi)
+                                                <span class="badge bg-light text-primary border border-primary-subtle" style="font-size: 0.72rem;">
+                                                    <i class="bi bi-diagram-3 me-1"></i>{{ $opname->divisi->nama }}
+                                                </span>
+                                            @endif
+                                        </td>
+                                        <td>
                                             <div class="fw-semibold">{{ $detail->barang->nama ?? '-' }}</div>
-                                            <div class="text-muted" style="font-size:11px;">{{ $opname->gudang->nama ?? '-' }}</div>
                                         </td>
                                         <td class="text-center">{{ number_format($detail->stok_sistem, 2) }}</td>
                                         <td class="text-center fw-semibold">{{ number_format($detail->stok_fisik, 2) }}</td>
@@ -135,7 +148,6 @@
                                                 <span class="text-muted">0</span>
                                             @endif
                                         </td>
-                                        <td class="text-end text-muted">Rp {{ number_format($detail->hpp_satuan, 0, ',', '.') }}</td>
                                         <td class="text-end fw-semibold {{ $detail->nilai_selisih < 0 ? 'text-danger' : ($detail->nilai_selisih > 0 ? 'text-success' : '') }}">
                                             Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
                                         </td>
@@ -157,21 +169,57 @@
                                 </tr>
                             @endforelse
                         </tbody>
-                        @if($data->count() > 0)
-                        <tfoot>
-                            <tr style="background:#fdf3ec; font-weight:600;">
-                                <td colspan="6" class="px-4" style="color:#d88656;">Total Nilai Selisih</td>
-                                <td class="text-end" style="color:#d88656;">
-                                    Rp {{ number_format($totalNilaiSelisih, 0, ',', '.') }}
-                                </td>
-                                <td></td>
-                            </tr>
-                        </tfoot>
-                        @endif
                     </table>
                 </div>
             </div>
         </div>
 
     </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const gudangSelect = document.getElementById('report_gudang_id');
+        const divisiContainer = document.getElementById('report_divisi_container');
+        const divisiSelect = document.getElementById('report_divisi_id');
+        const currentDivisiId = "{{ request('divisi_id') }}";
+
+        function loadDivisi(gudangId, selectedId = null) {
+            if (!gudangId) {
+                divisiContainer.style.display = 'none';
+                divisiSelect.innerHTML = '<option value="">Semua Divisi</option>';
+                return;
+            }
+
+            fetch('/gudangs/' + gudangId + '/divisi')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.is_operasional && data.divisi && data.divisi.length > 0) {
+                        divisiContainer.style.display = 'block';
+                        let opts = '<option value="">Semua Divisi</option>';
+                        data.divisi.forEach(d => {
+                            let isSel = (selectedId && selectedId == d.id) ? 'selected' : '';
+                            opts += `<option value="${d.id}" ${isSel}>${d.nama}</option>`;
+                        });
+                        divisiSelect.innerHTML = opts;
+                    } else {
+                        divisiContainer.style.display = 'none';
+                        divisiSelect.innerHTML = '<option value="">Semua Divisi</option>';
+                    }
+                })
+                .catch(() => {
+                    divisiContainer.style.display = 'none';
+                });
+        }
+
+        if (gudangSelect) {
+            gudangSelect.addEventListener('change', function() {
+                loadDivisi(this.value);
+            });
+
+            if (gudangSelect.value) {
+                loadDivisi(gudangSelect.value, currentDivisiId);
+            }
+        }
+    });
+    </script>
 </x-app-layout>

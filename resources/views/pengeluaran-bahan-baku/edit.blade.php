@@ -51,18 +51,38 @@
             @csrf
             @method('PUT')
 
-            <div class="mb-4">
-                <label class="form-label fw-bold">Gudang Tujuan</label>
-                <select name="gudang_id" class="form-select" required>
-                    @foreach($gudang as $g)
-                        <option value="{{ $g->id }}" {{ $pengeluaran->gudang_id == $g->id ? 'selected' : '' }}>
-                            {{ $g->nama }} - {{ $g->kategori }}
-                        </option>
-                    @endforeach
-                </select>
-                <small class="text-muted">
-                    Bahan baku akan dipindahkan dari Gudang Utama ke gudang tujuan yang dipilih.
-                </small>
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">Gudang Tujuan <span class="text-danger">*</span></label>
+                    <select name="gudang_id" id="select-gudang" class="form-select @error('gudang_id') is-invalid @enderror" required>
+                        @foreach($gudang as $g)
+                            <option value="{{ $g->id }}" data-kategori="{{ strtolower($g->kategori) }}" {{ old('gudang_id', $pengeluaran->gudang_id) == $g->id ? 'selected' : '' }}>
+                                {{ $g->nama }} ({{ $g->kategori }})
+                            </option>
+                        @endforeach
+                    </select>
+                    @error('gudang_id')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="text-muted">
+                        Bahan baku akan dipindahkan dari Gudang Utama ke gudang tujuan yang dipilih.
+                    </small>
+                </div>
+
+                <div class="col-md-6" id="divisi-wrapper" style="display: none;">
+                    <label class="form-label fw-bold">
+                        <i class="bi bi-diagram-3-fill text-primary me-1"></i> Divisi Tujuan <span class="text-danger">*</span>
+                    </label>
+                    <select name="divisi_id" id="select-divisi" class="form-select @error('divisi_id') is-invalid @enderror">
+                        <option value="">-- Pilih Divisi --</option>
+                    </select>
+                    @error('divisi_id')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                    <small class="text-muted">
+                        Pilih divisi operasional penerima bahan baku (Kitchen / Barista / Server / dll).
+                    </small>
+                </div>
             </div>
 
             <hr>
@@ -281,6 +301,53 @@ document.addEventListener("DOMContentLoaded", function() {
     document.querySelectorAll('#table-detail tbody tr').forEach(function(row) {
         checkStok(row);
     });
+
+    const selectGudang = document.getElementById('select-gudang');
+    const divisiWrapper = document.getElementById('divisi-wrapper');
+    const selectDivisi = document.getElementById('select-divisi');
+    const currentDivisiId = "{{ old('divisi_id', $pengeluaran->divisi_id ?? '') }}";
+
+    function fetchDivisi(gudangId, selectedId = null) {
+        if (!gudangId) {
+            divisiWrapper.style.display = 'none';
+            selectDivisi.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+            selectDivisi.required = false;
+            return;
+        }
+
+        fetch("/gudangs/" + gudangId + "/divisi")
+            .then(res => res.json())
+            .then(data => {
+                if (data.is_operasional && data.divisi && data.divisi.length > 0) {
+                    divisiWrapper.style.display = 'block';
+                    selectDivisi.required = true;
+                    let opts = '<option value="">-- Pilih Divisi Tujuan --</option>';
+                    data.divisi.forEach(d => {
+                        let isSel = (selectedId && selectedId == d.id) ? 'selected' : '';
+                        opts += `<option value="${d.id}" ${isSel}>${d.nama}</option>`;
+                    });
+                    selectDivisi.innerHTML = opts;
+                } else {
+                    divisiWrapper.style.display = 'none';
+                    selectDivisi.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                    selectDivisi.required = false;
+                }
+            })
+            .catch(() => {
+                divisiWrapper.style.display = 'none';
+                selectDivisi.required = false;
+            });
+    }
+
+    if (selectGudang) {
+        selectGudang.addEventListener('change', function() {
+            fetchDivisi(this.value);
+        });
+
+        if (selectGudang.value) {
+            fetchDivisi(selectGudang.value, currentDivisiId);
+        }
+    }
 });
 
 document.addEventListener('input', function(e) {

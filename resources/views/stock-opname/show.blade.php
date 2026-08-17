@@ -63,11 +63,16 @@
                 <div class="card-body">
 
                     <small class="text-muted">
-                        Gudang
+                        Gudang & Divisi
                     </small>
 
-                    <h6 class="fw-bold mt-2">
+                    <h6 class="fw-bold mt-2 mb-0">
                         {{ $stockOpname->gudang->nama }}
+                        @if($stockOpname->divisi)
+                            <span class="badge bg-light text-primary border border-primary-subtle d-inline-block mt-1">
+                                <i class="bi bi-diagram-3 me-1"></i>{{ $stockOpname->divisi->nama }}
+                            </span>
+                        @endif
                     </h6>
 
                 </div>

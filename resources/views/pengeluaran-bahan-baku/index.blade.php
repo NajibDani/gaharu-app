@@ -165,7 +165,7 @@
 
                             <th>No</th>
                             <th>Kode</th>
-                            <th>Gudang</th>
+                            <th>Gudang & Divisi Tujuan</th>
                             <th>Tanggal</th>
                             <th>Status</th>
                             <th width="180">
@@ -191,11 +191,16 @@
                             </td>
 
                             <td>
-                                {{ $item->nama_gudang }}
+                                <div class="fw-bold">{{ $item->nama_gudang }}</div>
+                                @if(!empty($item->nama_divisi))
+                                    <span class="badge bg-light text-primary border border-primary-subtle mt-1" style="font-size: 0.75rem;">
+                                        <i class="bi bi-diagram-3 me-1"></i>{{ $item->nama_divisi }}
+                                    </span>
+                                @endif
                             </td>
 
                             <td>
-                                {{ $item->tanggal }}
+                                {{ \Carbon\Carbon::parse($item->tanggal)->format('d-m-Y H:i') }}
                             </td>
 
                             <td>

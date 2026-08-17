@@ -16,6 +16,7 @@ class StokGudangBatchController extends Controller
                 'supplier',
                 'barang',
                 'gudang',
+                'divisi',
                 'pembelian',
             ])
             ->orderByDesc('id');
@@ -28,6 +29,10 @@ class StokGudangBatchController extends Controller
 
         if ($request->filled('gudang_id')) {
             $query->where('gudang_id', $request->gudang_id);
+        }
+
+        if ($request->filled('divisi_id')) {
+            $query->where('divisi_id', $request->divisi_id);
         }
 
         if ($request->filled('barang_id')) {
@@ -57,17 +62,25 @@ class StokGudangBatchController extends Controller
         $tidakSinkron = DB::table('stok_gudang as sg')
             ->join('master_barang as b', 'b.id', '=', 'sg.barang_id')
             ->join('master_gudang as mg', 'mg.id', '=', 'sg.gudang_id')
+            ->leftJoin('gudang_divisi as gd', 'gd.id', '=', 'sg.divisi_id')
             ->leftJoin(DB::raw('(
-                SELECT barang_id, gudang_id, SUM(qty_sisa) as total_sisa
+                SELECT barang_id, gudang_id, divisi_id, SUM(qty_sisa) as total_sisa
                 FROM stok_gudang_batch
-                GROUP BY barang_id, gudang_id
+                GROUP BY barang_id, gudang_id, divisi_id
             ) as batch_sum'), function ($join) {
                 $join->on('batch_sum.barang_id', '=', 'sg.barang_id')
-                     ->on('batch_sum.gudang_id', '=', 'sg.gudang_id');
+                     ->on('batch_sum.gudang_id', '=', 'sg.gudang_id')
+                     ->where(function($q) {
+                         $q->on('batch_sum.divisi_id', '=', 'sg.divisi_id')
+                           ->orWhere(function($sq) {
+                               $sq->whereNull('batch_sum.divisi_id')->whereNull('sg.divisi_id');
+                           });
+                     });
             })
             ->select(
                 'b.nama as nama_barang',
                 'mg.nama as nama_gudang',
+                'gd.nama as nama_divisi',
                 'sg.jumlah as stok_sistem',
                 DB::raw('COALESCE(batch_sum.total_sisa, 0) as total_batch'),
                 DB::raw('sg.jumlah - COALESCE(batch_sum.total_sisa, 0) as selisih')
@@ -81,7 +94,7 @@ class StokGudangBatchController extends Controller
         |----------------------------------------------------------------------
         */
 
-        $gudangs = MasterGudang::orderBy('nama')->get();
+        $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         $barangs = MasterBarang::orderBy('nama')->get();
 
         return view(

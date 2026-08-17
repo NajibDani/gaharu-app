@@ -9,41 +9,47 @@
                 <form method="GET" action="{{ route('laporan.pengeluaran-bahan-baku') }}" class="row g-3 align-items-end">
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">DARI TANGGAL</label>
-                        <input type="date" name="dari" class="form-control" value="{{ request('dari') }}">
+                        <input type="date" name="dari" class="form-control form-control-sm" value="{{ request('dari') }}">
                     </div>
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">SAMPAI TANGGAL</label>
-                        <input type="date" name="sampai" class="form-control" value="{{ request('sampai') }}">
+                        <input type="date" name="sampai" class="form-control form-control-sm" value="{{ request('sampai') }}">
                     </div>
-                    <div class="col-12 col-md-3">
+                    <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">GUDANG</label>
-                        <select name="gudang_id" class="form-select">
+                        <select name="gudang_id" id="report_gudang_id" class="form-select form-select-sm">
                             <option value="">Semua Gudang</option>
                             @foreach($gudangs as $g)
                                 <option value="{{ $g->id }}" {{ request('gudang_id') == $g->id ? 'selected' : '' }}>
-                                    {{ $g->nama }}
+                                    {{ $g->nama }} ({{ $g->kategori }})
                                 </option>
                             @endforeach
                         </select>
                     </div>
+                    <div class="col-12 col-md-2" id="report_divisi_container" style="{{ !request('divisi_id') && !request('gudang_id') ? 'display:none;' : '' }}">
+                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">DIVISI</label>
+                        <select name="divisi_id" id="report_divisi_id" class="form-select form-select-sm">
+                            <option value="">Semua Divisi</option>
+                        </select>
+                    </div>
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">STATUS</label>
-                        <select name="status" class="form-select">
+                        <select name="status" class="form-select form-select-sm">
                             <option value="">Semua Status</option>
                             <option value="draft"    {{ request('status') === 'draft'    ? 'selected' : '' }}>Draft</option>
                             <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approved</option>
                         </select>
                     </div>
-                    <div class="col-12 col-md-3 d-flex gap-2 align-items-end">
-                        <button type="submit" class="btn text-white px-3" style="background-color: #d88656; border: none;">
+                    <div class="col-12 col-md-2 d-flex gap-2 align-items-end">
+                        <button type="submit" class="btn btn-sm text-white px-3" style="background-color: #d88656; border: none;">
                             <i class="bi bi-search me-1"></i> Tampilkan
                         </button>
                         <a href="{{ route('laporan.pengeluaran-bahan-baku', array_merge(request()->all(), ['format'=>'excel'])) }}"
-                           class="btn text-white" style="background-color: #606060; border: none;" title="Export Excel">
+                           class="btn btn-sm text-white" style="background-color: #606060; border: none;" title="Export Excel">
                             <i class="bi bi-file-earmark-spreadsheet"></i>
                         </a>
                         <a href="{{ route('laporan.pengeluaran-bahan-baku', array_merge(request()->all(), ['format'=>'pdf'])) }}"
-                           class="btn text-white" style="background-color: #606060; border: none;" title="Export PDF">
+                           class="btn btn-sm text-white" style="background-color: #606060; border: none;" title="Export PDF">
                             <i class="bi bi-file-earmark-pdf"></i>
                         </a>
                     </div>
@@ -108,7 +114,7 @@
                             <tr>
                                 <th style="background-color: #d88656; color: white;" class="px-4">Kode</th>
                                 <th style="background-color: #d88656; color: white;">Tanggal</th>
-                                <th style="background-color: #d88656; color: white;">Gudang</th>
+                                <th style="background-color: #d88656; color: white;">Gudang & Divisi</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Jml Item</th>
                                 <th style="background-color: #d88656; color: white;" class="text-end">Nilai HPP</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Status</th>
@@ -122,7 +128,14 @@
                                         {{ $row->kode_pengeluaran }}
                                     </td>
                                     <td>{{ \Carbon\Carbon::parse($row->tanggal)->format('d M Y') }}</td>
-                                    <td class="text-muted">{{ $row->gudang->nama ?? '-' }}</td>
+                                    <td>
+                                        <div class="fw-medium text-dark">{{ $row->gudang->nama ?? '-' }}</div>
+                                        @if($row->divisi)
+                                            <span class="badge bg-light text-primary border border-primary-subtle" style="font-size: 0.72rem;">
+                                                <i class="bi bi-diagram-3 me-1"></i>{{ $row->divisi->nama }}
+                                            </span>
+                                        @endif
+                                    </td>
                                     <td class="text-center">{{ $row->details->count() }}</td>
                                     <td class="text-end fw-semibold">
                                         Rp {{ number_format($row->details->sum('hpp_total'), 0, ',', '.') }}
@@ -135,7 +148,6 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
-                                        {{-- Tombol Detail memicu Modal di bawahnya --}}
                                         <button type="button" class="btn btn-sm text-white" style="background-color: #d88656; border: none;"
                                                 data-bs-toggle="modal" data-bs-target="#modalDetail{{ $row->id }}">
                                             <i class="bi bi-eye"></i> Detail
@@ -152,7 +164,7 @@
                                                     <div class="modal-body p-0">
                                                         <div class="bg-light px-4 py-3 border-bottom text-muted" style="font-size:13px;">
                                                             <strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($row->tanggal)->format('d M Y') }} &nbsp;|&nbsp;
-                                                            <strong>Gudang:</strong> {{ $row->gudang->nama ?? '-' }} &nbsp;|&nbsp;
+                                                            <strong>Gudang:</strong> {{ $row->gudang->nama ?? '-' }} {{ $row->divisi ? '('.$row->divisi->nama.')' : '' }} &nbsp;|&nbsp;
                                                             <strong>Status:</strong> <span class="badge {{ $row->status === 'approved' ? 'bg-success' : 'bg-secondary' }}">{{ ucfirst($row->status) }}</span>
                                                         </div>
                                                         <div class="table-responsive">
@@ -196,8 +208,6 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        {{-- AKHIR MODAL DETAIL --}}
-
                                     </td>
                                 </tr>
                             @empty
@@ -216,10 +226,56 @@
 
     </div>
 
-    {{-- Style Tambahan untuk Tombol Close Putih di Modal --}}
     <style>
         .btn-close-white {
             filter: invert(1) grayscale(1) brightness(2);
         }
     </style>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const gudangSelect = document.getElementById('report_gudang_id');
+        const divisiContainer = document.getElementById('report_divisi_container');
+        const divisiSelect = document.getElementById('report_divisi_id');
+        const currentDivisiId = "{{ request('divisi_id') }}";
+
+        function loadDivisi(gudangId, selectedId = null) {
+            if (!gudangId) {
+                divisiContainer.style.display = 'none';
+                divisiSelect.innerHTML = '<option value="">Semua Divisi</option>';
+                return;
+            }
+
+            fetch('/gudangs/' + gudangId + '/divisi')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.is_operasional && data.divisi && data.divisi.length > 0) {
+                        divisiContainer.style.display = 'block';
+                        let opts = '<option value="">Semua Divisi</option>';
+                        data.divisi.forEach(d => {
+                            let isSel = (selectedId && selectedId == d.id) ? 'selected' : '';
+                            opts += `<option value="${d.id}" ${isSel}>${d.nama}</option>`;
+                        });
+                        divisiSelect.innerHTML = opts;
+                    } else {
+                        divisiContainer.style.display = 'none';
+                        divisiSelect.innerHTML = '<option value="">Semua Divisi</option>';
+                    }
+                })
+                .catch(() => {
+                    divisiContainer.style.display = 'none';
+                });
+        }
+
+        if (gudangSelect) {
+            gudangSelect.addEventListener('change', function() {
+                loadDivisi(this.value);
+            });
+
+            if (gudangSelect.value) {
+                loadDivisi(gudangSelect.value, currentDivisiId);
+            }
+        }
+    });
+    </script>
 </x-app-layout>

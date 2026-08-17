@@ -42,7 +42,7 @@ class PengeluaranBahanBakuService
             |--------------------------------------------------------------------------
             */
 
-            if ($pengeluaran->status == 'disetujui') {
+            if ($pengeluaran->status == 'disetujui' || $pengeluaran->status == 'approved') {
                 throw new \Exception(
                     'Pengeluaran sudah disetujui'
                 );
@@ -53,14 +53,10 @@ class PengeluaranBahanBakuService
             | GUDANG ASAL
             |--------------------------------------------------------------------------
             |
-            | Untuk transfer antar gudang, stok selalu keluar dari Gudang Utama.
-            | Namun jika pengeluaran memiliki gudang_id sendiri yang valid dan
-            | berbeda dari Gudang Utama, gunakan gudang itu sebagai asal.
-            | Fallback ke Gudang Utama jika tidak ada.
+            | Untuk transfer antar gudang, stok keluar dari Gudang Utama (pusat pembelian).
             |
             */
 
-            // Gudang asal selalu Gudang Utama karena seluruh pembelian masuk ke Gudang Utama
             $gudangUtama = MasterGudang::where('nama', 'Gudang Utama')->first();
             $gudangAsalId = $gudangUtama ? $gudangUtama->id : 1;
 
@@ -78,7 +74,7 @@ class PengeluaranBahanBakuService
                 |--------------------------------------------------------------------------
                 |
                 | 1. Panggil consumeFIFO untuk memotong batch lama dari Gudang Asal
-                | 2. Looping layer yang terpotong untuk dimasukkan ke Gudang Tujuan
+                | 2. Looping layer yang terpotong untuk dimasukkan ke Gudang Tujuan (+ Divisi)
                 |
                 */
 
@@ -91,7 +87,7 @@ class PengeluaranBahanBakuService
 
                 $hppTotal = 0;
 
-                // Buat batch FIFO baru di Gudang Tujuan dengan harga modal aslinya
+                // Buat batch FIFO baru di Gudang Tujuan (+ Divisi) dengan harga modal aslinya
                 foreach ($fifoResult as $layer) {
                     $totalHarga = $layer['qty_keluar'] * $layer['harga_per_qty'];
                     $hppTotal  += $totalHarga;
@@ -101,6 +97,7 @@ class PengeluaranBahanBakuService
 
                     StokGudangBatch::create([
                         'gudang_id'           => $pengeluaran->gudang_id, // Gudang tujuan
+                        'divisi_id'           => $pengeluaran->divisi_id, // Divisi tujuan (Kitchen/Barista/Server)
                         'supplier_id'         => $originalBatch ? $originalBatch->supplier_id : 1,
                         'barang_id'           => $detail->barang_id,
                         'pembelian_id'        => $originalBatch ? $originalBatch->pembelian_id : 1,
@@ -124,7 +121,7 @@ class PengeluaranBahanBakuService
 
                 /*
                 |--------------------------------------------------------------------------
-                | KURANGI STOK SUMMARY
+                | KURANGI STOK SUMMARY GUDANG ASAL
                 |--------------------------------------------------------------------------
                 */
 
@@ -140,17 +137,18 @@ class PengeluaranBahanBakuService
 
                 /*
                 |--------------------------------------------------------------------------
-                | TAMBAH STOK KE GUDANG TUJUAN
+                | TAMBAH STOK KE GUDANG & DIVISI TUJUAN
                 |--------------------------------------------------------------------------
                 */
 
                 $this->stockService->stockIn([
-                    'barang_id'       => $detail->barang_id,
-                    'gudang_tujuan_id'=> $pengeluaran->gudang_id,
-                    'qty'             => $detail->qty,
-                    'total_harga'     => $hppTotal,
-                    'source_type'     => 'pengeluaran_bahan_baku',
-                    'source_id'       => $pengeluaran->id,
+                    'barang_id'        => $detail->barang_id,
+                    'gudang_tujuan_id' => $pengeluaran->gudang_id,
+                    'divisi_tujuan_id' => $pengeluaran->divisi_id,
+                    'qty'              => $detail->qty,
+                    'total_harga'      => $hppTotal,
+                    'source_type'      => 'pengeluaran_bahan_baku',
+                    'source_id'        => $pengeluaran->id,
                     'user_id'         => $userId,
                 ]);
             }
@@ -162,12 +160,9 @@ class PengeluaranBahanBakuService
             */
 
             $pengeluaran->update([
-                'status'
-                    => 'disetujui',
-                'approved_by'
-                    => $userId,
-                'approved_at'
-                    => now(),
+                'status'      => 'disetujui',
+                'approved_by' => $userId,
+                'approved_at' => now(),
             ]);
 
             return $pengeluaran;

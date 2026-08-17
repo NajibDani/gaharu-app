@@ -12,6 +12,7 @@ class PengeluaranBahanBaku extends Model
         'kode_pengeluaran',
         'tanggal',
         'gudang_id',
+        'divisi_id',
         'status',
         'keterangan',
         'created_by',
@@ -31,14 +32,14 @@ class PengeluaranBahanBaku extends Model
             'pengeluaran_id'
         );
     }
-    public function index()
-    {
-        $data = PengeluaranBahanBaku::latest()->get();
 
-        return view('pengeluaran-bahan-baku.index', compact('data'));
-    }
-        public function gudang()
+    public function gudang()
     {
         return $this->belongsTo(MasterGudang::class, 'gudang_id');
+    }
+
+    public function divisi()
+    {
+        return $this->belongsTo(GudangDivisi::class, 'divisi_id');
     }
 }

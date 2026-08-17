@@ -1,15 +1,13 @@
 <x-app-layout>
 <x-slot name="header">
-
-        Master Gudang
-
-    </x-slot>
+    Master Gudang
+</x-slot>
 
 <div class="card shadow-sm border-0">
-    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
         <div>
             <h5 class="mb-0 fw-bold">Master Data Gudang</h5>
-            <small class="text-muted">Kelola data gudang perusahaan</small>
+            <small class="text-muted">Kelola data gudang perusahaan dan divisi operasional</small>
         </div>
 
         <div class="d-flex align-items-center gap-2">
@@ -21,14 +19,20 @@
                 @endif
             </form>
 
-            {{-- Tombol Tambah sekarang membuka modal, bukan pindah halaman --}}
-            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalTambahGudang">
-                + Tambah Gudang
-            </button>
+            <a href="{{ route('gudangs.create') }}" class="btn btn-primary btn-sm" style="border-radius: 6px;">
+                <i class="bi bi-plus-circle me-1"></i> Tambah Gudang
+            </a>
         </div>
     </div>
 
     <div class="card-body">
+
+        @if(session('success'))
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                {{ session('success') }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
 
         <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle mb-0">
@@ -36,7 +40,8 @@
                     <tr>
                         <th style="width: 60px;">No</th>
                         <th>Nama Gudang</th>
-                        <th>Kategori</th>
+                        <th style="width: 150px;">Kategori</th>
+                        <th>Divisi (Khusus Operasional)</th>
                         <th style="width: 180px;">Aksi</th>
                     </tr>
                 </thead>
@@ -44,51 +49,65 @@
                 <tbody>
                     @forelse ($gudangs as $gudang)
                         <tr>
-                            <td class="text-center">
+                            <td class="text-center fw-semibold">
                                 {{ $loop->iteration + ($gudangs->currentPage() - 1) * $gudangs->perPage() }}
                             </td>
 
-                            <td>{{ $gudang->nama }}</td>
-
-                            <td>{{ $gudang->kategori }}</td>
+                            <td class="fw-bold text-dark">
+                                <i class="bi bi-shop text-muted me-1"></i> {{ $gudang->nama }}
+                            </td>
 
                             <td class="text-center">
-                                {{-- Tombol Detil membuka modal detail --}}
-                                <button type="button"
-                                        class="btn btn-info btn-sm text-white"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#modalDetailGudang"
-                                        data-nama="{{ $gudang->nama }}"
-                                        data-kategori="{{ $gudang->kategori }}">
-                                    Detil
-                                </button>
+                                @if(strtolower($gudang->kategori) === 'operasional')
+                                    <span class="badge bg-primary px-2 py-1">Operasional</span>
+                                @elseif(strtolower($gudang->kategori) === 'utama')
+                                    <span class="badge bg-success px-2 py-1">Utama</span>
+                                @else
+                                    <span class="badge bg-secondary px-2 py-1">{{ $gudang->kategori }}</span>
+                                @endif
+                            </td>
 
-                                {{-- Tombol Edit membuka modal edit, terisi otomatis --}}
-                                <button type="button"
-                                        class="btn btn-warning btn-sm"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#modalEditGudang"
-                                        data-id="{{ $gudang->id }}"
-                                        data-nama="{{ $gudang->nama }}"
-                                        data-kategori="{{ $gudang->kategori }}"
-                                        data-action="{{ route('gudangs.update', $gudang->id) }}">
-                                    Edit
-                                </button>
+                            <td>
+                                @if(strtolower($gudang->kategori) === 'operasional')
+                                    @if($gudang->divisi && $gudang->divisi->count() > 0)
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach($gudang->divisi as $div)
+                                                <span class="badge bg-light text-primary border border-primary-subtle py-1 px-2">
+                                                    <i class="bi bi-diagram-3 me-1"></i>{{ $div->nama }}
+                                                </span>
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>Belum ada divisi</span>
+                                    @endif
+                                @else
+                                    <span class="text-muted small fst-italic">- (Gudang Tunggal)</span>
+                                @endif
+                            </td>
 
-                                {{-- Tombol Hapus membuka modal konfirmasi --}}
+                            <td class="text-center">
+                                <a href="{{ route('gudangs.show', $gudang->id) }}" class="btn btn-info btn-sm text-white" title="Lihat Detail">
+                                    <i class="bi bi-eye"></i> Detil
+                                </a>
+
+                                <a href="{{ route('gudangs.edit', $gudang->id) }}" class="btn btn-warning btn-sm" title="Edit Gudang">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </a>
+
                                 <button type="button"
                                         class="btn btn-danger btn-sm"
                                         data-bs-toggle="modal"
                                         data-bs-target="#modalHapusGudang"
                                         data-nama="{{ $gudang->nama }}"
-                                        data-action="{{ route('gudangs.destroy', $gudang->id) }}">
-                                    Hapus
+                                        data-action="{{ route('gudangs.destroy', $gudang->id) }}"
+                                        title="Hapus Gudang">
+                                    <i class="bi bi-trash"></i> Hapus
                                 </button>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="4" class="text-center text-muted py-4">
+                            <td colspan="5" class="text-center text-muted py-4">
                                 Data gudang belum ada.
                             </td>
                         </tr>
@@ -104,149 +123,6 @@
     </div>
 </div>
 
-
-{{-- ================= MODAL TAMBAH GUDANG ================= --}}
-<div class="modal fade" id="modalTambahGudang" tabindex="-1" aria-labelledby="modalTambahGudangLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 12px; overflow: hidden;">
-            <form action="{{ route('gudangs.store') }}" method="POST">
-                @csrf
-                <input type="hidden" name="_form" value="create">
-
-                <div class="modal-header text-white" style="background-color: #d88656;">
-                    <h5 class="modal-title fw-bold" id="modalTambahGudangLabel">Tambah Gudang</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-
-                <div class="modal-body p-4">
-                    <div class="mb-3">
-                        <label for="nama" class="form-label fw-semibold">
-                            Nama Gudang <span class="text-danger">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            name="nama"
-                            id="nama"
-                            class="form-control @error('nama') is-invalid @enderror"
-                            value="{{ old('nama') }}"
-                            placeholder="Contoh: Gudang Bahan Baku"
-                        >
-                        @error('nama')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-
-                    <div class="mb-1">
-                        <label for="kategori" class="form-label fw-semibold">
-                            Kategori <span class="text-danger">*</span>
-                        </label>
-                        <select name="kategori" id="kategori" class="form-select @error('kategori') is-invalid @enderror" required>
-                            <option value="">-- Pilih Kategori --</option>
-                            <option value="Operasional" {{ old('kategori') == 'Operasional' ? 'selected' : '' }}>Operasional</option>
-                            <option value="Utama" {{ old('kategori') == 'Utama' ? 'selected' : '' }}>Utama</option>
-                            <option value="Produksi" {{ old('kategori') == 'Produksi' ? 'selected' : '' }}>Produksi</option>
-                        </select>
-                        @error('kategori')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-primary">Simpan Gudang</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-
-{{-- ================= MODAL DETAIL GUDANG ================= --}}
-<div class="modal fade" id="modalDetailGudang" tabindex="-1" aria-labelledby="modalDetailGudangLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 12px; overflow: hidden;">
-            <div class="modal-header text-white" style="background-color: #d88656;">
-                <h5 class="modal-title fw-bold" id="modalDetailGudangLabel">Informasi Gudang</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-
-            <div class="modal-body p-4">
-                <div class="mb-3">
-                    <label class="fw-bold text-muted small text-uppercase">Nama Gudang</label>
-                    <p class="fs-5 text-dark fw-semibold mb-0" id="detailNama"></p>
-                </div>
-                <div class="mb-0">
-                    <label class="fw-bold text-muted small text-uppercase">Kategori</label>
-                    <p class="fs-5 text-dark fw-semibold mb-0" id="detailKategori"></p>
-                </div>
-            </div>
-
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Tutup</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-
-{{-- ================= MODAL EDIT GUDANG ================= --}}
-<div class="modal fade" id="modalEditGudang" tabindex="-1" aria-labelledby="modalEditGudangLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 12px; overflow: hidden;">
-            <form id="formEditGudang" method="POST">
-                @csrf
-                @method('PUT')
-                <input type="hidden" name="_form" value="edit">
-
-                <div class="modal-header text-white" style="background-color: #d88656;">
-                    <h5 class="modal-title fw-bold" id="modalEditGudangLabel">Edit Gudang</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-
-                <div class="modal-body p-4">
-                    <div class="mb-3">
-                        <label for="editNama" class="form-label fw-semibold">
-                            Nama Gudang <span class="text-danger">*</span>
-                        </label>
-                        <input
-                            type="text"
-                            name="nama"
-                            id="editNama"
-                            class="form-control @error('nama') is-invalid @enderror"
-                            placeholder="Contoh: Gudang Bahan Baku"
-                        >
-                        @error('nama')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-
-                    <div class="mb-1">
-                        <label for="editKategori" class="form-label fw-semibold">
-                            Kategori <span class="text-danger">*</span>
-                        </label>
-                        <select name="kategori" id="editKategori" class="form-select @error('kategori') is-invalid @enderror" required>
-                            <option value="">-- Pilih Kategori --</option>
-                            <option value="Operasional">Operasional</option>
-                            <option value="Utama">Utama</option>
-                            <option value="Produksi">Produksi</option>
-                        </select>
-                        @error('kategori')
-                            <div class="invalid-feedback">{{ $message }}</div>
-                        @enderror
-                    </div>
-                </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-primary">Update Gudang</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-
 {{-- ================= MODAL HAPUS GUDANG ================= --}}
 <div class="modal fade" id="modalHapusGudang" tabindex="-1" aria-labelledby="modalHapusGudangLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -255,16 +131,16 @@
                 @csrf
                 @method('DELETE')
 
-                <div class="modal-header">
+                <div class="modal-header bg-danger text-white">
                     <h5 class="modal-title fw-bold" id="modalHapusGudangLabel">Konfirmasi Hapus</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
                 <div class="modal-body p-4">
                     <p class="mb-0">
                         Yakin ingin menghapus data gudang
                         <strong id="hapusNama"></strong>?
-                        Tindakan ini tidak dapat dibatalkan.
+                        Tindakan ini juga akan menghapus seluruh data divisi terkait.
                     </p>
                 </div>
 
@@ -277,46 +153,17 @@
     </div>
 </div>
 
-
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-
-    // ---- Isi modal Detail dari data-attribute tombol yang diklik ----
-    var modalDetail = document.getElementById('modalDetailGudang');
-    modalDetail.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget;
-        document.getElementById('detailNama').innerText = button.getAttribute('data-nama');
-        document.getElementById('detailKategori').innerText = button.getAttribute('data-kategori');
-    });
-
-    // ---- Isi modal Edit dari data-attribute tombol yang diklik ----
-    var modalEdit = document.getElementById('modalEditGudang');
-    modalEdit.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget;
-        document.getElementById('editNama').value = button.getAttribute('data-nama');
-        document.getElementById('editKategori').value = button.getAttribute('data-kategori');
-        document.getElementById('formEditGudang').action = button.getAttribute('data-action');
-    });
-
-    // ---- Set action form Hapus dari data-attribute tombol yang diklik ----
     var modalHapus = document.getElementById('modalHapusGudang');
-    modalHapus.addEventListener('show.bs.modal', function (event) {
-        var button = event.relatedTarget;
-        document.getElementById('hapusNama').innerText = button.getAttribute('data-nama');
-        document.getElementById('formHapusGudang').action = button.getAttribute('data-action');
-    });
-
-    // ---- Auto-buka kembali modal Tambah/Edit jika ada error validasi ----
-    @if ($errors->any())
-        @if (old('_form') === 'edit')
-            document.getElementById('editNama').value = "{{ old('nama') }}";
-            document.getElementById('editKategori').value = "{{ old('kategori') }}";
-            new bootstrap.Modal(document.getElementById('modalEditGudang')).show();
-        @else
-            new bootstrap.Modal(document.getElementById('modalTambahGudang')).show();
-        @endif
-    @endif
+    if (modalHapus) {
+        modalHapus.addEventListener('show.bs.modal', function (event) {
+            var button = event.relatedTarget;
+            document.getElementById('hapusNama').innerText = button.getAttribute('data-nama');
+            document.getElementById('formHapusGudang').action = button.getAttribute('data-action');
+        });
+    }
 });
 </script>
 @endpush

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MasterGudang;
+use App\Models\GudangDivisi;
 use App\Models\PengeluaranBahanBaku;
 use App\Models\PengeluaranBahanBakuDetail;
 use App\Models\StockOpname;
@@ -22,18 +23,18 @@ class StockOpnameController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = StockOpname::with(['gudang', 'user']);
+        $query = StockOpname::with(['gudang', 'divisi', 'user']);
 
         if ($search) {
             $query->where(function($q) use ($search) {
-                $q->where('no_opname', 'like', '%' . $search . '%')
+                $q->where('kode_opname', 'like', '%' . $search . '%')
                   ->orWhere('keterangan', 'like', '%' . $search . '%');
             });
         }
 
         $stockOpname = $query->latest()->paginate(20)->withQueryString();
 
-        $gudangs = MasterGudang::orderBy('nama')->get();
+        $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
 
         return view('stock-opname.index', compact('stockOpname', 'gudangs'));
     }
@@ -47,6 +48,7 @@ class StockOpnameController extends Controller
     public function create(Request $request)
     {
         $gudangId = $request->gudang_id;
+        $divisiId = $request->divisi_id;
 
         if (!$gudangId) {
             return redirect()
@@ -54,9 +56,17 @@ class StockOpnameController extends Controller
                 ->with('error', 'Silakan pilih gudang terlebih dahulu.');
         }
 
-        $gudang = MasterGudang::findOrFail($gudangId);
+        $gudang = MasterGudang::with('divisi')->findOrFail($gudangId);
+        $divisi = $divisiId ? GudangDivisi::find($divisiId) : null;
 
-        return view('stock-opname.create', compact('gudang'));
+        // Jika gudang operasional memiliki divisi tapi divisi belum dipilih, arahkan untuk memilih divisi
+        if (strtolower($gudang->kategori) === 'operasional' && $gudang->divisi->count() > 0 && !$divisiId) {
+            return redirect()
+                ->route('stock-opname.index')
+                ->with('error', 'Gudang ' . $gudang->nama . ' memiliki beberapa divisi. Silakan pilih divisi yang akan di-opname.');
+        }
+
+        return view('stock-opname.create', compact('gudang', 'divisi', 'divisiId'));
     }
 
     /*
@@ -68,11 +78,18 @@ class StockOpnameController extends Controller
     public function loadBarang(Request $request)
     {
         $request->validate(['gudang_id' => 'required']);
+        $gudangId = $request->gudang_id;
+        $divisiId = $request->divisi_id;
 
         $barang = DB::table('master_barang')
-            ->leftJoin('stok_gudang', function ($join) use ($request) {
+            ->leftJoin('stok_gudang', function ($join) use ($gudangId, $divisiId) {
                 $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
-                     ->where('stok_gudang.gudang_id', '=', $request->gudang_id);
+                     ->where('stok_gudang.gudang_id', '=', $gudangId);
+                if ($divisiId) {
+                    $join->where('stok_gudang.divisi_id', '=', $divisiId);
+                } else {
+                    $join->whereNull('stok_gudang.divisi_id');
+                }
             })
             ->where('master_barang.is_active', true)
             ->where(function ($q) {
@@ -95,8 +112,9 @@ class StockOpnameController extends Controller
 
         foreach ($barang as $item) {
             $item->harga_fifo = $this->getHargaFIFO(
-                $request->gudang_id,
-                $item->id
+                $gudangId,
+                $item->id,
+                $divisiId
             );
         }
 
@@ -114,7 +132,8 @@ class StockOpnameController extends Controller
         $nilai = $this->hitungNilaiFIFO(
             $request->gudang_id,
             $request->barang_id,
-            abs($request->selisih)
+            abs($request->selisih),
+            $request->divisi_id
         );
 
         return response()->json(['nilai' => $nilai]);
@@ -130,11 +149,17 @@ class StockOpnameController extends Controller
     {
         $request->validate([
             'gudang_id'   => 'required',
+            'divisi_id'   => 'nullable|exists:gudang_divisi,id',
             'tanggal'     => 'nullable|date',
             'barang_id'   => 'required|array',
             'stok_sistem' => 'required|array',
             'stok_fisik'  => 'required|array',
         ]);
+
+        $gudang = MasterGudang::with('divisi')->find($request->gudang_id);
+        if ($gudang && strtolower($gudang->kategori) === 'operasional' && $gudang->divisi->count() > 0 && empty($request->divisi_id)) {
+            return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $gudang->nama . '.'])->withInput();
+        }
 
         $tanggal = $request->tanggal ? date('Y-m-d', strtotime($request->tanggal)) : date('Y-m-d');
 
@@ -149,6 +174,7 @@ class StockOpnameController extends Controller
                 'kode_opname' => 'SO-' . now()->format('YmdHis'),
                 'tanggal'     => $tanggal,
                 'gudang_id'   => $request->gudang_id,
+                'divisi_id'   => $request->divisi_id,
                 'status'      => 'draft',
                 'keterangan'  => $request->keterangan,
                 'created_by'  => Auth::id(),
@@ -161,7 +187,8 @@ class StockOpnameController extends Controller
                 $nilaiSelisih = $this->hitungNilaiFIFO(
                     $request->gudang_id,
                     $barangId,
-                    abs($selisih)
+                    abs($selisih),
+                    $request->divisi_id
                 );
 
                 StockOpnameDetail::create([
@@ -178,122 +205,101 @@ class StockOpnameController extends Controller
 
             return redirect()
                 ->route('stock-opname.show', $opname->id)
-                ->with('success', 'Draft Stock Opname berhasil dibuat.');
+                ->with('success', 'Draft Stock Opname berhasil disimpan.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->withErrors($e->getMessage());
+            return back()->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
     }
 
     /*
     |--------------------------------------------------------------------------
-    | DETAIL STOCK OPNAME
+    | DETAIL
     |--------------------------------------------------------------------------
     */
 
     public function show(string $id)
     {
-        $stockOpname = StockOpname::with(['gudang', 'user', 'details.barang'])
-            ->findOrFail($id);
+        $opname = StockOpname::with([
+            'gudang',
+            'divisi',
+            'user',
+            'details.barang',
+        ])->findOrFail($id);
 
-        return view('stock-opname.show', compact('stockOpname'));
+        $pengeluaranOtomatis = $opname->pengeluaranOtomatis();
+
+        return view('stock-opname.show', compact('opname', 'pengeluaranOtomatis'));
     }
-/*
-|--------------------------------------------------------------------------
-| DETAIL STOCK OPNAME (JSON UNTUK MODAL)
-|--------------------------------------------------------------------------
-*/
 
-public function detailJson(string $id)
-{
-    $stockOpname = StockOpname::with(['gudang', 'user', 'details.barang'])
-        ->findOrFail($id);
-
-    $details = $stockOpname->details->map(function ($detail) {
-        return [
-            'barang'        => $detail->barang->nama ?? '-',
-            'stok_sistem'   => (float) $detail->stok_sistem,
-            'stok_fisik'    => (float) $detail->stok_fisik,
-            'selisih'       => (float) $detail->selisih,
-            'nilai_selisih' => (float) $detail->nilai_selisih,
-        ];
-    });
-
-    $grandTotal = $stockOpname->details->sum(function ($detail) {
-        return abs($detail->nilai_selisih);
-    });
-
-    return response()->json([
-        'id'          => $stockOpname->id,
-        'kode_opname' => $stockOpname->kode_opname,
-        'gudang'      => $stockOpname->gudang->nama ?? '-',
-        'tanggal'     => \Carbon\Carbon::parse($stockOpname->tanggal)->format('d M Y H:i'),
-        'tanggal_raw' => \Carbon\Carbon::parse($stockOpname->tanggal)->format('Y-m-d'),
-        'status'      => $stockOpname->status,
-        'keterangan'  => $stockOpname->keterangan ?: '-',
-        'details'     => $details,
-        'grand_total' => (float) $grandTotal,
-        'approve_url' => route('stock-opname.approve', $stockOpname->id),
-    ]);
-}
     /*
     |--------------------------------------------------------------------------
-    | APPROVE STOCK OPNAME
+    | DETAIL JSON (untuk modal index)
     |--------------------------------------------------------------------------
-    |
-    | Alur:
-    | 1. Validasi status belum approved
-    | 2. Hitung nilai selisih FIFO dari batch terlama (re-hitung saat approve)
-    | 3. Update nilai_selisih di detail
-    | 4. Untuk setiap item yang selisih NEGATIF (stok fisik < sistem):
-    |    → Auto-buat PengeluaranBahanBaku (header)
-    |    → Auto-buat PengeluaranBahanBakuDetail per item selisih
-    |    Pengeluaran dibuat status 'draft', admin approve sendiri
-    |    di menu Raw Material Output menggunakan alur FIFO yang sudah ada.
-    | 5. Update status opname → approved
-    |
     */
 
-    public function approve($id)
+    public function detailJson(string $id)
     {
+        $opname = StockOpname::with([
+            'gudang',
+            'divisi',
+            'user',
+            'details.barang',
+        ])->findOrFail($id);
+
+        return response()->json([
+            'id'          => $opname->id,
+            'kode_opname' => $opname->kode_opname,
+            'tanggal'     => \Carbon\Carbon::parse($opname->tanggal)->format('d M Y'),
+            'gudang'      => $opname->gudang->nama ?? '-',
+            'divisi'      => $opname->divisi->nama ?? '-',
+            'user'        => $opname->user->nama_karyawan ?? $opname->user->name ?? '-',
+            'status'      => $opname->status,
+            'keterangan'  => $opname->keterangan ?? '-',
+            'details'     => $opname->details->map(function ($d) {
+                return [
+                    'nama_barang'   => $d->barang->nama ?? '-',
+                    'satuan'        => $d->barang->satuan ?? 'pcs',
+                    'stok_sistem'   => (float) $d->stok_sistem,
+                    'stok_fisik'    => (float) $d->stok_fisik,
+                    'selisih'       => (float) $d->selisih,
+                    'nilai_selisih' => (float) $d->nilai_selisih,
+                ];
+            }),
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | APPROVE
+    |--------------------------------------------------------------------------
+    */
+
+    public function approve(string $id)
+    {
+        $opname = StockOpname::with(['details.barang', 'gudang', 'divisi'])->findOrFail($id);
+
+        if ($opname->status === 'approved') {
+            return back()->with('error', 'Stock Opname sudah disetujui sebelumnya.');
+        }
+
         DB::beginTransaction();
 
         try {
-            $opname = StockOpname::with(['details.barang', 'gudang'])
-                ->findOrFail($id);
-
-            if (\App\Models\Journal::isPeriodClosed($opname->tanggal)) {
-                return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($opname->tanggal)) . ' sudah ditutup buku. Tidak dapat memproses Stock Opname pada periode yang sudah ditutup.');
-            }
-
-            // ── Guard: sudah approved ──
-            if ($opname->status === 'approved') {
-                return back()->with('error', 'Stock opname sudah diapprove.');
-            }
-
-            // ── Kumpulkan item yang selisihnya negatif & proses yang positif ──
             $itemSelisihNegatif = [];
             $surplusDebits = [];
             $totalSurplusKredit = 0;
-            $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
-                ?? DB::table('chart_of_accounts')->where('kode', '8103')->value('id') 
-                ?? DB::table('chart_of_accounts')->where('kode', '8100')->value('id') 
-                ?? 13;
+            $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '4201')->value('id') ?? 32;
 
             foreach ($opname->details as $detail) {
 
-                // Re-hitung nilai selisih FIFO saat approve (data terkini)
-                $nilaiSelisih = $this->hitungNilaiFIFO(
+                $hargaUnit = $this->getHargaFIFO(
                     $opname->gudang_id,
                     $detail->barang_id,
-                    abs($detail->selisih)
+                    $opname->divisi_id
                 );
 
-                // Update nilai_selisih dengan kalkulasi FIFO terbaru
-                $detail->update(['nilai_selisih' => $nilaiSelisih]);
-
-                // Selisih negatif = stok fisik < stok sistem → perlu pengurangan stok
                 if ($detail->selisih < 0) {
                     $itemSelisihNegatif[] = [
                         'barang_id' => $detail->barang_id,
@@ -308,6 +314,7 @@ public function detailJson(string $id)
                     // 1. Buat batch FIFO baru untuk surplus
                     \App\Models\StokGudangBatch::create([
                         'gudang_id'           => $opname->gudang_id,
+                        'divisi_id'           => $opname->divisi_id,
                         'supplier_id'         => $defaultSupplierId,
                         'barang_id'           => $detail->barang_id,
                         'pembelian_id'        => $defaultPembelianId,
@@ -324,6 +331,7 @@ public function detailJson(string $id)
                     app(\App\Services\StockService::class)->stockIn([
                         'barang_id'        => $detail->barang_id,
                         'gudang_tujuan_id' => $opname->gudang_id,
+                        'divisi_tujuan_id' => $opname->divisi_id,
                         'qty'              => $detail->selisih,
                         'total_harga'      => $detail->selisih * $hargaUnit,
                         'source_type'      => 'stock_opname',
@@ -375,16 +383,15 @@ public function detailJson(string $id)
                 ]);
             }
 
-
             // ── Buat Pengeluaran Bahan Baku otomatis jika ada selisih negatif ──
             if (!empty($itemSelisihNegatif)) {
-
                 $kode = 'PBK-SO-' . $opname->kode_opname;
 
                 $pengeluaran = PengeluaranBahanBaku::create([
                     'kode_pengeluaran' => $kode,
                     'tanggal'          => $opname->tanggal,
                     'gudang_id'        => $opname->gudang_id,
+                    'divisi_id'        => $opname->divisi_id,
                     'status'           => 'draft',
                     'keterangan'       => 'Auto dari Stock Opname: ' . $opname->kode_opname,
                     'created_by'       => Auth::id(),
@@ -398,7 +405,7 @@ public function detailJson(string $id)
                         'barang_id'      => $item['barang_id'],
                         'qty'            => $item['qty'],
                         'satuan'         => $item['satuan'],
-                        'harga_satuan'   => 0, // diisi saat approve pengeluaran via FIFO
+                        'harga_satuan'   => 0,
                         'total_harga'    => 0,
                         'hpp_total'      => 0,
                     ]);
@@ -450,12 +457,6 @@ public function detailJson(string $id)
             ->with('success', 'Stock Opname berhasil dihapus.');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | EDIT / UPDATE (reserved)
-    |--------------------------------------------------------------------------
-    */
-
     public function edit(string $id) {}
 
     public function update(Request $request, string $id)
@@ -485,36 +486,36 @@ public function detailJson(string $id)
     }
 
     /*
-    |==========================================================================
-    | PRIVATE HELPERS
-    |==========================================================================
-    */
-
-    /*
     |--------------------------------------------------------------------------
     | GET HARGA FIFO (untuk preview di form)
     |--------------------------------------------------------------------------
     */
 
-    private function getHargaFIFO($gudangId, $barangId): float
+    private function getHargaFIFO($gudangId, $barangId, $divisiId = null): float
     {
-        // Batch aktif (qty_sisa > 0), ambil yang terlama dulu (order by id asc)
-        $harga = DB::table('stok_gudang_batch')
+        $q = DB::table('stok_gudang_batch')
             ->where('gudang_id', $gudangId)
             ->where('barang_id', $barangId)
-            ->where('qty_sisa', '>', 0)
-            ->orderBy('id', 'asc')
-            ->value('harga_per_qty');
+            ->where('qty_sisa', '>', 0);
 
-        // Fallback 1: rata-rata semua batch historis di gudang ini
-        if (!$harga) {
-            $harga = DB::table('stok_gudang_batch')
-                ->where('gudang_id', $gudangId)
-                ->where('barang_id', $barangId)
-                ->avg('harga_per_qty');
+        if ($divisiId) {
+            $q->where('divisi_id', $divisiId);
         }
 
-        // Fallback 2: batch aktif di gudang manapun (misal diproduksi di CK)
+        $harga = $q->orderBy('id', 'asc')->value('harga_per_qty');
+
+        // Fallback 1: rata-rata semua batch historis di gudang/divisi ini
+        if (!$harga) {
+            $fbQ = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangId)
+                ->where('barang_id', $barangId);
+            if ($divisiId) {
+                $fbQ->where('divisi_id', $divisiId);
+            }
+            $harga = $fbQ->avg('harga_per_qty');
+        }
+
+        // Fallback 2: batch aktif di gudang manapun
         if (!$harga) {
             $harga = DB::table('stok_gudang_batch')
                 ->where('barang_id', $barangId)
@@ -537,13 +538,9 @@ public function detailJson(string $id)
     |--------------------------------------------------------------------------
     | HITUNG NILAI FIFO
     |--------------------------------------------------------------------------
-    |
-    | Menghitung nilai rupiah dari sejumlah qty berdasarkan batch terlama
-    | (FIFO murni: batch id terkecil diambil terlebih dahulu).
-    |
     */
 
-    private function hitungNilaiFIFO($gudangId, $barangId, $qty): float
+    private function hitungNilaiFIFO($gudangId, $barangId, $qty, $divisiId = null): float
     {
         if ($qty <= 0) return 0;
 
@@ -551,12 +548,16 @@ public function detailJson(string $id)
         $nilai = 0;
 
         // ── Tahap 1: FIFO dari batch terlama yang masih punya sisa ──
-        $batches = DB::table('stok_gudang_batch')
+        $q = DB::table('stok_gudang_batch')
             ->where('gudang_id', $gudangId)
             ->where('barang_id', $barangId)
-            ->where('qty_sisa', '>', 0)
-            ->orderBy('id', 'asc')          // terlama dulu
-            ->get();
+            ->where('qty_sisa', '>', 0);
+
+        if ($divisiId) {
+            $q->where('divisi_id', $divisiId);
+        }
+
+        $batches = $q->orderBy('id', 'asc')->get();
 
         foreach ($batches as $batch) {
             if ($sisa <= 0) break;
@@ -567,10 +568,20 @@ public function detailJson(string $id)
 
         // ── Tahap 2: Fallback rata-rata batch historis jika qty_sisa semua 0 ──
         if ($sisa > 0) {
-            $hargaRata = DB::table('stok_gudang_batch')
+            $fbQ = DB::table('stok_gudang_batch')
                 ->where('gudang_id', $gudangId)
-                ->where('barang_id', $barangId)
-                ->avg('harga_per_qty');
+                ->where('barang_id', $barangId);
+            if ($divisiId) {
+                $fbQ->where('divisi_id', $divisiId);
+            }
+            $hargaRata = $fbQ->avg('harga_per_qty');
+
+            if (!$hargaRata) {
+                $hargaRata = DB::table('stok_gudang_batch')
+                    ->where('gudang_id', $gudangId)
+                    ->where('barang_id', $barangId)
+                    ->avg('harga_per_qty');
+            }
 
             if ($hargaRata) {
                 $nilai += $sisa * $hargaRata;

@@ -12,6 +12,7 @@ class StokGudang extends Model
 
     protected $fillable = [
         'gudang_id',
+        'divisi_id',
         'barang_id',
         'jumlah',
     ];
@@ -19,6 +20,11 @@ class StokGudang extends Model
     public function gudang()
     {
         return $this->belongsTo(MasterGudang::class, 'gudang_id');
+    }
+
+    public function divisi()
+    {
+        return $this->belongsTo(GudangDivisi::class, 'divisi_id');
     }
 
     public function barang()

@@ -12,6 +12,7 @@ class StockOpname extends Model
         'kode_opname',
         'tanggal',
         'gudang_id',
+        'divisi_id',
         'status',
         'keterangan',
         'created_by',
@@ -30,6 +31,11 @@ class StockOpname extends Model
     public function gudang()
     {
         return $this->belongsTo(MasterGudang::class, 'gudang_id');
+    }
+
+    public function divisi()
+    {
+        return $this->belongsTo(GudangDivisi::class, 'divisi_id');
     }
 
     public function user()

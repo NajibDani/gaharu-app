@@ -15,6 +15,7 @@ class StokGudangController extends Controller
         $roleName = $user->role->nama ?? '';
 
         $gudangId = $request->gudang_id;
+        $divisiId = $request->divisi_id;
         $barangId = $request->barang_id;
 
         // Auto filter warehouse based on role
@@ -30,31 +31,30 @@ class StokGudangController extends Controller
         |--------------------------------------------------------------------------
         | QUERY UTAMA
         |--------------------------------------------------------------------------
-        |
-        | Tampilkan semua kombinasi barang × gudang yang punya record stok_gudang.
-        | Jika filter gudang aktif → hanya gudang itu.
-        | Jika filter barang aktif → hanya barang itu.
-        | Barang yang belum punya stok_gudang sama sekali TETAP muncul
-        | (lewat subquery UNION di bawah) agar inventory lengkap.
-        |
         */
 
-        // ── Bagian 1: Barang yang sudah punya baris di stok_gudang ──
         $query = DB::table('stok_gudang')
             ->join('master_barang', 'master_barang.id', '=', 'stok_gudang.barang_id')
             ->join('master_gudang',  'master_gudang.id',  '=', 'stok_gudang.gudang_id')
+            ->leftJoin('gudang_divisi', 'gudang_divisi.id', '=', 'stok_gudang.divisi_id')
             ->select([
                 'master_barang.id',
                 'master_barang.kode_barang',
                 'master_barang.nama',
                 'master_barang.satuan',
                 'master_gudang.nama   as nama_gudang',
+                'gudang_divisi.nama   as nama_divisi',
                 'stok_gudang.gudang_id',
+                'stok_gudang.divisi_id',
                 'stok_gudang.jumlah   as qty',
             ]);
 
         if ($gudangId) {
             $query->where('stok_gudang.gudang_id', $gudangId);
+        }
+
+        if ($divisiId) {
+            $query->where('stok_gudang.divisi_id', $divisiId);
         }
 
         if ($barangId) {
@@ -87,21 +87,21 @@ class StokGudangController extends Controller
             ->whereIn('barang_id', $itemIds)
             ->whereIn('gudang_id', $gudangIds)
             ->where('qty_sisa', '>', 0)
-            ->select('barang_id', 'gudang_id')
+            ->select('barang_id', 'gudang_id', 'divisi_id')
             ->selectRaw('AVG(harga_per_qty) as avg_harga')
-            ->groupBy('barang_id', 'gudang_id')
+            ->groupBy('barang_id', 'gudang_id', 'divisi_id')
             ->get()
-            ->keyBy(fn($x) => $x->barang_id . '-' . $x->gudang_id);
+            ->keyBy(fn($x) => $x->barang_id . '-' . $x->gudang_id . '-' . ($x->divisi_id ?? '0'));
 
         // 2. Fallback: Ambil harga rata-rata dari semua batch historis
         $historicalPrices = DB::table('stok_gudang_batch')
             ->whereIn('barang_id', $itemIds)
             ->whereIn('gudang_id', $gudangIds)
-            ->select('barang_id', 'gudang_id')
+            ->select('barang_id', 'gudang_id', 'divisi_id')
             ->selectRaw('AVG(harga_per_qty) as avg_harga')
-            ->groupBy('barang_id', 'gudang_id')
+            ->groupBy('barang_id', 'gudang_id', 'divisi_id')
             ->get()
-            ->keyBy(fn($x) => $x->barang_id . '-' . $x->gudang_id);
+            ->keyBy(fn($x) => $x->barang_id . '-' . $x->gudang_id . '-' . ($x->divisi_id ?? '0'));
 
         // 3. Fallback akhir: HPP referensi master barang
         $hppReferences = DB::table('master_barang')
@@ -116,7 +116,7 @@ class StokGudangController extends Controller
         $items = $items->map(function ($row) use ($batchPrices, $historicalPrices, $hppReferences) {
             $row->status = $row->qty > 0 ? 'tersedia' : 'habis';
 
-            $key = $row->id . '-' . $row->gudang_id;
+            $key = $row->id . '-' . $row->gudang_id . '-' . ($row->divisi_id ?? '0');
             
             // Cek harga FIFO batch aktif
             $hargaFifo = $batchPrices->get($key)?->avg_harga;
@@ -153,19 +153,19 @@ class StokGudangController extends Controller
         */
 
         if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::where('id', 4)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
         } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::where('id', 2)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
         } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::where('id', 1)->get();
+            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
         } else {
-            $gudangs = MasterGudang::orderBy('nama')->get();
+            $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         }
         $barangs = MasterBarang::orderBy('nama')->get();
 
         return view(
             'stok-gudang.index',
-            compact('stokGudang', 'gudangs', 'barangs', 'gudangId', 'barangId')
+            compact('stokGudang', 'gudangs', 'barangs', 'gudangId', 'divisiId', 'barangId')
         );
     }
 
