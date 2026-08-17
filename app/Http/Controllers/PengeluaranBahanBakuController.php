@@ -84,10 +84,8 @@ class PengeluaranBahanBakuController extends Controller
             }
 
             $items = MasterBarang::where('is_active', true)
-                ->where(function($q) {
-                    $q->where('is_bahan_baku', 1)
-                      ->orWhere('is_bahan_setengah_jadi', 1);
-                })
+                ->where('is_bahan_baku', 1)
+                ->where('is_bahan_setengah_jadi', 0)
                 ->get();
 
             $criticalCount = 0;
@@ -125,7 +123,7 @@ class PengeluaranBahanBakuController extends Controller
     }
 
     /**
-     * Mengambil saran Bahan Baku / BSJ di bawah batas minimum stock untuk Gudang/Outlet tertentu (JSON)
+     * Mengambil saran Bahan Baku di bawah batas minimum stock untuk Gudang/Outlet tertentu (JSON)
      */
     public function suggestions(Request $request)
     {
@@ -147,10 +145,8 @@ class PengeluaranBahanBakuController extends Controller
         }
 
         $items = MasterBarang::where('is_active', true)
-            ->where(function($q) {
-                $q->where('is_bahan_baku', 1)
-                  ->orWhere('is_bahan_setengah_jadi', 1);
-            })
+            ->where('is_bahan_baku', 1)
+            ->where('is_bahan_setengah_jadi', 0)
             ->orderBy('nama', 'asc')
             ->get();
 
@@ -218,10 +214,8 @@ class PengeluaranBahanBakuController extends Controller
                     1
                 );
             })
-            ->where(function ($q) {
-                $q->where('master_barang.is_bahan_baku', 1)
-                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
-            })
+            ->where('master_barang.is_bahan_baku', 1)
+            ->where('master_barang.is_bahan_setengah_jadi', 0)
             ->where('master_barang.is_active', true)
             ->select([
                 'master_barang.*',
@@ -230,7 +224,7 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $gudang = MasterGudang::where('id', '!=', 1)->get(); // Hanya gudang tujuan (selain Gudang Utama)
+        $gudang = MasterGudang::orderBy('nama')->get(); // Semua gudang sesuai Master Gudang
 
         return view(
             'pengeluaran-bahan-baku.create',
@@ -403,10 +397,8 @@ class PengeluaranBahanBakuController extends Controller
             $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
                  ->where('stok_gudang.gudang_id', 1);
         })
-        ->where(function ($q) {
-            $q->where('master_barang.is_bahan_baku', 1)
-              ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
-        })
+        ->where('master_barang.is_bahan_baku', 1)
+        ->where('master_barang.is_bahan_setengah_jadi', 0)
         ->where('master_barang.is_active', true)
         ->select([
             'master_barang.*',

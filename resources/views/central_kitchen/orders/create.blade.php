@@ -46,7 +46,7 @@
                             <option value="">-- Pilih Outlet Pemesan --</option>
                             @foreach($customers as $c)
                                 <option value="{{ $c->id }}" {{ old('customer_id') == $c->id ? 'selected' : '' }}>
-                                    {{ $c->nama }}
+                                    {{ $c->nama }} ({{ $c->gudang_nama ?? $c->nama }})
                                 </option>
                             @endforeach
                         </select>

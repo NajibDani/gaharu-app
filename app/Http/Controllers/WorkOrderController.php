@@ -210,58 +210,59 @@ public function cetakPdf($id)
         |--------------------------------------------------------------------------
         */
 
-        $pengeluaran = \App\Models\PengeluaranBahanBaku::create([
-            'kode_pengeluaran' => 'REQ-' . date('Ymd') . '-' . strtoupper(\Str::random(4)),
-            'tanggal'          => now(),
-
-            // tujuan transfer
-            'gudang_id'        => $gudangProduksi->id,
-
-            'status'           => 'Draft',
-            'keterangan'       => 'Permintaan bahan baku untuk ' . $wo->kode_wo,
-            'created_by'       => auth()->id(),
-        ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | DETAIL BAHAN BAKU DARI RESEP
-        |--------------------------------------------------------------------------
-        | Digabung (agregasi) per barang_id dulu, supaya kalau ada beberapa
-        | pesanan yang minta produk yang sama, kebutuhan bahannya dijumlah
-        | menjadi satu baris permintaan per bahan, bukan baris terpisah
-        | per pesanan. Ini hanya penggabungan angka kebutuhan, TIDAK
-        | mengubah logika pengambilan stok (FIFO) yang terjadi di proses lain.
-        */
-
         $agregatBahan = [];
 
         foreach ($wo->details as $detail) {
-
-            if (!$detail->produk) {
-                continue;
-            }
-
-            if (!$detail->produk->resep) {
+            if (!$detail->produk || !$detail->produk->resep) {
                 continue;
             }
 
             foreach ($detail->produk->resep as $resep) {
-
-                $qtyKebutuhan = $resep->qty_bahan * $detail->qty_rencana;
+                $qtyKebutuhan = floatval($resep->qty_bahan) * floatval($detail->qty_rencana);
 
                 if (!isset($agregatBahan[$resep->bahan_id])) {
                     $agregatBahan[$resep->bahan_id] = [
-                        'qty'    => 0,
+                        'butuh'  => 0,
                         'satuan' => $resep->bahan->satuan ?? '-',
                     ];
                 }
 
-                $agregatBahan[$resep->bahan_id]['qty'] += $qtyKebutuhan;
+                $agregatBahan[$resep->bahan_id]['butuh'] += $qtyKebutuhan;
             }
         }
 
+        // Hitung kekurangan bahan saja (kebutuhan resep - stok tersedia di Gudang Produksi)
+        $bahanKurang = [];
         foreach ($agregatBahan as $bahanId => $data) {
+            $stokProduksi = floatval(\App\Models\StokGudang::where('gudang_id', $gudangProduksi->id)->where('barang_id', $bahanId)->value('jumlah') ?? 0);
+            $kurang = max(0, $data['butuh'] - $stokProduksi);
+            if ($kurang > 0) {
+                $bahanKurang[$bahanId] = [
+                    'qty'    => $kurang,
+                    'satuan' => $data['satuan'],
+                ];
+            }
+        }
 
+        if (empty($bahanKurang)) {
+            $wo->update(['status_wo' => 'Diproses']);
+            \DB::commit();
+            return redirect()->back()->with(
+                'success',
+                'Stok bahan baku di Gudang Produksi sudah mencukupi seluruh kebutuhan Work Order. Status WO diubah menjadi Diproses.'
+            );
+        }
+
+        $pengeluaran = \App\Models\PengeluaranBahanBaku::create([
+            'kode_pengeluaran' => 'REQ-' . date('Ymd') . '-' . strtoupper(\Str::random(4)),
+            'tanggal'          => now(),
+            'gudang_id'        => $gudangProduksi->id,
+            'status'           => 'Draft',
+            'keterangan'       => 'Permintaan kekurangan bahan baku untuk ' . $wo->kode_wo,
+            'created_by'       => auth()->id(),
+        ]);
+
+        foreach ($bahanKurang as $bahanId => $data) {
             \App\Models\PengeluaranBahanBakuDetail::create([
                 'pengeluaran_id' => $pengeluaran->id,
                 'barang_id'      => $bahanId,
@@ -284,7 +285,7 @@ public function cetakPdf($id)
 
         return redirect()->back()->with(
             'success',
-            'Permintaan bahan berhasil dibuat.'
+            'Permintaan kekurangan bahan baku berhasil dibuat.'
         );
 
     } catch (\Exception $e) {

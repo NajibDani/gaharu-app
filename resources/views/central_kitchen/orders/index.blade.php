@@ -325,7 +325,9 @@
                                 <select name="customer_id" id="modal-select-customer" class="form-select rounded-3" required>
                                     <option value="">-- Pilih Outlet Pemesan --</option>
                                     @foreach($customers as $c)
-                                        <option value="{{ $c->id }}">{{ $c->nama }}</option>
+                                        <option value="{{ $c->id }}" data-gudang-id="{{ $c->gudang_id ?? '' }}">
+                                            {{ $c->nama }} ({{ $c->gudang_nama ?? $c->nama }})
+                                        </option>
                                     @endforeach
                                 </select>
                             </div>

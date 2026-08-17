@@ -31,11 +31,13 @@ class CafeMasterSeeder extends Seeder
         ];
         DB::table('kategori')->insert($kategori);
 
-        // 2. SEED CUSTOMERS (B2B Clients - Tanpa Timestamps, pakai kolom 'jenis' dan 'no_hp')
+        // 2. SEED CUSTOMERS (Outlet Internal & B2B Clients)
         $customers = [
-            ['id' => 1, 'nama' => 'Gaharu Cafe Partner', 'jenis' => 'B2B', 'no_hp' => '081234567890', 'alamat' => 'Jl. Sudirman No. 12, Jakarta'],
-            ['id' => 2, 'nama' => 'Kejingga Resto Partner', 'jenis' => 'B2B', 'no_hp' => '081298765432', 'alamat' => 'Jl. Thamrin No. 45, Jakarta'],
-            ['id' => 3, 'nama' => 'Hotel Grand Horizon', 'jenis' => 'Hotel', 'no_hp' => '0215551234', 'alamat' => 'Jl. Gatot Subroto No. 99, Jakarta'],
+            ['id' => 1, 'nama' => 'Outlet Gaharu', 'jenis' => 'Outlet Internal', 'no_hp' => '081234567890', 'alamat' => 'Gudang Gaharu, Jakarta'],
+            ['id' => 2, 'nama' => 'Outlet KeJingga', 'jenis' => 'Outlet Internal', 'no_hp' => '081298765432', 'alamat' => 'Gudang KeJingga, Jakarta'],
+            ['id' => 3, 'nama' => 'Gaharu Cafe Partner', 'jenis' => 'B2B', 'no_hp' => '081234567891', 'alamat' => 'Jl. Sudirman No. 12, Jakarta'],
+            ['id' => 4, 'nama' => 'Kejingga Resto Partner', 'jenis' => 'B2B', 'no_hp' => '081298765433', 'alamat' => 'Jl. Thamrin No. 45, Jakarta'],
+            ['id' => 5, 'nama' => 'Hotel Grand Horizon', 'jenis' => 'Hotel', 'no_hp' => '0215551234', 'alamat' => 'Jl. Gatot Subroto No. 99, Jakarta'],
         ];
         DB::table('customers')->insert($customers);
 
@@ -209,6 +211,77 @@ class CafeMasterSeeder extends Seeder
             ],
         ];
         DB::table('master_barang')->insert($barangJadi);
+
+        // 5b. SEED BAHAN SETENGAH JADI (BSJ) Central Kitchen
+        $bahanSetengahJadi = [
+            [
+                'id' => 9,
+                'kategori_id' => 3,
+                'resep_id' => null,
+                'kode_barang' => 'BSJ-001',
+                'nama' => 'Espresso Base Batch 1L',
+                'satuan' => 'liter',
+                'is_bahan_baku' => false,
+                'is_barang_jadi' => false,
+                'is_bahan_setengah_jadi' => true,
+                'is_operational' => false,
+                'is_direct_consumption' => false,
+                'harga_jual_b2b' => 0,
+                'harga_jual_pos' => 0,
+                'hpp_referensi' => 45000.00,
+                'minimum_stock' => 5,
+                'minimum_stock_gaharu' => 5,
+                'minimum_stock_kejingga' => 5,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 10,
+                'kategori_id' => 3,
+                'resep_id' => null,
+                'kode_barang' => 'BSJ-002',
+                'nama' => 'Caramel Syrup Infusion 1L',
+                'satuan' => 'liter',
+                'is_bahan_baku' => false,
+                'is_barang_jadi' => false,
+                'is_bahan_setengah_jadi' => true,
+                'is_operational' => false,
+                'is_direct_consumption' => false,
+                'harga_jual_b2b' => 0,
+                'harga_jual_pos' => 0,
+                'hpp_referensi' => 35000.00,
+                'minimum_stock' => 3,
+                'minimum_stock_gaharu' => 4,
+                'minimum_stock_kejingga' => 3,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'id' => 11,
+                'kategori_id' => 3,
+                'resep_id' => null,
+                'kode_barang' => 'BSJ-003',
+                'nama' => 'Premix Powder Blend 1kg',
+                'satuan' => 'kg',
+                'is_bahan_baku' => false,
+                'is_barang_jadi' => false,
+                'is_bahan_setengah_jadi' => true,
+                'is_operational' => false,
+                'is_direct_consumption' => false,
+                'harga_jual_b2b' => 0,
+                'harga_jual_pos' => 0,
+                'hpp_referensi' => 25000.00,
+                'minimum_stock' => 4,
+                'minimum_stock_gaharu' => 6,
+                'minimum_stock_kejingga' => 4,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ];
+        DB::table('master_barang')->insert($bahanSetengahJadi);
 
         // 6. SEED RESEP BTKL & BOP (Header Resep - Ada Timestamps)
         $reseps = [

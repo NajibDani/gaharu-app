@@ -143,6 +143,37 @@ class CentralKitchenProductionController extends Controller
 
         $riwayatProduksi = $queryProduksi->orderBy('id', 'desc')->paginate(10, ['*'], 'prod_page')->withQueryString();
 
+        // Hitung ketersediaan bahan baku untuk setiap draft riwayat produksi CK
+        $riwayatProduksi->getCollection()->transform(function($prod) use ($gudangCkId) {
+            $isBahanSufficient = true;
+            $defisitBahan = [];
+            if (strtolower($prod->status_produksi) === 'draft') {
+                foreach ($prod->details as $detail) {
+                    $produk = MasterBarang::with('resep.bahan')->find($detail->produk_id);
+                    if ($produk && $produk->resep_id) {
+                        $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                        foreach ($resepItems as $resep) {
+                            $kebutuhan = floatval($resep->qty_bahan) * floatval($detail->qty);
+                            $stok = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resep->bahan_id)->value('jumlah') ?? 0);
+                            if ($stok < $kebutuhan) {
+                                $isBahanSufficient = false;
+                                $defisitBahan[] = [
+                                    'nama'   => $resep->bahan->nama ?? 'Bahan',
+                                    'butuh'  => $kebutuhan,
+                                    'stok'   => $stok,
+                                    'kurang' => $kebutuhan - $stok,
+                                    'satuan' => $resep->bahan->satuan ?? 'pcs',
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+            $prod->is_bahan_sufficient = $isBahanSufficient;
+            $prod->defisit_bahan = $defisitBahan;
+            return $prod;
+        });
+
         return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi'));
     }
 
@@ -216,7 +247,7 @@ class CentralKitchenProductionController extends Controller
     }
 
     /**
-     * Kirim/Minta Bahan Baku dari Gudang Utama ke Gudang Central Kitchen
+     * Kirim/Minta Bahan Baku dari Gudang Utama ke Gudang Central Kitchen Sesuai Kekurangan Saja
      */
     public function kirimBahanBaku($woId)
     {
@@ -224,11 +255,53 @@ class CentralKitchenProductionController extends Controller
 
         DB::beginTransaction();
         try {
-            $gudangCk = MasterGudang::where('nama', 'Gudang Central Kitchen')->first()
+            $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first()
                 ?? MasterGudang::where('kategori', 'Produksi')->first();
 
             if (!$gudangCk) {
                 throw new \Exception('Gudang Central Kitchen belum tersedia di Master Gudang.');
+            }
+
+            $agregatBahan = [];
+            foreach ($wo->details as $detail) {
+                if (!$detail->produk || !$detail->produk->resep) continue;
+
+                // Hitung sisa kebutuhan produksi untuk item ini
+                $sudah = DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $detail->pesanan_id)
+                    ->where('produk_id', $detail->produk_id)
+                    ->sum('qty_alokasi') ?? 0;
+                $sisaQty = max(0, floatval($detail->qty_rencana) - floatval($sudah));
+                if ($sisaQty <= 0) $sisaQty = floatval($detail->qty_rencana);
+
+                foreach ($detail->produk->resep as $resep) {
+                    $qtyKebutuhan = floatval($resep->qty_bahan) * $sisaQty;
+                    if (!isset($agregatBahan[$resep->bahan_id])) {
+                        $agregatBahan[$resep->bahan_id] = [
+                            'nama'   => $resep->bahan->nama ?? 'Bahan',
+                            'butuh'  => 0,
+                            'satuan' => $resep->bahan->satuan ?? '-',
+                        ];
+                    }
+                    $agregatBahan[$resep->bahan_id]['butuh'] += $qtyKebutuhan;
+                }
+            }
+
+            // Hitung hanya kekurangan bahannya saja (kebutuhan resep - stok tersedia di Gudang CK)
+            $bahanKurang = [];
+            foreach ($agregatBahan as $bahanId => $data) {
+                $stokDiCk = floatval(StokGudang::where('gudang_id', $gudangCk->id)->where('barang_id', $bahanId)->value('jumlah') ?? 0);
+                $kurang = max(0, $data['butuh'] - $stokDiCk);
+                if ($kurang > 0) {
+                    $bahanKurang[$bahanId] = [
+                        'qty'    => $kurang,
+                        'satuan' => $data['satuan'],
+                    ];
+                }
+            }
+
+            if (empty($bahanKurang)) {
+                return redirect()->back()->with('success', 'Stok bahan baku di Gudang Central Kitchen sudah mencukupi seluruh target WO. Tidak perlu meminta bahan tambahan.');
             }
 
             $pengeluaran = \App\Models\PengeluaranBahanBaku::create([
@@ -236,27 +309,11 @@ class CentralKitchenProductionController extends Controller
                 'tanggal'          => now(),
                 'gudang_id'        => $gudangCk->id,
                 'status'           => 'Draft',
-                'keterangan'       => 'Permintaan bahan baku CK untuk ' . $wo->kode_wo,
+                'keterangan'       => 'Permintaan kekurangan bahan baku CK untuk ' . $wo->kode_wo,
                 'created_by'       => auth()->id(),
             ]);
 
-            $agregatBahan = [];
-            foreach ($wo->details as $detail) {
-                if (!$detail->produk || !$detail->produk->resep) continue;
-
-                foreach ($detail->produk->resep as $resep) {
-                    $qtyKebutuhan = $resep->qty_bahan * $detail->qty_rencana;
-                    if (!isset($agregatBahan[$resep->bahan_id])) {
-                        $agregatBahan[$resep->bahan_id] = [
-                            'qty'    => 0,
-                            'satuan' => $resep->bahan->satuan ?? '-',
-                        ];
-                    }
-                    $agregatBahan[$resep->bahan_id]['qty'] += $qtyKebutuhan;
-                }
-            }
-
-            foreach ($agregatBahan as $bahanId => $data) {
+            foreach ($bahanKurang as $bahanId => $data) {
                 \App\Models\PengeluaranBahanBakuDetail::create([
                     'pengeluaran_id' => $pengeluaran->id,
                     'barang_id'      => $bahanId,
@@ -268,7 +325,7 @@ class CentralKitchenProductionController extends Controller
             $wo->update(['status_wo' => 'Diproses']);
 
             DB::commit();
-            return redirect()->back()->with('success', 'Permintaan bahan baku untuk Central Kitchen berhasil dibuat.');
+            return redirect()->back()->with('success', 'Permintaan kekurangan bahan baku untuk Central Kitchen berhasil dibuat.');
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal: ' . $e->getMessage());
@@ -287,20 +344,60 @@ class CentralKitchenProductionController extends Controller
             })
             ->get();
 
+        $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkId = $gudangCk ? $gudangCk->id : 5;
+
         $items = collect();
+        $isBahanSufficient = true;
+        $defisitBahan = [];
+
         if ($selectedWoId) {
-            $woDetails = WorkOrderDetail::where('work_order_id', $selectedWoId)->with('produk')->get();
+            $woDetails = WorkOrderDetail::where('work_order_id', $selectedWoId)->with('produk.resep.bahan')->get();
             $items = $woDetails->map(function($wod) {
+                $sudah = DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $wod->pesanan_id)
+                    ->where('produk_id', $wod->produk_id)
+                    ->sum('qty_alokasi') ?? 0;
+                $sisa = max(0, floatval($wod->qty_rencana) - floatval($sudah));
+
                 return (object) [
                     'produk_id'    => $wod->produk_id,
                     'produk'       => $wod->produk,
                     'total_target' => $wod->qty_rencana,
-                    'sisa_target'  => $wod->qty_rencana,
+                    'sisa_target'  => $sisa,
                 ];
             });
+
+            // Cek ketersediaan bahan
+            foreach ($woDetails as $wod) {
+                if ($wod->produk && $wod->produk->resep) {
+                    $sudah = DB::table('alokasi_produksi_pesanan')
+                        ->where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->sum('qty_alokasi') ?? 0;
+                    $sisa = max(0, floatval($wod->qty_rencana) - floatval($sudah));
+
+                    if ($sisa > 0) {
+                        foreach ($wod->produk->resep as $resep) {
+                            $kebutuhan = floatval($resep->qty_bahan) * $sisa;
+                            $stok = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resep->bahan_id)->value('jumlah') ?? 0);
+                            if ($stok < $kebutuhan) {
+                                $isBahanSufficient = false;
+                                $defisitBahan[] = [
+                                    'nama'   => $resep->bahan->nama ?? 'Bahan',
+                                    'butuh'  => $kebutuhan,
+                                    'stok'   => $stok,
+                                    'kurang' => $kebutuhan - $stok,
+                                    'satuan' => $resep->bahan->satuan ?? 'pcs',
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        return view('central_kitchen.produksi.create', compact('workOrders', 'selectedWoId', 'items'));
+        return view('central_kitchen.produksi.create', compact('workOrders', 'selectedWoId', 'items', 'isBahanSufficient', 'defisitBahan'));
     }
 
     /**
@@ -376,7 +473,7 @@ class CentralKitchenProductionController extends Controller
             $pesananIdUtama = $wo->details->pluck('pesanan_id')->first();
             $pesanan = Pesanan::find($pesananIdUtama);
 
-            $gudangCk = MasterGudang::where('nama', 'Gudang Central Kitchen')->first();
+            $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
             $gudangCkId = $gudangCk ? $gudangCk->id : 5;
 
             // Validasi minimal 1 produk memiliki qty hasil > 0
@@ -390,6 +487,25 @@ class CentralKitchenProductionController extends Controller
 
             if (!$hasValidQty) {
                 throw new \Exception('Harap masukkan minimal 1 produk dengan Qty hasil lebih dari 0.');
+            }
+
+            // Validasi ketersediaan bahan baku di Gudang CK sebelum eksekusi
+            foreach ($request->produk_id as $key => $produkId) {
+                $qtyHasil = floatval($request->qty_hasil[$key] ?? 0);
+                if ($qtyHasil <= 0) continue;
+
+                $produk = MasterBarang::with('resep.bahan')->find($produkId);
+                if ($produk && $produk->resep_id) {
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    foreach ($resepItems as $item) {
+                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        $stokBahan = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $item->bahan_id)->value('jumlah') ?? 0);
+                        if ($stokBahan < $qtyButuh) {
+                            $namaBahan = $item->bahan->nama ?? 'Bahan Baku';
+                            throw new \Exception("Stok {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan minta bahan terlebih dahulu.");
+                        }
+                    }
+                }
             }
 
             // Kode Produksi
@@ -573,6 +689,22 @@ class CentralKitchenProductionController extends Controller
 
             $wodUtama = DB::table('work_order_detail')->where('pesanan_id', $produksi->pesanan_id)->first();
             $workOrderId = $wodUtama ? $wodUtama->work_order_id : null;
+
+            // Validasi ketersediaan bahan baku sebelum approve
+            foreach ($produksi->details as $detail) {
+                $produk = MasterBarang::with('resep.bahan')->find($detail->produk_id);
+                if ($produk && $produk->resep_id) {
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    foreach ($resepItems as $item) {
+                        $qtyButuh = floatval($item->qty_bahan) * floatval($detail->qty);
+                        $stokBahan = floatval(StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->value('jumlah') ?? 0);
+                        if ($stokBahan < $qtyButuh) {
+                            $namaBahan = $item->bahan->nama ?? 'Bahan Baku';
+                            throw new \Exception("Stok {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}).");
+                        }
+                    }
+                }
+            }
 
             foreach ($produksi->details as $detail) {
                 $produkId = $detail->produk_id;

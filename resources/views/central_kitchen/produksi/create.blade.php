@@ -60,6 +60,20 @@
                 <div class="card card-form p-4 mb-4">
                     <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Hasil Fisik Produksi</h6>
 
+                    @if(isset($isBahanSufficient) && !$isBahanSufficient && !empty($defisitBahan))
+                        <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
+                            <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
+                            <div>
+                                <strong>Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
+                                <ul class="mb-0 ps-3">
+                                    @foreach($defisitBahan as $def)
+                                        <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    @endif
+
                     <div class="table-responsive">
                         <table class="table table-bordered align-middle">
                             <thead class="table-light">
@@ -94,7 +108,9 @@
 
                 <div class="d-flex justify-content-end gap-2">
                     <a href="{{ route('ck-produksi.index') }}" class="btn btn-light rounded-3 px-4">Batal</a>
-                    <button type="submit" class="btn btn-custom-orange shadow-sm px-4">Simpan Draft Hasil Produksi</button>
+                    <button type="submit" class="btn btn-custom-orange shadow-sm px-4" {{ (isset($isBahanSufficient) && !$isBahanSufficient) ? 'disabled' : '' }} title="{{ (isset($isBahanSufficient) && !$isBahanSufficient) ? 'Stok bahan baku belum mencukupi' : '' }}">
+                        Simpan Draft Hasil Produksi
+                    </button>
                 </div>
             @elseif($selectedWoId)
                 <div class="alert alert-warning text-center rounded-3">Tidak ada item target pada Work Order yang dipilih.</div>

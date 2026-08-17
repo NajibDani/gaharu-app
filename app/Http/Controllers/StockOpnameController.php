@@ -69,15 +69,26 @@ class StockOpnameController extends Controller
     {
         $request->validate(['gudang_id' => 'required']);
 
-        $barang = DB::table('stok_gudang')
-            ->join('master_barang', 'stok_gudang.barang_id', '=', 'master_barang.id')
-            ->where('stok_gudang.gudang_id', $request->gudang_id)
+        $barang = DB::table('master_barang')
+            ->leftJoin('stok_gudang', function ($join) use ($request) {
+                $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
+                     ->where('stok_gudang.gudang_id', '=', $request->gudang_id);
+            })
+            ->where('master_barang.is_active', true)
+            ->where(function ($q) {
+                $q->where('master_barang.is_bahan_baku', 1)
+                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1)
+                  ->orWhere('master_barang.is_barang_jadi', 1)
+                  ->orWhere('master_barang.is_operational', 1);
+            })
             ->select(
                 'master_barang.id',
                 'master_barang.kode_barang',
                 'master_barang.nama',
                 'master_barang.satuan',
-                'stok_gudang.jumlah as stok'
+                'master_barang.is_bahan_setengah_jadi',
+                'master_barang.is_bahan_baku',
+                DB::raw('COALESCE(stok_gudang.jumlah, 0) as stok')
             )
             ->orderBy('master_barang.nama', 'asc')
             ->get();
@@ -495,12 +506,21 @@ public function detailJson(string $id)
             ->orderBy('id', 'asc')
             ->value('harga_per_qty');
 
-        // Fallback: rata-rata semua batch historis
+        // Fallback 1: rata-rata semua batch historis di gudang ini
         if (!$harga) {
             $harga = DB::table('stok_gudang_batch')
                 ->where('gudang_id', $gudangId)
                 ->where('barang_id', $barangId)
                 ->avg('harga_per_qty');
+        }
+
+        // Fallback 2: batch aktif di gudang manapun (misal diproduksi di CK)
+        if (!$harga) {
+            $harga = DB::table('stok_gudang_batch')
+                ->where('barang_id', $barangId)
+                ->where('qty_sisa', '>', 0)
+                ->orderBy('id', 'desc')
+                ->value('harga_per_qty');
         }
 
         // Fallback akhir: hpp_referensi di master barang

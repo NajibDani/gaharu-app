@@ -46,38 +46,31 @@ class CentralKitchenOrderController extends Controller
         $totalProses = Pesanan::centralKitchen()->whereIn('status_pesanan', ['Draft', 'Proses', 'Siap kirim', 'pending', 'ready', 'Diproses'])->count();
         $totalSelesai = Pesanan::centralKitchen()->where('status_pesanan', 'Selesai')->count();
 
-        // Ambil data untuk modal pembuatan order baru
-        $customers = Customer::whereIn('nama', ['Outlet Gaharu', 'Outlet KeJingga'])
-            ->orWhere('jenis', 'Outlet Internal')
-            ->get();
-
-        if ($customers->isEmpty()) {
-            $customers = Customer::all();
-        }
+        // Ambil data outlet operasional dari Master Gudang
+        $customers = $this->getOutletCustomers();
 
         $produk = MasterBarang::where('is_active', true)
-            ->where(function($q) {
-                $q->whereNotNull('resep_id')
-                  ->orWhere('is_barang_jadi', true)
-                  ->orWhere('is_bahan_baku', true)
-                  ->orWhere('is_bahan_setengah_jadi', true);
-            })
+            ->where('is_bahan_setengah_jadi', true)
             ->orderBy('nama', 'asc')
             ->get();
 
         // Hitung ringkasan saran restock Bahan Setengah Jadi per outlet (di bawah minimum stock)
         $outletSuggestionsSummary = [];
         foreach ($customers as $c) {
-            $cName = strtolower($c->nama);
             $g = null;
             $mField = null;
+            $cName = strtolower($c->nama);
             if (str_contains($cName, 'gaharu')) {
                 $g = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
                 $mField = 'minimum_stock_gaharu';
             } elseif (str_contains($cName, 'kejingga')) {
                 $g = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
                 $mField = 'minimum_stock_kejingga';
+            } else {
+                $g = \App\Models\MasterGudang::find($c->gudang_id ?? 0) ?? \App\Models\MasterGudang::where('nama', 'like', '%' . $c->nama . '%')->first();
+                $mField = 'minimum_stock';
             }
+
             if ($g && $mField) {
                 $bsjItems = MasterBarang::where('is_active', true)
                     ->where('is_bahan_setengah_jadi', true)
@@ -104,6 +97,7 @@ class CentralKitchenOrderController extends Controller
                     $outletSuggestionsSummary[] = [
                         'customer_id'   => $c->id,
                         'customer_nama' => $c->nama,
+                        'gudang_id'     => $g->id,
                         'gudang_nama'   => $g->nama,
                         'count'         => count($deficitItems),
                         'items'         => $deficitItems,
@@ -116,34 +110,82 @@ class CentralKitchenOrderController extends Controller
     }
 
     /**
+     * Helper untuk mengambil data outlet dari Master Gudang
+     */
+    private function getOutletCustomers()
+    {
+        $outletGudangs = \App\Models\MasterGudang::where('kategori', 'Operasional')
+            ->orWhere('nama', 'like', '%Gaharu%')
+            ->orWhere('nama', 'like', '%KeJingga%')
+            ->orWhere('nama', 'like', '%Kejingga%')
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        $customers = collect();
+        foreach ($outletGudangs as $og) {
+            $cName = str_starts_with($og->nama, 'Gudang ') ? 'Outlet ' . substr($og->nama, 7) : $og->nama;
+            $customer = Customer::firstOrCreate(
+                ['nama' => $cName],
+                [
+                    'jenis'  => 'Outlet Internal',
+                    'no_hp'  => '-',
+                    'alamat' => $og->nama,
+                ]
+            );
+            $customer->gudang_id = $og->id;
+            $customer->gudang_nama = $og->nama;
+            $customers->push($customer);
+        }
+
+        if ($customers->isEmpty()) {
+            $customers = Customer::where('jenis', 'Outlet Internal')
+                ->orWhereIn('nama', ['Outlet Gaharu', 'Outlet KeJingga'])
+                ->get();
+        }
+
+        return $customers;
+    }
+
+    /**
      * Mengambil saran Bahan Setengah Jadi di bawah batas minimum stock untuk Outlet tertentu (JSON)
      */
     public function suggestions(Request $request)
     {
         $customerId = $request->query('customer_id');
-        $customer = Customer::find($customerId);
+        $gudangId = $request->query('gudang_id');
 
-        if (!$customer) {
-            return response()->json(['suggestions' => [], 'outlet_name' => '']);
-        }
-
-        $customerName = strtolower($customer->nama);
+        $customer = $customerId ? Customer::find($customerId) : null;
         $gudang = null;
         $minStockField = null;
 
-        if (str_contains($customerName, 'gaharu')) {
-            $gudang = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
-            $minStockField = 'minimum_stock_gaharu';
-        } elseif (str_contains($customerName, 'kejingga')) {
-            $gudang = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
-            $minStockField = 'minimum_stock_kejingga';
-        } else {
-            $gudang = \App\Models\MasterGudang::where('nama', 'like', '%' . $customer->nama . '%')->first();
-            $minStockField = 'minimum_stock';
+        if ($gudangId) {
+            $gudang = \App\Models\MasterGudang::find($gudangId);
         }
 
-        if (!$gudang || !$minStockField) {
-            return response()->json(['suggestions' => [], 'outlet_name' => $customer->nama]);
+        if (!$gudang && $customer) {
+            $customerName = strtolower($customer->nama);
+            if (str_contains($customerName, 'gaharu')) {
+                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+            } elseif (str_contains($customerName, 'kejingga')) {
+                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
+            } else {
+                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%' . $customer->nama . '%')->first()
+                    ?? \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
+            }
+        }
+
+        if (!$gudang) {
+            $outletName = $customer ? $customer->nama : '';
+            return response()->json(['suggestions' => [], 'outlet_name' => $outletName]);
+        }
+
+        $gudangName = strtolower($gudang->nama);
+        if (str_contains($gudangName, 'gaharu')) {
+            $minStockField = 'minimum_stock_gaharu';
+        } elseif (str_contains($gudangName, 'kejingga')) {
+            $minStockField = 'minimum_stock_kejingga';
+        } else {
+            $minStockField = 'minimum_stock';
         }
 
         $items = MasterBarang::where('is_active', true)
@@ -176,7 +218,7 @@ class CentralKitchenOrderController extends Controller
         }
 
         return response()->json([
-            'outlet_name' => $customer->nama,
+            'outlet_name' => $customer ? $customer->nama : ($gudang->nama),
             'gudang_name' => $gudang->nama,
             'suggestions' => $suggestions,
         ]);
@@ -187,23 +229,12 @@ class CentralKitchenOrderController extends Controller
      */
     public function create()
     {
-        // Ambil outlet customer (Gaharu & Kejingga) atau seluruh customer
-        $customers = Customer::whereIn('nama', ['Outlet Gaharu', 'Outlet KeJingga'])
-            ->orWhere('jenis', 'Outlet Internal')
-            ->get();
+        $customers = $this->getOutletCustomers();
 
-        if ($customers->isEmpty()) {
-            $customers = Customer::all();
-        }
-
-        // Ambil barang yang aktif dari Master Barang (memiliki resep atau barang jadi/bahan)
+        // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) untuk Central Kitchen Order
         $produk = MasterBarang::where('is_active', true)
-            ->where(function($q) {
-                $q->whereNotNull('resep_id')
-                  ->orWhere('is_barang_jadi', true)
-                  ->orWhere('is_bahan_baku', true)
-                  ->orWhere('is_bahan_setengah_jadi', true);
-            })
+            ->where('is_bahan_setengah_jadi', true)
+            ->orderBy('nama', 'asc')
             ->get();
 
         return view('central_kitchen.orders.create', compact('customers', 'produk'));
@@ -230,9 +261,21 @@ class CentralKitchenOrderController extends Controller
         try {
             $kode = 'CKO-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
-            // Ambil Gudang CK
-            $gudangCk = DB::table('master_gudang')->where('nama', 'Gudang Central Kitchen')->first();
-            $gudangId = $gudangCk ? $gudangCk->id : null;
+            // Tentukan gudang OUTLET TUJUAN berdasarkan customer pemesan
+            $customer = Customer::findOrFail($request->customer_id);
+            $custNama = strtolower($customer->nama);
+            $gudangOutlet = null;
+
+            if (str_contains($custNama, 'kejingga')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')
+                    ->orWhere('nama', 'like', '%Kejingga%')->first();
+            } elseif (str_contains($custNama, 'gaharu')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')
+                    ->where('kategori', 'Operasional')->first();
+            } else {
+                $gudangOutlet = \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
+            }
+            $gudangId = $gudangOutlet ? $gudangOutlet->id : null;
 
             $pesanan = Pesanan::create([
                 'kode_pesanan'      => $request->kode_pesanan ?? $kode,

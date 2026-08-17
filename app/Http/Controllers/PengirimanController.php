@@ -157,16 +157,20 @@ class PengirimanController extends Controller
             // Tentukan gudang tujuan outlet jika ini pesanan Central Kitchen
             $gudangTujuanOutlet = null;
             if ($isCentralKitchen) {
-                if ($pesanan->gudang_id) {
+                // Gunakan gudang_id pesanan jika tersedia DAN bukan gudang CK (sumber)
+                if ($pesanan->gudang_id && $pesanan->gudang_id != $gudangB2B->id) {
                     $gudangTujuanOutlet = MasterGudang::find($pesanan->gudang_id);
                 }
+                // Fallback: resolusi dari nama customer
                 if (!$gudangTujuanOutlet) {
                     $customer = DB::table('customers')->where('id', $pesanan->customer_id)->first();
                     $custNama = strtolower($customer->nama ?? '');
                     if (str_contains($custNama, 'kejingga')) {
-                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%KeJingga%')->first();
+                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%KeJingga%')
+                            ->orWhere('nama', 'like', '%Kejingga%')->first();
                     } else {
-                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%Gaharu%')
+                            ->where('kategori', 'Operasional')->first();
                     }
                 }
             }
@@ -453,12 +457,21 @@ class PengirimanController extends Controller
             // Tentukan gudang tujuan outlet jika ini pesanan Central Kitchen
             $gudangTujuanOutlet = null;
             if ($isCentralKitchen) {
-                $customer = DB::table('customers')->where('id', $pesanan->customer_id)->first();
-                $custNama = strtolower($customer->nama ?? '');
-                if (str_contains($custNama, 'kejingga')) {
-                    $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%KeJingga%')->first();
-                } else {
-                    $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+                // Gunakan gudang_id pesanan jika tersedia DAN bukan gudang CK (sumber)
+                if ($pesanan->gudang_id && $pesanan->gudang_id != $gudangB2B->id) {
+                    $gudangTujuanOutlet = MasterGudang::find($pesanan->gudang_id);
+                }
+                // Fallback: resolusi dari nama customer
+                if (!$gudangTujuanOutlet) {
+                    $customer = DB::table('customers')->where('id', $pesanan->customer_id)->first();
+                    $custNama = strtolower($customer->nama ?? '');
+                    if (str_contains($custNama, 'kejingga')) {
+                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%KeJingga%')
+                            ->orWhere('nama', 'like', '%Kejingga%')->first();
+                    } else {
+                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%Gaharu%')
+                            ->where('kategori', 'Operasional')->first();
+                    }
                 }
             }
 

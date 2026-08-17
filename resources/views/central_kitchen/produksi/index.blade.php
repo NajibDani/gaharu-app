@@ -360,7 +360,7 @@
                                                             </div>
                                                             <div class="modal-footer bg-light">
                                                                 <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                                                                <button type="submit" class="btn btn-success px-4 fw-bold">
+                                                                <button type="submit" class="btn btn-success px-4 fw-bold" {{ !$wo->is_bahan_sufficient ? 'disabled' : '' }} title="{{ !$wo->is_bahan_sufficient ? 'Stok bahan baku di Gudang Central Kitchen belum mencukupi' : '' }}">
                                                                     <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
                                                                 </button>
                                                             </div>
@@ -458,10 +458,10 @@
                                                     <i class="bi bi-eye me-1"></i> Detail
                                                 </button>
 
-                                                @if(strtolower($prod->status_produksi) == 'draft')
+                                                 @if(strtolower($prod->status_produksi) == 'draft')
                                                     <form action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Approve Produksi CK? HPP per unit akan dihitung otomatis & barang masuk stok CK.')">
                                                         @csrf
-                                                        <button type="submit" class="btn btn-sm btn-success rounded-3">
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-3" {{ (isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient) ? 'disabled' : '' }} title="{{ (isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient) ? 'Stok bahan baku di Gudang CK belum mencukupi' : 'Approve' }}">
                                                             <i class="bi bi-check-circle me-1"></i> Approve
                                                         </button>
                                                     </form>
@@ -479,6 +479,20 @@
                                                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body p-4">
+                                                            @if(strtolower($prod->status_produksi) == 'draft' && isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient && !empty($prod->defisit_bahan))
+                                                                <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
+                                                                    <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
+                                                                    <div>
+                                                                        <strong>Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
+                                                                        <ul class="mb-0 ps-3">
+                                                                            @foreach($prod->defisit_bahan as $def)
+                                                                                <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
+                                                                            @endforeach
+                                                                        </ul>
+                                                                    </div>
+                                                                </div>
+                                                            @endif
+
                                                             <div class="p-3 mb-3 bg-light rounded-3 border-start border-4 border-primary">
                                                                 <div class="row g-2 small">
                                                                     <div class="col-md-4">
@@ -544,7 +558,7 @@
                                                             @if(strtolower($prod->status_produksi) == 'draft')
                                                                 <form action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" onsubmit="return confirm('Approve Produksi CK sekarang?')">
                                                                     @csrf
-                                                                    <button type="submit" class="btn btn-success btn-sm px-3">
+                                                                    <button type="submit" class="btn btn-success btn-sm px-3" {{ (isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient) ? 'disabled' : '' }}>
                                                                         <i class="bi bi-check-circle me-1"></i> Approve & Hitung HPP
                                                                     </button>
                                                                 </form>
