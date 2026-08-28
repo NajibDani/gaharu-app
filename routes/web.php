@@ -39,6 +39,13 @@ use App\Http\Controllers\StockOpnameController;
 use App\Http\Controllers\PengirimanController;
 use App\Http\Controllers\CentralKitchenOrderController;
 use App\Http\Controllers\CentralKitchenProductionController;
+use App\Http\Controllers\PersediaanAwalController;
+use App\Http\Controllers\PengaturanGajiController;
+use App\Http\Controllers\KeterlambatanController;
+
+Route::get('/proposal-penawaran', function () {
+    return file_get_contents(public_path('proposal/index.html'));
+})->name('proposal.penawaran');
 
 Route::get('/', function () {
     if (Auth::check()) {
@@ -62,7 +69,7 @@ Route::middleware('auth')->group(function () {
 
     // =========================================================================
     // 1. GROUP GAHARU, KEJINGGA & GUDANG
-    // Hak Akses: Master Data Kategori, Barang
+    // Hak Akses: Master Data Kategori, Barang, Persediaan Awal
     // =========================================================================
     Route::middleware(['role:Kepala Outlet Gaharu,Kepala Outlet Kejingga,Kepala Gudang'])->group(function () {
         Route::resource('kategori', KategoriController::class)->names('kategori');
@@ -70,8 +77,15 @@ Route::middleware('auth')->group(function () {
         Route::patch('barang/{barang}/toggle', [BarangController::class, 'toggle'])->name('barang.toggle');
         Route::get('/barang/generate-kode/{kategori}', [BarangController::class, 'generateKode'])->name('barang.generate-kode');
         Route::get('/barang/check-nama', [BarangController::class, 'checkNama'])->name('barang.check-nama');
-    Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
-    Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');});
+        Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
+        Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');
+
+        // Persediaan Awal
+        Route::get('/persediaan-awal/template', [PersediaanAwalController::class, 'importTemplate'])->name('persediaan-awal.template');
+        Route::post('/persediaan-awal/import', [PersediaanAwalController::class, 'importExcel'])->name('persediaan-awal.import');
+        Route::post('/persediaan-awal/load-barang', [PersediaanAwalController::class, 'loadBarang'])->name('persediaan-awal.load-barang');
+        Route::resource('persediaan-awal', PersediaanAwalController::class)->names('persediaan-awal');
+    });
 
 
     // =========================================================================
@@ -134,9 +148,11 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::resource('suppliers', SupplierController::class)->names('suppliers');
 
         Route::get('pengeluaran-bahan-baku/suggestions', [PengeluaranBahanBakuController::class, 'suggestions'])->name('pengeluaran-bahan-baku.suggestions');
+        Route::get('pengeluaran-bahan-baku/{id}/detail-json', [PengeluaranBahanBakuController::class, 'detailJson'])->name('pengeluaran-bahan-baku.detail-json');
         Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
         Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
 
+        Route::get('pembelian/suggestions', [PembelianController::class, 'suggestions'])->name('pembelian.suggestions');
         Route::get('pembelian/{id}/cetak-pdf', [PembelianController::class, 'cetakPoPdf'])->name('pembelian.cetak-pdf');
         Route::post('pembelian/{pembelian}/terima', [PembelianController::class, 'terima'])->name('pembelian.terima');
         Route::post('pembelian/{pembelian}/lunasi', [PembelianController::class, 'lunasi'])->name('pembelian.lunasi');
@@ -336,17 +352,20 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
 
     // =========================================================================
-    // 6. GROUP HRD
-    // Hak Akses: Master Data Karyawan, User, Role
+    // 6. GROUP HRD & PAYROLL
+    // Hak Akses: Master Data Karyawan, User, Role, Penggajian
     // =========================================================================
-    Route::middleware(['role:HRD'])->group(function () {
-        Route::resource('roles', RoleController::class);
-        Route::resource('users', UserController::class);
+    Route::middleware(['role:HRD,Kepala Outlet Gaharu,Kepala Outlet Kejingga,Direktur Keuangan'])->group(function () {
         Route::resource('karyawan', KaryawanController::class)->names('karyawan');
     });
 
-    // Payroll (HRD, Direktur Keuangan, & Kepala Outlet Gaharu)
-    Route::middleware(['role:HRD,Direktur Keuangan,Kepala Outlet Gaharu'])->group(function () {
+    Route::middleware(['role:HRD'])->group(function () {
+        Route::resource('roles', RoleController::class);
+        Route::resource('users', UserController::class);
+    });
+
+    // Payroll (HRD, Direktur Keuangan, Kepala Outlet Gaharu, Kepala Outlet Kejingga)
+    Route::middleware(['role:HRD,Direktur Keuangan,Kepala Outlet Gaharu,Kepala Outlet Kejingga'])->group(function () {
         Route::get('/penggajian/create', [PenggajianController::class, 'create'])->name('penggajian.create');
         Route::get('/penggajian/periode', [PenggajianController::class, 'periodeDetail'])->name('penggajian.show-periode');
         Route::post('/penggajian/auto-fill', [PenggajianController::class, 'autoFill'])->name('penggajian.auto-fill');
@@ -354,11 +373,21 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::post('/penggajian/approve', [PenggajianController::class, 'approve'])->name('penggajian.approve');
         Route::post('/penggajian/kirim-jurnal', [PenggajianController::class, 'kirimJurnalUmum'])->name('penggajian.kirimJurnalUmum');
         Route::get('/penggajian/periode/{periode}', [PenggajianController::class, 'showPeriode'])->name('penggajian.periode');
+        Route::get('/penggajian/{id}/pdf', [PenggajianController::class, 'cetakPdf'])->name('penggajian.pdf');
         Route::post('/penggajian/store', [PenggajianController::class, 'store'])->name('penggajian.store');
         Route::post('/penggajian/periode/{periode}/submit', [PenggajianController::class, 'submitToDirector'])->name('penggajian.submit');
         Route::post('/penggajian/periode/{periode}/approve', [PenggajianController::class, 'approveByDirector'])->name('penggajian.approve');
         Route::post('/penggajian/periode/{periode}/journal', [PenggajianController::class, 'sendToJournal'])->name('penggajian.journal');
+        Route::post('/penggajian/{id}/bayar', [PenggajianController::class, 'bayarKaryawan'])->name('penggajian.bayar');
+        Route::post('/penggajian/periode/{periode}/bayar-semua', [PenggajianController::class, 'bayarSemuaPeriode'])->name('penggajian.bayar-semua');
         Route::delete('/penggajian/{penggajian}', [PenggajianController::class, 'destroy'])->name('penggajian.destroy');
+        Route::get('/pengaturan-gaji', [PengaturanGajiController::class, 'index'])->name('pengaturan-gaji.index');
+        Route::put('/pengaturan-gaji/{id}', [PengaturanGajiController::class, 'update'])->name('pengaturan-gaji.update');
+
+        // Data Keterlambatan Karyawan
+        Route::get('/keterlambatan/hitung-ajax', [KeterlambatanController::class, 'hitungAjax'])->name('keterlambatan.hitung-ajax');
+        Route::resource('keterlambatan', KeterlambatanController::class)->names('keterlambatan');
+
         Route::resource('penggajian', PenggajianController::class);
     });
     });

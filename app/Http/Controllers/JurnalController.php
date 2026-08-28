@@ -2118,6 +2118,7 @@ class JurnalController extends Controller
             $idPersediaan   = DB::table('chart_of_accounts')->where('kode', $debitCoaCode)->value('id') ?? ($hasOperational ? 27 : 19);
             $idUangMukaPemb = DB::table('chart_of_accounts')->where('kode', '1202')->value('id') ?? 17;
             $idPPNMasukan   = DB::table('chart_of_accounts')->where('kode', '1203')->value('id') ?? 18;
+            $idUtangDagang  = DB::table('chart_of_accounts')->where('kode', '2101')->value('id') ?? 28;
 
             $defaultDetails = [];
             $sourceType = 'pembelian';
@@ -2125,7 +2126,7 @@ class JurnalController extends Controller
             $noRef = 'AJP-PB-' . strtoupper($tahap) . '-' . $pembelian->kode_pembelian;
             $descJurnal = $pembelian->kode_pembelian;
 
-            if (in_array($tahap, ['reklas_lunas', 'cod'])) {
+            if (in_array($tahap, ['reklas_lunas', 'cod', 'termin'])) {
                 if (!$penerimaanId) {
                     $penerimaan = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelianId)->latest()->first();
                 } else {
@@ -2146,7 +2147,17 @@ class JurnalController extends Controller
                     $dppTotal += floatval($det->qty) * floatval($det->harga_per_qty);
                 }
 
-                if ($tahap === 'reklas_lunas') {
+                if ($tahap === 'termin') {
+                    // Penerimaan barang dengan termin -> Debit Persediaan & PPN, Kredit Utang Dagang
+                    $ppnTotal = floatval($pembelian->tax_service ?? 0);
+                    $totalUtang = $dppTotal + $ppnTotal;
+
+                    $defaultDetails = [
+                        ['account_id' => $idPersediaan, 'debit' => $dppTotal, 'kredit' => 0],
+                        ['account_id' => $idPPNMasukan, 'debit' => $ppnTotal, 'kredit' => 0],
+                        ['account_id' => $idUtangDagang, 'debit' => 0, 'kredit' => $totalUtang]
+                    ];
+                } elseif ($tahap === 'reklas_lunas') {
                     $hasPelunasanJournal = DB::table('jurnal_pembelian')
                         ->where('source_id', $pembelian->id)
                         ->where('source_type', 'pembelian')
@@ -2197,6 +2208,13 @@ class JurnalController extends Controller
                     $defaultDetails = [
                         ['account_id' => $idUangMukaPemb, 'debit' => $dpMurni, 'kredit' => 0],
                         ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $kasDP]
+                    ];
+                } elseif ($pembelian->metode_pembayaran === 'termin') {
+                    // Pelunasan untuk termin -> Debit Utang Dagang, Kredit Kas/Bank
+                    $totalPelunasanTermin = floatval($pembelian->total);
+                    $defaultDetails = [
+                        ['account_id' => $idUtangDagang, 'debit' => $totalPelunasanTermin, 'kredit' => 0],
+                        ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $totalPelunasanTermin]
                     ];
                 } else {
                     $defaultDetails = [

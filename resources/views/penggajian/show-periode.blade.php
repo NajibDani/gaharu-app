@@ -1,129 +1,258 @@
 <x-app-layout>
-    <div class="py-12">
+    <div class="py-10">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
 
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b pb-4">
+            <x-outlet-selector :selectedOutlet="$selectedOutlet" />
+
+            {{-- PAGE HEADER --}}
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-5">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                        <a href="{{ route('penggajian.index') }}" class="text-sm text-blue-600 hover:underline flex items-center gap-1 mb-1">
-                            ← Kembali ke Ringkasan Utama
+                        <a href="{{ route('penggajian.index', ['outlet' => $selectedOutlet]) }}"
+                           class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 transition-colors mb-2">
+                            &larr; Kembali ke Ringkasan Utama
                         </a>
-                        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                            Detail Karyawan & Gaji: Periode {{ $periode }}
-                        </h2>
+                        <h1 class="text-lg font-bold text-gray-800">Detail Karyawan &amp; Gaji</h1>
+                        <p class="text-sm text-gray-500 mt-0.5">
+                            Periode <span class="font-semibold text-gray-700">{{ \App\Models\Penggajian::formatPeriode($periode) }}</span>
+                            &nbsp;&middot;&nbsp; Outlet <span class="font-semibold text-gray-700">{{ $selectedOutlet }}</span>
+                        </p>
                     </div>
 
-                    @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
                     <div class="flex flex-wrap items-center gap-2">
+                        @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
                         <form action="{{ route('penggajian.auto-fill') }}" method="POST" class="inline">
                             @csrf
                             <input type="hidden" name="periode" value="{{ $periode }}">
-                            <button type="submit" onclick="return confirm('Tambahkan seluruh karyawan aktif yang belum terdaftar ke periode {{ $periode }} secara otomatis?')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium transition-all flex items-center gap-1.5">
-                                ⚡ + Auto-Fill Semua Karyawan
+                            <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
+                            <button type="submit"
+                                    onclick="return confirm('Tambahkan seluruh karyawan aktif Outlet {{ $selectedOutlet }} yang belum terdaftar ke periode {{ \App\Models\Penggajian::formatPeriode($periode) }} secara otomatis?')"
+                                    class="inline-flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-200 px-3.5 py-2 rounded-lg text-sm font-medium transition-all"
+                                    title="Tambahkan otomatis semua karyawan aktif yang belum terdaftar di periode ini">
+                                &#9889; Auto-Fill Karyawan
                             </button>
                         </form>
 
-                        <a href="{{ route('penggajian.create', ['target_periode' => $periode]) }}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium transition-all">
-                            + Input Manual
+                        <a href="{{ route('penggajian.create', ['target_periode' => $periode, 'outlet' => $selectedOutlet]) }}"
+                           class="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-sm font-semibold transition-all"
+                           title="Input slip gaji baru secara manual">
+                            + Input Gaji Manual
                         </a>
+                        @endif
+
+                        <form action="{{ route('penggajian.bayar-semua', $periode) }}" method="POST" class="inline"
+                              onsubmit="return confirm('Proses pembayaran dan jurnal untuk SELURUH karyawan di periode {{ \App\Models\Penggajian::formatPeriode($periode) }}?')">
+                            @csrf
+                            <button type="submit"
+                                    class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-all border border-emerald-700">
+                                &#128179; Bayar Semua
+                            </button>
+                        </form>
                     </div>
-                    @else
-                    <span class="bg-gray-100 text-gray-400 border px-4 py-2 rounded-lg text-sm font-medium cursor-not-allowed">
-                        Periode Terkunci (Approved)
-                    </span>
-                    @endif
                 </div>
+            </div>
 
-                @if(session('success'))
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
-                    {{ session('success') }}
-                </div>
-                @endif
-                @if(session('info'))
-                <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded-lg mb-4 text-sm">
-                    {{ session('info') }}
-                </div>
-                @endif
+            @if(session('success'))
+            <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl mb-4 text-sm flex items-center gap-2">
+                <span class="text-emerald-500">&#10003;</span> {{ session('success') }}
+            </div>
+            @endif
+            @if(session('info'))
+            <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-xl mb-4 text-sm flex items-center gap-2">
+                <span class="text-blue-500">&#9432;</span> {{ session('info') }}
+            </div>
+            @endif
 
-                {{-- Live Search Input --}}
-                <div class="mb-4 flex justify-between items-center flex-wrap gap-2">
-                    <div class="relative w-full sm:w-72">
-                        <input type="text" id="searchKaryawan" onkeyup="filterKaryawan()" placeholder="🔍 Cari nama karyawan..." class="w-full px-3.5 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
-                    </div>
-                    <span class="text-xs text-gray-500">Total Karyawan Terdaftar: <strong>{{ count($payrolls) }}</strong></span>
+            <div class="flex justify-between items-center gap-3 mb-3 flex-wrap">
+                <div class="relative w-full sm:w-72">
+                    <input type="text" id="searchKaryawan" onkeyup="filterKaryawan()"
+                           placeholder="&#128269; Cari nama karyawan..."
+                           class="w-full px-3.5 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
                 </div>
+                <span class="text-xs text-gray-400">
+                    <strong class="text-gray-600">{{ count($payrolls) }}</strong> karyawan terdaftar
+                </span>
+            </div>
 
-                <div class="overflow-x-auto border border-gray-200 rounded-xl shadow-sm">
-                    <table class="w-full text-sm text-left text-gray-500" id="tableKaryawan">
-                        <thead class="text-xs text-gray-700 uppercase bg-gray-100 border-b">
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left" id="tableKaryawan">
+                        <thead class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide bg-gray-50 border-b border-gray-100">
                             <tr>
-                                <th class="px-6 py-3 text-center w-16">No</th>
-                                <th class="px-6 py-3">Nama Karyawan</th>
-                                <th class="px-6 py-3 text-right">Gaji Pokok</th>
-                                <th class="px-6 py-3 text-right">Gaji Bersih</th>
-                                <th class="px-6 py-3 text-center w-40">Aksi Perorangan</th>
+                                <th class="px-4 py-3 w-10 text-center">#</th>
+                                <th class="px-4 py-3">Karyawan</th>
+                                <th class="px-4 py-3 text-center">Hari</th>
+                                <th class="px-4 py-3 text-right">Tarif/Hari</th>
+                                <th class="px-4 py-3 text-right">Pendapatan</th>
+                                <th class="px-4 py-3 text-right">Potongan</th>
+                                <th class="px-4 py-3 text-right">Gaji Bersih</th>
+                                <th class="px-4 py-3 text-center w-52">Periode &amp; Aksi</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-200 bg-white">
+                        <tbody class="divide-y divide-gray-50 bg-white">
                             @forelse($payrolls as $index => $payroll)
-                            <tr class="payroll-row hover:bg-gray-50 transition-colors">
-                                <td class="px-6 py-4 text-center font-medium text-gray-900">{{ $index + 1 }}</td>
-                                <td class="px-6 py-4 font-semibold text-gray-800 nama-karyawan">{{ $payroll->karyawan->nama_karyawan }}</td>
-                                <td class="px-6 py-4 text-right text-gray-700">Rp {{ number_format($payroll->gaji_pokok, 0, ',', '.') }}</td>
-                                <td class="px-6 py-4 text-right font-bold text-blue-600">Rp {{ number_format($payroll->total_gaji_bersih, 0, ',', '.') }}</td>
-                                <td class="px-6 py-4 text-center">
-                                    <div class="flex justify-center gap-2">
-                                        <a href="{{ route('penggajian.show', $payroll->id) }}" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all">
-                                            Lihat Slip
-                                        </a>
+                            @php
+                                $tarifHarian = $payroll->tarif_harian_total > 0
+                                    ? $payroll->tarif_harian_total
+                                    : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+                                $earnings = $payroll->total_earnings > 0
+                                    ? $payroll->total_earnings
+                                    : (($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) + ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0));
+                                $deductions = $payroll->total_deductions > 0
+                                    ? $payroll->total_deductions
+                                    : (($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) + ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_dll ?? 0));
+                                $isPaid = $payroll->status_jurnal || $payroll->status == 'approved';
+                                $labelPeriode = ($payroll->tanggal_mulai && $payroll->tanggal_selesai)
+                                    ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('d/m') . ' - ' . \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('d/m')
+                                    : null;
+                                $confirmMsg = 'Bayar gaji ' . $payroll->karyawan->nama_karyawan . ($labelPeriode ? ' periode ' . $labelPeriode : '') . ' dan buat Jurnal Umum?';
+                            @endphp
+                            <tr class="payroll-row hover:bg-gray-50/60 transition-colors">
+                                <td class="px-4 py-4 text-center text-xs text-gray-400 font-medium">{{ $index + 1 }}</td>
 
-                                        @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
-                                        <a href="{{ route('penggajian.edit', $payroll->id) }}" class="bg-amber-50 hover:bg-amber-100 text-amber-700 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border border-amber-200">
-                                            Edit
-                                        </a>
-
-                                        @if($currentStatus == 'draft')
-                                        <form action="{{ route('penggajian.destroy', $payroll->id) }}" method="POST" onsubmit="return confirm('Hapus data karyawan ini?')" class="inline">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit" class="bg-red-50 hover:bg-red-100 text-red-600 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all">
-                                                Hapus
-                                            </button>
-                                        </form>
+                                <td class="px-4 py-4">
+                                    <div class="font-semibold text-gray-800 text-sm nama-karyawan leading-tight">
+                                        {{ $payroll->karyawan->nama_karyawan }}
+                                    </div>
+                                    <div class="text-xs text-gray-400 mt-0.5">
+                                        {{ $payroll->karyawan->jabatan ?? '-' }}
+                                        @if($payroll->karyawan->departemen)
+                                            <span class="mx-1 text-gray-200">&middot;</span>{{ $payroll->karyawan->departemen }}
                                         @endif
+                                    </div>
+                                    <a href="{{ route('penggajian.create', ['target_periode' => $periode, 'outlet' => $selectedOutlet, 'karyawan_id' => $payroll->karyawan_id, 'lock_karyawan' => 1]) }}"
+                                       class="inline-flex items-center gap-1 mt-2 text-[11px] font-semibold text-blue-500 hover:text-blue-700 hover:underline transition-colors"
+                                       title="Tambah periode gaji baru � nama karyawan ter-lock otomatis">
+                                        + Tambah Periode Gaji
+                                    </a>
+                                </td>
+
+                                <td class="px-4 py-4 text-center">
+                                    <span class="text-sm font-bold text-gray-700">{{ $payroll->hari_kerja }}</span>
+                                    <span class="text-xs text-gray-400"> hr</span>
+                                </td>
+
+                                <td class="px-4 py-4 text-right">
+                                    <span class="text-xs text-gray-500">Rp {{ number_format($tarifHarian, 0, ',', '.') }}</span>
+                                </td>
+
+                                <td class="px-4 py-4 text-right">
+                                    <span class="text-sm font-semibold text-emerald-600">Rp {{ number_format($earnings, 0, ',', '.') }}</span>
+                                </td>
+
+                                <td class="px-4 py-4 text-right">
+                                    @if($deductions > 0)
+                                        <span class="text-sm font-semibold text-rose-500">- Rp {{ number_format($deductions, 0, ',', '.') }}</span>
+                                    @else
+                                        <span class="text-xs text-gray-300">-</span>
+                                    @endif
+                                </td>
+
+                                <td class="px-4 py-4 text-right">
+                                    <span class="text-sm font-bold" style="color: #7A4517;">
+                                        Rp {{ number_format($payroll->total_gaji_bersih, 0, ',', '.') }}
+                                    </span>
+                                </td>
+
+                                <td class="px-4 py-4">
+                                    <div class="flex flex-col items-center gap-2">
+
+                                        @if($labelPeriode)
+                                        <span class="text-[10px] font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 whitespace-nowrap">
+                                            &#128197; {{ $labelPeriode }}
+                                        </span>
+                                        @endif
+
+                                        @if($isPaid)
+                                            <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                &#10003; Terbayar
+                                            </span>
                                         @else
-                                        <span class="text-xs text-gray-400 italic">Terkunci</span>
+                                            <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST"
+                                                  onsubmit="return confirm('{{ addslashes($confirmMsg) }}')">
+                                                @csrf
+                                                <button type="submit"
+                                                        class="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-sm border border-emerald-700 transition-all whitespace-nowrap">
+                                                    &#128179; Bayar
+                                                </button>
+                                            </form>
                                         @endif
+
+                                        {{-- KEBAB DROPDOWN --}}
+                                        <div class="relative kebab-wrapper" style="position:relative;">
+                                            <button onclick="toggleKebab(this)"
+                                                    class="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors border border-transparent hover:border-gray-200"
+                                                    title="Aksi lain (Slip, Edit, Hapus)">
+                                                &bull;&bull;&bull;
+                                            </button>
+                                            <div class="kebab-menu hidden absolute right-0 mt-1 w-38 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 text-left" style="min-width:140px;">
+                                                <a href="{{ route('penggajian.show', $payroll->id) }}"
+                                                   class="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
+                                                    &#129534; Cetak Slip
+                                                </a>
+                                                @if(!$isPaid)
+                                                <a href="{{ route('penggajian.edit', $payroll->id) }}"
+                                                   class="flex items-center gap-2 px-3 py-2 text-xs text-amber-600 hover:bg-amber-50 transition-colors">
+                                                    &#9999; Edit Presensi
+                                                </a>
+                                                @if($currentStatus == 'draft')
+                                                <form action="{{ route('penggajian.destroy', $payroll->id) }}" method="POST"
+                                                      onsubmit="return confirm('Hapus data penggajian karyawan ini?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit"
+                                                            class="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors">
+                                                        &#128465; Hapus
+                                                    </button>
+                                                </form>
+                                                @endif
+                                                @endif
+                                            </div>
+                                        </div>
+
                                     </div>
                                 </td>
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="5" class="px-6 py-12 text-center text-gray-400">
-                                    Belum ada karyawan yang dimasukkan pada periode ini. Silakan klik "⚡ + Auto-Fill Semua Karyawan" atau "+ Input Manual" di atas.
+                                <td colspan="8" class="px-6 py-16 text-center">
+                                    <div class="text-3xl mb-2">&#128203;</div>
+                                    <div class="font-medium text-gray-500 text-sm">Belum ada data karyawan</div>
+                                    <div class="text-xs text-gray-400 mt-1">Klik "Auto-Fill Karyawan" atau "+ Input Gaji Manual" di atas.</div>
                                 </td>
                             </tr>
                             @endforelse
                         </tbody>
                     </table>
                 </div>
-
             </div>
+
         </div>
     </div>
 
     <script>
         function filterKaryawan() {
             const input = document.getElementById('searchKaryawan').value.toLowerCase();
-            const rows = document.querySelectorAll('.payroll-row');
-            rows.forEach(row => {
-                const nameText = row.querySelector('.nama-karyawan').textContent.toLowerCase();
-                if (nameText.includes(input)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
+            document.querySelectorAll('.payroll-row').forEach(row => {
+                const name = row.querySelector('.nama-karyawan').textContent.toLowerCase();
+                row.style.display = name.includes(input) ? '' : 'none';
             });
         }
+
+        function toggleKebab(btn) {
+            const menu = btn.nextElementSibling;
+            const isHidden = menu.classList.contains('hidden');
+            // Close all other open kebabs
+            document.querySelectorAll('.kebab-menu').forEach(m => m.classList.add('hidden'));
+            if (isHidden) {
+                menu.classList.remove('hidden');
+            }
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.kebab-wrapper')) {
+                document.querySelectorAll('.kebab-menu').forEach(m => m.classList.add('hidden'));
+            }
+        });
     </script>
 </x-app-layout>

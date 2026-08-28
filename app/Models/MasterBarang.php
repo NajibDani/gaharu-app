@@ -131,4 +131,9 @@ public function stockOpnameDetails()
         'barang_id'
     );
 }
+
+public function minimumStocks()
+{
+    return $this->hasMany(BarangMinimumStock::class, 'barang_id');
+}
 }

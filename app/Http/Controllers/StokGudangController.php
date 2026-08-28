@@ -61,6 +61,25 @@ class StokGudangController extends Controller
             $query->where('master_barang.id', $barangId);
         }
 
+        // Filter bahan baku yang dinonaktifkan di outlet & divisi masing-masing
+        $query->where(function($q) {
+            $q->where('master_barang.is_bahan_baku', 0)
+              ->orWhereNotExists(function($notExistsQuery) {
+                  $notExistsQuery->select(DB::raw(1))
+                      ->from('barang_minimum_stock')
+                      ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                      ->whereColumn('barang_minimum_stock.gudang_id', 'stok_gudang.gudang_id')
+                      ->where(function($divQ) {
+                          $divQ->whereColumn('barang_minimum_stock.divisi_id', 'stok_gudang.divisi_id')
+                               ->orWhere(function($subDivQ) {
+                                   $subDivQ->whereNull('barang_minimum_stock.divisi_id')
+                                           ->whereNull('stok_gudang.divisi_id');
+                               });
+                      })
+                      ->where('barang_minimum_stock.is_active', false);
+              });
+        });
+
         // Ambil semua hasil (kita paginate manual di bawah)
         $rows = $query->orderBy('master_barang.nama')->orderBy('master_gudang.nama')->get();
 
@@ -401,9 +420,15 @@ class StokGudangController extends Controller
                 return "Penerimaan Pembelian (ID: {$id})";
 
             case 'pengeluaran_bahan_baku':
-                $out = \App\Models\PengeluaranBahanBaku::find($id);
+                $out = \App\Models\PengeluaranBahanBaku::with(['gudang', 'divisi'])->find($id);
                 if ($out) {
-                    return "Material Output: {$out->no_pengeluaran}";
+                    $gudangTujuan = $out->gudang->nama ?? '';
+                    $divisiTujuan = $out->divisi->nama ?? '';
+                    $tujuanInfo = [];
+                    if ($gudangTujuan) $tujuanInfo[] = "Gudang: {$gudangTujuan}";
+                    if ($divisiTujuan) $tujuanInfo[] = "Divisi: {$divisiTujuan}";
+                    $tujuanStr = !empty($tujuanInfo) ? ' [' . implode(' - ', $tujuanInfo) . ']' : '';
+                    return "Material Output: {$out->no_pengeluaran}{$tujuanStr}";
                 }
                 return "Material Output (ID: {$id})";
 

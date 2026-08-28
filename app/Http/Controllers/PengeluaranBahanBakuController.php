@@ -135,11 +135,26 @@ class PengeluaranBahanBakuController extends Controller
     public function suggestions(Request $request)
     {
         $gudangId = $request->query('gudang_id');
-        $gudang = MasterGudang::find($gudangId);
+        $divisiId = $request->query('divisi_id');
 
-        if (!$gudang) {
-            return response()->json(['suggestions' => [], 'gudang_name' => '']);
+        if (!$gudangId) {
+            return response()->json([
+                'gudang_name' => '',
+                'divisi_name' => '',
+                'suggestions' => [],
+            ]);
         }
+
+        $gudang = MasterGudang::find($gudangId);
+        if (!$gudang) {
+            return response()->json([
+                'gudang_name' => '',
+                'divisi_name' => '',
+                'suggestions' => [],
+            ]);
+        }
+
+        $divisi = $divisiId ? \App\Models\GudangDivisi::find($divisiId) : null;
 
         $gudangNama = strtolower($gudang->nama);
         $minStockField = null;
@@ -154,15 +169,76 @@ class PengeluaranBahanBakuController extends Controller
         $items = MasterBarang::where('is_active', true)
             ->where('is_bahan_baku', 1)
             ->where('is_bahan_setengah_jadi', 0)
+            ->whereNotExists(function($notExistsQuery) use ($gudangId, $divisiId) {
+                $notExistsQuery->select(DB::raw(1))
+                    ->from('barang_minimum_stock')
+                    ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                    ->where('barang_minimum_stock.gudang_id', $gudangId)
+                    ->where('barang_minimum_stock.is_active', false);
+                if ($divisiId) {
+                    $notExistsQuery->where('barang_minimum_stock.divisi_id', $divisiId);
+                } else {
+                    $notExistsQuery->whereNull('barang_minimum_stock.divisi_id');
+                }
+            })
+            ->with(['minimumStocks' => function ($q) use ($gudangId, $divisiId) {
+                $q->where('gudang_id', $gudangId);
+                if ($divisiId) {
+                    $q->where(function ($sq) use ($divisiId) {
+                        $sq->where('divisi_id', $divisiId)
+                           ->orWhereNull('divisi_id');
+                    });
+                }
+            }])
             ->orderBy('nama', 'asc')
             ->get();
 
         $suggestions = [];
         foreach ($items as $it) {
             $minStock = 0;
-            if ($minStockField && !empty($it->{$minStockField})) {
+
+            // Prioritas 1: Tabel barang_minimum_stock untuk outlet + divisi terkait
+            if ($it->minimumStocks && $it->minimumStocks->count() > 0) {
+                if ($divisiId) {
+                    $specific = $it->minimumStocks->firstWhere('divisi_id', (int)$divisiId);
+                    if ($specific) {
+                        if (!$specific->is_active) {
+                            continue; // Skip jika non-aktif
+                        }
+                        if ($specific->minimum_stock !== null) {
+                            $minStock = (float)$specific->minimum_stock;
+                        }
+                    } else {
+                        $fallback = $it->minimumStocks->firstWhere('divisi_id', null);
+                        if ($fallback) {
+                            if (!$fallback->is_active) {
+                                continue;
+                            }
+                            if ($fallback->minimum_stock !== null) {
+                                $minStock = (float)$fallback->minimum_stock;
+                            }
+                        }
+                    }
+                } else {
+                    $general = $it->minimumStocks->first();
+                    if ($general) {
+                        if (!$general->is_active) {
+                            continue;
+                        }
+                        if ($general->minimum_stock !== null) {
+                            $minStock = (float)$general->minimum_stock;
+                        }
+                    }
+                }
+            }
+
+            // Prioritas 2: Kolom minimum_stock_ck/gaharu/kejingga jika ada
+            if ($minStock <= 0 && $minStockField && !empty($it->{$minStockField})) {
                 $minStock = (float) $it->{$minStockField};
-            } elseif (!empty($it->minimum_stock)) {
+            }
+
+            // Prioritas 3: Kolom minimum_stock umum
+            if ($minStock <= 0 && !empty($it->minimum_stock)) {
                 $minStock = (float) $it->minimum_stock;
             }
 
@@ -170,13 +246,22 @@ class PengeluaranBahanBakuController extends Controller
                 continue;
             }
 
-            $currentStock = (float) (StokGudang::where('gudang_id', $gudang->id)
-                ->where('barang_id', $it->id)
-                ->value('jumlah') ?? 0);
+            $stokQuery = StokGudang::where('gudang_id', $gudang->id)
+                ->where('barang_id', $it->id);
+            if ($divisiId) {
+                $stokQuery->where('divisi_id', $divisiId);
+            }
+
+            $currentStock = (float) ($stokQuery->value('jumlah') ?? 0);
 
             if ($currentStock < $minStock) {
                 $deficit = $minStock - $currentStock;
                 $suggestedQty = max(1, (float) ceil($deficit));
+                
+                $konversi = (float) ($it->konversi_pembelian ?: 1);
+                $satuanPembelian = $it->satuan_pembelian ?: $it->satuan;
+                $hasKonversi = ($it->satuan_pembelian && $konversi > 1 && $it->satuan_pembelian !== $it->satuan);
+                $suggestedQtyInput = $hasKonversi ? (float) ceil($suggestedQty / $konversi) : $suggestedQty;
 
                 // Stok yang tersedia di Gudang Utama (Gudang ID 1)
                 $stokUtama = (float) (StokGudang::where('gudang_id', 1)
@@ -184,20 +269,25 @@ class PengeluaranBahanBakuController extends Controller
                     ->value('jumlah') ?? 0);
 
                 $suggestions[] = [
-                    'barang_id'     => $it->id,
-                    'kode_barang'   => $it->kode_barang,
-                    'nama'          => $it->nama,
-                    'satuan'        => $it->satuan,
-                    'current_stock' => $currentStock,
-                    'min_stock'     => $minStock,
-                    'stok_utama'    => $stokUtama,
-                    'suggested_qty' => $suggestedQty,
+                    'barang_id'            => $it->id,
+                    'kode_barang'          => $it->kode_barang,
+                    'nama'                 => $it->nama,
+                    'satuan'               => $it->satuan,
+                    'satuan_pembelian'      => $satuanPembelian,
+                    'konversi_pembelian'    => $konversi,
+                    'has_konversi'         => $hasKonversi,
+                    'current_stock'        => $currentStock,
+                    'min_stock'            => $minStock,
+                    'stok_utama'           => $stokUtama,
+                    'suggested_qty'        => $suggestedQty,
+                    'suggested_qty_input'  => $suggestedQtyInput,
                 ];
             }
         }
 
         return response()->json([
             'gudang_name' => $gudang->nama,
+            'divisi_name' => $divisi ? $divisi->nama : null,
             'suggestions' => $suggestions,
         ]);
     }
@@ -374,6 +464,66 @@ class PengeluaranBahanBakuController extends Controller
             'pengeluaran-bahan-baku.show',
             compact('pengeluaran')
         );
+    }
+
+    /**
+     * Mengambil detail pengeluaran untuk Modal Pop-up Minimalist (JSON)
+     */
+    public function detailJson(string $id)
+    {
+        $pengeluaran = PengeluaranBahanBaku::with([
+            'details.barang',
+            'gudang',
+            'divisi',
+        ])->findOrFail($id);
+
+        $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
+
+        $grandTotal = 0;
+        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, &$grandTotal) {
+            $hppTotal = (float) ($detail->hpp_total ?? 0);
+            if (!$isApproved) {
+                $est = $this->fifoService->getEstimatedHargaFIFO(
+                    $detail->barang_id,
+                    $detail->qty,
+                    $pengeluaran->gudang_id ?? 1,
+                    $pengeluaran->divisi_id
+                );
+                $hppTotal = (float) ($est['total_harga'] ?? 0);
+            }
+            $grandTotal += $hppTotal;
+            $hargaSatuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
+
+            return [
+                'nama_barang'  => $detail->barang->nama ?? '-',
+                'kode_barang'  => $detail->barang->kode_barang ?? '-',
+                'satuan'       => $detail->barang->satuan ?? ($detail->satuan ?? 'pcs'),
+                'qty'          => (float) $detail->qty,
+                'harga_satuan' => $hargaSatuan,
+                'total_harga'  => $hppTotal,
+            ];
+        });
+
+        $isWO = str_contains(
+            strtolower($pengeluaran->keterangan ?? ''),
+            'permintaan bahan baku untuk'
+        );
+
+        return response()->json([
+            'id'                => $pengeluaran->id,
+            'kode_pengeluaran'  => $pengeluaran->kode_pengeluaran,
+            'tanggal'           => \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i'),
+            'gudang_nama'       => $pengeluaran->gudang->nama ?? '-',
+            'divisi_nama'       => $pengeluaran->divisi->nama ?? null,
+            'status'            => $pengeluaran->status,
+            'is_approved'       => $isApproved,
+            'keterangan'        => $pengeluaran->keterangan ?? '-',
+            'is_wo'             => $isWO,
+            'grand_total'       => $grandTotal,
+            'edit_url'          => route('pengeluaran-bahan-baku.edit', $pengeluaran->id),
+            'approve_url'       => route('pengeluaran-bahan-baku.approve', $pengeluaran->id),
+            'details'           => $details,
+        ]);
     }
 
     /**

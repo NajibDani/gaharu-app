@@ -58,7 +58,7 @@
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted mb-2">Draft</div>
-                    <h2 class="fw-bold text-warning mb-0">{{ $stockOpname->where('status','draft')->count() }}</h2>
+                    <h2 class="fw-bold text-warning mb-0">{{ $totalDraft ?? 0 }}</h2>
                 </div>
             </div>
         </div>
@@ -67,7 +67,7 @@
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted mb-2">Approved</div>
-                    <h2 class="fw-bold text-success mb-0">{{ $stockOpname->where('status','approved')->count() }}</h2>
+                    <h2 class="fw-bold text-success mb-0">{{ $totalApproved ?? 0 }}</h2>
                 </div>
             </div>
         </div>

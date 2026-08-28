@@ -48,7 +48,7 @@
                 @if($pembelian->metode_pembayaran === 'termin')
                     <p>
                         <strong>Jatuh Tempo:</strong> 
-                        {{ $pembelian->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($pembelian->tanggal_jatuh_tempo)->format('d M Y') : '-' }}
+                        {{ $pembelian->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($pembelian->tanggal_jatuh_tempo)->format('d M Y') : 'Fleksibel / Kesepakatan Personal' }}
                     </p>
                     <p>
                         <strong>Estimasi Pelunasan:</strong> 

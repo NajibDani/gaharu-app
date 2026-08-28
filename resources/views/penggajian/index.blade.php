@@ -3,19 +3,22 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
 
+                <x-outlet-selector :selectedOutlet="$selectedOutlet" />
+
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b pb-4">
                     <div>
                         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                            Sistem Pencatatan Gaji & Jurnal
+                            Sistem Pencatatan Gaji & Jurnal - Outlet {{ $selectedOutlet }}
                         </h2>
-                        <p class="text-sm text-gray-500 mt-1">Kelola data gaji kolektif per periode dan integrasi jurnal umum.</p>
+                        <p class="text-sm text-gray-500 mt-1">Kelola data gaji kolektif per periode dan integrasi jurnal umum untuk Outlet {{ $selectedOutlet }}.</p>
                     </div>
                     <div class="flex gap-2 items-center">
                         <form action="{{ route('penggajian.index') }}" method="GET" class="flex gap-2">
+                            <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                             <input type="text" name="search" class="border rounded px-3 py-1 text-sm" placeholder="Cari periode/karyawan..." value="{{ request('search') }}" style="width: 220px;">
                             <button type="submit" class="bg-gray-800 text-white px-3 py-1 rounded text-sm">Cari</button>
                             @if(request('search'))
-                                <a href="{{ route('penggajian.index') }}" class="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm">Reset</a>
+                                <a href="{{ route('penggajian.index', ['outlet' => $selectedOutlet]) }}" class="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm">Reset</a>
                             @endif
                         </form>
                         <button @click="openModalPeriode = true" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium transition-all cursor-pointer">
@@ -64,7 +67,7 @@
                             @endphp
                             <tr class="hover:bg-gray-50/50 transition-colors">
                                 <td class="px-6 py-4 text-center font-medium text-gray-900">{{ $no++ }}</td>
-                                <td class="px-6 py-4 font-bold text-gray-800 tracking-wide">{{ $periode }}</td>
+                                <td class="px-6 py-4 font-bold text-gray-800 tracking-wide">{{ \App\Models\Penggajian::formatPeriode($periode) }}</td>
                                 <td class="px-6 py-4 text-center font-medium text-gray-700">{{ $items->count() }} Orang</td>
                                 <td class="px-6 py-4 text-right font-semibold text-gray-900">Rp {{ number_format($totalGajiPeriode, 0, ',', '.') }}</td>
 
@@ -81,7 +84,7 @@
                                 <td class="px-6 py-4 text-center">
                                     <div class="flex justify-center items-center gap-2">
 
-                                        <a href="{{ route('penggajian.show-periode', ['periode' => $periode]) }}"
+                                        <a href="{{ route('penggajian.show-periode', ['periode' => $periode, 'outlet' => $selectedOutlet]) }}"
                                             class="inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-semibold px-4 py-2 rounded-lg text-xs shadow-sm transition-all text-center">
                                             Detail
                                         </a>
@@ -149,6 +152,7 @@
                     </div>
 
                     <form action="{{ route('penggajian.show-periode') }}" method="GET">
+                        <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                         <div class="mb-4">
                             <label for="periode_baru" class="block text-sm font-medium text-gray-700 mb-1">Pilih Bulan & Tahun</label>
                             <input type="month" id="periode_baru" name="periode" required

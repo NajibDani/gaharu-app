@@ -7,6 +7,7 @@ use App\Models\MasterBarang;
 use App\Models\MasterGudang;
 use App\Models\Pembelian;
 use App\Models\Supplier;
+use App\Models\StokGudang;
 
 use App\Services\StockService;
 use App\Services\FifoService;
@@ -83,7 +84,46 @@ class PembelianController extends Controller
             ]];
         });
 
-        return view('pembelian.index', compact('pembelian', 'dataPembayaran'));
+        // Hitung ringkasan saran restock Gudang Utama
+        $gudangUtama = MasterGudang::where('nama', 'Gudang Utama')->first();
+        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 1;
+        
+        $itemsRestock = MasterBarang::where('is_active', true)
+            ->where(function ($q) {
+                $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_operational', true)
+                  ->orWhere('is_direct_consumption', true);
+            })
+            ->with(['minimumStocks' => function ($q) use ($gudangUtamaId) {
+                $q->where('gudang_id', $gudangUtamaId)->whereNull('divisi_id');
+            }])
+            ->get();
+
+        $countLowStockUtama = 0;
+        foreach ($itemsRestock as $it) {
+            $minStock = 0;
+            if ($it->minimumStocks && $it->minimumStocks->count() > 0) {
+                $ms = $it->minimumStocks->first();
+                if ($ms && $ms->is_active && $ms->minimum_stock !== null) {
+                    $minStock = (float) $ms->minimum_stock;
+                }
+            }
+            if ($minStock <= 0 && !empty($it->minimum_stock)) {
+                $minStock = (float) $it->minimum_stock;
+            }
+            if ($minStock > 0) {
+                $currentStock = (float) (StokGudang::where('gudang_id', $gudangUtamaId)
+                    ->whereNull('divisi_id')
+                    ->where('barang_id', $it->id)
+                    ->value('jumlah') ?? 0);
+                if ($currentStock <= $minStock) {
+                    $countLowStockUtama++;
+                }
+            }
+        }
+
+        return view('pembelian.index', compact('pembelian', 'dataPembayaran', 'countLowStockUtama'));
     }
 
     /*
@@ -108,6 +148,86 @@ class PembelianController extends Controller
             ->get();
 
         return view('pembelian.create', compact('suppliers', 'gudangs', 'barangs'));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SUGGESTIONS FOR RESTOCK GUDANG UTAMA
+    |--------------------------------------------------------------------------
+    */
+    public function suggestions(Request $request)
+    {
+        $gudangUtama = MasterGudang::where('nama', 'Gudang Utama')->first();
+        $gudangId = $gudangUtama ? $gudangUtama->id : 1;
+
+        $items = MasterBarang::where('is_active', true)
+            ->where(function ($q) {
+                $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_operational', true)
+                  ->orWhere('is_direct_consumption', true);
+            })
+            ->with(['minimumStocks' => function ($q) use ($gudangId) {
+                $q->where('gudang_id', $gudangId)->whereNull('divisi_id');
+            }])
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        $suggestions = [];
+        foreach ($items as $it) {
+            $minStock = 0;
+
+            // 1. Prioritas tabel barang_minimum_stock
+            if ($it->minimumStocks && $it->minimumStocks->count() > 0) {
+                $ms = $it->minimumStocks->first();
+                if ($ms && $ms->is_active && $ms->minimum_stock !== null) {
+                    $minStock = (float) $ms->minimum_stock;
+                }
+            }
+
+            // 2. Fallback ke kolom minimum_stock di master_barang
+            if ($minStock <= 0 && !empty($it->minimum_stock)) {
+                $minStock = (float) $it->minimum_stock;
+            }
+
+            if ($minStock <= 0) {
+                continue;
+            }
+
+            // Hitung stok saat ini di Gudang Utama
+            $currentStock = (float) (StokGudang::where('gudang_id', $gudangId)
+                ->whereNull('divisi_id')
+                ->where('barang_id', $it->id)
+                ->value('jumlah') ?? 0);
+
+            if ($currentStock <= $minStock) {
+                $deficit = $minStock - $currentStock;
+                $suggestedQty = max(1, (float) ceil($deficit));
+
+                // Jika ada konversi pembelian, kita tampilkan juga saran qty dalam satuan pembelian
+                $konversi = (float) ($it->konversi_pembelian ?: 1);
+                $suggestedQtyPembelian = (float) ceil($suggestedQty / $konversi);
+
+                $suggestions[] = [
+                    'barang_id'                => $it->id,
+                    'kode_barang'              => $it->kode_barang,
+                    'nama'                     => $it->nama,
+                    'satuan'                   => $it->satuan,
+                    'satuan_pembelian'         => $it->satuan_pembelian ?: $it->satuan,
+                    'konversi_pembelian'       => $konversi,
+                    'current_stock'            => $currentStock,
+                    'min_stock'                => $minStock,
+                    'suggested_qty'            => $suggestedQty,
+                    'suggested_qty_pembelian'  => $suggestedQtyPembelian,
+                    'hpp_referensi'            => (float) ($it->hpp_referensi ?? 0),
+                ];
+            }
+        }
+
+        return response()->json([
+            'gudang_name' => $gudangUtama ? $gudangUtama->nama : 'Gudang Utama',
+            'suggestions' => $suggestions,
+        ]);
     }
 
     /*
@@ -183,8 +303,8 @@ class PembelianController extends Controller
 
     public function terima(Request $request, Pembelian $pembelian)
     {
-        if (!$pembelian->is_lunas) {
-            return back()->with('error', 'Gagal memproses penerimaan barang: Pembayaran belum lunas. Silakan lunasi pembayaran terlebih dahulu.');
+        if (empty($pembelian->metode_pembayaran)) {
+            return back()->with('error', 'Gagal memproses penerimaan barang: Metode pembayaran belum dicatat. Silakan catat metode pembayaran (COD / DP / Termin) terlebih dahulu.');
         }
 
         $request->validate([
@@ -305,10 +425,12 @@ class PembelianController extends Controller
                 'diterima_oleh' => auth()->id()
             ]);
 
-            // Auto-post Jurnal Persediaan (reklas_lunas atau cod)
+            // Auto-post Jurnal Persediaan (reklas_lunas, termin, atau cod)
             $tahapJurnal = 'cod';
             if ($pembelian->metode_pembayaran === 'dp') {
                 $tahapJurnal = 'reklas_lunas';
+            } elseif ($pembelian->metode_pembayaran === 'termin') {
+                $tahapJurnal = 'termin';
             }
             \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, $tahapJurnal, $penerimaan->id);
         });
@@ -382,7 +504,7 @@ class PembelianController extends Controller
     public function catatPembayaran(Request $request, Pembelian $pembelian)
     {
         $validated = $request->validate([
-            'metode_pembayaran'   => 'required|in:cod,dp',
+            'metode_pembayaran'   => 'required|in:cod,dp,termin',
             'tanggal_jatuh_tempo' => 'nullable|date',
             'persen_dp'           => 'nullable|integer|min:1|max:99',
             'nominal_dp'          => 'nullable|numeric|min:0',

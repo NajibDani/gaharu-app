@@ -24,6 +24,9 @@
                         <select name="jenis_tenaga_kerja" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
                             <option value="Karyawan Tetap">Karyawan Tetap</option>
                             <option value="Karyawan Kontrak">Karyawan Kontrak</option>
+                            <option value="Part Time">Part Time</option>
+                            <option value="Casual">Casual</option>
+                            <option value="Probation">Probation</option>
                         </select>
                     </div>
 
@@ -34,12 +37,32 @@
                             <option value="Produksi">Produksi</option>
                             <option value="Manajemen">Manajemen</option>
                             <option value="Operasional">Operasional</option>
+                            <option value="Kitchen">Kitchen</option>
+                            <option value="Central Kitchen">Central Kitchen</option>
+                            <option value="Cold Kitchen">Cold Kitchen</option>
+                            <option value="Barista">Barista</option>
+                            <option value="Server">Server</option>
+                            <option value="Satpam">Satpam</option>
                         </select>
                     </div>
 
                     <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Outlet <span class="text-red-500">*</span></label>
+                        <select name="outlet" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm font-bold text-amber-900" required>
+                            <option value="Gaharu" {{ request('outlet') == 'Gaharu' ? 'selected' : '' }}>Outlet Gaharu</option>
+                            <option value="Kejingga" {{ request('outlet') == 'Kejingga' ? 'selected' : '' }}>Outlet Kejingga</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Nomor Rekening</label>
+                        <input type="text" name="no_rekening" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" placeholder="Contoh: BCA 1234567890">
+                    </div>
+
+                    <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700">Gaji Pokok</label>
-                        <input type="number" name="gaji_pokok" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" required min="0" placeholder="0" value="{{ old('gaji_pokok', 0) }}">
+                        <input type="number" name="gaji_pokok" class="mt-1 block w-full bg-gray-100 border-gray-300 rounded-md shadow-sm text-gray-500" required min="0" value="0" readonly>
+                        <p class="text-xs text-gray-500 mt-1">Gaji pokok akan diatur melalui menu Pengaturan Gaji.</p>
                     </div>
 
                     <div class="flex items-center gap-4">

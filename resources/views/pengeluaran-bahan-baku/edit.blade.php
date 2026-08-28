@@ -85,6 +85,25 @@
                 </div>
             </div>
 
+            {{-- SARAN RESTOCK (CONDITIONAL) --}}
+            <div id="suggestion-box" class="card p-3 my-3 bg-light border-warning shadow-sm" style="display: none; border-left: 5px solid #f59e0b !important; border-radius: 12px;">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small d-flex align-items-center">
+                            <i class="bi bi-lightbulb-fill text-warning fs-6 me-2"></i>
+                            Saran Restock Bahan Baku (<span id="suggest-gudang-name"></span>)
+                        </strong>
+                        <span class="text-muted small" style="font-size: 0.75rem;">Bahan baku di bawah batas minimum stock gudang outlet tujuan</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-warning text-dark fw-bold shadow-sm" id="btn-apply-all-suggestions">
+                        <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                    </button>
+                </div>
+                <div id="suggestion-list" class="d-flex flex-wrap gap-2 pt-1">
+                    <!-- Dynamic suggestion pills -->
+                </div>
+            </div>
+
             <hr>
 
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -205,6 +224,23 @@ function tambahBaris(barangId = '', qty = '')
 {
     let tbody = document.querySelector('#table-detail tbody');
 
+    // Coba isi baris pertama jika masih kosong
+    if (barangId !== '') {
+        let rows = tbody.querySelectorAll('tr');
+        for (let row of rows) {
+            let sel = row.querySelector('.barang-select');
+            let selValue = sel.tomselect ? sel.tomselect.getValue() : sel.value;
+            if (!selValue) {
+                if (sel.tomselect) sel.tomselect.setValue(barangId);
+                else sel.value = barangId;
+                let qInput = row.querySelector('.qty-input');
+                if (qty !== '') qInput.value = qty;
+                checkStok(row);
+                return row;
+            }
+        }
+    }
+
     let tr = document.createElement('tr');
     tr.innerHTML = `
         <td>
@@ -307,6 +343,90 @@ document.addEventListener("DOMContentLoaded", function() {
     const selectDivisi = document.getElementById('select-divisi');
     const currentDivisiId = "{{ old('divisi_id', $pengeluaran->divisi_id ?? '') }}";
 
+    const suggestionBox     = document.getElementById('suggestion-box');
+    const suggestionList    = document.getElementById('suggestion-list');
+    const suggestionGudang  = document.getElementById('suggest-gudang-name');
+    const btnApplyAll       = document.getElementById('btn-apply-all-suggestions');
+    let currentSuggestions  = [];
+
+    function fetchSuggestions(gudangId, divisiId = null) {
+        if (!gudangId) {
+            suggestionBox.style.display = 'none';
+            currentSuggestions = [];
+            return;
+        }
+        let url = "{{ route('pengeluaran-bahan-baku.suggestions') }}?gudang_id=" + encodeURIComponent(gudangId);
+        if (divisiId) {
+            url += "&divisi_id=" + encodeURIComponent(divisiId);
+        }
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                currentSuggestions = data.suggestions || [];
+                let labelGudang = data.gudang_name || '';
+                if (data.divisi_name) {
+                    labelGudang += ' - Divisi ' + data.divisi_name;
+                }
+                suggestionGudang.innerText = labelGudang;
+                if (currentSuggestions.length > 0) {
+                    suggestionBox.style.display = 'block';
+                    suggestionList.innerHTML = '';
+                    currentSuggestions.forEach(item => {
+                        const pill = document.createElement('div');
+                        pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                        pill.innerHTML = `
+                            <div class="text-start">
+                                <div class="fw-bold">${item.nama} <span class="text-muted small">(${item.kode_barang})</span></div>
+                                <div class="text-muted" style="font-size: 0.72rem;">
+                                    Stok Outlet: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
+                                    <span class="text-secondary ms-1">(Utama: ${item.stok_utama} ${item.satuan})</span>
+                                    <span class="text-success fw-bold ms-1">&rarr; Saran: ${item.suggested_qty} ${item.satuan}</span>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-single-suggest py-1 px-2" style="font-size: 0.75rem;" title="Tambah item ini">
+                                <i class="bi bi-plus-circle-fill"></i> Tambah
+                            </button>
+                        `;
+                        pill.querySelector('.btn-add-single-suggest').addEventListener('click', function () {
+                            tambahBaris(item.barang_id, item.suggested_qty);
+                            pill.classList.remove('bg-white');
+                            pill.classList.add('bg-warning-subtle');
+                            this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                            this.disabled = true;
+                        });
+                        suggestionList.appendChild(pill);
+                    });
+                } else {
+                    suggestionBox.style.display = 'none';
+                }
+            })
+            .catch(() => { suggestionBox.style.display = 'none'; });
+    }
+
+    function applyAllSuggestions() {
+        const tbody = document.querySelector('#table-detail tbody');
+        const rows = [...tbody.querySelectorAll('tr')];
+        rows.forEach((r, i) => {
+            if (i > 0) {
+                let s = r.querySelector('.barang-select');
+                if (s && s.tomselect) s.tomselect.destroy();
+                r.remove();
+            }
+        });
+        let firstSel = tbody.querySelector('.barang-select');
+        if (firstSel && firstSel.tomselect) firstSel.tomselect.clear();
+        else if (firstSel) firstSel.value = '';
+        let firstQty = tbody.querySelector('.qty-input');
+        if (firstQty) firstQty.value = '';
+
+        currentSuggestions.forEach(item => tambahBaris(item.barang_id, item.suggested_qty));
+
+        suggestionList.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
+            btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+            btn.disabled = true;
+        });
+    }
+
     function fetchDivisi(gudangId, selectedId = null) {
         if (!gudangId) {
             divisiWrapper.style.display = 'none';
@@ -342,11 +462,23 @@ document.addEventListener("DOMContentLoaded", function() {
     if (selectGudang) {
         selectGudang.addEventListener('change', function() {
             fetchDivisi(this.value);
+            fetchSuggestions(this.value, selectDivisi ? selectDivisi.value : null);
         });
 
         if (selectGudang.value) {
             fetchDivisi(selectGudang.value, currentDivisiId);
+            fetchSuggestions(selectGudang.value, currentDivisiId);
         }
+    }
+
+    if (selectDivisi) {
+        selectDivisi.addEventListener('change', function() {
+            fetchSuggestions(selectGudang ? selectGudang.value : null, this.value);
+        });
+    }
+
+    if (btnApplyAll) {
+        btnApplyAll.addEventListener('click', applyAllSuggestions);
     }
 });
 

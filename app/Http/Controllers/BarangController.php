@@ -23,7 +23,7 @@ class BarangController extends Controller
         $kategoriId = $request->query('kategori_id');
         $search     = $request->query('search');
 
-        $query = MasterBarang::with(['kategori', 'resep']);
+        $query = MasterBarang::with(['kategori', 'resep', 'minimumStocks.gudang', 'minimumStocks.divisi']);
 
         if ($kategoriId) {
             $query->where('kategori_id', $kategoriId);
@@ -39,9 +39,10 @@ class BarangController extends Controller
         $data = $query->orderBy('kode_barang', 'asc')->paginate(10)->withQueryString();
         
         $kategori = Kategori::all();
-        $reseps   = ResepBtklBop::all(); 
+        $reseps   = ResepBtklBop::all();
+        $gudangList = \App\Models\MasterGudang::with('divisi')->orderBy('id')->get();
 
-        return view('barang.index', compact('data', 'kategori', 'reseps', 'gudangRole'));
+        return view('barang.index', compact('data', 'kategori', 'reseps', 'gudangRole', 'gudangList'));
     }
 
     public function checkNama(Request $request)
@@ -57,7 +58,7 @@ class BarangController extends Controller
 
     public function show($id)
     {
-        $barang = MasterBarang::with(['kategori', 'resep'])->findOrFail($id);
+        $barang = MasterBarang::with(['kategori', 'resep', 'minimumStocks.gudang', 'minimumStocks.divisi'])->findOrFail($id);
         return view('barang.show', compact('barang'));
     }
 
@@ -153,7 +154,7 @@ class BarangController extends Controller
                 $harga_pos = 0;
             }
     
-            MasterBarang::create([
+            $barang = MasterBarang::create([
                 'kategori_id'           => $request->kategori_id,
                 'resep_id'              => $request->resep_id, 
                 'kode_barang'           => $request->kode_barang,
@@ -176,6 +177,43 @@ class BarangController extends Controller
                 'minimum_order'         => $request->minimum_order ?? 1.00,
                 'tipe_penjualan'        => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
             ]);
+
+            // Simpan minimum stock & status aktif per outlet & divisi jika jenis BAHAN_BAKU
+            if ($request->jenis_utama === 'BAHAN_BAKU') {
+                $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
+                foreach ($gudangListAll as $g) {
+                    if ($g->divisi->count() > 0) {
+                        foreach ($g->divisi as $div) {
+                            $minVal = $request->input("min_stock_outlet.{$g->id}.{$div->id}");
+                            $isActive = (bool)$request->input("min_stock_active.{$g->id}.{$div->id}", true);
+                            
+                            // Jika ada nilai minimum stock atau status dinonaktifkan (atau diset khusus), simpan
+                            if (($minVal !== null && $minVal !== '') || !$isActive) {
+                                \App\Models\BarangMinimumStock::create([
+                                    'barang_id'     => $barang->id,
+                                    'gudang_id'     => $g->id,
+                                    'divisi_id'     => $div->id,
+                                    'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
+                                    'is_active'     => $isActive,
+                                ]);
+                            }
+                        }
+                    } else {
+                        $minVal = $request->input("min_stock_outlet.{$g->id}.none", $request->input("min_stock_outlet.{$g->id}"));
+                        $isActive = (bool)$request->input("min_stock_active.{$g->id}.none", $request->input("min_stock_active.{$g->id}", true));
+                        
+                        if (($minVal !== null && $minVal !== '') || !$isActive) {
+                            \App\Models\BarangMinimumStock::create([
+                                'barang_id'     => $barang->id,
+                                'gudang_id'     => $g->id,
+                                'divisi_id'     => null,
+                                'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
+                                'is_active'     => $isActive,
+                            ]);
+                        }
+                    }
+                }
+            }
     
             return redirect()->route('barang.index')->with('success', 'Data berhasil ditambah');
     
@@ -187,13 +225,14 @@ class BarangController extends Controller
     public function edit($id)
     {
         // Fungsi ini sekarang opsional karena sudah pakai popup di index
-        $data = MasterBarang::findOrFail($id);
+        $data = MasterBarang::with('minimumStocks')->findOrFail($id);
         $kategori = Kategori::all();
         $reseps = ResepBtklBop::all(); 
+        $gudangList = \App\Models\MasterGudang::with('divisi')->orderBy('id')->get();
 
         $data->jenis_utama = $data->is_bahan_baku ? 'BAHAN_BAKU' : ($data->is_bahan_setengah_jadi ? 'BAHAN_SETENGAH_JADI' : ($data->is_barang_jadi ? 'BARANG_JADI' : ($data->is_operational ? 'OPERATIONAL' : 'BAHAN_BAKU')));
 
-        return view('barang.edit', compact('data', 'kategori', 'reseps'));
+        return view('barang.edit', compact('data', 'kategori', 'reseps', 'gudangList'));
     }
 
     public function update(Request $request, $id)
@@ -277,6 +316,43 @@ class BarangController extends Controller
             'minimum_order'  => $request->minimum_order ?? 1.00,
             'tipe_penjualan' => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
         ]);
+
+        // Simpan / update minimum stock & status aktif per outlet & divisi
+        \App\Models\BarangMinimumStock::where('barang_id', $data->id)->delete();
+        if ($request->jenis_utama === 'BAHAN_BAKU') {
+            $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
+            foreach ($gudangListAll as $g) {
+                if ($g->divisi->count() > 0) {
+                    foreach ($g->divisi as $div) {
+                        $minVal = $request->input("min_stock_outlet.{$g->id}.{$div->id}");
+                        $isActive = (bool)$request->input("min_stock_active.{$g->id}.{$div->id}", true);
+                        
+                        if (($minVal !== null && $minVal !== '') || !$isActive) {
+                            \App\Models\BarangMinimumStock::create([
+                                'barang_id'     => $data->id,
+                                'gudang_id'     => $g->id,
+                                'divisi_id'     => $div->id,
+                                'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
+                                'is_active'     => $isActive,
+                            ]);
+                        }
+                    }
+                } else {
+                    $minVal = $request->input("min_stock_outlet.{$g->id}.none", $request->input("min_stock_outlet.{$g->id}"));
+                    $isActive = (bool)$request->input("min_stock_active.{$g->id}.none", $request->input("min_stock_active.{$g->id}", true));
+                    
+                    if (($minVal !== null && $minVal !== '') || !$isActive) {
+                        \App\Models\BarangMinimumStock::create([
+                            'barang_id'     => $data->id,
+                            'gudang_id'     => $g->id,
+                            'divisi_id'     => null,
+                            'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
+                            'is_active'     => $isActive,
+                        ]);
+                    }
+                }
+            }
+        }
     
         return redirect()->route('barang.index')->with('success', 'Data berhasil diupdate');
     }
@@ -336,12 +412,14 @@ class BarangController extends Controller
             'kode_barang', 'nama', 'kategori', 'jenis_utama', 'satuan',
             'satuan_pembelian', 'konversi_pembelian', 'tipe_penjualan',
             'harga_jual_b2b', 'harga_jual_pos', 'hpp_referensi',
-            'minimum_stock', 'minimum_stock_ck', 'minimum_stock_kejingga', 'minimum_stock_gaharu', 'minimum_order',
+            'min_stock_ck', 'min_stock_kejingga_kitchen', 'min_stock_kejingga_barista', 'min_stock_kejingga_server',
+            'min_stock_gaharu_kitchen', 'min_stock_gaharu_barista', 'min_stock_gaharu_server', 'min_stock_b2b',
+            'minimum_stock_umum', 'minimum_order',
         ];
         $sheet->fromArray($headers, null, 'A1');
-        $sheet->getStyle('A1:P1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:P1')->getFont()->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:P1')->getFill()
+        $sheet->getStyle('A1:U1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:U1')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:U1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('D88656');
 
@@ -349,15 +427,21 @@ class BarangController extends Controller
         $sheet->fromArray([
             'BMB003', 'SAMBAL MATAH', 'BUMBU', 'BAHAN_BAKU', 'GR',
             'JERIGEN', '5000', '',
-            '0', '0', '0', '5000', '', '', '', '1',
+            '0', '0', '0', 
+            '5000', '2000', '1000', '',
+            '3000', '1500', '', '',
+            '', '1',
         ], null, 'A2');
         $sheet->fromArray([
             'BSJ001', 'SAUS BOLOGNESE JADI', 'BUMBU', 'BAHAN_SETENGAH_JADI', 'GR',
             '', '1', '',
-            '0', '0', '0', '', '2000', '1000', '1000', '1',
+            '0', '0', '0', 
+            '2000', '1000', '', '',
+            '1000', '', '', '',
+            '', '1',
         ], null, 'A3');
 
-        foreach (range('A', 'P') as $col) {
+        foreach (range('A', 'U') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -393,17 +477,22 @@ class BarangController extends Controller
             ['harga_jual_b2b', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['harga_jual_pos', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['hpp_referensi', 'Tidak', 'Default 0 jika kosong.'],
-            ['minimum_stock', 'Tidak', 'Minimum stock umum/Bahan Baku. Boleh kosong.'],
-            ['minimum_stock_ck', 'Tidak', 'Minimum stock Central Kitchen (khusus Bahan Setengah Jadi). Boleh kosong.'],
-            ['minimum_stock_kejingga', 'Tidak', 'Minimum stock Outlet Kejingga (khusus Bahan Setengah Jadi). Boleh kosong.'],
-            ['minimum_stock_gaharu', 'Tidak', 'Minimum stock Outlet Gaharu (khusus Bahan Setengah Jadi). Boleh kosong.'],
+            ['min_stock_ck', 'Tidak', 'Minimum stock Central Kitchen (Bahan Baku / Bahan Setengah Jadi). Boleh kosong.'],
+            ['min_stock_kejingga_kitchen', 'Tidak', 'Minimum stock KeJingga - Divisi Kitchen. Boleh kosong.'],
+            ['min_stock_kejingga_barista', 'Tidak', 'Minimum stock KeJingga - Divisi Barista. Boleh kosong.'],
+            ['min_stock_kejingga_server', 'Tidak', 'Minimum stock KeJingga - Divisi Server. Boleh kosong.'],
+            ['min_stock_gaharu_kitchen', 'Tidak', 'Minimum stock Gaharu - Divisi Kitchen. Boleh kosong.'],
+            ['min_stock_gaharu_barista', 'Tidak', 'Minimum stock Gaharu - Divisi Barista. Boleh kosong.'],
+            ['min_stock_gaharu_server', 'Tidak', 'Minimum stock Gaharu - Divisi Server. Boleh kosong.'],
+            ['min_stock_b2b', 'Tidak', 'Minimum stock Gudang B2B. Boleh kosong.'],
+            ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Boleh kosong.'],
             ['minimum_order', 'Tidak', 'Default 1 jika kosong.'],
         ], null, 'A1');
         $guide->getStyle('A1:C1')->getFont()->setBold(true);
         foreach (['A', 'B', 'C'] as $col) {
             $guide->getColumnDimension($col)->setWidth(30);
         }
-        $guide->getStyle('A1:C17')->getAlignment()->setWrapText(true);
+        $guide->getStyle('A1:C22')->getAlignment()->setWrapText(true);
 
         $spreadsheet->setActiveSheetIndex(0);
 

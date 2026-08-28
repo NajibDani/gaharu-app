@@ -94,11 +94,37 @@
                             </div>
                         </div>
                     @elseif($barang->is_bahan_baku)
-                        <div class="col-md-6 mb-3">
-                            <label class="fw-bold text-muted small uppercase">Batas Minimum Stock (Batas Kritis)</label>
-                            <p class="fs-6 text-danger fw-bold">
-                                {{ $barang->minimum_stock !== null ? number_format($barang->minimum_stock) . ' ' . $barang->satuan : '—' }}
-                            </p>
+                        <div class="col-12 mb-3">
+                            <label class="fw-bold text-muted small uppercase d-block mb-1">Batas Minimum Stock per Outlet &amp; Divisi (Bahan Baku)</label>
+                            @if($barang->minimumStocks && $barang->minimumStocks->count() > 0)
+                                <div class="p-3 bg-light rounded border">
+                                    <div class="row g-2">
+                                        @foreach($barang->minimumStocks as $ms)
+                                            <div class="col-md-4 col-sm-6">
+                                                <div class="p-2 bg-white rounded border d-flex justify-content-between align-items-center {{ !$ms->is_active ? 'opacity-75 bg-light' : '' }}">
+                                                    <div>
+                                                        <span class="text-secondary small fw-semibold">
+                                                            <i class="bi bi-geo-alt me-1 text-primary"></i>{{ $ms->gudang->nama ?? 'Gudang' }}{{ $ms->divisi ? ' (' . $ms->divisi->nama . ')' : '' }}
+                                                        </span>
+                                                        @if($ms->is_active)
+                                                            <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:0.65rem;">Aktif</span>
+                                                        @else
+                                                            <span class="badge bg-secondary-subtle text-secondary border ms-1" style="font-size:0.65rem;">Non-Aktif</span>
+                                                        @endif
+                                                    </div>
+                                                    <strong class="text-dark small">{{ $ms->minimum_stock > 0 ? (number_format($ms->minimum_stock) . ' ' . $barang->satuan) : '—' }}</strong>
+                                                </div>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @elseif($barang->minimum_stock !== null)
+                                <p class="fs-6 text-danger fw-bold">
+                                    {{ number_format($barang->minimum_stock) }} {{ $barang->satuan }}
+                                </p>
+                            @else
+                                <p class="text-muted fst-italic small">Belum diatur (tidak ada batas minimum)</p>
+                            @endif
                         </div>
                     @endif
 

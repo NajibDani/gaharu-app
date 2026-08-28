@@ -82,6 +82,25 @@
 
             <hr>
 
+            {{-- SARAN RESTOCK (CONDITIONAL) --}}
+            <div id="suggestion-box" class="card p-3 mb-4 bg-light border-warning shadow-sm" style="display: none; border-left: 5px solid #f59e0b !important; border-radius: 12px;">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small d-flex align-items-center">
+                            <i class="bi bi-lightbulb-fill text-warning fs-6 me-2"></i>
+                            Saran Restock Bahan Baku Gudang Utama
+                        </strong>
+                        <span class="text-muted small" style="font-size: 0.75rem;">Bahan baku yang stoknya sudah atau hampir mencapai batas minimum stok</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-warning text-dark fw-bold shadow-sm" id="btn-apply-all-suggestions">
+                        <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                    </button>
+                </div>
+                <div id="suggestion-list" class="d-flex flex-wrap gap-2 pt-1">
+                    <!-- Dynamic suggestion pills -->
+                </div>
+            </div>
+
             <h5>Detail Barang</h5>
 
             <div class="table-responsive">
@@ -533,6 +552,113 @@
             document.querySelectorAll('.mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
             });
+        });
+
+        /*
+        |--------------------------------------------------------------------------
+        | SUGGESTION RESTOCK LOGIC
+        |--------------------------------------------------------------------------
+        */
+        let currentSuggestions = [];
+
+        function addBarisWithItem(barangId, qty, hppRef) {
+            const tbody = document.querySelector('#table-items tbody');
+            const rows = tbody.querySelectorAll('tr.item-row');
+
+            // Cek apakah ada baris kosong pertama
+            let targetRow = null;
+            for (let r of rows) {
+                let select = r.querySelector('.barang-select');
+                let qtyInp = r.querySelector('.qty-input');
+                if ((!select.value || select.value === '') && (!qtyInp.value || qtyInp.value === '')) {
+                    targetRow = r;
+                    break;
+                }
+            }
+
+            if (!targetRow) {
+                // Buat baris baru dengan menstimulasi tombol add
+                document.getElementById('btn-add').click();
+                const updatedRows = tbody.querySelectorAll('tr.item-row');
+                targetRow = updatedRows[updatedRows.length - 1];
+            }
+
+            const barangSelect = targetRow.querySelector('.barang-select');
+            barangSelect.value = barangId;
+            updateQtyHint(targetRow);
+            generateBatchNumber(targetRow);
+
+            const qtyInput = targetRow.querySelector('.qty-input');
+            qtyInput.value = formatNumberIndonesian(String(qty));
+
+            // Jika ada HPP referensi, isi estimasi harga
+            const hargaInput = targetRow.querySelector('.harga-input');
+            if (hppRef && hppRef > 0) {
+                const opt = barangSelect.options[barangSelect.selectedIndex];
+                const konversi = parseFloat(opt.dataset.konversiPembelian) || 1;
+                const totalHargaEstimasi = qty * hppRef * konversi;
+                hargaInput.value = formatNumberIndonesian(String(Math.round(totalHargaEstimasi)));
+            }
+
+            calculateHargaPerQty(targetRow);
+        }
+
+        function fetchPembelianSuggestions() {
+            const suggestionBox = document.getElementById('suggestion-box');
+            const suggestionList = document.getElementById('suggestion-list');
+
+            fetch("{{ route('pembelian.suggestions') }}")
+                .then(r => r.json())
+                .then(data => {
+                    currentSuggestions = data.suggestions || [];
+                    if (currentSuggestions.length > 0) {
+                        suggestionBox.style.display = 'block';
+                        suggestionList.innerHTML = '';
+                        currentSuggestions.forEach(item => {
+                            const pill = document.createElement('div');
+                            pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                            pill.innerHTML = `
+                                <div class="text-start">
+                                    <div class="fw-bold">${item.nama} <span class="text-muted small">(${item.kode_barang})</span></div>
+                                    <div class="text-muted" style="font-size: 0.72rem;">
+                                        Stok Utama: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
+                                        <span class="text-success fw-bold ms-1">&rarr; Saran: ${item.suggested_qty_pembelian} ${item.satuan_pembelian}</span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-single-suggest py-1 px-2" style="font-size: 0.75rem;" title="Tambah item ini">
+                                    <i class="bi bi-plus-circle-fill"></i> Tambah
+                                </button>
+                            `;
+                            pill.querySelector('.btn-add-single-suggest').addEventListener('click', function () {
+                                addBarisWithItem(item.barang_id, item.suggested_qty_pembelian, item.hpp_referensi);
+                                pill.classList.remove('bg-white');
+                                pill.classList.add('bg-warning-subtle');
+                                this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                                this.disabled = true;
+                            });
+                            suggestionList.appendChild(pill);
+                        });
+                    } else {
+                        suggestionBox.style.display = 'none';
+                    }
+                })
+                .catch(() => {
+                    suggestionBox.style.display = 'none';
+                });
+        }
+
+        document.getElementById('btn-apply-all-suggestions').addEventListener('click', function () {
+            currentSuggestions.forEach(item => {
+                addBarisWithItem(item.barang_id, item.suggested_qty_pembelian, item.hpp_referensi);
+            });
+            document.querySelectorAll('#suggestion-list .btn-add-single-suggest').forEach(btn => {
+                btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                btn.disabled = true;
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            fetchPembelianSuggestions();
         });
 
     </script>

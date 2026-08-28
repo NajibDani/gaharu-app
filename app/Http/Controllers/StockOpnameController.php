@@ -34,9 +34,12 @@ class StockOpnameController extends Controller
 
         $stockOpname = $query->latest()->paginate(20)->withQueryString();
 
+        $totalDraft = StockOpname::where('status', 'draft')->count();
+        $totalApproved = StockOpname::where('status', 'approved')->count();
+
         $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
 
-        return view('stock-opname.index', compact('stockOpname', 'gudangs'));
+        return view('stock-opname.index', compact('stockOpname', 'gudangs', 'totalDraft', 'totalApproved'));
     }
 
     /*
@@ -97,6 +100,21 @@ class StockOpnameController extends Controller
                   ->orWhere('master_barang.is_bahan_setengah_jadi', 1)
                   ->orWhere('master_barang.is_barang_jadi', 1)
                   ->orWhere('master_barang.is_operational', 1);
+            })
+            ->where(function($q) use ($gudangId, $divisiId) {
+                $q->where('master_barang.is_bahan_baku', 0)
+                  ->orWhereNotExists(function($notExistsQuery) use ($gudangId, $divisiId) {
+                      $notExistsQuery->select(DB::raw(1))
+                          ->from('barang_minimum_stock')
+                          ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                          ->where('barang_minimum_stock.gudang_id', $gudangId)
+                          ->where('barang_minimum_stock.is_active', false);
+                      if ($divisiId) {
+                          $notExistsQuery->where('barang_minimum_stock.divisi_id', $divisiId);
+                      } else {
+                          $notExistsQuery->whereNull('barang_minimum_stock.divisi_id');
+                      }
+                  });
             })
             ->select(
                 'master_barang.id',
@@ -221,16 +239,16 @@ class StockOpnameController extends Controller
 
     public function show(string $id)
     {
-        $opname = StockOpname::with([
+        $stockOpname = StockOpname::with([
             'gudang',
             'divisi',
             'user',
             'details.barang',
         ])->findOrFail($id);
 
-        $pengeluaranOtomatis = $opname->pengeluaranOtomatis();
+        $pengeluaranOtomatis = $stockOpname->pengeluaranOtomatis();
 
-        return view('stock-opname.show', compact('opname', 'pengeluaranOtomatis'));
+        return view('stock-opname.show', compact('stockOpname', 'pengeluaranOtomatis'));
     }
 
     /*

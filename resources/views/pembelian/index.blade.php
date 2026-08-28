@@ -14,6 +14,32 @@
             </div>
         @endif
 
+        {{-- ALERT SARAN RESTOCK BAHAN BAKU GUDANG UTAMA --}}
+        @if(!empty($countLowStockUtama) && $countLowStockUtama > 0)
+            <div class="card border-0 shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-left: 5px solid #f97316 !important;">
+                <div class="card-body p-3 p-md-4">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-warning text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                                <i class="bi bi-lightbulb-fill"></i>
+                            </div>
+                            <div>
+                                <h6 class="fw-bold text-dark mb-1">
+                                    Saran Restock Bahan Baku Gudang Utama
+                                </h6>
+                                <p class="text-muted small mb-0">
+                                    Terdapat <strong>{{ $countLowStockUtama }} item</strong> bahan baku yang stoknya di Gudang Utama sudah atau hampir mencapai batas minimum stok.
+                                </p>
+                            </div>
+                        </div>
+                        <a href="{{ route('pembelian.create') }}" class="btn btn-warning text-dark fw-bold shadow-sm">
+                            <i class="bi bi-plus-circle-fill me-1"></i> Buat Pembelian & Lihat Saran
+                        </a>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <a href="{{ route('pembelian.create') }}" class="btn btn-primary mb-0">
                 Tambah Pembelian
@@ -103,10 +129,12 @@
                             <td class="text-center">
                                 @if($item->metode_pembayaran)
                                     @php
-                                        $labelMetode = [
-                                            'cod'    => ['text' => 'COD',   'class' => 'bg-success'],
-                                            'dp'     => ['text' => 'DP ' . $item->persen_dp . '%', 'class' => 'bg-info'],
-                                        ][$item->metode_pembayaran];
+                                        $labelMetode = match($item->metode_pembayaran) {
+                                            'cod'    => ['text' => 'COD', 'class' => 'bg-success'],
+                                            'termin' => ['text' => 'Termin', 'class' => 'bg-warning text-dark'],
+                                            'dp'     => ['text' => ($item->nominal_dp && $item->nominal_dp > 0 ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.') : 'DP ' . $item->persen_dp . '%'), 'class' => 'bg-info'],
+                                            default  => ['text' => '-', 'class' => 'bg-secondary'],
+                                        };
                                     @endphp
                                     <div class="d-flex flex-column align-items-center gap-1">
                                         <span class="badge {{ $labelMetode['class'] }}"
@@ -164,11 +192,11 @@
                                         </div>
                                     @endif
 
-                                    @if(!$item->is_lunas)
+                                    @if(!$item->metode_pembayaran)
                                         <button type="button"
                                                 class="btn btn-sm"
                                                 disabled
-                                                title="Pembayaran belum lunas. Silakan lunasi pembayaran terlebih dahulu."
+                                                title="Metode pembayaran belum dicatat. Silakan catat metode pembayaran terlebih dahulu."
                                                 style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
                                             Terima Barang
                                         </button>
@@ -283,6 +311,21 @@
                                 <label class="btn btn-outline-success" for="opt_cod">COD</label>
                                 <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_dp" value="dp" onchange="toggleFieldPembayaran('dp')">
                                 <label class="btn btn-outline-info" for="opt_dp">DP</label>
+                                <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_termin" value="termin" onchange="toggleFieldPembayaran('termin')">
+                                <label class="btn btn-outline-warning" for="opt_termin">Termin / Tempo</label>
+                            </div>
+                        </div>
+                        <div id="field_termin" class="d-none">
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label fw-semibold mb-0">Tanggal Jatuh Tempo</label>
+                                    <div class="form-check form-check-inline mb-0">
+                                        <input class="form-check-input" type="checkbox" id="checkTanpaJatuhTempo" onchange="toggleTanpaJatuhTempo(this.checked)">
+                                        <label class="form-check-label text-muted small" for="checkTanpaJatuhTempo">Tidak ada jatuh tempo (Fleksibel)</label>
+                                    </div>
+                                </div>
+                                <input type="date" name="tanggal_jatuh_tempo" id="inputJatuhTempoTermin" class="form-control">
+                                <small class="text-muted" id="hintTanpaJatuhTempo" style="display:none;">Tempo pembayaran fleksibel / kesepakatan personal.</small>
                             </div>
                         </div>
                         <div id="field_dp" class="d-none">
@@ -450,18 +493,50 @@
             
             const fieldDp = document.getElementById('field_dp');
             if (fieldDp) fieldDp.classList.add('d-none');
+
+            const fieldTermin = document.getElementById('field_termin');
+            if (fieldTermin) fieldTermin.classList.add('d-none');
             
             document.getElementById('inputPersenDP').value = '';
             document.getElementById('inputNominalDP').value = '';
             document.getElementById('keteranganDP').textContent = '';
+            const inputJt = document.getElementById('inputJatuhTempoTermin');
+            if (inputJt) {
+                inputJt.value = '';
+                inputJt.disabled = false;
+            }
+            const checkTjt = document.getElementById('checkTanpaJatuhTempo');
+            if (checkTjt) checkTjt.checked = false;
+            const hintTjt = document.getElementById('hintTanpaJatuhTempo');
+            if (hintTjt) hintTjt.style.display = 'none';
+
             // Reset required
             const tglPelunasan = document.querySelector('#formPembayaran input[name=tanggal_pelunasan]');
             if (tglPelunasan) tglPelunasan.removeAttribute('required');
             new bootstrap.Modal(document.getElementById('modalPembayaran')).show();
         }
 
+        function toggleTanpaJatuhTempo(isTanpaJatuhTempo) {
+            const inputJt = document.getElementById('inputJatuhTempoTermin');
+            const hintTjt = document.getElementById('hintTanpaJatuhTempo');
+            if (inputJt) {
+                if (isTanpaJatuhTempo) {
+                    inputJt.value = '';
+                    inputJt.disabled = true;
+                    if (hintTjt) hintTjt.style.display = 'block';
+                } else {
+                    inputJt.disabled = false;
+                    if (hintTjt) hintTjt.style.display = 'none';
+                }
+            }
+        }
+
         function toggleFieldPembayaran(metode) {
-            document.getElementById('field_dp').classList.toggle('d-none', metode !== 'dp');
+            const fieldDp = document.getElementById('field_dp');
+            if (fieldDp) fieldDp.classList.toggle('d-none', metode !== 'dp');
+
+            const fieldTermin = document.getElementById('field_termin');
+            if (fieldTermin) fieldTermin.classList.toggle('d-none', metode !== 'termin');
 
             const tglPelunasan = document.querySelector('#formPembayaran input[name=tanggal_pelunasan]');
             if (tglPelunasan) {
@@ -508,7 +583,7 @@
                 .forEach(rowId => document.getElementById(rowId).classList.add('d-none'));
             if (data.metode === 'termin') {
                 document.getElementById('row_jatuh_tempo').classList.remove('d-none');
-                document.getElementById('dp_jatuh_tempo').textContent = data.tanggal_jatuh_tempo ?? '-';
+                document.getElementById('dp_jatuh_tempo').textContent = data.tanggal_jatuh_tempo ? data.tanggal_jatuh_tempo : 'Fleksibel / Kesepakatan Personal';
                 document.getElementById('row_sisa_dp').classList.remove('d-none');
                 document.getElementById('dp_sisa').textContent = 'Rp ' + total.toLocaleString('id-ID');
                 if (data.tanggal_pelunasan) {

@@ -40,6 +40,11 @@
                 @endif
             </form>
 
+            {{-- Tombol Persediaan Awal --}}
+            <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm btn-outline-primary" style="border-radius: 6px; padding: 5px 15px;">
+                <i class="bi bi-inbox-fill"></i> Persediaan Awal
+            </a>
+
             {{-- Tombol Import Excel membuka modal import --}}
             <button type="button" class="btn btn-sm btn-outline-secondary" style="border-radius: 6px; padding: 5px 15px;" data-bs-toggle="modal" data-bs-target="#modalImportBarang">
                 <i class="bi bi-upload"></i> Import Excel
@@ -144,6 +149,20 @@
                                     @else
                                         <span class="text-muted">—</span>
                                     @endif
+                                @elseif($d->is_bahan_baku)
+                                    @php
+                                        $configuredCount = $d->minimumStocks ? $d->minimumStocks->where('minimum_stock', '>', 0)->count() : 0;
+                                    @endphp
+                                    @if($configuredCount > 0)
+                                        <span class="badge bg-light text-dark border px-2 py-1 small" title="Klik tombol Detil untuk melihat rincian per divisi">
+                                            <i class="bi bi-geo-alt-fill me-1" style="color: #d88656;"></i>{{ $configuredCount }} Outlet/Divisi
+                                        </span>
+                                    @elseif($d->minimum_stock !== null && $d->minimum_stock > 0)
+                                        <span class="fw-bold text-dark">{{ number_format($d->minimum_stock) }}</span>
+                                        <small class="text-muted">{{ $d->satuan }}</small>
+                                    @else
+                                        <span class="text-muted">—</span>
+                                    @endif
                                 @else
                                     @if($d->minimum_stock !== null)
                                         <span class="fw-bold text-dark">{{ number_format($d->minimum_stock) }}</span>
@@ -177,6 +196,7 @@
                                             data-min-stock-ck="{{ $d->minimum_stock_ck !== null ? number_format($d->minimum_stock_ck) . ' ' . $d->satuan : '—' }}"
                                             data-min-stock-kejingga="{{ $d->minimum_stock_kejingga !== null ? number_format($d->minimum_stock_kejingga) . ' ' . $d->satuan : '—' }}"
                                             data-min-stock-gaharu="{{ $d->minimum_stock_gaharu !== null ? number_format($d->minimum_stock_gaharu) . ' ' . $d->satuan : '—' }}"
+                                            data-min-stock-outlets="{{ json_encode($d->minimumStocks->map(fn($m) => ['gudang' => $m->gudang->nama ?? '', 'divisi' => $m->divisi->nama ?? null, 'qty' => (float)$m->minimum_stock, 'satuan' => $d->satuan, 'is_active' => (bool)$m->is_active])) }}"
                                             data-min-order="{{ number_format($d->minimum_order ?? 1) }} {{ $d->satuan }}"
                                             data-tipe-penjualan="{{ $d->tipe_penjualan ?: 'Belum Diatur' }}">
                                         <i class="bi bi-eye-fill"></i>
@@ -210,6 +230,7 @@
                                             data-min-stock-ck="{{ $d->minimum_stock_ck }}"
                                             data-min-stock-kejingga="{{ $d->minimum_stock_kejingga }}"
                                             data-min-stock-gaharu="{{ $d->minimum_stock_gaharu }}"
+                                            data-min-stock-map="{{ json_encode($d->minimumStocks->mapWithKeys(fn($m) => [($m->gudang_id . '_' . ($m->divisi_id ?? 'none')) => ['qty' => (float)$m->minimum_stock, 'is_active' => (bool)$m->is_active]])) }}"
                                             data-min-order="{{ $d->minimum_order ?? 1 }}"
                                             data-tipe-penjualan="{{ $d->tipe_penjualan }}"
                                             data-action="{{ route('barang.update', $d->id) }}">
@@ -337,9 +358,97 @@
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
-                        <div class="col-md-6 mb-3" id="group-min-stock">
+                        <div class="col-md-6 mb-3" id="group-min-stock" style="display: none;">
                             <label class="custom-label text-danger">Minimum Stock (Batas Kritis)</label>
                             <input type="number" name="minimum_stock" id="minimum_stock" class="form-control custom-input" value="{{ old('minimum_stock') }}" placeholder="Contoh: 10" min="0">
+                        </div>
+
+                        {{-- Input Minimum Stock per Outlet & Divisi untuk Bahan Baku --}}
+                        <div class="col-12 mb-3" id="group-min-stock-bb" style="display: none;">
+                            <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <label class="custom-label text-danger fw-bold mb-0">
+                                        <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock per Outlet &amp; Divisi (Bahan Baku - Opsional)
+                                    </label>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 0.7rem;">Tidak Wajib Diisi</span>
+                                </div>
+                                <p class="text-muted small mb-3" style="font-size: 0.78rem;">
+                                    Tentukan batas minimum stok di setiap outlet dan divisi. Kosongkan jika tidak ada batas minimum.
+                                </p>
+                                <div class="row g-3">
+                                    @foreach($gudangList as $g)
+                                        <div class="col-md-6">
+                                            <div class="card h-100 rounded-3 shadow-sm" style="border: 1.5px solid #e2e8f0; background: #ffffff;">
+                                                <div class="card-header py-2 px-3 d-flex align-items-center justify-content-between" style="background-color: #f1f5f9; border-bottom: 1.5px solid #e2e8f0;">
+                                                    <span class="fw-bold text-dark small">
+                                                        <i class="bi bi-geo-alt-fill me-1" style="color: #d88656;"></i>{{ $g->nama }}
+                                                    </span>
+                                                    <span class="badge bg-white text-secondary border shadow-xs" style="font-size: 0.68rem; font-weight: 600;">{{ $g->kategori }}</span>
+                                                </div>
+                                                <div class="card-body p-3">
+                                                    @if($g->divisi && $g->divisi->count() > 0)
+                                                        <div class="row g-2">
+                                                            @foreach($g->divisi as $div)
+                                                                <div class="col-4">
+                                                                    <div class="outlet-col-box p-2 rounded-3 border h-100" id="box_tambah_{{ $g->id }}_{{ $div->id }}" style="background: #ffffff; border-color: #e2e8f0; transition: all 0.2s ease;">
+                                                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                                                            <label class="small text-dark fw-semibold mb-0 text-truncate label-outlet-name" title="{{ $div->nama }}" style="font-size: 0.75rem;">
+                                                                                {{ $div->nama }}
+                                                                            </label>
+                                                                            <div class="form-check form-switch m-0 p-0 d-flex align-items-center" title="Status Aktif/Non-Aktif di Divisi ini">
+                                                                                <input type="hidden" name="min_stock_active[{{ $g->id }}][{{ $div->id }}]" value="0">
+                                                                                <input class="form-check-input ms-0 outlet-active-toggle" type="checkbox" role="switch"
+                                                                                    name="min_stock_active[{{ $g->id }}][{{ $div->id }}]" 
+                                                                                    value="1" 
+                                                                                    id="tambah_active_{{ $g->id }}_{{ $div->id }}"
+                                                                                    checked
+                                                                                    style="cursor: pointer; width: 1.8em; height: 0.9em;">
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="input-group input-group-sm">
+                                                                            <input type="number" step="any" min="0" 
+                                                                                name="min_stock_outlet[{{ $g->id }}][{{ $div->id }}]" 
+                                                                                id="tambah_min_stock_{{ $g->id }}_{{ $div->id }}"
+                                                                                class="form-control form-control-sm text-center fw-semibold" 
+                                                                                style="border-radius: 6px; border: 1px solid #cbd5e1; background: #fafafa;"
+                                                                                placeholder="Opsional"
+                                                                                value="{{ old('min_stock_outlet.' . $g->id . '.' . $div->id) }}">
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    @else
+                                                        <div class="outlet-col-box p-2 rounded-3 border" id="box_tambah_{{ $g->id }}_none" style="background: #ffffff; border-color: #e2e8f0; transition: all 0.2s ease;">
+                                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                                <label class="small text-dark fw-semibold mb-0 label-outlet-name" style="font-size: 0.75rem;">
+                                                                    Min Stock
+                                                                </label>
+                                                                <div class="form-check form-switch m-0 p-0 d-flex align-items-center" title="Status Aktif/Non-Aktif di Outlet ini">
+                                                                    <input type="hidden" name="min_stock_active[{{ $g->id }}][none]" value="0">
+                                                                    <input class="form-check-input ms-0 outlet-active-toggle" type="checkbox" role="switch"
+                                                                        name="min_stock_active[{{ $g->id }}][none]" 
+                                                                        value="1" 
+                                                                        id="tambah_active_{{ $g->id }}_none"
+                                                                        checked
+                                                                        style="cursor: pointer; width: 1.8em; height: 0.9em;">
+                                                                </div>
+                                                            </div>
+                                                            <input type="number" step="any" min="0" 
+                                                                name="min_stock_outlet[{{ $g->id }}][none]" 
+                                                                id="tambah_min_stock_{{ $g->id }}_none"
+                                                                class="form-control form-control-sm fw-semibold" 
+                                                                style="border-radius: 6px; border: 1px solid #cbd5e1; background: #fafafa;"
+                                                                placeholder="Opsional"
+                                                                value="{{ old('min_stock_outlet.' . $g->id . '.none') }}">
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
                         </div>
 
                         <div class="col-12 mb-3" id="group-min-stock-bsj" style="display: none;">
@@ -434,7 +543,7 @@
 
 {{-- ================= MODAL DETAIL BARANG ================= --}}
 <div class="modal fade" id="modalDetailBarang" tabindex="-1" aria-labelledby="modalDetailBarangLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content" style="border-radius: 14px; border: none; overflow: hidden;">
             <div class="modal-header text-white" style="background-color: #d88656;">
                 <h5 class="modal-title fw-bold" id="modalDetailBarangLabel">Informasi Barang</h5>
@@ -482,6 +591,15 @@
                     <div class="col-md-6 mb-3" id="detailMinStockWrap">
                         <label class="custom-label">Batas Minimum Stock</label>
                         <p class="fs-6 text-danger fw-bold mb-0" id="detailMinStock"></p>
+                    </div>
+                    {{-- Detail Minimum Stock per Outlet & Divisi untuk Bahan Baku --}}
+                    <div class="col-12 mb-3" id="detailMinStockBbWrap" style="display: none;">
+                        <label class="custom-label text-danger fw-bold">Batas Minimum Stock per Outlet &amp; Divisi (Bahan Baku)</label>
+                        <div class="p-3 bg-light rounded border small">
+                            <div class="row g-2" id="detailMinStockBbContainer">
+                                <!-- Dynamic pills inserted via JS -->
+                            </div>
+                        </div>
                     </div>
                     <div class="col-12 mb-3" id="detailMinStockBsjWrap" style="display: none;">
                         <label class="custom-label text-danger fw-bold">Batas Minimum Stock per Lokasi</label>
@@ -585,9 +703,95 @@
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
-                        <div class="col-md-6 mb-3" id="editGroupMinStock">
+                        <div class="col-md-6 mb-3" id="editGroupMinStock" style="display: none;">
                             <label class="custom-label text-danger">Minimum Stock (Batas Kritis)</label>
                             <input type="number" name="minimum_stock" id="editMinimumStock" class="form-control custom-input" min="0">
+                        </div>
+
+                        {{-- Edit Minimum Stock per Outlet & Divisi untuk Bahan Baku --}}
+                        <div class="col-12 mb-3" id="editGroupMinStockBb" style="display: none;">
+                            <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <label class="custom-label text-danger fw-bold mb-0">
+                                        <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock per Outlet &amp; Divisi (Bahan Baku - Opsional)
+                                    </label>
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 0.7rem;">Tidak Wajib Diisi</span>
+                                </div>
+                                <p class="text-muted small mb-3" style="font-size: 0.78rem;">
+                                    Tentukan batas minimum stok di setiap outlet dan divisi. Kosongkan jika tidak ada batas minimum.
+                                </p>
+                                <div class="row g-3">
+                                    @foreach($gudangList as $g)
+                                        <div class="col-md-6">
+                                            <div class="card h-100 rounded-3 shadow-sm" style="border: 1.5px solid #e2e8f0; background: #ffffff;">
+                                                <div class="card-header py-2 px-3 d-flex align-items-center justify-content-between" style="background-color: #f1f5f9; border-bottom: 1.5px solid #e2e8f0;">
+                                                    <span class="fw-bold text-dark small">
+                                                        <i class="bi bi-geo-alt-fill me-1" style="color: #d88656;"></i>{{ $g->nama }}
+                                                    </span>
+                                                    <span class="badge bg-white text-secondary border shadow-xs" style="font-size: 0.68rem; font-weight: 600;">{{ $g->kategori }}</span>
+                                                </div>
+                                                <div class="card-body p-3">
+                                                    @if($g->divisi && $g->divisi->count() > 0)
+                                                        <div class="row g-2">
+                                                            @foreach($g->divisi as $div)
+                                                                <div class="col-4">
+                                                                    <div class="outlet-col-box p-2 rounded-3 border h-100" id="box_edit_{{ $g->id }}_{{ $div->id }}" style="background: #ffffff; border-color: #e2e8f0; transition: all 0.2s ease;">
+                                                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                                                            <label class="small text-dark fw-semibold mb-0 text-truncate label-outlet-name" title="{{ $div->nama }}" style="font-size: 0.75rem;">
+                                                                                {{ $div->nama }}
+                                                                            </label>
+                                                                            <div class="form-check form-switch m-0 p-0 d-flex align-items-center" title="Status Aktif/Non-Aktif di Divisi ini">
+                                                                                <input type="hidden" name="min_stock_active[{{ $g->id }}][{{ $div->id }}]" value="0">
+                                                                                <input class="form-check-input ms-0 outlet-active-toggle" type="checkbox" role="switch"
+                                                                                    name="min_stock_active[{{ $g->id }}][{{ $div->id }}]" 
+                                                                                    value="1" 
+                                                                                    id="edit_active_{{ $g->id }}_{{ $div->id }}"
+                                                                                    checked
+                                                                                    style="cursor: pointer; width: 1.8em; height: 0.9em;">
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="input-group input-group-sm">
+                                                                            <input type="number" step="any" min="0" 
+                                                                                name="min_stock_outlet[{{ $g->id }}][{{ $div->id }}]" 
+                                                                                id="edit_min_stock_{{ $g->id }}_{{ $div->id }}"
+                                                                                class="form-control form-control-sm text-center fw-semibold edit-min-stock-input" 
+                                                                                style="border-radius: 6px; border: 1px solid #cbd5e1; background: #fafafa;"
+                                                                                placeholder="Opsional">
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
+                                                    @else
+                                                        <div class="outlet-col-box p-2 rounded-3 border" id="box_edit_{{ $g->id }}_none" style="background: #ffffff; border-color: #e2e8f0; transition: all 0.2s ease;">
+                                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                                <label class="small text-dark fw-semibold mb-0 label-outlet-name" style="font-size: 0.75rem;">
+                                                                    Min Stock
+                                                                </label>
+                                                                <div class="form-check form-switch m-0 p-0 d-flex align-items-center" title="Status Aktif/Non-Aktif di Outlet ini">
+                                                                    <input type="hidden" name="min_stock_active[{{ $g->id }}][none]" value="0">
+                                                                    <input class="form-check-input ms-0 outlet-active-toggle" type="checkbox" role="switch"
+                                                                        name="min_stock_active[{{ $g->id }}][none]" 
+                                                                        value="1" 
+                                                                        id="edit_active_{{ $g->id }}_none"
+                                                                        checked
+                                                                        style="cursor: pointer; width: 1.8em; height: 0.9em;">
+                                                                </div>
+                                                            </div>
+                                                            <input type="number" step="any" min="0" 
+                                                                name="min_stock_outlet[{{ $g->id }}][none]" 
+                                                                id="edit_min_stock_{{ $g->id }}_none"
+                                                                class="form-control form-control-sm fw-semibold edit-min-stock-input" 
+                                                                style="border-radius: 6px; border: 1px solid #cbd5e1; background: #fafafa;"
+                                                                placeholder="Opsional">
+                                                        </div>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
                         </div>
 
                         <div class="col-12 mb-3" id="editGroupMinStockBsj" style="display: none;">
@@ -739,6 +943,7 @@ document.addEventListener("DOMContentLoaded", function () {
     /* ============ MODAL TAMBAH: toggle field & generate kode & cek nama duplikat ============ */
     const jenis = document.getElementById('jenis');
     const groupMinStock = document.getElementById('group-min-stock');
+    const groupMinStockBb = document.getElementById('group-min-stock-bb');
     const groupMinStockBsj = document.getElementById('group-min-stock-bsj');
     const minStockInput = document.getElementById('minimum_stock');
     const minStockCk = document.getElementById('minimum_stock_ck');
@@ -750,16 +955,19 @@ document.addEventListener("DOMContentLoaded", function () {
     function toggleForm() {
         if (jenis.value === "BAHAN_SETENGAH_JADI") {
             groupMinStock.style.display = "none";
+            if (groupMinStockBb) groupMinStockBb.style.display = "none";
             groupMinStockBsj.style.display = "block";
             minStockInput.value = "";
         } else if (jenis.value === "BAHAN_BAKU") {
-            groupMinStock.style.display = "block";
+            groupMinStock.style.display = "none";
+            if (groupMinStockBb) groupMinStockBb.style.display = "block";
             groupMinStockBsj.style.display = "none";
             if (minStockCk) minStockCk.value = "";
             if (minStockKejingga) minStockKejingga.value = "";
             if (minStockGaharu) minStockGaharu.value = "";
         } else {
             groupMinStock.style.display = "none";
+            if (groupMinStockBb) groupMinStockBb.style.display = "none";
             groupMinStockBsj.style.display = "none";
             minStockInput.value = "";
             if (minStockCk) minStockCk.value = "";
@@ -851,21 +1059,53 @@ document.addEventListener("DOMContentLoaded", function () {
             : '<span class="badge bg-danger">Non-Aktif</span>';
 
         var minStockWrap = document.getElementById('detailMinStockWrap');
+        var minStockBbWrap = document.getElementById('detailMinStockBbWrap');
         var minStockBsjWrap = document.getElementById('detailMinStockBsjWrap');
         var tipeWrap = document.getElementById('detailTipePenjualanWrap');
 
         if (jenisVal === 'BAHAN_SETENGAH_JADI') {
             minStockWrap.style.display = 'none';
+            if (minStockBbWrap) minStockBbWrap.style.display = 'none';
             minStockBsjWrap.style.display = 'block';
             document.getElementById('detailMinStockCk').innerText = button.getAttribute('data-min-stock-ck') || '—';
             document.getElementById('detailMinStockKejingga').innerText = button.getAttribute('data-min-stock-kejingga') || '—';
             document.getElementById('detailMinStockGaharu').innerText = button.getAttribute('data-min-stock-gaharu') || '—';
         } else if (jenisVal === 'BAHAN_BAKU') {
-            minStockWrap.style.display = 'block';
+            minStockWrap.style.display = 'none';
             minStockBsjWrap.style.display = 'none';
-            document.getElementById('detailMinStock').innerText = button.getAttribute('data-min-stock');
+            if (minStockBbWrap) {
+                minStockBbWrap.style.display = 'block';
+                var outletsRaw = button.getAttribute('data-min-stock-outlets');
+                var outlets = [];
+                try { outlets = JSON.parse(outletsRaw) || []; } catch(e){}
+                var container = document.getElementById('detailMinStockBbContainer');
+                if (container) {
+                    if (outlets.length > 0) {
+                        var html = '';
+                        outlets.forEach(function(item) {
+                            var statusBadge = item.is_active !== false 
+                                ? '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:0.65rem;">Aktif</span>'
+                                : '<span class="badge bg-secondary-subtle text-secondary border ms-1" style="font-size:0.65rem;">Non-Aktif</span>';
+                            
+                            html += '<div class="col-md-6 mb-2">' +
+                                        '<div class="p-2 bg-white rounded border d-flex justify-content-between align-items-center ' + (item.is_active === false ? 'opacity-75 bg-light' : '') + '">' +
+                                            '<div>' +
+                                                '<span class="fw-semibold text-secondary">' + item.gudang + (item.divisi ? ' (' + item.divisi + ')' : '') + '</span>' +
+                                                statusBadge +
+                                            '</div>' +
+                                            '<strong class="text-dark">' + (item.qty > 0 ? (Number(item.qty).toLocaleString('id-ID') + ' ' + (item.satuan || '')) : '—') + '</strong>' +
+                                        '</div>' +
+                                    '</div>';
+                        });
+                        container.innerHTML = html;
+                    } else {
+                        container.innerHTML = '<div class="col-12 text-muted fst-italic">Semua outlet & divisi aktif (default), tanpa batas minimum stok.</div>';
+                    }
+                }
+            }
         } else {
             minStockWrap.style.display = 'none';
+            if (minStockBbWrap) minStockBbWrap.style.display = 'none';
             minStockBsjWrap.style.display = 'none';
         }
 
@@ -880,6 +1120,7 @@ document.addEventListener("DOMContentLoaded", function () {
     /* ============ MODAL EDIT: isi dari data-attribute + toggle field ============ */
     var editJenis = document.getElementById('editJenis');
     var editGroupMinStock = document.getElementById('editGroupMinStock');
+    var editGroupMinStockBb = document.getElementById('editGroupMinStockBb');
     var editGroupMinStockBsj = document.getElementById('editGroupMinStockBsj');
     var editMinimumStock = document.getElementById('editMinimumStock');
     var editMinimumStockCk = document.getElementById('editMinimumStockCk');
@@ -891,16 +1132,19 @@ document.addEventListener("DOMContentLoaded", function () {
     function toggleEditForm() {
         if (editJenis.value === "BAHAN_SETENGAH_JADI") {
             editGroupMinStock.style.display = "none";
+            if (editGroupMinStockBb) editGroupMinStockBb.style.display = "none";
             editGroupMinStockBsj.style.display = "block";
             editMinimumStock.value = "";
         } else if (editJenis.value === "BAHAN_BAKU") {
-            editGroupMinStock.style.display = "block";
+            editGroupMinStock.style.display = "none";
+            if (editGroupMinStockBb) editGroupMinStockBb.style.display = "block";
             editGroupMinStockBsj.style.display = "none";
             if (editMinimumStockCk) editMinimumStockCk.value = "";
             if (editMinimumStockKejingga) editMinimumStockKejingga.value = "";
             if (editMinimumStockGaharu) editMinimumStockGaharu.value = "";
         } else {
             editGroupMinStock.style.display = "none";
+            if (editGroupMinStockBb) editGroupMinStockBb.style.display = "none";
             editGroupMinStockBsj.style.display = "none";
             editMinimumStock.value = "";
             if (editMinimumStockCk) editMinimumStockCk.value = "";
@@ -937,7 +1181,87 @@ document.addEventListener("DOMContentLoaded", function () {
         document.getElementById('editMinimumOrder').value = button.getAttribute('data-min-order');
         document.getElementById('formEditBarang').action = button.getAttribute('data-action');
 
+        // Reset edit min stock inputs & checkboxes
+        document.querySelectorAll('.edit-min-stock-input').forEach(function(inp) {
+            inp.value = '';
+            inp.disabled = false;
+        });
+        document.querySelectorAll('#modalEditBarang .outlet-active-toggle').forEach(function(chk) {
+            chk.checked = true;
+        });
+
+        var mapRaw = button.getAttribute('data-min-stock-map');
+        if (mapRaw) {
+            try {
+                var map = JSON.parse(mapRaw);
+                for (var key in map) {
+                    var el = document.getElementById('edit_min_stock_' + key);
+                    var chk = document.getElementById('edit_active_' + key);
+                    var itemData = map[key];
+
+                    if (typeof itemData === 'object' && itemData !== null) {
+                        if (el) el.value = itemData.qty > 0 ? itemData.qty : '';
+                        if (chk) {
+                            chk.checked = itemData.is_active;
+                        }
+                    } else if (typeof itemData === 'number') {
+                        if (el) el.value = itemData;
+                    }
+                }
+            } catch(e){}
+        }
+
+        // Update tampilan visual aktif/non-aktif setiap kotak
+        document.querySelectorAll('#modalEditBarang .outlet-active-toggle').forEach(function(chk) {
+            updateBoxAppearance(chk);
+        });
+
         toggleEditForm();
+    });
+
+    function updateBoxAppearance(chk) {
+        if (!chk) return;
+        var boxId = chk.id.replace('tambah_active_', 'box_tambah_').replace('edit_active_', 'box_edit_');
+        var inputId = chk.id.replace('tambah_active_', 'tambah_min_stock_').replace('edit_active_', 'edit_min_stock_');
+        var box = document.getElementById(boxId);
+        var input = document.getElementById(inputId);
+
+        if (box) {
+            var label = box.querySelector('.label-outlet-name');
+            if (chk.checked) {
+                box.style.background = '#ffffff';
+                box.style.borderColor = '#e2e8f0';
+                box.style.opacity = '1';
+                if (label) {
+                    label.style.color = '#212529';
+                    label.style.textDecoration = 'none';
+                }
+                if (input) {
+                    input.disabled = false;
+                    input.style.background = '#fafafa';
+                }
+            } else {
+                box.style.background = '#f1f5f9';
+                box.style.borderColor = '#cbd5e1';
+                box.style.opacity = '0.65';
+                if (label) {
+                    label.style.color = '#94a3b8';
+                    label.style.textDecoration = 'line-through';
+                }
+                if (input) {
+                    input.disabled = true;
+                    input.value = '';
+                    input.style.background = '#e2e8f0';
+                }
+            }
+        }
+    }
+
+    // Event listener untuk toggle aktif/nonaktif input enable/disable & visual styling
+    document.addEventListener('change', function(e) {
+        if (e.target && e.target.classList.contains('outlet-active-toggle')) {
+            updateBoxAppearance(e.target);
+        }
     });
 
     /* ============ MODAL HAPUS ============ */

@@ -226,21 +226,18 @@
                             </td>
 
                             <td>
-
-                                <div class="btn-group">
-
-                                    <a
-                                        href="{{ route('pengeluaran-bahan-baku.show',$item->id) }}"
-                                        class="btn btn-info btn-sm">
-
-                                        <i class="bi bi-eye"></i>
-
-                                    </a>
+                                <div class="d-flex align-items-center gap-1">
+                                    <button type="button" 
+                                            class="btn btn-sm btn-outline-primary"
+                                            onclick="showDetailPengeluaran({{ $item->id }})"
+                                            title="Lihat Detail">
+                                        <i class="bi bi-eye me-1"></i> Detail
+                                    </button>
 
                                     @if(strtolower($item->status) == 'draft')
                                         <a href="{{ route('pengeluaran-bahan-baku.edit', $item->id) }}"
                                            class="btn btn-warning btn-sm" title="Edit Permintaan / Pengeluaran">
-                                            <i class="bi bi-pencil"></i> Edit
+                                            <i class="bi bi-pencil"></i>
                                         </a>
                                         <a href="{{ route('pengeluaran-bahan-baku.approve', $item->id) }}"
                                            class="btn btn-success btn-sm"
@@ -248,9 +245,7 @@
                                             <i class="bi bi-check-circle"></i>
                                         </a>
                                     @endif
-
                                 </div>
-
                             </td>
 
                         </tr>
@@ -281,5 +276,169 @@
     </div>
 
 </div>
+
+{{-- MODAL DETAIL PENGELUARAN MINIMALIST --}}
+<div class="modal fade" id="detailPengeluaranModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow rounded-4 overflow-hidden">
+            <div class="modal-header text-white px-4 py-3" style="background:#7A4517;">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-box-seam fs-5"></i>
+                    <h5 class="modal-title fw-bold mb-0">Detail Pengeluaran Bahan Baku</h5>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4" id="detailPengeluaranBody">
+                <div class="text-center text-muted py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-3 mb-0">Memuat detail pengeluaran...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function showDetailPengeluaran(id) {
+    let modalEl = document.getElementById('detailPengeluaranModal');
+    let modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    let body = document.getElementById('detailPengeluaranBody');
+
+    body.innerHTML = `
+        <div class="text-center text-muted py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 mb-0">Memuat detail pengeluaran...</p>
+        </div>
+    `;
+
+    modal.show();
+
+    fetch(`/pengeluaran-bahan-baku/${id}/detail-json`)
+        .then(response => response.json())
+        .then(data => renderDetailPengeluaran(data))
+        .catch(err => {
+            console.error(err);
+            body.innerHTML = `
+                <div class="text-center text-danger py-4">
+                    <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
+                    Gagal memuat data pengeluaran bahan baku.
+                </div>
+            `;
+        });
+}
+
+function renderDetailPengeluaran(data) {
+    let body = document.getElementById('detailPengeluaranBody');
+
+    let statusBadge = data.is_approved
+        ? '<span class="badge bg-success px-3 py-2 fs-6">Approved</span>'
+        : '<span class="badge bg-warning text-dark px-3 py-2 fs-6">Draft</span>';
+
+    let divisiBadge = data.divisi_nama
+        ? `<span class="badge bg-light text-primary border border-primary-subtle ms-1"><i class="bi bi-diagram-3 me-1"></i>${data.divisi_nama}</span>`
+        : '';
+
+    let rows = '';
+    data.details.forEach(function (d, index) {
+        rows += `
+            <tr>
+                <td class="text-center text-muted small">${index + 1}</td>
+                <td>
+                    <div class="fw-semibold text-dark">${d.nama_barang}</div>
+                    <small class="text-muted font-monospace">${d.kode_barang}</small>
+                </td>
+                <td class="text-end fw-bold">
+                    ${d.qty.toLocaleString('id-ID')} <span class="text-muted fw-normal small">${d.satuan}</span>
+                </td>
+                <td class="text-end text-muted small">
+                    Rp ${d.harga_satuan.toLocaleString('id-ID')}
+                </td>
+                <td class="text-end fw-bold text-dark">
+                    Rp ${d.total_harga.toLocaleString('id-ID')}
+                </td>
+            </tr>
+        `;
+    });
+
+    let actionButtons = '';
+    if (!data.is_approved) {
+        let editBtn = !data.is_wo
+            ? `<a href="${data.edit_url}" class="btn btn-warning btn-sm px-3 fw-semibold"><i class="bi bi-pencil-square me-1"></i> Edit</a>`
+            : '';
+        actionButtons = `
+            <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top">
+                ${editBtn}
+                <a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran ini?')">
+                    <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
+                </a>
+            </div>
+        `;
+    }
+
+    body.innerHTML = `
+        {{-- HEADER INFO CARDS --}}
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-md-3">
+                <div class="p-3 bg-light rounded-3 h-100 border">
+                    <div class="text-muted small">Kode Pengeluaran</div>
+                    <div class="fw-bold fs-6 text-dark mt-1">${data.kode_pengeluaran}</div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <div class="p-3 bg-light rounded-3 h-100 border">
+                    <div class="text-muted small">Tujuan</div>
+                    <div class="fw-bold fs-6 text-dark mt-1">${data.gudang_nama} ${divisiBadge}</div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <div class="p-3 bg-light rounded-3 h-100 border">
+                    <div class="text-muted small">Tanggal</div>
+                    <div class="fw-bold fs-6 text-dark mt-1">${data.tanggal}</div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <div class="p-3 bg-light rounded-3 h-100 border d-flex flex-column justify-content-between">
+                    <div class="text-muted small">Status</div>
+                    <div>${statusBadge}</div>
+                </div>
+            </div>
+        </div>
+
+        {{-- KETERANGAN JIKA ADA --}}
+        ${data.keterangan && data.keterangan !== '-' ? `
+            <div class="mb-3 p-3 bg-light rounded-3 border">
+                <div class="text-muted small fw-semibold mb-1">Keterangan:</div>
+                <div class="text-dark small">${data.keterangan}</div>
+            </div>
+        ` : ''}
+
+        {{-- TABEL DETAIL BARANG --}}
+        <div class="table-responsive rounded-3 border">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="40" class="text-center">#</th>
+                        <th>Barang</th>
+                        <th width="120" class="text-end">Qty</th>
+                        <th width="140" class="text-end">Harga Satuan</th>
+                        <th width="160" class="text-end">Total HPP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+                <tfoot class="table-light border-top">
+                    <tr>
+                        <th colspan="4" class="text-end fw-bold">Total Nilai FIFO ${!data.is_approved ? '<span class="text-muted fw-normal small">(Estimasi)</span>' : ''}:</th>
+                        <th class="text-end fw-bold fs-6" style="color:#7A4517;">Rp ${data.grand_total.toLocaleString('id-ID')}</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        ${actionButtons}
+    `;
+}
+</script>
 
 </x-app-layout>

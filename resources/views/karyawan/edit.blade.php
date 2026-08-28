@@ -40,7 +40,7 @@
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700">Jenis Tenaga Kerja</label>
                         <select name="jenis_tenaga_kerja" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            @foreach(['Karyawan Tetap', 'Karyawan Kontrak'] as $jenis)
+                            @foreach(['Karyawan Tetap', 'Karyawan Kontrak', 'Part Time', 'Casual', 'Probation'] as $jenis)
                             <option value="{{ $jenis }}" {{ old('jenis_tenaga_kerja', $karyawan->jenis_tenaga_kerja) == $jenis ? 'selected' : '' }}>
                                 {{ $jenis }}
                             </option>
@@ -51,7 +51,7 @@
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700">Departemen</label>
                         <select name="departemen" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            @foreach(['Gudang', 'Produksi', 'Manajemen', 'Operasional'] as $dept)
+                            @foreach(['Gudang', 'Produksi', 'Manajemen', 'Operasional', 'Kitchen', 'Central Kitchen', 'Cold Kitchen', 'Barista', 'Server', 'Satpam'] as $dept)
                             <option value="{{ $dept }}" {{ old('departemen', $karyawan->departemen) == $dept ? 'selected' : '' }}>
                                 {{ $dept }}
                             </option>
@@ -60,10 +60,29 @@
                     </div>
 
                     <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Outlet <span class="text-red-500">*</span></label>
+                        <select name="outlet" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm font-bold text-amber-900 focus:border-amber-500 focus:ring-amber-500" required>
+                            @foreach(['Gaharu', 'Kejingga'] as $outl)
+                            <option value="{{ $outl }}" {{ old('outlet', $karyawan->outlet ?? 'Gaharu') == $outl ? 'selected' : '' }}>
+                                Outlet {{ $outl }}
+                            </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Nomor Rekening</label>
+                        <input type="text" name="no_rekening"
+                            value="{{ old('no_rekening', $karyawan->no_rekening) }}"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Contoh: BCA 1234567890">
+                    </div>
+
+                    <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700">Gaji Pokok</label>
                         <input type="number" name="gaji_pokok"
                             value="{{ old('gaji_pokok', $karyawan->gaji_pokok) }}"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required min="0" placeholder="0">
+                            class="mt-1 block w-full bg-gray-100 text-gray-500 border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required min="0" readonly>
+                        <p class="text-xs text-gray-500 mt-1">Gaji pokok hanya dapat diubah melalui menu Pengaturan Gaji.</p>
                     </div>
 
                     <div class="flex items-center justify-end mt-4">

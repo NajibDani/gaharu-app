@@ -4,12 +4,46 @@
 
 <div class="container py-4">
 
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <h3 class="fw-bold text-dark m-0">Daftar Resep Produk</h3>
-        <button type="button" class="btn btn-primary rounded-3 px-4 shadow-sm fw-semibold" id="btn-tambah-resep">
-            <i class="fas fa-plus me-2"></i>Tambah Resep
-        </button>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary rounded-3 px-3 shadow-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#modalImportResep">
+                <i class="fas fa-file-upload me-2"></i>Import Excel
+            </button>
+            <button type="button" class="btn btn-primary rounded-3 px-4 shadow-sm fw-semibold" id="btn-tambah-resep">
+                <i class="fas fa-plus me-2"></i>Tambah Resep
+            </button>
+        </div>
     </div>
+
+    @if (session('import_result_resep'))
+        @php $ir = session('import_result_resep'); @endphp
+        <div class="alert alert-info border-0 shadow-sm mb-4">
+            <strong>Hasil Import Resep:</strong>
+            {{ $ir['createdRecipes'] }} resep dibuat ({{ $ir['createdIngredients'] }} bahan),
+            {{ $ir['skippedRecipes'] }} dilewati (produk sudah punya resep).
+            @if (!empty($ir['skippedRows']))
+                <div class="mt-1 small text-muted">
+                    <strong>Catatan:</strong>
+                    <ul class="mb-0 ps-3">
+                        @foreach ($ir['skippedRows'] as $skipNote)
+                            <li>{{ $skipNote }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+            @if (!empty($ir['errors']))
+                <div class="mt-2">
+                    <strong class="text-danger">{{ count($ir['errors']) }} pesan perhatian:</strong>
+                    <ul class="mb-0 small text-danger">
+                        @foreach ($ir['errors'] as $err)
+                            <li>{{ $err }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+        </div>
+    @endif
 
     @if(session('success'))
     <div class="alert alert-success alert-dismissible fade show border-0 shadow-sm mb-4" role="alert">
@@ -198,6 +232,46 @@
         </div>
     </div>
 </form>
+
+{{-- ================= MODAL IMPORT EXCEL RESEP ================= --}}
+<div class="modal fade" id="modalImportResep" tabindex="-1" aria-labelledby="modalImportResepLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 14px; border: none; overflow: hidden;">
+            <div class="modal-header text-white" style="background-color: #7A4517;">
+                <h5 class="modal-title fw-bold" id="modalImportResepLabel">
+                    <i class="fas fa-file-excel me-2"></i>Import Resep dari Excel
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <form action="{{ route('resep.import') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <div class="modal-body text-start">
+                    <p class="text-muted small mb-3">
+                        Gunakan file Excel untuk mengunggah resep secara massal. Produk yang sudah memiliki resep akan otomatis dilewati agar tidak terjadi duplikasi.
+                    </p>
+
+                    <div class="mb-3">
+                        <a href="{{ route('resep.import.template') }}" class="btn btn-sm btn-outline-secondary rounded-3">
+                            <i class="fas fa-download me-1"></i> Unduh Template Excel
+                        </a>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-dark">Pilih File Excel (.xlsx)</label>
+                        <input type="file" name="file" class="form-control rounded-3 @error('file') is-invalid @enderror" accept=".xlsx,.xls" required>
+                        @error('file') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                    </div>
+                </div>
+
+                <div class="modal-footer border-0 px-4 pb-4 pt-0">
+                    <button type="button" class="btn btn-secondary px-3 rounded-3" data-bs-dismiss="modal">Kembali</button>
+                    <button type="submit" class="btn text-white px-4 rounded-3" style="background-color: #7A4517;">Import</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <style>
     /* Styling & Z-Index Choices.js Dropdown di dalam Modal agar tidak bertabrakan */
