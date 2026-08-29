@@ -94,8 +94,20 @@
     {{-- HEADER --}}
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h4 class="fw-bold mb-1" style="color:#3d1f0a;">Tambah Pengeluaran Bahan Baku</h4>
-            <p class="text-muted mb-0" style="font-size:0.85rem;">Buat permintaan pengeluaran bahan baku dari Gudang Utama ke gudang tujuan.</p>
+            <h4 class="fw-bold mb-1" style="color:#3d1f0a;">
+                @if(($jenis ?? '') === 'wasted')
+                    <i class="bi bi-trash3-fill text-danger me-2"></i>Tambah Pengeluaran Wasted / Busuk / Rusak
+                @else
+                    Tambah Pengeluaran Bahan Baku
+                @endif
+            </h4>
+            <p class="text-muted mb-0" style="font-size:0.85rem;">
+                @if(($jenis ?? '') === 'wasted')
+                    Pengeluaran stok yang terbuang, busuk, atau rusak langsung dari gudang lokasi tanpa transfer.
+                @else
+                    Buat permintaan pengeluaran bahan baku dari Gudang Utama ke gudang tujuan.
+                @endif
+            </p>
         </div>
         <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="btn btn-outline-secondary btn-sm px-3 rounded-3">
             <i class="bi bi-arrow-left me-1"></i> Kembali
@@ -105,27 +117,30 @@
     @if($barang->count() == 0)
     <div class="alert alert-danger border-0 rounded-3 d-flex align-items-center gap-2 mb-4">
         <i class="bi bi-exclamation-circle-fill"></i>
-        <span><strong>Stok bahan baku tidak tersedia.</strong> Silakan lakukan pembelian terlebih dahulu.</span>
+        <span><strong>Stok tidak tersedia.</strong> Silakan lakukan penerimaan/pembelian barang terlebih dahulu.</span>
     </div>
     @endif
 
     <form method="POST" action="{{ route('pengeluaran-bahan-baku.store') }}" id="formPengeluaran">
         @csrf
+        <input type="hidden" name="jenis_pengeluaran" value="{{ $jenis ?? 'transfer' }}">
 
         {{-- INFORMASI PENGELUARAN --}}
         <div class="form-card mb-4">
-            <div class="card-header-custom">
-                <i class="bi bi-box-seam me-2"></i> Informasi Pengeluaran
+            <div class="card-header-custom" style="{{ ($jenis ?? '') === 'wasted' ? 'background: #dc3545;' : '' }}">
+                <i class="bi bi-box-seam me-2"></i> Informasi Pengeluaran {{ ($jenis ?? '') === 'wasted' ? 'Wasted / Busuk' : '' }}
             </div>
             <div class="p-4">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label fw-bold small text-dark mb-1">Gudang Tujuan <span class="text-danger">*</span></label>
+                        <label class="form-label fw-bold small text-dark mb-1">
+                            {{ ($jenis ?? '') === 'wasted' ? 'Gudang Asal (Lokasi Bahan Wasted)' : 'Gudang Tujuan' }} <span class="text-danger">*</span>
+                        </label>
                         <select name="gudang_id" id="select-gudang"
                             class="form-select @error('gudang_id') is-invalid @enderror"
                             style="border-radius:8px;"
                             required>
-                            <option value="">-- Pilih Gudang Tujuan --</option>
+                            <option value="">-- Pilih {{ ($jenis ?? '') === 'wasted' ? 'Gudang Lokasi Wasted' : 'Gudang Tujuan' }} --</option>
                             @foreach($gudang as $g)
                             <option value="{{ $g->id }}"
                                 data-kategori="{{ strtolower($g->kategori) }}"
@@ -138,7 +153,11 @@
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                         <small class="text-muted d-block mt-1" style="font-size:0.75rem;">
-                            Bahan baku akan dipindahkan dari Gudang Utama ke gudang tujuan.
+                            @if(($jenis ?? '') === 'wasted')
+                                Stok barang akan dikurangi langsung dari gudang lokasi ini saat approved.
+                            @else
+                                Bahan baku akan dipindahkan dari Gudang Utama ke gudang tujuan.
+                            @endif
                         </small>
                     </div>
 

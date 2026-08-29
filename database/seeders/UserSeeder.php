@@ -12,99 +12,126 @@ class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1. Ambil ID dari Role (menggunakan kolom nama)
+        // 1. Ambil ID dari Role
         $idSuperAdmin = Role::where('nama', 'Super Admin')->first()?->id;
         $idHrd        = Role::where('nama', 'HRD')->first()?->id;
-        $idGaharu     = Role::where('nama', 'Kepala Outlet Gaharu')->first()?->id;
-        $idKejingga   = Role::where('nama', 'Kepala Outlet Kejingga')->first()?->id;
-        $idProduksi   = Role::where('nama', 'Bagian Produksi')->first()?->id;
+        $idGaharu     = Role::whereIn('nama', ['Operasional Gaharu', 'Kepala Outlet Gaharu'])->first()?->id;
+        $idKejingga   = Role::whereIn('nama', ['Operasional Kejingga', 'Kepala Outlet Kejingga'])->first()?->id;
+        $idProduksi   = Role::whereIn('nama', ['Central Kitchen', 'Bagian Produksi'])->first()?->id;
+        $idColdKitchen = Role::where('nama', 'Cold Kitchen')->first()?->id;
         $idGudang     = Role::where('nama', 'Kepala Gudang')->first()?->id;
-        $idDirektur   = Role::where('nama', 'Direktur Keuangan')->first()?->id;
+        $idManagement = Role::whereIn('nama', ['Management', 'Direktur Keuangan'])->first()?->id;
 
-        // 2. Ambil ID dari MasterGudang (menyesuaikan nama persis dari MasterGudangSeeder Anda)
+        // 2. Ambil ID dari MasterGudang
         $idGudangUtama    = MasterGudang::where('nama', 'Gudang Utama')->first()?->id;
         $idGudangGaharu   = MasterGudang::where('nama', 'Gudang Gaharu')->first()?->id;
-        $idGudangKejingga = MasterGudang::where('nama', 'Gudang KeJingga')->first()?->id; // J Kapital
+        $idGudangKejingga = MasterGudang::where('nama', 'Gudang KeJingga')->first()?->id;
 
-        $passwordTesting = Hash::make('password123');
+        $passwordPrivacy = Hash::make('admin16072023');
 
-        // 3. Buat data user dummy (sesuai fillable: nama, username, password, role_id)
-        // Pastikan Anda sudah menambahkan 'gudang_id' ke $fillable di User.php jika ingin disimpan ke database
-        
-        // Akun Super Admin
+        // 1. Superadmin
         User::updateOrCreate(
             ['username' => 'superadmin'],
             [
                 'nama'      => 'Super Admin Utama',
-                'password'  => Hash::make('admin123'),
+                'password'  => $passwordPrivacy,
                 'role_id'   => $idSuperAdmin,
                 'gudang_id' => null,
             ]
         );
 
-        // Akun HRD
+        // 2. HRD
         User::updateOrCreate(
             ['username' => 'hrd'],
             [
-                'nama'      => 'Dwi Novita',
-                'password'  => $passwordTesting,
+                'nama'      => 'HRD Manager',
+                'password'  => $passwordPrivacy,
                 'role_id'   => $idHrd,
                 'gudang_id' => null,
             ]
         );
 
-        // Akun Kepala Outlet Gaharu
+        // 3. Management
         User::updateOrCreate(
-            ['username' => 'gaharu'],
+            ['username' => 'management'],
             [
-                'nama'      => 'Adellia Syifa (Gaharu)',
-                'password'  => $passwordTesting,
-                'role_id'   => $idGaharu,
-                'gudang_id' => $idGudangGaharu, // Terikat ke Gudang Gaharu
+                'nama'      => 'Management Utama',
+                'password'  => $passwordPrivacy,
+                'role_id'   => $idManagement,
+                'gudang_id' => null,
+            ]
+        );
+        User::updateOrCreate(
+            ['username' => 'direktur'],
+            [
+                'nama'      => 'Direktur Keuangan',
+                'password'  => $passwordPrivacy,
+                'role_id'   => $idManagement,
+                'gudang_id' => null,
             ]
         );
 
-        // Akun Kepala Outlet Kejingga
+        // 4. Kepala Gudang
         User::updateOrCreate(
-            ['username' => 'kejingga'],
+            ['username' => 'gudang'],
             [
-                'nama'      => 'Annisa Tahira (Kejingga)',
-                'password'  => $passwordTesting,
-                'role_id'   => $idKejingga,
-                'gudang_id' => $idGudangKejingga, // Terikat ke Gudang KeJingga
+                'nama'      => 'Kepala Gudang Logistik',
+                'password'  => Hash::make('gudang123'),
+                'role_id'   => $idGudang,
+                'gudang_id' => $idGudangUtama,
             ]
         );
 
-        // Akun Bagian Produksi
+        // 5. Central Kitchen
+        User::updateOrCreate(
+            ['username' => 'centralkitchen'],
+            [
+                'nama'      => 'Central Kitchen Production',
+                'password'  => Hash::make('ck123'),
+                'role_id'   => $idProduksi,
+                'gudang_id' => null,
+            ]
+        );
         User::updateOrCreate(
             ['username' => 'produksi'],
             [
                 'nama'      => 'Eko Produksi',
-                'password'  => $passwordTesting,
+                'password'  => Hash::make('ck123'),
                 'role_id'   => $idProduksi,
                 'gudang_id' => null,
             ]
         );
 
-        // Akun Kepala Gudang
+        // 5b. Cold Kitchen
         User::updateOrCreate(
-            ['username' => 'gudang'],
+            ['username' => 'coldkitchen'],
             [
-                'nama'      => 'Randi Logistik',
-                'password'  => $passwordTesting,
-                'role_id'   => $idGudang,
-                'gudang_id' => $idGudangUtama, // Terikat ke Gudang Utama
+                'nama'      => 'Cold Kitchen Production',
+                'password'  => Hash::make('ck123'),
+                'role_id'   => $idColdKitchen,
+                'gudang_id' => null,
             ]
         );
 
-        // Akun Direktur Keuangan
+        // 6. Operasional Gaharu
         User::updateOrCreate(
-            ['username' => 'direktur'],
+            ['username' => 'gaharu'],
             [
-                'nama'      => 'Direktur Keuangan CV Gaharu',
-                'password'  => $passwordTesting,
-                'role_id'   => $idDirektur,
-                'gudang_id' => null,
+                'nama'      => 'Operasional Gaharu',
+                'password'  => Hash::make('gaharu123'),
+                'role_id'   => $idGaharu,
+                'gudang_id' => $idGudangGaharu,
+            ]
+        );
+
+        // 7. Operasional Kejingga
+        User::updateOrCreate(
+            ['username' => 'kejingga'],
+            [
+                'nama'      => 'Operasional Kejingga',
+                'password'  => Hash::make('kejingga123'),
+                'role_id'   => $idKejingga,
+                'gudang_id' => $idGudangKejingga,
             ]
         );
     }

@@ -33,11 +33,20 @@
                         </select>
                     </div>
                     <div class="col-12 col-md-2">
+                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">JENIS PENGELUARAN</label>
+                        <select name="jenis_pengeluaran" class="form-select form-select-sm">
+                            <option value="">Semua Jenis</option>
+                            <option value="transfer" {{ request('jenis_pengeluaran') === 'transfer' ? 'selected' : '' }}>Transfer</option>
+                            <option value="wasted"   {{ request('jenis_pengeluaran') === 'wasted'   ? 'selected' : '' }}>Wasted / Busuk</option>
+                            <option value="opname"   {{ request('jenis_pengeluaran') === 'opname'   ? 'selected' : '' }}>Stock Opname</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">STATUS</label>
                         <select name="status" class="form-select form-select-sm">
                             <option value="">Semua Status</option>
                             <option value="draft"    {{ request('status') === 'draft'    ? 'selected' : '' }}>Draft</option>
-                            <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approved</option>
+                            <option value="approved" {{ request('status') === 'approved' || request('status') === 'disetujui' ? 'selected' : '' }}>Approved</option>
                         </select>
                     </div>
                     <div class="col-12 col-md-2 d-flex gap-2 align-items-end">
@@ -80,13 +89,13 @@
                 </div>
             </div>
             <div class="col-12 col-sm-6 col-md-3">
-                <div class="card h-100 border-0 shadow-sm" style="background:#f8f9fa;">
+                <div class="card h-100 border-0 shadow-sm" style="background:#fff3cd; color:#664d03; border-left: 4px solid #ffc107 !important;">
                     <div class="card-body">
-                        <div style="font-size:11px; color:#6c757d; text-transform:uppercase; letter-spacing:1px;">Total Qty Keluar</div>
-                        <div class="fw-bold mt-1" style="font-size:28px; color:#d88656;">
-                            {{ number_format($totalQty, 0, ',', '.') }}
+                        <div style="font-size:11px; opacity:.9; text-transform:uppercase; letter-spacing:1px; font-weight:600;">Rekap Wasted / Busuk</div>
+                        <div class="fw-bold mt-1" style="font-size:20px; color:#856404;">
+                            Rp {{ number_format($totalWastedNilaiHpp ?? 0, 0, ',', '.') }}
                         </div>
-                        <div style="font-size:12px; color:#6c757d;">unit bahan baku</div>
+                        <div style="font-size:12px; opacity:.9;">{{ $totalWastedTransaksi ?? 0 }} dokumen ({{ number_format($totalWastedQty ?? 0, 0, ',', '.') }} qty)</div>
                     </div>
                 </div>
             </div>
@@ -124,8 +133,15 @@
                         <tbody>
                             @forelse($data as $row)
                                 <tr>
-                                    <td class="px-4 fw-semibold font-monospace" style="font-size:12px; color:#d88656;">
-                                        {{ $row->kode_pengeluaran }}
+                                    <td class="px-4 fw-semibold font-monospace" style="font-size:12px;">
+                                        <div style="color:#d88656;">{{ $row->kode_pengeluaran }}</div>
+                                        @if(($row->jenis_pengeluaran ?? '') === 'wasted' || str_starts_with($row->kode_pengeluaran, 'PBK-WST-'))
+                                            <span class="badge bg-danger" style="font-size:0.68rem;">Wasted / Busuk</span>
+                                        @elseif(str_starts_with($row->kode_pengeluaran, 'PBK-SO-'))
+                                            <span class="badge bg-secondary" style="font-size:0.68rem;">Stock Opname</span>
+                                        @else
+                                            <span class="badge bg-info text-dark" style="font-size:0.68rem;">Transfer</span>
+                                        @endif
                                     </td>
                                     <td>{{ \Carbon\Carbon::parse($row->tanggal)->format('d M Y') }}</td>
                                     <td>

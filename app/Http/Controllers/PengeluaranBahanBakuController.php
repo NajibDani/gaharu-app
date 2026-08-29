@@ -50,6 +50,7 @@ class PengeluaranBahanBakuController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
+        $jenisFilter = $request->query('jenis');
         $query = DB::table('pengeluaran_bahan_baku')
                     ->join(
                         'master_gudang',
@@ -70,7 +71,13 @@ class PengeluaranBahanBakuController extends Controller
                     );
 
         if ($search) {
-            $query->where('no_pengeluaran', 'like', '%' . $search . '%');
+            $query->where(function($q) use ($search) {
+                $q->where('kode_pengeluaran', 'like', '%' . $search . '%')
+                  ->orWhere('keterangan', 'like', '%' . $search . '%');
+            });
+        }
+        if ($jenisFilter) {
+            $query->where('jenis_pengeluaran', $jenisFilter);
         }
 
         $data = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
@@ -298,9 +305,14 @@ class PengeluaranBahanBakuController extends Controller
     public function create(Request $request)
     {
         $selectedGudangId = $request->query('gudang_id');
+        $jenis = $request->query('jenis', 'transfer');
+        if ($request->query('wasted')) {
+            $jenis = 'wasted';
+        }
 
-        $barang = MasterBarang::query()
-            ->leftJoin('stok_gudang', function ($join) {
+        $queryBarang = MasterBarang::query()
+            ->leftJoin('stok_gudang', function ($join) use ($selectedGudangId) {
+                $gId = $selectedGudangId ?: 1;
                 $join->on(
                     'master_barang.id',
                     '=',
@@ -308,27 +320,32 @@ class PengeluaranBahanBakuController extends Controller
                 );
                 $join->where(
                     'stok_gudang.gudang_id',
-                    1
+                    $gId
                 );
             })
-            ->where('master_barang.is_bahan_baku', 1)
-            ->where('master_barang.is_bahan_setengah_jadi', 0)
-            ->where('master_barang.is_active', true)
-            ->select([
+            ->where('master_barang.is_active', true);
+
+        if ($jenis !== 'wasted') {
+            $queryBarang->where('master_barang.is_bahan_baku', 1)
+                        ->where('master_barang.is_bahan_setengah_jadi', 0);
+        }
+
+        $barang = $queryBarang->select([
                 'master_barang.*',
                 DB::raw('COALESCE(stok_gudang.jumlah,0) as stok')
             ])
             ->orderBy('master_barang.nama')
             ->get();
 
-        $gudang = MasterGudang::with('divisi')->orderBy('nama')->get(); // Semua gudang sesuai Master Gudang
+        $gudang = MasterGudang::with('divisi')->orderBy('nama')->get();
 
         return view(
             'pengeluaran-bahan-baku.create',
             compact(
                 'barang',
                 'gudang',
-                'selectedGudangId'
+                'selectedGudangId',
+                'jenis'
             )
         );
     }
@@ -340,12 +357,14 @@ class PengeluaranBahanBakuController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-
             'gudang_id'
                 => 'required|exists:master_gudang,id',
 
             'divisi_id'
                 => 'nullable|exists:gudang_divisi,id',
+
+            'jenis_pengeluaran'
+                => 'nullable|string|in:transfer,wasted',
 
             'barang_id'
                 => 'required|array|min:1',
@@ -368,25 +387,25 @@ class PengeluaranBahanBakuController extends Controller
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $selectedGudang->nama . '.'])->withInput();
         }
 
+        $jenisPengeluaran = $request->input('jenis_pengeluaran', 'transfer');
+        $prefix = ($jenisPengeluaran === 'wasted') ? 'PBK-WST-' : 'PBK-';
+
         $data = PengeluaranBahanBaku::create([
 
             'kode_pengeluaran'
-                => 'PBK-' . time(),
+                => $prefix . time(),
 
             'tanggal'
                 => now(),
-
-            /*
-            |--------------------------------------------------------------------------
-            | GUDANG & DIVISI
-            |--------------------------------------------------------------------------
-            */
 
             'gudang_id'
                 => $request->gudang_id,
 
             'divisi_id'
                 => $request->divisi_id,
+
+            'jenis_pengeluaran'
+                => $jenisPengeluaran,
 
             'status'
                 => 'draft',
@@ -414,12 +433,6 @@ class PengeluaranBahanBakuController extends Controller
                 'satuan'
                     => 'pcs',
 
-                /*
-                |--------------------------------------------------------------------------
-                | NANTI BISA DIISI FIFO HPP
-                |--------------------------------------------------------------------------
-                */
-
                 'harga_satuan'
                     => 0,
 
@@ -428,12 +441,13 @@ class PengeluaranBahanBakuController extends Controller
             ]);
         }
 
+        $msg = ($jenisPengeluaran === 'wasted') 
+            ? 'Data pengeluaran barang wasted/busuk berhasil dibuat.' 
+            : 'Data pengeluaran bahan baku berhasil dibuat.';
+
         return redirect()
             ->route('pengeluaran-bahan-baku.index')
-            ->with(
-                'success',
-                'Data pengeluaran bahan baku berhasil dibuat.'
-            );
+            ->with('success', $msg);
     }
 
     /**
@@ -564,15 +578,21 @@ class PengeluaranBahanBakuController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    $barang = MasterBarang::query()
-        ->leftJoin('stok_gudang', function ($join) {
+    $jenis = $pengeluaran->jenis_pengeluaran ?? (str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-') ? 'wasted' : 'transfer');
+
+    $queryBarang = MasterBarang::query()
+        ->leftJoin('stok_gudang', function ($join) use ($pengeluaran) {
             $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
-                 ->where('stok_gudang.gudang_id', 1);
+                 ->where('stok_gudang.gudang_id', $pengeluaran->gudang_id ?? 1);
         })
-        ->where('master_barang.is_bahan_baku', 1)
-        ->where('master_barang.is_bahan_setengah_jadi', 0)
-        ->where('master_barang.is_active', true)
-        ->select([
+        ->where('master_barang.is_active', true);
+
+    if ($jenis !== 'wasted') {
+        $queryBarang->where('master_barang.is_bahan_baku', 1)
+                    ->where('master_barang.is_bahan_setengah_jadi', 0);
+    }
+
+    $barang = $queryBarang->select([
             'master_barang.*',
             DB::raw('COALESCE(stok_gudang.jumlah,0) as stok')
         ])
@@ -592,7 +612,8 @@ class PengeluaranBahanBakuController extends Controller
         compact(
             'pengeluaran',
             'barang',
-            'gudang'
+            'gudang',
+            'jenis'
         )
     );
 }
@@ -791,19 +812,18 @@ class PengeluaranBahanBakuController extends Controller
                 */
 
                 $isFromOpname = str_starts_with($data->kode_pengeluaran, 'PBK-SO-');
+                $isWasted = ($data->jenis_pengeluaran === 'wasted' || str_starts_with($data->kode_pengeluaran, 'PBK-WST-'));
 
-                if ($isFromOpname) {
+                if ($isFromOpname || $isWasted) {
 
                     /*
                     |----------------------------------------------------------------------
-                    | ALUR 1: STOCK OPNAME — pengurangan stok murni
+                    | ALUR 1: STOCK OPNAME / WASTED — pengurangan stok murni
                     |----------------------------------------------------------------------
                     */
 
-                    $gudangOpname = $data->gudang_id;
-                    $divisiOpname = $data->divisi_id;
-                    $shortageCredits = [];
-                    $totalShortageDebit = 0;
+                    $gudangLokasi = $data->gudang_id;
+                    $divisiLokasi = $data->divisi_id;
                     $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
                         ?? DB::table('chart_of_accounts')->where('kode', '5104')->value('id') 
                         ?? DB::table('chart_of_accounts')->where('kode', '5103')->value('id') 
@@ -813,14 +833,14 @@ class PengeluaranBahanBakuController extends Controller
 
                         /*
                         | consumeFIFO dengan allowNegative = true:
-                        | stok boleh tidak cukup (selisih opname tetap diproses)
+                        | stok dikurangi langsung dari gudang lokasi
                         */
                         $fifoResult = $this->fifoService->consumeFIFO(
                             barangId:       $detail->barang_id,
                             qtyKeluar:      $detail->qty,
-                            gudangId:       $gudangOpname,
+                            gudangId:       $gudangLokasi,
                             allowNegative:  true,
-                            divisiId:       $divisiOpname,
+                            divisiId:       $divisiLokasi,
                         );
 
                         $hppTotal = 0;
@@ -851,7 +871,7 @@ class PengeluaranBahanBakuController extends Controller
                         if ($hppTotal > 0) {
                             $barang = \App\Models\MasterBarang::find($detail->barang_id);
                             $isOperational = $barang && ($barang->is_operational || (!$barang->is_bahan_baku && !$barang->is_bahan_setengah_jadi));
-                            $coaCode = $isOperational ? '1501' : '1301';
+                            $coaCode = $isOperational ? '1501' : ($barang->is_bahan_setengah_jadi ? '1302' : ($barang->is_barang_jadi ? '1303' : '1301'));
                             $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
 
                             $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
@@ -859,17 +879,23 @@ class PengeluaranBahanBakuController extends Controller
                                 ?? DB::table('chart_of_accounts')->where('kode', '5103')->value('id') 
                                 ?? 44;
 
+                            $deskripsiJp = $isWasted 
+                                ? "[AJP] Pengeluaran Wasted / Busuk / Rusak: " . ($barang->nama ?? 'Barang')
+                                : "[AJP] Penyesuaian Kurang (Shortage) Stock Opname: " . ($barang->nama ?? 'Barang');
+
+                            $refPrefix = $isWasted ? 'AJP-WASTED-' : 'AJP-SO-SHORTAGE-';
+
                             $jp = \App\Models\JurnalPenyesuaian::create([
                                 'tanggal'     => now(),
-                                'deskripsi'   => "[AJP] Penyesuaian Kurang (Shortage) Stock Opname: " . ($barang->nama ?? 'Barang'),
-                                'no_ref'      => 'AJP-SO-SHORTAGE-' . $data->kode_pengeluaran . '-' . rand(100, 999),
+                                'deskripsi'   => $deskripsiJp,
+                                'no_ref'      => $refPrefix . $data->kode_pengeluaran . '-' . rand(100, 999),
                                 'source_type' => 'pengeluaran_bahan_baku',
                                 'source_id'   => $data->id,
                                 'created_by'  => auth()->id(),
                                 'status'      => 'approved',
                             ]);
 
-                            // Debit: Beban Selisih HPP
+                            // Debit: Beban Selisih HPP / Kerusakan
                             $jp->details()->create([
                                 'account_id'   => $idBebanSelisih,
                                 'debit'        => $hppTotal,
@@ -877,7 +903,7 @@ class PengeluaranBahanBakuController extends Controller
                                 'journal_type' => 'jurnal_penyesuaian',
                             ]);
 
-                            // Kredit: Persediaan (1301 / 1302)
+                            // Kredit: Persediaan
                             $jp->details()->create([
                                 'account_id'   => $idPersediaan,
                                 'debit'        => 0,
@@ -893,10 +919,10 @@ class PengeluaranBahanBakuController extends Controller
                         */
 
                         $stokQuery = StokGudang::where('barang_id', $detail->barang_id)
-                            ->where('gudang_id', $gudangOpname);
+                            ->where('gudang_id', $gudangLokasi);
 
-                        if ($divisiOpname) {
-                            $stokQuery->where('divisi_id', $divisiOpname);
+                        if ($divisiLokasi) {
+                            $stokQuery->where('divisi_id', $divisiLokasi);
                         } else {
                             $stokQuery->whereNull('divisi_id');
                         }
@@ -910,10 +936,10 @@ class PengeluaranBahanBakuController extends Controller
                         TransaksiStok::create([
                             'tanggal'        => now(),
                             'tipe'           => 'keluar',
-                            'source_type'    => 'pengeluaran_bahan_baku',
+                            'source_type'    => $isWasted ? 'pengeluaran_wasted' : 'pengeluaran_bahan_baku',
                             'source_id'      => $data->id,
-                            'gudang_asal_id' => $gudangOpname,
-                            'divisi_asal_id' => $divisiOpname,
+                            'gudang_asal_id' => $gudangLokasi,
+                            'divisi_asal_id' => $divisiLokasi,
                             'barang_id'      => $detail->barang_id,
                             'qty'            => $detail->qty,
                             'total_harga'    => $hppTotal,

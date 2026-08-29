@@ -13,6 +13,7 @@ class PengeluaranBahanBaku extends Model
         'tanggal',
         'gudang_id',
         'divisi_id',
+        'jenis_pengeluaran',
         'status',
         'keterangan',
         'created_by',

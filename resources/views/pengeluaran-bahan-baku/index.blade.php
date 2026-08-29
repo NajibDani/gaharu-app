@@ -30,10 +30,15 @@
                 <i class="bi bi-arrow-left"></i>
                 Dashboard
             </a>
+            <a href="{{ route('pengeluaran-bahan-baku.create', ['jenis' => 'wasted']) }}"
+               class="btn btn-warning text-dark fw-bold" title="Pengeluaran Stok Wasted / Busuk / Rusak">
+                <i class="bi bi-trash3-fill me-1"></i>
+                Tambah Wasted / Busuk
+            </a>
             <a href="{{ route('pengeluaran-bahan-baku.create') }}"
                class="btn btn-primary">
                 <i class="bi bi-plus-circle"></i>
-                Tambah
+                Tambah Transfer
             </a>
         </div>
 
@@ -187,7 +192,14 @@
                             </td>
 
                             <td class="fw-semibold">
-                                {{ $item->kode_pengeluaran }}
+                                <div>{{ $item->kode_pengeluaran }}</div>
+                                @if(($item->jenis_pengeluaran ?? '') === 'wasted' || str_starts_with($item->kode_pengeluaran, 'PBK-WST-'))
+                                    <span class="badge bg-danger" style="font-size:0.7rem;"><i class="bi bi-trash3 me-1"></i>Wasted / Busuk</span>
+                                @elseif(str_starts_with($item->kode_pengeluaran, 'PBK-SO-'))
+                                    <span class="badge bg-secondary" style="font-size:0.7rem;"><i class="bi bi-clipboard-check me-1"></i>Stock Opname</span>
+                                @else
+                                    <span class="badge bg-info text-dark" style="font-size:0.7rem;"><i class="bi bi-box-arrow-right me-1"></i>Transfer</span>
+                                @endif
                             </td>
 
                             <td>

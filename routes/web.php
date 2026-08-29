@@ -60,7 +60,7 @@ Route::middleware('auth')->group(function () {
     // AKSES UMUM (Bisa diakses oleh semua user yang sudah login)
     // =========================================================================
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/dashboard-keuangan', [DashboardController::class, 'keuangan'])->name('dashboard.keuangan');
+    Route::get('/dashboard-keuangan', [DashboardController::class, 'keuangan'])->name('dashboard.keuangan')->middleware('role:Management,Direktur Keuangan');
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
@@ -79,13 +79,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/barang/check-nama', [BarangController::class, 'checkNama'])->name('barang.check-nama');
         Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
         Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');
-
-        // Persediaan Awal
-        Route::get('/persediaan-awal/template', [PersediaanAwalController::class, 'importTemplate'])->name('persediaan-awal.template');
-        Route::post('/persediaan-awal/import', [PersediaanAwalController::class, 'importExcel'])->name('persediaan-awal.import');
-        Route::post('/persediaan-awal/load-barang', [PersediaanAwalController::class, 'loadBarang'])->name('persediaan-awal.load-barang');
-        Route::resource('persediaan-awal', PersediaanAwalController::class)->names('persediaan-awal');
     });
+
+    // Persediaan Awal (Akses Operasional - Semua Role)
+    Route::get('/persediaan-awal/template', [PersediaanAwalController::class, 'importTemplate'])->name('persediaan-awal.template');
+    Route::post('/persediaan-awal/import', [PersediaanAwalController::class, 'importExcel'])->name('persediaan-awal.import');
+    Route::post('/persediaan-awal/load-barang', [PersediaanAwalController::class, 'loadBarang'])->name('persediaan-awal.load-barang');
+    Route::resource('persediaan-awal', PersediaanAwalController::class)->names('persediaan-awal');
 
 
     // =========================================================================
@@ -107,14 +107,15 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::put('/harga-barang-pos/{id}', [HargaBarangPosController::class, 'update'])->name('harga.update');
         Route::delete('/harga-barang-pos/{id}', [HargaBarangPosController::class, 'destroy'])->name('harga.destroy');
 
-        // Transaksi POS
-        Route::post('penjualan-pos/import-moka', [PenjualanPosController::class, 'importMokaExcel'])->name('penjualan_pos.import-moka');
-        Route::post('penjualan-pos/{id}/approve', [PenjualanPosController::class, 'approve'])->name('penjualan_pos.approve');
-        Route::get('/penjualan_pos/get-harga/{produk_id}', [PenjualanPosController::class, 'getHargaAktif'])->name('penjualan_pos.get-harga');
-        Route::get('/penjualan_pos/{id}/cetak-pdf', [PenjualanPosController::class, 'cetakNotaPdf'])->name('penjualan_pos.cetak-pdf');
-        Route::resource('penjualan_pos', PenjualanPosController::class);
-        Route::resource('penjualanpos-detail', PenjualanPosDetailController::class);
     });
+
+    // Transaksi POS (Akses Operasional - Semua Role)
+    Route::post('penjualan-pos/import-moka', [PenjualanPosController::class, 'importMokaExcel'])->name('penjualan_pos.import-moka');
+    Route::post('penjualan-pos/{id}/approve', [PenjualanPosController::class, 'approve'])->name('penjualan_pos.approve');
+    Route::get('/penjualan_pos/get-harga/{produk_id}', [PenjualanPosController::class, 'getHargaAktif'])->name('penjualan_pos.get-harga');
+    Route::get('/penjualan_pos/{id}/cetak-pdf', [PenjualanPosController::class, 'cetakNotaPdf'])->name('penjualan_pos.cetak-pdf');
+    Route::resource('penjualan_pos', PenjualanPosController::class);
+    Route::resource('penjualanpos-detail', PenjualanPosDetailController::class);
 
     // Laporan B2B Sales (diakses oleh Gaharu, Kejingga, dan Direktur Keuangan)
     Route::middleware(['role:Kepala Outlet Gaharu,Kepala Outlet Kejingga,Direktur Keuangan'])->group(function () {
@@ -133,40 +134,40 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // =========================================================================
     Route::middleware(['role:Kepala Outlet Gaharu'])->group(function () {
         Route::resource('customer', CustomerController::class)->names('customer');
-
-        // Pesanan B2B
-        Route::get('/pesanan/{id}/cetak-pdf', [PesananController::class, 'cetakSoPdf'])->name('pesanan.cetak-pdf');
-        Route::resource('pesanan', PesananController::class)->names('pesanan');
-        Route::resource('pesanan-detail', PesananDetailController::class);
-        Route::post('/pesanan/{id}/pembayaran', [PesananController::class, 'simpanPembayaran'])->name('pesanan.bayar');
-        Route::get('/pesanan/{id}/kwitansi', [PesananController::class, 'kwitansi'])->name('pesanan.kwitansi');
-        Route::post('/pesanan/{id}/batal', [PesananController::class, 'batal'])->name('pesanan.batal');
     });
 
-    // Supplier, Pembelian, Material Purchase (diakses oleh Gaharu & Kepala Gudang)
+    // Pesanan B2B (Akses Operasional - Semua Role)
+    Route::get('/pesanan/{id}/cetak-pdf', [PesananController::class, 'cetakSoPdf'])->name('pesanan.cetak-pdf');
+    Route::resource('pesanan', PesananController::class)->names('pesanan');
+    Route::resource('pesanan-detail', PesananDetailController::class);
+    Route::post('/pesanan/{id}/pembayaran', [PesananController::class, 'simpanPembayaran'])->name('pesanan.bayar');
+    Route::get('/pesanan/{id}/kwitansi', [PesananController::class, 'kwitansi'])->name('pesanan.kwitansi');
+    Route::post('/pesanan/{id}/batal', [PesananController::class, 'batal'])->name('pesanan.batal');
+
     Route::middleware(['role:Kepala Outlet Gaharu,Kepala Gudang'])->group(function () {
         Route::resource('suppliers', SupplierController::class)->names('suppliers');
-
-        Route::get('pengeluaran-bahan-baku/suggestions', [PengeluaranBahanBakuController::class, 'suggestions'])->name('pengeluaran-bahan-baku.suggestions');
-        Route::get('pengeluaran-bahan-baku/{id}/detail-json', [PengeluaranBahanBakuController::class, 'detailJson'])->name('pengeluaran-bahan-baku.detail-json');
-        Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
-        Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
-
-        Route::get('pembelian/suggestions', [PembelianController::class, 'suggestions'])->name('pembelian.suggestions');
-        Route::get('pembelian/{id}/cetak-pdf', [PembelianController::class, 'cetakPoPdf'])->name('pembelian.cetak-pdf');
-        Route::post('pembelian/{pembelian}/terima', [PembelianController::class, 'terima'])->name('pembelian.terima');
-        Route::post('pembelian/{pembelian}/lunasi', [PembelianController::class, 'lunasi'])->name('pembelian.lunasi');
-        Route::post('pembelian/{pembelian}/catat-pembayaran', [PembelianController::class, 'catatPembayaran'])->name('pembelian.catat-pembayaran');
-        Route::resource('pembelian', PembelianController::class)->only([
-            'index', 'create', 'store', 'show', 'edit', 'update', 'destroy',
-        ]);
     });
+
+    // Pengadaan & Pengeluaran Bahan (Akses Operasional - Semua Role)
+    Route::get('pengeluaran-bahan-baku/suggestions', [PengeluaranBahanBakuController::class, 'suggestions'])->name('pengeluaran-bahan-baku.suggestions');
+    Route::get('pengeluaran-bahan-baku/{id}/detail-json', [PengeluaranBahanBakuController::class, 'detailJson'])->name('pengeluaran-bahan-baku.detail-json');
+    Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
+    Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
+
+    Route::get('pembelian/suggestions', [PembelianController::class, 'suggestions'])->name('pembelian.suggestions');
+    Route::get('pembelian/{id}/cetak-pdf', [PembelianController::class, 'cetakPoPdf'])->name('pembelian.cetak-pdf');
+    Route::post('pembelian/{pembelian}/terima', [PembelianController::class, 'terima'])->name('pembelian.terima');
+    Route::post('pembelian/{pembelian}/lunasi', [PembelianController::class, 'lunasi'])->name('pembelian.lunasi');
+    Route::post('pembelian/{pembelian}/catat-pembayaran', [PembelianController::class, 'catatPembayaran'])->name('pembelian.catat-pembayaran');
+    Route::resource('pembelian', PembelianController::class)->only([
+        'index', 'create', 'store', 'show', 'edit', 'update', 'destroy',
+    ]);
 
 
     // =========================================================================
     // 3C. GROUP FINANCE & REPORTS (GAHARU & DIREKTUR KEUANGAN)
     // =========================================================================
-    Route::middleware(['role:Kepala Outlet Gaharu,Direktur Keuangan'])->group(function () {
+    Route::middleware(['role:Management,Direktur Keuangan'])->group(function () {
         Route::resource('coa', CoaController::class)->names('coa');
 
         // Laporan Penjualan B2B
@@ -233,7 +234,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     });
 
     // Jurnal Penjualan POS (Gaharu, Kejingga, Direktur Keuangan)
-    Route::middleware(['role:Kepala Outlet Gaharu,Kepala Outlet Kejingga,Direktur Keuangan'])->group(function () {
+    Route::middleware(['role:Management,Direktur Keuangan'])->group(function () {
         Route::get('/jurnal-penjualanpos', [JurnalController::class, 'penjualanposIndex'])->name('jurnal-penjualanpos.index');
         Route::get('/jurnal-penjualanpos/create/{id}', [JurnalController::class, 'penjualanposCreate'])->name('jurnal-penjualanpos.create');
         Route::post('/jurnal-penjualanpos/store/{id}', [JurnalController::class, 'penjualanposStore'])->name('jurnal-penjualanpos.store');
@@ -243,72 +244,62 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
 
     // =========================================================================
-    // 4. GROUP PRODUKSI
-    // Hak Akses: Work Order, Pengeluaran Bahan, Barang Jadi
+    // 4. GROUP PRODUKSI (Akses Operasional - Semua Role)
     // =========================================================================
-    Route::middleware(['role:Bagian Produksi,Kepala Outlet Gaharu'])->group(function () {
-        Route::prefix('work-order')->name('wo.')->group(function () {
-            Route::get('/', function () {
-                return redirect()->route('produksi.index');
-            })->name('index');
-            Route::get('/create/{id}', [WorkOrderController::class, 'create'])->name('create');
-            Route::post('/store', [WorkOrderController::class, 'store'])->name('store');
-            Route::get('/show/{id}', [WorkOrderController::class, 'show'])->name('show');
-            Route::get('/{id}/cetak-pdf', [WorkOrderController::class, 'cetakPdf'])->name('cetak-pdf');
-            Route::post('/massal/review', [WorkOrderController::class, 'reviewMassal'])->name('review_massal');
-            Route::post('/massal/store', [WorkOrderController::class, 'storeMassal'])->name('store_massal');
-            Route::get('/massal/review', function () {
-                return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Sesi tidak valid, silakan ulangi.');
-            });
-            Route::post('/{id}/kirim-produksi', [WorkOrderController::class, 'kirimKeProduksi'])->name('kirim_produksi');
+    Route::prefix('work-order')->name('wo.')->group(function () {
+        Route::get('/', function () {
+            return redirect()->route('produksi.index');
+        })->name('index');
+        Route::get('/create/{id}', [WorkOrderController::class, 'create'])->name('create');
+        Route::post('/store', [WorkOrderController::class, 'store'])->name('store');
+        Route::get('/show/{id}', [WorkOrderController::class, 'show'])->name('show');
+        Route::get('/{id}/cetak-pdf', [WorkOrderController::class, 'cetakPdf'])->name('cetak-pdf');
+        Route::post('/massal/review', [WorkOrderController::class, 'reviewMassal'])->name('review_massal');
+        Route::post('/massal/store', [WorkOrderController::class, 'storeMassal'])->name('store_massal');
+        Route::get('/massal/review', function () {
+            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Sesi tidak valid, silakan ulangi.');
         });
-
-        Route::get('/produksi', [ProduksiController::class, 'index'])->name('produksi.index');
-        Route::post('/produksi/wo', [ProduksiController::class, 'storeWo'])->name('produksi.store-wo');
-        Route::post('/produksi/store-and-approve', [ProduksiController::class, 'storeAndApprove'])->name('produksi.store-and-approve');
-        Route::get('/produksi/create', [ProduksiController::class, 'create'])->name('produksi.create');
-        Route::post('/produksi', [ProduksiController::class, 'store'])->name('produksi.store');
-        Route::get('/produksi/get-wo-detail/{id}', [ProduksiController::class, 'getWoDetail'])->name('produksi.getWoDetail');
-        Route::get('/produksi/{id}/cetak-pdf', [ProduksiController::class, 'cetakPdf'])->name('produksi.cetak-pdf');
-        Route::resource('produksi', ProduksiController::class);
-        Route::post('/produksi/{id}/approve', [ProduksiController::class, 'approve'])->name('produksi.approve');
+        Route::post('/{id}/kirim-produksi', [WorkOrderController::class, 'kirimKeProduksi'])->name('kirim_produksi');
     });
 
-    // Pengiriman / Delivery (diakses oleh Produksi & Kepala Outlet Gaharu)
-    Route::middleware(['role:Bagian Produksi,Kepala Outlet Gaharu'])->group(function () {
-        Route::get('/pengiriman', [PengirimanController::class, 'index'])->name('pengiriman.index');
-        Route::get('/pengiriman/create', [PengirimanController::class, 'create'])->name('pengiriman.create');
-        Route::post('/pengiriman/store', [PengirimanController::class, 'store'])->name('pengiriman.store');
-        Route::get('/pengiriman/pesanan-detail/{id}', [PengirimanController::class, 'getPesananDetail'])->name('pengiriman.pesanan-detail');
-        Route::resource('pengiriman', PengirimanController::class);
-        Route::post('pengiriman/{id}/approve', [PengirimanController::class, 'approve'])->name('pengiriman.approve');
-    });
+    Route::get('/produksi', [ProduksiController::class, 'index'])->name('produksi.index');
+    Route::post('/produksi/wo', [ProduksiController::class, 'storeWo'])->name('produksi.store-wo');
+    Route::post('/produksi/store-and-approve', [ProduksiController::class, 'storeAndApprove'])->name('produksi.store-and-approve');
+    Route::get('/produksi/create', [ProduksiController::class, 'create'])->name('produksi.create');
+    Route::post('/produksi', [ProduksiController::class, 'store'])->name('produksi.store');
+    Route::get('/produksi/get-wo-detail/{id}', [ProduksiController::class, 'getWoDetail'])->name('produksi.getWoDetail');
+    Route::get('/produksi/{id}/cetak-pdf', [ProduksiController::class, 'cetakPdf'])->name('produksi.cetak-pdf');
+    Route::resource('produksi', ProduksiController::class);
+    Route::post('/produksi/{id}/approve', [ProduksiController::class, 'approve'])->name('produksi.approve');
 
-    // Laporan Produksi Dashboard & Rekapitulasi (Produksi, Gaharu, Direktur Keuangan)
-    Route::middleware(['role:Bagian Produksi,Direktur Keuangan'])->group(function () {
-        Route::get('/laporan-produksi/dashboard', [LaporanProduksiController::class, 'dashboard'])->name('laporan.produksi.dashboard');
-        Route::get('/laporan-produksi/rekapitulasi', [LaporanProduksiController::class, 'rekapitulasi'])->name('laporan.rekapitulasi');
-    });
+    // Pengiriman / Delivery (Akses Operasional - Semua Role)
+    Route::get('/pengiriman', [PengirimanController::class, 'index'])->name('pengiriman.index');
+    Route::get('/pengiriman/create', [PengirimanController::class, 'create'])->name('pengiriman.create');
+    Route::post('/pengiriman/store', [PengirimanController::class, 'store'])->name('pengiriman.store');
+    Route::get('/pengiriman/pesanan-detail/{id}', [PengirimanController::class, 'getPesananDetail'])->name('pengiriman.pesanan-detail');
+    Route::resource('pengiriman', PengirimanController::class);
+    Route::post('pengiriman/{id}/approve', [PengirimanController::class, 'approve'])->name('pengiriman.approve');
+
+    // Laporan Produksi Dashboard & Rekapitulasi (Akses Laporan - Semua Role)
+    Route::get('/laporan-produksi/dashboard', [LaporanProduksiController::class, 'dashboard'])->name('laporan.produksi.dashboard');
+    Route::get('/laporan-produksi/rekapitulasi', [LaporanProduksiController::class, 'rekapitulasi'])->name('laporan.rekapitulasi');
 
     // =========================================================================
-    // 4B. GROUP CENTRAL KITCHEN
-    // Hak Akses: Kepala Outlet Gaharu, Kepala Outlet Kejingga, Bagian Produksi, Kepala Gudang
+    // 4B. GROUP CENTRAL KITCHEN (Akses Operasional - Semua Role)
     // =========================================================================
-    Route::middleware(['role:Kepala Outlet Gaharu,Kepala Outlet Kejingga,Bagian Produksi,Kepala Gudang'])->group(function () {
-        // CK Orders
-        Route::get('/central-kitchen/orders/suggestions', [CentralKitchenOrderController::class, 'suggestions'])->name('ck-orders.suggestions');
-        Route::get('/central-kitchen/orders/{id}/cetak-pdf', [CentralKitchenOrderController::class, 'cetakPdf'])->name('ck-orders.cetak-pdf');
-        Route::resource('central-kitchen/orders', CentralKitchenOrderController::class)->names('ck-orders');
+    // CK Orders
+    Route::get('/central-kitchen/orders/suggestions', [CentralKitchenOrderController::class, 'suggestions'])->name('ck-orders.suggestions');
+    Route::get('/central-kitchen/orders/{id}/cetak-pdf', [CentralKitchenOrderController::class, 'cetakPdf'])->name('ck-orders.cetak-pdf');
+    Route::resource('central-kitchen/orders', CentralKitchenOrderController::class)->names('ck-orders');
 
-        // CK Production
-        Route::get('/central-kitchen/produksi', [CentralKitchenProductionController::class, 'index'])->name('ck-produksi.index');
-        Route::post('/central-kitchen/produksi/wo', [CentralKitchenProductionController::class, 'storeWo'])->name('ck-produksi.store-wo');
-        Route::post('/central-kitchen/produksi/kirim-bahan/{id}', [CentralKitchenProductionController::class, 'kirimBahanBaku'])->name('ck-produksi.kirim-bahan');
-        Route::get('/central-kitchen/produksi/create-produksi', [CentralKitchenProductionController::class, 'createProduksi'])->name('ck-produksi.create-produksi');
-        Route::post('/central-kitchen/produksi/store-produksi', [CentralKitchenProductionController::class, 'storeProduksi'])->name('ck-produksi.store-produksi');
-        Route::post('/central-kitchen/produksi/store-and-approve', [CentralKitchenProductionController::class, 'storeAndApprove'])->name('ck-produksi.store-and-approve');
-        Route::post('/central-kitchen/produksi/{id}/approve', [CentralKitchenProductionController::class, 'approveProduksi'])->name('ck-produksi.approve');
-    });
+    // CK Production
+    Route::get('/central-kitchen/produksi', [CentralKitchenProductionController::class, 'index'])->name('ck-produksi.index');
+    Route::post('/central-kitchen/produksi/wo', [CentralKitchenProductionController::class, 'storeWo'])->name('ck-produksi.store-wo');
+    Route::post('/central-kitchen/produksi/kirim-bahan/{id}', [CentralKitchenProductionController::class, 'kirimBahanBaku'])->name('ck-produksi.kirim-bahan');
+    Route::get('/central-kitchen/produksi/create-produksi', [CentralKitchenProductionController::class, 'createProduksi'])->name('ck-produksi.create-produksi');
+    Route::post('/central-kitchen/produksi/store-produksi', [CentralKitchenProductionController::class, 'storeProduksi'])->name('ck-produksi.store-produksi');
+    Route::post('/central-kitchen/produksi/store-and-approve', [CentralKitchenProductionController::class, 'storeAndApprove'])->name('ck-produksi.store-and-approve');
+    Route::post('/central-kitchen/produksi/{id}/approve', [CentralKitchenProductionController::class, 'approveProduksi'])->name('ck-produksi.approve');
 
 
     // =========================================================================
@@ -317,55 +308,50 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // =========================================================================
     Route::middleware(['role:Kepala Gudang,Kepala Outlet Gaharu,Kepala Outlet Kejingga'])->group(function () {
         Route::resource('gudangs', GudangController::class)->names('gudangs');
-
-        Route::get('/stok-gudang', [StokGudangController::class, 'index'])->name('stok-gudang.index');
-        Route::get('stok-gudang/{id}/detail', [StokGudangController::class, 'detail'])->name('stok-gudang.detail');
-        Route::resource('stok-gudang-batch', StokGudangBatchController::class);
-        Route::get('/stok-gudang-batch', [StokGudangBatchController::class, 'index'])->name('stok-gudang-batch.index');
-
-        // Stock Opname
-        Route::post('/stock-opname/hitung-fifo', [StockOpnameController::class, 'hitungFIFORealtime'])->name('stock-opname.hitung-fifo');
-        Route::post('stock-opname/load-barang', [StockOpnameController::class, 'loadBarang'])->name('stock-opname.load-barang');
-        Route::resource('stock-opname', StockOpnameController::class);
-        Route::get('stock-opname/{id}/approve', [StockOpnameController::class, 'approve'])->name('stock-opname.approve');
-        Route::get('stock-opname/{id}/detail-json', [StockOpnameController::class, 'detailJson'])->name('stock-opname.detail-json');
     });
 
-    // Laporan Persediaan / Inventory (Kepala Gudang, Kepala Outlet Gaharu, Direktur Keuangan)
-    Route::middleware(['role:Kepala Gudang,Kepala Outlet Gaharu,Direktur Keuangan'])->group(function () {
-        Route::get('/reports/inventory', [ReportInventoryController::class, 'index'])->name('reports.inventory');
-        Route::prefix('laporan')->name('laporan.')->group(function () {
-            Route::get('/pembelian', [LaporanPersediaanController::class, 'pembelian'])->name('pembelian');
-        });
+    // Pengelolaan Stok (Akses Operasional - Semua Role)
+    Route::get('/stok-gudang', [StokGudangController::class, 'index'])->name('stok-gudang.index');
+    Route::get('stok-gudang/{id}/detail', [StokGudangController::class, 'detail'])->name('stok-gudang.detail');
+    Route::resource('stok-gudang-batch', StokGudangBatchController::class);
+    Route::get('/stok-gudang-batch', [StokGudangBatchController::class, 'index'])->name('stok-gudang-batch.index');
+
+    // Stock Opname
+    Route::post('/stock-opname/hitung-fifo', [StockOpnameController::class, 'hitungFIFORealtime'])->name('stock-opname.hitung-fifo');
+    Route::post('stock-opname/load-barang', [StockOpnameController::class, 'loadBarang'])->name('stock-opname.load-barang');
+    Route::resource('stock-opname', StockOpnameController::class);
+    Route::get('stock-opname/{id}/approve', [StockOpnameController::class, 'approve'])->name('stock-opname.approve');
+    Route::get('stock-opname/{id}/detail-json', [StockOpnameController::class, 'detailJson'])->name('stock-opname.detail-json');
+
+    // Laporan Persediaan / Inventory (Akses Laporan - Semua Role)
+    Route::get('/reports/inventory', [ReportInventoryController::class, 'index'])->name('reports.inventory');
+    Route::prefix('laporan')->name('laporan.')->group(function () {
+        Route::get('/pembelian', [LaporanPersediaanController::class, 'pembelian'])->name('pembelian');
     });
 
-    Route::middleware(['role:Kepala Gudang,Kepala Outlet Gaharu,Direktur Keuangan,Kepala Outlet Kejingga'])->group(function () {
-        Route::get('/stok-gudang/buku-pembantu', [StokGudangController::class, 'bukuPembantuIndex'])->name('stok-gudang.buku-pembantu.index');
-        Route::get('/stok-gudang/buku-pembantu/mutasi', [StokGudangController::class, 'bukuPembantuMutasi'])->name('stok-gudang.buku-pembantu.mutasi');
+    Route::get('/stok-gudang/buku-pembantu', [StokGudangController::class, 'bukuPembantuIndex'])->name('stok-gudang.buku-pembantu.index');
+    Route::get('/stok-gudang/buku-pembantu/mutasi', [StokGudangController::class, 'bukuPembantuMutasi'])->name('stok-gudang.buku-pembantu.mutasi');
 
-        Route::prefix('laporan')->name('laporan.')->group(function () {
-            Route::get('/stok-gudang', [LaporanPersediaanController::class, 'stokGudang'])->name('stok-gudang');
-            Route::get('/pengeluaran-bahan-baku', [LaporanPersediaanController::class, 'pengeluaranBahanBaku'])->name('pengeluaran-bahan-baku');
-            Route::get('/stock-opname', [LaporanPersediaanController::class, 'stockOpname'])->name('stock-opname');
-        });
+    Route::prefix('laporan')->name('laporan.')->group(function () {
+        Route::get('/stok-gudang', [LaporanPersediaanController::class, 'stokGudang'])->name('stok-gudang');
+        Route::get('/pengeluaran-bahan-baku', [LaporanPersediaanController::class, 'pengeluaranBahanBaku'])->name('pengeluaran-bahan-baku');
+        Route::get('/stock-opname', [LaporanPersediaanController::class, 'stockOpname'])->name('stock-opname');
     });
 
 
     // =========================================================================
     // 6. GROUP HRD & PAYROLL
-    // Hak Akses: Master Data Karyawan, User, Role, Penggajian
+    // Hak Akses: Master Data Karyawan (HRD & Management), User, Role, Penggajian (Khusus HRD)
     // =========================================================================
-    Route::middleware(['role:HRD,Kepala Outlet Gaharu,Kepala Outlet Kejingga,Direktur Keuangan'])->group(function () {
+    Route::middleware(['role:HRD,Management,Direktur Keuangan'])->group(function () {
         Route::resource('karyawan', KaryawanController::class)->names('karyawan');
     });
 
     Route::middleware(['role:HRD'])->group(function () {
         Route::resource('roles', RoleController::class);
         Route::resource('users', UserController::class);
-    });
 
-    // Payroll (HRD, Direktur Keuangan, Kepala Outlet Gaharu, Kepala Outlet Kejingga)
-    Route::middleware(['role:HRD,Direktur Keuangan,Kepala Outlet Gaharu,Kepala Outlet Kejingga'])->group(function () {
+        // Payroll & Pengaturan Gaji
         Route::get('/penggajian/create', [PenggajianController::class, 'create'])->name('penggajian.create');
         Route::get('/penggajian/periode', [PenggajianController::class, 'periodeDetail'])->name('penggajian.show-periode');
         Route::post('/penggajian/auto-fill', [PenggajianController::class, 'autoFill'])->name('penggajian.auto-fill');

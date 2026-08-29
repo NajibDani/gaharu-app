@@ -1,9 +1,29 @@
 @php
     // Ambil nama role user yang sedang login
-    $role = auth()->user()->role->nama;
+    $role = auth()->user()->role->nama ?? '';
 
-    $isSuperAdmin = in_array($role, ['Super Admin', 'Administrator']);
-    $canRole = fn (array $allowed) => $isSuperAdmin || in_array($role, $allowed);
+    $roleMap = [
+        'Superadmin'             => 'Super Admin',
+        'Administrator'          => 'Super Admin',
+        'Bagian Produksi'        => 'Central Kitchen',
+        'Kepala Outlet Gaharu'   => 'Operasional Gaharu',
+        'Kepala Outlet Kejingga' => 'Operasional Kejingga',
+        'Direktur Keuangan'      => 'Management',
+    ];
+
+    $normalizedRole = $roleMap[$role] ?? $role;
+    $isSuperAdmin = in_array($normalizedRole, ['Super Admin', 'Superadmin']);
+
+    $canRole = function (array $allowed) use ($isSuperAdmin, $role, $normalizedRole, $roleMap) {
+        if ($isSuperAdmin) return true;
+        foreach ($allowed as $a) {
+            $normA = $roleMap[$a] ?? $a;
+            if ($role === $a || $normalizedRole === $normA || $role === $normA || $normalizedRole === $a) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     $masterActive = request()->routeIs([
         'kategori.*', 'barang.*', 'persediaan-awal.*', 'suppliers.*', 'customer.*',
@@ -51,7 +71,7 @@
                 </a>
             </div>
 
-            @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
+            @if($canRole(['Management', 'Direktur Keuangan']))
             <div class="menu-group">
                 <a href="{{ route('dashboard.keuangan') }}"
                     class="menu-parent text-decoration-none d-flex align-items-center justify-content-start {{ request()->routeIs('dashboard.keuangan') ? 'active-menu-root' : '' }}"
@@ -64,7 +84,7 @@
             </div>
             @endif
             
-            @if($canRole(['Bagian Produksi']))
+            @if($canRole(['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi']))
             <div class="menu-group">
                 <a href="{{ route('laporan.produksi.dashboard') }}"
                     class="menu-parent text-decoration-none d-flex align-items-center justify-content-start {{ request()->routeIs('laporan.produksi.dashboard') ? 'active-menu-root' : '' }}"
@@ -81,7 +101,7 @@
             {{-- ========================================================================= --}}
             {{-- MASTER DATA --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Kepala Gudang', 'HRD', 'Direktur Keuangan']))
+            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Kepala Gudang', 'HRD', 'Management', 'Direktur Keuangan']))
             <div class="menu-group {{ $masterActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -94,20 +114,18 @@
                 <div class="submenu-content">
 
                     {{-- PRODUK & RESEP --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Kepala Gudang']))
+                    @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Kepala Gudang']))
                     <div class="submenu-divider">PRODUK &amp; RESEP</div>
-                        @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Kepala Gudang']))
-                            <a href="{{ route('kategori.index') }}" class="{{ request()->routeIs('kategori.*') ? 'active' : '' }}">
-                                <i class="bi bi-tags me-2" style="font-size:12px;"></i>Kategori Barang
-                            </a>
-                            <a href="{{ route('barang.index') }}" class="{{ request()->routeIs('barang.*') ? 'active' : '' }}">
-                                <i class="bi bi-box-seam me-2" style="font-size:12px;"></i>Daftar Barang &amp; Bahan
-                            </a>
-                            <a href="{{ route('persediaan-awal.index') }}" class="{{ request()->routeIs('persediaan-awal.*') ? 'active' : '' }}">
-                                <i class="bi bi-inbox-fill me-2" style="font-size:12px;"></i>Persediaan Awal
-                            </a>
-                        @endif
-                        @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga']))
+                        <a href="{{ route('kategori.index') }}" class="{{ request()->routeIs('kategori.*') ? 'active' : '' }}">
+                            <i class="bi bi-tags me-2" style="font-size:12px;"></i>Kategori Barang
+                        </a>
+                        <a href="{{ route('barang.index') }}" class="{{ request()->routeIs('barang.*') ? 'active' : '' }}">
+                            <i class="bi bi-box-seam me-2" style="font-size:12px;"></i>Daftar Barang &amp; Bahan
+                        </a>
+                        <a href="{{ route('persediaan-awal.index') }}" class="{{ request()->routeIs('persediaan-awal.*') ? 'active' : '' }}">
+                            <i class="bi bi-inbox-fill me-2" style="font-size:12px;"></i>Persediaan Awal
+                        </a>
+                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga']))
                             <a href="{{ route('resep.index') }}" class="{{ request()->routeIs('resep.*') ? 'active' : '' }}">
                                 <i class="bi bi-journal-text me-2" style="font-size:12px;"></i>Resep Produk
                             </a>
@@ -118,39 +136,35 @@
                     @endif
 
                     {{-- MITRA & DISTRIBUSI --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Gudang']))
+                    @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Kepala Gudang']))
                     <div class="submenu-divider">MITRA &amp; GUDANG</div>
-                        @if($canRole(['Kepala Outlet Gaharu', 'Kepala Gudang']))
-                            <a href="{{ route('suppliers.index') }}" class="{{ request()->routeIs('suppliers.*') ? 'active' : '' }}">
-                                <i class="bi bi-truck me-2" style="font-size:12px;"></i>Daftar Supplier
-                            </a>
-                        @endif
-                        @if($canRole(['Kepala Outlet Gaharu']))
+                        <a href="{{ route('suppliers.index') }}" class="{{ request()->routeIs('suppliers.*') ? 'active' : '' }}">
+                            <i class="bi bi-truck me-2" style="font-size:12px;"></i>Daftar Supplier
+                        </a>
+                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu']))
                             <a href="{{ route('customer.index') }}" class="{{ request()->routeIs('customer.*') ? 'active' : '' }}">
                                 <i class="bi bi-people me-2" style="font-size:12px;"></i>Pelanggan B2B
                             </a>
                         @endif
-                        @if($canRole(['Kepala Gudang', 'Kepala Outlet Gaharu']))
-                            <a href="{{ route('gudangs.index') }}" class="{{ request()->routeIs('gudangs.*') ? 'active' : '' }}">
-                                <i class="bi bi-geo-alt me-2" style="font-size:12px;"></i>Daftar Gudang / Outlet
-                            </a>
-                        @endif
+                        <a href="{{ route('gudangs.index') }}" class="{{ request()->routeIs('gudangs.*') ? 'active' : '' }}">
+                            <i class="bi bi-geo-alt me-2" style="font-size:12px;"></i>Daftar Gudang / Outlet
+                        </a>
                     @endif
 
                     {{-- SDM & KEUANGAN --}}
-                    @if($canRole(['HRD', 'Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan']))
+                    @if($canRole(['HRD', 'Management', 'Direktur Keuangan']))
                     <div class="submenu-divider">SDM &amp; AKUN</div>
-                        @if($canRole(['HRD', 'Kepala Outlet Gaharu', 'Kepala Outlet Kejingga']))
+                        @if($canRole(['HRD', 'Management', 'Direktur Keuangan']))
                             <a href="{{ route('karyawan.index') }}" class="{{ request()->routeIs('karyawan.*') ? 'active' : '' }}">
                                 <i class="bi bi-person-badge me-2" style="font-size:12px;"></i>Data Karyawan
                             </a>
                         @endif
-                        @if($canRole(['HRD', 'Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan']))
+                        @if($canRole(['HRD']))
                             <a href="{{ route('pengaturan-gaji.index') }}" class="{{ request()->routeIs('pengaturan-gaji.*') ? 'active' : '' }}">
                                 <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Pengaturan Gaji
                             </a>
                         @endif
-                        @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan']))
+                        @if($canRole(['Management', 'Direktur Keuangan']))
                             <a href="{{ route('coa.index') }}" class="{{ request()->routeIs('coa.*') ? 'active' : '' }}">
                                 <i class="bi bi-diagram-3 me-2" style="font-size:12px;"></i>Bagan Akun (COA)
                             </a>
@@ -165,7 +179,6 @@
             {{-- ========================================================================= --}}
             {{-- OPERASIONAL --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Kepala Gudang', 'Bagian Produksi', 'HRD', 'Direktur Keuangan']))
             <div class="menu-group {{ $operationsActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -178,89 +191,64 @@
                 <div class="submenu-content">
 
                     {{-- ── PESANAN & PRODUKSI B2B ─────────────────────── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Bagian Produksi']))
                     <div class="submenu-divider">PESANAN &amp; PRODUKSI B2B</div>
-
-                    {{-- Step 1: Order --}}
-                    @if($canRole(['Kepala Outlet Gaharu']))
                     <a href="{{ route('pesanan.index') }}"
                        class="submenu-step {{ request()->routeIs('pesanan.*') ? 'active' : '' }}">
                         <span class="step-badge">1</span>
                         <i class="bi bi-briefcase me-2" style="font-size:12px;"></i>Pesanan B2B
                     </a>
-                    @endif
-
-                    {{-- Step 2: B2B Produksi (Unified WO & Produksi) --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Bagian Produksi']))
                     <a href="{{ route('produksi.index') }}"
                        class="submenu-step {{ (request()->routeIs('produksi.*') && !request()->routeIs('laporan.produksi.*')) || request()->routeIs('wo.*') ? 'active' : '' }}">
                         <span class="step-badge">2</span>
                         <i class="bi bi-hammer me-2" style="font-size:12px;"></i>Produksi B2B
                     </a>
-                    @endif
-
-                    @endif
 
                     {{-- ── PENJUALAN KASIR / POS ────────────────────── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga']))
                     <div class="submenu-divider">PENJUALAN KASIR (POS)</div>
-                        <a href="{{ route('penjualan_pos.index') }}" class="{{ request()->routeIs('penjualan_pos.*') ? 'active' : '' }}">
-                            <i class="bi bi-cart me-2" style="font-size:12px;"></i>Rekap Penjualan POS
-                        </a>
-                    @endif
+                    <a href="{{ route('penjualan_pos.index') }}" class="{{ request()->routeIs('penjualan_pos.*') ? 'active' : '' }}">
+                        <i class="bi bi-cart me-2" style="font-size:12px;"></i>Rekap Penjualan POS
+                    </a>
 
                     {{-- ── CENTRAL KITCHEN ─────────── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Bagian Produksi', 'Kepala Gudang']))
                     <div class="submenu-divider">DAPUR PUSAT (CENTRAL KITCHEN)</div>
-
-                    {{-- Step 1: CK Order --}}
                     <a href="{{ route('ck-orders.index') }}"
                        class="submenu-step {{ request()->routeIs('ck-orders.*') ? 'active' : '' }}">
                         <span class="step-badge">1</span>
                         <i class="bi bi-shop me-2" style="font-size:12px;"></i>Permintaan Dapur Pusat
                     </a>
-
-                    {{-- Step 2: CK Production --}}
                     <a href="{{ route('ck-produksi.index') }}"
                        class="submenu-step {{ request()->routeIs('ck-produksi.*') ? 'active' : '' }}">
                         <span class="step-badge">2</span>
                         <i class="bi bi-gear-wide-connected me-2" style="font-size:12px;"></i>Produksi Dapur Pusat
                     </a>
-                    @endif
 
                     {{-- ── PENGIRIMAN ──── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Bagian Produksi', 'Kepala Gudang']))
                     <div class="submenu-divider">PENGIRIMAN &amp; LOGISTIK</div>
                     <a href="{{ route('pengiriman.index') }}"
                        class="submenu-step {{ request()->routeIs('pengiriman.*') ? 'active' : '' }}">
                         <i class="bi bi-truck me-2" style="font-size:12px;"></i>Pengiriman Barang
                     </a>
-                    @endif
 
                     {{-- ── INVENTORY & GUDANG ───────────── --}}
-                    @if($canRole(['Kepala Gudang', 'Kepala Outlet Gaharu', 'Kepala Outlet Kejingga']))
                     <div class="submenu-divider">PENGELOLAAN STOK</div>
-                        @if($canRole(['Kepala Gudang', 'Kepala Outlet Gaharu']))
-                            <a href="{{ route('pembelian.index') }}" class="{{ request()->routeIs('pembelian.*') ? 'active' : '' }}">
-                                <i class="bi bi-bag-plus me-2" style="font-size:12px;"></i>Pembelian Bahan Baku
-                            </a>
-                            <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="{{ request()->routeIs('pengeluaran-bahan-baku.*') ? 'active' : '' }}">
-                                <i class="bi bi-arrow-right-circle me-2" style="font-size:12px;"></i>Permintaan / Transfer Bahan
-                            </a>
-                        @endif
-                        <a href="{{ route('persediaan-awal.index') }}" class="{{ request()->routeIs('persediaan-awal.*') ? 'active' : '' }}">
-                            <i class="bi bi-inbox-fill me-2" style="font-size:12px;"></i>Persediaan Awal
-                        </a>
-                        <a href="{{ route('stok-gudang.index') }}" class="{{ request()->routeIs('stok-gudang.index') || request()->routeIs('stok-gudang.detail') || request()->routeIs('stok-gudang-batch.*') ? 'active' : '' }}">
-                            <i class="bi bi-boxes me-2" style="font-size:12px;"></i>Stok Gudang
-                        </a>
-                        <a href="{{ route('stock-opname.index') }}" class="{{ request()->routeIs('stock-opname.*') ? 'active' : '' }}">
-                            <i class="bi bi-clipboard-check me-2" style="font-size:12px;"></i>Stock Opname (Cek Fisik)
-                        </a>
-                    @endif
+                    <a href="{{ route('pembelian.index') }}" class="{{ request()->routeIs('pembelian.*') ? 'active' : '' }}">
+                        <i class="bi bi-bag-plus me-2" style="font-size:12px;"></i>Pembelian Bahan Baku
+                    </a>
+                    <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="{{ request()->routeIs('pengeluaran-bahan-baku.*') ? 'active' : '' }}">
+                        <i class="bi bi-arrow-right-circle me-2" style="font-size:12px;"></i>Permintaan / Transfer Bahan
+                    </a>
+                    <a href="{{ route('persediaan-awal.index') }}" class="{{ request()->routeIs('persediaan-awal.*') ? 'active' : '' }}">
+                        <i class="bi bi-inbox-fill me-2" style="font-size:12px;"></i>Persediaan Awal
+                    </a>
+                    <a href="{{ route('stok-gudang.index') }}" class="{{ request()->routeIs('stok-gudang.index') || request()->routeIs('stok-gudang.detail') || request()->routeIs('stok-gudang-batch.*') ? 'active' : '' }}">
+                        <i class="bi bi-boxes me-2" style="font-size:12px;"></i>Stok Gudang
+                    </a>
+                    <a href="{{ route('stock-opname.index') }}" class="{{ request()->routeIs('stock-opname.*') ? 'active' : '' }}">
+                        <i class="bi bi-clipboard-check me-2" style="font-size:12px;"></i>Stock Opname (Cek Fisik)
+                    </a>
 
                     {{-- ── HR ──────────────────────────── --}}
-                    @if($canRole(['HRD', 'Direktur Keuangan', 'Kepala Outlet Gaharu', 'Kepala Outlet Kejingga']))
+                    @if($canRole(['HRD']))
                     <div class="submenu-divider">PENGGAJIAN (HR)</div>
                         <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') ? 'active' : '' }}">
                             <i class="bi bi-cash-stack me-2" style="font-size:12px;"></i>Penggajian Karyawan
@@ -272,13 +260,12 @@
 
                 </div>
             </div>
-            @endif
 
 
             {{-- ========================================================================= --}}
             {{-- KEUANGAN --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan']))
+            @if($canRole(['Management', 'Direktur Keuangan']))
             <div class="menu-group {{ $financeActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -289,37 +276,27 @@
                 </div>
 
                 <div class="submenu-content">
-                    @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
-                        <div class="submenu-divider">JURNAL TRANSAKSI</div>
-                        <a href="{{ route('jurnal.index') }}" class="{{ request()->routeIs('jurnal.index') ? 'active' : '' }}">
-                            <i class="bi bi-journal-check me-2" style="font-size:12px;"></i>Jurnal Umum
-                        </a>
-                        <a href="{{ route('jurnal-pembelian.index') }}" class="{{ request()->routeIs('jurnal-pembelian.*') ? 'active' : '' }}">
-                            <i class="bi bi-journal-plus me-2" style="font-size:12px;"></i>Jurnal Pembelian
-                        </a>
-                        <a href="{{ route('jurnal-penjualanb2b.index') }}" class="{{ request()->routeIs('jurnal-penjualanb2b.*') ? 'active' : '' }}">
-                            <i class="bi bi-journal-plus me-2" style="font-size:12px;"></i>Jurnal Penjualan B2B
-                        </a>
-                    @endif
+                    <div class="submenu-divider">JURNAL TRANSAKSI</div>
+                    <a href="{{ route('jurnal.index') }}" class="{{ request()->routeIs('jurnal.index') ? 'active' : '' }}">
+                        <i class="bi bi-journal-check me-2" style="font-size:12px;"></i>Jurnal Umum
+                    </a>
+                    <a href="{{ route('jurnal-pembelian.index') }}" class="{{ request()->routeIs('jurnal-pembelian.*') ? 'active' : '' }}">
+                        <i class="bi bi-journal-plus me-2" style="font-size:12px;"></i>Jurnal Pembelian
+                    </a>
+                    <a href="{{ route('jurnal-penjualanb2b.index') }}" class="{{ request()->routeIs('jurnal-penjualanb2b.*') ? 'active' : '' }}">
+                        <i class="bi bi-journal-plus me-2" style="font-size:12px;"></i>Jurnal Penjualan B2B
+                    </a>
+                    <a href="{{ route('jurnal-penjualanpos.index') }}" class="{{ request()->routeIs('jurnal-penjualanpos.*') ? 'active' : '' }}">
+                        <i class="bi bi-journal-minus me-2" style="font-size:12px;"></i>Jurnal Penjualan POS
+                    </a>
 
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan']))
-                        @if(!$canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
-                            <div class="submenu-divider">JURNAL TRANSAKSI</div>
-                        @endif
-                        <a href="{{ route('jurnal-penjualanpos.index') }}" class="{{ request()->routeIs('jurnal-penjualanpos.*') ? 'active' : '' }}">
-                            <i class="bi bi-journal-minus me-2" style="font-size:12px;"></i>Jurnal Penjualan POS
-                        </a>
-                    @endif
-
-                    @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
-                        <div class="submenu-divider">PENYESUAIAN &amp; TUTUP BUKU</div>
-                        <a href="{{ route('adjustment.index') }}" class="{{ request()->routeIs('adjustment.*') ? 'active' : '' }}">
-                            <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Jurnal Penyesuaian
-                        </a>
-                        <a href="{{ route('closing.index') }}" class="{{ request()->routeIs('closing.*') ? 'active' : '' }}">
-                            <i class="bi bi-lock me-2" style="font-size:12px;"></i>Tutup Buku Bulanan
-                        </a>
-                    @endif
+                    <div class="submenu-divider">PENYESUAIAN &amp; TUTUP BUKU</div>
+                    <a href="{{ route('adjustment.index') }}" class="{{ request()->routeIs('adjustment.*') ? 'active' : '' }}">
+                        <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Jurnal Penyesuaian
+                    </a>
+                    <a href="{{ route('closing.index') }}" class="{{ request()->routeIs('closing.*') ? 'active' : '' }}">
+                        <i class="bi bi-lock me-2" style="font-size:12px;"></i>Tutup Buku Bulanan
+                    </a>
                 </div>
             </div>
             @endif
@@ -328,7 +305,7 @@
             {{-- ========================================================================= --}}
             {{-- LAPORAN --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Bagian Produksi', 'Kepala Gudang', 'Direktur Keuangan']))
+            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Kepala Gudang', 'Management', 'Direktur Keuangan']))
             <div class="menu-group {{ $reportsActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -340,9 +317,9 @@
 
                 <div class="submenu-content">
                     {{-- ── LAPORAN PERSEDIAAN & STOK ──────────────── --}}
-                    @if($canRole(['Kepala Gudang', 'Kepala Outlet Gaharu', 'Direktur Keuangan', 'Kepala Outlet Kejingga']))
+                    @if($canRole(['Kepala Gudang', 'Operasional Gaharu', 'Kepala Outlet Gaharu', 'Management', 'Direktur Keuangan', 'Operasional Kejingga', 'Kepala Outlet Kejingga']))
                         <div class="submenu-divider">PERSEDIAAN &amp; STOK</div>
-                        @if($canRole(['Kepala Gudang', 'Kepala Outlet Gaharu', 'Direktur Keuangan']))
+                        @if($canRole(['Kepala Gudang', 'Operasional Gaharu', 'Kepala Outlet Gaharu', 'Management', 'Direktur Keuangan']))
                             <a href="{{ route('laporan.pembelian') }}" class="{{ request()->routeIs('laporan.pembelian') ? 'active' : '' }}">
                                 <i class="bi bi-cart-check me-2" style="font-size:12px;"></i>Laporan Pembelian
                             </a>
@@ -356,13 +333,10 @@
                         <a href="{{ route('laporan.stock-opname') }}" class="{{ request()->routeIs('laporan.stock-opname') ? 'active' : '' }}">
                             <i class="bi bi-clipboard-check me-2" style="font-size:12px;"></i>Laporan Stock Opname
                         </a>
-                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
-                            <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
-                        </a>
                     @endif
 
                     {{-- ── LAPORAN KEUANGAN UTAMA ───────────── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
+                    @if($canRole(['Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">LAPORAN KEUANGAN</div>
                         <a href="{{ route('laporan.laba-rugi.index') }}" class="{{ request()->routeIs('laporan.laba-rugi.*') ? 'active' : '' }}">
                             <i class="bi bi-graph-up me-2" style="font-size:12px;"></i>Laba Rugi (Profit &amp; Loss)
@@ -379,7 +353,7 @@
                     @endif
 
                     {{-- ── BUKU BESAR & PEMBANTU ────── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
+                    @if($canRole(['Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">BUKU BESAR &amp; PEMBANTU</div>
                         <a href="{{ route('laporan.neraca-saldo.index') }}" class="{{ request()->routeIs('laporan.neraca-saldo.*') ? 'active' : '' }}">
                             <i class="bi bi-list-check me-2" style="font-size:12px;"></i>Neraca Saldo (Trial Balance)
@@ -390,13 +364,16 @@
                         <a href="{{ route('buku-pembantu.index') }}" class="{{ request()->routeIs('buku-pembantu.*') ? 'active' : '' }}">
                             <i class="bi bi-book-half me-2" style="font-size:12px;"></i>Buku Pembantu Piutang/Utang
                         </a>
+                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
+                            <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
+                        </a>
                     @endif
 
                     {{-- ── PENJUALAN & HPP ──────────────────── --}}
-                    @if($canRole(['Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Direktur Keuangan']))
+                    @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">PENJUALAN &amp; HPP</div>
 
-                        @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
+                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Management', 'Direktur Keuangan']))
                             <a href="{{ route('laporan.penjualan') }}" class="{{ request()->routeIs('laporan.penjualan') ? 'active' : '' }}">
                                 <i class="bi bi-building me-2" style="font-size:12px;"></i>Laporan Penjualan B2B
                             </a>
@@ -406,7 +383,7 @@
                             <i class="bi bi-receipt me-2" style="font-size:12px;"></i>Laporan Penjualan POS
                         </a>
 
-                        @if($canRole(['Kepala Outlet Gaharu', 'Direktur Keuangan']))
+                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Management', 'Direktur Keuangan']))
                             <a href="{{ route('laporan.hpp') }}" class="{{ request()->routeIs('laporan.hpp') ? 'active' : '' }}">
                                 <i class="bi bi-cpu me-2" style="font-size:12px;"></i>Laporan HPP Produk
                             </a>
@@ -414,7 +391,7 @@
                     @endif
 
                     {{-- ── LAPORAN PRODUKSI ─────────────── --}}
-                    @if($canRole(['Bagian Produksi', 'Direktur Keuangan']))
+                    @if($canRole(['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">PRODUKSI</div>
                         <a href="{{ route('laporan.rekapitulasi') }}" class="{{ request()->routeIs('laporan.rekapitulasi') ? 'active' : '' }}">
                             <i class="bi bi-gear-wide-connected me-2" style="font-size:12px;"></i>Rekapitulasi Produksi

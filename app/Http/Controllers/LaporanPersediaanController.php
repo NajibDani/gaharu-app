@@ -231,13 +231,37 @@ class LaporanPersediaanController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
+        if ($request->filled('jenis_pengeluaran')) {
+            if ($request->jenis_pengeluaran === 'wasted') {
+                $query->where(function ($q) {
+                    $q->where('jenis_pengeluaran', 'wasted')
+                      ->orWhere('kode_pengeluaran', 'like', 'PBK-WST-%');
+                });
+            } elseif ($request->jenis_pengeluaran === 'transfer') {
+                $query->where(function ($q) {
+                    $q->where(function ($sq) {
+                        $sq->whereNull('jenis_pengeluaran')
+                          ->orWhere('jenis_pengeluaran', 'transfer');
+                    })
+                    ->where('kode_pengeluaran', 'not like', 'PBK-SO-%')
+                    ->where('kode_pengeluaran', 'not like', 'PBK-WST-%');
+                });
+            } elseif ($request->jenis_pengeluaran === 'opname') {
+                $query->where('kode_pengeluaran', 'like', 'PBK-SO-%');
+            }
+        }
 
         $data = $query->get();
 
         $totalTransaksi = $data->count();
         $totalNilaiHpp  = $data->sum(fn($d) => $d->details->sum('hpp_total'));
         $totalQty       = $data->sum(fn($d) => $d->details->sum('qty'));
-        $totalApproved  = $data->where('status', 'approved')->count();
+        $totalApproved  = $data->whereIn('status', ['approved', 'disetujui'])->count();
+
+        $wastedData = $data->filter(fn($d) => $d->jenis_pengeluaran === 'wasted' || str_starts_with($d->kode_pengeluaran, 'PBK-WST-'));
+        $totalWastedTransaksi = $wastedData->count();
+        $totalWastedNilaiHpp  = $wastedData->sum(fn($d) => $d->details->sum('hpp_total'));
+        $totalWastedQty       = $wastedData->sum(fn($d) => $d->details->sum('qty'));
 
         $topBahan = $data->flatMap->details
             ->groupBy('barang_id')
@@ -283,6 +307,7 @@ class LaporanPersediaanController extends Controller
         return view('laporanpersediaan.pengeluaran-bahan-baku', compact(
             'data', 'gudangs',
             'totalTransaksi', 'totalNilaiHpp', 'totalQty', 'totalApproved',
+            'totalWastedTransaksi', 'totalWastedNilaiHpp', 'totalWastedQty',
             'topBahan', 'detailData', 'request'
         ));
     }
