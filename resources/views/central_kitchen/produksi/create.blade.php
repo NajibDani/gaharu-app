@@ -37,17 +37,21 @@
                 <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Pilih Work Order CK</h6>
 
                 <div class="row g-3">
-                    <div class="col-md-8">
+                    <div class="col-md-6">
                         <label class="form-label fw-semibold text-sm">Work Order Central Kitchen <span class="text-danger">*</span></label>
-                        <select name="work_order_id" class="form-select text-sm rounded-3" onchange="window.location.href='{{ route('ck-produksi.create-produksi') }}?work_order_id=' + this.value" required>
+                        <select name="work_order_id" id="select-wo" class="form-select text-sm rounded-3" required>
                             <option value="">-- Pilih Work Order CK --</option>
                             @foreach($workOrders as $wo)
-                                <option value="{{ $wo->id }}" {{ $selectedWoId == $wo->id ? 'selected' : '' }}>
+                                <option value="{{ $wo->id }}"
+                                    data-divisi="{{ $wo->divisi_id ?? '' }}"
+                                    {{ $selectedWoId == $wo->id ? 'selected' : '' }}>
                                     {{ $wo->kode_wo }} - {{ date('d/m/Y', strtotime($wo->tanggal_wo)) }}
                                 </option>
                             @endforeach
                         </select>
                     </div>
+
+                    <input type="hidden" name="divisi_id" id="select-divisi" value="1">
 
                     <div class="col-md-4">
                         <label class="form-label fw-semibold text-sm">Tanggal Selesai Produksi <span class="text-danger">*</span></label>
@@ -117,4 +121,32 @@
             @endif
         </form>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const woSelect = document.getElementById('select-wo');
+            const divisiSelect = document.getElementById('select-divisi');
+
+            // Saat WO dipilih, redirect agar item target ter-load + kirim divisi_id juga
+            if (woSelect) {
+                woSelect.addEventListener('change', function () {
+                    const woId = this.value;
+                    const divisiId = this.options[this.selectedIndex].getAttribute('data-divisi') || '';
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('work_order_id', woId);
+                    if (divisiId) url.searchParams.set('divisi_id', divisiId);
+                    window.location.href = url.toString();
+                });
+            }
+
+            // Auto-fill divisi berdasarkan query string (hasil redirect WO)
+            if (divisiSelect) {
+                const params = new URLSearchParams(window.location.search);
+                const divisiFromUrl = params.get('divisi_id');
+                if (divisiFromUrl) {
+                    divisiSelect.value = divisiFromUrl;
+                }
+            }
+        });
+    </script>
 </x-app-layout>

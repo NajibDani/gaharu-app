@@ -233,7 +233,7 @@
                                             data-min-stock-map="{{ json_encode($d->minimumStocks->mapWithKeys(fn($m) => [($m->gudang_id . '_' . ($m->divisi_id ?? 'none')) => ['qty' => (float)$m->minimum_stock, 'is_active' => (bool)$m->is_active]])) }}"
                                             data-min-order="{{ $d->minimum_order ?? 1 }}"
                                             data-tipe-penjualan="{{ $d->tipe_penjualan }}"
-                                            data-action="{{ route('barang.update', $d->id) }}">
+                                            data-action="{{ route('barang.update', $d->id) }}?page={{ $data->currentPage() }}">
                                         <i class="bi bi-pencil-fill"></i>
                                     </button>
 
@@ -310,8 +310,9 @@
 
                         <div class="col-md-6 mb-3">
                             <label class="custom-label">Satuan Utama</label>
-                            <input type="text" name="satuan" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter, ml">
+                            <input type="text" name="satuan" id="satuan_input_create" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter, ml">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            <small class="form-text text-danger d-none" id="satuan-helper-create">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).</small>
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -678,6 +679,7 @@
                             <label class="custom-label">Satuan Utama</label>
                             <input type="text" name="satuan" id="editSatuan" class="form-control custom-input @error('satuan') is-invalid @enderror" required placeholder="Contoh: kg, pcs, liter, ml">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            <small class="form-text text-danger d-none" id="satuan-helper-edit">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).</small>
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -953,18 +955,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const tipePenjualanSelect = document.getElementById('tipe_penjualan');
 
     function toggleForm() {
+        const satuanHelperCreate = document.getElementById('satuan-helper-create');
         if (jenis.value === "BAHAN_SETENGAH_JADI") {
             groupMinStock.style.display = "none";
             if (groupMinStockBb) groupMinStockBb.style.display = "none";
             groupMinStockBsj.style.display = "block";
             minStockInput.value = "";
-        } else if (jenis.value === "BAHAN_BAKU") {
-            groupMinStock.style.display = "none";
-            if (groupMinStockBb) groupMinStockBb.style.display = "block";
-            groupMinStockBsj.style.display = "none";
-            if (minStockCk) minStockCk.value = "";
-            if (minStockKejingga) minStockKejingga.value = "";
-            if (minStockGaharu) minStockGaharu.value = "";
+            if (satuanHelperCreate) satuanHelperCreate.classList.remove('d-none');
         } else {
             groupMinStock.style.display = "none";
             if (groupMinStockBb) groupMinStockBb.style.display = "none";
@@ -973,6 +970,11 @@ document.addEventListener("DOMContentLoaded", function () {
             if (minStockCk) minStockCk.value = "";
             if (minStockKejingga) minStockKejingga.value = "";
             if (minStockGaharu) minStockGaharu.value = "";
+            if (satuanHelperCreate) satuanHelperCreate.classList.add('d-none');
+        }
+
+        if (jenis.value === "BAHAN_BAKU") {
+            if (groupMinStockBb) groupMinStockBb.style.display = "block";
         }
 
         if (jenis.value === "BARANG_JADI") {
@@ -1130,18 +1132,13 @@ document.addEventListener("DOMContentLoaded", function () {
     var editTipePenjualan = document.getElementById('editTipePenjualan');
 
     function toggleEditForm() {
+        const satuanHelperEdit = document.getElementById('satuan-helper-edit');
         if (editJenis.value === "BAHAN_SETENGAH_JADI") {
             editGroupMinStock.style.display = "none";
             if (editGroupMinStockBb) editGroupMinStockBb.style.display = "none";
             editGroupMinStockBsj.style.display = "block";
             editMinimumStock.value = "";
-        } else if (editJenis.value === "BAHAN_BAKU") {
-            editGroupMinStock.style.display = "none";
-            if (editGroupMinStockBb) editGroupMinStockBb.style.display = "block";
-            editGroupMinStockBsj.style.display = "none";
-            if (editMinimumStockCk) editMinimumStockCk.value = "";
-            if (editMinimumStockKejingga) editMinimumStockKejingga.value = "";
-            if (editMinimumStockGaharu) editMinimumStockGaharu.value = "";
+            if (satuanHelperEdit) satuanHelperEdit.classList.remove('d-none');
         } else {
             editGroupMinStock.style.display = "none";
             if (editGroupMinStockBb) editGroupMinStockBb.style.display = "none";
@@ -1150,6 +1147,11 @@ document.addEventListener("DOMContentLoaded", function () {
             if (editMinimumStockCk) editMinimumStockCk.value = "";
             if (editMinimumStockKejingga) editMinimumStockKejingga.value = "";
             if (editMinimumStockGaharu) editMinimumStockGaharu.value = "";
+            if (satuanHelperEdit) satuanHelperEdit.classList.add('d-none');
+        }
+
+        if (editJenis.value === "BAHAN_BAKU") {
+            if (editGroupMinStockBb) editGroupMinStockBb.style.display = "block";
         }
 
         if (editJenis.value === "BARANG_JADI") {

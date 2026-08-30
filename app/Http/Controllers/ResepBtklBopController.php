@@ -13,20 +13,33 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ResepBtklBopController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        // 1. Mengambil data utama resep beserta relasinya untuk tabel list
-        $data = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku'])->get();
+        $search = $request->query('search');
+
+        $query = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku']);
+
+        if (!empty($search)) {
+            $query->where(function($q) use ($search) {
+                $q->whereHas('produk', function($qp) use ($search) {
+                    $qp->where('nama', 'like', "%{$search}%")
+                       ->orWhere('kode_barang', 'like', "%{$search}%");
+                });
+            });
+        }
+
+        // Paginasi 10 data per halaman
+        $data = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
 
         $produk = MasterBarang::where(function($q) {
             $q->where('is_barang_jadi', '1')->orWhere('is_bahan_setengah_jadi', '1');
         })->where('is_active', true)->orderBy('nama')->get();
+        
         $bahan  = MasterBarang::where(function($q) {
             $q->where('is_bahan_baku', '1')->orWhere('is_bahan_setengah_jadi', '1');
         })->where('is_active', true)->orderBy('nama')->get();
 
-        // 3. Mengirimkan ketiga variabel ke view resep.index
-        return view('resep.index', compact('data', 'produk', 'bahan'));
+        return view('resep.index', compact('data', 'produk', 'bahan', 'search'));
     }
 
     public function show($id)
@@ -178,7 +191,8 @@ class ResepBtklBopController extends Controller
             ]);
         }
 
-        return redirect()->route('resep.index')->with('success', 'Resep dan koneksi produk berhasil diupdate');
+        $page = $request->query('page', 1);
+        return redirect()->route('resep.index', ['page' => $page])->with('success', 'Resep dan koneksi produk berhasil diupdate');
     }
 
     public function destroy($id)

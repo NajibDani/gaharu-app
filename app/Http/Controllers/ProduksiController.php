@@ -340,14 +340,29 @@ class ProduksiController extends Controller
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
                         $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangBahanId);
 
+                        $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
-                            $totalBbbProduk += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                            $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
                         }
+                        $totalBbbProduk += $hppBahan;
 
                         $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
                         }
+
+                        // Catat transaksi keluar bahan baku untuk Buku Pembantu Persediaan
+                        TransaksiStok::create([
+                            'tanggal'        => $request->tanggal_produksi,
+                            'tipe'           => 'keluar',
+                            'source_type'    => 'produksi',
+                            'source_id'      => $produksiId,
+                            'gudang_asal_id' => $gudangBahanId,
+                            'barang_id'      => $item->bahan_id,
+                            'qty'            => $qtyButuh,
+                            'total_harga'    => $hppBahan,
+                            'created_by'     => auth()->id() ?? 1,
+                        ]);
                     }
                 } else {
                     $totalBbbProduk = floatval($produk->hpp_referensi ?? 0) * $qtyHasil;
@@ -854,9 +869,11 @@ class ProduksiController extends Controller
                         $gudangBahanId
                     );
 
+                    $hppBahan = 0;
                     foreach ($fifoResult as $layer) {
-                        $totalBbbProduk += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                        $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
                     }
+                    $totalBbbProduk += $hppBahan;
 
                     $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)
                         ->where('barang_id', $item->bahan_id)
@@ -871,6 +888,19 @@ class ProduksiController extends Controller
                             'jumlah'    => 0 - $qtyButuh,
                         ]);
                     }
+
+                    // Catat transaksi keluar bahan baku untuk Buku Pembantu Persediaan
+                    TransaksiStok::create([
+                        'tanggal'        => now(),
+                        'tipe'           => 'keluar',
+                        'source_type'    => 'produksi',
+                        'source_id'      => $produksi->id,
+                        'gudang_asal_id' => $gudangBahanId,
+                        'barang_id'      => $item->bahan_id,
+                        'qty'            => $qtyButuh,
+                        'total_harga'    => $hppBahan,
+                        'created_by'     => auth()->id() ?? 1,
+                    ]);
                 }
 
                 // B. HITUNG BTKL & BOP (30% dari Total BBB)

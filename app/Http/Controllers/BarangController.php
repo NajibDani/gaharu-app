@@ -121,6 +121,22 @@ class BarangController extends Controller
             'kode_barang.unique' => 'Kode barang sudah digunakan, harap gunakan kode barang yang unik.',
         ]);
 
+        if ($request->jenis_utama === 'BAHAN_SETENGAH_JADI') {
+            $request->validate([
+                'satuan' => 'required|in:gr,ml,GR,ML,gram,mililiter,Gram,Mililiter',
+            ], [
+                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).',
+            ]);
+            
+            $satuanUpper = strtoupper(trim($request->satuan));
+            if ($satuanUpper === 'GRAM') {
+                $satuanUpper = 'GR';
+            } elseif ($satuanUpper === 'MILILITER') {
+                $satuanUpper = 'ML';
+            }
+            $request->merge(['satuan' => $satuanUpper]);
+        }
+
         $nameExists = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])->exists();
         if ($nameExists) {
             return back()->withErrors(['nama' => 'Nama barang sudah ada di sistem. Nama barang harus unik (tidak sensitif huruf besar/kecil).'])->withInput();
@@ -255,6 +271,22 @@ class BarangController extends Controller
             'kode_barang.unique' => 'Kode barang sudah digunakan, harap gunakan kode barang yang unik.',
         ]);
 
+        if ($request->jenis_utama === 'BAHAN_SETENGAH_JADI') {
+            $request->validate([
+                'satuan' => 'required|in:gr,ml,GR,ML,gram,mililiter,Gram,Mililiter',
+            ], [
+                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).',
+            ]);
+            
+            $satuanUpper = strtoupper(trim($request->satuan));
+            if ($satuanUpper === 'GRAM') {
+                $satuanUpper = 'GR';
+            } elseif ($satuanUpper === 'MILILITER') {
+                $satuanUpper = 'ML';
+            }
+            $request->merge(['satuan' => $satuanUpper]);
+        }
+
         $nameExists = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])
             ->where('id', '!=', $id)
             ->exists();
@@ -354,7 +386,8 @@ class BarangController extends Controller
             }
         }
     
-        return redirect()->route('barang.index')->with('success', 'Data berhasil diupdate');
+        $page = $request->query('page', 1);
+        return redirect()->route('barang.index', ['page' => $page])->with('success', 'Data berhasil diupdate');
     }
 
     public function destroy(MasterBarang $barang)

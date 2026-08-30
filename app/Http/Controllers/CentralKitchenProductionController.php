@@ -132,10 +132,11 @@ class CentralKitchenProductionController extends Controller
             ->withQueryString();
 
         // Riwayat Produksi CK dengan detail produk & pesanan
-        $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer'])
+        $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer', 'divisi'])
             ->whereHas('pesanan', function($q) {
                 $q->where('tipe_pesanan', 'central_kitchen');
-            });
+            })
+            ->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
 
         if ($search) {
             $queryProduksi->where('kode_produksi', 'like', '%' . $search . '%');
@@ -174,7 +175,25 @@ class CentralKitchenProductionController extends Controller
             return $prod;
         });
 
-        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi'));
+        // Stok BSJ per Divisi Gudang Central Kitchen
+        $stokBsjPerDivisi = [];
+        $divisiList = \App\Models\GudangDivisi::where('gudang_id', $gudangCkId)->get();
+        foreach ($divisiList as $divisi) {
+            $stokItems = StokGudang::with('barang')
+                ->where('gudang_id', $gudangCkId)
+                ->where('divisi_id', $divisi->id)
+                ->whereHas('barang', fn($q) => $q->where('is_bahan_setengah_jadi', true)->where('is_active', true))
+                ->get();
+            if ($stokItems->isNotEmpty()) {
+                $stokBsjPerDivisi[$divisi->nama] = $stokItems->map(fn($s) => [
+                    'nama'   => $s->barang->nama ?? '-',
+                    'jumlah' => (float) $s->jumlah,
+                    'satuan' => $s->barang->satuan ?? '-',
+                ])->toArray();
+            }
+        }
+
+        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjPerDivisi'));
     }
 
     /**
@@ -397,7 +416,24 @@ class CentralKitchenProductionController extends Controller
             }
         }
 
-        return view('central_kitchen.produksi.create', compact('workOrders', 'selectedWoId', 'items', 'isBahanSufficient', 'defisitBahan'));
+        // Ambil divisi Gudang Central Kitchen untuk dropdown
+        $gudangCkForDivisi = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkIdForDivisi = $gudangCkForDivisi ? $gudangCkForDivisi->id : 1;
+        $divisiCk = \App\Models\GudangDivisi::where('gudang_id', $gudangCkIdForDivisi)->get();
+
+        // Attach divisi_id dari pesanan CK terkait WO untuk auto-fill
+        $workOrders->each(function($wo) {
+            $pesananId = optional($wo->details->first())->pesanan_id;
+            $wo->divisi_id = $pesananId ? \App\Models\Pesanan::find($pesananId)?->divisi_id : null;
+        });
+
+        $selectedDivisiId = $request->get('divisi_id');
+        if (!$selectedDivisiId && $selectedWoId) {
+            $selectedWo = $workOrders->firstWhere('id', $selectedWoId);
+            $selectedDivisiId = $selectedWo?->divisi_id;
+        }
+
+        return view('central_kitchen.produksi.create', compact('workOrders', 'selectedWoId', 'items', 'isBahanSufficient', 'defisitBahan', 'divisiCk', 'selectedDivisiId'));
     }
 
     /**
@@ -410,6 +446,7 @@ class CentralKitchenProductionController extends Controller
             'tanggal_produksi' => 'required|date',
             'produk_id'        => 'required|array',
             'qty_hasil'        => 'required|array',
+            'divisi_id'        => 'required|exists:gudang_divisi,id',
         ]);
 
         DB::beginTransaction();
@@ -428,6 +465,7 @@ class CentralKitchenProductionController extends Controller
                 'status_produksi' => 'Draft',
                 'gudang_bahan_id' => $gudangCkId,
                 'gudang_hasil_id' => $gudangCkId,
+                'divisi_id'       => $request->divisi_id,
                 'created_by'      => auth()->id() ?? 1,
                 'created_at'      => now(),
                 'updated_at'      => now(),
@@ -465,6 +503,7 @@ class CentralKitchenProductionController extends Controller
             'tanggal_produksi' => 'required|date',
             'produk_id'        => 'required|array',
             'qty_hasil'        => 'required|array',
+            'divisi_id'        => 'required|exists:gudang_divisi,id',
         ]);
 
         DB::beginTransaction();
@@ -519,6 +558,7 @@ class CentralKitchenProductionController extends Controller
                 'status_produksi' => 'Selesai',
                 'gudang_bahan_id' => $gudangCkId,
                 'gudang_hasil_id' => $gudangCkId,
+                'divisi_id'       => $request->divisi_id,
                 'created_by'      => auth()->id() ?? 1,
                 'created_at'      => now(),
                 'updated_at'      => now(),
@@ -553,14 +593,29 @@ class CentralKitchenProductionController extends Controller
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
                         $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangCkId);
 
+                        $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
-                            $totalBbbProduk += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                            $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
                         }
+                        $totalBbbProduk += $hppBahan;
 
                         $stokBahanGlobal = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $item->bahan_id)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
                         }
+
+                        // Catat transaksi keluar bahan baku untuk Buku Pembantu Persediaan
+                        TransaksiStok::create([
+                            'tanggal'        => now(),
+                            'tipe'           => 'keluar',
+                            'source_type'    => 'produksi_ck',
+                            'source_id'      => $produksiId,
+                            'gudang_asal_id' => $gudangCkId,
+                            'barang_id'      => $item->bahan_id,
+                            'qty'            => $qtyButuh,
+                            'total_harga'    => $hppBahan,
+                            'created_by'     => auth()->id() ?? 1,
+                        ]);
                     }
                 } else {
                     $totalBbbProduk = floatval($produk->hpp_referensi ?? 0) * $qtyHasil;
@@ -718,14 +773,29 @@ class CentralKitchenProductionController extends Controller
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
                         $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangBahanId);
 
+                        $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
-                            $totalBbbProduk += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                            $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
                         }
+                        $totalBbbProduk += $hppBahan;
 
                         $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
                         }
+
+                        // Catat transaksi keluar bahan baku untuk Buku Pembantu Persediaan
+                        TransaksiStok::create([
+                            'tanggal'        => now(),
+                            'tipe'           => 'keluar',
+                            'source_type'    => 'produksi_ck',
+                            'source_id'      => $produksi->id,
+                            'gudang_asal_id' => $gudangBahanId,
+                            'barang_id'      => $item->bahan_id,
+                            'qty'            => $qtyButuh,
+                            'total_harga'    => $hppBahan,
+                            'created_by'     => auth()->id() ?? 1,
+                        ]);
                     }
                 } else {
                     // Jika belum ada resep, gunakan HPP referensi barang
@@ -828,6 +898,214 @@ class CentralKitchenProductionController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal Approve Produksi CK: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Form Produksi Stok Internal Central Kitchen (tanpa order outlet)
+     */
+    public function createStokInternal()
+    {
+        $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkId = $gudangCk ? $gudangCk->id : 1;
+
+        $divisiCk = \App\Models\GudangDivisi::where('gudang_id', $gudangCkId)->get();
+
+        $produkBsj = MasterBarang::where('is_active', true)
+            ->where('is_bahan_setengah_jadi', true)
+            ->orderBy('nama')
+            ->get();
+
+        // Cek ketersediaan bahan baku untuk setiap BSJ
+        $produkWithBahan = $produkBsj->map(function($p) use ($gudangCkId) {
+            $resepItems = ResepBahanBaku::where('resep_id', $p->resep_id)->with('bahan')->get();
+            $bahanList = $resepItems->map(function($r) use ($gudangCkId) {
+                $stok = (float) (StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $r->bahan_id)->value('jumlah') ?? 0);
+                return [
+                    'nama'        => $r->bahan->nama ?? 'Bahan',
+                    'qty_per_unit'=> (float) $r->qty_bahan,
+                    'satuan'      => $r->bahan->satuan ?? '',
+                    'stok'        => $stok,
+                ];
+            });
+            return (object)[
+                'id'     => $p->id,
+                'kode'   => $p->kode_barang,
+                'nama'   => $p->nama,
+                'satuan' => $p->satuan,
+                'bahan'  => $bahanList,
+            ];
+        });
+
+        return view('central_kitchen.produksi.stok_internal_create', compact('divisiCk', 'produkWithBahan', 'gudangCkId'));
+    }
+
+    /**
+     * Simpan Produksi Stok Internal Central Kitchen (langsung selesai)
+     */
+    public function storeStokInternal(Request $request)
+    {
+        $request->validate([
+            'divisi_id'        => 'required|exists:gudang_divisi,id',
+            'tanggal_produksi' => 'required|date',
+            'produk_id'        => 'required|array|min:1',
+            'qty_hasil'        => 'required|array|min:1',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+            $gudangCkId = $gudangCk ? $gudangCk->id : 1;
+            $divisiId   = $request->divisi_id;
+            $kodeProduksi = 'PRD-INT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+            // Validasi: minimal 1 produk dengan qty > 0
+            $hasValid = false;
+            foreach ($request->produk_id as $k => $pid) {
+                if (floatval($request->qty_hasil[$k] ?? 0) > 0) { $hasValid = true; break; }
+            }
+            if (!$hasValid) throw new \Exception('Harap isi minimal 1 produk dengan qty lebih dari 0.');
+
+            // Cek kecukupan bahan
+            foreach ($request->produk_id as $k => $produkId) {
+                $qty = floatval($request->qty_hasil[$k] ?? 0);
+                if ($qty <= 0) continue;
+                $produk = MasterBarang::find($produkId);
+                if ($produk && $produk->resep_id) {
+                    foreach (ResepBahanBaku::where('resep_id', $produk->resep_id)->get() as $r) {
+                        $butuh = floatval($r->qty_bahan) * $qty;
+                        $stok  = (float) (StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $r->bahan_id)->value('jumlah') ?? 0);
+                        if ($stok < $butuh) {
+                            $namaBahan = \App\Models\MasterBarang::find($r->bahan_id)?->nama ?? 'Bahan';
+                            throw new \Exception("Stok {$namaBahan} tidak mencukupi (Tersedia: {$stok}, Butuh: {$butuh}).");
+                        }
+                    }
+                }
+            }
+
+            // Simpan record Produksi
+            $produksiId = DB::table('produksi')->insertGetId([
+                'kode_produksi'   => $kodeProduksi,
+                'pesanan_id'      => null,
+                'tanggal_mulai'   => $request->tanggal_produksi,
+                'tanggal_selesai' => $request->tanggal_produksi,
+                'status_produksi' => 'Selesai',
+                'gudang_bahan_id' => $gudangCkId,
+                'gudang_hasil_id' => $gudangCkId,
+                'divisi_id'       => $divisiId,
+                'created_by'      => auth()->id() ?? 1,
+                'created_at'      => now(),
+                'updated_at'      => now(),
+            ]);
+
+            $fifoService = app(\App\Services\FifoService::class);
+
+            foreach ($request->produk_id as $k => $produkId) {
+                $qty = floatval($request->qty_hasil[$k] ?? 0);
+                if ($qty <= 0) continue;
+
+                $produk = MasterBarang::find($produkId);
+                $totalBbb = 0;
+
+                // Konsumsi bahan baku via FIFO
+                if ($produk && $produk->resep_id) {
+                    foreach (ResepBahanBaku::where('resep_id', $produk->resep_id)->get() as $r) {
+                        $butuh     = floatval($r->qty_bahan) * $qty;
+                        $fifoResult = $fifoService->consumeFIFO($r->bahan_id, $butuh, $gudangCkId);
+                        $hppBahan  = 0;
+                        foreach ($fifoResult as $layer) {
+                            $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                        }
+                        $totalBbb += $hppBahan;
+
+                        // Kurangi stok bahan
+                        $stokBahan = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $r->bahan_id)->first();
+                        if ($stokBahan) $stokBahan->decrement('jumlah', $butuh);
+
+                        // Catat TransaksiStok keluar bahan
+                        TransaksiStok::create([
+                            'tanggal'        => now(),
+                            'tipe'           => 'keluar',
+                            'source_type'    => 'produksi_internal_ck',
+                            'source_id'      => $produksiId,
+                            'gudang_asal_id' => $gudangCkId,
+                            'barang_id'      => $r->bahan_id,
+                            'qty'            => $butuh,
+                            'total_harga'    => $hppBahan,
+                            'created_by'     => auth()->id() ?? 1,
+                        ]);
+                    }
+                } else {
+                    $totalBbb = floatval($produk->hpp_referensi ?? 0) * $qty;
+                }
+
+                $totalBtkl = $totalBbb * 0.30;
+                $hppTotal  = $totalBbb + $totalBtkl;
+                $hppUnit   = $qty > 0 ? ($hppTotal / $qty) : 0;
+
+                DB::table('produksi_detail')->insert([
+                    'produksi_id' => $produksiId,
+                    'produk_id'   => $produkId,
+                    'qty'         => $qty,
+                    'hpp_total'   => $hppTotal,
+                    'created_at'  => now(),
+                    'updated_at'  => now(),
+                ]);
+
+                // Tambah stok BSJ di divisi yang dipilih
+                $stokBsj = StokGudang::where('gudang_id', $gudangCkId)
+                    ->where('barang_id', $produkId)
+                    ->where('divisi_id', $divisiId)
+                    ->first();
+                if ($stokBsj) {
+                    $stokBsj->increment('jumlah', $qty);
+                } else {
+                    StokGudang::create([
+                        'gudang_id' => $gudangCkId,
+                        'barang_id' => $produkId,
+                        'divisi_id' => $divisiId,
+                        'jumlah'    => $qty,
+                    ]);
+                }
+
+                // Batch FIFO masuk
+                $supplierId  = DB::table('suppliers')->value('id') ?? 1;
+                $pembelianId = DB::table('pembelian')->value('id') ?? 1;
+                $pemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
+                StokGudangBatch::create([
+                    'gudang_id'           => $gudangCkId,
+                    'divisi_id'           => $divisiId,
+                    'supplier_id'         => $supplierId,
+                    'barang_id'           => $produkId,
+                    'pembelian_id'        => $pembelianId,
+                    'pembelian_detail_id' => $pemDetailId,
+                    'batch_number'        => 'INT-' . $kodeProduksi,
+                    'qty_masuk'           => $qty,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qty,
+                    'harga_per_qty'       => $hppUnit,
+                    'is_habis'            => false,
+                ]);
+
+                // Catat TransaksiStok masuk BSJ
+                TransaksiStok::create([
+                    'tanggal'          => now(),
+                    'tipe'             => 'masuk',
+                    'source_type'      => 'produksi_internal_ck',
+                    'source_id'        => $produksiId,
+                    'gudang_tujuan_id' => $gudangCkId,
+                    'barang_id'        => $produkId,
+                    'qty'              => $qty,
+                    'total_harga'      => $hppTotal,
+                    'created_by'       => auth()->id() ?? 1,
+                ]);
+            }
+
+            DB::commit();
+            return redirect()->route('ck-produksi.index')->with('success', "Produksi Stok Internal ({$kodeProduksi}) berhasil disimpan. Stok BSJ bertambah di Divisi yang dipilih.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal Simpan Produksi Internal: ' . $e->getMessage())->withInput();
         }
     }
 }

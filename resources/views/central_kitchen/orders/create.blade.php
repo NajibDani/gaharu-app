@@ -52,15 +52,17 @@
                         </select>
                     </div>
 
-                    <div class="col-md-3">
+                    <div class="col-md-6">
                         <label class="form-label form-label-custom">Tanggal Order <span class="text-danger">*</span></label>
                         <input type="date" name="tanggal" class="form-control text-sm rounded-3" value="{{ old('tanggal', date('Y-m-d')) }}" required>
                     </div>
 
-                    <div class="col-md-3">
+                    <div class="col-md-6">
                         <label class="form-label form-label-custom">Estimasi Kirim <span class="text-danger">*</span></label>
                         <input type="date" name="estimasi_kirim" class="form-control text-sm rounded-3" value="{{ old('estimasi_kirim', date('Y-m-d', strtotime('+1 day'))) }}" required>
                     </div>
+
+                    <input type="hidden" name="divisi_id" value="1">
                 </div>
             </div>
 
@@ -156,6 +158,24 @@
                 row.querySelector('.input-satuan').value = satuan || '-';
             }
 
+            // Delegasi Event untuk Hapus Baris & Update Satuan
+            tableBody.addEventListener('click', function(e) {
+                const btnRemove = e.target.closest('.btn-remove-row');
+                if (btnRemove && !btnRemove.disabled) {
+                    const row = btnRemove.closest('tr');
+                    if (row) {
+                        row.remove();
+                        checkRows();
+                    }
+                }
+            });
+
+            tableBody.addEventListener('change', function(e) {
+                if (e.target.classList.contains('select-produk')) {
+                    updateSatuan(e.target);
+                }
+            });
+
             function checkRows() {
                 const rows = tableBody.querySelectorAll('tr');
                 rows.forEach((r, idx) => {
@@ -185,8 +205,10 @@
                     targetRow = firstRow.cloneNode(true);
                     targetRow.querySelector('.btn-remove-row').removeAttribute('disabled');
                     
-                    targetRow.querySelector('.select-produk').addEventListener('change', function() { updateSatuan(this); });
-                    targetRow.querySelector('.btn-remove-row').addEventListener('click', function() { targetRow.remove(); checkRows(); });
+                    // Reset values for the new row
+                    targetRow.querySelector('.select-produk').value = '';
+                    targetRow.querySelector('.input-qty').value = '';
+                    targetRow.querySelector('.input-satuan').value = '-';
 
                     tableBody.appendChild(targetRow);
                 }

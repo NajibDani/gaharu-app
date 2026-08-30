@@ -66,6 +66,18 @@
     @endif
 
     <div class="card shadow-sm border-0 rounded-3">
+        <div class="card-header bg-white py-3 border-0">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0 fw-bold text-dark">Data Resep</h5>
+                <form action="{{ route('resep.index') }}" method="GET" class="d-flex gap-2">
+                    <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari nama/kode..." value="{{ request('search') }}" style="width: 220px; border-radius: 6px;">
+                    <button type="submit" class="btn btn-sm text-white" style="background-color: #d88656; border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
+                    @if(request('search'))
+                        <a href="{{ route('resep.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px; padding: 5px 15px;">Reset</a>
+                    @endif
+                </form>
+            </div>
+        </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
@@ -106,10 +118,11 @@
                                             data-satuan_output="{{ $r->satuan_output }}"
                                             data-btkl="{{ (int) $r->btkl_per_batch }}"
                                             data-bop="{{ (int) $r->bop_per_batch }}"
-                                            data-bahanbaku="{{ json_encode($r->bahanbaku) }}">
+                                            data-bahanbaku="{{ json_encode($r->bahanbaku) }}"
+                                            data-page="{{ $data->currentPage() }}">
                                         Edit
                                     </button>
-
+ 
                                     <form action="{{ route('resep.destroy', $r->id) }}" method="POST" class="d-inline m-0">
                                         @csrf
                                         @method('DELETE')
@@ -132,6 +145,11 @@
                 </table>
             </div>
         </div>
+        @if($data->hasPages())
+            <div class="card-footer bg-white border-top py-3 d-flex justify-content-end">
+                {{ $data->links() }}
+            </div>
+        @endif
     </div>
 </div>
 
@@ -427,7 +445,8 @@ document.addEventListener("DOMContentLoaded", function () {
             btnSubmit.className = "btn btn-warning px-4 text-dark shadow-sm fw-semibold";
             
             const idResep = this.dataset.id;
-            formResep.action = `/resep/${idResep}`; 
+            const pageNum = this.dataset.page || 1;
+            formResep.action = `/resep/${idResep}?page=${pageNum}`; 
             formMethod.value = "PUT";
 
             produkChoices.setChoiceByValue(this.dataset.produk_id);

@@ -18,7 +18,8 @@ class Produksi extends Model
         'status_produksi', 
         'gudang_bahan_id', 
         'gudang_hasil_id', 
-        'created_by'
+        'created_by',
+        'divisi_id'
     ];
 
     /**
@@ -27,6 +28,11 @@ class Produksi extends Model
     public function pesanan(): BelongsTo
     {
         return $this->belongsTo(Pesanan::class, 'pesanan_id');
+    }
+
+    public function divisi(): BelongsTo
+    {
+        return $this->belongsTo(GudangDivisi::class, 'divisi_id');
     }
 
     /**

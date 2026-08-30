@@ -136,6 +136,21 @@ class MasterBarangImporter
                 $tipePenjualan = null;
             }
 
+            if ($jenisUtama === 'BAHAN_SETENGAH_JADI') {
+                $satuanClean = strtoupper(trim($satuan));
+                if (!in_array($satuanClean, ['GR', 'ML', 'GRAM', 'MILILITER'])) {
+                    $this->errors[] = "Baris {$excelRowNum}: Untuk Bahan Setengah Jadi, satuan '{$satuan}' tidak valid (harus gram/gr atau mililiter/ml), dilewati.";
+                    continue;
+                }
+                if ($satuanClean === 'GRAM') {
+                    $satuan = 'GR';
+                } elseif ($satuanClean === 'MILILITER') {
+                    $satuan = 'ML';
+                } else {
+                    $satuan = $satuanClean;
+                }
+            }
+
             $hargaB2bVal = $jenisUtama === 'BARANG_JADI' ? $numeric($hargaB2b) : 0;
             $hargaPosVal = $jenisUtama === 'BARANG_JADI' ? $numeric($hargaPos) : 0;
 

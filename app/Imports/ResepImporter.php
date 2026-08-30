@@ -89,11 +89,13 @@ class ResepImporter
 
             $produk = MasterBarang::withoutGlobalScopes()
                 ->where('kode_barang', $kodeProduk)
-                ->where('is_barang_jadi', 1)
+                ->where(function($q) {
+                    $q->where('is_barang_jadi', 1)->orWhere('is_bahan_setengah_jadi', 1);
+                })
                 ->first();
 
             if (!$produk) {
-                $this->errors[] = "Produk kode '{$kodeProduk}' tidak ditemukan atau bukan Barang Jadi. Semua baris resep untuk kode ini dilewati.";
+                $this->errors[] = "Produk kode '{$kodeProduk}' tidak ditemukan atau bukan Barang Jadi / Bahan Setengah Jadi. Semua baris resep untuk kode ini dilewati.";
                 continue;
             }
 
@@ -128,11 +130,13 @@ class ResepImporter
 
                 $bahan = MasterBarang::withoutGlobalScopes()
                     ->where('kode_barang', $kodeBahan)
-                    ->where('is_bahan_baku', 1)
+                    ->where(function($q) {
+                        $q->where('is_bahan_baku', 1)->orWhere('is_bahan_setengah_jadi', 1);
+                    })
                     ->first();
 
                 if (!$bahan) {
-                    $groupErrors[] = "Baris {$r['excel_row']}: bahan baku kode '{$kodeBahan}' tidak ditemukan / bukan Bahan Baku, dilewati.";
+                    $groupErrors[] = "Baris {$r['excel_row']}: bahan kode '{$kodeBahan}' tidak ditemukan / bukan Bahan Baku atau Bahan Setengah Jadi, dilewati.";
                     continue;
                 }
 

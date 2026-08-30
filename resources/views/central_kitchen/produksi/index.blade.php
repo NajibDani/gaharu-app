@@ -32,6 +32,9 @@
                 <h4 class="fw-bold text-dark mb-1">Central Kitchen Production</h4>
                 <p class="text-muted small mb-0">Manajemen Work Order (WO) & Hasil Produksi Dapur Pusat</p>
             </div>
+            <a href="{{ route('ck-produksi.create-stok-internal') }}" class="btn btn-custom-orange shadow-sm">
+                <i class="bi bi-box-arrow-in-down-right me-1"></i> Produksi Stok Internal CK
+            </a>
         </div>
 
         {{-- TABS NAVIGATION --}}
@@ -49,6 +52,11 @@
             <li class="nav-item">
                 <button class="nav-link" id="prod-tab" data-bs-toggle="tab" data-bs-target="#prod-history" type="button">
                     <i class="bi bi-check2-all me-1"></i> Riwayat Produksi CK
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" id="stok-tab" data-bs-toggle="tab" data-bs-target="#stok-divisi" type="button">
+                    <i class="bi bi-layers-half me-1"></i> Stok BSJ per Divisi
                 </button>
             </li>
         </ul>
@@ -427,7 +435,8 @@
                                 <tr>
                                     <th class="text-center" style="width: 50px;">NO</th>
                                     <th>KODE PRODUKSI</th>
-                                    <th>OUTLET PEMESAN</th>
+                                    <th>OUTLET / SUMBER</th>
+                                    <th>DIVISI CK</th>
                                     <th>TANGGAL PRODUKSI</th>
                                     <th class="text-end">TOTAL HPP</th>
                                     <th>STATUS</th>
@@ -442,7 +451,20 @@
                                     <tr>
                                         <td class="text-center">{{ $index + 1 }}</td>
                                         <td class="fw-bold text-dark">{{ $prod->kode_produksi }}</td>
-                                        <td><span class="badge bg-light text-dark border">{{ $prod->pesanan->customer->nama ?? '-' }}</span></td>
+                                        <td>
+                                            <span class="badge bg-light text-dark border">
+                                                {{ $prod->pesanan->customer->nama ?? 'Stok Internal CK' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if($prod->divisi)
+                                                <span class="badge rounded-pill" style="background:#ede9fe;color:#6d28d9;font-size:0.72rem;font-weight:600;">
+                                                    <i class="bi bi-layers-half me-1"></i>{{ $prod->divisi->nama }}
+                                                </span>
+                                            @else
+                                                <span class="text-muted small">-</span>
+                                            @endif
+                                        </td>
                                         <td>{{ date('d M Y', strtotime($prod->tanggal_mulai)) }}</td>
                                         <td class="text-end fw-bold text-danger">
                                             Rp {{ number_format($totalHppProd, 2, ',', '.') }}
@@ -572,12 +594,80 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">Belum ada riwayat produksi CK.</td>
+                                        <td colspan="8" class="text-center py-4 text-muted">Belum ada riwayat produksi CK.</td>
                                     </tr>
                                 @endforelse
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+
+            {{-- TAB 4: STOK BSJ PER DIVISI CK --}}
+            <div class="tab-pane fade" id="stok-divisi" role="tabpanel">
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h6 class="fw-bold mb-0 text-dark">Stok Bahan Setengah Jadi per Divisi Central Kitchen</h6>
+                            <small class="text-muted">Pantau ketersediaan stok BSJ sebelum memutuskan produksi baru</small>
+                        </div>
+                        <a href="{{ route('ck-produksi.create-stok-internal') }}" class="btn btn-custom-orange btn-sm shadow-sm">
+                            <i class="bi bi-plus-circle me-1"></i> Produksi Stok Internal CK
+                        </a>
+                    </div>
+
+                    @if(!empty($stokBsjPerDivisi))
+                        @foreach($stokBsjPerDivisi as $divisiNama => $items)
+                            <div class="px-4 pt-3 pb-2">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge rounded-pill fs-6 px-3 py-2" style="background:#ede9fe;color:#6d28d9;">
+                                        <i class="bi bi-layers-half me-1"></i>{{ $divisiNama }}
+                                    </span>
+                                    <span class="text-muted small">{{ count($items) }} jenis BSJ</span>
+                                </div>
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-bordered table-sm align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr class="text-secondary small">
+                                                <th>NAMA BARANG (BSJ)</th>
+                                                <th class="text-center" style="width:100px;">STOK SAAT INI</th>
+                                                <th class="text-center" style="width:80px;">SATUAN</th>
+                                                <th class="text-center" style="width:120px;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($items as $item)
+                                                <tr>
+                                                    <td class="fw-semibold">{{ $item['nama'] }}</td>
+                                                    <td class="text-center fw-bold {{ $item['jumlah'] <= 0 ? 'text-danger' : ($item['jumlah'] < 500 ? 'text-warning' : 'text-success') }}">
+                                                        {{ number_format($item['jumlah'], 0, ',', '.') }}
+                                                    </td>
+                                                    <td class="text-center text-muted">{{ $item['satuan'] }}</td>
+                                                    <td class="text-center">
+                                                        @if($item['jumlah'] <= 0)
+                                                            <span class="badge bg-danger">Habis</span>
+                                                        @elseif($item['jumlah'] < 500)
+                                                            <span class="badge bg-warning text-dark">Menipis</span>
+                                                        @else
+                                                            <span class="badge bg-success">Cukup</span>
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        @endforeach
+                    @else
+                        <div class="p-5 text-center text-muted">
+                            <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
+                            Belum ada stok Bahan Setengah Jadi di Gudang Central Kitchen.<br>
+                            <a href="{{ route('ck-produksi.create-stok-internal') }}" class="btn btn-custom-orange btn-sm mt-3">
+                                <i class="bi bi-plus-circle me-1"></i> Mulai Produksi Stok Internal
+                            </a>
+                        </div>
+                    @endif
                 </div>
             </div>
 
