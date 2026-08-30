@@ -109,10 +109,87 @@ class MasterBarangImporter
             // ATURAN UTAMA: skip jika kode_barang sudah ada (cek tanpa scope role)
             $exists = MasterBarang::withoutGlobalScopes()
                 ->where('kode_barang', $kodeBarang)
-                ->exists();
+                ->first();
             if ($exists) {
-                $this->skipped++;
-                $this->skippedRows[] = "Baris {$excelRowNum}: kode_barang '{$kodeBarang}' sudah ada, dilewati.";
+                // UPDATE MINIMUM STOCK untuk barang yang sudah ada
+                try {
+                    DB::transaction(function () use ($exists, $minStock, $minStockCk, $minStockKejingga, $minStockGaharu, $minKejinggaKitchen, $minKejinggaBarista, $minKejinggaServer, $minGaharuKitchen, $minGaharuBarista, $minGaharuServer, $minB2b, $numeric) {
+                        $updateData = [];
+                        if ($minStock !== '') $updateData['minimum_stock'] = $numeric($minStock, 0);
+                        if ($minStockCk !== '') $updateData['minimum_stock_ck'] = $numeric($minStockCk, 0);
+                        if ($minStockKejingga !== '') $updateData['minimum_stock_kejingga'] = $numeric($minStockKejingga, 0);
+                        if ($minStockGaharu !== '') $updateData['minimum_stock_gaharu'] = $numeric($minStockGaharu, 0);
+                        
+                        if (!empty($updateData)) {
+                            $exists->update($updateData);
+                        }
+
+                        // Simpan / update minimum stock per outlet & divisi
+                        $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
+                        $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
+                        $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
+                        $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
+                        $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
+
+                        $saveMin = function ($gudangId, $divisiId, $val) use ($exists, $numeric) {
+                            if ($gudangId && $val !== '' && $val !== null) {
+                                \App\Models\BarangMinimumStock::updateOrCreate(
+                                    [
+                                        'barang_id' => $exists->id,
+                                        'gudang_id' => $gudangId,
+                                        'divisi_id' => $divisiId,
+                                    ],
+                                    [
+                                        'minimum_stock' => $numeric($val, 0),
+                                        'is_active'     => true,
+                                    ]
+                                );
+                            }
+                        };
+
+                        // Central Kitchen
+                        if ($ckGudang && $minStockCk !== '') {
+                            $saveMin($ckGudang->id, null, $minStockCk);
+                        }
+
+                        // B2B
+                        if ($b2bGudang && $minB2b !== '') {
+                            $saveMin($b2bGudang->id, null, $minB2b);
+                        }
+
+                        // KeJingga
+                        if ($kejinggaGudang) {
+                            $divKitchen = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen'));
+                            $divBarista = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista'));
+                            $divServer  = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server'));
+
+                            if ($minKejinggaKitchen !== '') $saveMin($kejinggaGudang->id, $divKitchen?->id, $minKejinggaKitchen);
+                            if ($minKejinggaBarista !== '') $saveMin($kejinggaGudang->id, $divBarista?->id, $minKejinggaBarista);
+                            if ($minKejinggaServer !== '')  $saveMin($kejinggaGudang->id, $divServer?->id, $minKejinggaServer);
+                            if ($minStockKejingga !== '' && $minKejinggaKitchen === '' && $minKejinggaBarista === '' && $minKejinggaServer === '') {
+                                $saveMin($kejinggaGudang->id, null, $minStockKejingga);
+                            }
+                        }
+
+                        // Gaharu
+                        if ($gaharuGudang) {
+                            $divKitchen = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen'));
+                            $divBarista = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista'));
+                            $divServer  = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server'));
+
+                            if ($minGaharuKitchen !== '') $saveMin($gaharuGudang->id, $divKitchen?->id, $minGaharuKitchen);
+                            if ($minGaharuBarista !== '') $saveMin($gaharuGudang->id, $divBarista?->id, $minGaharuBarista);
+                            if ($minGaharuServer !== '')  $saveMin($gaharuGudang->id, $divServer?->id, $minGaharuServer);
+                            if ($minStockGaharu !== '' && $minGaharuKitchen === '' && $minGaharuBarista === '' && $minGaharuServer === '') {
+                                $saveMin($gaharuGudang->id, null, $minStockGaharu);
+                            }
+                        }
+                    });
+                    $this->skipped++; // Tetap dikelompokkan ke "skipped" atau "updated" agar user tahu
+                    $this->skippedRows[] = "Baris {$excelRowNum}: kode_barang '{$kodeBarang}' sudah ada, minimum stock diperbarui.";
+                } catch (\Throwable $e) {
+                    $this->errors[] = "Baris {$excelRowNum}: gagal memperbarui minimum stock ({$e->getMessage()}).";
+                }
                 continue;
             }
 

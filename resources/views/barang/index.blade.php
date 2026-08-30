@@ -61,8 +61,8 @@
         @php $ir = session('import_result_barang'); @endphp
         <div class="alert alert-info mx-3 mt-3 mb-0">
             <strong>Hasil Import:</strong>
-            {{ $ir['created'] }} barang berhasil ditambahkan,
-            {{ $ir['skipped'] }} dilewati (kode barang sudah ada).
+            {{ $ir['created'] }} barang baru ditambahkan,
+            {{ $ir['skipped'] }} barang diupdate minimum stock-nya.
             @if (!empty($ir['errors']))
                 <div class="mt-2">
                     <strong class="text-danger">{{ count($ir['errors']) }} baris bermasalah:</strong>
@@ -75,7 +75,7 @@
             @endif
             @if (!empty($ir['skippedRows']))
                 <details class="mt-2 small">
-                    <summary>Lihat detail baris yang dilewati</summary>
+                    <summary>Lihat detail barang yang diupdate min stock-nya</summary>
                     <ul class="mb-0">
                         @foreach ($ir['skippedRows'] as $sk)
                             <li>{{ $sk }}</li>
@@ -515,8 +515,8 @@
                 @csrf
                 <div class="modal-body text-start">
                     <p class="text-muted small">
-                        Baris dengan <strong>kode_barang</strong> yang sudah ada di sistem akan otomatis dilewati (tidak menimpa data lama).
-                        Jenis barang yang didukung: Bahan Baku, Bahan Setengah Jadi, Barang Jadi, Operational.
+                        Baris dengan <strong>kode_barang</strong> yang sudah ada di sistem akan otomatis di-<strong>update minimum stock-nya</strong>.
+                        Barang baru akan ditambahkan. Jenis barang yang didukung: Bahan Baku, Bahan Setengah Jadi, Barang Jadi, Operational.
                     </p>
 
                     <div class="mb-3">

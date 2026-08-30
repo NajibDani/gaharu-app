@@ -130,13 +130,10 @@ class ResepImporter
 
                 $bahan = MasterBarang::withoutGlobalScopes()
                     ->where('kode_barang', $kodeBahan)
-                    ->where(function($q) {
-                        $q->where('is_bahan_baku', 1)->orWhere('is_bahan_setengah_jadi', 1);
-                    })
                     ->first();
 
                 if (!$bahan) {
-                    $groupErrors[] = "Baris {$r['excel_row']}: bahan kode '{$kodeBahan}' tidak ditemukan / bukan Bahan Baku atau Bahan Setengah Jadi, dilewati.";
+                    $groupErrors[] = "Baris {$r['excel_row']}: bahan kode '{$kodeBahan}' tidak ditemukan di sistem, dilewati.";
                     continue;
                 }
 

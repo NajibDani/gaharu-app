@@ -35,9 +35,7 @@ class ResepBtklBopController extends Controller
             $q->where('is_barang_jadi', '1')->orWhere('is_bahan_setengah_jadi', '1');
         })->where('is_active', true)->orderBy('nama')->get();
         
-        $bahan  = MasterBarang::where(function($q) {
-            $q->where('is_bahan_baku', '1')->orWhere('is_bahan_setengah_jadi', '1');
-        })->where('is_active', true)->orderBy('nama')->get();
+        $bahan  = MasterBarang::where('is_active', true)->orderBy('nama')->get();
 
         return view('resep.index', compact('data', 'produk', 'bahan', 'search'));
     }
@@ -132,9 +130,7 @@ class ResepBtklBopController extends Controller
         $produk = MasterBarang::where(function($q) {
             $q->where('is_barang_jadi', 1)->orWhere('is_bahan_setengah_jadi', 1);
         })->where('is_active', true)->orderBy('nama')->get();
-        $bahan  = MasterBarang::where(function($q) {
-            $q->where('is_bahan_baku', 1)->orWhere('is_bahan_setengah_jadi', 1);
-        })->where('is_active', true)->orderBy('nama')->get();
+        $bahan  = MasterBarang::where('is_active', true)->orderBy('nama')->get();
     
         return view('resep.edit', compact('data', 'produk', 'bahan'));
     }

@@ -431,9 +431,10 @@ class BarangController extends Controller
 
     /**
      * Download template Excel untuk import Master Barang.
-     * Sheet 1 "Barang" = kolom yang harus diisi + 1 baris contoh.
-     * Sheet 2 "Referensi Kategori" = daftar kategori yang tersedia saat ini di sistem,
-     * supaya kolom "kategori" di sheet 1 diisi persis sama.
+     * Sheet 1 "Barang" = semua data barang dari database beserta minimum stock saat ini,
+     * sehingga user bisa langsung mengisi/mengedit kolom minimum stock dan re-import.
+     * Sheet 2 "Referensi Kategori" = daftar kategori yang tersedia saat ini di sistem.
+     * Sheet 3 "Panduan" = penjelasan setiap kolom.
      */
     public function importTemplate()
     {
@@ -456,23 +457,90 @@ class BarangController extends Controller
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('D88656');
 
-        // Baris contoh (boleh dihapus user sebelum import)
-        $sheet->fromArray([
-            'BMB003', 'SAMBAL MATAH', 'BUMBU', 'BAHAN_BAKU', 'GR',
-            'JERIGEN', '5000', '',
-            '0', '0', '0', 
-            '5000', '2000', '1000', '',
-            '3000', '1500', '', '',
-            '', '1',
-        ], null, 'A2');
-        $sheet->fromArray([
-            'BSJ001', 'SAUS BOLOGNESE JADI', 'BUMBU', 'BAHAN_SETENGAH_JADI', 'GR',
-            '', '1', '',
-            '0', '0', '0', 
-            '2000', '1000', '', '',
-            '1000', '', '', '',
-            '', '1',
-        ], null, 'A3');
+        // Highlight kolom minimum stock agar user tahu kolom mana yang perlu diisi
+        $sheet->getStyle('L1:S1')->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('2E7D32'); // hijau gelap untuk kolom min stock
+
+        // Isi semua data barang dari database beserta minimum stock saat ini
+        $barangs = MasterBarang::with('kategori')
+            ->where('is_active', true)
+            ->orderBy('kode_barang', 'asc')
+            ->get();
+
+        // Load semua gudang dan divisi untuk mapping minimum stock
+        $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
+        $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
+        $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
+        $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
+        $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
+
+        // Pre-load semua minimum stock per barang
+        $minStockAll = \App\Models\BarangMinimumStock::all()->groupBy('barang_id');
+
+        // Helper: cari min stock dari collection
+        $getMinStock = function ($barangId, $gudangId, $divisiId = null) use ($minStockAll) {
+            $items = $minStockAll->get($barangId);
+            if (!$items) return '';
+            $found = $items->first(function ($ms) use ($gudangId, $divisiId) {
+                if ($ms->gudang_id != $gudangId) return false;
+                if ($divisiId === null) return $ms->divisi_id === null;
+                return $ms->divisi_id == $divisiId;
+            });
+            return $found ? $found->minimum_stock : '';
+        };
+
+        // Divisi IDs per outlet
+        $kejinggaDivKitchen = $kejinggaGudang ? $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen')) : null;
+        $kejinggaDivBarista = $kejinggaGudang ? $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista')) : null;
+        $kejinggaDivServer  = $kejinggaGudang ? $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server')) : null;
+        $gaharuDivKitchen   = $gaharuGudang ? $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen')) : null;
+        $gaharuDivBarista   = $gaharuGudang ? $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista')) : null;
+        $gaharuDivServer    = $gaharuGudang ? $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server')) : null;
+
+        $rowNum = 2;
+        foreach ($barangs as $b) {
+            // Tentukan jenis_utama
+            $jenis = 'BAHAN_BAKU';
+            if ($b->is_bahan_setengah_jadi) $jenis = 'BAHAN_SETENGAH_JADI';
+            elseif ($b->is_barang_jadi) $jenis = 'BARANG_JADI';
+            elseif ($b->is_operational) $jenis = 'OPERATIONAL';
+
+            // Ambil min stock per outlet/divisi dari database
+            $minCk = $ckGudang ? $getMinStock($b->id, $ckGudang->id) : '';
+            $minB2b = $b2bGudang ? $getMinStock($b->id, $b2bGudang->id) : '';
+            $minKejKitchen = ($kejinggaGudang && $kejinggaDivKitchen) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivKitchen->id) : '';
+            $minKejBarista = ($kejinggaGudang && $kejinggaDivBarista) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivBarista->id) : '';
+            $minKejServer  = ($kejinggaGudang && $kejinggaDivServer) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivServer->id) : '';
+            $minGahKitchen = ($gaharuGudang && $gaharuDivKitchen) ? $getMinStock($b->id, $gaharuGudang->id, $gaharuDivKitchen->id) : '';
+            $minGahBarista = ($gaharuGudang && $gaharuDivBarista) ? $getMinStock($b->id, $gaharuGudang->id, $gaharuDivBarista->id) : '';
+            $minGahServer  = ($gaharuGudang && $gaharuDivServer) ? $getMinStock($b->id, $gaharuGudang->id, $gaharuDivServer->id) : '';
+
+            $sheet->fromArray([
+                $b->kode_barang,
+                $b->nama,
+                $b->kategori->nama ?? '',
+                $jenis,
+                $b->satuan,
+                $b->satuan_pembelian ?? '',
+                $b->konversi_pembelian ?? 1,
+                $b->tipe_penjualan ?? '',
+                (float) ($b->harga_jual_b2b ?? 0),
+                (float) ($b->harga_jual_pos ?? 0),
+                (float) ($b->hpp_referensi ?? 0),
+                $minCk,
+                $minKejKitchen,
+                $minKejBarista,
+                $minKejServer,
+                $minGahKitchen,
+                $minGahBarista,
+                $minGahServer,
+                $minB2b,
+                $b->minimum_stock ?? '',
+                $b->minimum_order ?? 1,
+            ], null, 'A' . $rowNum);
+            $rowNum++;
+        }
 
         foreach (range('A', 'U') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
@@ -499,33 +567,38 @@ class BarangController extends Controller
         $guide->setTitle('Panduan');
         $guide->fromArray([
             ['Kolom', 'Wajib?', 'Keterangan'],
-            ['kode_barang', 'Ya', 'Harus unik. Jika kode sudah ada di sistem, baris akan DILEWATI otomatis.'],
-            ['nama', 'Ya', 'Nama barang.'],
-            ['kategori', 'Ya', 'Isi persis sama dengan nama di sheet "Referensi Kategori".'],
-            ['jenis_utama', 'Ya', 'Salah satu: BAHAN_BAKU, BAHAN_SETENGAH_JADI, BARANG_JADI, OPERATIONAL. Bahan Setengah Jadi = barang olahan awal (mis. saus dasar) yang bisa punya resep sendiri sekaligus dipakai sebagai bahan di resep lain.'],
-            ['satuan', 'Ya', 'Contoh: GR, KG, PCS, LITER'],
+            ['kode_barang', 'Ya', 'Harus unik. Jika kode sudah ada di sistem, minimum stock akan di-UPDATE (data barang lainnya tidak berubah).'],
+            ['nama', 'Ya (barang baru)', 'Nama barang. Untuk barang yang sudah ada, kolom ini diabaikan.'],
+            ['kategori', 'Ya (barang baru)', 'Isi persis sama dengan nama di sheet "Referensi Kategori". Untuk barang yang sudah ada, kolom ini diabaikan.'],
+            ['jenis_utama', 'Ya (barang baru)', 'Salah satu: BAHAN_BAKU, BAHAN_SETENGAH_JADI, BARANG_JADI, OPERATIONAL. Untuk barang yang sudah ada, kolom ini diabaikan.'],
+            ['satuan', 'Ya (barang baru)', 'Contoh: GR, KG, PCS, LITER. Untuk barang yang sudah ada, kolom ini diabaikan.'],
             ['satuan_pembelian', 'Tidak', 'Kosongkan jika tidak ada satuan pembelian berbeda.'],
             ['konversi_pembelian', 'Tidak', 'Default 1 jika kosong.'],
             ['tipe_penjualan', 'Wajib jika BARANG_JADI', 'Salah satu: POS Kejingga, POS Gaharu, B2B'],
             ['harga_jual_b2b', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['harga_jual_pos', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['hpp_referensi', 'Tidak', 'Default 0 jika kosong.'],
-            ['min_stock_ck', 'Tidak', 'Minimum stock Central Kitchen (Bahan Baku / Bahan Setengah Jadi). Boleh kosong.'],
-            ['min_stock_kejingga_kitchen', 'Tidak', 'Minimum stock KeJingga - Divisi Kitchen. Boleh kosong.'],
-            ['min_stock_kejingga_barista', 'Tidak', 'Minimum stock KeJingga - Divisi Barista. Boleh kosong.'],
-            ['min_stock_kejingga_server', 'Tidak', 'Minimum stock KeJingga - Divisi Server. Boleh kosong.'],
-            ['min_stock_gaharu_kitchen', 'Tidak', 'Minimum stock Gaharu - Divisi Kitchen. Boleh kosong.'],
-            ['min_stock_gaharu_barista', 'Tidak', 'Minimum stock Gaharu - Divisi Barista. Boleh kosong.'],
-            ['min_stock_gaharu_server', 'Tidak', 'Minimum stock Gaharu - Divisi Server. Boleh kosong.'],
-            ['min_stock_b2b', 'Tidak', 'Minimum stock Gudang B2B. Boleh kosong.'],
-            ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Boleh kosong.'],
+            ['min_stock_ck', 'Tidak', 'Minimum stock di Central Kitchen. Isi angka untuk set/update. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_kejingga_kitchen', 'Tidak', 'Minimum stock KeJingga - Divisi Kitchen. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_kejingga_barista', 'Tidak', 'Minimum stock KeJingga - Divisi Barista. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_kejingga_server', 'Tidak', 'Minimum stock KeJingga - Divisi Server. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_gaharu_kitchen', 'Tidak', 'Minimum stock Gaharu - Divisi Kitchen. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_gaharu_barista', 'Tidak', 'Minimum stock Gaharu - Divisi Barista. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_gaharu_server', 'Tidak', 'Minimum stock Gaharu - Divisi Server. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_b2b', 'Tidak', 'Minimum stock Gudang B2B. Kosongkan jika tidak perlu diubah.'],
+            ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Kosongkan jika tidak perlu diubah.'],
             ['minimum_order', 'Tidak', 'Default 1 jika kosong.'],
+            ['', '', ''],
+            ['CARA PAKAI', '', 'Download template ini → isi/edit kolom min_stock (kolom L sampai S berwarna hijau) → Import kembali file ini.'],
+            ['', '', 'Barang yang kode_barang-nya sudah ada di sistem: hanya minimum stock yang akan diperbarui.'],
+            ['', '', 'Barang baru (kode_barang belum ada): akan ditambahkan sebagai master barang baru.'],
         ], null, 'A1');
         $guide->getStyle('A1:C1')->getFont()->setBold(true);
+        $guide->getStyle('A24:A24')->getFont()->setBold(true);
         foreach (['A', 'B', 'C'] as $col) {
-            $guide->getColumnDimension($col)->setWidth(30);
+            $guide->getColumnDimension($col)->setWidth(35);
         }
-        $guide->getStyle('A1:C22')->getAlignment()->setWrapText(true);
+        $guide->getStyle('A1:C27')->getAlignment()->setWrapText(true);
 
         $spreadsheet->setActiveSheetIndex(0);
 
@@ -553,6 +626,6 @@ class BarangController extends Controller
 
         return back()
             ->with('import_result_barang', $result)
-            ->with('success', "Import Master Barang selesai. {$result['created']} barang ditambahkan, {$result['skipped']} dilewati (kode sudah ada).");
+            ->with('success', "Import Master Barang selesai. {$result['created']} barang baru ditambahkan, {$result['skipped']} barang diupdate minimum stock-nya.");
     }
 } // <-- FIX: Kurung tutup ganda yang salah sudah dihapus
