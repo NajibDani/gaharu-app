@@ -335,10 +335,15 @@ class ProduksiController extends Controller
 
                 $totalBbbProduk = 0;
                 if ($produk->resep_id) {
-                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
-                        $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangBahanId);
+                        
+                        // Tentukan bahan yang dipakai (utama atau alternatif)
+                        $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
+                        $resolvedBahanId = $resolved['bahan_id'];
+
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangBahanId);
 
                         $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
@@ -346,7 +351,7 @@ class ProduksiController extends Controller
                         }
                         $totalBbbProduk += $hppBahan;
 
-                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->first();
+                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $resolvedBahanId)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
                         }
@@ -358,7 +363,7 @@ class ProduksiController extends Controller
                             'source_type'    => 'produksi',
                             'source_id'      => $produksiId,
                             'gudang_asal_id' => $gudangBahanId,
-                            'barang_id'      => $item->bahan_id,
+                            'barang_id'      => $resolvedBahanId,
                             'qty'            => $qtyButuh,
                             'total_harga'    => $hppBahan,
                             'created_by'     => auth()->id() ?? 1,
@@ -858,13 +863,17 @@ class ProduksiController extends Controller
                 $outputQty = ($biayaTambahan && floatval($biayaTambahan->output_qty) > 0) ? floatval($biayaTambahan->output_qty) : 1;
 
                 // A. FIFO BAHAN BAKU
-                $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
 
                 foreach ($resepItems as $item) {
                     $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
 
+                    // Tentukan bahan yang dipakai (utama atau alternatif)
+                    $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
+                    $resolvedBahanId = $resolved['bahan_id'];
+
                     $fifoResult = $fifoService->consumeFIFO(
-                        $item->bahan_id,
+                        $resolvedBahanId,
                         $qtyButuh,
                         $gudangBahanId
                     );
@@ -876,7 +885,7 @@ class ProduksiController extends Controller
                     $totalBbbProduk += $hppBahan;
 
                     $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)
-                        ->where('barang_id', $item->bahan_id)
+                        ->where('barang_id', $resolvedBahanId)
                         ->first();
 
                     if ($stokBahanGlobal) {
@@ -884,7 +893,7 @@ class ProduksiController extends Controller
                     } else {
                         StokGudang::create([
                             'gudang_id' => $gudangBahanId,
-                            'barang_id' => $item->bahan_id,
+                            'barang_id' => $resolvedBahanId,
                             'jumlah'    => 0 - $qtyButuh,
                         ]);
                     }
@@ -896,7 +905,7 @@ class ProduksiController extends Controller
                         'source_type'    => 'produksi',
                         'source_id'      => $produksi->id,
                         'gudang_asal_id' => $gudangBahanId,
-                        'barang_id'      => $item->bahan_id,
+                        'barang_id'      => $resolvedBahanId,
                         'qty'            => $qtyButuh,
                         'total_harga'    => $hppBahan,
                         'created_by'     => auth()->id() ?? 1,

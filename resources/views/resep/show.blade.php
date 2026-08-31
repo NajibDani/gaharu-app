@@ -59,7 +59,21 @@
                 <tbody>
                     @forelse($resep->bahanbaku as $b)
                     <tr>
-                        <td class="ps-4 fw-semibold text-dark">{{ $b->bahan->nama ?? 'Bahan Tidak Diketahui' }}</td>
+                        <td class="ps-4">
+                            <div class="fw-semibold text-dark">
+                                <span class="badge bg-primary rounded-pill me-1">1</span>
+                                {{ $b->bahan->nama ?? 'Bahan Tidak Diketahui' }}
+                            </div>
+                            @if($b->alternatif && $b->alternatif->count() > 0)
+                                @foreach($b->alternatif as $alt)
+                                <div class="ms-3 mt-1 text-muted small">
+                                    <span class="badge bg-secondary rounded-pill me-1">{{ $alt->prioritas }}</span>
+                                    {{ $alt->bahan->nama ?? 'Alternatif' }}
+                                    <span class="text-warning fst-italic">(substitusi)</span>
+                                </div>
+                                @endforeach
+                            @endif
+                        </td>
                         <td class="text-center">{{ $b->qty_bahan }}</td>
                         <td class="text-center">
                             <span class="badge bg-secondary opacity-75 px-3">{{ $b->satuan ?? '-' }}</span>

@@ -148,21 +148,23 @@ class CentralKitchenProductionController extends Controller
         $riwayatProduksi->getCollection()->transform(function($prod) use ($gudangCkId) {
             $isBahanSufficient = true;
             $defisitBahan = [];
+            $fifoService = app(\App\Services\FifoService::class);
             if (strtolower($prod->status_produksi) === 'draft') {
                 foreach ($prod->details as $detail) {
                     $produk = MasterBarang::with('resep.bahan')->find($detail->produk_id);
                     if ($produk && $produk->resep_id) {
-                        $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                        $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
                         foreach ($resepItems as $resep) {
                             $kebutuhan = floatval($resep->qty_bahan) * floatval($detail->qty);
-                            $stok = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resep->bahan_id)->value('jumlah') ?? 0);
-                            if ($stok < $kebutuhan) {
+                            
+                            $avail = $fifoService->checkBahanAvailability($resep, $kebutuhan, $gudangCkId);
+                            if (!$avail['sufficient']) {
                                 $isBahanSufficient = false;
                                 $defisitBahan[] = [
-                                    'nama'   => $resep->bahan->nama ?? 'Bahan',
+                                    'nama'   => $avail['nama'],
                                     'butuh'  => $kebutuhan,
-                                    'stok'   => $stok,
-                                    'kurang' => $kebutuhan - $stok,
+                                    'stok'   => $avail['stok'],
+                                    'kurang' => $kebutuhan - $avail['stok'],
                                     'satuan' => $resep->bahan->satuan ?? 'pcs',
                                 ];
                             }
@@ -529,18 +531,21 @@ class CentralKitchenProductionController extends Controller
             }
 
             // Validasi ketersediaan bahan baku di Gudang CK sebelum eksekusi
+            $fifoService = app(\App\Services\FifoService::class);
             foreach ($request->produk_id as $key => $produkId) {
                 $qtyHasil = floatval($request->qty_hasil[$key] ?? 0);
                 if ($qtyHasil <= 0) continue;
 
                 $produk = MasterBarang::with('resep.bahan')->find($produkId);
                 if ($produk && $produk->resep_id) {
-                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
-                        $stokBahan = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $item->bahan_id)->value('jumlah') ?? 0);
-                        if ($stokBahan < $qtyButuh) {
-                            $namaBahan = $item->bahan->nama ?? 'Bahan Baku';
+                        
+                        $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangCkId);
+                        if (!$avail['sufficient']) {
+                            $namaBahan = $avail['nama'];
+                            $stokBahan = $avail['stok'];
                             throw new \Exception("Stok {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan minta bahan terlebih dahulu.");
                         }
                     }
@@ -588,10 +593,14 @@ class CentralKitchenProductionController extends Controller
 
                 $totalBbbProduk = 0;
                 if ($produk && $produk->resep_id) {
-                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
-                        $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangCkId);
+                        
+                        $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangCkId);
+                        $resolvedBahanId = $resolved['bahan_id'];
+
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangCkId);
 
                         $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
@@ -599,7 +608,7 @@ class CentralKitchenProductionController extends Controller
                         }
                         $totalBbbProduk += $hppBahan;
 
-                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $item->bahan_id)->first();
+                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resolvedBahanId)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
                         }
@@ -611,7 +620,7 @@ class CentralKitchenProductionController extends Controller
                             'source_type'    => 'produksi_ck',
                             'source_id'      => $produksiId,
                             'gudang_asal_id' => $gudangCkId,
-                            'barang_id'      => $item->bahan_id,
+                            'barang_id'      => $resolvedBahanId,
                             'qty'            => $qtyButuh,
                             'total_harga'    => $hppBahan,
                             'created_by'     => auth()->id() ?? 1,
@@ -749,12 +758,14 @@ class CentralKitchenProductionController extends Controller
             foreach ($produksi->details as $detail) {
                 $produk = MasterBarang::with('resep.bahan')->find($detail->produk_id);
                 if ($produk && $produk->resep_id) {
-                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
                         $qtyButuh = floatval($item->qty_bahan) * floatval($detail->qty);
-                        $stokBahan = floatval(StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->value('jumlah') ?? 0);
-                        if ($stokBahan < $qtyButuh) {
-                            $namaBahan = $item->bahan->nama ?? 'Bahan Baku';
+                        
+                        $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangBahanId);
+                        if (!$avail['sufficient']) {
+                            $namaBahan = $avail['nama'];
+                            $stokBahan = $avail['stok'];
                             throw new \Exception("Stok {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}).");
                         }
                     }
@@ -768,10 +779,14 @@ class CentralKitchenProductionController extends Controller
 
                 $totalBbbProduk = 0;
                 if ($produk && $produk->resep_id) {
-                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->get();
+                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
-                        $fifoResult = $fifoService->consumeFIFO($item->bahan_id, $qtyButuh, $gudangBahanId);
+                        
+                        $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
+                        $resolvedBahanId = $resolved['bahan_id'];
+
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangBahanId);
 
                         $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
@@ -779,7 +794,7 @@ class CentralKitchenProductionController extends Controller
                         }
                         $totalBbbProduk += $hppBahan;
 
-                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $item->bahan_id)->first();
+                        $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $resolvedBahanId)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
                         }
@@ -791,7 +806,7 @@ class CentralKitchenProductionController extends Controller
                             'source_type'    => 'produksi_ck',
                             'source_id'      => $produksi->id,
                             'gudang_asal_id' => $gudangBahanId,
-                            'barang_id'      => $item->bahan_id,
+                            'barang_id'      => $resolvedBahanId,
                             'qty'            => $qtyButuh,
                             'total_harga'    => $hppBahan,
                             'created_by'     => auth()->id() ?? 1,
@@ -917,15 +932,16 @@ class CentralKitchenProductionController extends Controller
             ->get();
 
         // Cek ketersediaan bahan baku untuk setiap BSJ
-        $produkWithBahan = $produkBsj->map(function($p) use ($gudangCkId) {
-            $resepItems = ResepBahanBaku::where('resep_id', $p->resep_id)->with('bahan')->get();
-            $bahanList = $resepItems->map(function($r) use ($gudangCkId) {
-                $stok = (float) (StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $r->bahan_id)->value('jumlah') ?? 0);
+        $fifoService = app(\App\Services\FifoService::class);
+        $produkWithBahan = $produkBsj->map(function($p) use ($gudangCkId, $fifoService) {
+            $resepItems = ResepBahanBaku::where('resep_id', $p->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
+            $bahanList = $resepItems->map(function($r) use ($gudangCkId, $fifoService) {
+                $avail = $fifoService->checkBahanAvailability($r, (float)$r->qty_bahan, $gudangCkId);
                 return [
-                    'nama'        => $r->bahan->nama ?? 'Bahan',
+                    'nama'        => $avail['nama'],
                     'qty_per_unit'=> (float) $r->qty_bahan,
                     'satuan'      => $r->bahan->satuan ?? '',
-                    'stok'        => $stok,
+                    'stok'        => $avail['stok'],
                 ];
             });
             return (object)[
@@ -967,16 +983,18 @@ class CentralKitchenProductionController extends Controller
             if (!$hasValid) throw new \Exception('Harap isi minimal 1 produk dengan qty lebih dari 0.');
 
             // Cek kecukupan bahan
+            $fifoService = app(\App\Services\FifoService::class);
             foreach ($request->produk_id as $k => $produkId) {
                 $qty = floatval($request->qty_hasil[$k] ?? 0);
                 if ($qty <= 0) continue;
                 $produk = MasterBarang::find($produkId);
                 if ($produk && $produk->resep_id) {
-                    foreach (ResepBahanBaku::where('resep_id', $produk->resep_id)->get() as $r) {
+                    foreach (ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get() as $r) {
                         $butuh = floatval($r->qty_bahan) * $qty;
-                        $stok  = (float) (StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $r->bahan_id)->value('jumlah') ?? 0);
-                        if ($stok < $butuh) {
-                            $namaBahan = \App\Models\MasterBarang::find($r->bahan_id)?->nama ?? 'Bahan';
+                        $avail = $fifoService->checkBahanAvailability($r, $butuh, $gudangCkId);
+                        if (!$avail['sufficient']) {
+                            $namaBahan = $avail['nama'];
+                            $stok = $avail['stok'];
                             throw new \Exception("Stok {$namaBahan} tidak mencukupi (Tersedia: {$stok}, Butuh: {$butuh}).");
                         }
                     }
@@ -1009,9 +1027,13 @@ class CentralKitchenProductionController extends Controller
 
                 // Konsumsi bahan baku via FIFO
                 if ($produk && $produk->resep_id) {
-                    foreach (ResepBahanBaku::where('resep_id', $produk->resep_id)->get() as $r) {
+                    foreach (ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get() as $r) {
                         $butuh     = floatval($r->qty_bahan) * $qty;
-                        $fifoResult = $fifoService->consumeFIFO($r->bahan_id, $butuh, $gudangCkId);
+                        
+                        $resolved = $fifoService->resolveAlternativeBahan($r, $butuh, $gudangCkId);
+                        $resolvedBahanId = $resolved['bahan_id'];
+
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $butuh, $gudangCkId);
                         $hppBahan  = 0;
                         foreach ($fifoResult as $layer) {
                             $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
@@ -1019,7 +1041,7 @@ class CentralKitchenProductionController extends Controller
                         $totalBbb += $hppBahan;
 
                         // Kurangi stok bahan
-                        $stokBahan = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $r->bahan_id)->first();
+                        $stokBahan = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resolvedBahanId)->first();
                         if ($stokBahan) $stokBahan->decrement('jumlah', $butuh);
 
                         // Catat TransaksiStok keluar bahan
@@ -1029,7 +1051,7 @@ class CentralKitchenProductionController extends Controller
                             'source_type'    => 'produksi_internal_ck',
                             'source_id'      => $produksiId,
                             'gudang_asal_id' => $gudangCkId,
-                            'barang_id'      => $r->bahan_id,
+                            'barang_id'      => $resolvedBahanId,
                             'qty'            => $butuh,
                             'total_harga'    => $hppBahan,
                             'created_by'     => auth()->id() ?? 1,

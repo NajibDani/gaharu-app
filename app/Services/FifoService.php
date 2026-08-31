@@ -4,11 +4,146 @@ namespace App\Services;
 
 use App\Models\Pembelian;
 use App\Models\PembelianDetail;
+use App\Models\StokGudang;
 use App\Models\StokGudangBatch;
+use App\Models\ResepBahanBaku;
 use Illuminate\Support\Facades\DB;
 
 class FifoService
 {
+    /*
+    |--------------------------------------------------------------------------
+    | RESOLVE ALTERNATIVE BAHAN (PRIORITAS)
+    |--------------------------------------------------------------------------
+    |
+    | Menerima satu item ResepBahanBaku, cek stok bahan utama (prioritas 1).
+    | Jika stok utama tidak cukup, cek alternatif berdasarkan prioritas.
+    | Return: ['bahan_id' => int, 'nama' => string]
+    |
+    | Jika tidak ada satupun yang cukup, return bahan utama (biar FIFO yg handle error).
+    |
+    */
+
+    public function resolveAlternativeBahan(ResepBahanBaku $item, float $qtyButuh, int $gudangId, ?int $divisiId = null): array
+    {
+        // Bangun daftar kandidat: bahan utama (prioritas 1) + alternatif (prioritas 2, 3, ...)
+        $candidates = collect();
+
+        // Bahan utama (prioritas 1)
+        $candidates->push([
+            'bahan_id' => $item->bahan_id,
+            'nama'     => $item->bahan->nama ?? 'Bahan',
+            'prioritas' => 1,
+        ]);
+
+        // Alternatif (sudah di-sort by prioritas di model)
+        if ($item->relationLoaded('alternatif')) {
+            foreach ($item->alternatif as $alt) {
+                $candidates->push([
+                    'bahan_id' => $alt->bahan_id,
+                    'nama'     => $alt->bahan->nama ?? 'Bahan Alternatif',
+                    'prioritas' => $alt->prioritas,
+                ]);
+            }
+        } else {
+            foreach ($item->alternatif()->with('bahan')->orderBy('prioritas')->get() as $alt) {
+                $candidates->push([
+                    'bahan_id' => $alt->bahan_id,
+                    'nama'     => $alt->bahan->nama ?? 'Bahan Alternatif',
+                    'prioritas' => $alt->prioritas,
+                ]);
+            }
+        }
+
+        // Jika hanya 1 kandidat (tidak ada alternatif), langsung return
+        if ($candidates->count() <= 1) {
+            return $candidates->first();
+        }
+
+        // Cek stok per kandidat, pilih yang cukup dengan prioritas tertinggi
+        foreach ($candidates as $candidate) {
+            $query = StokGudang::where('gudang_id', $gudangId)
+                ->where('barang_id', $candidate['bahan_id']);
+
+            if ($divisiId) {
+                $query->where('divisi_id', $divisiId);
+            }
+
+            $stok = (float) ($query->value('jumlah') ?? 0);
+
+            if ($stok >= $qtyButuh) {
+                return $candidate;
+            }
+        }
+
+        // Tidak ada yang cukup — return bahan utama (prioritas 1)
+        return $candidates->first();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CHECK BAHAN AVAILABILITY (VALIDASI SAJA, TANPA KONSUMSI)
+    |--------------------------------------------------------------------------
+    |
+    | Dipakai untuk validasi sebelum produksi.
+    | Cek apakah bahan utama ATAU salah satu alternatif memiliki stok cukup.
+    | Return: ['sufficient' => bool, 'bahan_id' => int, 'nama' => string, 'stok' => float, 'butuh' => float]
+    |
+    */
+
+    public function checkBahanAvailability(ResepBahanBaku $item, float $qtyButuh, int $gudangId, ?int $divisiId = null): array
+    {
+        $candidates = collect();
+
+        $candidates->push([
+            'bahan_id' => $item->bahan_id,
+            'nama'     => $item->bahan->nama ?? 'Bahan',
+        ]);
+
+        $alts = $item->relationLoaded('alternatif')
+            ? $item->alternatif
+            : $item->alternatif()->with('bahan')->orderBy('prioritas')->get();
+
+        foreach ($alts as $alt) {
+            $candidates->push([
+                'bahan_id' => $alt->bahan_id,
+                'nama'     => $alt->bahan->nama ?? 'Bahan Alternatif',
+            ]);
+        }
+
+        foreach ($candidates as $candidate) {
+            $query = StokGudang::where('gudang_id', $gudangId)
+                ->where('barang_id', $candidate['bahan_id']);
+
+            if ($divisiId) {
+                $query->where('divisi_id', $divisiId);
+            }
+
+            $stok = (float) ($query->value('jumlah') ?? 0);
+
+            if ($stok >= $qtyButuh) {
+                return [
+                    'sufficient' => true,
+                    'bahan_id'   => $candidate['bahan_id'],
+                    'nama'       => $candidate['nama'],
+                    'stok'       => $stok,
+                    'butuh'      => $qtyButuh,
+                ];
+            }
+        }
+
+        // Tidak ada yang cukup, return info bahan utama
+        $first = $candidates->first();
+        $stokUtama = (float) (StokGudang::where('gudang_id', $gudangId)->where('barang_id', $first['bahan_id'])->value('jumlah') ?? 0);
+
+        return [
+            'sufficient' => false,
+            'bahan_id'   => $first['bahan_id'],
+            'nama'       => $first['nama'],
+            'stok'       => $stokUtama,
+            'butuh'      => $qtyButuh,
+        ];
+    }
     /*
     |--------------------------------------------------------------------------
     | CREATE BATCH SAAT PEMBELIAN

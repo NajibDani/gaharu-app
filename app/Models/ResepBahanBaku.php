@@ -20,4 +20,9 @@ class ResepBahanBaku extends Model
     {
         return $this->belongsTo(ResepBtklBop::class, 'resep_id');
     }
+
+    public function alternatif()
+    {
+        return $this->hasMany(ResepBahanBakuAlternatif::class, 'resep_bahanbaku_id')->orderBy('prioritas');
+    }
 }

@@ -17,7 +17,7 @@ class ResepBtklBopController extends Controller
     {
         $search = $request->query('search');
 
-        $query = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku']);
+        $query = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku.bahan', 'bahanbaku.alternatif.bahan']);
 
         if (!empty($search)) {
             $query->where(function($q) use ($search) {
@@ -43,7 +43,7 @@ class ResepBtklBopController extends Controller
     public function show($id)
 {
     // Kita ubah nama variabelnya menjadi $resep agar singkron dengan view
-    $resep = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku.bahan'])->findOrFail($id);
+    $resep = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->findOrFail($id);
 
     return view('resep.show', compact('resep'));
 }
@@ -68,10 +68,11 @@ class ResepBtklBopController extends Controller
             'output_qty' => 'required|numeric|min:1',
             'btkl_per_batch' => 'nullable|numeric',
             'bop_per_batch' => 'nullable|numeric',
-            'bahan_id' => 'required|array',
-            'bahan_id.*' => 'required|exists:master_barang,id',
+            'bahan_ids' => 'required|array',
+            'bahan_ids.*' => 'required|array|min:1',
+            'bahan_ids.*.*' => 'required|exists:master_barang,id',
             'qty_bahan' => 'required|array',
-            'qty_bahan.*' => 'required|numeric|min:0.01',
+            'qty_bahan.*' => 'required|numeric|min:0.001',
             'satuan' => 'required|array',
             'satuan.*' => 'required'
         ]);
@@ -96,29 +97,29 @@ class ResepBtklBopController extends Controller
             'resep_id' => $resep->id
         ]);
 
-        // 2. Grouping & Simpan Bahan Baku
-        $grouped = [];
-        foreach ($request->bahan_id as $i => $bahan_id) {
-            $qty = $request->qty_bahan[$i];
-            $satuan = $request->satuan[$i];
+        // 2. Simpan Bahan Baku dan Alternatif
+        foreach ($request->bahan_ids as $i => $item_bahan_ids) {
+            $qty = $request->qty_bahan[$i] ?? 0;
+            $satuan = $request->satuan[$i] ?? '-';
+            
+            // Bahan utama adalah item pertama (indeks 0)
+            $primary_bahan_id = $item_bahan_ids[0];
 
-            if (isset($grouped[$bahan_id])) {
-                $grouped[$bahan_id]['qty'] += $qty;
-            } else {
-                $grouped[$bahan_id] = [
-                    'qty' => $qty,
-                    'satuan' => $satuan
-                ];
-            }
-        }
-
-        foreach ($grouped as $bahan_id => $val) {
-            ResepBahanBaku::create([
+            $resepBahan = ResepBahanBaku::create([
                 'resep_id' => $resep->id,
-                'bahan_id' => $bahan_id,
-                'qty_bahan' => $val['qty'],
-                'satuan' => $val['satuan'],
+                'bahan_id' => $primary_bahan_id,
+                'qty_bahan' => $qty,
+                'satuan' => $satuan,
             ]);
+
+            // Alternatif adalah item berikutnya (indeks 1, 2, dst)
+            for ($prioritasIndex = 1; $prioritasIndex < count($item_bahan_ids); $prioritasIndex++) {
+                \App\Models\ResepBahanBakuAlternatif::create([
+                    'resep_bahanbaku_id' => $resepBahan->id,
+                    'bahan_id' => $item_bahan_ids[$prioritasIndex],
+                    'prioritas' => $prioritasIndex + 1, // 2, 3, dst.
+                ]);
+            }
         }
 
         return redirect()->route('resep.index')->with('success', 'Resep berhasil dibuat dan dihubungkan ke produk');
@@ -126,7 +127,7 @@ class ResepBtklBopController extends Controller
 
     public function edit($id)
     {
-        $data = ResepBtklBop::whereHas('produk')->with('bahanbaku.bahan')->findOrFail($id);
+        $data = ResepBtklBop::whereHas('produk')->with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->findOrFail($id);
         $produk = MasterBarang::where(function($q) {
             $q->where('is_barang_jadi', 1)->orWhere('is_bahan_setengah_jadi', 1);
         })->where('is_active', true)->orderBy('nama')->get();
@@ -142,10 +143,11 @@ class ResepBtklBopController extends Controller
             'output_qty' => 'required|numeric|min:1',
             'btkl_per_batch' => 'nullable|numeric',
             'bop_per_batch' => 'nullable|numeric',
-            'bahan_id' => 'required|array',
-            'bahan_id.*' => 'required|exists:master_barang,id',
+            'bahan_ids' => 'required|array',
+            'bahan_ids.*' => 'required|array|min:1',
+            'bahan_ids.*.*' => 'required|exists:master_barang,id',
             'qty_bahan' => 'required|array',
-            'qty_bahan.*' => 'required|numeric|min:0.01',
+            'qty_bahan.*' => 'required|numeric|min:0.001',
         ]);
 
         $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
@@ -164,27 +166,31 @@ class ResepBtklBopController extends Controller
             'resep_id' => $resep->id
         ]);
 
-        // 2. Refresh Bahan Baku
+        // 2. Refresh Bahan Baku (cascade delete will delete alternatives automatically)
         ResepBahanBaku::where('resep_id', $id)->delete();
 
-        $grouped = [];
-        foreach ($request->bahan_id as $i => $bahan_id) {
-            $qty = $request->qty_bahan[$i];
-            if (isset($grouped[$bahan_id])) {
-                $grouped[$bahan_id] += $qty;
-            } else {
-                $grouped[$bahan_id] = $qty;
-            }
-        }
+        foreach ($request->bahan_ids as $i => $item_bahan_ids) {
+            $qty = $request->qty_bahan[$i] ?? 0;
+            $satuan = $request->satuan[$i] ?? '-';
+            
+            // Bahan utama adalah item pertama (indeks 0)
+            $primary_bahan_id = $item_bahan_ids[0];
 
-        foreach ($grouped as $bahan_id => $qty) {
-            $barang = MasterBarang::find($bahan_id);
-            ResepBahanBaku::create([
+            $resepBahan = ResepBahanBaku::create([
                 'resep_id' => $id,
-                'bahan_id' => $bahan_id,
+                'bahan_id' => $primary_bahan_id,
                 'qty_bahan' => $qty,
-                'satuan' => $barang->satuan ?? '-',
+                'satuan' => $satuan,
             ]);
+
+            // Alternatif adalah item berikutnya (indeks 1, 2, dst)
+            for ($prioritasIndex = 1; $prioritasIndex < count($item_bahan_ids); $prioritasIndex++) {
+                \App\Models\ResepBahanBakuAlternatif::create([
+                    'resep_bahanbaku_id' => $resepBahan->id,
+                    'bahan_id' => $item_bahan_ids[$prioritasIndex],
+                    'prioritas' => $prioritasIndex + 1, // 2, 3, dst.
+                ]);
+            }
         }
 
         $page = $request->query('page', 1);
