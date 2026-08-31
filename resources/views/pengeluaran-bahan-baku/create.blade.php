@@ -181,6 +181,13 @@
             </div>
         </div>
 
+        {{-- TOMBOL TAMPILKAN SARAN --}}
+        <div id="toggle-suggestion-container" class="mb-3" style="display: none;">
+            <button type="button" class="btn btn-outline-warning text-dark fw-bold shadow-sm" id="btn-toggle-suggestions" style="border-radius: 8px;">
+                <i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock
+            </button>
+        </div>
+
         {{-- SARAN RESTOCK (CONDITIONAL) --}}
         <div id="suggestion-box" class="card p-3 mb-4 bg-light border-warning shadow-sm" style="display: none; border-left: 5px solid #f59e0b !important; border-radius: 12px;">
             <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -522,6 +529,7 @@ function hapusBaris(button) {
     let row = button.closest('tr');
     let rows = document.querySelectorAll('#table-detail tbody tr');
     let select = row.querySelector('.barang-select');
+    let barangId = select ? (select.tomselect ? select.tomselect.getValue() : select.value) : '';
 
     if (rows.length > 1) {
         if (select && select.tomselect) select.tomselect.destroy();
@@ -534,6 +542,19 @@ function hapusBaris(button) {
         if (satuanEl) satuanEl.textContent = '';
         if (infoEl) infoEl.textContent = '';
         row.querySelector('.stok-warning').style.display = 'none';
+    }
+
+    if (barangId) {
+        const pill = document.querySelector(`#suggestion-list [data-barang-id="${barangId}"]`);
+        if (pill) {
+            pill.classList.remove('bg-warning-subtle');
+            pill.classList.add('bg-white');
+            const btn = pill.querySelector('.btn-add-single-suggest');
+            if (btn) {
+                btn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Tambah';
+                btn.disabled = false;
+            }
+        }
     }
 }
 
@@ -601,8 +622,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function fetchSuggestions(gudangId, divisiId = null) {
+        const toggleContainer = document.getElementById('toggle-suggestion-container');
         if (!gudangId) {
             suggestionBox.style.display = 'none';
+            toggleContainer.style.display = 'none';
             currentSuggestions = [];
             return;
         }
@@ -620,11 +643,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 suggestionGudang.innerText = labelGudang;
                 if (currentSuggestions.length > 0) {
-                    suggestionBox.style.display = 'block';
+                    toggleContainer.style.display = 'block';
+                    suggestionBox.style.display = 'none'; // Keep hidden initially
                     suggestionList.innerHTML = '';
                     currentSuggestions.forEach(item => {
                         const pill = document.createElement('div');
                         pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                        pill.dataset.barangId = item.barang_id;
                         
                         let displaySaran = item.has_konversi 
                             ? `${item.suggested_qty_input} ${item.satuan_pembelian} (${item.suggested_qty} ${item.satuan})`
@@ -655,11 +680,30 @@ document.addEventListener('DOMContentLoaded', function () {
                         suggestionList.appendChild(pill);
                     });
                 } else {
+                    toggleContainer.style.display = 'none';
                     suggestionBox.style.display = 'none';
                 }
             })
-            .catch(() => { suggestionBox.style.display = 'none'; });
+            .catch(() => {
+                toggleContainer.style.display = 'none';
+                suggestionBox.style.display = 'none';
+            });
     }
+
+    document.getElementById('btn-toggle-suggestions').addEventListener('click', function () {
+        const box = document.getElementById('suggestion-box');
+        if (box.style.display === 'none') {
+            box.style.display = 'block';
+            this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Sembunyikan Saran Restock';
+            this.classList.remove('btn-outline-warning');
+            this.classList.add('btn-warning');
+        } else {
+            box.style.display = 'none';
+            this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock';
+            this.classList.remove('btn-warning');
+            this.classList.add('btn-outline-warning');
+        }
+    });
 
     function applyAllSuggestions() {
         const tbody = document.querySelector('#table-detail tbody');

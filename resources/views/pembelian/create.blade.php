@@ -1,4 +1,6 @@
 <x-app-layout>
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <div class="container">
         <h4>Tambah Pembelian</h4>
 
@@ -81,6 +83,13 @@
             </div>
 
             <hr>
+
+            {{-- TOMBOL TAMPILKAN SARAN --}}
+            <div id="toggle-suggestion-container" class="mb-3" style="display: none;">
+                <button type="button" class="btn btn-outline-warning text-dark fw-bold shadow-sm" id="btn-toggle-suggestions" style="border-radius: 8px;">
+                    <i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock
+                </button>
+            </div>
 
             {{-- SARAN RESTOCK (CONDITIONAL) --}}
             <div id="suggestion-box" class="card p-3 mb-4 bg-light border-warning shadow-sm" style="display: none; border-left: 5px solid #f59e0b !important; border-radius: 12px;">
@@ -341,11 +350,27 @@
                     document.querySelectorAll('#table-items tbody tr');
 
                 if (rows.length > 1) {
+                    const row = e.target.closest('tr');
+                    const select = row.querySelector('.barang-select');
+                    const barangId = select ? select.value : '';
 
-                    e.target.closest('tr').remove();
+                    row.remove();
 
                     // Reindex semua baris agar tidak ada gap di array
                     reindexRows();
+
+                    if (barangId) {
+                        const pill = document.querySelector(`#suggestion-list [data-barang-id="${barangId}"]`);
+                        if (pill) {
+                            pill.classList.remove('bg-warning-subtle');
+                            pill.classList.add('bg-white');
+                            const btn = pill.querySelector('.btn-add-single-suggest');
+                            if (btn) {
+                                btn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Tambah';
+                                btn.disabled = false;
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -374,11 +399,11 @@
             const supplierSelect =
                 document.getElementById('supplier_id');
 
-            const supplierOption =
-                supplierSelect.options[supplierSelect.selectedIndex];
+            const selectedVal = supplierSelect.value;
+            const supplierOption = supplierSelect.querySelector(`option[value="${selectedVal}"]`);
 
             const supplier =
-                supplierOption.dataset.nama ?? '';
+                supplierOption ? (supplierOption.dataset.nama ?? '') : '';
 
             const barangSelect =
                 row.querySelector('.barang-select');
@@ -606,17 +631,20 @@
         function fetchPembelianSuggestions() {
             const suggestionBox = document.getElementById('suggestion-box');
             const suggestionList = document.getElementById('suggestion-list');
+            const toggleContainer = document.getElementById('toggle-suggestion-container');
 
             fetch("{{ route('pembelian.suggestions') }}")
                 .then(r => r.json())
                 .then(data => {
                     currentSuggestions = data.suggestions || [];
                     if (currentSuggestions.length > 0) {
-                        suggestionBox.style.display = 'block';
+                        toggleContainer.style.display = 'block';
+                        suggestionBox.style.display = 'none'; // Keep hidden initially
                         suggestionList.innerHTML = '';
                         currentSuggestions.forEach(item => {
                             const pill = document.createElement('div');
                             pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                            pill.dataset.barangId = item.barang_id;
                             pill.innerHTML = `
                                 <div class="text-start">
                                     <div class="fw-bold">${item.nama} <span class="text-muted small">(${item.kode_barang})</span></div>
@@ -639,13 +667,30 @@
                             suggestionList.appendChild(pill);
                         });
                     } else {
+                        toggleContainer.style.display = 'none';
                         suggestionBox.style.display = 'none';
                     }
                 })
                 .catch(() => {
+                    toggleContainer.style.display = 'none';
                     suggestionBox.style.display = 'none';
                 });
         }
+
+        document.getElementById('btn-toggle-suggestions').addEventListener('click', function () {
+            const box = document.getElementById('suggestion-box');
+            if (box.style.display === 'none') {
+                box.style.display = 'block';
+                this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Sembunyikan Saran Restock';
+                this.classList.remove('btn-outline-warning');
+                this.classList.add('btn-warning');
+            } else {
+                box.style.display = 'none';
+                this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock';
+                this.classList.remove('btn-warning');
+                this.classList.add('btn-outline-warning');
+            }
+        });
 
         document.getElementById('btn-apply-all-suggestions').addEventListener('click', function () {
             currentSuggestions.forEach(item => {
@@ -659,6 +704,11 @@
 
         document.addEventListener('DOMContentLoaded', function () {
             fetchPembelianSuggestions();
+            new TomSelect('#supplier_id', {
+                create: false,
+                placeholder: '-- Pilih Supplier --',
+                allowEmptyOption: true,
+            });
         });
 
     </script>
