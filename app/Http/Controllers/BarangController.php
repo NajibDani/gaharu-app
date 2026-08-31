@@ -446,19 +446,19 @@ class BarangController extends Controller
             'kode_barang', 'nama', 'kategori', 'jenis_utama', 'satuan',
             'satuan_pembelian', 'konversi_pembelian', 'tipe_penjualan',
             'harga_jual_b2b', 'harga_jual_pos', 'hpp_referensi',
-            'min_stock_ck', 'min_stock_kejingga_kitchen', 'min_stock_kejingga_barista', 'min_stock_kejingga_server',
+            'min_stock_ck', 'min_stock_gudang_utama', 'min_stock_kejingga_kitchen', 'min_stock_kejingga_barista', 'min_stock_kejingga_server',
             'min_stock_gaharu_kitchen', 'min_stock_gaharu_barista', 'min_stock_gaharu_server', 'min_stock_b2b',
             'minimum_stock_umum', 'minimum_order',
         ];
         $sheet->fromArray($headers, null, 'A1');
-        $sheet->getStyle('A1:U1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:U1')->getFont()->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:U1')->getFill()
+        $sheet->getStyle('A1:V1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:V1')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:V1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('D88656');
 
         // Highlight kolom minimum stock agar user tahu kolom mana yang perlu diisi
-        $sheet->getStyle('L1:S1')->getFill()
+        $sheet->getStyle('L1:T1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('2E7D32'); // hijau gelap untuk kolom min stock
 
@@ -471,6 +471,7 @@ class BarangController extends Controller
         // Load semua gudang dan divisi untuk mapping minimum stock
         $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
         $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
+        $gudangUtama = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama'));
         $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
         $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
         $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
@@ -508,6 +509,7 @@ class BarangController extends Controller
 
             // Ambil min stock per outlet/divisi dari database
             $minCk = $ckGudang ? $getMinStock($b->id, $ckGudang->id) : '';
+            $minUtama = $gudangUtama ? $getMinStock($b->id, $gudangUtama->id) : '';
             $minB2b = $b2bGudang ? $getMinStock($b->id, $b2bGudang->id) : '';
             $minKejKitchen = ($kejinggaGudang && $kejinggaDivKitchen) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivKitchen->id) : '';
             $minKejBarista = ($kejinggaGudang && $kejinggaDivBarista) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivBarista->id) : '';
@@ -529,6 +531,7 @@ class BarangController extends Controller
                 (float) ($b->harga_jual_pos ?? 0),
                 (float) ($b->hpp_referensi ?? 0),
                 $minCk,
+                $minUtama,
                 $minKejKitchen,
                 $minKejBarista,
                 $minKejServer,
@@ -542,7 +545,7 @@ class BarangController extends Controller
             $rowNum++;
         }
 
-        foreach (range('A', 'U') as $col) {
+        foreach (range('A', 'V') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -579,6 +582,7 @@ class BarangController extends Controller
             ['harga_jual_pos', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['hpp_referensi', 'Tidak', 'Default 0 jika kosong.'],
             ['min_stock_ck', 'Tidak', 'Minimum stock di Central Kitchen. Isi angka untuk set/update. Kosongkan jika tidak perlu diubah.'],
+            ['min_stock_gudang_utama', 'Tidak', 'Minimum stock di Gudang Utama. Isi angka untuk set/update. Kosongkan jika tidak perlu diubah.'],
             ['min_stock_kejingga_kitchen', 'Tidak', 'Minimum stock KeJingga - Divisi Kitchen. Kosongkan jika tidak perlu diubah.'],
             ['min_stock_kejingga_barista', 'Tidak', 'Minimum stock KeJingga - Divisi Barista. Kosongkan jika tidak perlu diubah.'],
             ['min_stock_kejingga_server', 'Tidak', 'Minimum stock KeJingga - Divisi Server. Kosongkan jika tidak perlu diubah.'],
@@ -589,12 +593,12 @@ class BarangController extends Controller
             ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Kosongkan jika tidak perlu diubah.'],
             ['minimum_order', 'Tidak', 'Default 1 jika kosong.'],
             ['', '', ''],
-            ['CARA PAKAI', '', 'Download template ini → isi/edit kolom min_stock (kolom L sampai S berwarna hijau) → Import kembali file ini.'],
+            ['CARA PAKAI', '', 'Download template ini → isi/edit kolom min_stock (kolom L sampai T berwarna hijau) → Import kembali file ini.'],
             ['', '', 'Barang yang kode_barang-nya sudah ada di sistem: hanya minimum stock yang akan diperbarui.'],
             ['', '', 'Barang baru (kode_barang belum ada): akan ditambahkan sebagai master barang baru.'],
         ], null, 'A1');
         $guide->getStyle('A1:C1')->getFont()->setBold(true);
-        $guide->getStyle('A24:A24')->getFont()->setBold(true);
+        $guide->getStyle('A25:A25')->getFont()->setBold(true);
         foreach (['A', 'B', 'C'] as $col) {
             $guide->getColumnDimension($col)->setWidth(35);
         }

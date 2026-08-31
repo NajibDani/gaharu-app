@@ -88,6 +88,7 @@ class MasterBarangImporter
             $hpp               = $get($row, 'hpp_referensi');
             $minStock          = $get($row, 'minimum_stock') ?: $get($row, 'minimum_stock_umum');
             $minStockCk        = $get($row, 'min_stock_ck') ?: $get($row, 'minimum_stock_ck');
+            $minStockUtama     = $get($row, 'min_stock_gudang_utama');
             $minStockKejingga  = $get($row, 'minimum_stock_kejingga');
             $minStockGaharu    = $get($row, 'minimum_stock_gaharu');
             $minOrder          = $get($row, 'minimum_order');
@@ -113,7 +114,7 @@ class MasterBarangImporter
             if ($exists) {
                 // UPDATE MINIMUM STOCK untuk barang yang sudah ada
                 try {
-                    DB::transaction(function () use ($exists, $minStock, $minStockCk, $minStockKejingga, $minStockGaharu, $minKejinggaKitchen, $minKejinggaBarista, $minKejinggaServer, $minGaharuKitchen, $minGaharuBarista, $minGaharuServer, $minB2b, $numeric) {
+                    DB::transaction(function () use ($exists, $minStock, $minStockCk, $minStockUtama, $minStockKejingga, $minStockGaharu, $minKejinggaKitchen, $minKejinggaBarista, $minKejinggaServer, $minGaharuKitchen, $minGaharuBarista, $minGaharuServer, $minB2b, $numeric) {
                         $updateData = [];
                         if ($minStock !== '') $updateData['minimum_stock'] = $numeric($minStock, 0);
                         if ($minStockCk !== '') $updateData['minimum_stock_ck'] = $numeric($minStockCk, 0);
@@ -127,6 +128,7 @@ class MasterBarangImporter
                         // Simpan / update minimum stock per outlet & divisi
                         $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
                         $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
+                        $gudangUtama = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama'));
                         $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
                         $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
                         $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
@@ -150,6 +152,11 @@ class MasterBarangImporter
                         // Central Kitchen
                         if ($ckGudang && $minStockCk !== '') {
                             $saveMin($ckGudang->id, null, $minStockCk);
+                        }
+
+                        // Gudang Utama
+                        if ($gudangUtama && $minStockUtama !== '') {
+                            $saveMin($gudangUtama->id, null, $minStockUtama);
                         }
 
                         // B2B
@@ -235,7 +242,7 @@ class MasterBarangImporter
                 DB::transaction(function () use (
                     $kategori, $kodeBarang, $nama, $satuan, $satuanPembelian,
                     $konversiPembelian, $jenisUtama, $tipePenjualan,
-                    $hargaB2bVal, $hargaPosVal, $hpp, $minStock, $minStockCk, $minStockKejingga, $minStockGaharu, $minOrder,
+                    $hargaB2bVal, $hargaPosVal, $hpp, $minStock, $minStockCk, $minStockUtama, $minStockKejingga, $minStockGaharu, $minOrder,
                     $minKejinggaKitchen, $minKejinggaBarista, $minKejinggaServer, $minGaharuKitchen, $minGaharuBarista, $minGaharuServer, $minB2b,
                     $numeric
                 ) {
@@ -268,6 +275,7 @@ class MasterBarangImporter
                     if ($jenisUtama === 'BAHAN_BAKU') {
                         $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
                         $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
+                        $gudangUtama = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama'));
                         $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
                         $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
                         $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
@@ -287,6 +295,11 @@ class MasterBarangImporter
                         // Central Kitchen
                         if ($ckGudang && $minStockCk !== '') {
                             $saveMin($ckGudang->id, null, $minStockCk);
+                        }
+
+                        // Gudang Utama
+                        if ($gudangUtama && $minStockUtama !== '') {
+                            $saveMin($gudangUtama->id, null, $minStockUtama);
                         }
 
                         // B2B
