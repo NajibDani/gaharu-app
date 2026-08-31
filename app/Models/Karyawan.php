@@ -58,6 +58,18 @@ class Karyawan extends Model
     }
 
     /**
+     * Get the daily base salary (gaji pokok harian) for a specific date
+     */
+    public function getGajiHarianForDate($tanggal): float
+    {
+        $pInfo = $this->getPeriodeGajiLabelForDate($tanggal);
+        if ($pInfo['key'] === 'P2') {
+            return (float) ($this->gaji_pokok_2 ?? $this->gaji_pokok ?? 0);
+        }
+        return (float) ($this->gaji_pokok ?? 0);
+    }
+
+    /**
      * Mendapatkan label dan kunci periode gaji berdasarkan tanggal presensi/keterlambatan
      */
     public function getPeriodeGajiLabelForDate($tanggal): array

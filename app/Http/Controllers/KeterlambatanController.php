@@ -134,6 +134,14 @@ class KeterlambatanController extends Controller
 
         $kalkulasi = Keterlambatan::hitungPotongan($jamShift, $jamDatang);
 
+        $karyawan = Karyawan::findOrFail($request->karyawan_id);
+        $gajiHarian = $karyawan->getGajiHarianForDate($request->tanggal);
+        
+        $potongan = $kalkulasi['potongan'];
+        if ($potongan > $gajiHarian) {
+            $potongan = $gajiHarian;
+        }
+
         $keterlambatan = Keterlambatan::create([
             'karyawan_id'  => $request->karyawan_id,
             'tanggal'      => $request->tanggal,
@@ -141,16 +149,14 @@ class KeterlambatanController extends Controller
             'jam_shift'    => $jamShift,
             'jam_datang'   => $jamDatang,
             'durasi_menit' => $kalkulasi['durasi_menit'],
-            'potongan'     => $kalkulasi['potongan'],
+            'potongan'     => $potongan,
             'keterangan'   => $request->keterangan,
         ]);
 
         // Otomatis Sync / Linked ke Penggajian Karyawan
         $this->syncKePenggajian($request->karyawan_id, $request->tanggal);
 
-        $karyawan = Karyawan::find($request->karyawan_id);
-
-        return redirect()->back()->with('success', "Data keterlambatan {$karyawan->nama_karyawan} berhasil dicatat (Potongan: Rp " . number_format($kalkulasi['potongan'], 0, ',', '.') . ") dan otomatis terhubung ke Penggajian.");
+        return redirect()->back()->with('success', "Data keterlambatan {$karyawan->nama_karyawan} berhasil dicatat (Potongan: Rp " . number_format($potongan, 0, ',', '.') . ") dan otomatis terhubung ke Penggajian.");
     }
 
     /**
@@ -176,6 +182,14 @@ class KeterlambatanController extends Controller
 
         $kalkulasi = Keterlambatan::hitungPotongan($jamShift, $jamDatang);
 
+        $karyawan = Karyawan::findOrFail($request->karyawan_id);
+        $gajiHarian = $karyawan->getGajiHarianForDate($request->tanggal);
+        
+        $potongan = $kalkulasi['potongan'];
+        if ($potongan > $gajiHarian) {
+            $potongan = $gajiHarian;
+        }
+
         $keterlambatan->update([
             'karyawan_id'  => $request->karyawan_id,
             'tanggal'      => $request->tanggal,
@@ -183,7 +197,7 @@ class KeterlambatanController extends Controller
             'jam_shift'    => $jamShift,
             'jam_datang'   => $jamDatang,
             'durasi_menit' => $kalkulasi['durasi_menit'],
-            'potongan'     => $kalkulasi['potongan'],
+            'potongan'     => $potongan,
             'keterangan'   => $request->keterangan,
         ]);
 
@@ -220,12 +234,25 @@ class KeterlambatanController extends Controller
     {
         $jamShift = $request->query('jam_shift');
         $jamDatang = $request->query('jam_datang');
+        $karyawanId = $request->query('karyawan_id');
+        $tanggal = $request->query('tanggal');
 
         if (!$jamShift || !$jamDatang) {
             return response()->json(['durasi_menit' => 0, 'potongan' => 0, 'potongan_formatted' => 'Rp 0']);
         }
 
         $res = Keterlambatan::hitungPotongan($jamShift, $jamDatang);
+        
+        if ($karyawanId && $tanggal) {
+            $karyawan = Karyawan::find($karyawanId);
+            if ($karyawan) {
+                $gajiHarian = $karyawan->getGajiHarianForDate($tanggal);
+                if ($res['potongan'] > $gajiHarian) {
+                    $res['potongan'] = $gajiHarian;
+                }
+            }
+        }
+        
         $res['potongan_formatted'] = 'Rp ' . number_format($res['potongan'], 0, ',', '.');
 
         return response()->json($res);
