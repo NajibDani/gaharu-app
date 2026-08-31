@@ -174,7 +174,7 @@
                         <select name="produk_id" id="produk_id" class="form-select produk-select" required>
                             <option value="" disabled selected>-- Pilih Produk --</option>
                             @foreach($produk as $p)
-                                <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}">
+                                <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}" data-has-resep="{{ $p->resep_id ? 'true' : 'false' }}">
                                     {{ $p->nama }} {{ $p->is_bahan_setengah_jadi ? '(Bahan Setengah Jadi)' : '(Barang Jadi)' }}
                                 </option>
                             @endforeach
@@ -645,6 +645,13 @@ document.addEventListener("DOMContentLoaded", function () {
     selectProduk.addEventListener('change', function() {
         let opt = this.options[this.selectedIndex];
         inputSatuanOutput.value = opt ? (opt.dataset.satuan ?? '') : '';
+
+        // Prevent selecting product with existing recipe during creation (POST method)
+        if (formMethod.value === "POST" && opt && opt.dataset.hasResep === 'true') {
+            alert('Produk ini sudah memiliki resep! Silakan pilih produk lain.');
+            produkChoices.setChoiceByValue('');
+            inputSatuanOutput.value = '';
+        }
     });
 
     // Tambah baris baru
