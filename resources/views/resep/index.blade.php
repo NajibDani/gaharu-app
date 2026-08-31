@@ -187,7 +187,13 @@
                     {{-- TARGET OUTPUT PROSES PRODUKSI --}}
                     <div class="row position-relative" style="z-index: 100;">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label fw-bold small text-secondary">Output per Batch</label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label fw-bold small text-secondary mb-0">Output per Batch</label>
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox" id="auto_output_qty" style="cursor: pointer;">
+                                    <label class="form-check-label text-muted" for="auto_output_qty" style="cursor: pointer; font-size: 11px;">Otomatis dari Berat Bahan</label>
+                                </div>
+                            </div>
                             <input type="number" name="output_qty" id="output_qty" class="form-control" min="1" placeholder="0" required>
                         </div>
                         <div class="col-md-6 mb-3">
@@ -470,6 +476,35 @@ document.addEventListener("DOMContentLoaded", function () {
     const tbodyBahan = document.querySelector('#table-bahan tbody');
     const rowBlueprint = tbodyBahan.querySelector('tr').cloneNode(true);
 
+    const checkboxAuto = document.getElementById('auto_output_qty');
+    const inputOutputQty = document.getElementById('output_qty');
+
+    function recalculateAutoOutput() {
+        if (!checkboxAuto || !inputOutputQty) return;
+
+        if (checkboxAuto.checked) {
+            inputOutputQty.readOnly = true;
+            let sum = 0;
+            tbodyBahan.querySelectorAll('input[name="qty_bahan[]"]').forEach(input => {
+                const val = parseFloat(input.value) || 0;
+                sum += val;
+            });
+            inputOutputQty.value = sum > 0 ? Number(sum.toFixed(4)) : '';
+        } else {
+            inputOutputQty.readOnly = false;
+        }
+    }
+
+    if (checkboxAuto) {
+        checkboxAuto.addEventListener('change', recalculateAutoOutput);
+    }
+
+    tbodyBahan.addEventListener('input', function(e) {
+        if (e.target.name === 'qty_bahan[]') {
+            recalculateAutoOutput();
+        }
+    });
+
     const produkChoices = new Choices(selectProduk, {
         searchEnabled: true,
         itemSelectText: '',
@@ -665,6 +700,7 @@ document.addEventListener("DOMContentLoaded", function () {
         tbodyBahan.appendChild(barisBaru);
         setupRowEvents(barisBaru);
         updateAllRowIndexes();
+        recalculateAutoOutput();
     });
 
     // Hapus baris
@@ -673,6 +709,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (tbodyBahan.querySelectorAll('tr').length > 1) {
                 e.target.closest('tr').remove();
                 updateAllRowIndexes();
+                recalculateAutoOutput();
             } else {
                 alert('Resep minimal wajib memiliki 1 baris komponen bahan baku!');
             }
@@ -691,6 +728,11 @@ document.addEventListener("DOMContentLoaded", function () {
         produkChoices.enable();
         produkChoices.removeActiveItems();
         warningProduk.classList.add('d-none');
+
+        if (checkboxAuto) {
+            checkboxAuto.checked = false;
+            inputOutputQty.readOnly = false;
+        }
         
         tbodyBahan.innerHTML = '';
         let barisAwal = rowBlueprint.cloneNode(true);
@@ -765,6 +807,23 @@ document.addEventListener("DOMContentLoaded", function () {
                 tbodyBahan.appendChild(barisKosong);
                 setupRowEvents(barisKosong);
                 updateAllRowIndexes();
+            }
+
+            // Check if output_qty equals sum of ingredients to automatically check the toggle
+            let sumBahan = 0;
+            if (arrayBahanBaku && arrayBahanBaku.length > 0) {
+                arrayBahanBaku.forEach(item => {
+                    sumBahan += parseFloat(item.qty_bahan) || 0;
+                });
+            }
+            if (checkboxAuto) {
+                if (Math.abs(sumBahan - parseFloat(this.dataset.output_qty)) < 0.0001 && sumBahan > 0) {
+                    checkboxAuto.checked = true;
+                    inputOutputQty.readOnly = true;
+                } else {
+                    checkboxAuto.checked = false;
+                    inputOutputQty.readOnly = false;
+                }
             }
 
             bsModalInstance.show();

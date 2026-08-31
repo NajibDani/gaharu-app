@@ -252,6 +252,19 @@
         |--------------------------------------------------------------------------
         */
 
+        function initBarangSelect(selectEl) {
+            if (!selectEl || selectEl.tomselect) return;
+            new TomSelect(selectEl, {
+                create: false,
+                placeholder: '-- Pilih Barang --',
+                allowEmptyOption: true,
+                maxOptions: 500,
+                onChange: function(value) {
+                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        }
+
         document.getElementById('btn-add')
             .addEventListener('click', function () {
 
@@ -332,6 +345,10 @@
             `;
 
             tbody.insertAdjacentHTML('beforeend', row);
+            
+            const newRow = tbody.lastElementChild;
+            const newSelect = newRow.querySelector('.barang-select');
+            initBarangSelect(newSelect);
 
             rowIndex++;
         });
@@ -409,10 +426,10 @@
                 row.querySelector('.barang-select');
 
             const barangOption =
-                barangSelect.options[barangSelect.selectedIndex];
+                barangSelect.querySelector(`option[value="${barangSelect.value}"]`);
 
             const kodeBarang =
-                barangOption.dataset.kode ?? '';
+                barangOption ? (barangOption.dataset.kode ?? '') : '';
 
             if (
                 !tanggal ||
@@ -489,9 +506,9 @@
 
         function updateQtyHint(row) {
             const select = row.querySelector('.barang-select');
-            const opt = select.options[select.selectedIndex];
+            const opt = select.querySelector(`option[value="${select.value}"]`);
             const hint = row.querySelector('.qty-hint');
-            if (!opt || opt.value === '') {
+            if (!opt || select.value === '') {
                 hint.textContent = '';
                 return;
             }
@@ -609,7 +626,11 @@
             }
 
             const barangSelect = targetRow.querySelector('.barang-select');
-            barangSelect.value = barangId;
+            if (barangSelect.tomselect) {
+                barangSelect.tomselect.setValue(barangId);
+            } else {
+                barangSelect.value = barangId;
+            }
             updateQtyHint(targetRow);
             generateBatchNumber(targetRow);
 
@@ -619,8 +640,8 @@
             // Jika ada HPP referensi, isi estimasi harga
             const hargaInput = targetRow.querySelector('.harga-input');
             if (hppRef && hppRef > 0) {
-                const opt = barangSelect.options[barangSelect.selectedIndex];
-                const konversi = parseFloat(opt.dataset.konversiPembelian) || 1;
+                const opt = barangSelect.querySelector(`option[value="${barangSelect.value}"]`);
+                const konversi = opt ? (parseFloat(opt.dataset.konversiPembelian) || 1) : 1;
                 const totalHargaEstimasi = qty * hppRef * konversi;
                 hargaInput.value = formatNumberIndonesian(String(Math.round(totalHargaEstimasi)));
             }
@@ -708,6 +729,9 @@
                 create: false,
                 placeholder: '-- Pilih Supplier --',
                 allowEmptyOption: true,
+            });
+            document.querySelectorAll('.barang-select').forEach(select => {
+                initBarangSelect(select);
             });
         });
 

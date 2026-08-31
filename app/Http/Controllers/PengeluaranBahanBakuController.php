@@ -310,9 +310,17 @@ class PengeluaranBahanBakuController extends Controller
             $jenis = 'wasted';
         }
 
+        if ($jenis === 'wasted') {
+            $gudangSourceId = $selectedGudangId ?: 2;
+        } else {
+            $gudangUtama = MasterGudang::where('nama', 'like', '%Gudang Utama%')
+                ->orWhere('nama', 'like', '%Utama%')
+                ->first();
+            $gudangSourceId = $gudangUtama ? $gudangUtama->id : 2;
+        }
+
         $queryBarang = MasterBarang::query()
-            ->leftJoin('stok_gudang', function ($join) use ($selectedGudangId) {
-                $gId = $selectedGudangId ?: 1;
+            ->leftJoin('stok_gudang', function ($join) use ($gudangSourceId) {
                 $join->on(
                     'master_barang.id',
                     '=',
@@ -320,7 +328,7 @@ class PengeluaranBahanBakuController extends Controller
                 );
                 $join->where(
                     'stok_gudang.gudang_id',
-                    $gId
+                    $gudangSourceId
                 );
             })
             ->where('master_barang.is_active', true);

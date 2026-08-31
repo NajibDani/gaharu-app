@@ -32,9 +32,6 @@
                 <h4 class="fw-bold text-dark mb-1">Central Kitchen Production</h4>
                 <p class="text-muted small mb-0">Manajemen Work Order (WO) & Hasil Produksi Dapur Pusat</p>
             </div>
-            <a href="{{ route('ck-produksi.create-stok-internal') }}" class="btn btn-custom-orange shadow-sm">
-                <i class="bi bi-box-arrow-in-down-right me-1"></i> Produksi Stok Internal CK
-            </a>
         </div>
 
         {{-- TABS NAVIGATION --}}
@@ -91,25 +88,47 @@
                                         <td>
                                             <ul class="list-unstyled mb-0 small">
                                                 @foreach($p->details as $d)
-                                                    <li><i class="bi bi-dot"></i> {{ $d->produk->nama ?? '-' }} : <strong>{{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? '' }}</strong></li>
+                                                    <li>
+                                                        <i class="bi bi-dot"></i> {{ $d->produk->nama ?? '-' }} : 
+                                                        <strong>{{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? '' }}</strong>
+                                                        <span class="text-muted small d-block ms-3" style="font-size: 10px;">
+                                                            (Stok Gudang: {{ number_format($d->stok_tersedia ?? 0, 0, ',', '.') }} | 
+                                                            Kekurangan: <span class="{{ ($d->qty_kurang ?? 0) > 0 ? 'text-danger fw-bold' : 'text-success' }}">{{ number_format($d->qty_kurang ?? 0, 0, ',', '.') }}</span>)
+                                                        </span>
+                                                    </li>
                                                 @endforeach
                                             </ul>
                                         </td>
                                         <td class="text-center">
+                                            @php
+                                                $isAllSufficient = true;
+                                                foreach($p->details as $d) {
+                                                    if (($d->qty_kurang ?? 0) > 0) {
+                                                        $isAllSufficient = false;
+                                                    }
+                                                }
+                                            @endphp
                                             <div class="d-flex justify-content-center gap-1">
                                                 <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" data-bs-toggle="modal" data-bs-target="#modalOrder{{ $p->id }}">
                                                     <i class="bi bi-eye"></i> Detail
                                                 </button>
-                                                <form action="{{ route('ck-produksi.store-wo') }}" method="POST" class="d-inline" onsubmit="return confirm('Buat Work Order (WO) untuk pesanan ini?')">
+                                                <form action="{{ route('ck-produksi.store-wo') }}" method="POST" class="d-inline" onsubmit="return confirm('{{ $isAllSufficient ? 'Seluruh stok barang sudah tersedia. Alokasikan stok untuk pesanan ini?' : 'Buat Work Order (WO) untuk sisa kekurangan pesanan ini?' }}')">
                                                     @csrf
                                                     <input type="hidden" name="pesanan_id" value="{{ $p->id }}">
                                                     @foreach($p->details as $d)
                                                         <input type="hidden" name="produk_id[]" value="{{ $d->produk_id }}">
-                                                        <input type="hidden" name="qty_rencana[]" value="{{ $d->qty }}">
+                                                        <input type="hidden" name="qty_rencana[]" value="{{ $d->qty_kurang }}">
                                                     @endforeach
-                                                    <button type="submit" class="btn btn-sm btn-primary rounded-3">
-                                                        <i class="bi bi-gear-fill me-1"></i> Buat WO CK
-                                                    </button>
+                                                    
+                                                    @if($isAllSufficient)
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-3">
+                                                            <i class="bi bi-check-circle-fill me-1"></i> Alokasikan Stok
+                                                        </button>
+                                                    @else
+                                                        <button type="submit" class="btn btn-sm btn-primary rounded-3">
+                                                            <i class="bi bi-gear-fill me-1"></i> Buat WO CK
+                                                        </button>
+                                                    @endif
                                                 </form>
                                             </div>
 
@@ -368,7 +387,7 @@
                                                             </div>
                                                             <div class="modal-footer bg-light">
                                                                 <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                                                                <button type="submit" class="btn btn-success px-4 fw-bold" {{ !$wo->is_bahan_sufficient ? 'disabled' : '' }} title="{{ !$wo->is_bahan_sufficient ? 'Stok bahan baku di Gudang Central Kitchen belum mencukupi' : '' }}">
+                                                                <button type="submit" class="btn btn-success px-4 fw-bold">
                                                                     <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
                                                                 </button>
                                                             </div>
@@ -606,14 +625,11 @@
             {{-- TAB 4: STOK BSJ PER DIVISI CK --}}
             <div class="tab-pane fade" id="stok-divisi" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
-                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="card-header bg-white py-3 px-4">
                         <div>
                             <h6 class="fw-bold mb-0 text-dark">Stok Bahan Setengah Jadi per Divisi Central Kitchen</h6>
                             <small class="text-muted">Pantau ketersediaan stok BSJ sebelum memutuskan produksi baru</small>
                         </div>
-                        <a href="{{ route('ck-produksi.create-stok-internal') }}" class="btn btn-custom-orange btn-sm shadow-sm">
-                            <i class="bi bi-plus-circle me-1"></i> Produksi Stok Internal CK
-                        </a>
                     </div>
 
                     @if(!empty($stokBsjPerDivisi))
@@ -662,10 +678,7 @@
                     @else
                         <div class="p-5 text-center text-muted">
                             <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
-                            Belum ada stok Bahan Setengah Jadi di Gudang Central Kitchen.<br>
-                            <a href="{{ route('ck-produksi.create-stok-internal') }}" class="btn btn-custom-orange btn-sm mt-3">
-                                <i class="bi bi-plus-circle me-1"></i> Mulai Produksi Stok Internal
-                            </a>
+                            Belum ada stok Bahan Setengah Jadi di Gudang Central Kitchen.
                         </div>
                     @endif
                 </div>

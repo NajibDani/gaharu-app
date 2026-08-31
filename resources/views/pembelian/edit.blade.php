@@ -1,4 +1,6 @@
 <x-app-layout>
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <div class="container">
         <h4>Edit Pembelian</h4>
 
@@ -19,7 +21,7 @@
             <div class="row mb-3">
                 <div class="col-12 col-md-4 mb-3 mb-md-0">
                     <label>Supplier</label>
-                    <select name="supplier_id" class="form-control" required>
+                    <select name="supplier_id" id="supplier_id" class="form-control" required>
                         <option value="">-- Pilih Supplier --</option>
                         @foreach($suppliers as $supplier)
                             <option value="{{ $supplier->id }}"
@@ -74,7 +76,7 @@
                         @foreach($pembelian->details as $index => $detail)
                             <tr>
                                 <td>
-                                    <select name="items[{{ $index }}][barang_id]" class="form-control" required>
+                                    <select name="items[{{ $index }}][barang_id]" class="form-control barang-select" required>
                                         <option value="">-- Pilih Barang --</option>
                                         @foreach($barangs as $barang)
                                             <option value="{{ $barang->id }}"
@@ -154,13 +156,26 @@
     <script>
         let rowIndex = {{ $pembelian->details->count() }};
 
+        function initBarangSelect(selectEl) {
+            if (!selectEl || selectEl.tomselect) return;
+            new TomSelect(selectEl, {
+                create: false,
+                placeholder: '-- Pilih Barang --',
+                allowEmptyOption: true,
+                maxOptions: 500,
+                onChange: function(value) {
+                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        }
+
         document.getElementById('btn-add').addEventListener('click', function () {
             const tbody = document.querySelector('#table-items tbody');
 
             const row = `
                 <tr>
                     <td>
-                        <select name="items[${rowIndex}][barang_id]" class="form-control" required>
+                        <select name="items[${rowIndex}][barang_id]" class="form-control barang-select" required>
                             <option value="">-- Pilih Barang --</option>
                             @foreach($barangs as $barang)
                                 <option value="{{ $barang->id }}">
@@ -205,6 +220,11 @@
             `;
 
             tbody.insertAdjacentHTML('beforeend', row);
+
+            const newRow = tbody.lastElementChild;
+            const newSelect = newRow.querySelector('.barang-select');
+            initBarangSelect(newSelect);
+
             rowIndex++;
         });
 
@@ -264,6 +284,17 @@
         document.querySelector('form[action*="pembelian"]').addEventListener('submit', function (e) {
             document.querySelectorAll('.mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            new TomSelect('#supplier_id', {
+                create: false,
+                placeholder: '-- Pilih Supplier --',
+                allowEmptyOption: true,
+            });
+            document.querySelectorAll('.barang-select').forEach(select => {
+                initBarangSelect(select);
             });
         });
     </script>

@@ -327,7 +327,75 @@ class PenjualanPosController extends Controller
             $gudangId = $penjualan->gudang_id;
 
             // -- A. Hitung total kebutuhan bahan baku
-            $totalKebutuhanBahan = []; 
+            $totalKebutuhanBahan = [];
+
+            // Helper function to resolve ingredients recursively
+            $resolveBahan = function($barangId, $qtyNeeded) use (&$resolveBahan, &$totalKebutuhanBahan, $gudangId) {
+                $barang = DB::table('master_barang')->where('id', $barangId)->first();
+                if (!$barang) return;
+
+                // Check available stock of this item in this warehouse
+                $stokTersedia = DB::table('stok_gudang_batch')
+                    ->where('gudang_id', $gudangId)
+                    ->where('barang_id', $barangId)
+                    ->where('qty_sisa', '>', 0)
+                    ->sum('qty_sisa');
+
+                // If we have enough stock, or if it is NOT a semi-finished good (bahan baku biasa), or if it doesn't have a recipe:
+                if ($stokTersedia >= $qtyNeeded || !$barang->is_bahan_setengah_jadi || !$barang->resep_id) {
+                    if (isset($totalKebutuhanBahan[$barangId])) {
+                        $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyNeeded;
+                    } else {
+                        $totalKebutuhanBahan[$barangId] = [
+                            'nama'   => $barang->nama,
+                            'satuan' => $barang->satuan,
+                            'jumlah' => $qtyNeeded
+                        ];
+                    }
+                    return;
+                }
+
+                // If it is a semi-finished good and stock is not enough:
+                // Consume whatever is available first
+                $qtyRemaining = $qtyNeeded;
+                if ($stokTersedia > 0) {
+                    if (isset($totalKebutuhanBahan[$barangId])) {
+                        $totalKebutuhanBahan[$barangId]['jumlah'] += $stokTersedia;
+                    } else {
+                        $totalKebutuhanBahan[$barangId] = [
+                            'nama'   => $barang->nama,
+                            'satuan' => $barang->satuan,
+                            'jumlah' => $stokTersedia
+                        ];
+                    }
+                    $qtyRemaining -= $stokTersedia;
+                }
+
+                // Explode the remaining qty using its recipe
+                $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+                if ($resep) {
+                    $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+                    $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                    $multiplier = $qtyRemaining / $outputQty;
+
+                    foreach ($resepBahan as $subBahan) {
+                        $subQtyNeeded = floatval($subBahan->qty_bahan) * $multiplier;
+                        $resolveBahan($subBahan->bahan_id, $subQtyNeeded);
+                    }
+                } else {
+                    // No recipe, fallback to requiring the remaining amount of this item
+                    if (isset($totalKebutuhanBahan[$barangId])) {
+                        $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyRemaining;
+                    } else {
+                        $totalKebutuhanBahan[$barangId] = [
+                            'nama'   => $barang->nama,
+                            'satuan' => $barang->satuan,
+                            'jumlah' => $qtyRemaining
+                        ];
+                    }
+                }
+            };
+
             foreach ($penjualan->details as $detail) {
                 $qtyTerjual = floatval($detail->qty);
                 $produkId = $detail->produk_id;
@@ -338,21 +406,12 @@ class PenjualanPosController extends Controller
                 if ($resepUtama) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
                     $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
+                    $multiplier = $qtyTerjual / $outputQty;
 
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
-                        $butuh = $kebutuhanPerPcs * $qtyTerjual;
-
-                        if (isset($totalKebutuhanBahan[$bahan->bahan_id])) {
-                            $totalKebutuhanBahan[$bahan->bahan_id]['jumlah'] += $butuh;
-                        } else {
-                            $barang = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
-                            $totalKebutuhanBahan[$bahan->bahan_id] = [
-                                'nama'   => $barang ? $barang->nama : 'Bahan',
-                                'satuan' => $barang ? $barang->satuan : 'Pcs',
-                                'jumlah' => $butuh
-                            ];
-                        }
+                        $butuh = $kebutuhanPerPcs * $multiplier;
+                        $resolveBahan($bahan->bahan_id, $butuh);
                     }
                 }
             }
@@ -465,6 +524,32 @@ class PenjualanPosController extends Controller
             }
 
             // -- D. Update HPP ke Detail Transaksi
+            $getHppForBarang = function($barangId) use (&$getHppForBarang, &$mapHppBahanAvg) {
+                if (isset($mapHppBahanAvg[$barangId])) {
+                    return $mapHppBahanAvg[$barangId];
+                }
+
+                $barang = DB::table('master_barang')->where('id', $barangId)->first();
+                if (!$barang) return 0;
+
+                if ($barang->resep_id) {
+                    $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+                    if ($resep) {
+                        $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+                        $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                        $totalHpp = 0;
+                        foreach ($resepBahan as $subBahan) {
+                            $subHpp = $getHppForBarang($subBahan->bahan_id);
+                            $totalHpp += (floatval($subBahan->qty_bahan) * $subHpp);
+                        }
+                        $mapHppBahanAvg[$barangId] = $totalHpp / $outputQty;
+                        return $mapHppBahanAvg[$barangId];
+                    }
+                }
+
+                return (float) ($barang->hpp_referensi ?: 0);
+            };
+
             foreach ($penjualan->details as $detail) {
                 $qtyTerjual = floatval($detail->qty);
                 $produkId = $detail->produk_id;
@@ -477,10 +562,11 @@ class PenjualanPosController extends Controller
 
                 if ($resepUtama) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
+                    $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
-                        $hppBahanIni = $mapHppBahanAvg[$bahan->bahan_id] ?? 0;
-                        $totalHppBahan += ($kebutuhanPerPcs * $hppBahanIni);
+                        $hppBahanIni = $getHppForBarang($bahan->bahan_id);
+                        $totalHppBahan += (($kebutuhanPerPcs * $hppBahanIni) / $outputQty);
                     }
                     $hppSatuanProduk = $totalHppBahan; // Hanya biaya bahan baku (BBB), tanpa markup BTKL & BOP
                 } else {

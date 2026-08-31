@@ -131,6 +131,15 @@ class CentralKitchenProductionController extends Controller
             ->paginate(10, ['*'], 'pesanan_page')
             ->withQueryString();
 
+        $pesananCkPending->getCollection()->transform(function($p) use ($gudangCkId) {
+            foreach ($p->details as $d) {
+                $stok = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $d->produk_id)->value('jumlah') ?? 0);
+                $d->stok_tersedia = $stok;
+                $d->qty_kurang = max(0, floatval($d->qty) - $stok);
+            }
+            return $p;
+        });
+
         // Riwayat Produksi CK dengan detail produk & pesanan
         $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer', 'divisi'])
             ->whereHas('pesanan', function($q) {
@@ -215,6 +224,25 @@ class CentralKitchenProductionController extends Controller
         try {
             $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
             $gudangCkId = $gudangCk ? $gudangCk->id : 5;
+
+            // Check if there is any quantity to produce
+            $hasQtyToProduce = false;
+            foreach ($request->produk_id as $key => $produk_id) {
+                $qty = floatval($request->qty_rencana[$key] ?? 0);
+                if ($qty > 0) {
+                    $hasQtyToProduce = true;
+                }
+            }
+
+            if (!$hasQtyToProduce) {
+                $custNama = strtolower($pesanan->customer_nama ?? $pesanan->customer->nama ?? '');
+                $targetStatus = str_contains($custNama, 'central kitchen') ? 'Selesai' : 'Siap kirim';
+                
+                $pesanan->update(['status_pesanan' => $targetStatus]);
+                
+                DB::commit();
+                return redirect()->route('ck-produksi.index')->with('success', 'Stok sudah mencukupi di Gudang CK. Pesanan otomatis dialokasikan dari stok dan siap dikirim tanpa perlu WO baru!');
+            }
 
             // Cek ketersediaan bahan baku di Gudang Central Kitchen
             $isBahanCukup = true;
@@ -448,7 +476,7 @@ class CentralKitchenProductionController extends Controller
             'tanggal_produksi' => 'required|date',
             'produk_id'        => 'required|array',
             'qty_hasil'        => 'required|array',
-            'divisi_id'        => 'required|exists:gudang_divisi,id',
+            'divisi_id'        => 'nullable|exists:gudang_divisi,id',
         ]);
 
         DB::beginTransaction();
@@ -505,7 +533,7 @@ class CentralKitchenProductionController extends Controller
             'tanggal_produksi' => 'required|date',
             'produk_id'        => 'required|array',
             'qty_hasil'        => 'required|array',
-            'divisi_id'        => 'required|exists:gudang_divisi,id',
+            'divisi_id'        => 'nullable|exists:gudang_divisi,id',
         ]);
 
         DB::beginTransaction();
@@ -686,13 +714,21 @@ class CentralKitchenProductionController extends Controller
                     'created_by'       => auth()->id() ?? 1,
                 ]);
 
+                $isInternalCk = false;
+                if ($pesanan) {
+                    $custNama = strtolower($pesanan->customer_nama ?? $pesanan->customer->nama ?? '');
+                    if (str_contains($custNama, 'central kitchen')) {
+                        $isInternalCk = true;
+                    }
+                }
+
                 // Alokasi pesanan CK
                 ProduksiPesanan::create([
                     'produksi_id'       => $produksiId,
                     'pesanan_id'        => $pesananIdUtama,
                     'produk_id'         => $produkId,
                     'qty_alokasi'       => $qtyHasil,
-                    'qty_terkirim'      => 0,
+                    'qty_terkirim'      => $isInternalCk ? $qtyHasil : 0,
                     'hpp_per_unit'      => $hppPerUnit,
                     'total_hpp_alokasi' => $hppKeseluruhan,
                 ]);
@@ -714,7 +750,12 @@ class CentralKitchenProductionController extends Controller
             if ($woAllDone) {
                 $wo->update(['status_wo' => 'Selesai']);
                 if ($pesanan) {
-                    $pesanan->update(['status_pesanan' => 'Siap kirim']);
+                    $isInternalCk = false;
+                    $custNama = strtolower($pesanan->customer_nama ?? $pesanan->customer->nama ?? '');
+                    if (str_contains($custNama, 'central kitchen')) {
+                        $isInternalCk = true;
+                    }
+                    $pesanan->update(['status_pesanan' => $isInternalCk ? 'Selesai' : 'Siap kirim']);
                 }
             } else {
                 $wo->update(['status_wo' => 'Diproses']);
@@ -869,13 +910,26 @@ class CentralKitchenProductionController extends Controller
                     'created_by'       => auth()->id() ?? 1,
                 ]);
 
+                $isInternalCk = false;
+                $pesanan = DB::table('pesanan')->where('id', $produksi->pesanan_id)->first();
+                if ($pesanan) {
+                    $custNama = strtolower($pesanan->customer_nama ?? '');
+                    if (!$custNama) {
+                        $customer = DB::table('customers')->where('id', $pesanan->customer_id)->first();
+                        $custNama = strtolower($customer->nama ?? '');
+                    }
+                    if (str_contains($custNama, 'central kitchen')) {
+                        $isInternalCk = true;
+                    }
+                }
+
                 // Alokasi pesanan CK
                 ProduksiPesanan::create([
                     'produksi_id'       => $produksi->id,
                     'pesanan_id'        => $produksi->pesanan_id,
                     'produk_id'         => $produkId,
                     'qty_alokasi'       => $qtyHasil,
-                    'qty_terkirim'      => 0,
+                    'qty_terkirim'      => $isInternalCk ? $qtyHasil : 0,
                     'hpp_per_unit'      => $hppPerUnit,
                     'total_hpp_alokasi' => $hppKeseluruhan,
                 ]);
@@ -898,7 +952,8 @@ class CentralKitchenProductionController extends Controller
                     }
                     $wo->update(['status_wo' => $woAllDone ? 'Selesai' : 'Diproses']);
                     if ($woAllDone) {
-                        DB::table('pesanan')->where('id', $produksi->pesanan_id)->update(['status_pesanan' => 'Siap kirim']);
+                        $targetStatus = $isInternalCk ? 'Selesai' : 'Siap kirim';
+                        DB::table('pesanan')->where('id', $produksi->pesanan_id)->update(['status_pesanan' => $targetStatus]);
                     }
                 }
             }
@@ -962,7 +1017,7 @@ class CentralKitchenProductionController extends Controller
     public function storeStokInternal(Request $request)
     {
         $request->validate([
-            'divisi_id'        => 'required|exists:gudang_divisi,id',
+            'divisi_id'        => 'nullable|exists:gudang_divisi,id',
             'tanggal_produksi' => 'required|date',
             'produk_id'        => 'required|array|min:1',
             'qty_hasil'        => 'required|array|min:1',
@@ -1077,7 +1132,13 @@ class CentralKitchenProductionController extends Controller
                 // Tambah stok BSJ di divisi yang dipilih
                 $stokBsj = StokGudang::where('gudang_id', $gudangCkId)
                     ->where('barang_id', $produkId)
-                    ->where('divisi_id', $divisiId)
+                    ->where(function($q) use ($divisiId) {
+                        if ($divisiId) {
+                            $q->where('divisi_id', $divisiId);
+                        } else {
+                            $q->whereNull('divisi_id');
+                        }
+                    })
                     ->first();
                 if ($stokBsj) {
                     $stokBsj->increment('jumlah', $qty);

@@ -112,7 +112,7 @@
 
                 <div class="d-flex justify-content-end gap-2">
                     <a href="{{ route('ck-produksi.index') }}" class="btn btn-light rounded-3 px-4">Batal</a>
-                    <button type="submit" class="btn btn-custom-orange shadow-sm px-4" {{ (isset($isBahanSufficient) && !$isBahanSufficient) ? 'disabled' : '' }} title="{{ (isset($isBahanSufficient) && !$isBahanSufficient) ? 'Stok bahan baku belum mencukupi' : '' }}">
+                    <button type="submit" class="btn btn-custom-orange shadow-sm px-4">
                         Simpan Draft Hasil Produksi
                     </button>
                 </div>
