@@ -252,7 +252,7 @@
                                           <input type="text" name="satuan[]" class="form-control form-control-sm text-center bg-light satuan-input" readonly placeholder="-" style="border-radius: 6px; padding: 6px 12px; font-size: 14px;">
                                       </td>
                                       <td class="text-center p-2 align-middle">
-                                          <button type="button" class="btn btn-remove-row text-danger border-0 bg-transparent px-2" style="font-size: 16px;"><i class="far fa-trash-alt"></i></button>
+                                          <button type="button" class="btn btn-remove-row text-danger border-0 bg-transparent px-2" style="font-size: 16px;"><i class="bi bi-trash"></i></button>
                                       </td>
                                   </tr>
                               </tbody>
