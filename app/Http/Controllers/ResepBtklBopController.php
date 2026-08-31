@@ -83,6 +83,17 @@ class ResepBtklBopController extends Controller
             return back()->with('error', 'Produk sudah punya resep!');
         }
 
+        // Cek duplikasi bahan baku di seluruh baris
+        $allBahanIds = [];
+        foreach ($request->bahan_ids as $rowBahanIds) {
+            foreach ($rowBahanIds as $bId) {
+                if (in_array($bId, $allBahanIds)) {
+                    return back()->with('error', 'Tidak boleh ada bahan baku ganda/duplikat dalam satu resep!')->withInput();
+                }
+                $allBahanIds[] = $bId;
+            }
+        }
+
         // 1. Simpan header resep
         $resep = ResepBtklBop::create([
             'produk_id' => $request->produk_id,
@@ -151,6 +162,17 @@ class ResepBtklBopController extends Controller
         ]);
 
         $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
+
+        // Cek duplikasi bahan baku di seluruh baris
+        $allBahanIds = [];
+        foreach ($request->bahan_ids as $rowBahanIds) {
+            foreach ($rowBahanIds as $bId) {
+                if (in_array($bId, $allBahanIds)) {
+                    return back()->with('error', 'Tidak boleh ada bahan baku ganda/duplikat dalam satu resep!')->withInput();
+                }
+                $allBahanIds[] = $bId;
+            }
+        }
 
         // 1. Update header
         $resep->update([

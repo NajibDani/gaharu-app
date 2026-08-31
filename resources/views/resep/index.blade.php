@@ -199,7 +199,7 @@
                     <hr class="my-3 opacity-25">
                     <h6 class="fw-bold text-primary mb-3"><i class="fas fa-flask me-2"></i>Komposisi Komponen Bahan Baku</h6>
 
-                      <div class="table-responsive" style="min-height: 220px; max-height: 350px; overflow-y: auto; overflow-x: visible;">
+                      <div class="table-responsive" style="min-height: 220px; overflow: visible;">
                           <table class="table-resep-clean align-middle mb-0" id="table-bahan">
                               <thead>
                                   <tr>
@@ -334,6 +334,7 @@
         border: 1px solid #cbd5e1 !important;
         box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.15) !important;
         border-radius: 8px !important;
+        max-height: 200px !important;
     }
     .choices__list--dropdown .choices__item--selectable {
         padding: 8px 12px !important;
@@ -596,14 +597,14 @@ document.addEventListener("DOMContentLoaded", function () {
             const name = activeOption.dataset.nama;
             const satuan = activeOption.dataset.satuan;
 
-            // Check if already selected in this row
+            // Check if already selected in the entire recipe (any row)
             let exists = false;
-            container.querySelectorAll('.alt-chip').forEach(b => {
+            tbodyBahan.querySelectorAll('.alt-chip').forEach(b => {
                 if (b.dataset.value == val) exists = true;
             });
 
             if (exists) {
-                alert('Bahan ini sudah terpilih di baris ini.');
+                alert('Bahan ini sudah terpilih di resep ini.');
                 choice.setChoiceByValue('');
                 return;
             }
@@ -780,19 +781,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         produkChoices.enable();
-    });
-
-    const scrollContainer = document.querySelector('#table-bahan').closest('.table-responsive');
-
-    document.addEventListener('showDropdown', function(e) {
-        if (scrollContainer && scrollContainer.contains(e.target)) {
-            scrollContainer.style.overflow = 'visible';
-        }
-    });
-    document.addEventListener('hideDropdown', function(e) {
-        if (scrollContainer && scrollContainer.contains(e.target)) {
-            scrollContainer.style.overflow = 'auto';
-        }
     });
 });
 </script>
