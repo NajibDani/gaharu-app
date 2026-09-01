@@ -211,15 +211,17 @@ class PersediaanAwalController extends Controller
             }
 
             return [
-                'id'            => $b->id,
-                'kode_barang'   => $b->kode_barang,
-                'nama'          => $b->nama,
-                'kategori_id'   => $b->kategori_id,
-                'kategori_nama' => $b->kategori->nama ?? '-',
-                'satuan'        => $b->satuan,
-                'jenis'         => $jenis,
-                'hpp_referensi' => (float) ($b->hpp_referensi ?? 0),
-                'stok_sekarang' => (float) ($stockMap[$b->id] ?? 0),
+                'id'                 => $b->id,
+                'kode_barang'        => $b->kode_barang,
+                'nama'               => $b->nama,
+                'kategori_id'        => $b->kategori_id,
+                'kategori_nama'      => $b->kategori->nama ?? '-',
+                'satuan'             => $b->satuan,
+                'satuan_pembelian'   => $b->satuan_pembelian ?: $b->satuan,
+                'konversi_pembelian' => (float) ($b->konversi_pembelian ?: 1.00),
+                'jenis'              => $jenis,
+                'hpp_referensi'      => (float) ($b->hpp_referensi ?? 0),
+                'stok_sekarang'      => (float) ($stockMap[$b->id] ?? 0),
             ];
         });
 
@@ -263,15 +265,31 @@ class PersediaanAwalController extends Controller
         // Filter hanya item yang qty > 0
         $validItems = [];
         foreach ($request->barang_id as $index => $barangId) {
-            $qty = (float) str_replace(',', '.', $request->qty[$index] ?? 0);
-            $harga = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
+            $qtyInput = (float) str_replace(',', '.', $request->qty[$index] ?? 0);
+            $hargaInput = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
 
-            if ($qty > 0) {
+            if ($qtyInput > 0) {
+                $barang = MasterBarang::find($barangId);
+                if (!$barang) continue;
+
+                $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
+                if ($konversi <= 0) $konversi = 1.00;
+
+                $satuanBeli = $barang->satuan_pembelian ?: $barang->satuan;
+                $qtyStok = $qtyInput * $konversi;
+                $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+
                 $validItems[] = [
-                    'barang_id'    => $barangId,
-                    'qty'          => $qty,
-                    'harga_satuan' => max(0, $harga),
-                    'total_nilai'  => round($qty * max(0, $harga), 2),
+                    'barang_id'          => $barangId,
+                    'barang'             => $barang,
+                    'qty_input'          => $qtyInput,
+                    'harga_input'        => max(0, $hargaInput),
+                    'satuan_pembelian'   => $satuanBeli,
+                    'konversi_pembelian' => $konversi,
+                    'qty_stok'           => $qtyStok,
+                    'harga_stok'         => $hargaStok,
+                    'total_nilai'        => $totalNilai,
                 ];
             }
         }
@@ -299,7 +317,7 @@ class PersediaanAwalController extends Controller
             $kodeTransaksi = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
 
             $totalItem  = count($validItems);
-            $totalQty   = array_sum(array_column($validItems, 'qty'));
+            $totalQty   = array_sum(array_column($validItems, 'qty_stok'));
             $totalNilai = array_sum(array_column($validItems, 'total_nilai'));
 
             // 1. Buat Header Persediaan Awal
@@ -324,22 +342,26 @@ class PersediaanAwalController extends Controller
             $totalKredit   = 0;
 
             foreach ($validItems as $item) {
-                $barang = MasterBarang::find($item['barang_id']);
-                $satuan = $barang->satuan ?? 'pcs';
+                $barang = $item['barang'];
+                $satuanStok = $barang->satuan ?? 'pcs';
                 $batchNumber = 'SA-' . date('Ymd', strtotime($tanggal)) . '-' . ($barang->kode_barang ?? $item['barang_id']);
 
-                // 2. Simpan Detail Persediaan Awal
+                // 2. Simpan Detail Persediaan Awal (lengkap dengan satuan beli & satuan stok)
                 PersediaanAwalDetail::create([
                     'persediaan_awal_id' => $persediaanAwal->id,
                     'barang_id'          => $item['barang_id'],
-                    'qty'                => $item['qty'],
-                    'satuan'             => $satuan,
-                    'harga_satuan'       => $item['harga_satuan'],
+                    'qty'                => $item['qty_stok'],
+                    'satuan'             => $satuanStok,
+                    'satuan_pembelian'   => $item['satuan_pembelian'],
+                    'konversi_pembelian' => $item['konversi_pembelian'],
+                    'qty_pembelian'      => $item['qty_input'],
+                    'harga_pembelian'    => $item['harga_input'],
+                    'harga_satuan'       => $item['harga_stok'],
                     'total_nilai'        => $item['total_nilai'],
                     'batch_number'       => $batchNumber,
                 ]);
 
-                // 3. Tambah Stok Gudang
+                // 3. Tambah Stok Gudang (Satuan Stok Utama)
                 $stokQuery = StokGudang::where('barang_id', $item['barang_id'])
                     ->where('gudang_id', $request->gudang_id);
                 if ($request->divisi_id) {
@@ -350,17 +372,17 @@ class PersediaanAwalController extends Controller
 
                 $stokGudang = $stokQuery->lockForUpdate()->first();
                 if ($stokGudang) {
-                    $stokGudang->increment('jumlah', $item['qty']);
+                    $stokGudang->increment('jumlah', $item['qty_stok']);
                 } else {
                     StokGudang::create([
                         'barang_id' => $item['barang_id'],
                         'gudang_id' => $request->gudang_id,
                         'divisi_id' => $request->divisi_id,
-                        'jumlah'    => $item['qty'],
+                        'jumlah'    => $item['qty_stok'],
                     ]);
                 }
 
-                // 4. Buat Batch FIFO di stok_gudang_batch
+                // 4. Buat Batch FIFO di stok_gudang_batch (Satuan Stok Utama)
                 StokGudangBatch::create([
                     'gudang_id'           => $request->gudang_id,
                     'divisi_id'           => $request->divisi_id,
@@ -369,10 +391,10 @@ class PersediaanAwalController extends Controller
                     'pembelian_id'        => $defaultPembelianId,
                     'pembelian_detail_id' => $defaultPemDetailId,
                     'batch_number'        => $batchNumber,
-                    'qty_masuk'           => $item['qty'],
+                    'qty_masuk'           => $item['qty_stok'],
                     'qty_keluar'          => 0,
-                    'qty_sisa'            => $item['qty'],
-                    'harga_per_qty'       => $item['harga_satuan'],
+                    'qty_sisa'            => $item['qty_stok'],
+                    'harga_per_qty'       => $item['harga_stok'],
                     'is_habis'            => false,
                 ]);
 
@@ -385,14 +407,14 @@ class PersediaanAwalController extends Controller
                     'gudang_tujuan_id' => $request->gudang_id,
                     'divisi_tujuan_id' => $request->divisi_id,
                     'barang_id'        => $item['barang_id'],
-                    'qty'              => $item['qty'],
+                    'qty'              => $item['qty_stok'],
                     'total_harga'      => $item['total_nilai'],
                     'created_by'       => Auth::id() ?? 1,
                 ]);
 
                 // Update HPP Referensi di Master Barang jika sebelumnya masih 0
-                if (($barang->hpp_referensi == 0 || empty($barang->hpp_referensi)) && $item['harga_satuan'] > 0) {
-                    $barang->update(['hpp_referensi' => $item['harga_satuan']]);
+                if (($barang->hpp_referensi == 0 || empty($barang->hpp_referensi)) && $item['harga_stok'] > 0) {
+                    $barang->update(['hpp_referensi' => $item['harga_stok']]);
                 }
 
                 // Kelompokkan akun untuk jurnal
@@ -489,13 +511,13 @@ class PersediaanAwalController extends Controller
         $sheet->setTitle('Persediaan Awal');
 
         $headers = [
-            'kode_barang', 'nama_barang', 'kategori', 'satuan', 'qty_awal', 'harga_satuan',
+            'kode_barang', 'nama_barang', 'kategori', 'satuan_stok', 'satuan_beli', 'konversi', 'qty_beli_awal', 'harga_beli_satuan',
         ];
         $sheet->fromArray($headers, null, 'A1');
 
-        $sheet->getStyle('A1:F1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:F1')->getFont()->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:F1')->getFill()
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:H1')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:H1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('D88656');
 
@@ -507,16 +529,22 @@ class PersediaanAwalController extends Controller
 
         $rowNum = 2;
         foreach ($barangs as $b) {
+            $konversi = (float) ($b->konversi_pembelian ?: 1.00);
+            $satuanBeli = $b->satuan_pembelian ?: $b->satuan;
+            $defaultHargaBeli = ((float) ($b->hpp_referensi ?? 0)) * $konversi;
+
             $sheet->setCellValue('A' . $rowNum, $b->kode_barang);
             $sheet->setCellValue('B' . $rowNum, $b->nama);
             $sheet->setCellValue('C' . $rowNum, $b->kategori->nama ?? '-');
             $sheet->setCellValue('D' . $rowNum, $b->satuan);
-            $sheet->setCellValue('E' . $rowNum, 0); // Default Qty 0
-            $sheet->setCellValue('F' . $rowNum, (float) ($b->hpp_referensi ?? 0)); // Default Harga Satuan dari HPP Referensi
+            $sheet->setCellValue('E' . $rowNum, $satuanBeli);
+            $sheet->setCellValue('F' . $rowNum, $konversi);
+            $sheet->setCellValue('G' . $rowNum, 0); // Default Qty Beli Awal 0
+            $sheet->setCellValue('H' . $rowNum, $defaultHargaBeli); // Default Harga Satuan Beli
             $rowNum++;
         }
 
-        foreach (range('A', 'F') as $col) {
+        foreach (range('A', 'H') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -528,9 +556,11 @@ class PersediaanAwalController extends Controller
             ['kode_barang', 'Ya', 'Kode barang sesuai Master Barang. Jangan diubah.'],
             ['nama_barang', 'Tidak', 'Nama barang (hanya untuk referensi).'],
             ['kategori', 'Tidak', 'Kategori barang (hanya untuk referensi).'],
-            ['satuan', 'Ya', 'Satuan barang.'],
-            ['qty_awal', 'Ya', 'Jumlah kuantitas persediaan awal. Isi 0 jika tidak ada stok.'],
-            ['harga_satuan', 'Ya', 'Harga pokok per unit (HPP / Biaya per satuan).'],
+            ['satuan_stok', 'Tidak', 'Satuan stok dasar barang (misal: ml, gram, pcs).'],
+            ['satuan_beli', 'Tidak', 'Satuan pembelian barang (misal: galon, dus, kg).'],
+            ['konversi', 'Tidak', 'Faktor konversi pembelian (1 satuan beli = X satuan stok).'],
+            ['qty_beli_awal', 'Ya', 'Jumlah kuantitas saldo awal dalam satuan beli (misal: 1 galon).'],
+            ['harga_beli_satuan', 'Ya', 'Harga beli per unit satuan beli (misal: Rp 19.000 / galon). Sistem otomatis menghitung kuantitas & harga per satuan stok.'],
         ], null, 'A1');
         $guideSheet->getStyle('A1:C1')->getFont()->setBold(true);
         foreach (['A', 'B', 'C'] as $col) {
@@ -611,15 +641,29 @@ class PersediaanAwalController extends Controller
                 $barang = $barangMap->get($kodeBarang);
                 if (!$barang) continue;
 
-                $qty = $num($get($row, 'qty_awal') ?: ($get($row, 'qty') ?: 0));
-                $harga = $num($get($row, 'harga_satuan') ?: ($get($row, 'harga') ?: $barang->hpp_referensi));
+                $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
+                if ($konversi <= 0) $konversi = 1.00;
 
-                if ($qty > 0) {
+                $satuanBeli = $barang->satuan_pembelian ?: $barang->satuan;
+
+                $qtyInput = $num($get($row, 'qty_beli_awal') ?: ($get($row, 'qty_awal') ?: ($get($row, 'qty') ?: 0)));
+                $hargaInput = $num($get($row, 'harga_beli_satuan') ?: ($get($row, 'harga_satuan') ?: ($get($row, 'harga') ?: ($barang->hpp_referensi * $konversi))));
+
+                if ($qtyInput > 0) {
+                    $qtyStok = $qtyInput * $konversi;
+                    $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+                    $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+
                     $validItems[] = [
-                        'barang_id'    => $barang->id,
-                        'qty'          => $qty,
-                        'harga_satuan' => max(0, $harga),
-                        'total_nilai'  => round($qty * max(0, $harga), 2),
+                        'barang_id'          => $barang->id,
+                        'barang'             => $barang,
+                        'qty_input'          => $qtyInput,
+                        'harga_input'        => max(0, $hargaInput),
+                        'satuan_pembelian'   => $satuanBeli,
+                        'konversi_pembelian' => $konversi,
+                        'qty_stok'           => $qtyStok,
+                        'harga_stok'         => $hargaStok,
+                        'total_nilai'        => $totalNilai,
                     ];
                 }
             }
@@ -644,7 +688,7 @@ class PersediaanAwalController extends Controller
             $kodeTransaksi = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
 
             $totalItem  = count($validItems);
-            $totalQty   = array_sum(array_column($validItems, 'qty'));
+            $totalQty   = array_sum(array_column($validItems, 'qty_stok'));
             $totalNilai = array_sum(array_column($validItems, 'total_nilai'));
 
             $persediaanAwal = PersediaanAwal::create([
@@ -668,16 +712,20 @@ class PersediaanAwalController extends Controller
             $totalKredit   = 0;
 
             foreach ($validItems as $item) {
-                $barang = MasterBarang::find($item['barang_id']);
-                $satuan = $barang->satuan ?? 'pcs';
+                $barang = $item['barang'];
+                $satuanStok = $barang->satuan ?? 'pcs';
                 $batchNumber = 'SA-' . date('Ymd', strtotime($tanggal)) . '-' . ($barang->kode_barang ?? $item['barang_id']);
 
                 PersediaanAwalDetail::create([
                     'persediaan_awal_id' => $persediaanAwal->id,
                     'barang_id'          => $item['barang_id'],
-                    'qty'                => $item['qty'],
-                    'satuan'             => $satuan,
-                    'harga_satuan'       => $item['harga_satuan'],
+                    'qty'                => $item['qty_stok'],
+                    'satuan'             => $satuanStok,
+                    'satuan_pembelian'   => $item['satuan_pembelian'],
+                    'konversi_pembelian' => $item['konversi_pembelian'],
+                    'qty_pembelian'      => $item['qty_input'],
+                    'harga_pembelian'    => $item['harga_input'],
+                    'harga_satuan'       => $item['harga_stok'],
                     'total_nilai'        => $item['total_nilai'],
                     'batch_number'       => $batchNumber,
                 ]);
@@ -693,13 +741,13 @@ class PersediaanAwalController extends Controller
 
                 $stokGudang = $stokQuery->lockForUpdate()->first();
                 if ($stokGudang) {
-                    $stokGudang->increment('jumlah', $item['qty']);
+                    $stokGudang->increment('jumlah', $item['qty_stok']);
                 } else {
                     StokGudang::create([
                         'barang_id' => $item['barang_id'],
                         'gudang_id' => $request->gudang_id,
                         'divisi_id' => $request->divisi_id,
-                        'jumlah'    => $item['qty'],
+                        'jumlah'    => $item['qty_stok'],
                     ]);
                 }
 
@@ -712,10 +760,10 @@ class PersediaanAwalController extends Controller
                     'pembelian_id'        => $defaultPembelianId,
                     'pembelian_detail_id' => $defaultPemDetailId,
                     'batch_number'        => $batchNumber,
-                    'qty_masuk'           => $item['qty'],
+                    'qty_masuk'           => $item['qty_stok'],
                     'qty_keluar'          => 0,
-                    'qty_sisa'            => $item['qty'],
-                    'harga_per_qty'       => $item['harga_satuan'],
+                    'qty_sisa'            => $item['qty_stok'],
+                    'harga_per_qty'       => $item['harga_stok'],
                     'is_habis'            => false,
                 ]);
 
@@ -728,13 +776,13 @@ class PersediaanAwalController extends Controller
                     'gudang_tujuan_id' => $request->gudang_id,
                     'divisi_tujuan_id' => $request->divisi_id,
                     'barang_id'        => $item['barang_id'],
-                    'qty'              => $item['qty'],
+                    'qty'              => $item['qty_stok'],
                     'total_harga'      => $item['total_nilai'],
                     'created_by'       => Auth::id() ?? 1,
                 ]);
 
-                if (($barang->hpp_referensi == 0 || empty($barang->hpp_referensi)) && $item['harga_satuan'] > 0) {
-                    $barang->update(['hpp_referensi' => $item['harga_satuan']]);
+                if (($barang->hpp_referensi == 0 || empty($barang->hpp_referensi)) && $item['harga_stok'] > 0) {
+                    $barang->update(['hpp_referensi' => $item['harga_stok']]);
                 }
 
                 if ($item['total_nilai'] > 0) {

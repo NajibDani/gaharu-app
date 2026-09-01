@@ -104,25 +104,26 @@
                 </div>
 
                 <!-- SECTION 3: TABEL DAFTAR BARANG -->
-                <div class="table-responsive border rounded-3 mb-4" style="max-height: 520px; overflow-y: auto;">
+                <div class="table-responsive border rounded-3 mb-4" style="max-height: 540px; overflow-y: auto;">
                     <table class="table table-hover align-middle mb-0 text-center" id="tableBarang">
                         <thead class="table-light sticky-top" style="z-index: 2;">
                             <tr>
                                 <th style="width: 45px;">No</th>
-                                <th class="text-start" style="width: 130px;">Kode Barang</th>
-                                <th class="text-start">Nama Barang</th>
-                                <th style="width: 130px;">Kategori</th>
-                                <th style="width: 80px;">Satuan</th>
+                                <th class="text-start" style="width: 120px;">Kode</th>
+                                <th class="text-start" style="min-width: 170px;">Nama Barang</th>
+                                <th style="width: 120px;">Kategori</th>
+                                <th style="width: 140px;">Satuan & Konversi</th>
                                 <th style="width: 100px;">Stok Saat Ini</th>
-                                <th style="width: 150px;">Qty Saldo Awal <span class="text-danger">*</span></th>
-                                <th style="width: 170px;">Harga Pokok Satuan (Rp) <span class="text-danger">*</span></th>
-                                <th class="text-end" style="width: 170px;">Subtotal Nilai (Rp)</th>
-                                <th style="width: 50px;">Aksi</th>
+                                <th style="width: 155px;">Qty Saldo Awal (Beli) <span class="text-danger">*</span></th>
+                                <th style="width: 170px;">Harga Beli Satuan (Rp) <span class="text-danger">*</span></th>
+                                <th style="width: 160px;">Masuk ke Stok Utama</th>
+                                <th class="text-end" style="width: 150px;">Subtotal Nilai (Rp)</th>
+                                <th style="width: 45px;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyBarang">
                             <tr id="rowEmpty">
-                                <td colspan="10" class="text-center py-5 text-muted">
+                                <td colspan="11" class="text-center py-5 text-muted">
                                     <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
                                     Klik tombol <strong>"Muat Semua Barang Master"</strong> di atas untuk memuat daftar seluruh item barang.
                                 </td>
@@ -140,7 +141,7 @@
                             <span class="text-muted small"> dari <span id="summaryTotalLoaded">0</span> item</span>
                         </div>
                         <div class="col-md-3 border-end">
-                            <span class="text-muted small text-uppercase fw-bold d-block">Total Kuantitas</span>
+                            <span class="text-muted small text-uppercase fw-bold d-block">Total Kuantitas Masuk Stok</span>
                             <span class="fs-4 fw-bold text-dark" id="summaryTotalQty">0,00</span>
                         </div>
                         <div class="col-md-4">
@@ -284,7 +285,7 @@
             if (!items || items.length === 0) {
                 tbodyBarang.innerHTML = `
                     <tr id="rowEmpty">
-                        <td colspan="10" class="text-center py-5 text-muted">
+                        <td colspan="11" class="text-center py-5 text-muted">
                             Tidak ada data barang ditemukan.
                         </td>
                     </tr>
@@ -299,8 +300,22 @@
                 tr.setAttribute('data-kategori-id', item.kategori_id);
                 tr.setAttribute('data-nama', item.nama.toLowerCase());
                 tr.setAttribute('data-kode', item.kode_barang.toLowerCase());
+                tr.setAttribute('data-satuan-stok', item.satuan || 'pcs');
+                tr.setAttribute('data-satuan-beli', item.satuan_pembelian || item.satuan || 'pcs');
+                tr.setAttribute('data-konversi', item.konversi_pembelian || 1.00);
 
-                const defaultHarga = Number(item.hpp_referensi) || 0;
+                const konversi = parseFloat(item.konversi_pembelian) || 1.00;
+                const satuanStok = item.satuan || 'pcs';
+                const satuanBeli = item.satuan_pembelian || satuanStok;
+                const hasKonversi = satuanBeli && konversi > 1 && (satuanBeli !== satuanStok || konversi !== 1);
+
+                // Default harga beli = HPP Referensi * Konversi
+                const defaultHargaBeli = ((Number(item.hpp_referensi) || 0) * konversi) || 0;
+
+                const satuanBadge = hasKonversi
+                    ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satuanBeli}</span></div>
+                       <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
+                    : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
 
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">${idx + 1}</td>
@@ -311,13 +326,22 @@
                         <input type="hidden" name="barang_id[]" value="${item.id}">
                     </td>
                     <td><span class="badge bg-light text-dark border">${item.kategori_nama}</span></td>
-                    <td>${item.satuan}</td>
-                    <td><span class="badge bg-secondary-subtle text-secondary">${item.stok_sekarang}</span></td>
+                    <td>${satuanBadge}</td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
                     <td>
-                        <input type="number" name="qty[]" class="form-control form-control-sm text-center input-qty" step="0.01" min="0" value="0" placeholder="0">
+                        <div class="input-group input-group-sm">
+                            <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
+                            <span class="input-group-text bg-light text-muted small" style="font-size: 11px;">${satuanBeli}</span>
+                        </div>
                     </td>
                     <td>
-                        <input type="number" name="harga_satuan[]" class="form-control form-control-sm text-end input-harga" step="0.01" min="0" value="${defaultHarga}" placeholder="0">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-light text-muted small">Rp</span>
+                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaBeli}" placeholder="0">
+                        </div>
+                    </td>
+                    <td class="conversion-cell text-center">
+                        <span class="text-muted small">-</span>
                     </td>
                     <td class="text-end fw-bold text-success subtotal-cell">
                         Rp 0
@@ -344,30 +368,46 @@
             const rows = tbodyBarang.querySelectorAll('tr');
 
             rows.forEach(row => {
-                const qtyInput   = row.querySelector('.input-qty');
-                const hargaInput = row.querySelector('.input-harga');
-                const subtotalCell = row.querySelector('.subtotal-cell');
-                const btnRemove = row.querySelector('.btn-remove-row');
+                const qtyInputEl     = row.querySelector('.input-qty');
+                const hargaInputEl   = row.querySelector('.input-harga');
+                const conversionCell = row.querySelector('.conversion-cell');
+                const subtotalCell   = row.querySelector('.subtotal-cell');
+                const btnRemove      = row.querySelector('.btn-remove-row');
 
-                if (qtyInput && hargaInput) {
+                if (qtyInputEl && hargaInputEl) {
                     const calcRow = () => {
-                        const qty   = parseFloat(qtyInput.value) || 0;
-                        const harga = parseFloat(hargaInput.value) || 0;
-                        const subtotal = qty * harga;
+                        const konversi   = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+                        const satuanStok = row.getAttribute('data-satuan-stok');
+                        const satuanBeli = row.getAttribute('data-satuan-beli');
+                        const qtyInput   = parseFloat(qtyInputEl.value) || 0;
+                        const hargaInput = parseFloat(hargaInputEl.value) || 0;
 
-                        subtotalCell.innerText = 'Rp ' + subtotal.toLocaleString('id-ID', { maximumFractionDigits: 2 });
-                        
-                        if (qty > 0) {
+                        const qtyStok   = qtyInput * konversi;
+                        const hargaStok = konversi > 0 ? (hargaInput / konversi) : hargaInput;
+                        const subtotal  = qtyInput * hargaInput;
+
+                        if (qtyInput > 0) {
+                            conversionCell.innerHTML = `
+                                <div class="small fw-bold text-primary">
+                                    ${Number(qtyStok).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${satuanStok}
+                                </div>
+                                <div class="text-muted" style="font-size: 11px;">
+                                    @ Rp ${Number(hargaStok).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} / ${satuanStok}
+                                </div>
+                            `;
+                            subtotalCell.innerText = 'Rp ' + subtotal.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                             row.classList.add('table-success', 'bg-opacity-10');
                         } else {
+                            conversionCell.innerHTML = `<span class="text-muted small">-</span>`;
+                            subtotalCell.innerText = 'Rp 0';
                             row.classList.remove('table-success', 'bg-opacity-10');
                         }
 
                         updateSummary();
                     };
 
-                    qtyInput.addEventListener('input', calcRow);
-                    hargaInput.addEventListener('input', calcRow);
+                    qtyInputEl.addEventListener('input', calcRow);
+                    hargaInputEl.addEventListener('input', calcRow);
                 }
 
                 if (btnRemove) {
@@ -393,28 +433,29 @@
         // 5. Update Grand Summary
         function updateSummary() {
             const rows = tbodyBarang.querySelectorAll('tr:not(#rowEmpty)');
-            let totalFilled = 0;
-            let grandQty    = 0;
-            let grandNilai  = 0;
+            let totalFilled  = 0;
+            let grandQtyStok = 0;
+            let grandNilai   = 0;
 
             rows.forEach(r => {
-                const qtyInput   = r.querySelector('.input-qty');
-                const hargaInput = r.querySelector('.input-harga');
+                const qtyInputEl   = r.querySelector('.input-qty');
+                const hargaInputEl = r.querySelector('.input-harga');
+                const konversi     = parseFloat(r.getAttribute('data-konversi')) || 1.00;
 
-                if (qtyInput && hargaInput) {
-                    const qty   = parseFloat(qtyInput.value) || 0;
-                    const harga = parseFloat(hargaInput.value) || 0;
+                if (qtyInputEl && hargaInputEl) {
+                    const qtyInput   = parseFloat(qtyInputEl.value) || 0;
+                    const hargaInput = parseFloat(hargaInputEl.value) || 0;
 
-                    if (qty > 0) {
+                    if (qtyInput > 0) {
                         totalFilled++;
-                        grandQty += qty;
-                        grandNilai += (qty * harga);
+                        grandQtyStok += (qtyInput * konversi);
+                        grandNilai   += (qtyInput * hargaInput);
                     }
                 }
             });
 
             summaryTotalFilled.innerText = totalFilled;
-            summaryTotalQty.innerText    = grandQty.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            summaryTotalQty.innerText    = grandQtyStok.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             summaryTotalNilai.innerText  = 'Rp ' + grandNilai.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
         }
 

@@ -92,15 +92,19 @@
                             <th class="text-start">Kode Barang</th>
                             <th class="text-start">Nama Barang</th>
                             <th>Kategori</th>
-                            <th>Satuan</th>
-                            <th class="text-center">Qty Saldo Awal</th>
-                            <th class="text-end">Harga Satuan (Rp)</th>
+                            <th>Input Pembelian</th>
+                            <th>Satuan & Konversi</th>
+                            <th class="text-center">Qty Masuk Stok</th>
+                            <th class="text-end">HPP Satuan Stok (Rp)</th>
                             <th class="text-end">Total Nilai (Rp)</th>
                             <th class="text-start">Nomor Batch FIFO</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($persediaanAwal->details as $index => $detail)
+                            @php
+                                $hasKonv = $detail->satuan_pembelian && (float)$detail->konversi_pembelian > 1 && $detail->satuan_pembelian !== $detail->satuan;
+                            @endphp
                             <tr>
                                 <td class="text-muted">{{ $index + 1 }}</td>
                                 <td class="text-start font-monospace fw-bold">
@@ -112,12 +116,28 @@
                                 <td>
                                     <span class="badge bg-light text-dark border">{{ $detail->barang->kategori->nama ?? '-' }}</span>
                                 </td>
-                                <td>{{ $detail->satuan }}</td>
+                                <td>
+                                    @if($hasKonv && $detail->qty_pembelian)
+                                        <span class="fw-bold text-dark">{{ number_format($detail->qty_pembelian, 2, ',', '.') }}</span> {{ $detail->satuan_pembelian }}
+                                        <div class="text-muted small" style="font-size: 11px;">@ Rp {{ number_format($detail->harga_pembelian, 0, ',', '.') }}</div>
+                                    @else
+                                        <span class="text-muted">-</span>
+                                    @endif
+                                </td>
+                                <td>
+                                    @if($hasKonv)
+                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                            1 {{ $detail->satuan_pembelian }} = {{ number_format($detail->konversi_pembelian, 0, ',', '.') }} {{ $detail->satuan }}
+                                        </span>
+                                    @else
+                                        <span class="badge bg-light text-dark border">{{ $detail->satuan }}</span>
+                                    @endif
+                                </td>
                                 <td class="text-center fw-bold text-primary">
-                                    {{ number_format($detail->qty, 2, ',', '.') }}
+                                    {{ number_format($detail->qty, 2, ',', '.') }} <span class="small fw-normal text-muted">{{ $detail->satuan }}</span>
                                 </td>
                                 <td class="text-end">
-                                    Rp {{ number_format($detail->harga_satuan, 0, ',', '.') }}
+                                    Rp {{ number_format($detail->harga_satuan, 2, ',', '.') }} <span class="small text-muted">/ {{ $detail->satuan }}</span>
                                 </td>
                                 <td class="text-end fw-bold text-success">
                                     Rp {{ number_format($detail->total_nilai, 0, ',', '.') }}
@@ -130,13 +150,13 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="text-center py-4 text-muted">Tidak ada rincian item barang.</td>
+                                <td colspan="10" class="text-center py-4 text-muted">Tidak ada rincian item barang.</td>
                             </tr>
                         @endforelse
                     </tbody>
                     <tfoot class="table-light fw-bold">
                         <tr>
-                            <td colspan="5" class="text-end">Total:</td>
+                            <td colspan="6" class="text-end">Total Masuk Stok:</td>
                             <td class="text-center text-primary">{{ number_format($persediaanAwal->total_qty, 2, ',', '.') }}</td>
                             <td></td>
                             <td class="text-end text-success">Rp {{ number_format($persediaanAwal->total_nilai, 0, ',', '.') }}</td>
