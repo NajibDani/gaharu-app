@@ -128,26 +128,44 @@ class PenjualanPosController extends Controller
                 'created_by'     => auth()->id() ?? 1
             ]);
     
-            $total_penjualan = 0;
-    
+            // Kelompokkan produk jika ada menu/produk yang sama (totalkan Qty & Subtotal)
+            $groupedItems = [];
             foreach ($request->produk_id as $key => $produkId) {
                 if (!isset($request->qty[$key]) || !isset($request->harga[$key])) continue;
 
                 $qtyTerjual = floatval($request->qty[$key]);
                 $hargaJual  = floatval($request->harga[$key]);
                 $subtotal   = $qtyTerjual * $hargaJual;
-    
+
+                if (isset($groupedItems[$produkId])) {
+                    $groupedItems[$produkId]['qty'] += $qtyTerjual;
+                    $groupedItems[$produkId]['subtotal'] += $subtotal;
+                    if ($groupedItems[$produkId]['qty'] > 0) {
+                        $groupedItems[$produkId]['harga'] = round($groupedItems[$produkId]['subtotal'] / $groupedItems[$produkId]['qty'], 2);
+                    }
+                } else {
+                    $groupedItems[$produkId] = [
+                        'produk_id' => $produkId,
+                        'qty'       => $qtyTerjual,
+                        'harga'     => $hargaJual,
+                        'subtotal'  => $subtotal,
+                    ];
+                }
+            }
+
+            $total_penjualan = 0;
+            foreach ($groupedItems as $it) {
                 // HPP diset 0 saat simpan awal (Draft)
                 PenjualanPosDetail::create([ 
                     'penjualan_id' => $penjualan->id, 
-                    'produk_id'    => $produkId,
-                    'qty'          => $qtyTerjual,
-                    'harga'        => $hargaJual,
+                    'produk_id'    => $it['produk_id'],
+                    'qty'          => $it['qty'],
+                    'harga'        => $it['harga'],
                     'hpp_satuan'   => 0, 
-                    'subtotal'     => $subtotal
+                    'subtotal'     => $it['subtotal']
                 ]);
-    
-                $total_penjualan += $subtotal;
+
+                $total_penjualan += $it['subtotal'];
             }
     
             $penjualan->update(['total' => $total_penjualan]);
@@ -271,8 +289,9 @@ class PenjualanPosController extends Controller
 
             // Hapus detail lama, tulis detail baru dengan HPP tetap 0
             PenjualanPosDetail::where('penjualan_id', $id)->delete();
-            $total_penjualan = 0;
-
+            
+            // Kelompokkan produk jika ada menu/produk yang sama (totalkan Qty & Subtotal)
+            $groupedItems = [];
             foreach ($request->produk_id as $key => $produkId) {
                 if (!isset($request->qty[$key]) || !isset($request->harga[$key])) continue;
 
@@ -280,16 +299,34 @@ class PenjualanPosController extends Controller
                 $hargaJual  = floatval($request->harga[$key]);
                 $subtotal   = $qtyTerjual * $hargaJual;
 
+                if (isset($groupedItems[$produkId])) {
+                    $groupedItems[$produkId]['qty'] += $qtyTerjual;
+                    $groupedItems[$produkId]['subtotal'] += $subtotal;
+                    if ($groupedItems[$produkId]['qty'] > 0) {
+                        $groupedItems[$produkId]['harga'] = round($groupedItems[$produkId]['subtotal'] / $groupedItems[$produkId]['qty'], 2);
+                    }
+                } else {
+                    $groupedItems[$produkId] = [
+                        'produk_id' => $produkId,
+                        'qty'       => $qtyTerjual,
+                        'harga'     => $hargaJual,
+                        'subtotal'  => $subtotal,
+                    ];
+                }
+            }
+
+            $total_penjualan = 0;
+            foreach ($groupedItems as $it) {
                 PenjualanPosDetail::create([ 
                     'penjualan_id' => $penjualan->id, 
-                    'produk_id'    => $produkId,
-                    'qty'          => $qtyTerjual,
-                    'harga'        => $hargaJual,
+                    'produk_id'    => $it['produk_id'],
+                    'qty'          => $it['qty'],
+                    'harga'        => $it['harga'],
                     'hpp_satuan'   => 0,
-                    'subtotal'     => $subtotal
+                    'subtotal'     => $it['subtotal']
                 ]);
 
-                $total_penjualan += $subtotal;
+                $total_penjualan += $it['subtotal'];
             }
 
             $penjualan->update(['total' => $total_penjualan]);
@@ -690,6 +727,51 @@ class PenjualanPosController extends Controller
         return $pdf->stream('Sales-Order-POS-' . $penjualan->kode_transaksi . '.pdf');
     }
 
+    /**
+     * Helper pencocokan produk barang jadi berdasarkan nama item & varian
+     */
+    private function matchBarangJadi(string $itemName, string $variantName = '')
+    {
+        $fullName = trim($itemName . ' ' . $variantName);
+        
+        $product = null;
+        if (!empty($variantName)) {
+            $product = MasterBarang::where('nama', $fullName)
+                ->where('is_barang_jadi', 1)
+                ->first();
+        }
+
+        if (!$product) {
+            $product = MasterBarang::where('nama', $itemName)
+                ->where('is_barang_jadi', 1)
+                ->first();
+        }
+
+        if (!$product && !empty($fullName)) {
+            $product = MasterBarang::where('is_barang_jadi', 1)
+                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($fullName))])
+                ->first();
+        }
+
+        if (!$product) {
+            $product = MasterBarang::where('is_barang_jadi', 1)
+                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($itemName))])
+                ->first();
+        }
+
+        if (!$product) {
+            $product = MasterBarang::where('nama', 'like', '%' . $itemName . '%')
+                ->where('is_barang_jadi', 1)
+                ->first();
+        }
+
+        if (!$product) {
+            $product = MasterBarang::where('is_barang_jadi', 1)->first();
+        }
+
+        return $product;
+    }
+
     public function importMokaExcel(Request $request)
     {
         $request->validate([
@@ -811,7 +893,6 @@ class PenjualanPosController extends Controller
                     return back()->with('error', "Laporan Moka POS untuk tanggal " . date('d/m/Y', strtotime($selectedDate)) . " sudah pernah di-import (Kode: {$receiptCode}).");
                 }
 
-                $totalSales = 0;
                 $itemsToImport = [];
                 for ($i = $headerRowIndex + 1; $i <= count($rows); $i++) {
                     $row = $rows[$i];
@@ -821,22 +902,41 @@ class PenjualanPosController extends Controller
                     $qty = floatval($row[$mapping['qty']] ?? 0);
                     if ($qty <= 0) continue;
 
-                    $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? 0);
-                    $totalSales += $netSales;
-
                     $variantName = isset($mapping['variant']) ? trim((string)($row[$mapping['variant']] ?? '')) : '';
+                    $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? 0);
+                    if ($netSales <= 0 && isset($mapping['price'])) {
+                        $price = floatval($row[$mapping['price']] ?? 0);
+                        $netSales = $qty * $price;
+                    }
 
-                    $itemsToImport[] = [
-                        'item_name' => $itemName,
-                        'variant_name' => $variantName,
-                        'qty' => $qty,
-                        'net_sales' => $netSales
-                    ];
+                    // Cari produk master yang cocok
+                    $product = $this->matchBarangJadi($itemName, $variantName);
+                    if (!$product) {
+                        throw new \Exception("Tidak ada produk jadi terdaftar di master_barang untuk item: {$itemName}");
+                    }
+
+                    $prodId = $product->id;
+
+                    // AGREGASI: Jika terdapat 2 baris atau lebih dengan nama menu/produk yang sama, totalkan Qty & Net Sales
+                    if (isset($itemsToImport[$prodId])) {
+                        $itemsToImport[$prodId]['qty'] += $qty;
+                        $itemsToImport[$prodId]['net_sales'] += $netSales;
+                    } else {
+                        $itemsToImport[$prodId] = [
+                            'product'      => $product,
+                            'item_name'    => $itemName,
+                            'variant_name' => $variantName,
+                            'qty'          => $qty,
+                            'net_sales'    => $netSales
+                        ];
+                    }
                 }
 
                 if (empty($itemsToImport)) {
                     return back()->with('error', 'Tidak ada data transaksi yang valid untuk di-import.');
                 }
+
+                $totalSales = array_sum(array_column($itemsToImport, 'net_sales'));
 
                 DB::beginTransaction();
                 try {
@@ -850,39 +950,14 @@ class PenjualanPosController extends Controller
                         'created_by'     => $userId
                     ]);
 
-                    // 2. Create penjualanpos_detail rows
-                    foreach ($itemsToImport as $it) {
-                        // Match product: try full name (Item Name + Variant)
-                        $fullName = trim($it['item_name'] . ' ' . $it['variant_name']);
-                        
-                        $product = null;
-                        if (!empty($it['variant_name'])) {
-                            $product = MasterBarang::where('nama', $fullName)
-                                ->where('is_barang_jadi', 1)
-                                ->first();
+                    // 2. Create penjualanpos_detail rows (Item sudah digabungkan secara otomatis)
+                    foreach ($itemsToImport as $prodId => $it) {
+                        $product = $it['product'];
+                        $avgPrice = $it['qty'] > 0 ? round($it['net_sales'] / $it['qty'], 2) : (float) $product->harga_jual_pos;
+                        if ($avgPrice <= 0) {
+                            $avgPrice = (float) $product->harga_jual_pos;
+                            $it['net_sales'] = $it['qty'] * $avgPrice;
                         }
-
-                        if (!$product) {
-                            $product = MasterBarang::where('nama', $it['item_name'])
-                                ->where('is_barang_jadi', 1)
-                                ->first();
-                        }
-
-                        if (!$product) {
-                            $product = MasterBarang::where('nama', 'like', '%' . $it['item_name'] . '%')
-                                ->where('is_barang_jadi', 1)
-                                ->first();
-                        }
-
-                        if (!$product) {
-                            $product = MasterBarang::where('is_barang_jadi', 1)->first();
-                        }
-
-                        if (!$product) {
-                            throw new \Exception("Tidak ada produk jadi terdaftar di master_barang.");
-                        }
-
-                        $avgPrice = $it['qty'] > 0 ? round($it['net_sales'] / $it['qty'], 2) : 0;
 
                         PenjualanPosDetail::create([
                             'penjualan_id' => $penjualan->id,
@@ -899,7 +974,7 @@ class PenjualanPosController extends Controller
                     // 3. Approve and post automatically
                     $this->approve($penjualan->id);
 
-                    return redirect()->route('penjualan_pos.index')->with('success', "Import Ringkasan Moka POS berhasil! 1 transaksi gabungan (Kode: {$receiptCode}) untuk tanggal " . date('d/m/Y', strtotime($selectedDate)) . " berhasil dibuat, persediaan FIFO terpotong, dan jurnal otomatis diposting.");
+                    return redirect()->route('penjualan_pos.index')->with('success', "Import Ringkasan Moka POS berhasil! 1 transaksi gabungan (Kode: {$receiptCode}) untuk tanggal " . date('d/m/Y', strtotime($selectedDate)) . " berhasil dibuat, item menu yang sama otomatis digabungkan, persediaan FIFO terpotong, dan jurnal otomatis diposting.");
                 } catch (\Exception $e) {
                     DB::rollBack();
                     Log::error('Gagal import ringkasan POS Moka: ' . $e->getMessage());
@@ -940,19 +1015,41 @@ class PenjualanPosController extends Controller
                     if (!isset($transactions[$receipt])) {
                         $transactions[$receipt] = [
                             'receipt' => $receipt,
-                            'date' => !empty($dateVal) ? date('Y-m-d H:i:s', strtotime($dateVal)) : date('Y-m-d H:i:s'),
+                            'date'    => !empty($dateVal) ? date('Y-m-d H:i:s', strtotime($dateVal)) : date('Y-m-d H:i:s'),
                             'payment' => $payment,
-                            'tax' => 0,
-                            'items' => []
+                            'tax'     => 0,
+                            'items'   => []
                         ];
                     }
                     $transactions[$receipt]['tax'] += $tax;
-                    $transactions[$receipt]['items'][] = [
-                        'item_name' => $itemName,
-                        'qty' => $qty,
-                        'price' => $price,
-                        'subtotal' => $netSales
-                    ];
+
+                    // Cari produk master yang cocok
+                    $product = $this->matchBarangJadi($itemName);
+                    if (!$product) {
+                        throw new \Exception("Tidak ada produk jadi terdaftar di master_barang untuk item: {$itemName}");
+                    }
+
+                    $prodId = $product->id;
+
+                    // AGREGASI: Jika dalam 1 struk terdapat 2 baris menu yang sama, totalkan Qty & Subtotal
+                    if (isset($transactions[$receipt]['items'][$prodId])) {
+                        $transactions[$receipt]['items'][$prodId]['qty'] += $qty;
+                        $transactions[$receipt]['items'][$prodId]['subtotal'] += $netSales;
+                        if ($transactions[$receipt]['items'][$prodId]['qty'] > 0) {
+                            $transactions[$receipt]['items'][$prodId]['price'] = round(
+                                $transactions[$receipt]['items'][$prodId]['subtotal'] / $transactions[$receipt]['items'][$prodId]['qty'],
+                                2
+                            );
+                        }
+                    } else {
+                        $transactions[$receipt]['items'][$prodId] = [
+                            'product'   => $product,
+                            'item_name' => $itemName,
+                            'qty'       => $qty,
+                            'price'     => $price > 0 ? $price : ($qty > 0 ? round($netSales / $qty, 2) : (float) $product->harga_jual_pos),
+                            'subtotal'  => $netSales
+                        ];
+                    }
                 }
 
                 $successCount = 0;
@@ -983,23 +1080,7 @@ class PenjualanPosController extends Controller
                         ]);
 
                         foreach ($tx['items'] as $it) {
-                            $product = MasterBarang::where('nama', $it['item_name'])
-                                ->where('is_barang_jadi', 1)
-                                ->first();
-
-                            if (!$product) {
-                                $product = MasterBarang::where('nama', 'like', '%' . $it['item_name'] . '%')
-                                    ->where('is_barang_jadi', 1)
-                                    ->first();
-                            }
-
-                            if (!$product) {
-                                $product = MasterBarang::where('is_barang_jadi', 1)->first();
-                            }
-
-                            if (!$product) {
-                                throw new \Exception("Tidak ada produk jadi terdaftar di master_barang.");
-                            }
+                            $product = $it['product'];
 
                             PenjualanPosDetail::create([
                                 'penjualan_id' => $penjualan->id,
@@ -1022,7 +1103,7 @@ class PenjualanPosController extends Controller
                     }
                 }
 
-                return redirect()->route('penjualan_pos.index')->with('success', "Import berhasil! {$successCount} transaksi berhasil dimasukkan dan dijurnal otomatis, {$skippedCount} transaksi dilewati (duplikat).");
+                return redirect()->route('penjualan_pos.index')->with('success', "Import berhasil! {$successCount} transaksi berhasil dimasukkan, menu duplikat digabungkan, dan dijurnal otomatis. {$skippedCount} transaksi dilewati (duplikat struk).");
             }
 
         } catch (\Exception $e) {
