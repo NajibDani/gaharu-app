@@ -136,6 +136,40 @@ class PersediaanAwalController extends Controller
         return view('persediaan-awal.create', compact('gudangs', 'kategoris', 'defaultGudangId'));
     }
 
+    /**
+     * Mengambil map harga referensi persediaan awal dari Gudang Utama (ID: 2 / Kategori Utama)
+     * Format output: [barang_id => harga_satuan_stok]
+     */
+    private function getHargaGudangUtamaMap(): array
+    {
+        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+
+        // 1. Ambil dari persediaan awal Gudang Utama yang harganya > 0
+        $paUtamaPrices = DB::table('persediaan_awal_detail as pad')
+            ->join('persediaan_awal as pa', 'pa.id', '=', 'pad.persediaan_awal_id')
+            ->where('pa.gudang_id', $gudangUtamaId)
+            ->where('pad.harga_satuan', '>', 0)
+            ->orderBy('pa.tanggal', 'desc')
+            ->orderBy('pad.id', 'desc')
+            ->pluck('pad.harga_satuan', 'pad.barang_id')
+            ->toArray();
+
+        // 2. Ambil dari batch stok Gudang Utama
+        $batchPrices = DB::table('stok_gudang_batch')
+            ->where('gudang_id', $gudangUtamaId)
+            ->where('harga_per_qty', '>', 0)
+            ->orderBy('id', 'desc')
+            ->pluck('harga_per_qty', 'barang_id')
+            ->toArray();
+
+        // 3. Ambil dari master_barang hpp_referensi
+        $masterHpp = MasterBarang::where('hpp_referensi', '>', 0)->pluck('hpp_referensi', 'id')->toArray();
+
+        // Prioritas: Persediaan Awal Gudang Utama > Batch Gudang Utama > HPP Referensi Master Barang
+        return $paUtamaPrices + $batchPrices + $masterHpp;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | LOAD BARANG AJAX: Mengambil semua master barang aktif beserta info stok/HPP
@@ -147,6 +181,14 @@ class PersediaanAwalController extends Controller
         $divisiId = $request->divisi_id;
         $kategoriId = $request->kategori_id;
         $search = $request->search;
+
+        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+
+        $gudangPilihan = $gudangId ? MasterGudang::find($gudangId) : null;
+        $isGudangUtama = $gudangPilihan ? (strtolower($gudangPilihan->kategori) === 'utama' || $gudangPilihan->id == $gudangUtamaId) : true;
+
+        $hargaUtamaMap = $this->getHargaGudangUtamaMap();
 
         $query = MasterBarang::with('kategori')
             ->where('is_active', true);
@@ -200,7 +242,7 @@ class PersediaanAwalController extends Controller
             $stockMap = $stokQuery->pluck('jumlah', 'barang_id')->toArray();
         }
 
-        $result = $barangList->map(function ($b) use ($stockMap) {
+        $result = $barangList->map(function ($b) use ($stockMap, $hargaUtamaMap, $isGudangUtama) {
             $jenis = 'Bahan Baku';
             if ($b->is_bahan_setengah_jadi) {
                 $jenis = 'Bahan Setengah Jadi';
@@ -210,6 +252,13 @@ class PersediaanAwalController extends Controller
                 $jenis = 'Operational';
             }
 
+            $konversi = (float) ($b->konversi_pembelian ?: 1.00);
+            if ($konversi <= 0) $konversi = 1.00;
+
+            // Harga referensi stok Gudang Utama
+            $hargaStokUtama = (float) ($hargaUtamaMap[$b->id] ?? ($b->hpp_referensi ?? 0));
+            $hargaBeliUtama = $hargaStokUtama * $konversi;
+
             return [
                 'id'                 => $b->id,
                 'kode_barang'        => $b->kode_barang,
@@ -218,16 +267,21 @@ class PersediaanAwalController extends Controller
                 'kategori_nama'      => $b->kategori->nama ?? '-',
                 'satuan'             => $b->satuan,
                 'satuan_pembelian'   => $b->satuan_pembelian ?: $b->satuan,
-                'konversi_pembelian' => (float) ($b->konversi_pembelian ?: 1.00),
+                'konversi_pembelian' => $konversi,
                 'jenis'              => $jenis,
+                'is_gudang_utama'    => $isGudangUtama,
                 'hpp_referensi'      => (float) ($b->hpp_referensi ?? 0),
+                'hpp_satuan_utama'   => $hargaStokUtama,
+                'harga_beli_utama'   => $hargaBeliUtama,
                 'stok_sekarang'      => (float) ($stockMap[$b->id] ?? 0),
             ];
         });
 
         return response()->json([
-            'status' => 'success',
-            'data'   => $result,
+            'status'            => 'success',
+            'is_gudang_utama'   => $isGudangUtama,
+            'gudang_utama_nama' => $gudangUtama->nama ?? 'Gudang Utama',
+            'data'              => $result,
         ]);
     }
 
@@ -254,6 +308,12 @@ class PersediaanAwalController extends Controller
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $gudang->nama . '.'])->withInput();
         }
 
+        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+        $isGudangUtama = ($request->gudang_id == $gudangUtamaId || strtolower($gudang->kategori) === 'utama');
+
+        $hargaUtamaMap = $this->getHargaGudangUtamaMap();
+
         $tanggal = date('Y-m-d', strtotime($request->tanggal));
 
         if (Journal::isPeriodClosed($tanggal)) {
@@ -266,7 +326,6 @@ class PersediaanAwalController extends Controller
         $validItems = [];
         foreach ($request->barang_id as $index => $barangId) {
             $qtyInput = (float) str_replace(',', '.', $request->qty[$index] ?? 0);
-            $hargaInput = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
 
             if ($qtyInput > 0) {
                 $barang = MasterBarang::find($barangId);
@@ -277,7 +336,16 @@ class PersediaanAwalController extends Controller
 
                 $satuanBeli = $barang->satuan_pembelian ?: $barang->satuan;
                 $qtyStok = $qtyInput * $konversi;
-                $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+
+                if ($isGudangUtama) {
+                    $hargaInput = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
+                    $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+                } else {
+                    // Gudang non-Utama: harga otomatis mengikuti harga referensi Gudang Utama
+                    $hargaStok = (float) ($hargaUtamaMap[$barangId] ?? ($barang->hpp_referensi ?? 0));
+                    $hargaInput = $hargaStok * $konversi;
+                }
+
                 $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
 
                 $validItems[] = [
@@ -521,6 +589,8 @@ class PersediaanAwalController extends Controller
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('D88656');
 
+        $hargaUtamaMap = $this->getHargaGudangUtamaMap();
+
         // Isi semua data master barang aktif sebagai referensi / template langsung isi
         $barangs = MasterBarang::with('kategori')
             ->where('is_active', true)
@@ -530,8 +600,10 @@ class PersediaanAwalController extends Controller
         $rowNum = 2;
         foreach ($barangs as $b) {
             $konversi = (float) ($b->konversi_pembelian ?: 1.00);
+            if ($konversi <= 0) $konversi = 1.00;
             $satuanBeli = $b->satuan_pembelian ?: $b->satuan;
-            $defaultHargaBeli = ((float) ($b->hpp_referensi ?? 0)) * $konversi;
+            $hargaStokUtama = (float) ($hargaUtamaMap[$b->id] ?? ($b->hpp_referensi ?? 0));
+            $defaultHargaBeli = $hargaStokUtama * $konversi;
 
             $sheet->setCellValue('A' . $rowNum, $b->kode_barang);
             $sheet->setCellValue('B' . $rowNum, $b->nama);
@@ -560,7 +632,7 @@ class PersediaanAwalController extends Controller
             ['satuan_beli', 'Tidak', 'Satuan pembelian barang (misal: galon, dus, kg).'],
             ['konversi', 'Tidak', 'Faktor konversi pembelian (1 satuan beli = X satuan stok).'],
             ['qty_beli_awal', 'Ya', 'Jumlah kuantitas saldo awal dalam satuan beli (misal: 1 galon).'],
-            ['harga_beli_satuan', 'Ya', 'Harga beli per unit satuan beli (misal: Rp 19.000 / galon). Sistem otomatis menghitung kuantitas & harga per satuan stok.'],
+            ['harga_beli_satuan', 'Khusus Gudang Utama', 'Harga beli satuan diisi untuk Gudang Utama. Untuk gudang cabang/operasional lainnya, harga otomatis mengikuti referensi Gudang Utama.'],
         ], null, 'A1');
         $guideSheet->getStyle('A1:C1')->getFont()->setBold(true);
         foreach (['A', 'B', 'C'] as $col) {
@@ -599,6 +671,12 @@ class PersediaanAwalController extends Controller
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $gudang->nama . '.'])->withInput();
         }
 
+        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+        $isGudangUtama = ($request->gudang_id == $gudangUtamaId || strtolower($gudang->kategori) === 'utama');
+
+        $hargaUtamaMap = $this->getHargaGudangUtamaMap();
+
         $tanggal = date('Y-m-d', strtotime($request->tanggal));
 
         if (Journal::isPeriodClosed($tanggal)) {
@@ -610,7 +688,7 @@ class PersediaanAwalController extends Controller
         try {
             $spreadsheet = IOFactory::load($request->file('file_excel')->getRealPath());
             $sheet       = $spreadsheet->getActiveSheet();
-            $rows        = $sheet->toArray(null, true, true, false);
+            $rows        = $sheet->toArray(null, true, false, false);
 
             if (empty($rows) || count($rows) < 2) {
                 return back()->with('error', 'File Excel kosong atau tidak memiliki baris data.');
@@ -626,50 +704,119 @@ class PersediaanAwalController extends Controller
             $get = fn(array $r, string $key) => isset($colIndex[$key], $r[$colIndex[$key]]) ? trim((string) $r[$colIndex[$key]]) : '';
             $num = function ($val, $default = 0) {
                 if ($val === '' || $val === null) return $default;
-                $clean = str_replace([',', ' '], ['.', ''], (string) $val);
+                if (is_numeric($val)) return (float) $val;
+                // Bersihkan karakter selain angka, titik, koma, minus (menghapus Rp, spasi, simbol mata uang)
+                $clean = preg_replace('/[^0-9.,-]/', '', (string) $val);
+                if ($clean === '') return $default;
+                // Penanganan jika ada titik ribuan dan koma desimal (format Indo/Eropa)
+                if (strpos($clean, ',') !== false && strpos($clean, '.') !== false) {
+                    $clean = str_replace('.', '', $clean);
+                    $clean = str_replace(',', '.', $clean);
+                } elseif (strpos($clean, ',') !== false) {
+                    $clean = str_replace(',', '.', $clean);
+                }
                 return is_numeric($clean) ? (float) $clean : $default;
             };
 
-            $barangMap = MasterBarang::all()->keyBy('kode_barang');
+            $allBarang = MasterBarang::all();
+            $barangMapByCode = $allBarang->keyBy('kode_barang');
+            $barangMapByName = $allBarang->keyBy(fn($b) => strtolower(trim((string)$b->nama)));
 
             $validItems = [];
             for ($i = 1; $i < count($rows); $i++) {
                 $row = $rows[$i];
                 $kodeBarang = $get($row, 'kode_barang');
-                if (empty($kodeBarang)) continue;
+                $namaBarang = $get($row, 'nama_barang') ?: ($get($row, 'nama') ?: '');
+                $normNama   = strtolower(trim((string)$namaBarang));
 
-                $barang = $barangMap->get($kodeBarang);
+                $barang = null;
+
+                // 1. Prioritaskan pencocokan via kode_barang (karena kode unik untuk setiap item & kategori)
+                if (!empty($kodeBarang) && $barangMapByCode->has($kodeBarang)) {
+                    $barang = $barangMapByCode->get($kodeBarang);
+                }
+
+                // 2. Jika tidak ditemukan via kode, cari berdasarkan nama_barang
+                if (!$barang && !empty($normNama) && $barangMapByName->has($normNama)) {
+                    $barang = $barangMapByName->get($normNama);
+                }
+
+                // 3. Jika barang belum ada sama sekali di database, buat otomatis di master_barang
+                if (!$barang && !empty($kodeBarang)) {
+                    $katName = strtoupper(trim((string)$get($row, 'kategori')));
+                    $kategori = Kategori::firstOrCreate(['nama' => $katName ?: 'BAHAN BAKU'], ['prefix' => substr($kodeBarang, 0, 3)]);
+
+                    $isBahanBaku = ($katName === 'BAHAN BAKU') ? 1 : 0;
+                    $isBahanSetengahJadi = ($katName === 'BAHAN SETENGAH JADI') ? 1 : 0;
+                    $isBarangJadi = ($katName === 'MAKANAN & MINUMAN') ? 1 : 0;
+
+                    $barang = MasterBarang::create([
+                        'kode_barang'            => $kodeBarang,
+                        'nama'                   => $namaBarang ?: $kodeBarang,
+                        'kategori_id'            => $kategori->id,
+                        'satuan'                 => strtoupper(trim((string)$get($row, 'satuan_stok'))) ?: 'PCS',
+                        'satuan_pembelian'       => strtoupper(trim((string)$get($row, 'satuan_beli'))) ?: 'PCS',
+                        'konversi_pembelian'     => $num($get($row, 'konversi') ?: 1),
+                        'is_bahan_baku'          => $isBahanBaku,
+                        'is_bahan_setengah_jadi' => $isBahanSetengahJadi,
+                        'is_barang_jadi'         => $isBarangJadi,
+                        'is_active'              => 1,
+                    ]);
+                    $barangMapByCode->put($kodeBarang, $barang);
+                    if (!empty($normNama)) {
+                        $barangMapByName->put($normNama, $barang);
+                    }
+                }
+
                 if (!$barang) continue;
 
-                $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
+                // Baca konversi dari Excel terlebih dahulu, fallback ke database
+                $excelKonversi = $num($get($row, 'konversi') ?: ($get($row, 'konversi_pembelian') ?: ($get($row, 'faktor_konversi') ?: 0)));
+                $konversi = $excelKonversi > 0 ? $excelKonversi : (float) ($barang->konversi_pembelian ?: 1.00);
                 if ($konversi <= 0) $konversi = 1.00;
 
-                $satuanBeli = $barang->satuan_pembelian ?: $barang->satuan;
+                // Baca satuan beli dari Excel terlebih dahulu, fallback ke database
+                $excelSatuanBeli = $get($row, 'satuan_beli') ?: ($get($row, 'satuan_pembelian') ?: '');
+                $satuanBeli = !empty($excelSatuanBeli) ? $excelSatuanBeli : ($barang->satuan_pembelian ?: $barang->satuan);
 
-                $qtyInput = $num($get($row, 'qty_beli_awal') ?: ($get($row, 'qty_awal') ?: ($get($row, 'qty') ?: 0)));
-                $hargaInput = $num($get($row, 'harga_beli_satuan') ?: ($get($row, 'harga_satuan') ?: ($get($row, 'harga') ?: ($barang->hpp_referensi * $konversi))));
-
-                if ($qtyInput > 0) {
-                    $qtyStok = $qtyInput * $konversi;
-                    $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
-                    $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
-
-                    $validItems[] = [
-                        'barang_id'          => $barang->id,
-                        'barang'             => $barang,
-                        'qty_input'          => $qtyInput,
-                        'harga_input'        => max(0, $hargaInput),
+                // Sinkronkan ke master barang jika di Excel terdapat data konversi / satuan beli yang baru / diperbarui
+                if ($excelKonversi > 0 && ($excelKonversi != $barang->konversi_pembelian || (!empty($excelSatuanBeli) && $excelSatuanBeli != $barang->satuan_pembelian))) {
+                    $barang->update([
                         'satuan_pembelian'   => $satuanBeli,
                         'konversi_pembelian' => $konversi,
-                        'qty_stok'           => $qtyStok,
-                        'harga_stok'         => $hargaStok,
-                        'total_nilai'        => $totalNilai,
-                    ];
+                    ]);
                 }
+
+                $qtyInput = $num($get($row, 'qty_beli_awal') ?: ($get($row, 'qty_awal') ?: ($get($row, 'qty') ?: 0)));
+
+                if ($isGudangUtama) {
+                    $hargaInput = $num($get($row, 'harga_beli_satuan') ?: ($get($row, 'harga_satuan') ?: ($get($row, 'harga') ?: ($barang->hpp_referensi * $konversi))));
+                    $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+                } else {
+                    // Gudang non-Utama: harga otomatis mengikuti harga referensi Gudang Utama
+                    $hargaStok = (float) ($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
+                    $hargaInput = $hargaStok * $konversi;
+                }
+
+                // Simpan seluruh baris barang (termasuk yang bernilai 0) agar urutan baris sesuai dengan file Excel
+                $qtyStok = $qtyInput * $konversi;
+                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+
+                $validItems[] = [
+                    'barang_id'          => $barang->id,
+                    'barang'             => $barang,
+                    'qty_input'          => $qtyInput,
+                    'harga_input'        => max(0, $hargaInput),
+                    'satuan_pembelian'   => $satuanBeli,
+                    'konversi_pembelian' => $konversi,
+                    'qty_stok'           => $qtyStok,
+                    'harga_stok'         => $hargaStok,
+                    'total_nilai'        => $totalNilai,
+                ];
             }
 
             if (empty($validItems)) {
-                return back()->with('error', 'Tidak ada baris dengan Qty > 0 yang valid dalam file Excel.');
+                return back()->with('error', 'Tidak ada baris data barang yang valid dalam file Excel.');
             }
 
             DB::beginTransaction();
@@ -741,7 +888,9 @@ class PersediaanAwalController extends Controller
 
                 $stokGudang = $stokQuery->lockForUpdate()->first();
                 if ($stokGudang) {
-                    $stokGudang->increment('jumlah', $item['qty_stok']);
+                    if ($item['qty_stok'] > 0) {
+                        $stokGudang->increment('jumlah', $item['qty_stok']);
+                    }
                 } else {
                     StokGudang::create([
                         'barang_id' => $item['barang_id'],
@@ -751,35 +900,37 @@ class PersediaanAwalController extends Controller
                     ]);
                 }
 
-                // Buat Batch FIFO
-                StokGudangBatch::create([
-                    'gudang_id'           => $request->gudang_id,
-                    'divisi_id'           => $request->divisi_id,
-                    'supplier_id'         => $defaultSupplierId,
-                    'barang_id'           => $item['barang_id'],
-                    'pembelian_id'        => $defaultPembelianId,
-                    'pembelian_detail_id' => $defaultPemDetailId,
-                    'batch_number'        => $batchNumber,
-                    'qty_masuk'           => $item['qty_stok'],
-                    'qty_keluar'          => 0,
-                    'qty_sisa'            => $item['qty_stok'],
-                    'harga_per_qty'       => $item['harga_stok'],
-                    'is_habis'            => false,
-                ]);
+                // Buat Batch FIFO jika kuantitas masuk > 0
+                if ($item['qty_stok'] > 0) {
+                    StokGudangBatch::create([
+                        'gudang_id'           => $request->gudang_id,
+                        'divisi_id'           => $request->divisi_id,
+                        'supplier_id'         => $defaultSupplierId,
+                        'barang_id'           => $item['barang_id'],
+                        'pembelian_id'        => $defaultPembelianId,
+                        'pembelian_detail_id' => $defaultPemDetailId,
+                        'batch_number'        => $batchNumber,
+                        'qty_masuk'           => $item['qty_stok'],
+                        'qty_keluar'          => 0,
+                        'qty_sisa'            => $item['qty_stok'],
+                        'harga_per_qty'       => $item['harga_stok'],
+                        'is_habis'            => false,
+                    ]);
 
-                // Catat Transaksi Stok
-                TransaksiStok::create([
-                    'tanggal'          => $tanggal . ' ' . date('H:i:s'),
-                    'tipe'             => 'masuk',
-                    'source_type'      => 'saldo_awal',
-                    'source_id'        => $persediaanAwal->id,
-                    'gudang_tujuan_id' => $request->gudang_id,
-                    'divisi_tujuan_id' => $request->divisi_id,
-                    'barang_id'        => $item['barang_id'],
-                    'qty'              => $item['qty_stok'],
-                    'total_harga'      => $item['total_nilai'],
-                    'created_by'       => Auth::id() ?? 1,
-                ]);
+                    // Catat Transaksi Stok
+                    TransaksiStok::create([
+                        'tanggal'          => $tanggal . ' ' . date('H:i:s'),
+                        'tipe'             => 'masuk',
+                        'source_type'      => 'saldo_awal',
+                        'source_id'        => $persediaanAwal->id,
+                        'gudang_tujuan_id' => $request->gudang_id,
+                        'divisi_tujuan_id' => $request->divisi_id,
+                        'barang_id'        => $item['barang_id'],
+                        'qty'              => $item['qty_stok'],
+                        'total_harga'      => $item['total_nilai'],
+                        'created_by'       => Auth::id() ?? 1,
+                    ]);
+                }
 
                 if (($barang->hpp_referensi == 0 || empty($barang->hpp_referensi)) && $item['harga_stok'] > 0) {
                     $barang->update(['hpp_referensi' => $item['harga_stok']]);

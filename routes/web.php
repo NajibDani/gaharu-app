@@ -151,6 +151,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // Pengadaan & Pengeluaran Bahan (Akses Operasional - Semua Role)
     Route::get('pengeluaran-bahan-baku/suggestions', [PengeluaranBahanBakuController::class, 'suggestions'])->name('pengeluaran-bahan-baku.suggestions');
     Route::get('pengeluaran-bahan-baku/{id}/detail-json', [PengeluaranBahanBakuController::class, 'detailJson'])->name('pengeluaran-bahan-baku.detail-json');
+    Route::get('pengeluaran-bahan-baku/{id}/cetak-pdf', [PengeluaranBahanBakuController::class, 'cetakPdf'])->name('pengeluaran-bahan-baku.cetak-pdf');
     Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
     Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
 

@@ -282,6 +282,33 @@
         function renderTable(items) {
             tbodyBarang.innerHTML = '';
 
+            // Update mode alert banner if exists
+            const selectedOpt = gudangSelect.options[gudangSelect.selectedIndex];
+            const isGudangUtama = items.length > 0 ? (items[0].is_gudang_utama !== false) : true;
+
+            let bannerEl = document.getElementById('gudangModeBanner');
+            if (!bannerEl) {
+                bannerEl = document.createElement('div');
+                bannerEl.id = 'gudangModeBanner';
+                document.querySelector('.table-responsive').parentNode.insertBefore(bannerEl, document.querySelector('.table-responsive'));
+            }
+
+            if (isGudangUtama) {
+                bannerEl.innerHTML = `
+                    <div class="alert alert-primary py-2 px-3 mb-3 rounded-3 small d-flex align-items-center">
+                        <i class="bi bi-star-fill text-primary me-2"></i>
+                        <div><strong>Mode Master Gudang Utama:</strong> Anda dapat menginput kuantitas stock dan menentukan <strong>Harga Beli Satuan</strong> yang menjadi acuan patokan harga HPP seluruh sistem.</div>
+                    </div>
+                `;
+            } else {
+                bannerEl.innerHTML = `
+                    <div class="alert alert-warning py-2 px-3 mb-3 rounded-3 small d-flex align-items-center">
+                        <i class="bi bi-lock-fill text-warning me-2 fs-6"></i>
+                        <div><strong>Mode Input Stok Gudang Cabang / Operasional:</strong> Cukup isi <strong>Qty Saldo Awal</strong>. Kolom harga beli otomatis <span class="badge bg-warning text-dark">Terkunci</span> dan mengacu langsung pada harga referensi pertama dari <strong>Gudang Utama</strong>.</div>
+                    </div>
+                `;
+            }
+
             if (!items || items.length === 0) {
                 tbodyBarang.innerHTML = `
                     <tr id="rowEmpty">
@@ -309,13 +336,20 @@
                 const satuanBeli = item.satuan_pembelian || satuanStok;
                 const hasKonversi = satuanBeli && konversi > 1 && (satuanBeli !== satuanStok || konversi !== 1);
 
-                // Default harga beli = HPP Referensi * Konversi
-                const defaultHargaBeli = ((Number(item.hpp_referensi) || 0) * konversi) || 0;
+                // Harga beli = Jika gudang cabang, gunakan harga referensi Gudang Utama
+                const defaultHargaBeli = Number(item.harga_beli_utama !== undefined ? item.harga_beli_utama : (((Number(item.hpp_referensi) || 0) * konversi) || 0));
 
                 const satuanBadge = hasKonversi
                     ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satuanBeli}</span></div>
                        <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
                     : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
+
+                const isReadonlyHarga = !isGudangUtama;
+                const hargaInputAttr = isReadonlyHarga
+                    ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci mengacu pada harga Gudang Utama"'
+                    : '';
+
+                const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
 
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">${idx + 1}</td>
@@ -336,9 +370,10 @@
                     </td>
                     <td>
                         <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light text-muted small">Rp</span>
-                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaBeli}" placeholder="0">
+                            <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
+                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaBeli}" placeholder="0" ${hargaInputAttr}>
                         </div>
+                        ${isReadonlyHarga ? '<small class="text-muted d-block text-end" style="font-size: 9.5px;">(Ref. Gudang Utama)</small>' : ''}
                     </td>
                     <td class="conversion-cell text-center">
                         <span class="text-muted small">-</span>

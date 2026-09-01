@@ -43,4 +43,19 @@ class PengeluaranBahanBaku extends Model
     {
         return $this->belongsTo(GudangDivisi::class, 'divisi_id');
     }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function approvedByUser()
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
 }
