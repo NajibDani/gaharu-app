@@ -246,16 +246,33 @@
                                         <i class="bi bi-eye me-1"></i> Detail
                                     </button>
 
+                                    @php
+                                        $user = auth()->user();
+                                        $canApprove = $user && $user->canApprovePengeluaran();
+                                    @endphp
+
                                     @if(strtolower($item->status) == 'draft')
                                         <a href="{{ route('pengeluaran-bahan-baku.edit', $item->id) }}"
                                            class="btn btn-warning btn-sm" title="Edit Permintaan / Pengeluaran">
                                             <i class="bi bi-pencil"></i>
                                         </a>
-                                        <a href="{{ route('pengeluaran-bahan-baku.approve', $item->id) }}"
-                                           class="btn btn-success btn-sm"
-                                           onclick="return confirm('Approve pengeluaran ini?')">
-                                            <i class="bi bi-check-circle"></i>
-                                        </a>
+
+                                        @if($canApprove)
+                                            <a href="{{ route('pengeluaran-bahan-baku.approve', $item->id) }}"
+                                               class="btn btn-success btn-sm"
+                                               onclick="return confirm('Approve pengeluaran ini dan potong stok di gudang terkait?')">
+                                                <i class="bi bi-check-circle"></i>
+                                            </a>
+                                        @endif
+
+                                        {{-- Tombol Hapus Draft --}}
+                                        <form action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Hapus draft pengeluaran/permintaan {{ $item->kode_pengeluaran }}?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-danger btn-sm text-white" title="Hapus Draft">
+                                                <i class="bi bi-trash-fill"></i>
+                                            </button>
+                                        </form>
                                     @endif
                                 </div>
                             </td>
@@ -454,6 +471,8 @@ function renderDetailPengeluaran(data) {
         `;
     });
 
+    let csrfToken = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
+
     let actionButtons = `
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-4 pt-3 border-top">
             <div class="d-flex gap-2">
@@ -464,12 +483,21 @@ function renderDetailPengeluaran(data) {
                     <i class="bi bi-image me-1"></i> Save Image (PNG)
                 </button>
             </div>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 align-items-center">
                 ${!data.is_approved ? `
+                    <form action="${data.delete_url}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus dokumen permintaan / pengeluaran ${data.kode_pengeluaran}?')">
+                        <input type="hidden" name="_token" value="${csrfToken}">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm">
+                            <i class="bi bi-trash-fill me-1"></i> Hapus
+                        </button>
+                    </form>
                     ${!data.is_wo ? `<a href="${data.edit_url}" class="btn btn-warning btn-sm px-3 fw-semibold"><i class="bi bi-pencil-square me-1"></i> Edit</a>` : ''}
-                    <a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')">
-                        <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
-                    </a>
+                    ${data.can_approve ? `
+                        <a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')">
+                            <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
+                        </a>
+                    ` : ''}
                 ` : ''}
             </div>
         </div>

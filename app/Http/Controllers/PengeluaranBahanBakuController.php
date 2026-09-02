@@ -621,9 +621,11 @@ class PengeluaranBahanBakuController extends Controller
             'grand_total'         => $grandTotal,
             'total_item'          => count($details),
             'total_item_kurang'   => $totalKurang,
+            'can_approve'         => auth()->user() && auth()->user()->canApprovePengeluaran(),
             'pdf_url'             => route('pengeluaran-bahan-baku.cetak-pdf', $pengeluaran->id),
             'edit_url'            => route('pengeluaran-bahan-baku.edit', $pengeluaran->id),
             'approve_url'         => route('pengeluaran-bahan-baku.approve', $pengeluaran->id),
+            'delete_url'          => route('pengeluaran-bahan-baku.destroy', $pengeluaran->id),
             'details'             => $details,
         ]);
     }
@@ -896,10 +898,44 @@ class PengeluaranBahanBakuController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-
     public function destroy(string $id)
     {
-        //
+        try {
+            DB::transaction(function () use ($id) {
+                $pengeluaran = PengeluaranBahanBaku::with('details')->findOrFail($id);
+                $user = auth()->user();
+                $isSuperAdmin = $user && $user->isSuperAdmin();
+
+                $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
+
+                if ($isApproved && !$isSuperAdmin) {
+                    throw new \Exception('Pengeluaran yang sudah disetujui hanya dapat dihapus oleh Super Admin.');
+                }
+
+                if ($isApproved && $isSuperAdmin) {
+                    // Jika Super Admin menghapus pengeluaran yang sudah approved, rollback pengeluaran fifo dan jurnal penyesuaian jika ada
+                    DB::table('pengeluaran_bahan_baku_fifo')->where('pengeluaran_id', $pengeluaran->id)->delete();
+                    
+                    $jp = DB::table('jurnal_penyesuaian')->where('source_type', 'pengeluaran_bahan_baku')->where('source_id', $pengeluaran->id)->first();
+                    if ($jp) {
+                        DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_penyesuaian')->delete();
+                        DB::table('jurnal_penyesuaian')->where('id', $jp->id)->delete();
+                    }
+                }
+
+                // Hapus detail dan header
+                $pengeluaran->details()->delete();
+                $pengeluaran->delete();
+            });
+
+            return redirect()
+                ->route('pengeluaran-bahan-baku.index')
+                ->with('success', 'Data permintaan / pengeluaran bahan baku berhasil dihapus.');
+        } catch (\Exception $e) {
+            return redirect()
+                ->back()
+                ->with('error', 'Gagal menghapus pengeluaran: ' . $e->getMessage());
+        }
     }
 
     /*
@@ -915,6 +951,13 @@ class PengeluaranBahanBakuController extends Controller
 
     public function approve($id)
     {
+        $user = auth()->user();
+        if (!$user || !$user->canApprovePengeluaran()) {
+            return redirect()
+                ->back()
+                ->with('error', 'Akses ditolak! Hanya pihak Gudang dan Super Admin yang memiliki hak akses untuk menyetujui (approve) permintaan / transfer bahan baku.');
+        }
+
         try {
             DB::transaction(function () use ($id) {
 

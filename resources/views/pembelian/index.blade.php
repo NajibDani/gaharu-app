@@ -129,6 +129,11 @@
     
                             {{-- PEMBAYARAN --}}
                             <td class="text-center">
+                                @php
+                                    $user = auth()->user();
+                                    $isSuperAdmin = $user && $user->isSuperAdmin();
+                                @endphp
+
                                 @if($item->metode_pembayaran)
                                     @php
                                         $labelMetode = match($item->metode_pembayaran) {
@@ -145,30 +150,51 @@
                                             {{ $labelMetode['text'] }} ℹ️
                                         </span>
     
-                                        {{-- Tombol Lunasi --}}
+                                        {{-- Tombol Lunasi (Hanya Super Admin) --}}
                                         @if($adaKekurangan)
-                                            <button type="button"
-                                                    class="btn btn-sm mt-1"
-                                                    style="background:#dd7045; color:#fff; font-size:11px; padding:2px 10px; border-radius:6px;"
-                                                    onclick="bukaModalLunasi(
-                                                        {{ $item->id }},
-                                                        '{{ $item->kode_pembelian }}',
-                                                        {{ $kekurangan }},
-                                                        '{{ $item->supplier->nama ?? '' }}'
-                                                    )">
-                                                <i class="bi bi-cash me-1"></i>Lunasi
-                                            </button>
+                                            @if($isSuperAdmin)
+                                                <button type="button"
+                                                        class="btn btn-sm mt-1"
+                                                        style="background:#dd7045; color:#fff; font-size:11px; padding:2px 10px; border-radius:6px;"
+                                                        onclick="bukaModalLunasi(
+                                                            {{ $item->id }},
+                                                            '{{ $item->kode_pembelian }}',
+                                                            {{ $kekurangan }},
+                                                            '{{ $item->supplier->nama ?? '' }}'
+                                                        )">
+                                                    <i class="bi bi-cash me-1"></i>Lunasi
+                                                </button>
+                                            @else
+                                                <button type="button"
+                                                        class="btn btn-sm mt-1"
+                                                        disabled
+                                                        title="Hanya Super Admin yang dapat menginput pembayaran pelunasan."
+                                                        style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
+                                                    <i class="bi bi-lock-fill me-1"></i>Lunasi
+                                                </button>
+                                            @endif
                                         @elseif($item->is_lunas && $item->metode_pembayaran !== 'cod')
                                             <span class="badge bg-success" style="font-size:10px;">✓ Lunas</span>
                                         @endif
                                     </div>
                                 @else
-                                    <button type="button"
-                                            class="btn btn-sm"
-                                            style="background:#606060; color:#fff; font-size:11px; padding:2px 10px;"
-                                            onclick="bukaPembayaran({{ $item->id }}, '{{ $item->kode_pembelian }}', {{ $item->total }})">
-                                        + Catat
-                                    </button>
+                                    {{-- Tombol Catat Pembayaran (Hanya Super Admin) --}}
+                                    @if($isSuperAdmin)
+                                        <button type="button"
+                                                class="btn btn-sm"
+                                                style="background:#606060; color:#fff; font-size:11px; padding:2px 10px;"
+                                                onclick="bukaPembayaran({{ $item->id }}, '{{ $item->kode_pembelian }}', {{ $item->total }})">
+                                            + Catat
+                                        </button>
+                                    @else
+                                        <button type="button"
+                                                class="btn btn-sm"
+                                                disabled
+                                                title="Hanya Super Admin yang dapat menginput pembayaran pembelian."
+                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
+                                            <i class="bi bi-lock-fill me-1"></i>+ Catat
+                                        </button>
+                                    @endif
                                 @endif
                             </td>
     
@@ -244,14 +270,14 @@
                                         </button>
                                         <form action="{{ route('pembelian.destroy', $item->id) }}"
                                               method="POST" class="d-inline"
-                                              onsubmit="return confirm('Yakin ingin menghapus transaksi {{ $item->kode_pembelian }}?')">
+                                              onsubmit="return confirm('Yakin ingin menghapus transaksi pembelian {{ $item->kode_pembelian }}?')">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit"
-                                                    class="btn btn-sm"
-                                                    style="background:#606060; color:#fff; font-size:11px; padding:2px 8px; border-radius:5px;"
-                                                    title="Hapus Transaksi">
-                                                Hapus
+                                                    class="btn btn-sm btn-danger text-white"
+                                                    style="font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                    title="Hapus Pembelian (Belum Diterima/Lunas)">
+                                                <i class="bi bi-trash-fill me-1"></i>Hapus
                                             </button>
                                         </form>
                                     @else

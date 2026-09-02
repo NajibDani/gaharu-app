@@ -485,6 +485,10 @@ class PembelianController extends Controller
 
     public function lunasi(Request $request, Pembelian $pembelian)
     {
+        if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
+            return back()->with('error', 'Hanya Super Admin yang diizinkan untuk menginput atau melunasi pembayaran pembelian.');
+        }
+
         if ($pembelian->is_lunas) {
             return back()->with('error', 'Pembelian ini sudah lunas.');
         }
@@ -542,6 +546,10 @@ class PembelianController extends Controller
 
     public function catatPembayaran(Request $request, Pembelian $pembelian)
     {
+        if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
+            return back()->with('error', 'Hanya Super Admin yang diizinkan untuk menginput pembayaran pembelian.');
+        }
+
         $validated = $request->validate([
             'metode_pembayaran'   => 'required|in:cod,dp,termin',
             'tanggal_jatuh_tempo' => 'nullable|date',

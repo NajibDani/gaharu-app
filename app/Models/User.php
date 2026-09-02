@@ -57,4 +57,14 @@ class User extends Authenticatable
         $roleName = $this->role->nama ?? '';
         return in_array($roleName, ['Super Admin', 'Superadmin', 'Administrator']);
     }
+
+    public function canApprovePengeluaran(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, ['Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']);
+    }
 }
