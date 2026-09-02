@@ -14,7 +14,12 @@
                 <i class="bi bi-file-earmark-pdf-fill me-1"></i> Cetak Struk PDF
             </a>
 
-            {{-- TOMBOL EDIT DAN APPROVE HANYA MUNCUL JIKA STATUS MASIH DRAFT --}}
+            @php
+                $user = auth()->user();
+                $isSuperAdmin = $user && $user->isSuperAdmin();
+            @endphp
+
+            {{-- TOMBOL EDIT DAN APPROVE HANYA MUNCUL JIKA STATUS MASIH DRAFT ATAU SUPER ADMIN --}}
             @if(($penjualan->status ?? 'Draft') === 'Draft')
                 <a href="{{ route('penjualan_pos.edit', $penjualan->id) }}" class="btn btn-warning px-4 text-dark fw-medium me-2">
                     Edit Transaksi
@@ -24,6 +29,19 @@
                     @csrf
                     <button type="submit" class="btn btn-success px-4 fw-medium">
                         <i class="bi bi-check-circle me-1"></i> Approve
+                    </button>
+                </form>
+            @elseif($isSuperAdmin && ($penjualan->status ?? '') !== 'VOID')
+                <a href="{{ route('penjualan_pos.edit', $penjualan->id) }}" class="btn btn-warning px-4 text-dark fw-medium me-2" title="Koreksi Transaksi (Khusus Super Admin)">
+                    <i class="bi bi-pencil-square me-1"></i> Koreksi Transaksi
+                </a>
+
+                <form action="{{ route('penjualan_pos.destroy', $penjualan->id) }}" method="POST" class="d-inline"
+                      onsubmit="return confirm('PERINGATAN SUPER ADMIN:\n\nTransaksi {{ $penjualan->kode_transaksi }} sudah di-Approve. Menghapus transaksi ini akan MENGEMBALIKAN stok bahan baku ke gudang dan menghapus jurnal akuntansi terkait.\n\nYakin ingin menghapus?')">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-danger px-4 text-white fw-medium">
+                        <i class="bi bi-trash-fill me-1"></i> Hapus & Rollback
                     </button>
                 </form>
             @endif
@@ -133,6 +151,7 @@
                             <th>Nama Item</th>
                             <th class="text-center" width="80">Qty</th>
                             <th class="text-end">Harga Jual</th>
+                            <th class="text-end">HPP / Unit</th>
                             <th class="text-end pe-4">Total Harga Jual</th>
                         </tr>
                     </thead>
@@ -141,9 +160,16 @@
                         @foreach($penjualan->details as $key => $d)
                         <tr>
                             <td class="ps-4 text-muted">{{ $key + 1 }}</td>
-                            <td class="fw-medium">{{ $d->produk->nama }}</td>
+                            <td class="fw-medium">{{ $d->produk->nama ?? 'Item' }}</td>
                             <td class="text-center bg-light">{{ $d->qty }}</td>
                             <td class="text-end">Rp {{ number_format($d->harga, 0, ',', '.') }}</td>
+                            <td class="text-end text-muted">
+                                @if(($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0)
+                                    Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}
+                                @else
+                                    <span class="text-muted small"><em>(Draft)</em></span>
+                                @endif
+                            </td>
                             <td class="text-end fw-medium pe-4">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
                         </tr>
                         @endforeach

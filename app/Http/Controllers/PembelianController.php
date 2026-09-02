@@ -61,14 +61,26 @@ class PembelianController extends Controller
                 default  => '-',
             };
             return [$item->id => [
+                'id'                  => $item->id,
                 'kode'                => $item->kode_pembelian,
+                'supplier_id'         => $item->supplier_id,
+                'supplier_nama'       => $item->supplier->nama ?? '-',
+                'gudang_id'           => $item->gudang_id,
+                'gudang_nama'         => $item->gudang->nama ?? '-',
+                'tanggal'             => \Carbon\Carbon::parse($item->tanggal)->format('d M Y'),
+                'tanggal_raw'         => \Carbon\Carbon::parse($item->tanggal)->format('Y-m-d'),
+                'tax_service'         => (float) ($item->tax_service ?? 0),
                 'total'               => (float) $item->total,
                 'metode'              => $item->metode_pembayaran,
                 'label'               => $label,
                 'persen_dp'           => $item->persen_dp,
                 'nominal_dp'          => (float) $item->nominal_dp,
-                'tanggal_jatuh_tempo' => $item->tanggal_jatuh_tempo,
-                'tanggal_pelunasan'   => $item->tanggal_pelunasan,
+                'is_lunas'            => (bool) $item->is_lunas,
+                'is_diterima'         => (bool) $item->is_diterima,
+                'is_terkunci'         => (bool) $item->isTerkunci(),
+                'kekurangan'          => (float) ($item->kekurangan_pembayaran ?? ($item->is_lunas ? 0 : $item->total)),
+                'tanggal_jatuh_tempo' => $item->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($item->tanggal_jatuh_tempo)->format('d M Y') : null,
+                'tanggal_pelunasan'   => $item->tanggal_pelunasan ? \Carbon\Carbon::parse($item->tanggal_pelunasan)->format('d M Y') : null,
                 'catatan'             => $item->catatan_pembayaran,
                 'dicatat_pada'        => $item->dicatat_pada,
                 'details'             => $item->details->map(function ($d) {
@@ -80,7 +92,9 @@ class PembelianController extends Controller
 
                     return [
                         'id'                 => $d->id,
+                        'barang_id'          => $d->barang_id,
                         'nama'               => $bItem->nama ?? 'Barang',
+                        'kode_barang'        => $bItem->kode_barang ?? '',
                         'satuan'             => $sPembelian ?: $sUtama,
                         'satuan_pembelian'   => $sPembelian,
                         'satuan_utama'       => $sUtama,
@@ -88,7 +102,9 @@ class PembelianController extends Controller
                         'has_konversi'       => $hasKonv,
                         'qty'                => floatval($d->qty),
                         'qty_diterima'       => floatval($d->qty_diterima ?? 0),
+                        'harga'              => floatval($d->harga ?? ($d->qty * $d->harga_per_qty)),
                         'harga_per_qty'      => floatval($d->harga_per_qty),
+                        'batch_number'       => $d->batch_number,
                     ];
                 })->values()->toArray(),
             ]];
@@ -710,18 +726,85 @@ class PembelianController extends Controller
 
     public function destroy(Pembelian $pembelian)
     {
-        if ($pembelian->isTerkunci()) {
-            return back()->with('error', 'Pembelian yang sudah diterima atau lunas tidak bisa dihapus.');
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
+        // Jika terkunci dan bukan Super Admin, tolak
+        if ($pembelian->isTerkunci() && !$isSuperAdmin) {
+            return back()->with('error', 'Pembelian yang sudah diterima atau lunas hanya dapat dihapus / di-rollback oleh Super Admin.');
         }
 
-        DB::transaction(function () use ($pembelian) {
+        DB::transaction(function () use ($pembelian, $isSuperAdmin) {
+            $pembelian->load(['details.barang', 'gudang']);
+
+            // 1. Rollback Stok Gudang & Stok Batch jika barang sudah pernah diterima
+            $penerimaanList = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelian->id)->get();
+            $batchList = \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)->get();
+
+            // Kembalikan stok gudang berdasarkan batch penerimaan
+            foreach ($batchList as $batch) {
+                if ($batch->qty_masuk > 0) {
+                    $stokGudang = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
+                        ->where('gudang_id', $batch->gudang_id)
+                        ->when($batch->divisi_id, fn($q) => $q->where('divisi_id', $batch->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($stokGudang) {
+                        // Kurangi stok sebesar qty_masuk yang pernah di-inbox dari pembelian ini
+                        $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
+                    }
+
+                    // Catat mutasi stok keluar (koreksi pembatalan pembelian)
+                    \App\Models\TransaksiStok::create([
+                        'barang_id'        => $batch->barang_id,
+                        'gudang_asal_id'   => $batch->gudang_id,
+                        'divisi_asal_id'   => $batch->divisi_id,
+                        'qty'              => (float) $batch->qty_masuk,
+                        'total_harga'      => (float) ($batch->qty_masuk * $batch->harga_per_qty),
+                        'tipe_transaksi'   => 'keluar',
+                        'keterangan'       => 'Pembatalan/Hapus Transaksi Pembelian ' . $pembelian->kode_pembelian . ' (Batch ' . $batch->batch_number . ')',
+                        'user_id'          => auth()->id(),
+                    ]);
+                }
+            }
+
+            // Hapus batch
+            \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)->delete();
+
+            // Hapus riwayat penerimaan pembelian
+            foreach ($penerimaanList as $penerimaan) {
+                $penerimaan->details()->delete();
+                $penerimaan->delete();
+            }
+
+            // 2. Hapus Jurnal Akuntansi yang terkait dengan pembelian ini
+            $jurnalPembelianList = DB::table('jurnal_pembelian')
+                ->where(function($q) use ($pembelian, $penerimaanList) {
+                    $q->where(function($sub) use ($pembelian) {
+                        $sub->where('source_type', 'pembelian')->where('source_id', $pembelian->id);
+                    })->orWhere(function($sub) use ($penerimaanList) {
+                        $sub->where('source_type', 'penerimaan_pembelian')->whereIn('source_id', $penerimaanList->pluck('id'));
+                    });
+                })
+                ->get();
+
+            foreach ($jurnalPembelianList as $jp) {
+                DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_pembelian')->delete();
+                DB::table('jurnal_pembelian')->where('id', $jp->id)->delete();
+            }
+
+            // 3. Hapus Pembayaran
+            \App\Models\Pembayaran::where('pembelian_id', $pembelian->id)->delete();
+
+            // 4. Hapus Detail & Header Pembelian
             $pembelian->details()->delete();
             $pembelian->delete();
         });
 
         return redirect()
             ->route('pembelian.index')
-            ->with('success', 'Pembelian berhasil dihapus.');
+            ->with('success', 'Transaksi pembelian ' . $pembelian->kode_pembelian . ' berhasil dihapus dan seluruh stok/jurnal terkait telah di-rollback secara otomatis.');
     }
 
     /*

@@ -91,6 +91,11 @@
                                         <i class="bi bi-file-earmark-pdf-fill"></i> Cetak Struk
                                     </a>
 
+                                    @php
+                                        $user = auth()->user();
+                                        $isSuperAdmin = $user && $user->isSuperAdmin();
+                                    @endphp
+
                                     @if(($item->status ?? 'Draft') === 'Draft')
                                         {{-- Tombol Approve --}}
                                         <form action="{{ route('penjualan_pos.approve', $item->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin menyetujui transaksi ini? Stok Bahan Baku akan dipotong permanen berdasarkan FIFO.')">
@@ -114,6 +119,25 @@
                                                 Hapus
                                             </button>
                                         </form>
+                                    @else
+                                        {{-- Jika status Approved / SUKSES --}}
+                                        @if($isSuperAdmin && ($item->status ?? '') !== 'VOID')
+                                            {{-- Tombol Edit Koreksi (Khusus Super Admin) --}}
+                                            <a href="{{ route('penjualan_pos.edit', $item->id) }}"
+                                               class="btn btn-outline-warning btn-sm shadow-sm" title="Koreksi Transaksi & HPP (Khusus Super Admin)">
+                                                <i class="bi bi-pencil-square"></i> Koreksi
+                                            </a>
+
+                                            {{-- Tombol Hapus / Rollback (Khusus Super Admin) --}}
+                                            <form action="{{ route('penjualan_pos.destroy', $item->id) }}" method="POST" class="d-inline" 
+                                                  onsubmit="return confirm('PERINGATAN SUPER ADMIN:\n\nTransaksi {{ $item->kode_transaksi }} sudah di-Approve. Menghapus transaksi ini akan MENGEMBALIKAN / ME-ROLLBACK stok bahan baku ke gudang, menghapus riwayat pemotongan, dan menghapus jurnal akuntansi terkait.\n\nApakah Anda yakin ingin menghapus transaksi ini?')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-outline-danger btn-sm shadow-sm" title="Hapus & Rollback Stok (Khusus Super Admin)">
+                                                    <i class="bi bi-trash-fill"></i> Hapus
+                                                </button>
+                                            </form>
+                                        @endif
                                     @endif
                                 </div>
                             </td>
@@ -149,12 +173,28 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label for="tanggal_transaksi" class="form-label fw-bold text-secondary">Tanggal Transaksi Jurnal</label>
+                        <label for="gudang_id" class="form-label fw-bold text-secondary">Pilih Outlet / Gudang Asal Bahan Baku <span class="text-danger">*</span></label>
+                        <select name="gudang_id" id="gudang_id" class="form-select" required>
+                            <option value="">-- Pilih Outlet / Gudang --</option>
+                            @foreach($gudangList as $g)
+                                <option value="{{ $g->id }}" {{ (auth()->user()->gudang_id == $g->id || (is_null(auth()->user()->gudang_id) && $g->id == 2)) ? 'selected' : '' }}>
+                                    {{ $g->nama }} ({{ $g->kategori ?? 'Outlet' }})
+                                </option>
+                            @endforeach
+                        </select>
+                        <div class="form-text mt-1 small text-muted">
+                            Stok bahan baku (FIFO) akan dipotong dari gudang/outlet yang dipilih ini.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="tanggal_transaksi" class="form-label fw-bold text-secondary">Tanggal Transaksi Jurnal <span class="text-danger">*</span></label>
                         <input type="date" name="tanggal_transaksi" id="tanggal_transaksi" class="form-control" value="{{ date('Y-m-d') }}" required>
                         <div class="form-text mt-1 small text-muted">Tanggal pembukuan transaksi & jurnal yang di-import.</div>
                     </div>
+
                     <div class="mb-3">
-                        <label for="moka_file" class="form-label fw-bold text-secondary">Pilih File Excel / CSV Moka POS</label>
+                        <label for="moka_file" class="form-label fw-bold text-secondary">Pilih File Excel / CSV Moka POS <span class="text-danger">*</span></label>
                         <input type="file" name="moka_file" id="moka_file" class="form-control" accept=".xlsx,.xls,.csv" required>
                         <div class="form-text mt-2 small text-muted">
                             Mendukung dua format ekspor Moka POS:

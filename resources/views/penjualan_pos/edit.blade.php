@@ -50,9 +50,14 @@
                             <thead class="table-light">
                                 <tr>
                                     <th>Produk</th>
-                                    <th width="150">Qty</th>
-                                    <th width="200">Harga</th>
-                                    <th width="200">Subtotal</th>
+                                    <th width="130">Qty</th>
+                                    <th width="180">Harga Jual</th>
+                                    @if($isSuperAdmin ?? false)
+                                        <th width="180" class="text-primary">
+                                            HPP Satuan <small class="text-muted d-block" style="font-size:10px;">(Opsional Koreksi)</small>
+                                        </th>
+                                    @endif
+                                    <th width="180">Subtotal</th>
                                     <th width="50" class="text-center">Aksi</th>
                                 </tr>
                             </thead>
@@ -86,6 +91,16 @@
                                                value="{{ $detail->harga }}" 
                                                readonly>
                                     </td>
+                                    @if($isSuperAdmin ?? false)
+                                    <td>
+                                        <input type="number" 
+                                               step="0.01" 
+                                               name="hpp_satuan[]" 
+                                               class="form-control hpp-satuan border-primary" 
+                                               value="{{ $detail->hpp_satuan > 0 ? $detail->hpp_satuan : '' }}" 
+                                               placeholder="Otomatis FIFO">
+                                    </td>
+                                    @endif
                                     <td>
                                         <input type="number" 
                                                class="form-control subtotal" 

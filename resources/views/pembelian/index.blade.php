@@ -229,6 +229,11 @@
                                         <i class="bi bi-file-earmark-pdf-fill me-1"></i>Cetak PO
                                     </a>
     
+                                    @php
+                                        $user = auth()->user();
+                                        $isSuperAdmin = $user && $user->isSuperAdmin();
+                                    @endphp
+
                                     @if(!$item->isTerkunci())
                                         <button type="button"
                                                 class="btn btn-sm text-white"
@@ -239,20 +244,36 @@
                                         </button>
                                         <form action="{{ route('pembelian.destroy', $item->id) }}"
                                               method="POST" class="d-inline"
-                                              onsubmit="return confirm('Yakin ingin menghapus {{ $item->kode_pembelian }}?')">
+                                              onsubmit="return confirm('Yakin ingin menghapus transaksi {{ $item->kode_pembelian }}?')">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit"
                                                     class="btn btn-sm"
-                                                    style="background:#606060; color:#fff; font-size:11px; padding:2px 8px; border-radius:5px;">
+                                                    style="background:#606060; color:#fff; font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                    title="Hapus Transaksi">
                                                 Hapus
                                             </button>
                                         </form>
                                     @else
                                         <button class="btn btn-sm" disabled
-                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;">Edit</button>
-                                        <button class="btn btn-sm" disabled
-                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;">Hapus</button>
+                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian terkunci karena sudah diterima / lunas">Edit</button>
+                                        @if($isSuperAdmin)
+                                            <form action="{{ route('pembelian.destroy', $item->id) }}"
+                                                  method="POST" class="d-inline"
+                                                  onsubmit="return confirm('PERINGATAN SUPER ADMIN:\n\nTransaksi {{ $item->kode_pembelian }} sudah diterima/lunas. Menghapus transaksi ini akan ME-ROLLBACK / MENGURANGI stok gudang, menghapus batch FIFO terkait, dan menghapus jurnal akuntansi pembelian.\n\nApakah Anda yakin ingin melanjutkan penghapusan?')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        style="font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                        title="Hapus & Rollback Stok (Khusus Super Admin)">
+                                                    <i class="bi bi-trash-fill me-1"></i>Hapus
+                                                </button>
+                                            </form>
+                                        @else
+                                            <button class="btn btn-sm" disabled
+                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian terkunci (Hanya Super Admin yang dapat menghapus/rollback)">Hapus</button>
+                                        @endif
                                     @endif
                                 </div>
                             </td>

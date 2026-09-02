@@ -42,6 +42,7 @@ use App\Http\Controllers\CentralKitchenProductionController;
 use App\Http\Controllers\PersediaanAwalController;
 use App\Http\Controllers\PengaturanGajiController;
 use App\Http\Controllers\KeterlambatanController;
+use App\Http\Controllers\EventNotifikasiController;
 
 Route::get('/proposal-penawaran', function () {
     return file_get_contents(public_path('proposal/index.html'));
@@ -79,7 +80,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/barang/check-nama', [BarangController::class, 'checkNama'])->name('barang.check-nama');
         Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
         Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');
+
+        // Event & Notifikasi Khusus (High Season, Promo, dll)
+        Route::patch('event-notifikasi/{id}/toggle', [EventNotifikasiController::class, 'toggleActive'])->name('event-notifikasi.toggle');
+        Route::resource('event-notifikasi', EventNotifikasiController::class)->names('event-notifikasi');
     });
+
+    // API Event Notifikasi Aktif untuk Frontend/SweetAlert (Semua User Login)
+    Route::get('/api/event-notifikasi-aktif', [EventNotifikasiController::class, 'getActiveEvents'])->name('api.event-notifikasi.aktif');
 
     // Persediaan Awal (Akses Operasional - Semua Role)
     Route::get('/persediaan-awal/template', [PersediaanAwalController::class, 'importTemplate'])->name('persediaan-awal.template');

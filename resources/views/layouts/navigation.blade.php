@@ -27,7 +27,7 @@
 
     $masterActive = request()->routeIs([
         'kategori.*', 'barang.*', 'persediaan-awal.*', 'suppliers.*', 'customer.*',
-        'gudangs.*', 'karyawan.*', 'pengaturan-gaji.*', 'resep.*', 'harga.*', 'coa.*',
+        'gudangs.*', 'karyawan.*', 'pengaturan-gaji.*', 'resep.*', 'harga.*', 'coa.*', 'event-notifikasi.*',
     ]);
 
     $operationsActive = request()->routeIs([
@@ -133,6 +133,9 @@
                                 <i class="bi bi-currency-dollar me-2" style="font-size:12px;"></i>Harga Jual POS
                             </a>
                         @endif
+                        <a href="{{ route('event-notifikasi.index') }}" class="{{ request()->routeIs('event-notifikasi.*') ? 'active' : '' }}">
+                            <i class="bi bi-bell me-2" style="font-size:12px;"></i>Event &amp; Notifikasi
+                        </a>
                     @endif
 
                     {{-- MITRA & DISTRIBUSI --}}

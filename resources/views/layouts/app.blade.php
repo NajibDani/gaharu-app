@@ -471,6 +471,9 @@
         </div>
     </div>
 
+    <!-- SweetAlert2 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
     <script>
         // ── Auto-dismiss popup toast (sukses/error) ──
         document.addEventListener('DOMContentLoaded', function () {
@@ -492,7 +495,70 @@
                     hideToast();
                 });
             });
+
+            // ── Auto-check Event Notifikasi (SweetAlert) untuk halaman aktif ──
+            checkEventNotifications();
         });
+
+        function checkEventNotifications() {
+            // Tentukan konteks menu berdasarkan URL halaman saat ini
+            let currentPath = window.location.pathname;
+            let menu = 'semua';
+            if (currentPath.includes('/pembelian')) {
+                menu = 'pembelian';
+            } else if (currentPath.includes('/pengeluaran-bahan-baku')) {
+                menu = 'permintaan';
+            } else if (currentPath.includes('/produksi') || currentPath.includes('/ck-produksi')) {
+                menu = 'produksi';
+            } else if (currentPath.includes('/penjualan_pos')) {
+                menu = 'penjualan_pos';
+            }
+
+            fetch('/api/event-notifikasi-aktif?menu=' + menu)
+                .then(res => res.json())
+                .then(events => {
+                    if (!events || events.length === 0) return;
+
+                    // Filter event yang belum dipilih "Jangan tampilkan lagi" di localStorage
+                    let pendingEvents = events.filter(ev => {
+                        let dismissedKey = 'event_dismissed_' + ev.id;
+                        return !localStorage.getItem(dismissedKey);
+                    });
+
+                    if (pendingEvents.length === 0) return;
+
+                    // Tampilkan event secara berurutan
+                    displaySequentialSweetAlert(pendingEvents, 0);
+                })
+                .catch(err => console.error('Error fetching event notifications:', err));
+        }
+
+        function displaySequentialSweetAlert(events, index) {
+            if (index >= events.length) return;
+
+            let ev = events[index];
+            Swal.fire({
+                title: ev.judul,
+                html: `<p style="font-size: 15px; margin-bottom: 12px; color: #374151; line-height: 1.6;">${ev.pesan}</p>`,
+                icon: ev.tipe_icon || 'warning',
+                showCancelButton: true,
+                confirmButtonText: '<i class="bi bi-check2 me-1"></i> Mengerti',
+                cancelButtonText: '<i class="bi bi-eye-slash me-1"></i> Jangan tampilkan lagi',
+                confirmButtonColor: '#7A4517',
+                cancelButtonColor: '#6c757d',
+                reverseButtons: true,
+                focusConfirm: true,
+                allowOutsideClick: false,
+            }).then((result) => {
+                if (result.dismiss === Swal.DismissReason.cancel) {
+                    // Simpan di localStorage agar tidak muncul lagi
+                    localStorage.setItem('event_dismissed_' + ev.id, 'true');
+                }
+                
+                // Tampilkan notifikasi berikutnya jika ada
+                displaySequentialSweetAlert(events, index + 1);
+            });
+        }
     </script>
 
     @stack('scripts')
