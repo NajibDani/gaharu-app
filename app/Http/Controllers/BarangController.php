@@ -442,39 +442,83 @@ class BarangController extends Controller
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Barang');
 
+        // Base fixed headers
         $headers = [
             'kode_barang', 'nama', 'kategori', 'jenis_utama', 'satuan',
             'satuan_pembelian', 'konversi_pembelian', 'tipe_penjualan',
             'harga_jual_b2b', 'harga_jual_pos', 'hpp_referensi',
-            'min_stock_ck', 'min_stock_gudang_utama', 'min_stock_kejingga_kitchen', 'min_stock_kejingga_barista', 'min_stock_kejingga_server',
-            'min_stock_gaharu_kitchen', 'min_stock_gaharu_barista', 'min_stock_gaharu_server', 'min_stock_b2b',
-            'minimum_stock_umum', 'minimum_order',
         ];
+
+        // Load semua gudang dan divisi secara dinamis
+        $allGudangs = \App\Models\MasterGudang::with(['divisi' => function($q) {
+            $q->orderBy('nama', 'asc');
+        }])->orderBy('nama', 'asc')->get();
+
+        // Buat mapping kolom min_stock dinamis per gudang / divisi
+        // Struktur: [ 'key' => ..., 'label' => ..., 'gudang_id' => ..., 'divisi_id' => ..., 'deskripsi' => ... ]
+        $minStockColumns = [];
+
+        foreach ($allGudangs as $g) {
+            $slugGudang = \Illuminate\Support\Str::slug($g->nama, '_');
+            if ($g->divisi->count() > 0) {
+                foreach ($g->divisi as $d) {
+                    $slugDiv = \Illuminate\Support\Str::slug($d->nama, '_');
+                    $colKey = "min_stock_{$slugGudang}_{$slugDiv}";
+                    $minStockColumns[] = [
+                        'key'       => $colKey,
+                        'gudang_id' => $g->id,
+                        'divisi_id' => $d->id,
+                        'label'     => "Min Stock: {$g->nama} ({$d->nama})",
+                        'desc'      => "Minimum stock di {$g->nama} - Divisi {$d->nama}. Kosongkan jika tidak perlu diubah.",
+                    ];
+                }
+            } else {
+                $colKey = "min_stock_{$slugGudang}";
+                $minStockColumns[] = [
+                    'key'       => $colKey,
+                    'gudang_id' => $g->id,
+                    'divisi_id' => null,
+                    'label'     => "Min Stock: {$g->nama}",
+                    'desc'      => "Minimum stock di {$g->nama}. Kosongkan jika tidak perlu diubah.",
+                ];
+            }
+        }
+
+        // Tambahkan dynamic min stock keys ke header
+        $minStockStartIndex = count($headers); // 0-based index
+        foreach ($minStockColumns as $msc) {
+            $headers[] = $msc['key'];
+        }
+        $minStockEndIndex = count($headers) - 1;
+
+        // Tambahan kolom akhir
+        $headers[] = 'minimum_stock_umum';
+        $headers[] = 'minimum_order';
+
+        $totalCols = count($headers);
+        $lastColLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($totalCols);
+
         $sheet->fromArray($headers, null, 'A1');
-        $sheet->getStyle('A1:V1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:V1')->getFont()->getColor()->setRGB('FFFFFF');
-        $sheet->getStyle('A1:V1')->getFill()
+        $sheet->getStyle("A1:{$lastColLetter}1")->getFont()->setBold(true);
+        $sheet->getStyle("A1:{$lastColLetter}1")->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle("A1:{$lastColLetter}1")->getFill()
             ->setFillType(Fill::FILL_SOLID)
             ->getStartColor()->setRGB('D88656');
 
         // Highlight kolom minimum stock agar user tahu kolom mana yang perlu diisi
-        $sheet->getStyle('L1:T1')->getFill()
-            ->setFillType(Fill::FILL_SOLID)
-            ->getStartColor()->setRGB('2E7D32'); // hijau gelap untuk kolom min stock
+        if ($minStockEndIndex >= $minStockStartIndex) {
+            $startMinCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($minStockStartIndex + 1);
+            $endMinCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($minStockEndIndex + 1);
+            $sheet->getStyle("{$startMinCol}1:{$endMinCol}1")->getFill()
+                ->setFillType(Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('2E7D32'); // hijau gelap untuk kolom min stock dinamis
+        }
 
         // Isi semua data barang dari database beserta minimum stock saat ini
         $barangs = MasterBarang::with('kategori')
             ->where('is_active', true)
             ->orderBy('kode_barang', 'asc')
             ->get();
-
-        // Load semua gudang dan divisi untuk mapping minimum stock
-        $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
-        $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
-        $gudangUtama = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama'));
-        $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
-        $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
-        $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
 
         // Pre-load semua minimum stock per barang
         $minStockAll = \App\Models\BarangMinimumStock::all()->groupBy('barang_id');
@@ -491,14 +535,6 @@ class BarangController extends Controller
             return $found ? $found->minimum_stock : '';
         };
 
-        // Divisi IDs per outlet
-        $kejinggaDivKitchen = $kejinggaGudang ? $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen')) : null;
-        $kejinggaDivBarista = $kejinggaGudang ? $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista')) : null;
-        $kejinggaDivServer  = $kejinggaGudang ? $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server')) : null;
-        $gaharuDivKitchen   = $gaharuGudang ? $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen')) : null;
-        $gaharuDivBarista   = $gaharuGudang ? $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista')) : null;
-        $gaharuDivServer    = $gaharuGudang ? $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server')) : null;
-
         $rowNum = 2;
         foreach ($barangs as $b) {
             // Tentukan jenis_utama
@@ -507,18 +543,7 @@ class BarangController extends Controller
             elseif ($b->is_barang_jadi) $jenis = 'BARANG_JADI';
             elseif ($b->is_operational) $jenis = 'OPERATIONAL';
 
-            // Ambil min stock per outlet/divisi dari database
-            $minCk = $ckGudang ? $getMinStock($b->id, $ckGudang->id) : '';
-            $minUtama = $gudangUtama ? $getMinStock($b->id, $gudangUtama->id) : '';
-            $minB2b = $b2bGudang ? $getMinStock($b->id, $b2bGudang->id) : '';
-            $minKejKitchen = ($kejinggaGudang && $kejinggaDivKitchen) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivKitchen->id) : '';
-            $minKejBarista = ($kejinggaGudang && $kejinggaDivBarista) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivBarista->id) : '';
-            $minKejServer  = ($kejinggaGudang && $kejinggaDivServer) ? $getMinStock($b->id, $kejinggaGudang->id, $kejinggaDivServer->id) : '';
-            $minGahKitchen = ($gaharuGudang && $gaharuDivKitchen) ? $getMinStock($b->id, $gaharuGudang->id, $gaharuDivKitchen->id) : '';
-            $minGahBarista = ($gaharuGudang && $gaharuDivBarista) ? $getMinStock($b->id, $gaharuGudang->id, $gaharuDivBarista->id) : '';
-            $minGahServer  = ($gaharuGudang && $gaharuDivServer) ? $getMinStock($b->id, $gaharuGudang->id, $gaharuDivServer->id) : '';
-
-            $sheet->fromArray([
+            $rowData = [
                 $b->kode_barang,
                 $b->nama,
                 $b->kategori->nama ?? '',
@@ -530,23 +555,24 @@ class BarangController extends Controller
                 (float) ($b->harga_jual_b2b ?? 0),
                 (float) ($b->harga_jual_pos ?? 0),
                 (float) ($b->hpp_referensi ?? 0),
-                $minCk,
-                $minUtama,
-                $minKejKitchen,
-                $minKejBarista,
-                $minKejServer,
-                $minGahKitchen,
-                $minGahBarista,
-                $minGahServer,
-                $minB2b,
-                $b->minimum_stock ?? '',
-                $b->minimum_order ?? 1,
-            ], null, 'A' . $rowNum);
+            ];
+
+            // Isi nilai minimum stock per gudang / divisi dinamis
+            foreach ($minStockColumns as $msc) {
+                $val = $getMinStock($b->id, $msc['gudang_id'], $msc['divisi_id']);
+                $rowData[] = $val;
+            }
+
+            $rowData[] = $b->minimum_stock ?? '';
+            $rowData[] = $b->minimum_order ?? 1;
+
+            $sheet->fromArray($rowData, null, 'A' . $rowNum);
             $rowNum++;
         }
 
-        foreach (range('A', 'V') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        for ($c = 1; $c <= $totalCols; $c++) {
+            $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c);
+            $sheet->getColumnDimension($colLetter)->setAutoSize(true);
         }
 
         // Sheet referensi kategori supaya kolom "kategori" diisi persis sesuai sistem
@@ -565,10 +591,33 @@ class BarangController extends Controller
             $kategoriSheet->getColumnDimension($col)->setAutoSize(true);
         }
 
+        // Sheet referensi gudang & divisi untuk kemudahan user
+        $gudangRefSheet = $spreadsheet->createSheet();
+        $gudangRefSheet->setTitle('Referensi Gudang');
+        $gudangRefSheet->fromArray(['nama_gudang', 'kategori_gudang', 'divisi', 'kolom_excel_min_stock'], null, 'A1');
+        $gudangRefSheet->getStyle('A1:D1')->getFont()->setBold(true);
+
+        $gRow = 2;
+        foreach ($allGudangs as $g) {
+            if ($g->divisi->count() > 0) {
+                foreach ($g->divisi as $d) {
+                    $slugG = \Illuminate\Support\Str::slug($g->nama, '_');
+                    $slugD = \Illuminate\Support\Str::slug($d->nama, '_');
+                    $gudangRefSheet->fromArray([$g->nama, $g->kategori, $d->nama, "min_stock_{$slugG}_{$slugD}"], null, 'A' . $gRow);
+                    $gRow++;
+                }
+            } else {
+                $slugG = \Illuminate\Support\Str::slug($g->nama, '_');
+                $gudangRefSheet->fromArray([$g->nama, $g->kategori, '-', "min_stock_{$slugG}"], null, 'A' . $gRow);
+                $gRow++;
+            }
+        }
+        foreach (['A', 'B', 'C', 'D'] as $col) {
+            $gudangRefSheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
         // Sheet panduan singkat
-        $guide = $spreadsheet->createSheet();
-        $guide->setTitle('Panduan');
-        $guide->fromArray([
+        $guideData = [
             ['Kolom', 'Wajib?', 'Keterangan'],
             ['kode_barang', 'Ya', 'Harus unik. Jika kode sudah ada di sistem, minimum stock akan di-UPDATE (data barang lainnya tidak berubah).'],
             ['nama', 'Ya (barang baru)', 'Nama barang. Untuk barang yang sudah ada, kolom ini diabaikan.'],
@@ -581,28 +630,27 @@ class BarangController extends Controller
             ['harga_jual_b2b', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['harga_jual_pos', 'Tidak', 'Hanya dipakai jika jenis_utama = BARANG_JADI.'],
             ['hpp_referensi', 'Tidak', 'Default 0 jika kosong.'],
-            ['min_stock_ck', 'Tidak', 'Minimum stock di Central Kitchen. Isi angka untuk set/update. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_gudang_utama', 'Tidak', 'Minimum stock di Gudang Utama. Isi angka untuk set/update. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_kejingga_kitchen', 'Tidak', 'Minimum stock KeJingga - Divisi Kitchen. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_kejingga_barista', 'Tidak', 'Minimum stock KeJingga - Divisi Barista. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_kejingga_server', 'Tidak', 'Minimum stock KeJingga - Divisi Server. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_gaharu_kitchen', 'Tidak', 'Minimum stock Gaharu - Divisi Kitchen. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_gaharu_barista', 'Tidak', 'Minimum stock Gaharu - Divisi Barista. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_gaharu_server', 'Tidak', 'Minimum stock Gaharu - Divisi Server. Kosongkan jika tidak perlu diubah.'],
-            ['min_stock_b2b', 'Tidak', 'Minimum stock Gudang B2B. Kosongkan jika tidak perlu diubah.'],
-            ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Kosongkan jika tidak perlu diubah.'],
-            ['minimum_order', 'Tidak', 'Default 1 jika kosong.'],
-            ['', '', ''],
-            ['CARA PAKAI', '', 'Download template ini → isi/edit kolom min_stock (kolom L sampai T berwarna hijau) → Import kembali file ini.'],
-            ['', '', 'Barang yang kode_barang-nya sudah ada di sistem: hanya minimum stock yang akan diperbarui.'],
-            ['', '', 'Barang baru (kode_barang belum ada): akan ditambahkan sebagai master barang baru.'],
-        ], null, 'A1');
+        ];
+
+        foreach ($minStockColumns as $msc) {
+            $guideData[] = [$msc['key'], 'Tidak', $msc['desc']];
+        }
+
+        $guideData[] = ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Kosongkan jika tidak perlu diubah.'];
+        $guideData[] = ['minimum_order', 'Tidak', 'Default 1 jika kosong.'];
+        $guideData[] = ['', '', ''];
+        $guideData[] = ['CARA PAKAI', '', 'Download template ini → isi/edit kolom min_stock (kolom hijau yang digenerate otomatis sesuai gudang & divisi aktif) → Import kembali file ini.'];
+        $guideData[] = ['', '', 'Barang yang kode_barang-nya sudah ada di sistem: hanya minimum stock yang akan diperbarui.'];
+        $guideData[] = ['', '', 'Barang baru (kode_barang belum ada): akan ditambahkan sebagai master barang baru.'];
+
+        $guide = $spreadsheet->createSheet();
+        $guide->setTitle('Panduan');
+        $guide->fromArray($guideData, null, 'A1');
         $guide->getStyle('A1:C1')->getFont()->setBold(true);
-        $guide->getStyle('A25:A25')->getFont()->setBold(true);
         foreach (['A', 'B', 'C'] as $col) {
             $guide->getColumnDimension($col)->setWidth(35);
         }
-        $guide->getStyle('A1:C27')->getAlignment()->setWrapText(true);
+        $guide->getStyle('A1:C' . count($guideData))->getAlignment()->setWrapText(true);
 
         $spreadsheet->setActiveSheetIndex(0);
 

@@ -14,9 +14,10 @@ class StokGudangController extends Controller
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';
 
-        $gudangId = $request->gudang_id;
-        $divisiId = $request->divisi_id;
-        $barangId = $request->barang_id;
+        $gudangId    = $request->gudang_id;
+        $divisiId    = $request->divisi_id;
+        $barangId    = $request->barang_id;
+        $jenisBarang = $request->jenis_barang ?? $request->jenis_utama;
 
         // Auto filter warehouse based on role
         if ($roleName === 'Kepala Outlet Kejingga') {
@@ -42,6 +43,12 @@ class StokGudangController extends Controller
                 'master_barang.kode_barang',
                 'master_barang.nama',
                 'master_barang.satuan',
+                'master_barang.satuan_pembelian',
+                'master_barang.konversi_pembelian',
+                'master_barang.is_bahan_baku',
+                'master_barang.is_bahan_setengah_jadi',
+                'master_barang.is_barang_jadi',
+                'master_barang.is_operational',
                 'master_gudang.nama   as nama_gudang',
                 'gudang_divisi.nama   as nama_divisi',
                 'stok_gudang.gudang_id',
@@ -59,6 +66,19 @@ class StokGudangController extends Controller
 
         if ($barangId) {
             $query->where('master_barang.id', $barangId);
+        }
+
+        if ($jenisBarang) {
+            $kolom = match($jenisBarang) {
+                'bahan_baku'          => 'master_barang.is_bahan_baku',
+                'bahan_setengah_jadi' => 'master_barang.is_bahan_setengah_jadi',
+                'barang_jadi'         => 'master_barang.is_barang_jadi',
+                'operational'         => 'master_barang.is_operational',
+                default               => null,
+            };
+            if ($kolom) {
+                $query->where($kolom, true);
+            }
         }
 
         // Filter bahan baku yang dinonaktifkan di outlet & divisi masing-masing
@@ -184,7 +204,7 @@ class StokGudangController extends Controller
 
         return view(
             'stok-gudang.index',
-            compact('stokGudang', 'gudangs', 'barangs', 'gudangId', 'divisiId', 'barangId')
+            compact('stokGudang', 'gudangs', 'barangs', 'gudangId', 'divisiId', 'barangId', 'jenisBarang')
         );
     }
 

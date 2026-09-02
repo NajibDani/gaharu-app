@@ -109,15 +109,16 @@
                         <thead class="table-light sticky-top" style="z-index: 2;">
                             <tr>
                                 <th style="width: 45px;">No</th>
-                                <th class="text-start" style="width: 120px;">Kode</th>
-                                <th class="text-start" style="min-width: 170px;">Nama Barang</th>
-                                <th style="width: 120px;">Kategori</th>
-                                <th style="width: 140px;">Satuan & Konversi</th>
-                                <th style="width: 100px;">Stok Saat Ini</th>
-                                <th style="width: 155px;">Qty Saldo Awal (Beli) <span class="text-danger">*</span></th>
-                                <th style="width: 170px;">Harga Beli Satuan (Rp) <span class="text-danger">*</span></th>
-                                <th style="width: 160px;">Masuk ke Stok Utama</th>
-                                <th class="text-end" style="width: 150px;">Subtotal Nilai (Rp)</th>
+                                <th class="text-start" style="width: 110px;">Kode</th>
+                                <th class="text-start" style="min-width: 160px;">Nama Barang</th>
+                                <th style="width: 110px;">Kategori</th>
+                                <th style="width: 130px;">Satuan & Konversi</th>
+                                <th style="width: 95px;">Stok Saat Ini</th>
+                                <th style="width: 130px;">Qty Input <span class="text-danger">*</span></th>
+                                <th style="width: 135px;">Satuan Input <span class="text-danger">*</span></th>
+                                <th style="width: 155px;">Harga per Satuan Input (Rp) <span class="text-danger">*</span></th>
+                                <th style="width: 155px;">Masuk ke Stok Utama</th>
+                                <th class="text-end" style="width: 140px;">Subtotal Nilai (Rp)</th>
                                 <th style="width: 45px;">Aksi</th>
                             </tr>
                         </thead>
@@ -330,14 +331,19 @@
                 tr.setAttribute('data-satuan-stok', item.satuan || 'pcs');
                 tr.setAttribute('data-satuan-beli', item.satuan_pembelian || item.satuan || 'pcs');
                 tr.setAttribute('data-konversi', item.konversi_pembelian || 1.00);
+                tr.setAttribute('data-harga-stok-utama', item.hpp_satuan_utama || (item.hpp_referensi || 0));
+                tr.setAttribute('data-harga-beli-utama', item.harga_beli_utama || 0);
 
                 const konversi = parseFloat(item.konversi_pembelian) || 1.00;
                 const satuanStok = item.satuan || 'pcs';
                 const satuanBeli = item.satuan_pembelian || satuanStok;
                 const hasKonversi = satuanBeli && konversi > 1 && (satuanBeli !== satuanStok || konversi !== 1);
 
-                // Harga beli = Jika gudang cabang, gunakan harga referensi Gudang Utama
-                const defaultHargaBeli = Number(item.harga_beli_utama !== undefined ? item.harga_beli_utama : (((Number(item.hpp_referensi) || 0) * konversi) || 0));
+                // Default unit: jika ada konversi pembelian, default ke 'pembelian'
+                const defaultUnit = hasKonversi ? 'pembelian' : 'utama';
+                const defaultHargaInput = hasKonversi 
+                    ? Number(item.harga_beli_utama || 0)
+                    : Number(item.hpp_satuan_utama || (item.hpp_referensi || 0));
 
                 const satuanBadge = hasKonversi
                     ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satuanBeli}</span></div>
@@ -351,6 +357,11 @@
 
                 const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
 
+                let unitOptionsHtml = `<option value="utama" ${defaultUnit === 'utama' ? 'selected' : ''}>${satuanStok}</option>`;
+                if (hasKonversi) {
+                    unitOptionsHtml = `<option value="pembelian" ${defaultUnit === 'pembelian' ? 'selected' : ''}>${satuanBeli} (${Number(konversi).toLocaleString('id-ID')} ${satuanStok})</option>` + unitOptionsHtml;
+                }
+
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">${idx + 1}</td>
                     <td class="text-start font-monospace fw-bold">${item.kode_barang}</td>
@@ -363,15 +374,17 @@
                     <td>${satuanBadge}</td>
                     <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
                     <td>
-                        <div class="input-group input-group-sm">
-                            <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
-                            <span class="input-group-text bg-light text-muted small" style="font-size: 11px;">${satuanBeli}</span>
-                        </div>
+                        <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
+                    </td>
+                    <td>
+                        <select name="satuan_tipe[]" class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                            ${unitOptionsHtml}
+                        </select>
                     </td>
                     <td>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
-                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaBeli}" placeholder="0" ${hargaInputAttr}>
+                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput}" placeholder="0" ${hargaInputAttr}>
                         </div>
                         ${isReadonlyHarga ? '<small class="text-muted d-block text-end" style="font-size: 9.5px;">(Ref. Gudang Utama)</small>' : ''}
                     </td>
@@ -404,6 +417,7 @@
 
             rows.forEach(row => {
                 const qtyInputEl     = row.querySelector('.input-qty');
+                const satuanSelectEl = row.querySelector('.input-satuan');
                 const hargaInputEl   = row.querySelector('.input-harga');
                 const conversionCell = row.querySelector('.conversion-cell');
                 const subtotalCell   = row.querySelector('.subtotal-cell');
@@ -411,18 +425,22 @@
 
                 if (qtyInputEl && hargaInputEl) {
                     const calcRow = () => {
-                        const konversi   = parseFloat(row.getAttribute('data-konversi')) || 1.00;
-                        const satuanStok = row.getAttribute('data-satuan-stok');
-                        const satuanBeli = row.getAttribute('data-satuan-beli');
+                        const konversi       = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+                        const satuanStok     = row.getAttribute('data-satuan-stok');
+                        const satuanBeli     = row.getAttribute('data-satuan-beli');
+                        const selectedUnit   = satuanSelectEl ? satuanSelectEl.value : 'pembelian';
+                        const isPembelian    = selectedUnit === 'pembelian';
+
                         const qtyInput   = parseFloat(qtyInputEl.value) || 0;
                         const hargaInput = parseFloat(hargaInputEl.value) || 0;
 
-                        const qtyStok   = qtyInput * konversi;
-                        const hargaStok = konversi > 0 ? (hargaInput / konversi) : hargaInput;
-                        const subtotal  = qtyInput * hargaInput;
+                        const multiplier = isPembelian ? konversi : 1.00;
+                        const qtyStok    = qtyInput * multiplier;
+                        const hargaStok  = multiplier > 0 ? (hargaInput / multiplier) : hargaInput;
+                        const subtotal   = qtyInput * hargaInput;
 
                         if (qtyInput > 0) {
-                            conversionCell.innerHTML = `
+                            let conversionText = `
                                 <div class="small fw-bold text-primary">
                                     ${Number(qtyStok).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${satuanStok}
                                 </div>
@@ -430,6 +448,7 @@
                                     @ Rp ${Number(hargaStok).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} / ${satuanStok}
                                 </div>
                             `;
+                            conversionCell.innerHTML = conversionText;
                             subtotalCell.innerText = 'Rp ' + subtotal.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                             row.classList.add('table-success', 'bg-opacity-10');
                         } else {
@@ -440,6 +459,21 @@
 
                         updateSummary();
                     };
+
+                    // Switch satuan -> auto recalculate & update reference price if locked
+                    if (satuanSelectEl) {
+                        satuanSelectEl.addEventListener('change', function () {
+                            const isReadonly = hargaInputEl.hasAttribute('readonly');
+                            const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+                            const hargaStokUtama = parseFloat(row.getAttribute('data-harga-stok-utama')) || 0;
+                            const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
+
+                            if (isReadonly) {
+                                hargaInputEl.value = this.value === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                            }
+                            calcRow();
+                        });
+                    }
 
                     qtyInputEl.addEventListener('input', calcRow);
                     hargaInputEl.addEventListener('input', calcRow);
@@ -473,17 +507,20 @@
             let grandNilai   = 0;
 
             rows.forEach(r => {
-                const qtyInputEl   = r.querySelector('.input-qty');
-                const hargaInputEl = r.querySelector('.input-harga');
-                const konversi     = parseFloat(r.getAttribute('data-konversi')) || 1.00;
+                const qtyInputEl     = r.querySelector('.input-qty');
+                const satuanSelectEl = r.querySelector('.input-satuan');
+                const hargaInputEl   = r.querySelector('.input-harga');
+                const konversi       = parseFloat(r.getAttribute('data-konversi')) || 1.00;
 
                 if (qtyInputEl && hargaInputEl) {
-                    const qtyInput   = parseFloat(qtyInputEl.value) || 0;
-                    const hargaInput = parseFloat(hargaInputEl.value) || 0;
+                    const selectedUnit = satuanSelectEl ? satuanSelectEl.value : 'pembelian';
+                    const multiplier   = selectedUnit === 'pembelian' ? konversi : 1.00;
+                    const qtyInput     = parseFloat(qtyInputEl.value) || 0;
+                    const hargaInput   = parseFloat(hargaInputEl.value) || 0;
 
                     if (qtyInput > 0) {
                         totalFilled++;
-                        grandQtyStok += (qtyInput * konversi);
+                        grandQtyStok += (qtyInput * multiplier);
                         grandNilai   += (qtyInput * hargaInput);
                     }
                 }

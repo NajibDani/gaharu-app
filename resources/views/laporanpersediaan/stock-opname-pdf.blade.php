@@ -172,12 +172,40 @@
                 </tr>
                 
                 @foreach($row->details->where('selisih','!=',0) as $d)
+                    @php
+                        $k = (float) ($d->barang->konversi_pembelian ?? 1);
+                        $hasK = !empty($d->barang->satuan_pembelian) && $k > 1;
+                        $stn = $d->barang->satuan ?? 'pcs';
+                        $stnB = $d->barang->satuan_pembelian ?? '';
+                    @endphp
                     <tr class="sub">
-                        <td style="padding-left:18px;">↳ {{ $d->barang->nama ?? '-' }}</td>
-                        <td colspan="2">Sistem: {{ number_format($d->stok_sistem,2) }} → Fisik: {{ number_format($d->stok_fisik,2) }}</td>
+                        <td style="padding-left:18px;">
+                            ↳ {{ $d->barang->nama ?? '-' }}
+                            @if($hasK)
+                                <div style="font-size: 8px; color: #1e3a8a;">(1 {{ $stnB }} = {{ number_format($k, 0, ',', '.') }} {{ $stn }})</div>
+                            @endif
+                        </td>
+                        <td colspan="2">
+                            Sistem: {{ number_format($d->stok_sistem,2) }} {{ $stn }} @if($hasK) ({{ number_format($d->stok_sistem / $k, 2) }} {{ $stnB }}) @endif
+                            → Fisik: {{ number_format($d->stok_fisik,2) }} {{ $stn }} @if($hasK) ({{ number_format($d->stok_fisik / $k, 2) }} {{ $stnB }}) @endif
+                        </td>
                         <td></td>
-                        <td class="text-center plus">{{ $d->selisih > 0 ? '+'.number_format($d->selisih,2) : '' }}</td>
-                        <td class="text-center minus">{{ $d->selisih < 0 ? number_format($d->selisih,2) : '' }}</td>
+                        <td class="text-center plus">
+                            @if($d->selisih > 0)
+                                +{{ number_format($d->selisih,2) }} {{ $stn }}
+                                @if($hasK)
+                                    <div style="font-size: 8px;">(+{{ number_format($d->selisih / $k, 2) }} {{ $stnB }})</div>
+                                @endif
+                            @endif
+                        </td>
+                        <td class="text-center minus">
+                            @if($d->selisih < 0)
+                                {{ number_format($d->selisih,2) }} {{ $stn }}
+                                @if($hasK)
+                                    <div style="font-size: 8px;">({{ number_format($d->selisih / $k, 2) }} {{ $stnB }})</div>
+                                @endif
+                            @endif
+                        </td>
                         <td class="text-right">Rp {{ number_format($d->nilai_selisih,0,',','.') }}</td>
                         <td></td>
                     </tr>

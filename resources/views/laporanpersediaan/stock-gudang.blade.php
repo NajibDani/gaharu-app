@@ -183,9 +183,23 @@
                                             </span>
                                         @endif
                                     </td>
-                                    <td class="text-muted">{{ $row->satuan }}</td>
-                                    <td class="text-center fw-bold" style="font-size:15px; {{ $isKritis ? 'color:#dc3545;' : 'color:#198754;' }}">
-                                        {{ number_format($row->jumlah, 2) }}
+                                    <td class="text-muted">
+                                        <div>{{ $row->satuan }}</div>
+                                        @if(!empty($row->satuan_pembelian) && (float)($row->konversi_pembelian ?? 1) > 1)
+                                            <small class="text-primary font-monospace" style="font-size: 0.72rem;">
+                                                1 {{ $row->satuan_pembelian }} = {{ number_format((float)$row->konversi_pembelian, 0, ',', '.') }} {{ $row->satuan }}
+                                            </small>
+                                        @endif
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="fw-bold" style="font-size:15px; {{ $isKritis ? 'color:#dc3545;' : 'color:#198754;' }}">
+                                            {{ number_format($row->jumlah, 2) }}
+                                        </div>
+                                        @if(!empty($row->satuan_pembelian) && (float)($row->konversi_pembelian ?? 1) > 1)
+                                            <div class="small text-primary fw-semibold mt-1" style="font-size: 0.78rem;">
+                                                <i class="bi bi-arrow-repeat me-1"></i>{{ number_format($row->jumlah / (float)$row->konversi_pembelian, 2) }} {{ $row->satuan_pembelian }}
+                                            </div>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty

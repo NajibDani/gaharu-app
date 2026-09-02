@@ -23,6 +23,10 @@ class StockOpnameController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
+        $gudangId = $request->query('gudang_id');
+        $kategoriId = $request->query('kategori_id');
+        $jenisBarang = $request->query('jenis_barang');
+
         $query = StockOpname::with(['gudang', 'divisi', 'user']);
 
         if ($search) {
@@ -32,14 +36,39 @@ class StockOpnameController extends Controller
             });
         }
 
+        if ($gudangId) {
+            $query->where('gudang_id', $gudangId);
+        }
+
+        // Filter berdasarkan kategori atau jenis barang pada detail stock opname
+        if ($kategoriId || $jenisBarang) {
+            $query->whereHas('details.barang', function($q) use ($kategoriId, $jenisBarang) {
+                if ($kategoriId) {
+                    $q->where('kategori_id', $kategoriId);
+                }
+                if ($jenisBarang) {
+                    if ($jenisBarang === 'bahan_baku') {
+                        $q->where('is_bahan_baku', 1);
+                    } elseif ($jenisBarang === 'bahan_setengah_jadi') {
+                        $q->where('is_bahan_setengah_jadi', 1);
+                    } elseif ($jenisBarang === 'barang_jadi') {
+                        $q->where('is_barang_jadi', 1);
+                    } elseif ($jenisBarang === 'operational') {
+                        $q->where('is_operational', 1);
+                    }
+                }
+            });
+        }
+
         $stockOpname = $query->latest()->paginate(20)->withQueryString();
 
         $totalDraft = StockOpname::where('status', 'draft')->count();
         $totalApproved = StockOpname::where('status', 'approved')->count();
 
         $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
+        $kategoris = \App\Models\Kategori::orderBy('nama')->get();
 
-        return view('stock-opname.index', compact('stockOpname', 'gudangs', 'totalDraft', 'totalApproved'));
+        return view('stock-opname.index', compact('stockOpname', 'gudangs', 'kategoris', 'totalDraft', 'totalApproved'));
     }
 
     /*
@@ -61,6 +90,7 @@ class StockOpnameController extends Controller
 
         $gudang = MasterGudang::with('divisi')->findOrFail($gudangId);
         $divisi = $divisiId ? GudangDivisi::find($divisiId) : null;
+        $kategoris = \App\Models\Kategori::orderBy('nama')->get();
 
         // Jika gudang operasional memiliki divisi tapi divisi belum dipilih, arahkan untuk memilih divisi
         if (strtolower($gudang->kategori) === 'operasional' && $gudang->divisi->count() > 0 && !$divisiId) {
@@ -69,7 +99,7 @@ class StockOpnameController extends Controller
                 ->with('error', 'Gudang ' . $gudang->nama . ' memiliki beberapa divisi. Silakan pilih divisi yang akan di-opname.');
         }
 
-        return view('stock-opname.create', compact('gudang', 'divisi', 'divisiId'));
+        return view('stock-opname.create', compact('gudang', 'divisi', 'divisiId', 'kategoris'));
     }
 
     /*
@@ -85,6 +115,7 @@ class StockOpnameController extends Controller
         $divisiId = $request->divisi_id;
 
         $barang = DB::table('master_barang')
+            ->leftJoin('kategori', 'master_barang.kategori_id', '=', 'kategori.id')
             ->leftJoin('stok_gudang', function ($join) use ($gudangId, $divisiId) {
                 $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
                      ->where('stok_gudang.gudang_id', '=', $gudangId);
@@ -121,8 +152,14 @@ class StockOpnameController extends Controller
                 'master_barang.kode_barang',
                 'master_barang.nama',
                 'master_barang.satuan',
-                'master_barang.is_bahan_setengah_jadi',
+                'master_barang.satuan_pembelian',
+                'master_barang.konversi_pembelian',
+                'master_barang.kategori_id',
+                'kategori.nama as kategori_nama',
                 'master_barang.is_bahan_baku',
+                'master_barang.is_bahan_setengah_jadi',
+                'master_barang.is_barang_jadi',
+                'master_barang.is_operational',
                 DB::raw('COALESCE(stok_gudang.jumlah, 0) as stok')
             )
             ->orderBy('master_barang.nama', 'asc')
@@ -276,13 +313,23 @@ class StockOpnameController extends Controller
             'status'      => $opname->status,
             'keterangan'  => $opname->keterangan ?? '-',
             'details'     => $opname->details->map(function ($d) {
+                $konversi = (float) ($d->barang->konversi_pembelian ?? 1);
+                $hasKonversi = !empty($d->barang->satuan_pembelian) && $konversi > 1;
+
                 return [
-                    'nama_barang'   => $d->barang->nama ?? '-',
-                    'satuan'        => $d->barang->satuan ?? 'pcs',
-                    'stok_sistem'   => (float) $d->stok_sistem,
-                    'stok_fisik'    => (float) $d->stok_fisik,
-                    'selisih'       => (float) $d->selisih,
-                    'nilai_selisih' => (float) $d->nilai_selisih,
+                    'nama_barang'       => $d->barang->nama ?? '-',
+                    'kode_barang'       => $d->barang->kode_barang ?? '-',
+                    'satuan'            => $d->barang->satuan ?? 'pcs',
+                    'satuan_pembelian'  => $d->barang->satuan_pembelian ?? null,
+                    'konversi_pembelian'=> $konversi,
+                    'has_konversi'      => $hasKonversi,
+                    'stok_sistem'       => (float) $d->stok_sistem,
+                    'stok_fisik'        => (float) $d->stok_fisik,
+                    'selisih'           => (float) $d->selisih,
+                    'nilai_selisih'     => (float) $d->nilai_selisih,
+                    'stok_sistem_konv'  => $hasKonversi ? ((float)$d->stok_sistem / $konversi) : null,
+                    'stok_fisik_konv'   => $hasKonversi ? ((float)$d->stok_fisik / $konversi) : null,
+                    'selisih_konv'      => $hasKonversi ? ((float)$d->selisih / $konversi) : null,
                 ];
             }),
         ]);

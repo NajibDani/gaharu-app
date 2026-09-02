@@ -119,31 +119,62 @@
                     <thead style="background:#5a3416; color:white;">
                         <tr>
                             <th>Barang (Ketik Nama / Kode untuk Mencari)</th>
-                            <th width="200">Qty Keluar</th>
-                            <th width="120">Aksi</th>
+                            <th width="160">Qty Input</th>
+                            <th width="170">Satuan Input</th>
+                            <th width="200">Total Qty (Utama)</th>
+                            <th width="80" class="text-center">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($pengeluaran->details as $detail)
+                            @php
+                                $bItem = $detail->barang;
+                                $sPembelian = $bItem->satuan_pembelian ?? '';
+                                $konv = (float)($bItem->konversi_pembelian ?? 1);
+                                $sUtama = $bItem->satuan ?? 'Pcs';
+                                $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+                            @endphp
                             <tr>
                                 <td>
                                     <select name="barang_id[]" class="form-select barang-select" required>
                                         <option value="">-- Pilih / Cari Bahan Baku --</option>
                                         @foreach($barang as $b)
                                             <option value="{{ $b->id }}" data-stok="{{ $b->stok }}"
+                                                data-kode="{{ $b->kode_barang }}" data-satuan="{{ $b->satuan }}"
+                                                data-satuan-pembelian="{{ $b->satuan_pembelian }}"
+                                                data-konversi-pembelian="{{ $b->konversi_pembelian }}"
                                                 {{ $detail->barang_id == $b->id ? 'selected' : '' }}>
-                                                {{ $b->kode_barang }} - {{ $b->nama }} ({{ $b->satuan }}) - Stok Utama: {{ $b->stok }}
-                                                @if($b->stok <= 0) [HABIS] @endif
+                                                {{ $b->nama }}
                                             </option>
                                         @endforeach
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="qty[]" value="{{ $detail->qty }}"
-                                        class="form-control qty-input" min="0.01" step="any" placeholder="Qty" required>
-                                    <small class="text-danger stok-warning d-block mt-1" style="display:none;"></small>
+                                    <input type="number" class="form-control qty-input-user"
+                                        min="0.01" step="any" placeholder="Qty" value="{{ $detail->qty }}"
+                                        style="border-radius:8px;" required>
                                 </td>
                                 <td>
+                                    <select class="form-select satuan-select" style="border-radius:8px;">
+                                        <option value="utama">{{ $sUtama }}</option>
+                                        @if($hasKonv)
+                                            <option value="pembelian">{{ $sPembelian }} ({{ $konv }} {{ $sUtama }})</option>
+                                        @endif
+                                    </select>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="number" name="qty[]" value="{{ $detail->qty }}"
+                                            class="form-control qty-input fw-bold" min="0.01" step="any" placeholder="Total Qty"
+                                            style="border-radius:8px; background:#f8fafc;" readonly required>
+                                        <span class="stok-satuan text-muted fw-semibold small" style="min-width:35px;">{{ $sUtama }}</span>
+                                    </div>
+                                    <small class="text-muted stok-info d-block mt-1" style="font-size:0.75rem;">
+                                        Tersedia di Gudang Utama: {{ $bItem->stok ?? 0 }} {{ $sUtama }}
+                                    </small>
+                                    <small class="text-danger stok-warning d-block mt-1" style="display:none; font-size:0.75rem;"></small>
+                                </td>
+                                <td class="text-center">
                                     <button type="button" class="btn btn-danger btn-sm" onclick="hapusBaris(this)">
                                         Hapus
                                     </button>
@@ -155,18 +186,36 @@
                                     <select name="barang_id[]" class="form-select barang-select" required>
                                         <option value="">-- Pilih / Cari Bahan Baku --</option>
                                         @foreach($barang as $b)
-                                            <option value="{{ $b->id }}" data-stok="{{ $b->stok }}">
-                                                {{ $b->kode_barang }} - {{ $b->nama }} ({{ $b->satuan }}) - Stok Utama: {{ $b->stok }}
-                                                @if($b->stok <= 0) [HABIS] @endif
+                                            <option value="{{ $b->id }}" data-stok="{{ $b->stok }}"
+                                                data-kode="{{ $b->kode_barang }}" data-satuan="{{ $b->satuan }}"
+                                                data-satuan-pembelian="{{ $b->satuan_pembelian }}"
+                                                data-konversi-pembelian="{{ $b->konversi_pembelian }}">
+                                                {{ $b->nama }}
                                             </option>
                                         @endforeach
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" name="qty[]" class="form-control qty-input" min="0.01" step="any" placeholder="Qty" required>
-                                    <small class="text-danger stok-warning d-block mt-1" style="display:none;"></small>
+                                    <input type="number" class="form-control qty-input-user"
+                                        min="0.01" step="any" placeholder="Qty"
+                                        style="border-radius:8px;" required>
                                 </td>
                                 <td>
+                                    <select class="form-select satuan-select" style="border-radius:8px;">
+                                        <option value="utama">Utama</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="number" name="qty[]" class="form-control qty-input fw-bold"
+                                            min="0.01" step="any" placeholder="Total Qty"
+                                            style="border-radius:8px; background:#f8fafc;" readonly required>
+                                        <span class="stok-satuan text-muted fw-semibold small" style="min-width:35px;"></span>
+                                    </div>
+                                    <small class="text-muted stok-info d-block mt-1" style="font-size:0.75rem;"></small>
+                                    <small class="text-danger stok-warning d-block mt-1" style="display:none; font-size:0.75rem;"></small>
+                                </td>
+                                <td class="text-center">
                                     <button type="button" class="btn btn-danger btn-sm" onclick="hapusBaris(this)">
                                         Hapus
                                     </button>
@@ -202,130 +251,247 @@
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 
 <script>
+const barangData = [
+    @foreach($barang as $b)
+    {
+        value: "{{ $b->id }}",
+        text: "{{ addslashes($b->kode_barang . ' - ' . $b->nama . ' (' . $b->satuan . ')' . ($b->satuan_pembelian && $b->konversi_pembelian > 1 ? ' [' . $b->satuan_pembelian . ']' : '') . ' - Stok Utama: ' . $b->stok . ($b->stok <= 0 ? ' [HABIS]' : '')) }}",
+        nama: "{{ addslashes($b->nama) }}",
+        kode: "{{ $b->kode_barang }}",
+        satuan: "{{ $b->satuan }}",
+        satuan_pembelian: "{{ $b->satuan_pembelian ?: $b->satuan }}",
+        konversi_pembelian: {{ (float)($b->konversi_pembelian ?: 1) }},
+        stok: {{ (float)$b->stok }},
+        habis: {{ $b->stok <= 0 ? 'true' : 'false' }}
+    },
+    @endforeach
+];
+
 function initTomSelect(selectEl) {
     if (!selectEl || selectEl.tomselect) return selectEl.tomselect;
+
     return new TomSelect(selectEl, {
+        options: barangData,
+        valueField: 'value',
+        labelField: 'text',
+        searchField: ['text', 'nama', 'kode'],
         create: false,
         allowEmptyOption: true,
         placeholder: '-- Ketik / Cari Bahan Baku --',
         maxOptions: 500,
-        sortField: {
-            field: "text",
-            direction: "asc"
+        render: {
+            option: function(data, escape) {
+                let badge = data.habis 
+                    ? '<span class="badge bg-danger ms-2">Habis</span>'
+                    : `<span class="badge bg-light text-dark border ms-2">Stok: ${escape(data.stok)} ${escape(data.satuan)}</span>`;
+                return `<div class="d-flex justify-content-between align-items-center py-1">
+                    <div>
+                        <span class="fw-bold">${escape(data.kode)}</span> - ${escape(data.nama)}
+                        <span class="text-muted small">(${escape(data.satuan)})</span>
+                    </div>
+                    ${badge}
+                </div>`;
+            },
+            item: function(data, escape) {
+                return `<div>${escape(data.kode)} - ${escape(data.nama)} (${escape(data.satuan)})</div>`;
+            }
         },
         onChange: function(value) {
             let row = selectEl.closest('tr');
-            if (row) checkStok(row);
+            if (row) updateRowInfo(row, value);
         }
     });
 }
 
-function tambahBaris(barangId = '', qty = '')
-{
-    let tbody = document.querySelector('#table-detail tbody');
+function calculateRowQty(row) {
+    let select = row.querySelector('.barang-select');
+    let userInput = row.querySelector('.qty-input-user');
+    let satuanSelect = row.querySelector('.satuan-select');
+    let qtyMainInput = row.querySelector('.qty-input');
+    if (!select || !userInput || !satuanSelect || !qtyMainInput) return;
 
-    // Coba isi baris pertama jika masih kosong
-    if (barangId !== '') {
-        let rows = tbody.querySelectorAll('tr');
-        for (let row of rows) {
-            let sel = row.querySelector('.barang-select');
-            let selValue = sel.tomselect ? sel.tomselect.getValue() : sel.value;
-            if (!selValue) {
-                if (sel.tomselect) sel.tomselect.setValue(barangId);
-                else sel.value = barangId;
-                let qInput = row.querySelector('.qty-input');
-                if (qty !== '') qInput.value = qty;
-                checkStok(row);
-                return row;
-            }
-        }
+    let barangId = select.tomselect ? select.tomselect.getValue() : select.value;
+    let found = barangData.find(b => b.value == barangId);
+    let valUser = parseFloat(userInput.value) || 0;
+
+    if (!found || valUser <= 0) {
+        qtyMainInput.value = '';
+        checkStok(row);
+        return;
     }
 
-    let tr = document.createElement('tr');
-    tr.innerHTML = `
-        <td>
-            <select name="barang_id[]" class="form-select barang-select" required>
-                <option value="">-- Ketik / Cari Bahan Baku --</option>
-                @foreach($barang as $b)
-                    <option value="{{ $b->id }}" data-stok="{{ $b->stok }}">
-                        {{ $b->kode_barang }} - {{ $b->nama }} ({{ $b->satuan }}) - Stok Utama: {{ $b->stok }}
-                        @if($b->stok <= 0) [HABIS] @endif
-                    </option>
-                @endforeach
-            </select>
-        </td>
-        <td>
-            <input type="number" name="qty[]" class="form-control qty-input" min="0.01" step="any" placeholder="Qty" required>
-            <small class="text-danger stok-warning d-block mt-1" style="display:none;"></small>
-        </td>
-        <td>
-            <button type="button" class="btn btn-danger btn-sm" onclick="hapusBaris(this)">
-                Hapus
-            </button>
-        </td>
-    `;
-
-    tbody.appendChild(tr);
-
-    let newSelect = tr.querySelector('.barang-select');
-    let tsInstance = initTomSelect(newSelect);
-
-    if (barangId && tsInstance) {
-        tsInstance.setValue(barangId);
-    } else if (barangId) {
-        newSelect.value = barangId;
+    let multiplier = 1;
+    if (satuanSelect.value === 'pembelian') {
+        multiplier = found.konversi_pembelian || 1;
     }
 
-    if (qty !== '') {
-        tr.querySelector('.qty-input').value = qty;
-    }
-
-    checkStok(tr);
-    return tr;
+    let totalQty = valUser * multiplier;
+    qtyMainInput.value = totalQty;
+    checkStok(row);
 }
 
-function hapusBaris(button)
-{
-    let row = button.closest('tr');
-    let select = row.querySelector('.barang-select');
+function updateRowInfo(row, barangId) {
+    let found = barangData.find(b => b.value == barangId);
+    let satuanSelect = row.querySelector('.satuan-select');
+    let satuanEl = row.querySelector('.stok-satuan');
+    let infoEl = row.querySelector('.stok-info');
+    let warnEl = row.querySelector('.stok-warning');
 
-    if (document.querySelectorAll('#table-detail tbody tr').length > 1) {
-        if (select && select.tomselect) {
-            select.tomselect.destroy();
+    if (found) {
+        if (satuanSelect) {
+            let opts = `<option value="utama">${found.satuan}</option>`;
+            if (found.satuan_pembelian && found.konversi_pembelian > 1 && found.satuan_pembelian !== found.satuan) {
+                opts += `<option value="pembelian">${found.satuan_pembelian} (${found.konversi_pembelian} ${found.satuan})</option>`;
+            }
+            satuanSelect.innerHTML = opts;
         }
-        row.remove();
+        if (satuanEl) satuanEl.textContent = found.satuan;
+        if (infoEl) {
+            infoEl.textContent = `Tersedia di Gudang Utama: ${found.stok} ${found.satuan}`;
+            infoEl.style.color = found.habis ? '#dc3545' : '#6c757d';
+        }
     } else {
-        if (select && select.tomselect) {
-            select.tomselect.clear();
-        } else if (select) {
-            select.value = '';
-        }
-        row.querySelector('.qty-input').value = '';
-        checkStok(row);
+        if (satuanSelect) satuanSelect.innerHTML = '<option value="utama">Utama</option>';
+        if (satuanEl) satuanEl.textContent = '';
+        if (infoEl) infoEl.textContent = '';
     }
+    if (warnEl) warnEl.style.display = 'none';
+    calculateRowQty(row);
 }
 
 function checkStok(row) {
     let select = row.querySelector('.barang-select');
     let qtyInput = row.querySelector('.qty-input');
     let warning = row.querySelector('.stok-warning');
-
     if (!select || !qtyInput || !warning) return;
 
-    let selectedOption = select.options[select.selectedIndex];
-    if (!selectedOption || select.value === "") {
-        warning.style.display = "none";
-        return;
-    }
-
-    let stok = parseFloat(selectedOption.getAttribute('data-stok')) || 0;
+    let barangId = select.tomselect ? select.tomselect.getValue() : select.value;
+    let found = barangData.find(b => b.value == barangId);
     let qty = parseFloat(qtyInput.value) || 0;
 
-    if (qty > stok) {
-        warning.innerHTML = `⚠️ Stok Gudang Utama tidak mencukupi! Tersedia: <strong>${stok}</strong>`;
-        warning.style.display = "block";
+    if (found && qty > 0) {
+        if (qty > found.stok) {
+            warning.innerHTML = `⚠️ Melebihi stok Gudang Utama! (Tersedia: <strong>${found.stok} ${found.satuan}</strong>)`;
+            warning.style.display = 'block';
+        } else {
+            warning.style.display = 'none';
+        }
     } else {
-        warning.style.display = "none";
+        warning.style.display = 'none';
+    }
+}
+
+function buatRowHtml(barangId = '', qty = '') {
+    return `
+    <tr>
+        <td>
+            <select name="barang_id[]" class="form-select barang-select" required>
+                <option value="">-- Pilih / Cari Bahan Baku --</option>
+            </select>
+        </td>
+        <td>
+            <input type="number" class="form-control qty-input-user"
+                min="0.01" step="any" placeholder="Qty"
+                style="border-radius:8px;" required>
+        </td>
+        <td>
+            <select class="form-select satuan-select" style="border-radius:8px;">
+                <option value="utama">Utama</option>
+            </select>
+        </td>
+        <td>
+            <div class="d-flex align-items-center gap-2">
+                <input type="number" name="qty[]" class="form-control qty-input fw-bold"
+                    min="0.01" step="any" placeholder="Total Qty"
+                    style="border-radius:8px; background:#f8fafc;" value="${qty}" readonly required>
+                <span class="stok-satuan text-muted fw-semibold small" style="min-width:35px;"></span>
+            </div>
+            <small class="text-muted stok-info d-block mt-1" style="font-size:0.75rem;"></small>
+            <small class="text-danger stok-warning d-block mt-1" style="display:none; font-size:0.75rem;"></small>
+        </td>
+        <td class="text-center">
+            <button type="button" class="btn btn-danger btn-sm" onclick="hapusBaris(this)">
+                Hapus
+            </button>
+        </td>
+    </tr>`;
+}
+
+function tambahBaris(barangId = '', qty = '', unit = 'utama') {
+    let tbody = document.querySelector('#table-detail tbody');
+    let rows = tbody.querySelectorAll('tr');
+
+    // Coba isi baris pertama jika masih kosong
+    if (barangId !== '') {
+        for (let row of rows) {
+            let sel = row.querySelector('.barang-select');
+            let selValue = sel.tomselect ? sel.tomselect.getValue() : sel.value;
+            if (!selValue) {
+                if (sel.tomselect) sel.tomselect.setValue(barangId);
+                else sel.value = barangId;
+                updateRowInfo(row, barangId);
+                let qInput = row.querySelector('.qty-input-user');
+                if (qty !== '') qInput.value = qty;
+                let sSelect = row.querySelector('.satuan-select');
+                if (sSelect && unit) sSelect.value = unit;
+                calculateRowQty(row);
+                return row;
+            }
+        }
+    }
+
+    // Tambah baris baru
+    tbody.insertAdjacentHTML('beforeend', buatRowHtml('', qty));
+    let newRow = tbody.lastElementChild;
+    let newSelect = newRow.querySelector('.barang-select');
+    let ts = initTomSelect(newSelect);
+
+    if (barangId && ts) {
+        setTimeout(() => {
+            ts.setValue(barangId);
+            updateRowInfo(newRow, barangId);
+            if (qty) {
+                newRow.querySelector('.qty-input-user').value = qty;
+                let sSelect = newRow.querySelector('.satuan-select');
+                if (sSelect && unit) sSelect.value = unit;
+                calculateRowQty(newRow);
+            }
+        }, 50);
+    }
+    return newRow;
+}
+
+function hapusBaris(button) {
+    let row = button.closest('tr');
+    let rows = document.querySelectorAll('#table-detail tbody tr');
+    let select = row.querySelector('.barang-select');
+    let barangId = select ? (select.tomselect ? select.tomselect.getValue() : select.value) : '';
+
+    if (rows.length > 1) {
+        if (select && select.tomselect) select.tomselect.destroy();
+        row.remove();
+    } else {
+        if (select && select.tomselect) select.tomselect.clear();
+        row.querySelector('.qty-input').value = '';
+        row.querySelector('.qty-input-user').value = '';
+        let satuanEl = row.querySelector('.stok-satuan');
+        let infoEl = row.querySelector('.stok-info');
+        if (satuanEl) satuanEl.textContent = '';
+        if (infoEl) infoEl.textContent = '';
+        row.querySelector('.stok-warning').style.display = 'none';
+    }
+
+    if (barangId) {
+        const pill = document.querySelector(`#suggestion-list [data-barang-id="${barangId}"]`);
+        if (pill) {
+            pill.classList.remove('bg-warning-subtle');
+            pill.classList.add('bg-white');
+            const btn = pill.querySelector('.btn-add-single-suggest');
+            if (btn) {
+                btn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Tambah';
+                btn.disabled = false;
+            }
+        }
     }
 }
 
@@ -334,8 +500,16 @@ document.addEventListener("DOMContentLoaded", function() {
         initTomSelect(el);
     });
 
-    document.querySelectorAll('#table-detail tbody tr').forEach(function(row) {
-        checkStok(row);
+    document.addEventListener('input', function (e) {
+        if (e.target.classList.contains('qty-input-user')) {
+            calculateRowQty(e.target.closest('tr'));
+        }
+    });
+
+    document.addEventListener('change', function (e) {
+        if (e.target.classList.contains('satuan-select')) {
+            calculateRowQty(e.target.closest('tr'));
+        }
     });
 
     const selectGudang = document.getElementById('select-gudang');
@@ -374,13 +548,19 @@ document.addEventListener("DOMContentLoaded", function() {
                     currentSuggestions.forEach(item => {
                         const pill = document.createElement('div');
                         pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                        pill.dataset.barangId = item.barang_id;
+                        
+                        let displaySaran = item.has_konversi 
+                            ? `${item.suggested_qty_input} ${item.satuan_pembelian} (${item.suggested_qty} ${item.satuan})`
+                            : `${item.suggested_qty} ${item.satuan}`;
+
                         pill.innerHTML = `
                             <div class="text-start">
                                 <div class="fw-bold">${item.nama} <span class="text-muted small">(${item.kode_barang})</span></div>
                                 <div class="text-muted" style="font-size: 0.72rem;">
                                     Stok Outlet: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
                                     <span class="text-secondary ms-1">(Utama: ${item.stok_utama} ${item.satuan})</span>
-                                    <span class="text-success fw-bold ms-1">&rarr; Saran: ${item.suggested_qty} ${item.satuan}</span>
+                                    <span class="text-success fw-bold ms-1">&rarr; Saran: ${displaySaran}</span>
                                 </div>
                             </div>
                             <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-single-suggest py-1 px-2" style="font-size: 0.75rem;" title="Tambah item ini">
@@ -388,7 +568,9 @@ document.addEventListener("DOMContentLoaded", function() {
                             </button>
                         `;
                         pill.querySelector('.btn-add-single-suggest').addEventListener('click', function () {
-                            tambahBaris(item.barang_id, item.suggested_qty);
+                            let qtyForm = item.has_konversi ? item.suggested_qty_input : item.suggested_qty;
+                            let unitForm = item.has_konversi ? 'pembelian' : 'utama';
+                            tambahBaris(item.barang_id, qtyForm, unitForm);
                             pill.classList.remove('bg-white');
                             pill.classList.add('bg-warning-subtle');
                             this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
@@ -416,10 +598,14 @@ document.addEventListener("DOMContentLoaded", function() {
         let firstSel = tbody.querySelector('.barang-select');
         if (firstSel && firstSel.tomselect) firstSel.tomselect.clear();
         else if (firstSel) firstSel.value = '';
-        let firstQty = tbody.querySelector('.qty-input');
+        let firstQty = tbody.querySelector('.qty-input-user');
         if (firstQty) firstQty.value = '';
 
-        currentSuggestions.forEach(item => tambahBaris(item.barang_id, item.suggested_qty));
+        currentSuggestions.forEach(item => {
+            let qtyForm = item.has_konversi ? item.suggested_qty_input : item.suggested_qty;
+            let unitForm = item.has_konversi ? 'pembelian' : 'utama';
+            tambahBaris(item.barang_id, qtyForm, unitForm);
+        });
 
         suggestionList.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
             btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
@@ -479,13 +665,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     if (btnApplyAll) {
         btnApplyAll.addEventListener('click', applyAllSuggestions);
-    }
-});
-
-document.addEventListener('input', function(e) {
-    if (e.target.classList.contains('qty-input')) {
-        let row = e.target.closest('tr');
-        checkStok(row);
     }
 });
 </script>

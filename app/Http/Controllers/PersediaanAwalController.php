@@ -334,16 +334,21 @@ class PersediaanAwalController extends Controller
                 $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
                 if ($konversi <= 0) $konversi = 1.00;
 
-                $satuanBeli = $barang->satuan_pembelian ?: $barang->satuan;
-                $qtyStok = $qtyInput * $konversi;
+                $satuanStok = $barang->satuan ?: 'pcs';
+                $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
+                $satuanTipe = $request->satuan_tipe[$index] ?? 'pembelian';
+                $isPembelian = ($satuanTipe === 'pembelian');
+
+                $multiplier = $isPembelian ? $konversi : 1.00;
+                $qtyStok = $qtyInput * $multiplier;
 
                 if ($isGudangUtama) {
                     $hargaInput = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
-                    $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+                    $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
                 } else {
                     // Gudang non-Utama: harga otomatis mengikuti harga referensi Gudang Utama
                     $hargaStok = (float) ($hargaUtamaMap[$barangId] ?? ($barang->hpp_referensi ?? 0));
-                    $hargaInput = $hargaStok * $konversi;
+                    $hargaInput = $hargaStok * $multiplier;
                 }
 
                 $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
@@ -353,6 +358,7 @@ class PersediaanAwalController extends Controller
                     'barang'             => $barang,
                     'qty_input'          => $qtyInput,
                     'harga_input'        => max(0, $hargaInput),
+                    'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
                     'satuan_pembelian'   => $satuanBeli,
                     'konversi_pembelian' => $konversi,
                     'qty_stok'           => $qtyStok,

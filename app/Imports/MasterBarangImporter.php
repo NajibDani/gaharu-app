@@ -87,20 +87,64 @@ class MasterBarangImporter
             $hargaPos          = $get($row, 'harga_jual_pos');
             $hpp               = $get($row, 'hpp_referensi');
             $minStock          = $get($row, 'minimum_stock') ?: $get($row, 'minimum_stock_umum');
-            $minStockCk        = $get($row, 'min_stock_ck') ?: $get($row, 'minimum_stock_ck');
-            $minStockUtama     = $get($row, 'min_stock_gudang_utama');
-            $minStockKejingga  = $get($row, 'minimum_stock_kejingga');
-            $minStockGaharu    = $get($row, 'minimum_stock_gaharu');
             $minOrder          = $get($row, 'minimum_order');
 
-            // Outlet & Divisi columns
-            $minKejinggaKitchen = $get($row, 'min_stock_kejingga_kitchen');
-            $minKejinggaBarista = $get($row, 'min_stock_kejingga_barista');
-            $minKejinggaServer  = $get($row, 'min_stock_kejingga_server');
-            $minGaharuKitchen   = $get($row, 'min_stock_gaharu_kitchen');
-            $minGaharuBarista   = $get($row, 'min_stock_gaharu_barista');
-            $minGaharuServer    = $get($row, 'min_stock_gaharu_server');
-            $minB2b             = $get($row, 'min_stock_b2b');
+            // Load semua master gudang & divisi untuk pencocokan kolom dinamis
+            $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
+
+            // Kumpulkan nilai minimum stock dari seluruh kolom (baik dinamis maupun legacy)
+            // Format: [ ['gudang_id' => ..., 'divisi_id' => ..., 'val' => ...], ... ]
+            $minStockEntries = [];
+
+            foreach ($allGudangs as $g) {
+                $slugG = \Illuminate\Support\Str::slug($g->nama, '_');
+                if ($g->divisi->count() > 0) {
+                    foreach ($g->divisi as $d) {
+                        $slugD = \Illuminate\Support\Str::slug($d->nama, '_');
+                        // Cek beberapa kemungkinan nama kolom
+                        $val = $get($row, "min_stock_{$slugG}_{$slugD}");
+                        if ($val === '') {
+                            // Cek format legacy jika ada (e.g. min_stock_kejingga_kitchen, min_stock_gaharu_kitchen)
+                            if (str_contains(strtolower($g->nama), 'kejingga')) {
+                                if (str_contains(strtolower($d->nama), 'kitchen')) $val = $get($row, 'min_stock_kejingga_kitchen');
+                                elseif (str_contains(strtolower($d->nama), 'barista')) $val = $get($row, 'min_stock_kejingga_barista');
+                                elseif (str_contains(strtolower($d->nama), 'server')) $val = $get($row, 'min_stock_kejingga_server');
+                            } elseif (str_contains(strtolower($g->nama), 'gaharu')) {
+                                if (str_contains(strtolower($d->nama), 'kitchen')) $val = $get($row, 'min_stock_gaharu_kitchen');
+                                elseif (str_contains(strtolower($d->nama), 'barista')) $val = $get($row, 'min_stock_gaharu_barista');
+                                elseif (str_contains(strtolower($d->nama), 'server')) $val = $get($row, 'min_stock_gaharu_server');
+                            }
+                        }
+
+                        if ($val !== '') {
+                            $minStockEntries[] = [
+                                'gudang_id' => $g->id,
+                                'divisi_id' => $d->id,
+                                'val'       => $val,
+                            ];
+                        }
+                    }
+                } else {
+                    $val = $get($row, "min_stock_{$slugG}");
+                    if ($val === '') {
+                        if (str_contains(strtolower($g->nama), 'central kitchen')) {
+                            $val = $get($row, 'min_stock_ck') ?: $get($row, 'minimum_stock_ck');
+                        } elseif (str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama')) {
+                            $val = $get($row, 'min_stock_gudang_utama');
+                        } elseif (str_contains(strtolower($g->nama), 'b2b')) {
+                            $val = $get($row, 'min_stock_b2b');
+                        }
+                    }
+
+                    if ($val !== '') {
+                        $minStockEntries[] = [
+                            'gudang_id' => $g->id,
+                            'divisi_id' => null,
+                            'val'       => $val,
+                        ];
+                    }
+                }
+            }
 
             if ($kodeBarang === '' || $nama === '') {
                 $this->errors[] = "Baris {$excelRowNum}: kode_barang atau nama kosong, dilewati.";
@@ -114,81 +158,25 @@ class MasterBarangImporter
             if ($exists) {
                 // UPDATE MINIMUM STOCK untuk barang yang sudah ada
                 try {
-                    DB::transaction(function () use ($exists, $minStock, $minStockCk, $minStockUtama, $minStockKejingga, $minStockGaharu, $minKejinggaKitchen, $minKejinggaBarista, $minKejinggaServer, $minGaharuKitchen, $minGaharuBarista, $minGaharuServer, $minB2b, $numeric) {
-                        $updateData = [];
-                        if ($minStock !== '') $updateData['minimum_stock'] = $numeric($minStock, 0);
-                        if ($minStockCk !== '') $updateData['minimum_stock_ck'] = $numeric($minStockCk, 0);
-                        if ($minStockKejingga !== '') $updateData['minimum_stock_kejingga'] = $numeric($minStockKejingga, 0);
-                        if ($minStockGaharu !== '') $updateData['minimum_stock_gaharu'] = $numeric($minStockGaharu, 0);
-                        
-                        if (!empty($updateData)) {
-                            $exists->update($updateData);
+                    DB::transaction(function () use ($exists, $minStock, $minStockEntries, $numeric) {
+                        if ($minStock !== '') {
+                            $exists->update(['minimum_stock' => $numeric($minStock, 0)]);
                         }
 
-                        // Simpan / update minimum stock per outlet & divisi
-                        $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
-                        $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
-                        $gudangUtama = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama'));
-                        $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
-                        $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
-                        $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
-
-                        $saveMin = function ($gudangId, $divisiId, $val) use ($exists, $numeric) {
-                            if ($gudangId && $val !== '' && $val !== null) {
+                        // Simpan / update minimum stock per outlet & divisi dinamis
+                        foreach ($minStockEntries as $entry) {
+                            if ($entry['gudang_id'] && $entry['val'] !== '' && $entry['val'] !== null) {
                                 \App\Models\BarangMinimumStock::updateOrCreate(
                                     [
                                         'barang_id' => $exists->id,
-                                        'gudang_id' => $gudangId,
-                                        'divisi_id' => $divisiId,
+                                        'gudang_id' => $entry['gudang_id'],
+                                        'divisi_id' => $entry['divisi_id'],
                                     ],
                                     [
-                                        'minimum_stock' => $numeric($val, 0),
+                                        'minimum_stock' => $numeric($entry['val'], 0),
                                         'is_active'     => true,
                                     ]
                                 );
-                            }
-                        };
-
-                        // Central Kitchen
-                        if ($ckGudang && $minStockCk !== '') {
-                            $saveMin($ckGudang->id, null, $minStockCk);
-                        }
-
-                        // Gudang Utama
-                        if ($gudangUtama && $minStockUtama !== '') {
-                            $saveMin($gudangUtama->id, null, $minStockUtama);
-                        }
-
-                        // B2B
-                        if ($b2bGudang && $minB2b !== '') {
-                            $saveMin($b2bGudang->id, null, $minB2b);
-                        }
-
-                        // KeJingga
-                        if ($kejinggaGudang) {
-                            $divKitchen = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen'));
-                            $divBarista = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista'));
-                            $divServer  = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server'));
-
-                            if ($minKejinggaKitchen !== '') $saveMin($kejinggaGudang->id, $divKitchen?->id, $minKejinggaKitchen);
-                            if ($minKejinggaBarista !== '') $saveMin($kejinggaGudang->id, $divBarista?->id, $minKejinggaBarista);
-                            if ($minKejinggaServer !== '')  $saveMin($kejinggaGudang->id, $divServer?->id, $minKejinggaServer);
-                            if ($minStockKejingga !== '' && $minKejinggaKitchen === '' && $minKejinggaBarista === '' && $minKejinggaServer === '') {
-                                $saveMin($kejinggaGudang->id, null, $minStockKejingga);
-                            }
-                        }
-
-                        // Gaharu
-                        if ($gaharuGudang) {
-                            $divKitchen = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen'));
-                            $divBarista = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista'));
-                            $divServer  = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server'));
-
-                            if ($minGaharuKitchen !== '') $saveMin($gaharuGudang->id, $divKitchen?->id, $minGaharuKitchen);
-                            if ($minGaharuBarista !== '') $saveMin($gaharuGudang->id, $divBarista?->id, $minGaharuBarista);
-                            if ($minGaharuServer !== '')  $saveMin($gaharuGudang->id, $divServer?->id, $minGaharuServer);
-                            if ($minStockGaharu !== '' && $minGaharuKitchen === '' && $minGaharuBarista === '' && $minGaharuServer === '') {
-                                $saveMin($gaharuGudang->id, null, $minStockGaharu);
                             }
                         }
                     });
@@ -242,8 +230,8 @@ class MasterBarangImporter
                 DB::transaction(function () use (
                     $kategori, $kodeBarang, $nama, $satuan, $satuanPembelian,
                     $konversiPembelian, $jenisUtama, $tipePenjualan,
-                    $hargaB2bVal, $hargaPosVal, $hpp, $minStock, $minStockCk, $minStockUtama, $minStockKejingga, $minStockGaharu, $minOrder,
-                    $minKejinggaKitchen, $minKejinggaBarista, $minKejinggaServer, $minGaharuKitchen, $minGaharuBarista, $minGaharuServer, $minB2b,
+                    $hargaB2bVal, $hargaPosVal, $hpp, $minStock, $minOrder,
+                    $minStockEntries,
                     $numeric
                 ) {
                     $barang = MasterBarang::create([
@@ -264,74 +252,21 @@ class MasterBarangImporter
                         'harga_jual_pos'        => $hargaPosVal,
                         'is_active'             => true,
                         'minimum_stock'         => $minStock !== '' ? $numeric($minStock, 0) : null,
-                        'minimum_stock_ck'      => $minStockCk !== '' ? $numeric($minStockCk, 0) : null,
-                        'minimum_stock_kejingga' => $minStockKejingga !== '' ? $numeric($minStockKejingga, 0) : null,
-                        'minimum_stock_gaharu'  => $minStockGaharu !== '' ? $numeric($minStockGaharu, 0) : null,
                         'minimum_order'         => $numeric($minOrder, 1),
                         'tipe_penjualan'        => $tipePenjualan,
                     ]);
 
-                    // Simpan minimum stock per outlet & divisi jika jenis BAHAN_BAKU
+                    // Simpan minimum stock per outlet & divisi dinamis jika jenis BAHAN_BAKU
                     if ($jenisUtama === 'BAHAN_BAKU') {
-                        $allGudangs = \App\Models\MasterGudang::with('divisi')->get();
-                        $ckGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'central kitchen'));
-                        $gudangUtama = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gudang utama') || str_contains(strtolower($g->nama), 'utama'));
-                        $b2bGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'b2b'));
-                        $gaharuGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'gaharu'));
-                        $kejinggaGudang = $allGudangs->first(fn($g) => str_contains(strtolower($g->nama), 'kejingga'));
-
-                        $saveMin = function ($gudangId, $divisiId, $val) use ($barang, $numeric) {
-                            if ($gudangId && $val !== '' && $val !== null) {
+                        foreach ($minStockEntries as $entry) {
+                            if ($entry['gudang_id'] && $entry['val'] !== '' && $entry['val'] !== null) {
                                 \App\Models\BarangMinimumStock::create([
                                     'barang_id'     => $barang->id,
-                                    'gudang_id'     => $gudangId,
-                                    'divisi_id'     => $divisiId,
-                                    'minimum_stock' => $numeric($val, 0),
+                                    'gudang_id'     => $entry['gudang_id'],
+                                    'divisi_id'     => $entry['divisi_id'],
+                                    'minimum_stock' => $numeric($entry['val'], 0),
                                     'is_active'     => true,
                                 ]);
-                            }
-                        };
-
-                        // Central Kitchen
-                        if ($ckGudang && $minStockCk !== '') {
-                            $saveMin($ckGudang->id, null, $minStockCk);
-                        }
-
-                        // Gudang Utama
-                        if ($gudangUtama && $minStockUtama !== '') {
-                            $saveMin($gudangUtama->id, null, $minStockUtama);
-                        }
-
-                        // B2B
-                        if ($b2bGudang && $minB2b !== '') {
-                            $saveMin($b2bGudang->id, null, $minB2b);
-                        }
-
-                        // KeJingga
-                        if ($kejinggaGudang) {
-                            $divKitchen = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen'));
-                            $divBarista = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista'));
-                            $divServer  = $kejinggaGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server'));
-
-                            if ($minKejinggaKitchen !== '') $saveMin($kejinggaGudang->id, $divKitchen?->id, $minKejinggaKitchen);
-                            if ($minKejinggaBarista !== '') $saveMin($kejinggaGudang->id, $divBarista?->id, $minKejinggaBarista);
-                            if ($minKejinggaServer !== '')  $saveMin($kejinggaGudang->id, $divServer?->id, $minKejinggaServer);
-                            if ($minStockKejingga !== '' && $minKejinggaKitchen === '' && $minKejinggaBarista === '' && $minKejinggaServer === '') {
-                                $saveMin($kejinggaGudang->id, null, $minStockKejingga);
-                            }
-                        }
-
-                        // Gaharu
-                        if ($gaharuGudang) {
-                            $divKitchen = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'kitchen'));
-                            $divBarista = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'barista'));
-                            $divServer  = $gaharuGudang->divisi->first(fn($d) => str_contains(strtolower($d->nama), 'server'));
-
-                            if ($minGaharuKitchen !== '') $saveMin($gaharuGudang->id, $divKitchen?->id, $minGaharuKitchen);
-                            if ($minGaharuBarista !== '') $saveMin($gaharuGudang->id, $divBarista?->id, $minGaharuBarista);
-                            if ($minGaharuServer !== '')  $saveMin($gaharuGudang->id, $divServer?->id, $minGaharuServer);
-                            if ($minStockGaharu !== '' && $minGaharuKitchen === '' && $minGaharuBarista === '' && $minGaharuServer === '') {
-                                $saveMin($gaharuGudang->id, null, $minStockGaharu);
                             }
                         }
                     }

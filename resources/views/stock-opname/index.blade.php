@@ -17,14 +17,7 @@
             </p>
         </div>
 
-        <div class="d-flex align-items-center gap-2">
-            <form action="{{ route('stock-opname.index') }}" method="GET" class="d-flex gap-2">
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari no opname/ket..." value="{{ request('search') }}" style="width: 200px; border-radius: 6px;">
-                <button type="submit" class="btn btn-sm btn-primary" style="border-radius: 6px;">Cari</button>
-                @if(request('search'))
-                    <a href="{{ route('stock-opname.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px;">Reset</a>
-                @endif
-            </form>
+        <div>
             <button
                 class="btn btn-primary px-4"
                 data-bs-toggle="modal"
@@ -32,6 +25,63 @@
                 <i class="bi bi-plus-circle me-2"></i>
                 Buat Stock Opname
             </button>
+        </div>
+    </div>
+
+    {{-- FILTER FORM CARD --}}
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-body p-3">
+            <form action="{{ route('stock-opname.index') }}" method="GET" class="row g-2 align-items-center">
+                <div class="col-12 col-md-3">
+                    <label class="form-label text-muted small fw-semibold mb-1">Cari Opname / Ket</label>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" name="search" class="form-control form-control-sm border-start-0" placeholder="Kode opname / keterangan..." value="{{ request('search') }}">
+                    </div>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label text-muted small fw-semibold mb-1">Filter Gudang</label>
+                    <select name="gudang_id" class="form-select form-select-sm">
+                        <option value="">-- Semua Gudang --</option>
+                        @foreach($gudangs as $g)
+                            <option value="{{ $g->id }}" {{ request('gudang_id') == $g->id ? 'selected' : '' }}>
+                                {{ $g->nama }} ({{ $g->kategori }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-muted small fw-semibold mb-1">Kategori Barang</label>
+                    <select name="kategori_id" class="form-select form-select-sm">
+                        <option value="">-- Semua Kategori --</option>
+                        @foreach($kategoris as $k)
+                            <option value="{{ $k->id }}" {{ request('kategori_id') == $k->id ? 'selected' : '' }}>
+                                {{ $k->nama }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label text-muted small fw-semibold mb-1">Jenis Barang</label>
+                    <select name="jenis_barang" class="form-select form-select-sm">
+                        <option value="">-- Semua Jenis --</option>
+                        <option value="bahan_baku" {{ request('jenis_barang') == 'bahan_baku' ? 'selected' : '' }}>Bahan Baku</option>
+                        <option value="bahan_setengah_jadi" {{ request('jenis_barang') == 'bahan_setengah_jadi' ? 'selected' : '' }}>Bahan Setengah Jadi</option>
+                        <option value="barang_jadi" {{ request('jenis_barang') == 'barang_jadi' ? 'selected' : '' }}>Barang Jadi</option>
+                        <option value="operational" {{ request('jenis_barang') == 'operational' ? 'selected' : '' }}>Operational</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2 d-flex align-items-end gap-1" style="padding-top: 22px;">
+                    <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                        <i class="bi bi-funnel me-1"></i> Filter
+                    </button>
+                    @if(request()->hasAny(['search', 'gudang_id', 'kategori_id', 'jenis_barang']))
+                        <a href="{{ route('stock-opname.index') }}" class="btn btn-sm btn-secondary" title="Reset Filter">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </a>
+                    @endif
+                </div>
+            </form>
         </div>
     </div>
 
@@ -285,24 +335,53 @@ function renderDetailOpname(data) {
     let grandTotal = 0;
 
     data.details.forEach(function (detail, index) {
-        let selisihBadge = '<span class="badge bg-secondary">0</span>';
+        let selisihBadge = `<span class="badge bg-secondary">0 ${detail.satuan}</span>`;
 
         if (detail.selisih < 0) {
-            selisihBadge = `<span class="badge bg-danger">${detail.selisih.toLocaleString('id-ID')}</span>`;
+            selisihBadge = `<span class="badge bg-danger">${detail.selisih.toLocaleString('id-ID')} ${detail.satuan}</span>`;
         } else if (detail.selisih > 0) {
-            selisihBadge = `<span class="badge bg-success">+${detail.selisih.toLocaleString('id-ID')}</span>`;
+            selisihBadge = `<span class="badge bg-success">+${detail.selisih.toLocaleString('id-ID')} ${detail.satuan}</span>`;
         }
+
+        let konvSistem = detail.has_konversi
+            ? `<div class="small text-primary mt-1" style="font-size:0.75rem;"><i class="bi bi-arrow-repeat me-1"></i>${detail.stok_sistem_konv.toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${detail.satuan_pembelian}</div>`
+            : '';
+
+        let konvFisik = detail.has_konversi
+            ? `<div class="small text-primary mt-1" style="font-size:0.75rem;"><i class="bi bi-arrow-repeat me-1"></i>${detail.stok_fisik_konv.toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${detail.satuan_pembelian}</div>`
+            : '';
+
+        let konvSelisih = detail.has_konversi
+            ? `<div class="small ${detail.selisih > 0 ? 'text-success' : (detail.selisih < 0 ? 'text-danger' : 'text-muted')} mt-1 font-monospace" style="font-size:0.75rem;">(${detail.selisih > 0 ? '+' : ''}${detail.selisih_konv.toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${detail.satuan_pembelian})</div>`
+            : '';
+
+        let konvHeader = detail.has_konversi
+            ? `<small class="text-primary d-block font-monospace" style="font-size:0.72rem;">1 ${detail.satuan_pembelian} = ${detail.konversi_pembelian.toLocaleString('id-ID')} ${detail.satuan}</small>`
+            : '';
 
         grandTotal += detail.nilai_selisih;
 
         rows += `
             <tr>
                 <td>${index + 1}</td>
-                <td>${detail.nama_barang}</td>
-                <td>${detail.stok_sistem.toLocaleString('id-ID')} ${detail.satuan}</td>
-                <td>${detail.stok_fisik.toLocaleString('id-ID')} ${detail.satuan}</td>
-                <td>${selisihBadge}</td>
-                <td>Rp ${detail.nilai_selisih.toLocaleString('id-ID')}</td>
+                <td>
+                    <div class="fw-bold">${detail.nama_barang}</div>
+                    <small class="text-muted font-monospace">${detail.kode_barang}</small>
+                    ${konvHeader}
+                </td>
+                <td>
+                    <div>${detail.stok_sistem.toLocaleString('id-ID')} <span class="text-muted small">${detail.satuan}</span></div>
+                    ${konvSistem}
+                </td>
+                <td>
+                    <div>${detail.stok_fisik.toLocaleString('id-ID')} <span class="text-muted small">${detail.satuan}</span></div>
+                    ${konvFisik}
+                </td>
+                <td>
+                    ${selisihBadge}
+                    ${konvSelisih}
+                </td>
+                <td class="fw-bold">Rp ${detail.nilai_selisih.toLocaleString('id-ID')}</td>
             </tr>
         `;
     });

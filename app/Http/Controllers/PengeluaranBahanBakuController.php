@@ -469,6 +469,8 @@ class PengeluaranBahanBakuController extends Controller
             'divisi',
         ])->findOrFail($id);
 
+        $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+
         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
         $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
 
@@ -479,19 +481,30 @@ class PengeluaranBahanBakuController extends Controller
                 $est = $this->fifoService->getEstimatedHargaFIFO(
                     $detail->barang_id,
                     $detail->qty,
-                    $pengeluaran->gudang_id ?? 1,
-                    $pengeluaran->divisi_id
+                    $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                    $isWasted ? $pengeluaran->divisi_id : null
                 );
                 $detail->hpp_total = $est['total_harga'];
             }
-            $stokUtama = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
-            $detail->stok_gudang_utama = $stokUtama;
-            $detail->kekurangan = max(0, (float)$detail->qty - $stokUtama);
+
+            if ($isWasted) {
+                $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
+                if ($pengeluaran->divisi_id) {
+                    $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
+                }
+                $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
+            } else {
+                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
+            }
+
+            $detail->stok_tersedia = $stokTersedia;
+            $detail->stok_gudang_utama = $stokTersedia; // backward compatibility
+            $detail->kekurangan = max(0, (float)$detail->qty - $stokTersedia);
         }
 
         return view(
             'pengeluaran-bahan-baku.show',
-            compact('pengeluaran', 'gudangUtama', 'isApproved')
+            compact('pengeluaran', 'gudangUtama', 'isApproved', 'isWasted')
         );
     }
 
@@ -506,6 +519,8 @@ class PengeluaranBahanBakuController extends Controller
             'divisi',
         ])->findOrFail($id);
 
+        $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+
         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
         $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
 
@@ -514,14 +529,14 @@ class PengeluaranBahanBakuController extends Controller
         $grandTotal = 0;
         $totalKurang = 0;
 
-        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $gudangUtamaId, &$grandTotal, &$totalKurang) {
+        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $gudangUtamaId, &$grandTotal, &$totalKurang) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
             if (!$isApproved) {
                 $est = $this->fifoService->getEstimatedHargaFIFO(
                     $detail->barang_id,
                     $detail->qty,
-                    $pengeluaran->gudang_id ?? 1,
-                    $pengeluaran->divisi_id
+                    $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                    $isWasted ? $pengeluaran->divisi_id : null
                 );
                 $hppTotal = (float) ($est['total_harga'] ?? 0);
             }
@@ -529,8 +544,18 @@ class PengeluaranBahanBakuController extends Controller
             $hargaSatuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
 
             $qtyDiminta = (float) $detail->qty;
-            $stokUtama  = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
-            $kekurangan = max(0, $qtyDiminta - $stokUtama);
+
+            if ($isWasted) {
+                $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
+                if ($pengeluaran->divisi_id) {
+                    $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
+                }
+                $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
+            } else {
+                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
+            }
+
+            $kekurangan = max(0, $qtyDiminta - $stokTersedia);
 
             if ($kekurangan > 0) {
                 $totalKurang++;
@@ -538,10 +563,10 @@ class PengeluaranBahanBakuController extends Controller
 
             $satuan = $detail->barang->satuan ?? ($detail->satuan ?? 'pcs');
 
-            if ($stokUtama >= $qtyDiminta) {
+            if ($stokTersedia >= $qtyDiminta) {
                 $statusStok = 'Tersedia Penuh';
                 $statusColor = 'success';
-            } elseif ($stokUtama > 0) {
+            } elseif ($stokTersedia > 0) {
                 $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
                 $statusColor = 'warning';
             } else {
@@ -549,12 +574,21 @@ class PengeluaranBahanBakuController extends Controller
                 $statusColor = 'danger';
             }
 
+            $bItem       = $detail->barang;
+            $satuanBeli  = $bItem->satuan_pembelian ?? '';
+            $konversi    = (float) ($bItem->konversi_pembelian ?? 1);
+            $hasKonv     = ($satuanBeli && $konversi > 1 && $satuanBeli !== $satuan);
+
             return [
                 'nama_barang'        => $detail->barang->nama ?? '-',
                 'kode_barang'        => $detail->barang->kode_barang ?? '-',
                 'satuan'             => $satuan,
+                'satuan_pembelian'   => $satuanBeli,
+                'konversi_pembelian' => $konversi,
+                'has_konversi'       => $hasKonv,
                 'qty'                => $qtyDiminta,
-                'stok_gudang_utama'  => $stokUtama,
+                'stok_tersedia'      => $stokTersedia,
+                'stok_gudang_utama'  => $stokTersedia, // backward compatibility
                 'kekurangan'         => $kekurangan,
                 'status_stok'        => $statusStok,
                 'status_color'       => $statusColor,
@@ -568,6 +602,8 @@ class PengeluaranBahanBakuController extends Controller
             'permintaan bahan baku untuk'
         );
 
+        $lokasiNama = ($pengeluaran->gudang->nama ?? '-') . ($pengeluaran->divisi ? ' - ' . $pengeluaran->divisi->nama : '');
+
         return response()->json([
             'id'                  => $pengeluaran->id,
             'kode_pengeluaran'    => $pengeluaran->kode_pengeluaran,
@@ -575,6 +611,9 @@ class PengeluaranBahanBakuController extends Controller
             'gudang_nama'         => $pengeluaran->gudang->nama ?? '-',
             'gudang_utama_nama'   => $gudangUtama->nama ?? 'Gudang Utama',
             'divisi_nama'         => $pengeluaran->divisi->nama ?? null,
+            'lokasi_nama'         => $lokasiNama,
+            'is_wasted'           => $isWasted,
+            'jenis_pengeluaran'   => $pengeluaran->jenis_pengeluaran ?? ($isWasted ? 'wasted' : 'transfer'),
             'status'              => $pengeluaran->status,
             'is_approved'         => $isApproved,
             'keterangan'          => $pengeluaran->keterangan ?? '-',
@@ -590,7 +629,7 @@ class PengeluaranBahanBakuController extends Controller
     }
 
     /**
-     * Cetak / Download PDF Surat Permintaan & Transfer Bahan Baku
+     * Cetak / Download PDF Surat Permintaan & Transfer Bahan Baku / Wasted
      */
     public function cetakPdf(string $id)
     {
@@ -600,6 +639,8 @@ class PengeluaranBahanBakuController extends Controller
             'divisi',
             'user',
         ])->findOrFail($id);
+
+        $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
 
         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
         $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
@@ -613,8 +654,8 @@ class PengeluaranBahanBakuController extends Controller
                 $est = $this->fifoService->getEstimatedHargaFIFO(
                     $detail->barang_id,
                     $detail->qty,
-                    $pengeluaran->gudang_id ?? 1,
-                    $pengeluaran->divisi_id
+                    $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                    $isWasted ? $pengeluaran->divisi_id : null
                 );
                 $hppTotal = (float) ($est['total_harga'] ?? 0);
             }
@@ -622,15 +663,26 @@ class PengeluaranBahanBakuController extends Controller
             $detail->calculated_hpp = $hppTotal;
             $detail->harga_satuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
 
-            $stokUtama = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
-            $detail->stok_gudang_utama = $stokUtama;
-            $detail->kekurangan = max(0, (float)$detail->qty - $stokUtama);
+            if ($isWasted) {
+                $stokGudangQuery = StokGudang::where('barang_id', $detail->barang_id)->where('gudang_id', $pengeluaran->gudang_id);
+                if ($pengeluaran->divisi_id) {
+                    $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
+                }
+                $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
+            } else {
+                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
+            }
+
+            $detail->stok_tersedia = $stokTersedia;
+            $detail->stok_gudang_utama = $stokTersedia; // backward compatibility
+            $detail->kekurangan = max(0, (float)$detail->qty - $stokTersedia);
         }
 
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
-        $pdf->loadView('pengeluaran-bahan-baku.pdf', compact('pengeluaran', 'gudangUtama', 'grandTotal', 'isApproved'));
+        $pdf->loadView('pengeluaran-bahan-baku.pdf', compact('pengeluaran', 'gudangUtama', 'grandTotal', 'isApproved', 'isWasted'));
 
-        return $pdf->stream('Transfer-Bahan-' . $pengeluaran->kode_pengeluaran . '.pdf');
+        $filename = ($isWasted ? 'Berita-Acara-Wasted-' : 'Transfer-Bahan-') . $pengeluaran->kode_pengeluaran . '.pdf';
+        return $pdf->stream($filename);
     }
 
     /**

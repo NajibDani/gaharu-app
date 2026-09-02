@@ -154,15 +154,33 @@
             <div class="card-header text-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2"
                  style="background:#7A4517;">
 
-                <span>Detail Stock Opname Barang</span>
+                <span><i class="bi bi-box-seam me-1"></i> Detail Stock Opname Barang</span>
 
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    {{-- Filter Kategori --}}
+                    <select id="filterKategoriInput" class="form-select form-select-sm bg-white text-dark" style="width: 170px; border-radius: 6px;" onchange="applyFilters()">
+                        <option value="">-- Semua Kategori --</option>
+                        @foreach($kategoris as $kat)
+                            <option value="{{ $kat->id }}">{{ $kat->nama }}</option>
+                        @endforeach
+                    </select>
+
+                    {{-- Filter Jenis Barang --}}
+                    <select id="filterJenisInput" class="form-select form-select-sm bg-white text-dark" style="width: 170px; border-radius: 6px;" onchange="applyFilters()">
+                        <option value="">-- Semua Jenis --</option>
+                        <option value="bahan_baku">Bahan Baku</option>
+                        <option value="bahan_setengah_jadi">Bahan Setengah Jadi</option>
+                        <option value="barang_jadi">Barang Jadi</option>
+                        <option value="operational">Operational</option>
+                    </select>
+
+                    {{-- Search Keyword --}}
                     <input type="text" 
                            id="searchBarangInput" 
-                           class="form-control form-control-sm" 
-                           placeholder="Cari kode / nama barang..." 
-                           style="width: 220px; border-radius: 6px;"
-                           oninput="onSearchFilter(this.value)">
+                           class="form-control form-control-sm bg-white text-dark" 
+                           placeholder="Cari kode / nama..." 
+                           style="width: 180px; border-radius: 6px;"
+                           oninput="applyFilters()">
                 </div>
 
             </div>
@@ -380,19 +398,43 @@ function loadBarang()
     });
 }
 
-function onSearchFilter(keyword) {
-    let kw = (keyword || '').toLowerCase().trim();
-    if (!kw) {
-        filteredItems = [...rawItems];
-    } else {
-        filteredItems = rawItems.filter(item => {
+function applyFilters() {
+    let kw = (document.getElementById('searchBarangInput')?.value || '').toLowerCase().trim();
+    let kategoriId = document.getElementById('filterKategoriInput')?.value || '';
+    let jenis = document.getElementById('filterJenisInput')?.value || '';
+
+    filteredItems = rawItems.filter(item => {
+        // Filter keyword
+        if (kw) {
             let kode = (item.kode_barang || '').toLowerCase();
             let nama = (item.nama || '').toLowerCase();
-            return kode.includes(kw) || nama.includes(kw);
-        });
-    }
+            if (!kode.includes(kw) && !nama.includes(kw)) {
+                return false;
+            }
+        }
+
+        // Filter kategori
+        if (kategoriId && String(item.kategori_id) !== String(kategoriId)) {
+            return false;
+        }
+
+        // Filter jenis barang
+        if (jenis) {
+            if (jenis === 'bahan_baku' && !item.is_bahan_baku) return false;
+            if (jenis === 'bahan_setengah_jadi' && !item.is_bahan_setengah_jadi) return false;
+            if (jenis === 'barang_jadi' && !item.is_barang_jadi) return false;
+            if (jenis === 'operational' && !item.is_operational) return false;
+        }
+
+        return true;
+    });
+
     currentPage = 1;
     renderPagination();
+}
+
+function onSearchFilter(keyword) {
+    applyFilters();
 }
 
 function changePage(page) {
@@ -414,7 +456,7 @@ function renderPagination() {
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="text-center text-muted py-4">
-                    Tidak ada barang yang sesuai dengan filter.
+                    Tidak ada barang yang sesuai dengan filter pencarian / kategori / jenis.
                 </td>
             </tr>
         `;
@@ -432,10 +474,43 @@ function renderPagination() {
         let uv = userValues[item.id] || { stok_fisik: parseFloat(item.stok || 0), selisih: 0, nilai: 0 };
         let stokSistem = parseFloat(item.stok || 0);
         let selisih = uv.stok_fisik - stokSistem;
+        let konversi = parseFloat(item.konversi_pembelian || 1);
+        let hasKonversi = item.satuan_pembelian && konversi > 1;
 
         let selisihClass = 'text-secondary';
         if (selisih > 0) selisihClass = 'text-success fw-bold';
         else if (selisih < 0) selisihClass = 'text-danger fw-bold';
+
+        let satuanHtml = `
+            <div>${item.satuan || 'pcs'}</div>
+            ${hasKonversi ? `<small class="text-primary d-block font-monospace" style="font-size:0.72rem;">1 ${item.satuan_pembelian} = ${konversi.toLocaleString('id-ID')} ${item.satuan}</small>` : ''}
+        `;
+
+        let stokSistemHtml = `
+            <div>${stokSistem.toLocaleString('id-ID')} <span class="text-muted small">${item.satuan || 'pcs'}</span></div>
+            ${hasKonversi ? `<div class="small text-primary mt-1" style="font-size:0.75rem;"><i class="bi bi-arrow-repeat me-1"></i>${(stokSistem / konversi).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${item.satuan_pembelian}</div>` : ''}
+        `;
+
+        let konvFisikHtml = hasKonversi
+            ? `<span id="konv_fisik_${item.id}" class="small text-primary d-block mt-1" style="font-size:0.75rem;"><i class="bi bi-arrow-repeat me-1"></i>${(uv.stok_fisik / konversi).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${item.satuan_pembelian}</span>`
+            : '';
+
+        let konvSelisihHtml = hasKonversi
+            ? `<div id="konv_selisih_${item.id}" class="small ${selisih > 0 ? 'text-success' : (selisih < 0 ? 'text-danger' : 'text-muted')}" style="font-size:0.75rem;">(${(selisih / konversi).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${item.satuan_pembelian})</div>`
+            : '';
+
+        let badgeJenis = '';
+        if (item.is_bahan_setengah_jadi) {
+            badgeJenis = '<span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size:10px;">Setengah Jadi</span>';
+        } else if (item.is_barang_jadi) {
+            badgeJenis = '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:10px;">Barang Jadi</span>';
+        } else if (item.is_operational) {
+            badgeJenis = '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-1" style="font-size:10px;">Operasional</span>';
+        }
+
+        let kategoriHtml = item.kategori_nama 
+            ? `<div class="text-muted small" style="font-size:11px;"><i class="bi bi-tag me-1"></i>${item.kategori_nama} ${badgeJenis}</div>` 
+            : badgeJenis;
 
         tbody.innerHTML += `
             <tr data-barang-id="${item.id}">
@@ -443,13 +518,14 @@ function renderPagination() {
                     ${item.kode_barang}
                 </td>
                 <td class="fw-semibold">
-                    ${item.nama}
+                    <div>${item.nama}</div>
+                    ${kategoriHtml}
                 </td>
                 <td class="text-muted">
-                    ${item.satuan || 'pcs'}
+                    ${satuanHtml}
                 </td>
                 <td class="fw-semibold">
-                    ${stokSistem.toLocaleString('id-ID')}
+                    ${stokSistemHtml}
                 </td>
                 <td>
                     <input
@@ -458,12 +534,16 @@ function renderPagination() {
                         class="form-control form-control-sm stok-fisik fw-bold text-center"
                         data-barang-id="${item.id}"
                         data-stok="${stokSistem}"
+                        data-konversi="${konversi}"
+                        data-satuan-beli="${item.satuan_pembelian || ''}"
                         value="${uv.stok_fisik}">
+                    ${konvFisikHtml}
                 </td>
                 <td>
                     <span class="selisih ${selisihClass}" id="selisih_${item.id}">
-                        ${selisih.toLocaleString('id-ID')}
+                        ${selisih > 0 ? '+' : ''}${selisih.toLocaleString('id-ID')}
                     </span>
+                    ${konvSelisihHtml}
                 </td>
                 <td>
                     <span class="nilai fw-bold" id="nilai_${item.id}">
@@ -555,6 +635,8 @@ document.addEventListener('input', function(e){
 
     let barangId = e.target.dataset.barangId;
     let stokSistem = parseFloat(e.target.dataset.stok) || 0;
+    let konversi = parseFloat(e.target.dataset.konversi) || 1;
+    let satuanBeli = e.target.dataset.satuanBeli || '';
     let stokFisik = parseFloat(e.target.value);
     if (isNaN(stokFisik)) stokFisik = 0;
 
@@ -565,6 +647,19 @@ document.addEventListener('input', function(e){
     }
     userValues[barangId].stok_fisik = stokFisik;
     userValues[barangId].selisih = selisih;
+
+    // Update live conversion helper under input
+    let konvFisikEl = document.getElementById(`konv_fisik_${barangId}`);
+    if (konvFisikEl && satuanBeli && konversi > 1) {
+        konvFisikEl.innerHTML = `<i class="bi bi-arrow-repeat me-1"></i>${(stokFisik / konversi).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${satuanBeli}`;
+    }
+
+    // Update live conversion helper on selisih
+    let konvSelisihEl = document.getElementById(`konv_selisih_${barangId}`);
+    if (konvSelisihEl && satuanBeli && konversi > 1) {
+        konvSelisihEl.innerHTML = `(${(selisih / konversi).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${satuanBeli})`;
+        konvSelisihEl.className = `small ${selisih > 0 ? 'text-success' : (selisih < 0 ? 'text-danger' : 'text-muted')}`;
+    }
 
     // Update hidden field untuk submit
     let hiddenInput = document.getElementById(`hidden_fisik_${barangId}`);
@@ -606,7 +701,7 @@ document.addEventListener('input', function(e){
 
     let selisihElement = document.getElementById(`selisih_${barangId}`);
     if (selisihElement) {
-        selisihElement.innerHTML = selisih.toLocaleString('id-ID');
+        selisihElement.innerHTML = (selisih > 0 ? '+' : '') + selisih.toLocaleString('id-ID');
         if(selisih > 0) {
             selisihElement.className = 'selisih text-success fw-bold';
         } else if(selisih < 0) {

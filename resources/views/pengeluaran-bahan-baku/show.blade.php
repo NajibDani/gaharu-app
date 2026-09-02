@@ -21,16 +21,22 @@
 
 @php
     $grandTotal = 0;
+    $isWasted = $isWasted ?? ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+    $lokasiNama = ($pengeluaran->gudang->nama ?? '-') . ($pengeluaran->divisi ? ' (' . $pengeluaran->divisi->nama . ')' : '');
 @endphp
 
 <div class="page-header mb-4">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div>
             <h1 class="page-header-title">
-                Detail Permintaan / Transfer Bahan Baku
+                {{ $isWasted ? 'Detail Pengeluaran Bahan Wasted / Rusak' : 'Detail Permintaan / Transfer Bahan Baku' }}
             </h1>
             <p class="text-muted mb-0">
-                Informasi ketersediaan stok di Gudang Utama, jumlah diminta, kekurangan, dan kalkulasi FIFO.
+                @if($isWasted)
+                    Informasi ketersediaan stok di lokasi {{ $lokasiNama }}, kuantitas wasted, kekurangan, dan kalkulasi HPP.
+                @else
+                    Informasi ketersediaan stok di Gudang Utama, jumlah diminta, kekurangan, dan kalkulasi FIFO.
+                @endif
             </p>
         </div>
 
@@ -56,35 +62,57 @@
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="card p-3 h-100 shadow-sm border">
-                <small class="text-muted">Kode Pengeluaran / Transfer</small>
+                <small class="text-muted">Kode Pengeluaran / Dokumen</small>
                 <h5 class="fw-bold mb-0 text-dark font-monospace mt-1">
                     {{ $pengeluaran->kode_pengeluaran }}
                 </h5>
             </div>
         </div>
 
-        <div class="col-md-3">
-            <div class="card p-3 h-100 shadow-sm border">
-                <small class="text-muted">Gudang Sumber (Penyedia)</small>
-                <h6 class="fw-bold mb-0 text-primary mt-1">
-                    <i class="bi bi-building me-1"></i>{{ $gudangUtama->nama ?? 'Gudang Utama' }}
-                </h6>
+        @if($isWasted)
+            <div class="col-md-3">
+                <div class="card p-3 h-100 shadow-sm border">
+                    <small class="text-muted">Lokasi Terjadinya Wasted</small>
+                    <h6 class="fw-bold mb-0 text-danger mt-1">
+                        <i class="bi bi-geo-alt-fill me-1"></i>{{ $lokasiNama }}
+                    </h6>
+                    <small class="text-muted">Gudang Operasional</small>
+                </div>
             </div>
-        </div>
 
-        <div class="col-md-3">
-            <div class="card p-3 h-100 shadow-sm border">
-                <small class="text-muted">Gudang & Divisi Tujuan</small>
-                <h6 class="fw-bold mb-0 mt-1">
-                    {{ $pengeluaran->gudang->nama ?? '-' }}
-                    @if($pengeluaran->divisi)
-                        <span class="badge bg-light text-primary border border-primary-subtle d-inline-block mt-1">
-                            <i class="bi bi-diagram-3 me-1"></i>{{ $pengeluaran->divisi->nama }}
-                        </span>
-                    @endif
-                </h6>
+            <div class="col-md-3">
+                <div class="card p-3 h-100 shadow-sm border">
+                    <small class="text-muted">Jenis Pengeluaran</small>
+                    <div class="mt-1">
+                        <span class="badge bg-danger text-white px-2 py-1"><i class="bi bi-trash3 me-1"></i>Wasted / Rusak / Busuk</span>
+                    </div>
+                    <small class="text-muted">Pencatatan Kerusakan</small>
+                </div>
             </div>
-        </div>
+        @else
+            <div class="col-md-3">
+                <div class="card p-3 h-100 shadow-sm border">
+                    <small class="text-muted">Gudang Sumber (Penyedia)</small>
+                    <h6 class="fw-bold mb-0 text-primary mt-1">
+                        <i class="bi bi-building me-1"></i>{{ $gudangUtama->nama ?? 'Gudang Utama' }}
+                    </h6>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card p-3 h-100 shadow-sm border">
+                    <small class="text-muted">Gudang & Divisi Tujuan</small>
+                    <h6 class="fw-bold mb-0 mt-1">
+                        {{ $pengeluaran->gudang->nama ?? '-' }}
+                        @if($pengeluaran->divisi)
+                            <span class="badge bg-light text-primary border border-primary-subtle d-inline-block mt-1">
+                                <i class="bi bi-diagram-3 me-1"></i>{{ $pengeluaran->divisi->nama }}
+                            </span>
+                        @endif
+                    </h6>
+                </div>
+            </div>
+        @endif
 
         <div class="col-md-3">
             <div class="card p-3 h-100 shadow-sm border d-flex flex-column justify-content-between">
@@ -114,7 +142,7 @@
     <div class="card shadow-sm border">
         <div class="card-header text-white fw-bold d-flex justify-content-between align-items-center py-3" style="background:#7A4517;">
             <div>
-                <i class="bi bi-box-seam me-2"></i>Rincian Bahan Baku & Ketersediaan Stok Gudang Utama
+                <i class="bi bi-box-seam me-2"></i>{{ $isWasted ? 'Rincian Bahan Wasted & Ketersediaan Stok Lokasi' : 'Rincian Bahan Baku & Ketersediaan Stok Gudang Utama' }}
             </div>
             <span class="badge bg-light text-dark">{{ $pengeluaran->details->count() }} Item</span>
         </div>
@@ -126,8 +154,8 @@
                         <tr>
                             <th width="45" class="text-center">No</th>
                             <th>Kode & Nama Bahan</th>
-                            <th width="140" class="text-end">Jumlah Diminta</th>
-                            <th width="150" class="text-end">Stok Gudang Utama</th>
+                            <th width="140" class="text-end">{{ $isWasted ? 'Jumlah Wasted' : 'Jumlah Diminta' }}</th>
+                            <th width="160" class="text-end">{{ $isWasted ? ('Stok di ' . ($pengeluaran->divisi ? $pengeluaran->divisi->nama : $pengeluaran->gudang->nama)) : 'Stok Gudang Utama' }}</th>
                             <th width="140" class="text-end">Kekurangan</th>
                             <th width="140" class="text-center">Ketersediaan</th>
                             <th width="140" class="text-end">Harga Satuan</th>
@@ -142,18 +170,22 @@
                         @forelse($pengeluaran->details as $detail)
                             @php
                                 $qtyDiminta = (float) $detail->qty;
-                                $stokUtama  = (float) ($detail->stok_gudang_utama ?? 0);
-                                $kurang     = (float) ($detail->kekurangan ?? max(0, $qtyDiminta - $stokUtama));
-                                $satuan     = $detail->barang->satuan ?? ($detail->satuan ?? 'pcs');
+                                $stokTersedia = (float) ($detail->stok_tersedia ?? $detail->stok_gudang_utama ?? 0);
+                                $kurang     = (float) ($detail->kekurangan ?? max(0, $qtyDiminta - $stokTersedia));
+                                $bItem      = $detail->barang;
+                                $satuan     = $bItem->satuan ?? ($detail->satuan ?? 'pcs');
+                                $satuanBeli = $bItem->satuan_pembelian ?? '';
+                                $konversi   = (float) ($bItem->konversi_pembelian ?? 1);
+                                $hasKonv    = ($satuanBeli && $konversi > 1 && $satuanBeli !== $satuan);
 
                                 $hargaFIFO = $detail->qty > 0 ? $detail->hpp_total / $detail->qty : 0;
                                 $grandTotal += $detail->hpp_total;
                                 $totalDiminta += $qtyDiminta;
                                 $totalKurang += $kurang;
 
-                                if ($stokUtama >= $qtyDiminta) {
+                                if ($stokTersedia >= $qtyDiminta) {
                                     $statusPill = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Tersedia Penuh</span>';
-                                } elseif ($stokUtama > 0) {
+                                } elseif ($stokTersedia > 0) {
                                     $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">Kurang Sebagian</span>';
                                 } else {
                                     $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Stok Habis (0)</span>';
@@ -164,19 +196,37 @@
                                 <td>
                                     <div class="fw-bold text-dark">{{ $detail->barang->nama ?? '-' }}</div>
                                     <small class="text-muted font-monospace">{{ $detail->barang->kode_barang ?? '-' }}</small>
+                                    @if($hasKonv)
+                                        <div class="text-muted" style="font-size: 10.5px;">1 {{ $satuanBeli }} = {{ number_format($konversi, 0, ',', '.') }} {{ $satuan }}</div>
+                                    @endif
                                 </td>
                                 <td class="text-end fw-bold text-dark">
                                     {{ number_format($qtyDiminta, 2, ',', '.') }} <span class="text-muted fw-normal small">{{ $satuan }}</span>
+                                    @if($hasKonv)
+                                        <div class="text-primary fw-normal small" style="font-size: 11px;">
+                                            = {{ number_format($qtyDiminta / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
+                                        </div>
+                                    @endif
                                 </td>
                                 <td class="text-end">
-                                    <span class="fw-semibold {{ $stokUtama > 0 ? 'text-primary' : 'text-danger' }}">
-                                        {{ number_format($stokUtama, 2, ',', '.') }}
+                                    <span class="fw-semibold {{ $stokTersedia > 0 ? 'text-primary' : 'text-danger' }}">
+                                        {{ number_format($stokTersedia, 2, ',', '.') }}
                                     </span>
                                     <span class="text-muted fw-normal small">{{ $satuan }}</span>
+                                    @if($hasKonv)
+                                        <div class="text-muted small" style="font-size: 11px;">
+                                            = {{ number_format($stokTersedia / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
+                                        </div>
+                                    @endif
                                 </td>
                                 <td class="text-end">
                                     @if($kurang > 0)
                                         <span class="text-danger fw-bold">-{{ number_format($kurang, 2, ',', '.') }} <small class="fw-normal">{{ $satuan }}</small></span>
+                                        @if($hasKonv)
+                                            <div class="text-danger small" style="font-size: 11px;">
+                                                -{{ number_format($kurang / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
+                                            </div>
+                                        @endif
                                     @else
                                         <span class="text-success fw-semibold"><i class="bi bi-check2"></i> 0,00</span>
                                     @endif
@@ -184,14 +234,18 @@
                                 <td class="text-center">
                                     {!! $statusPill !!}
                                 </td>
+                                @php
+                                    $decSatShow = ($hargaFIFO > 0 && ($hargaFIFO < 1 || ($hargaFIFO < 100 && floor($hargaFIFO) != $hargaFIFO))) ? 4 : 2;
+                                    $decHppShow = ($detail->hpp_total > 0 && ($detail->hpp_total < 1 || ($detail->hpp_total < 100 && floor($detail->hpp_total) != $detail->hpp_total))) ? 4 : 2;
+                                @endphp
                                 <td class="text-end text-muted small">
-                                    Rp {{ number_format($hargaFIFO, 2, ',', '.') }}
+                                    Rp {{ number_format($hargaFIFO, $decSatShow, ',', '.') }}
                                     @if($pengeluaran->status !== 'approved' && $pengeluaran->status !== 'disetujui')
                                         <small class="text-muted d-block" style="font-size: 9px;">(Estimasi)</small>
                                     @endif
                                 </td>
                                 <td class="text-end fw-bold text-dark">
-                                    Rp {{ number_format($detail->hpp_total, 2, ',', '.') }}
+                                    Rp {{ number_format($detail->hpp_total, $decHppShow, ',', '.') }}
                                 </td>
                             </tr>
                         @empty
@@ -202,7 +256,7 @@
                     </tbody>
                     <tfoot class="table-light border-top fw-bold">
                         <tr>
-                            <td colspan="2" class="text-end">Total Diminta:</td>
+                            <td colspan="2" class="text-end">Total {{ $isWasted ? 'Wasted' : 'Diminta' }}:</td>
                             <td class="text-end text-dark">{{ number_format($totalDiminta, 2, ',', '.') }}</td>
                             <td></td>
                             <td class="text-end {{ $totalKurang > 0 ? 'text-danger' : 'text-success' }}">
@@ -240,7 +294,7 @@
                     <i class="bi bi-pencil-square me-1"></i> Edit Pengeluaran
                 </a>
             @endif
-            <a href="{{ route('pengeluaran-bahan-baku.approve', $pengeluaran->id) }}" class="btn btn-success fw-semibold" onclick="return confirm('Approve pengeluaran ini dan potong stok gudang utama?')">
+            <a href="{{ route('pengeluaran-bahan-baku.approve', $pengeluaran->id) }}" class="btn btn-success fw-semibold" onclick="return confirm('Approve pengeluaran ini dan potong stok di gudang terkait?')">
                 <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
             </a>
         </div>
@@ -253,6 +307,11 @@
 function downloadPageAsImage() {
     let now = new Date();
     let timestamp = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    let docSubtitle = "{{ $isWasted ? 'Berita Acara Pengeluaran Bahan Wasted / Rusak / Busuk' : 'Surat Permintaan & Transfer Bahan Baku - Distribusi Antar Gudang' }}";
+    let docType = "{{ $isWasted ? 'Bukti Pengeluaran Wasted' : 'Bukti Permintaan Bahan' }}";
+    let colQtyTitle = "{{ $isWasted ? 'QTY WASTED' : 'QTY DIMINTA' }}";
+    let colStokTitle = "{{ $isWasted ? 'STOK LOKASI' : 'STOK GDG UTAMA' }}";
 
     let container = document.createElement('div');
     container.style.position = 'fixed';
@@ -271,32 +330,51 @@ function downloadPageAsImage() {
         <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #7A4517; padding-bottom:14px; margin-bottom:18px;">
             <div>
                 <div style="font-size:20px; font-weight:800; color:#7A4517; letter-spacing:0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
-                <div style="font-size:11.5px; color:#64748b; margin-top:2px;">Surat Permintaan &amp; Transfer Bahan Baku - Distribusi Antar Gudang</div>
+                <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${docSubtitle}</div>
             </div>
             <div style="text-align:right;">
-                <div style="font-size:14px; font-weight:800; color:#0f172a; text-transform:uppercase;">Bukti Permintaan Bahan</div>
+                <div style="font-size:14px; font-weight:800; color:#0f172a; text-transform:uppercase;">${docType}</div>
                 <div style="font-size:11px; color:#64748b; margin-top:3px;">No. Dokumen: <strong style="font-family:monospace; color:#7A4517; font-size:12px;">{{ $pengeluaran->kode_pengeluaran }}</strong></div>
             </div>
         </div>
 
         <!-- INFO DETAIL GRID -->
         <table style="width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:18px; font-size:11.5px;">
-            <tr>
-                <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Gudang Sumber:</span> <strong style="color:#0f172a;">{{ $gudangUtama->nama ?? 'Gudang Utama' }}</strong> <span style="font-size:10px; color:#64748b;">(Penyedia)</span></div>
-                    <div><span style="color:#64748b; display:inline-block; width:135px;">Gudang Tujuan:</span> <strong style="color:#0f172a;">{{ $pengeluaran->gudang->nama ?? '-' }} @if($pengeluaran->divisi) (Divisi: {{ $pengeluaran->divisi->nama }}) @endif</strong></div>
-                </td>
-                <td style="padding:10px 14px; width:50%; vertical-align:top;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Pengajuan:</span> <strong style="color:#0f172a;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i') }}</strong></div>
-                    <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> 
-                        @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
-                            <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:4px;">APPROVED / DISETUJUI</span>
-                        @else
-                            <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:4px;">DRAFT / PENGAJUAN</span>
-                        @endif
-                    </div>
-                </td>
-            </tr>
+            @if($isWasted)
+                <tr>
+                    <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
+                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Lokasi Wasted:</span> <strong style="color:#0f172a;">{{ $lokasiNama }}</strong></div>
+                        <div><span style="color:#64748b; display:inline-block; width:135px;">Jenis Pengeluaran:</span> <strong style="color:#dc2626;">Wasted / Busuk / Rusak</strong></div>
+                    </td>
+                    <td style="padding:10px 14px; width:50%; vertical-align:top;">
+                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Laporan:</span> <strong style="color:#0f172a;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i') }}</strong></div>
+                        <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> 
+                            @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
+                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:4px;">APPROVED / DISETUJUI</span>
+                            @else
+                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:4px;">DRAFT / PENGAJUAN</span>
+                            @endif
+                        </div>
+                    </td>
+                </tr>
+            @else
+                <tr>
+                    <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
+                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Gudang Sumber:</span> <strong style="color:#0f172a;">{{ $gudangUtama->nama ?? 'Gudang Utama' }}</strong> <span style="font-size:10px; color:#64748b;">(Penyedia)</span></div>
+                        <div><span style="color:#64748b; display:inline-block; width:135px;">Gudang Tujuan:</span> <strong style="color:#0f172a;">{{ $pengeluaran->gudang->nama ?? '-' }} @if($pengeluaran->divisi) (Divisi: {{ $pengeluaran->divisi->nama }}) @endif</strong></div>
+                    </td>
+                    <td style="padding:10px 14px; width:50%; vertical-align:top;">
+                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Pengajuan:</span> <strong style="color:#0f172a;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i') }}</strong></div>
+                        <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> 
+                            @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
+                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:4px;">APPROVED / DISETUJUI</span>
+                            @else
+                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:4px;">DRAFT / PENGAJUAN</span>
+                            @endif
+                        </div>
+                    </td>
+                </tr>
+            @endif
         </table>
 
         @if(!empty($pengeluaran->keterangan) && $pengeluaran->keterangan !== '-')
@@ -311,11 +389,11 @@ function downloadPageAsImage() {
                 <tr style="background:#7A4517; color:#ffffff;">
                     <th style="padding:8px 5px; text-align:center; width:30px; border:1px solid #7A4517; font-size:10px;">NO</th>
                     <th style="padding:8px 8px; text-align:left; border:1px solid #7A4517; font-size:10px;">NAMA BAHAN BAKU</th>
-                    <th style="padding:8px 8px; text-align:right; width:105px; border:1px solid #7A4517; font-size:10px;">QTY DIMINTA</th>
-                    <th style="padding:8px 8px; text-align:right; width:120px; border:1px solid #7A4517; font-size:10px;">STOK GDG UTAMA</th>
+                    <th style="padding:8px 8px; text-align:right; width:105px; border:1px solid #7A4517; font-size:10px;">${colQtyTitle}</th>
+                    <th style="padding:8px 8px; text-align:right; width:120px; border:1px solid #7A4517; font-size:10px;">${colStokTitle}</th>
                     <th style="padding:8px 8px; text-align:right; width:100px; border:1px solid #7A4517; font-size:10px;">KEKURANGAN</th>
                     <th style="padding:8px 6px; text-align:center; width:100px; border:1px solid #7A4517; font-size:10px;">KETERSEDIAAN</th>
-                    <th style="padding:8px 8px; text-align:right; width:95px; border:1px solid #7A4517; font-size:10px;">HARGA (RP)</th>
+                    <th style="padding:8px 8px; text-align:right; width:95px; border:1px solid #7A4517; font-size:10px;">HARGA SATUAN</th>
                     <th style="padding:8px 8px; text-align:right; width:115px; border:1px solid #7A4517; font-size:10px;">TOTAL HPP</th>
                 </tr>
             </thead>
@@ -328,8 +406,8 @@ function downloadPageAsImage() {
                 @foreach($pengeluaran->details as $idx => $d)
                     @php
                         $dQty = (float) $d->qty;
-                        $dStokUtama = (float) ($d->stok_gudang_utama ?? 0);
-                        $dKurang = (float) ($d->kekurangan ?? max(0, $dQty - $dStokUtama));
+                        $dStokTersedia = (float) ($d->stok_tersedia ?? $d->stok_gudang_utama ?? 0);
+                        $dKurang = (float) ($d->kekurangan ?? max(0, $dQty - $dStokTersedia));
                         $dSatuan = $d->barang->satuan ?? ($d->satuan ?? 'pcs');
                         $dHpp = (float) ($d->hpp_total ?? 0);
                         $dHargaSatuan = $dQty > 0 ? $dHpp / $dQty : 0;
@@ -350,7 +428,7 @@ function downloadPageAsImage() {
                             {{ number_format($dQty, 2, ',', '.') }} <span style="font-size:9px; color:#64748b; font-weight:normal;">{{ $dSatuan }}</span>
                         </td>
                         <td style="padding:8px 8px; text-align:right; border:1px solid #e2e8f0; font-size:11px;">
-                            <span style="font-weight:600; color:{{ $dStokUtama > 0 ? '#0284c7' : '#dc2626' }};">{{ number_format($dStokUtama, 2, ',', '.') }}</span>
+                            <span style="font-weight:600; color:{{ $dStokTersedia > 0 ? '#0284c7' : '#dc2626' }};">{{ number_format($dStokTersedia, 2, ',', '.') }}</span>
                             <span style="font-size:9px; color:#64748b;">{{ $dSatuan }}</span>
                         </td>
                         <td style="padding:8px 8px; text-align:right; border:1px solid #e2e8f0; font-size:11px;">
@@ -361,9 +439,9 @@ function downloadPageAsImage() {
                             @endif
                         </td>
                         <td style="padding:8px 6px; text-align:center; border:1px solid #e2e8f0;">
-                            @if($dStokUtama >= $dQty)
+                            @if($dStokTersedia >= $dQty)
                                 <span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Tersedia</span>
-                            @elseif($dStokUtama > 0)
+                            @elseif($dStokTersedia > 0)
                                 <span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fffbeb; color:#b45309; border:1px solid #fde68a; border-radius:3px;">Kurang</span>
                             @else
                                 <span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Habis (0)</span>
@@ -398,23 +476,26 @@ function downloadPageAsImage() {
         <table style="width:100%; border-collapse:collapse; margin-top:25px; font-size:11px; text-align:center;">
             <tr>
                 <td style="width:33.33%; padding:0 15px; vertical-align:top;">
-                    <div style="color:#64748b; margin-bottom:50px;">Pemohon / Peminta</div>
-                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">{{ $pengeluaran->gudang->nama ?? 'Gudang Tujuan' }}</div>
+                    <div style="color:#64748b; margin-bottom:50px;">{{ $isWasted ? 'Yang Melaporkan (Kitchen/Outlet)' : 'Pemohon / Peminta' }}</div>
+                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">( ............................................ )</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:3px;">Divisi / Outlet</div>
                 </td>
                 <td style="width:33.33%; padding:0 15px; vertical-align:top;">
                     <div style="color:#64748b; margin-bottom:50px;">Kepala Gudang</div>
-                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">{{ $gudangUtama->nama ?? 'Gudang Utama' }}</div>
+                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">( ............................................ )</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:3px;">{{ $isWasted ? 'Petugas / Supervisor' : ($gudangUtama->nama ?? 'Gudang Utama') }}</div>
                 </td>
                 <td style="width:33.33%; padding:0 15px; vertical-align:top;">
                     <div style="color:#64748b; margin-bottom:50px;">Management</div>
-                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">CV Gaharu Agung Sejahtera</div>
+                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">( ............................................ )</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:3px;">Operasional &amp; Keuangan</div>
                 </td>
             </tr>
         </table>
 
         <!-- WATERMARK / TIMESTAMP -->
         <div style="margin-top:25px; padding-top:8px; border-top:1px dashed #cbd5e1; display:flex; justify-content:space-between; font-size:9.5px; color:#94a3b8;">
-            <div>Sistem ERP Gaharu - Dokumen Bukti Permintaan &amp; Transfer Bahan Baku</div>
+            <div>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</div>
             <div>Dicetak otomatis pada: ${timestamp}</div>
         </div>
     `;
@@ -428,7 +509,8 @@ function downloadPageAsImage() {
     }).then(canvas => {
         document.body.removeChild(container);
         let link = document.createElement('a');
-        link.download = `Transfer-Bahan-{{ $pengeluaran->kode_pengeluaran }}.png`;
+        let filenamePrefix = "{{ $isWasted ? 'Bukti-Wasted-' : 'Bukti-Transfer-Bahan-' }}";
+        link.download = filenamePrefix + '{{ $pengeluaran->kode_pengeluaran }}.png';
         link.href = canvas.toDataURL('image/png');
         link.click();
     }).catch(err => {

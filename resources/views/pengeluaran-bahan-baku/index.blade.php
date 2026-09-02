@@ -364,6 +364,15 @@ function showDetailPengeluaran(id) {
 
 function renderDetailPengeluaran(data) {
     let body = document.getElementById('detailPengeluaranBody');
+    let modalTitle = document.querySelector('#detailPengeluaranModal .modal-title');
+    let modalIcon = document.querySelector('#detailPengeluaranModal .modal-header i');
+
+    if (modalTitle) {
+        modalTitle.innerText = data.is_wasted ? 'Detail Pengeluaran Bahan Wasted / Rusak' : 'Detail Permintaan / Transfer Bahan Baku';
+    }
+    if (modalIcon) {
+        modalIcon.className = data.is_wasted ? 'bi bi-trash3 fs-5 me-1 text-warning' : 'bi bi-box-seam fs-5 me-1';
+    }
 
     let statusBadge = data.is_approved
         ? '<span class="badge bg-success px-3 py-2 fs-6"><i class="bi bi-check-circle me-1"></i>Approved</span>'
@@ -375,20 +384,37 @@ function renderDetailPengeluaran(data) {
 
     let alertShortage = '';
     if (data.total_item_kurang > 0) {
+        let lokasiWarning = data.is_wasted ? data.lokasi_nama : data.gudang_utama_nama;
+        let contextWarning = data.is_wasted ? 'kuantitas wasted yang dilaporkan' : 'kuantitas yang diminta';
         alertShortage = `
             <div class="alert alert-warning d-flex align-items-center py-2 px-3 mb-3 rounded-3 border-warning-subtle" role="alert">
                 <i class="bi bi-exclamation-triangle-fill fs-5 me-2 text-warning"></i>
                 <div class="small">
-                    <strong>Peringatan Ketersediaan:</strong> Terdapat <strong>${data.total_item_kurang}</strong> item bahan yang stoknya di <strong>${data.gudang_utama_nama}</strong> belum mencukupi kuantitas yang diminta.
+                    <strong>Peringatan Ketersediaan:</strong> Terdapat <strong>${data.total_item_kurang}</strong> item bahan yang stoknya di <strong>${lokasiWarning}</strong> belum mencukupi ${contextWarning}.
                 </div>
             </div>
         `;
     }
 
+    let colQtyLabel = data.is_wasted ? 'Jumlah Wasted' : 'Jumlah Diminta';
+    let colStokLabel = data.is_wasted ? `Stok Lokasi (${data.divisi_nama || data.gudang_nama})` : 'Stok Gudang Utama';
+
+    const formatCurrency = (val) => {
+        const num = Number(val || 0);
+        if (num === 0) return 'Rp 0';
+        const maxDec = (Math.abs(num) < 1 || (num % 1 !== 0 && Math.abs(num) < 100)) ? 4 : 2;
+        return 'Rp ' + num.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDec });
+    };
+
     let rows = '';
     data.details.forEach(function (d, index) {
+        let hasKonv = d.has_konversi;
+        let konv = Number(d.konversi_pembelian || 1);
+        let sBeli = d.satuan_pembelian;
+
         let kurangBadge = d.kekurangan > 0
-            ? `<span class="text-danger fw-bold">-${d.kekurangan.toLocaleString('id-ID')} <small class="text-muted fw-normal">${d.satuan}</small></span>`
+            ? `<span class="text-danger fw-bold">-${d.kekurangan.toLocaleString('id-ID')} <small class="text-muted fw-normal">${d.satuan}</small></span>` +
+              (hasKonv ? `<div class="text-danger small" style="font-size:10.5px;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
             : `<span class="text-success fw-semibold"><i class="bi bi-check2"></i> 0</span>`;
 
         let statusPill = `<span class="badge bg-${d.status_color}-subtle text-${d.status_color} border border-${d.status_color}-subtle px-2 py-1">${d.status_stok}</span>`;
@@ -399,15 +425,18 @@ function renderDetailPengeluaran(data) {
                 <td>
                     <div class="fw-semibold text-dark">${d.nama_barang}</div>
                     <small class="text-muted font-monospace">${d.kode_barang}</small>
+                    ${hasKonv ? `<div class="text-muted" style="font-size:10.5px;">1 ${sBeli} = ${konv.toLocaleString('id-ID')} ${d.satuan}</div>` : ''}
                 </td>
                 <td class="text-end fw-bold text-dark">
                     ${d.qty.toLocaleString('id-ID')} <span class="text-muted fw-normal small">${d.satuan}</span>
+                    ${hasKonv ? `<div class="text-primary fw-normal small" style="font-size:11px;">= ${(d.qty / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : ''}
                 </td>
                 <td class="text-end">
-                    <span class="fw-semibold ${d.stok_gudang_utama > 0 ? 'text-primary' : 'text-danger'}">
-                        ${d.stok_gudang_utama.toLocaleString('id-ID')}
+                    <span class="fw-semibold ${d.stok_tersedia > 0 ? 'text-primary' : 'text-danger'}">
+                        ${d.stok_tersedia.toLocaleString('id-ID')}
                     </span>
                     <span class="text-muted fw-normal small">${d.satuan}</span>
+                    ${hasKonv ? `<div class="text-muted small" style="font-size:10.5px;">= ${(d.stok_tersedia / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : ''}
                 </td>
                 <td class="text-end">
                     ${kurangBadge}
@@ -416,10 +445,10 @@ function renderDetailPengeluaran(data) {
                     ${statusPill}
                 </td>
                 <td class="text-end text-muted small">
-                    Rp ${d.harga_satuan.toLocaleString('id-ID')}
+                    ${formatCurrency(d.harga_satuan)}
                 </td>
                 <td class="text-end fw-bold text-dark">
-                    Rp ${d.total_harga.toLocaleString('id-ID')}
+                    ${formatCurrency(d.total_harga)}
                 </td>
             </tr>
         `;
@@ -438,7 +467,7 @@ function renderDetailPengeluaran(data) {
             <div class="d-flex gap-2">
                 ${!data.is_approved ? `
                     ${!data.is_wo ? `<a href="${data.edit_url}" class="btn btn-warning btn-sm px-3 fw-semibold"><i class="bi bi-pencil-square me-1"></i> Edit</a>` : ''}
-                    <a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan kurangi stok gudang sumber?')">
+                    <a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')">
                         <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
                     </a>
                 ` : ''}
@@ -446,11 +475,40 @@ function renderDetailPengeluaran(data) {
         </div>
     `;
 
-    body.innerHTML = `
-        <div id="printableDetailArea" class="p-2">
-            ${alertShortage}
-
-            {{-- HEADER INFO CARDS --}}
+    let infoCardsHtml = '';
+    if (data.is_wasted) {
+        infoCardsHtml = `
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <div class="text-muted small">Kode Dokumen</div>
+                        <div class="fw-bold fs-6 text-dark mt-1">${data.kode_pengeluaran}</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <div class="text-muted small">Lokasi Terjadinya Wasted</div>
+                        <div class="fw-bold fs-6 text-danger mt-1"><i class="bi bi-geo-alt-fill me-1"></i>${data.lokasi_nama}</div>
+                        <small class="text-muted">Gudang Operasional</small>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <div class="text-muted small">Jenis Pengeluaran</div>
+                        <div class="mt-1"><span class="badge bg-danger text-white px-2 py-1"><i class="bi bi-trash3 me-1"></i>Wasted / Rusak / Busuk</span></div>
+                        <small class="text-muted">Tanggal: ${data.tanggal}</small>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border d-flex flex-column justify-content-between">
+                        <div class="text-muted small">Status Dokumen</div>
+                        <div>${statusBadge}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        infoCardsHtml = `
             <div class="row g-3 mb-3">
                 <div class="col-sm-6 col-md-3">
                     <div class="p-3 bg-light rounded-3 h-100 border">
@@ -479,6 +537,15 @@ function renderDetailPengeluaran(data) {
                     </div>
                 </div>
             </div>
+        `;
+    }
+
+    body.innerHTML = `
+        <div id="printableDetailArea" class="p-2">
+            ${alertShortage}
+
+            {{-- HEADER INFO CARDS --}}
+            ${infoCardsHtml}
 
             {{-- KETERANGAN JIKA ADA --}}
             ${data.keterangan && data.keterangan !== '-' ? `
@@ -495,8 +562,8 @@ function renderDetailPengeluaran(data) {
                         <tr>
                             <th width="35">#</th>
                             <th class="text-start">Barang</th>
-                            <th width="110" class="text-end">Jumlah Diminta</th>
-                            <th width="120" class="text-end">Stok Gudang Utama</th>
+                            <th width="110" class="text-end">${colQtyLabel}</th>
+                            <th width="140" class="text-end">${colStokLabel}</th>
                             <th width="110" class="text-end">Kekurangan</th>
                             <th width="130">Ketersediaan</th>
                             <th width="110" class="text-end">Harga Satuan</th>
@@ -509,7 +576,7 @@ function renderDetailPengeluaran(data) {
                     <tfoot class="table-light border-top">
                         <tr>
                             <th colspan="7" class="text-end fw-bold">Total Nilai HPP ${!data.is_approved ? '<span class="text-muted fw-normal small">(Estimasi)</span>' : ''}:</th>
-                            <th class="text-end fw-bold fs-6" style="color:#7A4517;">Rp ${data.grand_total.toLocaleString('id-ID')}</th>
+                            <th class="text-end fw-bold fs-6" style="color:#7A4517;">${formatCurrency(data.grand_total)}</th>
                         </tr>
                     </tfoot>
                 </table>
@@ -526,6 +593,13 @@ function downloadModalAsImage() {
     let data = currentDetailData;
     let divisiText = data.divisi_nama ? ` (Divisi: ${data.divisi_nama})` : '';
 
+    const formatCurrency = (val) => {
+        const num = Number(val || 0);
+        if (num === 0) return 'Rp 0';
+        const maxDec = (Math.abs(num) < 1 || (num % 1 !== 0 && Math.abs(num) < 100)) ? 4 : 2;
+        return 'Rp ' + num.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDec });
+    };
+
     let statusHtml = data.is_approved
         ? '<span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:4px;">APPROVED / DISETUJUI</span>'
         : '<span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:4px;">DRAFT / PENGAJUAN</span>';
@@ -534,17 +608,21 @@ function downloadModalAsImage() {
     let totalKurang = 0;
     let rowsHtml = '';
 
-    data.details.forEach((d, idx) => {
+    data.details.forEach(function (d, idx) {
+        let hasKonv = d.has_konversi;
+        let konv = Number(d.konversi_pembelian || 1);
+        let sBeli = d.satuan_pembelian;
         totalDiminta += d.qty;
         totalKurang += d.kekurangan;
 
         let kurangText = d.kekurangan > 0
-            ? `<span style="color:#dc2626; font-weight:bold;">-${d.kekurangan.toLocaleString('id-ID')} <span style="font-size:9px; color:#64748b; font-weight:normal;">${d.satuan}</span></span>`
-            : `<span style="color:#16a34a; font-weight:600;">0,00</span>`;
+            ? `<span style="font-weight:700; color:#dc2626;">-${d.kekurangan.toLocaleString('id-ID')}</span> <span style="font-size:9px; color:#64748b;">${d.satuan}</span>` +
+              (hasKonv ? `<div style="font-size:8.5px; color:#dc2626;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
+            : '<span style="font-weight:600; color:#16a34a;">0</span>';
 
-        let availPill = d.stok_gudang_utama >= d.qty
+        let availPill = d.stok_tersedia >= d.qty
             ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Tersedia</span>'
-            : (d.stok_gudang_utama > 0
+            : (d.stok_tersedia > 0
                 ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fffbeb; color:#b45309; border:1px solid #fde68a; border-radius:3px;">Kurang</span>'
                 : '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Habis (0)</span>');
 
@@ -556,13 +634,16 @@ function downloadModalAsImage() {
                 <td style="padding:8px 8px; border:1px solid #e2e8f0;">
                     <div style="font-weight:700; color:#0f172a; font-size:11px;">${d.nama_barang}</div>
                     <div style="font-family:monospace; font-size:9.5px; color:#64748b;">${d.kode_barang}</div>
+                    ${hasKonv ? `<div style="font-size:8.5px; color:#64748b;">1 ${sBeli} = ${konv.toLocaleString('id-ID')} ${d.satuan}</div>` : ''}
                 </td>
                 <td style="padding:8px 8px; text-align:right; font-weight:700; color:#0f172a; border:1px solid #e2e8f0; font-size:11px;">
                     ${d.qty.toLocaleString('id-ID')} <span style="font-size:9px; color:#64748b; font-weight:normal;">${d.satuan}</span>
+                    ${hasKonv ? `<div style="font-size:8.5px; color:#0284c7; font-weight:normal;">= ${(d.qty / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : ''}
                 </td>
                 <td style="padding:8px 8px; text-align:right; border:1px solid #e2e8f0; font-size:11px;">
-                    <span style="font-weight:600; color:${d.stok_gudang_utama > 0 ? '#0284c7' : '#dc2626'};">${d.stok_gudang_utama.toLocaleString('id-ID')}</span>
+                    <span style="font-weight:600; color:${d.stok_tersedia > 0 ? '#0284c7' : '#dc2626'};">${d.stok_tersedia.toLocaleString('id-ID')}</span>
                     <span style="font-size:9px; color:#64748b;">${d.satuan}</span>
+                    ${hasKonv ? `<div style="font-size:8.5px; color:#64748b; font-weight:normal;">= ${(d.stok_tersedia / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : ''}
                 </td>
                 <td style="padding:8px 8px; text-align:right; border:1px solid #e2e8f0; font-size:11px;">
                     ${kurangText}
@@ -571,10 +652,10 @@ function downloadModalAsImage() {
                     ${availPill}
                 </td>
                 <td style="padding:8px 8px; text-align:right; color:#64748b; border:1px solid #e2e8f0; font-size:10.5px;">
-                    Rp ${d.harga_satuan.toLocaleString('id-ID')}
+                    ${formatCurrency(d.harga_satuan)}
                 </td>
                 <td style="padding:8px 8px; text-align:right; font-weight:700; color:#0f172a; border:1px solid #e2e8f0; font-size:11px;">
-                    Rp ${d.total_harga.toLocaleString('id-ID')}
+                    ${formatCurrency(d.total_harga)}
                 </td>
             </tr>
         `;
@@ -582,6 +663,42 @@ function downloadModalAsImage() {
 
     let now = new Date();
     let timestamp = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    let docSubtitle = data.is_wasted 
+        ? 'Berita Acara Pengeluaran Bahan Wasted / Rusak / Busuk'
+        : 'Surat Permintaan &amp; Transfer Bahan Baku - Distribusi Antar Gudang';
+    let docType = data.is_wasted ? 'Bukti Pengeluaran Wasted' : 'Bukti Permintaan Bahan';
+    let colQtyTitle = data.is_wasted ? 'QTY WASTED' : 'QTY DIMINTA';
+    let colStokTitle = data.is_wasted ? `STOK LOKASI` : 'STOK GDG UTAMA';
+
+    let gridInfoHtml = '';
+    if (data.is_wasted) {
+        gridInfoHtml = `
+            <tr>
+                <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
+                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Lokasi Wasted:</span> <strong style="color:#0f172a;">${data.lokasi_nama}</strong></div>
+                    <div><span style="color:#64748b; display:inline-block; width:135px;">Jenis Pengeluaran:</span> <strong style="color:#dc2626;">Wasted / Busuk / Rusak</strong></div>
+                </td>
+                <td style="padding:10px 14px; width:50%; vertical-align:top;">
+                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Laporan:</span> <strong style="color:#0f172a;">${data.tanggal}</strong></div>
+                    <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> ${statusHtml}</div>
+                </td>
+            </tr>
+        `;
+    } else {
+        gridInfoHtml = `
+            <tr>
+                <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
+                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Gudang Sumber:</span> <strong style="color:#0f172a;">${data.gudang_utama_nama}</strong> <span style="font-size:10px; color:#64748b;">(Penyedia)</span></div>
+                    <div><span style="color:#64748b; display:inline-block; width:135px;">Gudang Tujuan:</span> <strong style="color:#0f172a;">${data.gudang_nama}${divisiText}</strong></div>
+                </td>
+                <td style="padding:10px 14px; width:50%; vertical-align:top;">
+                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Pengajuan:</span> <strong style="color:#0f172a;">${data.tanggal}</strong></div>
+                    <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> ${statusHtml}</div>
+                </td>
+            </tr>
+        `;
+    }
 
     let container = document.createElement('div');
     container.style.position = 'fixed';
@@ -600,26 +717,17 @@ function downloadModalAsImage() {
         <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #7A4517; padding-bottom:14px; margin-bottom:18px;">
             <div>
                 <div style="font-size:20px; font-weight:800; color:#7A4517; letter-spacing:0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
-                <div style="font-size:11.5px; color:#64748b; margin-top:2px;">Surat Permintaan &amp; Transfer Bahan Baku - Distribusi Antar Gudang</div>
+                <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${docSubtitle}</div>
             </div>
             <div style="text-align:right;">
-                <div style="font-size:14px; font-weight:800; color:#0f172a; text-transform:uppercase;">Bukti Permintaan Bahan</div>
+                <div style="font-size:14px; font-weight:800; color:#0f172a; text-transform:uppercase;">${docType}</div>
                 <div style="font-size:11px; color:#64748b; margin-top:3px;">No. Dokumen: <strong style="font-family:monospace; color:#7A4517; font-size:12px;">${data.kode_pengeluaran}</strong></div>
             </div>
         </div>
 
         <!-- INFO DETAIL GRID -->
         <table style="width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:18px; font-size:11.5px;">
-            <tr>
-                <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Gudang Sumber:</span> <strong style="color:#0f172a;">${data.gudang_utama_nama}</strong> <span style="font-size:10px; color:#64748b;">(Penyedia)</span></div>
-                    <div><span style="color:#64748b; display:inline-block; width:135px;">Gudang Tujuan:</span> <strong style="color:#0f172a;">${data.gudang_nama}${divisiText}</strong></div>
-                </td>
-                <td style="padding:10px 14px; width:50%; vertical-align:top;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Pengajuan:</span> <strong style="color:#0f172a;">${data.tanggal}</strong></div>
-                    <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> ${statusHtml}</div>
-                </td>
-            </tr>
+            ${gridInfoHtml}
         </table>
 
         ${data.keterangan && data.keterangan !== '-' ? `
@@ -634,11 +742,11 @@ function downloadModalAsImage() {
                 <tr style="background:#7A4517; color:#ffffff;">
                     <th style="padding:8px 5px; text-align:center; width:30px; border:1px solid #7A4517; font-size:10px;">NO</th>
                     <th style="padding:8px 8px; text-align:left; border:1px solid #7A4517; font-size:10px;">NAMA BAHAN BAKU</th>
-                    <th style="padding:8px 8px; text-align:right; width:105px; border:1px solid #7A4517; font-size:10px;">QTY DIMINTA</th>
-                    <th style="padding:8px 8px; text-align:right; width:120px; border:1px solid #7A4517; font-size:10px;">STOK GDG UTAMA</th>
+                    <th style="padding:8px 8px; text-align:right; width:105px; border:1px solid #7A4517; font-size:10px;">${colQtyTitle}</th>
+                    <th style="padding:8px 8px; text-align:right; width:120px; border:1px solid #7A4517; font-size:10px;">${colStokTitle}</th>
                     <th style="padding:8px 8px; text-align:right; width:100px; border:1px solid #7A4517; font-size:10px;">KEKURANGAN</th>
                     <th style="padding:8px 6px; text-align:center; width:100px; border:1px solid #7A4517; font-size:10px;">KETERSEDIAAN</th>
-                    <th style="padding:8px 8px; text-align:right; width:95px; border:1px solid #7A4517; font-size:10px;">HARGA (RP)</th>
+                    <th style="padding:8px 8px; text-align:right; width:100px; border:1px solid #7A4517; font-size:10px;">HARGA SATUAN</th>
                     <th style="padding:8px 8px; text-align:right; width:115px; border:1px solid #7A4517; font-size:10px;">TOTAL HPP</th>
                 </tr>
             </thead>
@@ -646,43 +754,39 @@ function downloadModalAsImage() {
                 ${rowsHtml}
             </tbody>
             <tfoot>
-                <tr style="background:#f1f5f9; font-weight:bold; font-size:11px;">
-                    <td colspan="2" style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1;">TOTAL KESELURUHAN:</td>
-                    <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; color:#0f172a;">${totalDiminta.toLocaleString('id-ID')}</td>
-                    <td style="border:1px solid #cbd5e1;"></td>
-                    <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; color:${totalKurang > 0 ? '#dc2626' : '#16a34a'};">
-                        ${totalKurang > 0 ? '-' + totalKurang.toLocaleString('id-ID') : '0,00'}
-                    </td>
-                    <td colspan="2" style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1;">Total Nilai HPP:</td>
-                    <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; color:#7A4517; font-size:11.5px;">
-                        Rp ${data.grand_total.toLocaleString('id-ID')}
-                    </td>
+                <tr style="background:#f1f5f9; font-weight:bold;">
+                    <td colspan="2" style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11px;">TOTAL:</td>
+                    <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11px; color:#0f172a;">${totalDiminta.toLocaleString('id-ID')}</td>
+                    <td style="padding:9px 8px; border:1px solid #cbd5e1;"></td>
+                    <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11px; color:${totalKurang > 0 ? '#dc2626' : '#16a34a'};">${totalKurang > 0 ? '-' + totalKurang.toLocaleString('id-ID') : '0,00'}</td>
+                    <td colspan="2" style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11px;">TOTAL NILAI HPP:</td>
+                    <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11.5px; color:#7A4517; font-weight:800;">Rp ${data.grand_total.toLocaleString('id-ID')}</td>
                 </tr>
-            </tfoot>
-        </table>
-
-        <!-- SIGNATURE BLOCK -->
-        <table style="width:100%; border-collapse:collapse; margin-top:25px; font-size:11px; text-align:center;">
+        <!-- TANDA TANGAN 3 PIHAK -->
+        <table style="width:100%; border-collapse:collapse; margin-top:25px;">
             <tr>
-                <td style="width:33.33%; padding:0 15px; vertical-align:top;">
-                    <div style="color:#64748b; margin-bottom:50px;">Pemohon / Peminta</div>
-                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">${data.gudang_nama}</div>
+                <td style="width:33.33%; text-align:center; vertical-align:top; font-size:11px;">
+                    <div style="color:#64748b; margin-bottom:50px;">${data.is_wasted ? 'Yang Melaporkan (Kitchen/Outlet)' : 'Pemohon / Peminta'}</div>
+                    <div style="font-weight:700; color:#0f172a; text-decoration:underline;">( ............................................ )</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:3px;">Divisi / Outlet</div>
                 </td>
-                <td style="width:33.33%; padding:0 15px; vertical-align:top;">
+                <td style="width:33.33%; text-align:center; vertical-align:top; font-size:11px;">
                     <div style="color:#64748b; margin-bottom:50px;">Kepala Gudang</div>
-                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">${data.gudang_utama_nama}</div>
+                    <div style="font-weight:700; color:#0f172a; text-decoration:underline;">( ............................................ )</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:3px;">${data.is_wasted ? 'Petugas / Supervisor' : (data.gudang_utama_nama || 'Gudang Utama')}</div>
                 </td>
-                <td style="width:33.33%; padding:0 15px; vertical-align:top;">
+                <td style="width:33.33%; text-align:center; vertical-align:top; font-size:11px;">
                     <div style="color:#64748b; margin-bottom:50px;">Management</div>
-                    <div style="font-weight:700; border-top:1px solid #94a3b8; padding-top:4px; color:#0f172a;">CV Gaharu Agung Sejahtera</div>
+                    <div style="font-weight:700; color:#0f172a; text-decoration:underline;">( ............................................ )</div>
+                    <div style="font-size:10px; color:#64748b; margin-top:3px;">Operasional &amp; Keuangan</div>
                 </td>
             </tr>
         </table>
 
-        <!-- WATERMARK / TIMESTAMP -->
-        <div style="margin-top:25px; padding-top:8px; border-top:1px dashed #cbd5e1; display:flex; justify-content:space-between; font-size:9.5px; color:#94a3b8;">
-            <div>Sistem ERP Gaharu - Dokumen Bukti Permintaan &amp; Transfer Bahan Baku</div>
-            <div>Dicetak otomatis pada: ${timestamp}</div>
+        <!-- FOOTER TIMESTAMP -->
+        <div style="margin-top:25px; padding-top:10px; border-top:1px dashed #cbd5e1; display:flex; justify-content:space-between; font-size:9.5px; color:#94a3b8;">
+            <div>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</div>
+            <div>Dicetak / Diunduh pada: ${timestamp}</div>
         </div>
     `;
 
@@ -691,17 +795,20 @@ function downloadModalAsImage() {
     html2canvas(container, {
         scale: 2,
         useCORS: true,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#ffffff'
     }).then(canvas => {
         document.body.removeChild(container);
         let link = document.createElement('a');
-        link.download = `Transfer-Bahan-${data.kode_pengeluaran}.png`;
+        let filenamePrefix = data.is_wasted ? 'Bukti-Wasted-' : 'Bukti-Transfer-Bahan-';
+        link.download = filenamePrefix + data.kode_pengeluaran + '.png';
         link.href = canvas.toDataURL('image/png');
         link.click();
     }).catch(err => {
-        if (container.parentNode) document.body.removeChild(container);
+        if (container.parentNode) {
+            document.body.removeChild(container);
+        }
         console.error('Error generating image:', err);
-        alert('Gagal mendownload gambar: ' + err.message);
+        alert('Gagal menghasilkan gambar: ' + err.message);
     });
 }
 

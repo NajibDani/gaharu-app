@@ -72,13 +72,23 @@ class PembelianController extends Controller
                 'catatan'             => $item->catatan_pembayaran,
                 'dicatat_pada'        => $item->dicatat_pada,
                 'details'             => $item->details->map(function ($d) {
+                    $bItem = $d->barang;
+                    $sPembelian = $d->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
+                    $konv = floatval($d->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                    $sUtama = $bItem->satuan ?? 'Pcs';
+                    $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+
                     return [
-                        'id'            => $d->id,
-                        'nama'          => $d->barang->nama ?? 'Barang',
-                        'satuan'        => $d->satuan_pembelian ?: ($d->barang->satuan ?? 'Pcs'),
-                        'qty'           => floatval($d->qty),
-                        'qty_diterima'  => floatval($d->qty_diterima ?? 0),
-                        'harga_per_qty' => floatval($d->harga_per_qty),
+                        'id'                 => $d->id,
+                        'nama'               => $bItem->nama ?? 'Barang',
+                        'satuan'             => $sPembelian ?: $sUtama,
+                        'satuan_pembelian'   => $sPembelian,
+                        'satuan_utama'       => $sUtama,
+                        'konversi_pembelian' => $konv,
+                        'has_konversi'       => $hasKonv,
+                        'qty'                => floatval($d->qty),
+                        'qty_diterima'       => floatval($d->qty_diterima ?? 0),
+                        'harga_per_qty'      => floatval($d->harga_per_qty),
                     ];
                 })->values()->toArray(),
             ]];
@@ -123,7 +133,20 @@ class PembelianController extends Controller
             }
         }
 
-        return view('pembelian.index', compact('pembelian', 'dataPembayaran', 'countLowStockUtama'));
+        $suppliers = Supplier::orderBy('nama')->get();
+        $gudangs   = MasterGudang::orderBy('nama')->get();
+        $barangs   = MasterBarang::query()
+            ->where('is_active', true)
+            ->where(function ($q) {
+                $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_operational', true)
+                  ->orWhere('is_direct_consumption', true);
+            })
+            ->orderBy('nama')
+            ->get();
+
+        return view('pembelian.index', compact('pembelian', 'dataPembayaran', 'countLowStockUtama', 'suppliers', 'gudangs', 'barangs'));
     }
 
     /*

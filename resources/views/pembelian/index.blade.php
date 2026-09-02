@@ -1,4 +1,6 @@
 <x-app-layout>
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <x-slot name="header">Pembelian</x-slot>
 
     <div class="container">
@@ -214,23 +216,27 @@
                             {{-- AKSI --}}
                             <td>
                                 <div class="d-flex gap-1 flex-wrap justify-content-center">
-                                    <a href="{{ route('pembelian.show', $item->id) }}"
-                                       class="btn btn-sm"
-                                       style="background:#606060; color:#fff; font-size:11px;">
-                                        Detail
-                                    </a>
+                                    <button type="button"
+                                            class="btn btn-sm text-white"
+                                            style="background:#0284c7; font-size:11px; padding:2px 8px; border-radius:5px;"
+                                            onclick="bukaModalDetail({{ $item->id }})"
+                                            title="Lihat Detail Pembelian">
+                                        <i class="bi bi-eye-fill me-1"></i>Detail
+                                    </button>
                                     <a href="{{ route('pembelian.cetak-pdf', $item->id) }}"
                                        class="btn btn-sm btn-danger text-white"
-                                       style="font-size:11px;" target="_blank" title="Cetak Purchase Order (PDF)">
-                                        <i class="bi bi-file-earmark-pdf-fill"></i> Cetak PO
+                                       style="font-size:11px; padding:2px 8px; border-radius:5px;" target="_blank" title="Cetak Purchase Order (PDF)">
+                                        <i class="bi bi-file-earmark-pdf-fill me-1"></i>Cetak PO
                                     </a>
     
                                     @if(!$item->isTerkunci())
-                                        <a href="{{ route('pembelian.edit', $item->id) }}"
-                                           class="btn btn-sm"
-                                           style="background:#606060; color:#fff; font-size:11px;">
-                                            Edit
-                                        </a>
+                                        <button type="button"
+                                                class="btn btn-sm text-white"
+                                                style="background:#f59e0b; font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                onclick="bukaModalEdit({{ $item->id }})"
+                                                title="Edit Pembelian">
+                                            <i class="bi bi-pencil-square me-1"></i>Edit
+                                        </button>
                                         <form action="{{ route('pembelian.destroy', $item->id) }}"
                                               method="POST" class="d-inline"
                                               onsubmit="return confirm('Yakin ingin menghapus {{ $item->kode_pembelian }}?')">
@@ -238,15 +244,15 @@
                                             @method('DELETE')
                                             <button type="submit"
                                                     class="btn btn-sm"
-                                                    style="background:#606060; color:#fff; font-size:11px;">
+                                                    style="background:#606060; color:#fff; font-size:11px; padding:2px 8px; border-radius:5px;">
                                                 Hapus
                                             </button>
                                         </form>
                                     @else
                                         <button class="btn btn-sm" disabled
-                                                style="background:#d0d0d0; color:#888; font-size:11px;">Edit</button>
+                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;">Edit</button>
                                         <button class="btn btn-sm" disabled
-                                                style="background:#d0d0d0; color:#888; font-size:11px;">Hapus</button>
+                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;">Hapus</button>
                                     @endif
                                 </div>
                             </td>
@@ -479,10 +485,516 @@
         </div>
     </div>
 
+    {{-- ══════════════════ MODAL: DETAIL PEMBELIAN (MINIMALIST POP UP) ══════════════════ --}}
+    <div class="modal fade" id="modalDetailPembelian" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header bg-light py-3 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                            <i class="bi bi-receipt fs-5"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark mb-0" id="detail_modal_title">Detail Pembelian</h5>
+                            <small class="text-muted" id="detail_modal_subtitle">Rincian pesanan dan status transaksi</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4" id="modalDetailPembelianBody">
+                    {{-- Diisi secara dinamis via JS --}}
+                </div>
+                <div class="modal-footer bg-light py-2 border-top d-flex justify-content-between">
+                    <div id="modalDetailLeftActions">
+                        <a href="#" id="detail_btn_cetak_po" target="_blank" class="btn btn-sm btn-danger text-white">
+                            <i class="bi bi-file-earmark-pdf-fill me-1"></i> Cetak PO (PDF)
+                        </a>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">Tutup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{-- ══════════════════ MODAL: EDIT PEMBELIAN (MINIMALIST POP UP) ══════════════════ --}}
+    <div class="modal fade" id="modalEditPembelian" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header bg-light py-3 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                            <i class="bi bi-pencil-square fs-5 text-dark"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark mb-0">Edit Pembelian — <span id="edit_modal_kode" class="text-primary"></span></h5>
+                            <small class="text-muted">Perbarui informasi supplier, tanggal, atau rincian item barang</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="formEditPembelian" method="POST" action="">
+                    @csrf
+                    @method('PUT')
+                    <div class="modal-body p-4">
+                        <div class="row g-3 mb-3">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-semibold text-dark small">Supplier <span class="text-danger">*</span></label>
+                                <select name="supplier_id" id="edit_supplier_id" class="form-select form-select-sm" required>
+                                    <option value="">-- Pilih Supplier --</option>
+                                    @foreach($suppliers as $supplier)
+                                        <option value="{{ $supplier->id }}">{{ $supplier->nama }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-semibold text-dark small">Gudang Tujuan <span class="text-danger">*</span></label>
+                                <select name="gudang_id" id="edit_gudang_id" class="form-select form-select-sm" required>
+                                    <option value="">-- Pilih Gudang --</option>
+                                    @foreach($gudangs as $gudang)
+                                        <option value="{{ $gudang->id }}">{{ $gudang->nama }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-semibold text-dark small">Tanggal Transaksi <span class="text-danger">*</span></label>
+                                <input type="date" name="tanggal" id="edit_tanggal" class="form-control form-control-sm" required>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mb-2 pt-2 border-top">
+                            <h6 class="fw-bold mb-0 text-dark small"><i class="bi bi-boxes me-1 text-primary"></i> Daftar Barang Pembelian</h6>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item-modal">
+                                <i class="bi bi-plus-circle me-1"></i> Tambah Baris Barang
+                            </button>
+                        </div>
+
+                        <div class="table-responsive border rounded-3 mb-3" style="max-height: 380px; overflow-y: auto;">
+                            <table class="table table-hover align-middle mb-0 text-center" id="table-items-modal" style="font-size: 13px;">
+                                <thead class="table-light sticky-top" style="z-index: 2;">
+                                    <tr>
+                                        <th class="text-start" style="min-width: 250px;">Barang <span class="text-danger">*</span></th>
+                                        <th style="width: 170px;">Qty <span class="text-danger">*</span></th>
+                                        <th style="width: 170px;">Harga Total Item (Rp) <span class="text-danger">*</span></th>
+                                        <th style="width: 160px;">Nomor Batch</th>
+                                        <th style="width: 50px;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyEditItems">
+                                    {{-- Diisi via JS --}}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="row justify-content-end">
+                            <div class="col-12 col-md-5">
+                                <div class="card border-0 rounded-3 p-3 bg-light">
+                                    <div class="mb-2">
+                                        <label class="form-label fw-semibold text-secondary small mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-white fw-semibold text-muted">Rp</span>
+                                            <input type="text" name="tax_service" id="edit_tax_service" class="form-control mask-number fw-bold text-end bg-white" placeholder="0">
+                                        </div>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                                        <span class="fw-bold text-dark small">Grand Total Estimasi:</span>
+                                        <span class="fw-bold text-success fs-6" id="edit_grand_total">Rp 0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-2 border-top">
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-sm btn-primary px-3">
+                            <i class="bi bi-save me-1"></i> Simpan Perubahan
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     {{-- ══════════════════ SCRIPT ══════════════════ --}}
     <script>
         const dataPembayaran = @json($dataPembayaran);
+        const masterBarangs = @json($barangs);
         let totalAktif = 0;
+        let editRowIndex = 0;
+        let modalTomSelectInstances = [];
+
+        // ── Modal Detail Pembelian ──
+        function bukaModalDetail(id) {
+            const data = dataPembayaran[id];
+            if (!data) return;
+
+            document.getElementById('detail_modal_title').textContent = data.kode;
+            document.getElementById('detail_btn_cetak_po').href = '/pembelian/' + id + '/cetak-pdf';
+
+            const container = document.getElementById('modalDetailPembelianBody');
+            
+            let paymentStatusBadge = data.is_lunas 
+                ? '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-check2-circle me-1"></i>Lunas</span>'
+                : '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"><i class="bi bi-clock me-1"></i>Belum Lunas</span>';
+            
+            let receiveStatusBadge = data.is_diterima
+                ? '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-box-seam me-1"></i>Diterima</span>'
+                : '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle px-2 py-1"><i class="bi bi-hourglass-split me-1"></i>Menunggu Diterima</span>';
+
+            let metodeDisplay = data.label || 'Belum Dicatat';
+            let infoPayment = '';
+            if (data.metode === 'dp') {
+                infoPayment = `<div class="text-muted small mt-1">DP: Rp ${Number(data.nominal_dp || 0).toLocaleString('id-ID')} (${data.persen_dp}%) | Est. Pelunasan: ${data.tanggal_pelunasan || '-'}</div>`;
+            } else if (data.metode === 'termin') {
+                infoPayment = `<div class="text-muted small mt-1">Jatuh Tempo: ${data.tanggal_jatuh_tempo || 'Fleksibel'}</div>`;
+            }
+
+            let itemsTableRows = '';
+            let subtotalItems = 0;
+            if (data.details && data.details.length > 0) {
+                data.details.forEach((det, idx) => {
+                    const hasKonv = det.has_konversi;
+                    const konv = Number(det.konversi_pembelian || 1);
+                    const sUtama = det.satuan_utama || det.satuan;
+                    const sPembelian = det.satuan_pembelian || det.satuan;
+                    const totalUtama = det.qty * konv;
+                    const hargaPerUnit = Number(det.harga_per_qty || 0);
+                    const subtotal = det.qty * hargaPerUnit;
+                    subtotalItems += subtotal;
+
+                    itemsTableRows += `
+                        <tr>
+                            <td class="text-center text-muted">${idx + 1}</td>
+                            <td class="text-start">
+                                <div class="fw-semibold text-dark">${det.nama}</div>
+                                <small class="text-muted font-monospace">${det.kode_barang || ''}</small>
+                                ${hasKonv ? `<div class="text-muted" style="font-size:10.5px;">1 ${sPembelian} = ${konv.toLocaleString('id-ID')} ${sUtama}</div>` : ''}
+                            </td>
+                            <td class="text-center">
+                                <span class="fw-bold text-dark">${Number(det.qty).toLocaleString('id-ID')} ${det.satuan}</span>
+                                ${hasKonv ? `<div class="text-primary small" style="font-size:11px;">= ${Number(totalUtama).toLocaleString('id-ID')} ${sUtama}</div>` : ''}
+                            </td>
+                            <td class="text-end">
+                                Rp ${Number(hargaPerUnit).toLocaleString('id-ID')}
+                                ${hasKonv && konv > 0 ? `<div class="text-muted small" style="font-size:10.5px;">(~Rp ${Number(hargaPerUnit / konv).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})} / ${sUtama})</div>` : ''}
+                            </td>
+                            <td class="text-end fw-semibold text-dark">
+                                Rp ${Number(subtotal).toLocaleString('id-ID')}
+                            </td>
+                            <td class="text-center font-monospace small text-muted">
+                                <span class="badge bg-light text-dark border">${det.batch_number || '-'}</span>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            let taxServiceVal = Number(data.tax_service || 0);
+            let grandTotalVal = Number(data.total || (subtotalItems + taxServiceVal));
+
+            container.innerHTML = `
+                <!-- Ringkasan Info Header -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded-3 border h-100">
+                            <span class="text-muted small text-uppercase fw-bold d-block mb-1">Supplier</span>
+                            <span class="fs-6 fw-bold text-dark d-block">${data.supplier_nama}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded-3 border h-100">
+                            <span class="text-muted small text-uppercase fw-bold d-block mb-1">Gudang Tujuan</span>
+                            <span class="fs-6 fw-bold text-dark d-block">${data.gudang_nama}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded-3 border h-100">
+                            <span class="text-muted small text-uppercase fw-bold d-block mb-1">Tanggal Transaksi</span>
+                            <span class="fs-6 fw-bold text-dark d-block">${data.tanggal}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 bg-light rounded-3 border h-100">
+                            <span class="text-muted small text-uppercase fw-bold d-block mb-1">Status Transaksi</span>
+                            <div class="d-flex flex-column gap-1 align-items-start">
+                                ${paymentStatusBadge}
+                                ${receiveStatusBadge}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabel Detail Barang -->
+                <h6 class="fw-bold mb-2 text-dark"><i class="bi bi-box-seam me-1 text-primary"></i> Rincian Barang</h6>
+                <div class="table-responsive border rounded-3 mb-3">
+                    <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 40px;" class="text-center">No</th>
+                                <th class="text-start">Barang</th>
+                                <th class="text-center" style="width: 140px;">Qty Dipesan</th>
+                                <th class="text-end" style="width: 140px;">Harga Satuan</th>
+                                <th class="text-end" style="width: 140px;">Subtotal</th>
+                                <th class="text-center" style="width: 150px;">Batch Number</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsTableRows}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="4" class="text-end">Subtotal Barang</th>
+                                <th class="text-end">Rp ${Number(subtotalItems).toLocaleString('id-ID')}</th>
+                                <th></th>
+                            </tr>
+                            <tr>
+                                <th colspan="4" class="text-end text-muted font-normal">Biaya Tambahan (Tax / Service / Ongkir)</th>
+                                <th class="text-end">Rp ${Number(taxServiceVal).toLocaleString('id-ID')}</th>
+                                <th></th>
+                            </tr>
+                            <tr class="table-primary fw-bold">
+                                <th colspan="4" class="text-end">Grand Total</th>
+                                <th class="text-end text-primary fs-6">Rp ${Number(grandTotalVal).toLocaleString('id-ID')}</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <!-- Info Pembayaran -->
+                <div class="card border rounded-3 p-3 bg-light">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <span class="text-muted small fw-semibold text-uppercase d-block">Metode Pembayaran</span>
+                            <span class="fw-bold text-dark">${metodeDisplay}</span>
+                            ${infoPayment}
+                        </div>
+                        <div class="text-end">
+                            <span class="text-muted small fw-semibold text-uppercase d-block">Kekurangan / Sisa Bayar</span>
+                            <span class="fw-bold ${data.is_lunas ? 'text-success' : 'text-danger'} fs-6">
+                                ${data.is_lunas ? 'Lunas (Rp 0)' : 'Rp ' + Number(data.kekurangan || 0).toLocaleString('id-ID')}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            new bootstrap.Modal(document.getElementById('modalDetailPembelian')).show();
+        }
+
+        // ── Helper TomSelect Modal Edit ──
+        function initModalBarangSelect(selectEl) {
+            if (!selectEl || selectEl.tomselect) return;
+            const ts = new TomSelect(selectEl, {
+                create: false,
+                placeholder: '-- Pilih Barang --',
+                allowEmptyOption: true,
+                maxOptions: 500,
+                onChange: function(value) {
+                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            modalTomSelectInstances.push(ts);
+        }
+
+        function destroyModalTomSelects() {
+            modalTomSelectInstances.forEach(ts => {
+                if (ts) ts.destroy();
+            });
+            modalTomSelectInstances = [];
+        }
+
+        function updateModalQtyHint(row) {
+            const select = row.querySelector('.barang-select');
+            const qtyInput = row.querySelector('.qty-input');
+            const hint = row.querySelector('.qty-hint');
+            if (!select || !hint) return;
+
+            const opt = select.querySelector(`option[value="${select.value}"]`);
+            if (!opt || select.value === '') {
+                hint.textContent = '';
+                return;
+            }
+
+            const satuanPembelian = opt.dataset.satuanPembelian || '';
+            const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
+            const satuanUtama = opt.dataset.satuanUtama || 'Pcs';
+            const qtyVal = getCleanNumber(qtyInput ? qtyInput.value : 0);
+
+            if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
+                const totalUtama = qtyVal * konversi;
+                hint.innerHTML = `Satuan: <strong>${satuanPembelian}</strong><br><span class="text-primary">= ${Number(totalUtama).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${satuanUtama}</span> (1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})`;
+            } else {
+                hint.innerHTML = `Satuan: <strong>${satuanUtama}</strong>`;
+            }
+        }
+
+        function calcModalGrandTotal() {
+            let total = 0;
+            document.querySelectorAll('#tbodyEditItems .harga-input').forEach(input => {
+                total += getCleanNumber(input.value);
+            });
+            const taxService = getCleanNumber(document.getElementById('edit_tax_service').value);
+            total += taxService;
+            document.getElementById('edit_grand_total').textContent = 'Rp ' + Number(total).toLocaleString('id-ID');
+        }
+
+        function generateBarangOptionsHtml(selectedId = '') {
+            let html = '<option value="">-- Pilih Barang --</option>';
+            masterBarangs.forEach(b => {
+                const selected = String(b.id) === String(selectedId) ? 'selected' : '';
+                html += `
+                    <option value="${b.id}"
+                        data-kode="${b.kode_barang}"
+                        data-satuan-pembelian="${b.satuan_pembelian || ''}"
+                        data-konversi-pembelian="${b.konversi_pembelian || 1}"
+                        data-satuan-utama="${b.satuan || 'Pcs'}"
+                        ${selected}>
+                        ${b.kode_barang} - ${b.nama}
+                    </option>
+                `;
+            });
+            return html;
+        }
+
+        function addModalItemRow(barangId = '', qty = '', harga = '', batch = '') {
+            const tbody = document.getElementById('tbodyEditItems');
+            const tr = document.createElement('tr');
+            tr.className = 'item-row';
+
+            tr.innerHTML = `
+                <td class="text-start">
+                    <select name="items[${editRowIndex}][barang_id]" class="form-select form-select-sm barang-select" required>
+                        ${generateBarangOptionsHtml(barangId)}
+                    </select>
+                </td>
+                <td>
+                    <input type="text" name="items[${editRowIndex}][qty]" class="form-control form-control-sm text-center qty-input mask-number fw-bold" value="${qty}" required placeholder="0">
+                    <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
+                </td>
+                <td>
+                    <input type="text" name="items[${editRowIndex}][harga]" class="form-control form-control-sm text-end harga-input mask-number fw-bold" value="${harga}" required placeholder="0">
+                </td>
+                <td>
+                    <input type="text" name="items[${editRowIndex}][batch_number]" class="form-control form-control-sm" value="${batch}" placeholder="Otomatis">
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger p-1 border-0 btn-remove-item" title="Hapus">
+                        <i class="bi bi-x-circle fs-5"></i>
+                    </button>
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+
+            const selectEl = tr.querySelector('.barang-select');
+            initModalBarangSelect(selectEl);
+            updateModalQtyHint(tr);
+
+            editRowIndex++;
+            calcModalGrandTotal();
+        }
+
+        // ── Modal Edit Pembelian ──
+        function bukaModalEdit(id) {
+            const data = dataPembayaran[id];
+            if (!data) return;
+
+            destroyModalTomSelects();
+
+            document.getElementById('edit_modal_kode').textContent = data.kode;
+            document.getElementById('formEditPembelian').action = '/pembelian/' + id;
+
+            document.getElementById('edit_supplier_id').value = data.supplier_id || '';
+            document.getElementById('edit_gudang_id').value = data.gudang_id || '';
+            document.getElementById('edit_tanggal').value = data.tanggal_raw || '';
+            document.getElementById('edit_tax_service').value = Number(data.tax_service || 0).toLocaleString('id-ID');
+
+            const tbody = document.getElementById('tbodyEditItems');
+            tbody.innerHTML = '';
+            editRowIndex = 0;
+
+            if (data.details && data.details.length > 0) {
+                data.details.forEach(det => {
+                    const formattedQty = Number(det.qty).toLocaleString('id-ID');
+                    const formattedHarga = Number(det.harga || (det.qty * det.harga_per_qty)).toLocaleString('id-ID');
+                    addModalItemRow(det.barang_id, formattedQty, formattedHarga, det.batch_number || '');
+                });
+            } else {
+                addModalItemRow();
+            }
+
+            new bootstrap.Modal(document.getElementById('modalEditPembelian')).show();
+        }
+
+        document.getElementById('btn-add-item-modal').addEventListener('click', function () {
+            addModalItemRow();
+        });
+
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.btn-remove-item')) {
+                const rows = document.querySelectorAll('#tbodyEditItems .item-row');
+                if (rows.length > 1) {
+                    e.target.closest('.item-row').remove();
+                    calcModalGrandTotal();
+                } else {
+                    alert('Minimal harus ada 1 barang pada pesanan.');
+                }
+            }
+        });
+
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('barang-select')) {
+                const row = e.target.closest('.item-row');
+                if (row) updateModalQtyHint(row);
+            }
+        });
+
+        document.getElementById('edit_tax_service').addEventListener('input', calcModalGrandTotal);
+
+        // ── Number Masking (Indonesian Format) ──
+        function getCleanNumber(val) {
+            if (!val) return 0;
+            let clean = String(val).replace(/\./g, '').replace(/,/g, '.');
+            return parseFloat(clean) || 0;
+        }
+
+        function formatNumberIndonesian(value) {
+            let parts = value.replace(/[^0-9,]/g, '').split(',');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+            if (parts.length > 2) {
+                parts = [parts[0], parts.slice(1).join('')];
+            }
+            return parts.join(',');
+        }
+
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('mask-number')) {
+                let cursorPosition = e.target.selectionStart;
+                let originalLength = e.target.value.length;
+                
+                let formatted = formatNumberIndonesian(e.target.value);
+                e.target.value = formatted;
+                
+                let newLength = formatted.length;
+                e.target.selectionStart = cursorPosition + (newLength - originalLength);
+                e.target.selectionEnd = cursorPosition + (newLength - originalLength);
+
+                if (e.target.classList.contains('harga-input')) {
+                    calcModalGrandTotal();
+                }
+            }
+
+            if (e.target.classList.contains('qty-input')) {
+                const row = e.target.closest('.item-row');
+                if (row) updateModalQtyHint(row);
+            }
+        });
+
+        document.getElementById('formEditPembelian').addEventListener('submit', function (e) {
+            document.querySelectorAll('#modalEditPembelian .mask-number').forEach(input => {
+                input.value = getCleanNumber(input.value);
+            });
+        });
 
         // ── Catat Pembayaran ──
         function bukaPembayaran(id, kode, total) {
@@ -530,21 +1042,22 @@
                 }
             }
         }
-
         function toggleFieldPembayaran(metode) {
             const fieldDp = document.getElementById('field_dp');
-            if (fieldDp) fieldDp.classList.toggle('d-none', metode !== 'dp');
-
             const fieldTermin = document.getElementById('field_termin');
+            if (fieldDp) fieldDp.classList.toggle('d-none', metode !== 'dp');
             if (fieldTermin) fieldTermin.classList.toggle('d-none', metode !== 'termin');
+        }
 
-            const tglPelunasan = document.querySelector('#formPembayaran input[name=tanggal_pelunasan]');
-            if (tglPelunasan) {
-                if (metode === 'dp') {
-                    tglPelunasan.setAttribute('required', 'required');
-                } else {
-                    tglPelunasan.removeAttribute('required');
-                }
+        function toggleTanpaJatuhTempo(checked) {
+            const input = document.getElementById('inputJatuhTempoTermin');
+            const hint = document.getElementById('hintTanpaJatuhTempo');
+            if (input) {
+                input.disabled = checked;
+                if (checked) input.value = '';
+            }
+            if (hint) {
+                hint.style.display = checked ? 'block' : 'none';
             }
         }
 
@@ -637,12 +1150,32 @@
                 const qtyOrdered = Number(det.qty);
                 const qtyReceivedSoFar = Number(det.qty_diterima || 0);
                 const qtyRemaining = Math.max(0, qtyOrdered - qtyReceivedSoFar);
+                const hasKonv = det.has_konversi;
+                const konv = Number(det.konversi_pembelian || 1);
                 
+                let orderedText = `<strong>${qtyOrdered} ${det.satuan}</strong>`;
+                if (hasKonv) {
+                    orderedText += `<div class="text-primary small" style="font-size:10.5px;">= ${(qtyOrdered * konv).toLocaleString('id-ID')} ${det.satuan_utama}</div>`;
+                }
+
+                let receivedText = `<span class="text-success fw-semibold">${qtyReceivedSoFar} ${det.satuan}</span>`;
+                if (hasKonv && qtyReceivedSoFar > 0) {
+                    receivedText += `<div class="text-muted small" style="font-size:10px;">= ${(qtyReceivedSoFar * konv).toLocaleString('id-ID')} ${det.satuan_utama}</div>`;
+                }
+
+                let remainingText = `<span class="text-danger fw-semibold">${qtyRemaining} ${det.satuan}</span>`;
+                if (hasKonv && qtyRemaining > 0) {
+                    remainingText += `<div class="text-danger small" style="font-size:10px;">= ${(qtyRemaining * konv).toLocaleString('id-ID')} ${det.satuan_utama}</div>`;
+                }
+
                 tr.innerHTML = `
-                    <td><strong>${det.nama}</strong></td>
-                    <td class="text-center">${qtyOrdered} ${det.satuan}</td>
-                    <td class="text-center text-success fw-semibold">${qtyReceivedSoFar} ${det.satuan}</td>
-                    <td class="text-center text-danger fw-semibold">${qtyRemaining} ${det.satuan}</td>
+                    <td>
+                        <strong>${det.nama}</strong>
+                        ${hasKonv ? `<div class="text-muted" style="font-size:10px;">1 ${det.satuan_pembelian} = ${konv.toLocaleString('id-ID')} ${det.satuan_utama}</div>` : ''}
+                    </td>
+                    <td class="text-center">${orderedText}</td>
+                    <td class="text-center">${receivedText}</td>
+                    <td class="text-center">${remainingText}</td>
                     <td>
                         <div class="input-group input-group-sm">
                             <input type="number" step="0.01" min="0" max="${qtyRemaining}" 
@@ -652,6 +1185,7 @@
                                    required>
                             <span class="input-group-text">${det.satuan}</span>
                         </div>
+                        ${hasKonv ? `<small class="text-muted d-block text-center mt-1" style="font-size:10px;">Stok masuk: <strong>${(qtyRemaining * konv).toLocaleString('id-ID')} ${det.satuan_utama}</strong></small>` : ''}
                     </td>
                     <td class="text-end">Rp ${Number(det.harga_per_qty).toLocaleString('id-ID')}</td>
                 `;

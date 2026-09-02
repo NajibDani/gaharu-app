@@ -207,61 +207,72 @@
 
                         @php
                             $grandTotal += abs($detail->nilai_selisih);
+                            $konversi = (float) ($detail->barang->konversi_pembelian ?? 1);
+                            $hasKonversi = !empty($detail->barang->satuan_pembelian) && $konversi > 1;
+                            $satuan = $detail->barang->satuan ?? 'pcs';
+                            $satuanBeli = $detail->barang->satuan_pembelian ?? '';
                         @endphp
 
                         <tr>
 
-                            <td>
+                            <td class="text-muted">
                                 {{ $loop->iteration }}
                             </td>
 
                             <td>
-                                {{ $detail->barang->nama }}
-                            </td>
-
-                            <td>
-                                {{ number_format($detail->stok_sistem,2,',','.') }}
-                            </td>
-
-                            <td>
-                                {{ number_format($detail->stok_fisik,2,',','.') }}
-                            </td>
-
-                            <td>
-
-                                @if($detail->selisih < 0)
-
-                                    <span class="badge bg-danger">
-
-                                        {{ number_format($detail->selisih,2) }}
-
-                                    </span>
-
-                                @elseif($detail->selisih > 0)
-
-                                    <span class="badge bg-success">
-
-                                        +{{ number_format($detail->selisih,2) }}
-
-                                    </span>
-
-                                @else
-
-                                    <span class="badge bg-secondary">
-
-                                        0
-
-                                    </span>
-
+                                <div class="fw-bold">{{ $detail->barang->nama }}</div>
+                                <small class="text-muted font-monospace">{{ $detail->barang->kode_barang ?? '-' }}</small>
+                                @if($hasKonversi)
+                                    <small class="text-primary d-block font-monospace" style="font-size:0.72rem;">1 {{ $satuanBeli }} = {{ number_format($konversi, 0, ',', '.') }} {{ $satuan }}</small>
                                 @endif
-
                             </td>
 
                             <td>
+                                <div><span class="fw-semibold">{{ number_format($detail->stok_sistem, 2, ',', '.') }}</span> <span class="text-muted small">{{ $satuan }}</span></div>
+                                @if($hasKonversi)
+                                    <div class="small text-primary mt-1" style="font-size:0.75rem;">
+                                        <i class="bi bi-arrow-repeat me-1"></i>{{ number_format($detail->stok_sistem / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
+                                    </div>
+                                @endif
+                            </td>
 
-                                Rp
-                                {{ number_format($detail->nilai_selisih,0,',','.') }}
+                            <td>
+                                <div><span class="fw-bold">{{ number_format($detail->stok_fisik, 2, ',', '.') }}</span> <span class="text-muted small">{{ $satuan }}</span></div>
+                                @if($hasKonversi)
+                                    <div class="small text-primary mt-1" style="font-size:0.75rem;">
+                                        <i class="bi bi-arrow-repeat me-1"></i>{{ number_format($detail->stok_fisik / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
+                                    </div>
+                                @endif
+                            </td>
 
+                            <td>
+                                @if($detail->selisih < 0)
+                                    <span class="badge bg-danger">
+                                        {{ number_format($detail->selisih, 2, ',', '.') }} {{ $satuan }}
+                                    </span>
+                                    @if($hasKonversi)
+                                        <div class="small text-danger mt-1 font-monospace" style="font-size:0.75rem;">
+                                            ({{ number_format($detail->selisih / $konversi, 2, ',', '.') }} {{ $satuanBeli }})
+                                        </div>
+                                    @endif
+                                @elseif($detail->selisih > 0)
+                                    <span class="badge bg-success">
+                                        +{{ number_format($detail->selisih, 2, ',', '.') }} {{ $satuan }}
+                                    </span>
+                                    @if($hasKonversi)
+                                        <div class="small text-success mt-1 font-monospace" style="font-size:0.75rem;">
+                                            (+{{ number_format($detail->selisih / $konversi, 2, ',', '.') }} {{ $satuanBeli }})
+                                        </div>
+                                    @endif
+                                @else
+                                    <span class="badge bg-secondary">
+                                        0 {{ $satuan }}
+                                    </span>
+                                @endif
+                            </td>
+
+                            <td class="fw-bold">
+                                Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
                             </td>
 
                         </tr>
