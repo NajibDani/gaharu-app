@@ -19,14 +19,7 @@ class StokGudangController extends Controller
         $barangId    = $request->barang_id;
         $jenisBarang = $request->jenis_barang ?? $request->jenis_utama;
 
-        // Auto filter warehouse based on role
-        if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangId = 4;
-        } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangId = 2;
-        } elseif ($roleName === 'Kepala Gudang') {
-            $gudangId = 1;
-        }
+        // Auto filter warehouse based on role dihilangkan agar semua user bisa lihat dan filter semua gudang
 
         /*
         |--------------------------------------------------------------------------
@@ -191,15 +184,7 @@ class StokGudangController extends Controller
         |--------------------------------------------------------------------------
         */
 
-        if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
-        } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
-        } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
-        } else {
-            $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
-        }
+        $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         $barangs = MasterBarang::orderBy('nama')->get();
 
         return view(
@@ -215,14 +200,6 @@ class StokGudangController extends Controller
 
         $gudangId = $request->gudang_id;
         $search = $request->search;
-
-        if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangId = 4;
-        } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangId = 2;
-        } elseif ($roleName === 'Kepala Gudang') {
-            $gudangId = 1;
-        }
 
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate = $request->end_date ?: date('Y-m-d');
@@ -242,15 +219,7 @@ class StokGudangController extends Controller
             $item->stok_akhir = $this->calculateStockAtDate($item->id, $gudangId, $endDate);
         }
 
-        if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::where('id', 4)->get();
-        } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::where('id', 2)->get();
-        } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::where('id', 1)->get();
-        } else {
-            $gudangs = MasterGudang::orderBy('nama')->get();
-        }
+        $gudangs = MasterGudang::orderBy('nama')->get();
 
         return view('stok-gudang.buku-pembantu', compact(
             'items', 'gudangs', 'gudangId', 'startDate', 'endDate', 'search'

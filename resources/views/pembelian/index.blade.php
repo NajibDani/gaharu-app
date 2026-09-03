@@ -178,8 +178,9 @@
                                         @endif
                                     </div>
                                 @else
-                                    {{-- Tombol Catat Pembayaran (Hanya Super Admin) --}}
-                                    @if($isSuperAdmin)
+                                    {{-- Tombol Catat Pembayaran (Super Admin & Gudang) --}}
+                                    @php $isGudangUser = $user && $user->isGudang(); @endphp
+                                    @if($isSuperAdmin || $isGudangUser)
                                         <button type="button"
                                                 class="btn btn-sm"
                                                 style="background:#606060; color:#fff; font-size:11px; padding:2px 10px;"
@@ -190,7 +191,7 @@
                                         <button type="button"
                                                 class="btn btn-sm"
                                                 disabled
-                                                title="Hanya Super Admin yang dapat menginput pembayaran pembelian."
+                                                title="Hanya Super Admin atau pengguna Gudang yang dapat mencatat pembayaran pembelian."
                                                 style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
                                             <i class="bi bi-lock-fill me-1"></i>+ Catat
                                         </button>
@@ -258,6 +259,8 @@
                                     @php
                                         $user = auth()->user();
                                         $isSuperAdmin = $user && $user->isSuperAdmin();
+                                        $isGudangUser = $user && $user->isGudang();
+                                        $bisaHapusBelumBayar = $isSuperAdmin || $isGudangUser;
                                     @endphp
 
                                     @if(!$item->isTerkunci())
@@ -268,18 +271,24 @@
                                                 title="Edit Pembelian">
                                             <i class="bi bi-pencil-square me-1"></i>Edit
                                         </button>
-                                        <form action="{{ route('pembelian.destroy', $item->id) }}"
-                                              method="POST" class="d-inline"
-                                              onsubmit="return confirm('Yakin ingin menghapus transaksi pembelian {{ $item->kode_pembelian }}?')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit"
-                                                    class="btn btn-sm btn-danger text-white"
-                                                    style="font-size:11px; padding:2px 8px; border-radius:5px;"
-                                                    title="Hapus Pembelian (Belum Diterima/Lunas)">
-                                                <i class="bi bi-trash-fill me-1"></i>Hapus
-                                            </button>
-                                        </form>
+                                        @if($bisaHapusBelumBayar)
+                                            <form action="{{ route('pembelian.destroy', $item->id) }}"
+                                                  method="POST" class="d-inline"
+                                                  onsubmit="return confirm('Yakin ingin menghapus transaksi pembelian {{ $item->kode_pembelian }}?')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit"
+                                                        class="btn btn-sm btn-danger text-white"
+                                                        style="font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                        title="Hapus Pembelian (Belum Dibayar)">
+                                                    <i class="bi bi-trash-fill me-1"></i>Hapus
+                                                </button>
+                                            </form>
+                                        @else
+                                            <button class="btn btn-sm" disabled
+                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                    title="Hanya Super Admin atau pengguna Gudang yang dapat menghapus transaksi pembelian.">Hapus</button>
+                                        @endif
                                     @else
                                         <button class="btn btn-sm" disabled
                                                 style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian terkunci karena sudah diterima / lunas">Edit</button>
@@ -298,7 +307,7 @@
                                             </form>
                                         @else
                                             <button class="btn btn-sm" disabled
-                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian terkunci (Hanya Super Admin yang dapat menghapus/rollback)">Hapus</button>
+                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian sudah terbayar/diterima (Hanya Super Admin yang dapat menghapus/rollback)">Hapus</button>
                                         @endif
                                     @endif
                                 </div>

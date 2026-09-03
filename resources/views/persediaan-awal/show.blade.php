@@ -22,6 +22,11 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary rounded-2 px-3" onclick="window.print()">
                         <i class="bi bi-printer me-1"></i> Cetak / Print
                     </button>
+                    @if(auth()->user() && auth()->user()->isSuperAdmin())
+                        <a href="{{ route('persediaan-awal.edit', $persediaanAwal->id) }}" class="btn btn-sm btn-warning text-white rounded-2 px-3">
+                            <i class="bi bi-pencil-square me-1"></i> Edit Transaksi
+                        </a>
+                    @endif
                     <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm text-white rounded-2 px-3" style="background-color: #d88656; border: none;">
                         <i class="bi bi-plus-lg me-1"></i> Input Baru
                     </a>

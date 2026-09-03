@@ -129,12 +129,27 @@
                 Buku Pembantu
             </div>
 
-            <!-- Tab Navigasi Menu 4 Pilihan -->
-            <div class="tab-navigation">
-                <a href="{{ route('buku-pembantu.index', ['jenis' => 'utang']) }}" class="tab-btn {{ $jenis == 'utang' ? 'active' : '' }}">Utang Usaha</a>
-                <a href="{{ route('buku-pembantu.index', ['jenis' => 'piutang']) }}" class="tab-btn {{ $jenis == 'piutang' ? 'active' : '' }}">Piutang Usaha</a>
-                <a href="{{ route('buku-pembantu.index', ['jenis' => 'um-pembelian']) }}" class="tab-btn {{ $jenis == 'um-pembelian' ? 'active' : '' }}">Uang Muka Pembelian</a>
-                <a href="{{ route('buku-pembantu.index', ['jenis' => 'um-penjualan']) }}" class="tab-btn {{ $jenis == 'um-penjualan' ? 'active' : '' }}">Uang Muka Penjualan</a>
+            <!-- Tab Navigasi Menu 4 Pilihan & Search Form -->
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div class="tab-navigation mb-0" style="flex-wrap: wrap;">
+                    <a href="{{ route('buku-pembantu.index', ['jenis' => 'utang', 'search' => request('search')]) }}" class="tab-btn {{ $jenis == 'utang' ? 'active' : '' }}">Utang Usaha</a>
+                    <a href="{{ route('buku-pembantu.index', ['jenis' => 'piutang', 'search' => request('search')]) }}" class="tab-btn {{ $jenis == 'piutang' ? 'active' : '' }}">Piutang Usaha</a>
+                    <a href="{{ route('buku-pembantu.index', ['jenis' => 'um-pembelian', 'search' => request('search')]) }}" class="tab-btn {{ $jenis == 'um-pembelian' ? 'active' : '' }}">Uang Muka Pembelian</a>
+                    <a href="{{ route('buku-pembantu.index', ['jenis' => 'um-penjualan', 'search' => request('search')]) }}" class="tab-btn {{ $jenis == 'um-penjualan' ? 'active' : '' }}">Uang Muka Penjualan</a>
+                </div>
+
+                <!-- Search Input Form -->
+                <form action="{{ route('buku-pembantu.index') }}" method="GET" class="d-flex align-items-center gap-2" style="min-width: 260px;">
+                    <input type="hidden" name="jenis" value="{{ $jenis }}">
+                    <div style="position: relative; width: 100%;">
+                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari nama / ID {{ in_array($jenis, ['utang', 'um-pembelian']) ? 'supplier' : 'customer' }}..." value="{{ $search ?? request('search') }}" style="border-radius: 8px; border: 1px solid #cbd5e1; padding: 7px 12px 7px 32px; font-size: 13px; width: 100%;">
+                        <i class="bi bi-search" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 13px;"></i>
+                    </div>
+                    <button type="submit" class="btn btn-sm" style="background-color: var(--brand); color: #fff; border-radius: 8px; font-weight: 600; padding: 7px 14px; white-space: nowrap;">Cari</button>
+                    @if(!empty($search))
+                        <a href="{{ route('buku-pembantu.index', ['jenis' => $jenis]) }}" class="btn btn-sm btn-outline-secondary" style="border-radius: 8px; padding: 7px 12px; white-space: nowrap;">Reset</a>
+                    @endif
+                </form>
             </div>
 
             <!-- Summary Cards -->

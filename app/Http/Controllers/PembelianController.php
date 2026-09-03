@@ -546,8 +546,9 @@ class PembelianController extends Controller
 
     public function catatPembayaran(Request $request, Pembelian $pembelian)
     {
-        if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
-            return back()->with('error', 'Hanya Super Admin yang diizinkan untuk menginput pembayaran pembelian.');
+        $user = auth()->user();
+        if (!$user || (!$user->isSuperAdmin() && !$user->isGudang())) {
+            return back()->with('error', 'Hanya Super Admin atau pengguna Gudang yang diizinkan untuk mencatat pembayaran pembelian.');
         }
 
         $validated = $request->validate([
@@ -736,10 +737,16 @@ class PembelianController extends Controller
     {
         $user = auth()->user();
         $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
 
-        // Jika terkunci dan bukan Super Admin, tolak
+        // Jika terkunci (sudah diterima/lunas) dan bukan Super Admin, tolak
         if ($pembelian->isTerkunci() && !$isSuperAdmin) {
             return back()->with('error', 'Pembelian yang sudah diterima atau lunas hanya dapat dihapus / di-rollback oleh Super Admin.');
+        }
+
+        // Jika belum terkunci tapi user bukan SuperAdmin dan bukan Gudang, tolak
+        if (!$pembelian->isTerkunci() && !$isSuperAdmin && !$isGudang) {
+            return back()->with('error', 'Hanya Super Admin atau pengguna Gudang yang dapat menghapus transaksi pembelian.');
         }
 
         DB::transaction(function () use ($pembelian, $isSuperAdmin) {

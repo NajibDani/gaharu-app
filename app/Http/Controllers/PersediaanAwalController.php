@@ -575,6 +575,382 @@ class PersediaanAwalController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | EDIT: Form Koreksi Persediaan Awal (Khusus Super Admin)
+    |--------------------------------------------------------------------------
+    */
+    public function edit(string $id)
+    {
+        $user = auth()->user();
+        if (!$user || !$user->isSuperAdmin()) {
+            abort(403, 'Akses terbatas. Hanya Super Admin yang diizinkan mengedit transaksi persediaan awal.');
+        }
+
+        $persediaanAwal = PersediaanAwal::with([
+            'gudang.divisi',
+            'divisi',
+            'details.barang.kategori',
+        ])->findOrFail($id);
+
+        if (Journal::isPeriodClosed($persediaanAwal->tanggal->format('Y-m-d'))) {
+            return redirect()
+                ->route('persediaan-awal.show', $persediaanAwal->id)
+                ->with('error', 'Periode akuntansi sudah ditutup buku. Data transaksi tidak dapat diedit.');
+        }
+
+        $hargaUtamaMap = $this->getHargaGudangUtamaMap();
+
+        $detailsData = [];
+        foreach ($persediaanAwal->details as $d) {
+            $barang = $d->barang;
+            if (!$barang) continue;
+
+            $konv = (float)($d->konversi_pembelian ?: ($barang->konversi_pembelian ?: 1.00));
+            if ($konv <= 0) $konv = 1.00;
+
+            $satStok = $d->satuan ?: ($barang->satuan ?: 'pcs');
+            $satBeli = $d->satuan_pembelian ?: ($barang->satuan_pembelian ?: $satStok);
+
+            $hasKonv = $satBeli && $konv > 1 && ($satBeli !== $satStok);
+
+            $qtyInput = $d->qty_pembelian !== null ? (float)$d->qty_pembelian : ($hasKonv ? round((float)$d->qty / $konv, 2) : (float)$d->qty);
+            $hargaInput = $d->harga_pembelian !== null ? (float)$d->harga_pembelian : ($hasKonv ? round((float)$d->harga_satuan * $konv, 2) : (float)$d->harga_satuan);
+            $satuanTipe = ($hasKonv && $d->qty_pembelian !== null) ? 'pembelian' : 'utama';
+
+            $hrgStokUtama = (float)($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
+            $hrgBeliUtama = $hrgStokUtama * $konv;
+
+            $detailsData[] = [
+                'barang_id'          => $barang->id,
+                'kode_barang'        => $barang->kode_barang,
+                'nama'               => $barang->nama,
+                'kategori_id'        => $barang->kategori_id,
+                'kategori_nama'      => $barang->kategori->nama ?? '-',
+                'satuan'             => $satStok,
+                'satuan_pembelian'   => $satBeli,
+                'konversi_pembelian' => $konv,
+                'qty_input'          => $qtyInput,
+                'satuan_tipe'        => $satuanTipe,
+                'harga_input'        => $hargaInput,
+                'harga_stok_utama'   => $hrgStokUtama,
+                'harga_beli_utama'   => $hrgBeliUtama,
+            ];
+        }
+
+        $allBarang = MasterBarang::with('kategori')
+            ->where('is_active', true)
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        return view('persediaan-awal.edit', compact(
+            'persediaanAwal',
+            'detailsData',
+            'allBarang',
+            'hargaUtamaMap'
+        ));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | UPDATE: Simpan Perubahan Persediaan Awal (Khusus Super Admin)
+    |--------------------------------------------------------------------------
+    */
+    public function update(Request $request, string $id)
+    {
+        $user = auth()->user();
+        if (!$user || !$user->isSuperAdmin()) {
+            abort(403, 'Akses terbatas. Hanya Super Admin yang diizinkan mengedit transaksi persediaan awal.');
+        }
+
+        $persediaanAwal = PersediaanAwal::with('details')->findOrFail($id);
+
+        if (Journal::isPeriodClosed($persediaanAwal->tanggal->format('Y-m-d'))) {
+            return back()->with('error', 'Periode akuntansi tanggal transaksi lama sudah ditutup buku. Tidak dapat diubah.');
+        }
+
+        $request->validate([
+            'tanggal'        => 'required|date',
+            'barang_id'      => 'required|array|min:1',
+            'barang_id.*'    => 'required|exists:master_barang,id',
+            'qty'            => 'required|array|min:1',
+            'harga_satuan'   => 'required|array|min:1',
+            'keterangan'     => 'nullable|string|max:500',
+        ]);
+
+        $tanggalBaru = date('Y-m-d', strtotime($request->tanggal));
+        if (Journal::isPeriodClosed($tanggalBaru)) {
+            return back()->withErrors([
+                'tanggal' => 'Periode akuntansi tanggal baru ' . date('d/m/Y', strtotime($tanggalBaru)) . ' sudah ditutup buku.',
+            ])->withInput();
+        }
+
+        $gudang = MasterGudang::findOrFail($persediaanAwal->gudang_id);
+        $gudangId = $persediaanAwal->gudang_id;
+        $divisiId = $persediaanAwal->divisi_id;
+
+        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+        $isGudangUtama = ($gudangId == $gudangUtamaId || strtolower($gudang->kategori) === 'utama');
+
+        $hargaUtamaMap = $this->getHargaGudangUtamaMap();
+
+        // 1. Validasi & kalkulasi item baru
+        $validItems = [];
+        foreach ($request->barang_id as $index => $barangId) {
+            $qtyInput = (float) str_replace(',', '.', $request->qty[$index] ?? 0);
+
+            if ($qtyInput > 0) {
+                $barang = MasterBarang::find($barangId);
+                if (!$barang) continue;
+
+                $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
+                if ($konversi <= 0) $konversi = 1.00;
+
+                $satuanStok = $barang->satuan ?: 'pcs';
+                $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
+                $satuanTipe = $request->satuan_tipe[$index] ?? 'pembelian';
+                $isPembelian = ($satuanTipe === 'pembelian');
+
+                $multiplier = $isPembelian ? $konversi : 1.00;
+                $qtyStok = $qtyInput * $multiplier;
+
+                if ($isGudangUtama) {
+                    $hargaInput = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
+                    $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
+                } else {
+                    $hargaStok = (float) ($hargaUtamaMap[$barangId] ?? ($barang->hpp_referensi ?? 0));
+                    $hargaInput = $hargaStok * $multiplier;
+                }
+
+                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+
+                $validItems[] = [
+                    'barang_id'          => $barangId,
+                    'barang'             => $barang,
+                    'qty_input'          => $qtyInput,
+                    'harga_input'        => max(0, $hargaInput),
+                    'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
+                    'satuan_pembelian'   => $satBeli,
+                    'konversi_pembelian' => $konversi,
+                    'qty_stok'           => $qtyStok,
+                    'harga_stok'         => $hargaStok,
+                    'total_nilai'        => $totalNilai,
+                ];
+            }
+        }
+
+        if (empty($validItems)) {
+            return back()->withErrors([
+                'error' => 'Harap isi minimal 1 barang dengan Qty Persediaan Awal lebih dari 0.',
+            ])->withInput();
+        }
+
+        DB::beginTransaction();
+
+        try {
+            // 2. REVERT DAMPAK LAMA
+            // A. Kurangi stok fisik di stok_gudang sebesar qty lama
+            foreach ($persediaanAwal->details as $oldDetail) {
+                $stokQuery = StokGudang::where('barang_id', $oldDetail->barang_id)
+                    ->where('gudang_id', $gudangId);
+                if ($divisiId) {
+                    $stokQuery->where('divisi_id', $divisiId);
+                } else {
+                    $stokQuery->whereNull('divisi_id');
+                }
+
+                $stokRec = $stokQuery->lockForUpdate()->first();
+                if ($stokRec) {
+                    $stokRec->decrement('jumlah', min($stokRec->jumlah, $oldDetail->qty));
+                }
+
+                // Hapus batch FIFO lama
+                StokGudangBatch::where('gudang_id', $gudangId)
+                    ->where('barang_id', $oldDetail->barang_id)
+                    ->where('batch_number', $oldDetail->batch_number)
+                    ->delete();
+            }
+
+            // B. Hapus mutasi TransaksiStok lama
+            TransaksiStok::where('source_type', 'saldo_awal')
+                ->where('source_id', $persediaanAwal->id)
+                ->delete();
+
+            // C. Hapus detail lama persediaan_awal_detail
+            $persediaanAwal->details()->delete();
+
+            // 3. TERAPKAN DATA BARU
+            $totalItem  = count($validItems);
+            $totalQty   = array_sum(array_column($validItems, 'qty_stok'));
+            $totalNilai = array_sum(array_column($validItems, 'total_nilai'));
+
+            $defaultSupplierId  = DB::table('suppliers')->value('id') ?? 1;
+            $defaultPembelianId = DB::table('pembelian')->value('id') ?? 1;
+            $defaultPemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
+
+            $surplusDebits = [];
+            $totalKredit   = 0;
+
+            foreach ($validItems as $item) {
+                $barang = $item['barang'];
+                $satuanStok = $barang->satuan ?? 'pcs';
+                $batchNumber = 'SA-' . date('Ymd', strtotime($tanggalBaru)) . '-' . ($barang->kode_barang ?? $item['barang_id']);
+
+                // Simpan detail baru
+                PersediaanAwalDetail::create([
+                    'persediaan_awal_id' => $persediaanAwal->id,
+                    'barang_id'          => $item['barang_id'],
+                    'qty'                => $item['qty_stok'],
+                    'satuan'             => $satuanStok,
+                    'satuan_pembelian'   => $item['satuan_pembelian'],
+                    'konversi_pembelian' => $item['konversi_pembelian'],
+                    'qty_pembelian'      => $item['qty_input'],
+                    'harga_pembelian'    => $item['harga_input'],
+                    'harga_satuan'       => $item['harga_stok'],
+                    'total_nilai'        => $item['total_nilai'],
+                    'batch_number'       => $batchNumber,
+                ]);
+
+                // Tambah stok fisik di stok_gudang
+                $stokQuery = StokGudang::where('barang_id', $item['barang_id'])
+                    ->where('gudang_id', $gudangId);
+                if ($divisiId) {
+                    $stokQuery->where('divisi_id', $divisiId);
+                } else {
+                    $stokQuery->whereNull('divisi_id');
+                }
+
+                $stokGudang = $stokQuery->lockForUpdate()->first();
+                if ($stokGudang) {
+                    $stokGudang->increment('jumlah', $item['qty_stok']);
+                } else {
+                    StokGudang::create([
+                        'barang_id' => $item['barang_id'],
+                        'gudang_id' => $gudangId,
+                        'divisi_id' => $divisiId,
+                        'jumlah'    => $item['qty_stok'],
+                    ]);
+                }
+
+                // Buat Batch FIFO baru
+                StokGudangBatch::create([
+                    'gudang_id'           => $gudangId,
+                    'divisi_id'           => $divisiId,
+                    'supplier_id'         => $defaultSupplierId,
+                    'barang_id'           => $item['barang_id'],
+                    'pembelian_id'        => $defaultPembelianId,
+                    'pembelian_detail_id' => $defaultPemDetailId,
+                    'batch_number'        => $batchNumber,
+                    'qty_masuk'           => $item['qty_stok'],
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $item['qty_stok'],
+                    'harga_per_qty'       => $item['harga_stok'],
+                    'is_habis'            => false,
+                ]);
+
+                // Catat Transaksi Stok baru
+                TransaksiStok::create([
+                    'tanggal'          => $tanggalBaru . ' ' . date('H:i:s'),
+                    'tipe'             => 'masuk',
+                    'source_type'      => 'saldo_awal',
+                    'source_id'        => $persediaanAwal->id,
+                    'gudang_tujuan_id' => $gudangId,
+                    'divisi_tujuan_id' => $divisiId,
+                    'barang_id'        => $item['barang_id'],
+                    'qty'              => $item['qty_stok'],
+                    'total_harga'      => $item['total_nilai'],
+                    'created_by'       => Auth::id() ?? 1,
+                ]);
+
+                // Update HPP referensi di master barang jika bernilai > 0
+                if ($item['harga_stok'] > 0) {
+                    $barang->update(['hpp_referensi' => $item['harga_stok']]);
+                }
+
+                // Akun persediaan
+                if ($item['total_nilai'] > 0) {
+                    $isOperational = $barang && ($barang->is_operational || (!$barang->is_bahan_baku && !$barang->is_bahan_setengah_jadi && !$barang->is_barang_jadi));
+                    $coaCode = $isOperational ? '1501' : '1301';
+                    $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
+
+                    if (!isset($surplusDebits[$idPersediaan])) {
+                        $surplusDebits[$idPersediaan] = 0;
+                    }
+                    $surplusDebits[$idPersediaan] += $item['total_nilai'];
+                    $totalKredit += $item['total_nilai'];
+                }
+            }
+
+            // 4. Update Header Transaksi
+            $persediaanAwal->update([
+                'tanggal'     => $tanggalBaru,
+                'total_item'  => $totalItem,
+                'total_qty'   => $totalQty,
+                'total_nilai' => $totalNilai,
+                'keterangan'  => $request->keterangan ?? $persediaanAwal->keterangan,
+            ]);
+
+            // 5. Update Jurnal Penyesuaian Terkait
+            $jp = JurnalPenyesuaian::where('source_type', 'saldo_awal')
+                ->where('source_id', $persediaanAwal->id)
+                ->first();
+
+            if ($totalKredit > 0) {
+                $idEkuitas = DB::table('chart_of_accounts')->where('kode', '3101')->value('id')
+                          ?? DB::table('chart_of_accounts')->where('kode', '3103')->value('id')
+                          ?? 30;
+
+                if (!$jp) {
+                    $jp = JurnalPenyesuaian::create([
+                        'tanggal'     => $tanggalBaru,
+                        'deskripsi'   => "[Saldo Awal Koreksi] Persediaan Awal: {$persediaanAwal->kode_transaksi} ({$gudang->nama})",
+                        'no_ref'      => 'AJP-SA-' . $persediaanAwal->kode_transaksi,
+                        'source_type' => 'saldo_awal',
+                        'source_id'   => $persediaanAwal->id,
+                        'created_by'  => Auth::id() ?? 1,
+                        'status'      => 'approved',
+                    ]);
+                } else {
+                    $jp->update([
+                        'tanggal'   => $tanggalBaru,
+                        'deskripsi' => "[Saldo Awal Koreksi] Persediaan Awal: {$persediaanAwal->kode_transaksi} ({$gudang->nama})",
+                    ]);
+                    $jp->details()->delete();
+                }
+
+                foreach ($surplusDebits as $accId => $debitAmount) {
+                    $jp->details()->create([
+                        'account_id'   => $accId,
+                        'debit'        => round($debitAmount, 2),
+                        'kredit'       => 0,
+                        'journal_type' => JurnalPenyesuaian::class,
+                    ]);
+                }
+
+                $jp->details()->create([
+                    'account_id'   => $idEkuitas,
+                    'debit'        => 0,
+                    'kredit'       => round($totalKredit, 2),
+                    'journal_type' => JurnalPenyesuaian::class,
+                ]);
+            } elseif ($jp) {
+                $jp->details()->delete();
+                $jp->delete();
+            }
+
+            DB::commit();
+
+            return redirect()
+                ->route('persediaan-awal.show', $persediaanAwal->id)
+                ->with('success', "Perubahan data Persediaan Awal ({$persediaanAwal->kode_transaksi}) berhasil disimpan. Posisi stok gudang, batch FIFO, dan jurnal penyesuaian telah disesuaikan.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal memperbarui Persediaan Awal: ' . $e->getMessage())->withInput();
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | DOWNLOAD TEMPLATE EXCEL
     |--------------------------------------------------------------------------
     */
