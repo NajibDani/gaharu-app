@@ -772,14 +772,15 @@ class PembelianController extends Controller
 
                     // Catat mutasi stok keluar (koreksi pembatalan pembelian)
                     \App\Models\TransaksiStok::create([
-                        'barang_id'        => $batch->barang_id,
-                        'gudang_asal_id'   => $batch->gudang_id,
-                        'divisi_asal_id'   => $batch->divisi_id,
-                        'qty'              => (float) $batch->qty_masuk,
-                        'total_harga'      => (float) ($batch->qty_masuk * $batch->harga_per_qty),
-                        'tipe_transaksi'   => 'keluar',
-                        'keterangan'       => 'Pembatalan/Hapus Transaksi Pembelian ' . $pembelian->kode_pembelian . ' (Batch ' . $batch->batch_number . ')',
-                        'user_id'          => auth()->id(),
+                        'tanggal'        => now(),
+                        'tipe'           => 'keluar',
+                        'source_type'    => 'pembelian_batal',
+                        'source_id'      => $pembelian->id,
+                        'gudang_asal_id' => $batch->gudang_id,
+                        'barang_id'      => $batch->barang_id,
+                        'qty'            => (float) $batch->qty_masuk,
+                        'total_harga'    => (float) ($batch->qty_masuk * $batch->harga_per_qty),
+                        'created_by'     => auth()->id() ?? 1,
                     ]);
                 }
             }
