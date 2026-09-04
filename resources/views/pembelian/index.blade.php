@@ -241,21 +241,23 @@
                             </td>
     
                             {{-- AKSI --}}
-                            <td>
-                                <div class="d-flex gap-1 flex-wrap justify-content-center">
+                            <td class="text-center" style="width: 140px; white-space: nowrap;">
+                                <div class="d-inline-flex align-items-center justify-content-center gap-1">
+                                    {{-- Detail --}}
                                     <button type="button"
-                                            class="btn btn-sm text-white"
-                                            style="background:#0284c7; font-size:11px; padding:2px 8px; border-radius:5px;"
+                                            class="btn btn-sm btn-info text-white rounded-2 px-2 py-1"
                                             onclick="bukaModalDetail({{ $item->id }})"
                                             title="Lihat Detail Pembelian">
-                                        <i class="bi bi-eye-fill me-1"></i>Detail
+                                        <i class="bi bi-eye"></i>
                                     </button>
+
+                                    {{-- Cetak PO --}}
                                     <a href="{{ route('pembelian.cetak-pdf', $item->id) }}"
-                                       class="btn btn-sm btn-danger text-white"
-                                       style="font-size:11px; padding:2px 8px; border-radius:5px;" target="_blank" title="Cetak Purchase Order (PDF)">
-                                        <i class="bi bi-file-earmark-pdf-fill me-1"></i>Cetak PO
+                                       class="btn btn-sm btn-danger text-white rounded-2 px-2 py-1"
+                                       target="_blank" title="Cetak PO (PDF)">
+                                        <i class="bi bi-printer"></i>
                                     </a>
-    
+
                                     @php
                                         $user = auth()->user();
                                         $isSuperAdmin = $user && $user->isSuperAdmin();
@@ -264,13 +266,15 @@
                                     @endphp
 
                                     @if(!$item->isTerkunci())
+                                        {{-- Edit --}}
                                         <button type="button"
-                                                class="btn btn-sm text-white"
-                                                style="background:#f59e0b; font-size:11px; padding:2px 8px; border-radius:5px;"
+                                                class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
                                                 onclick="bukaModalEdit({{ $item->id }})"
                                                 title="Edit Pembelian">
-                                            <i class="bi bi-pencil-square me-1"></i>Edit
+                                            <i class="bi bi-pencil-square"></i>
                                         </button>
+
+                                        {{-- Hapus --}}
                                         @if($bisaHapusBelumBayar)
                                             <form action="{{ route('pembelian.destroy', $item->id) }}"
                                                   method="POST" class="d-inline"
@@ -278,20 +282,13 @@
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit"
-                                                        class="btn btn-sm btn-danger text-white"
-                                                        style="font-size:11px; padding:2px 8px; border-radius:5px;"
-                                                        title="Hapus Pembelian (Belum Dibayar)">
-                                                    <i class="bi bi-trash-fill me-1"></i>Hapus
+                                                        class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
+                                                        title="Hapus Pembelian">
+                                                    <i class="bi bi-trash"></i>
                                                 </button>
                                             </form>
-                                        @else
-                                            <button class="btn btn-sm" disabled
-                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;"
-                                                    title="Hanya Super Admin atau pengguna Gudang yang dapat menghapus transaksi pembelian.">Hapus</button>
                                         @endif
                                     @else
-                                        <button class="btn btn-sm" disabled
-                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian terkunci karena sudah diterima / lunas">Edit</button>
                                         @if($isSuperAdmin)
                                             <form action="{{ route('pembelian.destroy', $item->id) }}"
                                                   method="POST" class="d-inline"
@@ -299,15 +296,11 @@
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit"
-                                                        class="btn btn-sm btn-outline-danger"
-                                                        style="font-size:11px; padding:2px 8px; border-radius:5px;"
-                                                        title="Hapus & Rollback Stok (Khusus Super Admin)">
-                                                    <i class="bi bi-trash-fill me-1"></i>Hapus
+                                                        class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
+                                                        title="Hapus & Rollback Stok (Super Admin)">
+                                                    <i class="bi bi-trash"></i>
                                                 </button>
                                             </form>
-                                        @else
-                                            <button class="btn btn-sm" disabled
-                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 8px; border-radius:5px;" title="Pembelian sudah terbayar/diterima (Hanya Super Admin yang dapat menghapus/rollback)">Hapus</button>
                                         @endif
                                     @endif
                                 </div>

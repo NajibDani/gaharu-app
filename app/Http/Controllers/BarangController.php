@@ -36,7 +36,27 @@ class BarangController extends Controller
             });
         }
 
-        $data = $query->orderBy('kode_barang', 'asc')->paginate(10)->withQueryString();
+        $sort = $request->query('sort', 'kode_asc');
+
+        switch ($sort) {
+            case 'az':
+                $query->orderBy('nama', 'asc');
+                break;
+            case 'za':
+                $query->orderBy('nama', 'desc');
+                break;
+            case 'terlama':
+                $query->orderBy('created_at', 'asc')->orderBy('id', 'asc');
+                break;
+            case 'terbaru':
+                $query->orderBy('created_at', 'desc')->orderBy('id', 'desc');
+                break;
+            default:
+                $query->orderBy('kode_barang', 'asc');
+                break;
+        }
+
+        $data = $query->paginate(10)->withQueryString();
         
         $kategori = Kategori::all();
         $reseps   = ResepBtklBop::all();

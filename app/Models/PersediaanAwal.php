@@ -49,4 +49,37 @@ class PersediaanAwal extends Model
     {
         return $this->hasMany(PersediaanAwalDetail::class, 'persediaan_awal_id');
     }
+
+    public function isTerpakaiPengeluaranBahanBaku(): bool
+    {
+        $batchNumbers = $this->details->pluck('batch_number')->filter()->toArray();
+
+        if (empty($batchNumbers)) {
+            $barangIds = $this->details->pluck('barang_id')->filter()->toArray();
+            if (empty($barangIds)) {
+                return false;
+            }
+            $batchNumbers = StokGudangBatch::where('gudang_id', $this->gudang_id)
+                ->whereIn('barang_id', $barangIds)
+                ->where('batch_number', 'like', 'SA-%')
+                ->pluck('batch_number')
+                ->toArray();
+        }
+
+        if (empty($batchNumbers)) {
+            return false;
+        }
+
+        // Cek 1: PengeluaranBahanBakuFifo
+        $usedInFifo = PengeluaranBahanBakuFifo::whereIn('batch_number', $batchNumbers)->exists();
+        if ($usedInFifo) {
+            return true;
+        }
+
+        // Cek 2: StokGudangBatch (qty_keluar > 0)
+        return StokGudangBatch::whereIn('batch_number', $batchNumbers)
+            ->where('qty_keluar', '>', 0)
+            ->exists();
+    }
 }
+

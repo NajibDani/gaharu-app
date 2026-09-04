@@ -82,6 +82,10 @@ class PenjualanPosController extends Controller
         }
 
         $user = auth()->user();
+        if (in_array($request->gudang_id, [1, 2])) {
+            return back()->with('error', 'Gudang Utama dan Central Kitchen hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.')->withInput();
+        }
+
         if ($user->gudang_id && $request->gudang_id != $user->gudang_id) {
             return back()->with('error', 'Anda tidak diizinkan membuat transaksi untuk gudang lain.')->withInput();
         }
@@ -249,6 +253,10 @@ class PenjualanPosController extends Controller
 
         if (!$isSuperAdmin && date('Y-m-d', strtotime($request->tanggal)) < date('Y-m-d')) {
             return back()->with('error', 'Tanggal transaksi tidak boleh sebelum hari ini.')->withInput();
+        }
+
+        if (in_array($request->gudang_id, [1, 2])) {
+            return back()->with('error', 'Gudang Utama dan Central Kitchen hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.')->withInput();
         }
 
         if ($user->gudang_id && !$isSuperAdmin && $request->gudang_id != $user->gudang_id) {

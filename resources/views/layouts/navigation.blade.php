@@ -234,9 +234,14 @@
 
                     {{-- ── INVENTORY & GUDANG ───────────── --}}
                     <div class="submenu-divider">PENGELOLAAN STOK</div>
-                    <a href="{{ route('pembelian.index') }}" class="{{ request()->routeIs('pembelian.*') ? 'active' : '' }}">
+                    <a href="{{ route('pembelian.index') }}" class="{{ request()->routeIs('pembelian.*') && !request()->routeIs('pembelian-kejingga.*') ? 'active' : '' }}">
                         <i class="bi bi-bag-plus me-2" style="font-size:12px;"></i>Pembelian Bahan Baku
                     </a>
+                    @if(auth()->user() && auth()->user()->isSuperAdmin())
+                        <a href="{{ route('pembelian-kejingga.index') }}" class="{{ request()->routeIs('pembelian-kejingga.*') ? 'active' : '' }}">
+                            <i class="bi bi-cart-plus me-2" style="font-size:12px;"></i>Pembelian Kejingga (Luar Gaharu)
+                        </a>
+                    @endif
                     <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="{{ request()->routeIs('pengeluaran-bahan-baku.*') ? 'active' : '' }}">
                         <i class="bi bi-arrow-right-circle me-2" style="font-size:12px;"></i>Permintaan / Transfer Bahan
                     </a>

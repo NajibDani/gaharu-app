@@ -11,18 +11,19 @@ use Illuminate\Support\Facades\DB;
 class HargaBarangPosController extends Controller
 {
     // Menampilkan halaman daftar barang (GET)
-    public function index()
+    public function index(Request $request)
     {
         $user = auth()->user();
+        $tipePenjualan = $request->query('tipe_penjualan');
         $queryBarang = \App\Models\MasterBarang::where('is_barang_jadi', 1)->where('is_active', true)->orderBy('nama');
 
-        if ($user && $user->gudang_id) {
-            if ($user->gudang_id == 2) {
+        if ($tipePenjualan) {
+            $queryBarang->where('tipe_penjualan', $tipePenjualan);
+        } elseif ($user && $user->gudang_id && !$user->isSuperAdmin()) {
+            if ($user->gudang_id == 2 || $user->gudang_id == 3) {
                 $queryBarang->where('tipe_penjualan', 'POS Gaharu');
-            } elseif ($user->gudang_id == 4) {
+            } elseif ($user->gudang_id == 5 || $user->gudang_id == 4) {
                 $queryBarang->where('tipe_penjualan', 'POS Kejingga');
-            } else {
-                $queryBarang->where('tipe_penjualan', 'POS Gaharu');
             }
         }
         $listBarang = $queryBarang->with(['hargaPosAktif'])->get();
@@ -31,7 +32,7 @@ class HargaBarangPosController extends Controller
             $barang->dynamic_hpp = $this->calculateHppBarangJadi($barang->id, $user->gudang_id ?? 3);
         }
     
-        return view('harga.index', compact('listBarang'));
+        return view('harga.index', compact('listBarang', 'tipePenjualan'));
     }
 
     // Menampilkan detail barang, pengaturan harga baru, dan histori harga (GET)

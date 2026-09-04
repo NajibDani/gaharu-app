@@ -39,11 +39,24 @@
             <div class="col-md-12">
                 <div class="card shadow-sm border-0 rounded-4">
                     <div class="card-body bg-white p-4">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <h5 class="fw-bold text-gray-800 m-0"><i class="bi bi-list-stars me-2" style="color: #d88656;"></i>Daftar Barang Jadi</h5>
-                            <span class="badge bg-light text-dark border px-3 py-2 fw-semibold rounded-pill">
-                                Total: <span style="color: #d88656;">{{ $listBarang->count() }} Produk</span>
-                            </span>
+                            <div class="d-flex align-items-center gap-2">
+                                <form action="{{ route('harga.index') }}" method="GET" class="d-flex gap-2 align-items-center">
+                                    <select name="tipe_penjualan" class="form-select form-select-sm rounded-3" style="width: 180px;" onchange="this.form.submit()">
+                                        <option value="">-- Semua Outlet --</option>
+                                        <option value="POS Gaharu" {{ request('tipe_penjualan') == 'POS Gaharu' ? 'selected' : '' }}>POS Gaharu</option>
+                                        <option value="POS Kejingga" {{ request('tipe_penjualan') == 'POS Kejingga' ? 'selected' : '' }}>POS Kejingga</option>
+                                        <option value="B2B" {{ request('tipe_penjualan') == 'B2B' ? 'selected' : '' }}>B2B</option>
+                                    </select>
+                                    @if(request('tipe_penjualan'))
+                                        <a href="{{ route('harga.index') }}" class="btn btn-sm btn-outline-secondary rounded-3">Reset</a>
+                                    @endif
+                                </form>
+                                <span class="badge bg-light text-dark border px-3 py-2 fw-semibold rounded-pill">
+                                    Total: <span style="color: #d88656;">{{ $listBarang->count() }} Produk</span>
+                                </span>
+                            </div>
                         </div>
 
                         <div class="table-responsive">

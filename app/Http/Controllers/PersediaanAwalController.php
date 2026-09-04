@@ -729,7 +729,7 @@ class PersediaanAwalController extends Controller
                     'qty_input'          => $qtyInput,
                     'harga_input'        => max(0, $hargaInput),
                     'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
-                    'satuan_pembelian'   => $satBeli,
+                    'satuan_pembelian'   => $satuanBeli,
                     'konversi_pembelian' => $konversi,
                     'qty_stok'           => $qtyStok,
                     'harga_stok'         => $hargaStok,
@@ -744,41 +744,79 @@ class PersediaanAwalController extends Controller
             ])->withInput();
         }
 
+        // Validasi: Qty baru tidak boleh kurang dari Qty yang sudah terpakai di batch FIFO
+        $oldDetailsMap = $persediaanAwal->details->keyBy('barang_id');
+        $validBarangIds = array_column($validItems, 'barang_id');
+        $qtyErrors = [];
+
+        foreach ($validItems as $item) {
+            $barangId = $item['barang_id'];
+            $oldDetail = $oldDetailsMap->get($barangId);
+            if ($oldDetail && $oldDetail->batch_number) {
+                $existingBatch = StokGudangBatch::where('gudang_id', $gudangId)
+                    ->where('barang_id', $barangId)
+                    ->where('batch_number', $oldDetail->batch_number)
+                    ->first();
+
+                if ($existingBatch) {
+                    $qtyKeluar = (float) $existingBatch->qty_keluar;
+                    if ($qtyKeluar > 0 && $item['qty_stok'] < $qtyKeluar) {
+                        $barangNama = $item['barang']->nama ?? 'Barang #' . $barangId;
+                        $satuanStok = $item['barang']->satuan ?? 'pcs';
+                        
+                        $konversi = (float)($item['konversi_pembelian'] ?: 1.0);
+                        if ($item['satuan_dipilih'] === $item['satuan_pembelian'] && $konversi > 1) {
+                            $minInput = ceil($qtyKeluar / $konversi);
+                            $satuanInput = $item['satuan_pembelian'];
+                            $qtyErrors[] = "Qty Persediaan Awal untuk \"{$barangNama}\" tidak boleh kurang dari stok yang sudah terpakai ({$qtyKeluar} {$satuanStok}). Qty yang diinput ({$item['qty_input']} {$satuanInput}), minimal input adalah {$minInput} {$satuanInput}.";
+                        } else {
+                            $qtyErrors[] = "Qty Persediaan Awal untuk \"{$barangNama}\" tidak boleh kurang dari stok yang sudah terpakai ({$qtyKeluar} {$satuanStok}). Qty yang diinput ({$item['qty_stok']} {$satuanStok}) kurang dari stok terpakai.";
+                        }
+                    }
+                }
+            }
+        }
+
+        foreach ($oldDetailsMap as $oldBarangId => $oldDetail) {
+            if (!in_array($oldBarangId, $validBarangIds)) {
+                if ($oldDetail->batch_number) {
+                    $existingBatch = StokGudangBatch::where('gudang_id', $gudangId)
+                        ->where('barang_id', $oldBarangId)
+                        ->where('batch_number', $oldDetail->batch_number)
+                        ->first();
+
+                    if ($existingBatch && $existingBatch->qty_keluar > 0) {
+                        $barangNama = $oldDetail->barang->nama ?? 'Barang #' . $oldBarangId;
+                        $satuanStok = $oldDetail->barang->satuan ?? 'pcs';
+                        $qtyKeluar = (float) $existingBatch->qty_keluar;
+                        $qtyErrors[] = "Barang \"{$barangNama}\" tidak dapat dihapus dari daftar karena stoknya sudah terpakai sebanyak {$qtyKeluar} {$satuanStok}.";
+                    }
+                }
+            }
+        }
+
+        if (!empty($qtyErrors)) {
+            return back()->withErrors([
+                'error' => implode(' ', $qtyErrors),
+            ])->withInput();
+        }
+
         DB::beginTransaction();
 
         try {
-            // 2. REVERT DAMPAK LAMA
-            // A. Kurangi stok fisik di stok_gudang sebesar qty lama
-            foreach ($persediaanAwal->details as $oldDetail) {
-                $stokQuery = StokGudang::where('barang_id', $oldDetail->barang_id)
-                    ->where('gudang_id', $gudangId);
-                if ($divisiId) {
-                    $stokQuery->where('divisi_id', $divisiId);
-                } else {
-                    $stokQuery->whereNull('divisi_id');
-                }
+            // Map detail lama untuk perbandingan stok dan pembaruan batch
+            $oldDetailsMap = $persediaanAwal->details->keyBy('barang_id');
+            $processedBarangIds = [];
 
-                $stokRec = $stokQuery->lockForUpdate()->first();
-                if ($stokRec) {
-                    $stokRec->decrement('jumlah', min($stokRec->jumlah, $oldDetail->qty));
-                }
-
-                // Hapus batch FIFO lama
-                StokGudangBatch::where('gudang_id', $gudangId)
-                    ->where('barang_id', $oldDetail->barang_id)
-                    ->where('batch_number', $oldDetail->batch_number)
-                    ->delete();
-            }
-
-            // B. Hapus mutasi TransaksiStok lama
+            // Hapus mutasi TransaksiStok lama
             TransaksiStok::where('source_type', 'saldo_awal')
                 ->where('source_id', $persediaanAwal->id)
                 ->delete();
 
-            // C. Hapus detail lama persediaan_awal_detail
+            // Hapus detail lama persediaan_awal_detail
             $persediaanAwal->details()->delete();
 
-            // 3. TERAPKAN DATA BARU
+            // TERAPKAN DATA BARU
             $totalItem  = count($validItems);
             $totalQty   = array_sum(array_column($validItems, 'qty_stok'));
             $totalNilai = array_sum(array_column($validItems, 'total_nilai'));
@@ -792,13 +830,23 @@ class PersediaanAwalController extends Controller
 
             foreach ($validItems as $item) {
                 $barang = $item['barang'];
+                $barangId = $item['barang_id'];
+                $processedBarangIds[] = $barangId;
                 $satuanStok = $barang->satuan ?? 'pcs';
-                $batchNumber = 'SA-' . date('Ymd', strtotime($tanggalBaru)) . '-' . ($barang->kode_barang ?? $item['barang_id']);
 
-                // Simpan detail baru
+                $oldDetail = $oldDetailsMap->get($barangId);
+                $oldQtyStok = $oldDetail ? (float)$oldDetail->qty : 0.0;
+                $deltaQty = $item['qty_stok'] - $oldQtyStok;
+
+                // Tentukan batch_number: gunakan batch_number lama jika ada agar riwayat terhubung
+                $batchNumber = ($oldDetail && $oldDetail->batch_number)
+                    ? $oldDetail->batch_number
+                    : ('SA-' . date('Ymd', strtotime($tanggalBaru)) . '-' . ($barang->kode_barang ?? $barangId));
+
+                // 1. Simpan detail baru
                 PersediaanAwalDetail::create([
                     'persediaan_awal_id' => $persediaanAwal->id,
-                    'barang_id'          => $item['barang_id'],
+                    'barang_id'          => $barangId,
                     'qty'                => $item['qty_stok'],
                     'satuan'             => $satuanStok,
                     'satuan_pembelian'   => $item['satuan_pembelian'],
@@ -810,8 +858,8 @@ class PersediaanAwalController extends Controller
                     'batch_number'       => $batchNumber,
                 ]);
 
-                // Tambah stok fisik di stok_gudang
-                $stokQuery = StokGudang::where('barang_id', $item['barang_id'])
+                // 2. Adjust stok fisik di stok_gudang (selisih delta)
+                $stokQuery = StokGudang::where('barang_id', $barangId)
                     ->where('gudang_id', $gudangId);
                 if ($divisiId) {
                     $stokQuery->where('divisi_id', $divisiId);
@@ -821,33 +869,91 @@ class PersediaanAwalController extends Controller
 
                 $stokGudang = $stokQuery->lockForUpdate()->first();
                 if ($stokGudang) {
-                    $stokGudang->increment('jumlah', $item['qty_stok']);
+                    if ($deltaQty > 0) {
+                        $stokGudang->increment('jumlah', $deltaQty);
+                    } elseif ($deltaQty < 0) {
+                        $stokGudang->decrement('jumlah', min($stokGudang->jumlah, abs($deltaQty)));
+                    }
                 } else {
                     StokGudang::create([
-                        'barang_id' => $item['barang_id'],
+                        'barang_id' => $barangId,
                         'gudang_id' => $gudangId,
                         'divisi_id' => $divisiId,
-                        'jumlah'    => $item['qty_stok'],
+                        'jumlah'    => max(0, $item['qty_stok']),
                     ]);
                 }
 
-                // Buat Batch FIFO baru
-                StokGudangBatch::create([
-                    'gudang_id'           => $gudangId,
-                    'divisi_id'           => $divisiId,
-                    'supplier_id'         => $defaultSupplierId,
-                    'barang_id'           => $item['barang_id'],
-                    'pembelian_id'        => $defaultPembelianId,
-                    'pembelian_detail_id' => $defaultPemDetailId,
-                    'batch_number'        => $batchNumber,
-                    'qty_masuk'           => $item['qty_stok'],
-                    'qty_keluar'          => 0,
-                    'qty_sisa'            => $item['qty_stok'],
-                    'harga_per_qty'       => $item['harga_stok'],
-                    'is_habis'            => false,
-                ]);
+                // 3. Update atau buat Batch FIFO baru di stok_gudang_batch
+                $existingBatch = null;
+                if ($oldDetail && $oldDetail->batch_number) {
+                    $existingBatch = StokGudangBatch::where('gudang_id', $gudangId)
+                        ->where('barang_id', $barangId)
+                        ->where('batch_number', $oldDetail->batch_number)
+                        ->first();
+                }
 
-                // Catat Transaksi Stok baru
+                if ($existingBatch) {
+                    $existingQtyKeluar = (float) $existingBatch->qty_keluar;
+                    $newQtySisa = max(0, $item['qty_stok'] - $existingQtyKeluar);
+                    $existingBatch->update([
+                        'qty_masuk'     => $item['qty_stok'],
+                        'qty_sisa'      => $newQtySisa,
+                        'harga_per_qty' => $item['harga_stok'],
+                        'is_habis'      => ($newQtySisa <= 0),
+                    ]);
+                    $batchId = $existingBatch->id;
+                } else {
+                    $newBatch = StokGudangBatch::create([
+                        'gudang_id'           => $gudangId,
+                        'divisi_id'           => $divisiId,
+                        'supplier_id'         => $defaultSupplierId,
+                        'barang_id'           => $barangId,
+                        'pembelian_id'        => $defaultPembelianId,
+                        'pembelian_detail_id' => $defaultPemDetailId,
+                        'batch_number'        => $batchNumber,
+                        'qty_masuk'           => $item['qty_stok'],
+                        'qty_keluar'          => 0,
+                        'qty_sisa'            => $item['qty_stok'],
+                        'harga_per_qty'       => $item['harga_stok'],
+                        'is_habis'            => false,
+                    ]);
+                    $batchId = $newBatch->id;
+                }
+
+                // 4. Update otomatis harga & HPP pada transaksi Pengeluaran Bahan Baku yang sudah menggunakan batch ini
+                $fifoRecords = \App\Models\PengeluaranBahanBakuFifo::where('batch_id', $batchId)
+                    ->orWhere('batch_number', $batchNumber)
+                    ->get();
+
+                $affectedDetailIds = [];
+                foreach ($fifoRecords as $fifo) {
+                    $fifoTotal = round((float)$fifo->qty_keluar * $item['harga_stok'], 2);
+                    $fifo->update([
+                        'harga_per_qty' => $item['harga_stok'],
+                        'total_harga'   => $fifoTotal,
+                    ]);
+                    $affectedDetailIds[] = $fifo->detail_id;
+                }
+
+                foreach (array_unique($affectedDetailIds) as $detId) {
+                    $pbbDetail = \App\Models\PengeluaranBahanBakuDetail::find($detId);
+                    if ($pbbDetail) {
+                        $newHppTotal = \App\Models\PengeluaranBahanBakuFifo::where('detail_id', $detId)->sum('total_harga');
+                        $avgHarga = $pbbDetail->qty > 0 ? ($newHppTotal / $pbbDetail->qty) : 0;
+                        $pbbDetail->update([
+                            'harga_satuan' => $avgHarga,
+                            'total_harga'  => $newHppTotal,
+                            'hpp_total'    => $newHppTotal,
+                        ]);
+                    }
+                }
+
+                // Update juga batch turunan hasil mutasi (misalnya batch_number dengan suffix -MUT)
+                StokGudangBatch::where('batch_number', 'like', $batchNumber . '%')
+                    ->where('id', '!=', $batchId)
+                    ->update(['harga_per_qty' => $item['harga_stok']]);
+
+                // 5. Catat Transaksi Stok baru
                 TransaksiStok::create([
                     'tanggal'          => $tanggalBaru . ' ' . date('H:i:s'),
                     'tipe'             => 'masuk',
@@ -855,7 +961,7 @@ class PersediaanAwalController extends Controller
                     'source_id'        => $persediaanAwal->id,
                     'gudang_tujuan_id' => $gudangId,
                     'divisi_tujuan_id' => $divisiId,
-                    'barang_id'        => $item['barang_id'],
+                    'barang_id'        => $barangId,
                     'qty'              => $item['qty_stok'],
                     'total_harga'      => $item['total_nilai'],
                     'created_by'       => Auth::id() ?? 1,
@@ -877,6 +983,44 @@ class PersediaanAwalController extends Controller
                     }
                     $surplusDebits[$idPersediaan] += $item['total_nilai'];
                     $totalKredit += $item['total_nilai'];
+                }
+            }
+
+            // Tangani item lama yang dihapus dari form edit (tidak ada lagi di validItems)
+            foreach ($oldDetailsMap as $oldBarangId => $oldDetail) {
+                if (!in_array($oldBarangId, $processedBarangIds)) {
+                    $oldBatch = StokGudangBatch::where('gudang_id', $gudangId)
+                        ->where('barang_id', $oldBarangId)
+                        ->where('batch_number', $oldDetail->batch_number)
+                        ->first();
+
+                    $stokKurang = $oldDetail->qty;
+                    if ($oldBatch) {
+                        if ($oldBatch->qty_keluar > 0) {
+                            $stokKurang = max(0, $oldDetail->qty - $oldBatch->qty_keluar);
+                            $oldBatch->update([
+                                'qty_masuk' => $oldBatch->qty_keluar,
+                                'qty_sisa'  => 0,
+                                'is_habis'  => true,
+                            ]);
+                        } else {
+                            $oldBatch->delete();
+                        }
+                    }
+
+                    if ($stokKurang > 0) {
+                        $stok = StokGudang::where('barang_id', $oldBarangId)
+                            ->where('gudang_id', $gudangId);
+                        if ($divisiId) {
+                            $stok->where('divisi_id', $divisiId);
+                        } else {
+                            $stok->whereNull('divisi_id');
+                        }
+                        $stokRecord = $stok->first();
+                        if ($stokRecord) {
+                            $stokRecord->decrement('jumlah', min($stokRecord->jumlah, $stokKurang));
+                        }
+                    }
                 }
             }
 
@@ -1402,24 +1546,41 @@ class PersediaanAwalController extends Controller
 
             // Hapus Transaksi Stok & Revert Stok
             foreach ($persediaanAwal->details as $detail) {
-                // Kurangi stok di stok_gudang
-                $stok = StokGudang::where('barang_id', $detail->barang_id)
-                    ->where('gudang_id', $persediaanAwal->gudang_id);
-                if ($persediaanAwal->divisi_id) {
-                    $stok->where('divisi_id', $persediaanAwal->divisi_id);
-                } else {
-                    $stok->whereNull('divisi_id');
-                }
-                $stokRecord = $stok->first();
-                if ($stokRecord) {
-                    $stokRecord->decrement('jumlah', min($stokRecord->jumlah, $detail->qty));
-                }
-
-                // Hapus Batch FIFO terkait jika belum terkonsumsi
-                StokGudangBatch::where('gudang_id', $persediaanAwal->gudang_id)
+                $batch = StokGudangBatch::where('gudang_id', $persediaanAwal->gudang_id)
                     ->where('barang_id', $detail->barang_id)
                     ->where('batch_number', $detail->batch_number)
-                    ->delete();
+                    ->first();
+
+                $stokKurang = $detail->qty;
+                if ($batch) {
+                    if ($batch->qty_keluar > 0) {
+                        // Jika sudah ada yang terpakai, pertahankan batch sebesar porsi yang terpakai
+                        $stokKurang = max(0, $detail->qty - $batch->qty_keluar);
+                        $batch->update([
+                            'qty_masuk' => $batch->qty_keluar,
+                            'qty_sisa'  => 0,
+                            'is_habis'  => true,
+                        ]);
+                    } else {
+                        // Jika belum terpakai sama sekali, hapus batch
+                        $batch->delete();
+                    }
+                }
+
+                if ($stokKurang > 0) {
+                    // Kurangi stok di stok_gudang sebesar sisa porsi yang belum terpakai
+                    $stok = StokGudang::where('barang_id', $detail->barang_id)
+                        ->where('gudang_id', $persediaanAwal->gudang_id);
+                    if ($persediaanAwal->divisi_id) {
+                        $stok->where('divisi_id', $persediaanAwal->divisi_id);
+                    } else {
+                        $stok->whereNull('divisi_id');
+                    }
+                    $stokRecord = $stok->first();
+                    if ($stokRecord) {
+                        $stokRecord->decrement('jumlah', min($stokRecord->jumlah, $stokKurang));
+                    }
+                }
             }
 
             TransaksiStok::where('source_type', 'saldo_awal')

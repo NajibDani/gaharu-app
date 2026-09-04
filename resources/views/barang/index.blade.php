@@ -33,9 +33,16 @@
                         <option value="{{ $k->id }}" {{ request('kategori_id') == $k->id ? 'selected' : '' }}>{{ $k->nama }}</option>
                     @endforeach
                 </select>
+                <select name="sort" class="form-select form-select-sm" style="width: 160px; border-radius: 6px;" onchange="this.form.submit()">
+                    <option value="">Urutkan: Default</option>
+                    <option value="az" {{ request('sort') == 'az' ? 'selected' : '' }}>Nama: A - Z</option>
+                    <option value="za" {{ request('sort') == 'za' ? 'selected' : '' }}>Nama: Z - A</option>
+                    <option value="terbaru" {{ request('sort') == 'terbaru' ? 'selected' : '' }}>Input Terbaru</option>
+                    <option value="terlama" {{ request('sort') == 'terlama' ? 'selected' : '' }}>Input Terlama</option>
+                </select>
                 <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari nama/kode..." value="{{ request('search') }}" style="width: 180px; border-radius: 6px;">
                 <button type="submit" class="btn btn-sm text-white" style="background-color: #d88656; border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
-                @if(request('kategori_id') || request('search'))
+                @if(request('kategori_id') || request('search') || request('sort'))
                     <a href="{{ route('barang.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px; padding: 5px 15px;">Reset</a>
                 @endif
             </form>
