@@ -257,6 +257,12 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate = $request->end_date ?: date('Y-m-d');
 
+        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
+        $satuanBeliDefault = $barang ? ($barang->satuan_pembelian ?: $satuanStok) : $satuanStok;
+        $konversiBarang = $barang ? (float)($barang->konversi_pembelian ?: 1.0) : 1.0;
+        if ($konversiBarang <= 0) $konversiBarang = 1.0;
+
         $saQty = 0;
         $saNilai = 0;
 
@@ -276,6 +282,10 @@ class StokGudangController extends Controller
         foreach ($itemsBefore as $row) {
             $qty = floatval($row->qty);
             $totalHarga = floatval($row->total_harga);
+
+            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian'])) {
+                $qty = $this->calculateStockQtyForPembelian($row, $barangId, $konversiBarang);
+            }
 
             $isMasuk = false;
             $isKeluar = false;
@@ -321,8 +331,26 @@ class StokGudangController extends Controller
         $runningNilai = $saNilai;
 
         foreach ($itemsPeriod as $row) {
-            $qty = floatval($row->qty);
+            $rawQty = floatval($row->qty);
             $totalHarga = floatval($row->total_harga);
+            $qty = $rawQty;
+
+            $keteranganExtra = '';
+
+            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian'])) {
+                $pDetailInfo = $this->getPembelianDetailInfo($row, $barangId);
+                $konversiRow = $pDetailInfo['konversi'] ?: $konversiBarang;
+                $satBeliRow = $pDetailInfo['satuan_pembelian'] ?: $satuanBeliDefault;
+                $qtyBeliInput = $pDetailInfo['qty_input'];
+
+                if ($konversiRow > 1 && $qtyBeliInput > 0 && abs($rawQty - $qtyBeliInput) < 0.01) {
+                    $qty = $rawQty * $konversiRow;
+                    $keteranganExtra = " ({$qtyBeliInput} {$satBeliRow} @ 1 {$satBeliRow} = " . (float)$konversiRow . " {$satuanStok})";
+                } elseif ($konversiRow > 1 && $qtyBeliInput > 0) {
+                    $keteranganExtra = " (setara {$qtyBeliInput} {$satBeliRow})";
+                }
+            }
+
             $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
 
             $isMasuk = false;
@@ -351,7 +379,7 @@ class StokGudangController extends Controller
                     $runningNilai -= $totalHarga;
                 }
 
-                $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id);
+                $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id) . $keteranganExtra;
                 if ($row->tipe === 'transfer') {
                     $gAsal = DB::table('master_gudang')->where('id', $row->gudang_asal_id)->value('nama');
                     $gTujuan = DB::table('master_gudang')->where('id', $row->gudang_tujuan_id)->value('nama');
@@ -383,6 +411,55 @@ class StokGudangController extends Controller
                 'nilai' => $runningNilai
             ]
         ]);
+    }
+
+    private function getPembelianDetailInfo($row, $barangId)
+    {
+        $pDetail = null;
+        $sourceType = strtolower($row->source_type ?? '');
+
+        if ($sourceType === 'pembelian') {
+            $pDetail = DB::table('pembelian_detail')
+                ->where('pembelian_id', $row->source_id)
+                ->where('barang_id', $barangId)
+                ->first();
+        } elseif ($sourceType === 'penerimaan_pembelian') {
+            $rcv = DB::table('penerimaan_pembelian')->where('id', $row->source_id)->first();
+            if ($rcv) {
+                $pDetail = DB::table('pembelian_detail')
+                    ->where('pembelian_id', $rcv->pembelian_id)
+                    ->where('barang_id', $barangId)
+                    ->first();
+            }
+        }
+
+        if ($pDetail) {
+            return [
+                'konversi'          => (float) ($pDetail->konversi_pembelian ?? 1),
+                'satuan_pembelian' => $pDetail->satuan_pembelian,
+                'qty_input'         => (float) ($pDetail->qty ?? 0),
+            ];
+        }
+
+        return [
+            'konversi'          => 1.0,
+            'satuan_pembelian' => null,
+            'qty_input'         => 0.0,
+        ];
+    }
+
+    private function calculateStockQtyForPembelian($row, $barangId, $konversiDefault)
+    {
+        $rawQty = (float) $row->qty;
+        $info = $this->getPembelianDetailInfo($row, $barangId);
+        $konversi = $info['konversi'] ?: $konversiDefault;
+        $qtyInput = $info['qty_input'];
+
+        if ($konversi > 1 && $qtyInput > 0 && abs($rawQty - $qtyInput) < 0.01) {
+            return $rawQty * $konversi;
+        }
+
+        return $rawQty;
     }
 
     private function formatSourceDescription($type, $id)

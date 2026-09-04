@@ -414,9 +414,11 @@ class PembelianController extends Controller
 
                 // Create StokGudangBatch
                 $suffix = rand(10, 99) . '-' . date('His');
-                $konversi = floatval($detail->konversi_pembelian ?? 1);
+                $detailKonv = floatval($detail->konversi_pembelian ?? 1);
+                $barangKonv = floatval($detail->barang->konversi_pembelian ?? 1);
+                $konversi = $detailKonv > 1 ? $detailKonv : ($barangKonv > 1 ? $barangKonv : 1.0);
                 if ($konversi <= 0) {
-                    $konversi = 1;
+                    $konversi = 1.0;
                 }
 
                 $qtyMasukStok = $qtyBaruInput * $konversi;

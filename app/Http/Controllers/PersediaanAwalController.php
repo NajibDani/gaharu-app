@@ -137,6 +137,30 @@ class PersediaanAwalController extends Controller
     }
 
     /**
+     * Helper untuk parsing string format angka desimal/Indonesia
+     */
+    private function parseFormattedNumber($value): float
+    {
+        if (is_null($value) || $value === '') {
+            return 0.0;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        if (is_string($value)) {
+            $clean = trim($value);
+            if (strpos($clean, '.') !== false && strpos($clean, ',') !== false) {
+                $clean = str_replace('.', '', $clean);
+                $clean = str_replace(',', '.', $clean);
+            } else if (strpos($clean, ',') !== false) {
+                $clean = str_replace(',', '.', $clean);
+            }
+            return (float) $clean;
+        }
+        return 0.0;
+    }
+
+    /**
      * Mengambil map harga referensi persediaan awal dari Gudang Utama (ID: 2 / Kategori Utama)
      * Format output: [barang_id => harga_satuan_stok]
      */
@@ -693,99 +717,36 @@ class PersediaanAwalController extends Controller
 
         $hargaUtamaMap = $this->getHargaGudangUtamaMap();
 
-        // 1. Validasi & kalkulasi item baru
-        $validItems = [];
-        foreach ($request->barang_id as $index => $barangId) {
-            $qtyInput = (float) str_replace(',', '.', $request->qty[$index] ?? 0);
+        // 1. Kumpulkan semua input item yang dikirimkan oleh form HTML
+        $submittedMap = [];
+        if (!empty($request->barang_id) && is_array($request->barang_id)) {
+            foreach ($request->barang_id as $idx => $bId) {
+                $qtyRaw = $request->qty[$idx] ?? 0;
+                $hargaRaw = $request->harga_satuan[$idx] ?? 0;
+                $satuanTipe = $request->satuan_tipe[$idx] ?? 'pembelian';
 
-            if ($qtyInput > 0) {
-                $barang = MasterBarang::find($barangId);
-                if (!$barang) continue;
-
-                $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
-                if ($konversi <= 0) $konversi = 1.00;
-
-                $satuanStok = $barang->satuan ?: 'pcs';
-                $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
-                $satuanTipe = $request->satuan_tipe[$index] ?? 'pembelian';
-                $isPembelian = ($satuanTipe === 'pembelian');
-
-                $multiplier = $isPembelian ? $konversi : 1.00;
-                $qtyStok = $qtyInput * $multiplier;
-
-                if ($isGudangUtama) {
-                    $hargaInput = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
-                    $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
-                } else {
-                    $hargaStok = (float) ($hargaUtamaMap[$barangId] ?? ($barang->hpp_referensi ?? 0));
-                    $hargaInput = $hargaStok * $multiplier;
-                }
-
-                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
-
-                $validItems[] = [
-                    'barang_id'          => $barangId,
-                    'barang'             => $barang,
-                    'qty_input'          => $qtyInput,
-                    'harga_input'        => max(0, $hargaInput),
-                    'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
-                    'satuan_pembelian'   => $satuanBeli,
-                    'konversi_pembelian' => $konversi,
-                    'qty_stok'           => $qtyStok,
-                    'harga_stok'         => $hargaStok,
-                    'total_nilai'        => $totalNilai,
+                $submittedMap[$bId] = [
+                    'index'       => $idx,
+                    'qty_input'   => $this->parseFormattedNumber($qtyRaw),
+                    'harga_input' => $this->parseFormattedNumber($hargaRaw),
+                    'satuan_tipe' => $satuanTipe,
                 ];
             }
         }
 
-        if (empty($validItems)) {
-            return back()->withErrors([
-                'error' => 'Harap isi minimal 1 barang dengan Qty Persediaan Awal lebih dari 0.',
-            ])->withInput();
-        }
-
-        // Validasi: Qty baru tidak boleh kurang dari Qty yang sudah terpakai di batch FIFO
         $oldDetailsMap = $persediaanAwal->details->keyBy('barang_id');
-        $validBarangIds = array_column($validItems, 'barang_id');
         $qtyErrors = [];
 
-        foreach ($validItems as $item) {
-            $barangId = $item['barang_id'];
-            $oldDetail = $oldDetailsMap->get($barangId);
-            if ($oldDetail && $oldDetail->batch_number) {
-                $existingBatch = StokGudangBatch::where('gudang_id', $gudangId)
-                    ->where('barang_id', $barangId)
-                    ->where('batch_number', $oldDetail->batch_number)
-                    ->first();
-
-                if ($existingBatch) {
-                    $qtyKeluar = (float) $existingBatch->qty_keluar;
-                    if ($qtyKeluar > 0 && $item['qty_stok'] < $qtyKeluar) {
-                        $barangNama = $item['barang']->nama ?? 'Barang #' . $barangId;
-                        $satuanStok = $item['barang']->satuan ?? 'pcs';
-                        
-                        $konversi = (float)($item['konversi_pembelian'] ?: 1.0);
-                        if ($item['satuan_dipilih'] === $item['satuan_pembelian'] && $konversi > 1) {
-                            $minInput = ceil($qtyKeluar / $konversi);
-                            $satuanInput = $item['satuan_pembelian'];
-                            $qtyErrors[] = "Qty Persediaan Awal untuk \"{$barangNama}\" tidak boleh kurang dari stok yang sudah terpakai ({$qtyKeluar} {$satuanStok}). Qty yang diinput ({$item['qty_input']} {$satuanInput}), minimal input adalah {$minInput} {$satuanInput}.";
-                        } else {
-                            $qtyErrors[] = "Qty Persediaan Awal untuk \"{$barangNama}\" tidak boleh kurang dari stok yang sudah terpakai ({$qtyKeluar} {$satuanStok}). Qty yang diinput ({$item['qty_stok']} {$satuanStok}) kurang dari stok terpakai.";
-                        }
-                    }
-                }
-            }
-        }
-
+        // Validasi A: Item lama yang BENAR-BENAR dihapus dari tabel (baris HTML/DOM dihapus oleh user)
         foreach ($oldDetailsMap as $oldBarangId => $oldDetail) {
-            if (!in_array($oldBarangId, $validBarangIds)) {
+            if (!isset($submittedMap[$oldBarangId])) {
                 if ($oldDetail->batch_number) {
                     $existingBatch = StokGudangBatch::where('gudang_id', $gudangId)
                         ->where('barang_id', $oldBarangId)
                         ->where('batch_number', $oldDetail->batch_number)
                         ->first();
 
-                    if ($existingBatch && $existingBatch->qty_keluar > 0) {
+                    if ($existingBatch && (float)$existingBatch->qty_keluar > 0) {
                         $barangNama = $oldDetail->barang->nama ?? 'Barang #' . $oldBarangId;
                         $satuanStok = $oldDetail->barang->satuan ?? 'pcs';
                         $qtyKeluar = (float) $existingBatch->qty_keluar;
@@ -795,9 +756,136 @@ class PersediaanAwalController extends Controller
             }
         }
 
+        // Validasi B: Item yang MASIH ADA di tabel, tetapi Qty diubah menjadi kurang dari stok terpakai
+        foreach ($submittedMap as $bId => $sub) {
+            $oldDetail = $oldDetailsMap->get($bId);
+            if ($oldDetail && $oldDetail->batch_number) {
+                $existingBatch = StokGudangBatch::where('gudang_id', $gudangId)
+                    ->where('barang_id', $bId)
+                    ->where('batch_number', $oldDetail->batch_number)
+                    ->first();
+
+                if ($existingBatch && (float)$existingBatch->qty_keluar > 0) {
+                    $barang = MasterBarang::find($bId);
+                    if ($barang) {
+                        $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
+                        if ($konversi <= 0) $konversi = 1.00;
+
+                        $satuanStok = $barang->satuan ?: 'pcs';
+                        $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
+                        $isPembelian = ($sub['satuan_tipe'] === 'pembelian');
+                        $multiplier = $isPembelian ? $konversi : 1.00;
+
+                        $qtyStokSubmitted = $sub['qty_input'] * $multiplier;
+                        $qtyKeluar = (float) $existingBatch->qty_keluar;
+
+                        if ($qtyStokSubmitted < $qtyKeluar) {
+                            $barangNama = $barang->nama ?? 'Barang #' . $bId;
+                            if ($isPembelian && $konversi > 1) {
+                                $minInput = ceil($qtyKeluar / $konversi);
+                                $qtyErrors[] = "Qty Persediaan Awal untuk \"{$barangNama}\" tidak boleh kurang dari stok yang sudah terpakai ({$qtyKeluar} {$satuanStok}). Qty yang diinput ({$sub['qty_input']} {$satuanBeli}), minimal input adalah {$minInput} {$satuanBeli}.";
+                            } else {
+                                $qtyErrors[] = "Qty Persediaan Awal untuk \"{$barangNama}\" tidak boleh kurang dari stok yang sudah terpakai ({$qtyKeluar} {$satuanStok}). Qty yang diinput ({$qtyStokSubmitted} {$satuanStok}) kurang dari stok terpakai ({$qtyKeluar} {$satuanStok}).";
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (!empty($qtyErrors)) {
             return back()->withErrors([
                 'error' => implode(' ', $qtyErrors),
+            ])->withInput();
+        }
+
+        // 2. Kalkulasi valid items (item dengan Qty > 0)
+        $validItems = [];
+        foreach ($submittedMap as $bId => $sub) {
+            $qtyInput = $sub['qty_input'];
+
+            if ($qtyInput > 0) {
+                $barang = MasterBarang::find($bId);
+                if (!$barang) continue;
+
+                $oldDetail = $oldDetailsMap->get($bId);
+
+                $konversi = (float) ($barang->konversi_pembelian ?: 1.00);
+                if ($konversi <= 0) $konversi = 1.00;
+
+                $satuanStok = $barang->satuan ?: 'pcs';
+                $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
+                $satuanTipe = $sub['satuan_tipe'];
+                $isPembelian = ($satuanTipe === 'pembelian');
+
+                // Cek apakah item ini tidak diubah nilainya oleh user dibanding detail lama
+                $isUnchanged = false;
+                if ($oldDetail) {
+                    $hasKonvOld = $oldDetail->satuan_pembelian && ($oldDetail->konversi_pembelian ?: $konversi) > 1 && ($oldDetail->satuan_pembelian !== $oldDetail->satuan);
+                    $oldQtyInput = $oldDetail->qty_pembelian !== null ? (float)$oldDetail->qty_pembelian : ($hasKonvOld ? round((float)$oldDetail->qty / ($oldDetail->konversi_pembelian ?: $konversi), 2) : (float)$oldDetail->qty);
+                    $oldHargaInput = $oldDetail->harga_pembelian !== null ? (float)$oldDetail->harga_pembelian : ($hasKonvOld ? round((float)$oldDetail->harga_satuan * ($oldDetail->konversi_pembelian ?: $konversi), 2) : (float)$oldDetail->harga_satuan);
+                    $oldSatuanTipe = ($hasKonvOld && $oldDetail->qty_pembelian !== null) ? 'pembelian' : 'utama';
+
+                    if (
+                        abs($qtyInput - $oldQtyInput) < 0.0001 &&
+                        abs($sub['harga_input'] - $oldHargaInput) < 0.01 &&
+                        $satuanTipe === $oldSatuanTipe
+                    ) {
+                        $isUnchanged = true;
+                    }
+                }
+
+                if ($isUnchanged && $oldDetail) {
+                    // JIKA TIDAK DIEDIT: Pertahankan nilai asli 100% tanpa pembulatan ulang / recalculate
+                    $qtyStok   = (float)$oldDetail->qty;
+                    $hargaStok = (float)$oldDetail->harga_satuan;
+                    $hargaInput = $oldDetail->harga_pembelian !== null ? (float)$oldDetail->harga_pembelian : $oldHargaInput;
+                    $totalNilai = (float)$oldDetail->total_nilai;
+                    $satuanDipilih = $oldDetail->satuan_pembelian ?: $satuanStok;
+                    $konversiDipakai = (float)($oldDetail->konversi_pembelian ?: $konversi);
+                } else {
+                    // JIKA DIEDIT ATAU ITEM BARU: Hitung nilai baru
+                    $multiplier = $isPembelian ? $konversi : 1.00;
+                    $qtyStok = $qtyInput * $multiplier;
+
+                    if ($isGudangUtama) {
+                        $hargaInput = $sub['harga_input'];
+                        $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
+                    } else {
+                        // Jika ada input harga dari form > 0, gunakan input harga tersebut, jika tidak gunakan harga utama
+                        if ($sub['harga_input'] > 0) {
+                            $hargaInput = $sub['harga_input'];
+                            $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
+                        } else {
+                            $hargaStok = (float) ($hargaUtamaMap[$bId] ?? ($barang->hpp_referensi ?? 0));
+                            $hargaInput = $hargaStok * $multiplier;
+                        }
+                    }
+
+                    $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+                    $satuanDipilih = $isPembelian ? $satuanBeli : $satuanStok;
+                    $konversiDipakai = $konversi;
+                }
+
+                $validItems[] = [
+                    'barang_id'          => $bId,
+                    'barang'             => $barang,
+                    'qty_input'          => $qtyInput,
+                    'harga_input'        => max(0, $hargaInput),
+                    'satuan_dipilih'     => $satuanDipilih,
+                    'satuan_pembelian'   => $satuanBeli,
+                    'konversi_pembelian' => $konversiDipakai,
+                    'qty_stok'           => $qtyStok,
+                    'harga_stok'         => $hargaStok,
+                    'total_nilai'        => $totalNilai,
+                    'is_unchanged'       => $isUnchanged,
+                ];
+            }
+        }
+
+        if (empty($validItems)) {
+            return back()->withErrors([
+                'error' => 'Harap isi minimal 1 barang dengan Qty Persediaan Awal lebih dari 0.',
             ])->withInput();
         }
 
@@ -967,8 +1055,8 @@ class PersediaanAwalController extends Controller
                     'created_by'       => Auth::id() ?? 1,
                 ]);
 
-                // Update HPP referensi di master barang jika bernilai > 0
-                if ($item['harga_stok'] > 0) {
+                // Update HPP referensi di master barang jika bernilai > 0 (hanya untuk barang yang diedit)
+                if (empty($item['is_unchanged']) && $item['harga_stok'] > 0) {
                     $barang->update(['hpp_referensi' => $item['harga_stok']]);
                 }
 
