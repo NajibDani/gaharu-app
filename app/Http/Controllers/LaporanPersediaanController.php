@@ -119,6 +119,8 @@ class LaporanPersediaanController extends Controller
                 'master_barang.nama as nama_barang',
                 'master_barang.kode_barang',
                 'master_barang.satuan',
+                'master_barang.satuan_pembelian',
+                'master_barang.konversi_pembelian',
                 'master_barang.is_bahan_baku',
                 'master_barang.is_bahan_setengah_jadi',
                 'master_barang.is_barang_jadi',
@@ -437,20 +439,28 @@ class LaporanPersediaanController extends Controller
         $callback = function () use ($data) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode Barang', 'Nama Barang', 'Jenis', 'Satuan', 'Gudang', 'Stok', 'Status']);
+            fputcsv($f, ['Kode Barang', 'Nama Barang', 'Jenis', 'Satuan', 'Gudang', 'Divisi', 'Stok Utama', 'Satuan Pembelian', 'Faktor Konversi', 'Stok Konversi', 'Status']);
             foreach ($data as $row) {
                 $jenis  = $row->is_bahan_baku  ? 'Bahan Baku'
                         : ($row->is_bahan_setengah_jadi ? 'Bahan Setengah Jadi'
                         : ($row->is_barang_jadi ? 'Barang Jadi'
                         : ($row->is_operational ? 'Operational' : '-')));
                 $status = $row->jumlah == 0 ? 'Habis' : 'Tersedia';
+                $konversi = (float) ($row->konversi_pembelian ?? 1);
+                $hasKonversi = !empty($row->satuan_pembelian) && $konversi > 1;
+                $stokKonv = $hasKonversi ? ($row->jumlah / $konversi) : '-';
+
                 fputcsv($f, [
                     $row->kode_barang,
                     $row->nama_barang,
                     $jenis,
                     $row->satuan,
                     $row->nama_gudang,
+                    $row->nama_divisi ?? '-',
                     $row->jumlah,
+                    $row->satuan_pembelian ?? '-',
+                    $hasKonversi ? $konversi : '-',
+                    $stokKonv,
                     $status,
                 ]);
             }

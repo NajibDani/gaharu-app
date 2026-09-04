@@ -51,6 +51,11 @@
                     <i class="bi bi-check2-all me-1"></i> Riwayat Produksi CK
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link" id="stok-tab" data-bs-toggle="tab" data-bs-target="#stok-divisi" type="button">
+                    <i class="bi bi-layers-half me-1"></i> Stok BSJ per Divisi
+                </button>
+            </li>
         </ul>
 
         <div class="tab-content" id="ckTabContent">
@@ -83,25 +88,47 @@
                                         <td>
                                             <ul class="list-unstyled mb-0 small">
                                                 @foreach($p->details as $d)
-                                                    <li><i class="bi bi-dot"></i> {{ $d->produk->nama ?? '-' }} : <strong>{{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? '' }}</strong></li>
+                                                    <li>
+                                                        <i class="bi bi-dot"></i> {{ $d->produk->nama ?? '-' }} : 
+                                                        <strong>{{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? '' }}</strong>
+                                                        <span class="text-muted small d-block ms-3" style="font-size: 10px;">
+                                                            (Stok Gudang: {{ number_format($d->stok_tersedia ?? 0, 0, ',', '.') }} | 
+                                                            Kekurangan: <span class="{{ ($d->qty_kurang ?? 0) > 0 ? 'text-danger fw-bold' : 'text-success' }}">{{ number_format($d->qty_kurang ?? 0, 0, ',', '.') }}</span>)
+                                                        </span>
+                                                    </li>
                                                 @endforeach
                                             </ul>
                                         </td>
                                         <td class="text-center">
+                                            @php
+                                                $isAllSufficient = true;
+                                                foreach($p->details as $d) {
+                                                    if (($d->qty_kurang ?? 0) > 0) {
+                                                        $isAllSufficient = false;
+                                                    }
+                                                }
+                                            @endphp
                                             <div class="d-flex justify-content-center gap-1">
                                                 <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" data-bs-toggle="modal" data-bs-target="#modalOrder{{ $p->id }}">
                                                     <i class="bi bi-eye"></i> Detail
                                                 </button>
-                                                <form action="{{ route('ck-produksi.store-wo') }}" method="POST" class="d-inline" onsubmit="return confirm('Buat Work Order (WO) untuk pesanan ini?')">
+                                                <form action="{{ route('ck-produksi.store-wo') }}" method="POST" class="d-inline" onsubmit="return confirm('{{ $isAllSufficient ? 'Seluruh stok barang sudah tersedia. Alokasikan stok untuk pesanan ini?' : 'Buat Work Order (WO) untuk sisa kekurangan pesanan ini?' }}')">
                                                     @csrf
                                                     <input type="hidden" name="pesanan_id" value="{{ $p->id }}">
                                                     @foreach($p->details as $d)
                                                         <input type="hidden" name="produk_id[]" value="{{ $d->produk_id }}">
-                                                        <input type="hidden" name="qty_rencana[]" value="{{ $d->qty }}">
+                                                        <input type="hidden" name="qty_rencana[]" value="{{ $d->qty_kurang }}">
                                                     @endforeach
-                                                    <button type="submit" class="btn btn-sm btn-primary rounded-3">
-                                                        <i class="bi bi-gear-fill me-1"></i> Buat WO CK
-                                                    </button>
+                                                    
+                                                    @if($isAllSufficient)
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-3">
+                                                            <i class="bi bi-check-circle-fill me-1"></i> Alokasikan Stok
+                                                        </button>
+                                                    @else
+                                                        <button type="submit" class="btn btn-sm btn-primary rounded-3">
+                                                            <i class="bi bi-gear-fill me-1"></i> Buat WO CK
+                                                        </button>
+                                                    @endif
                                                 </form>
                                             </div>
 
@@ -360,7 +387,7 @@
                                                             </div>
                                                             <div class="modal-footer bg-light">
                                                                 <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                                                                <button type="submit" class="btn btn-success px-4 fw-bold" {{ !$wo->is_bahan_sufficient ? 'disabled' : '' }} title="{{ !$wo->is_bahan_sufficient ? 'Stok bahan baku di Gudang Central Kitchen belum mencukupi' : '' }}">
+                                                                <button type="submit" class="btn btn-success px-4 fw-bold">
                                                                     <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
                                                                 </button>
                                                             </div>
@@ -427,7 +454,8 @@
                                 <tr>
                                     <th class="text-center" style="width: 50px;">NO</th>
                                     <th>KODE PRODUKSI</th>
-                                    <th>OUTLET PEMESAN</th>
+                                    <th>OUTLET / SUMBER</th>
+                                    <th>DIVISI CK</th>
                                     <th>TANGGAL PRODUKSI</th>
                                     <th class="text-end">TOTAL HPP</th>
                                     <th>STATUS</th>
@@ -442,7 +470,20 @@
                                     <tr>
                                         <td class="text-center">{{ $index + 1 }}</td>
                                         <td class="fw-bold text-dark">{{ $prod->kode_produksi }}</td>
-                                        <td><span class="badge bg-light text-dark border">{{ $prod->pesanan->customer->nama ?? '-' }}</span></td>
+                                        <td>
+                                            <span class="badge bg-light text-dark border">
+                                                {{ $prod->pesanan->customer->nama ?? 'Stok Internal CK' }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if($prod->divisi)
+                                                <span class="badge rounded-pill" style="background:#ede9fe;color:#6d28d9;font-size:0.72rem;font-weight:600;">
+                                                    <i class="bi bi-layers-half me-1"></i>{{ $prod->divisi->nama }}
+                                                </span>
+                                            @else
+                                                <span class="text-muted small">-</span>
+                                            @endif
+                                        </td>
                                         <td>{{ date('d M Y', strtotime($prod->tanggal_mulai)) }}</td>
                                         <td class="text-end fw-bold text-danger">
                                             Rp {{ number_format($totalHppProd, 2, ',', '.') }}
@@ -572,12 +613,74 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">Belum ada riwayat produksi CK.</td>
+                                        <td colspan="8" class="text-center py-4 text-muted">Belum ada riwayat produksi CK.</td>
                                     </tr>
                                 @endforelse
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+
+            {{-- TAB 4: STOK BSJ PER DIVISI CK --}}
+            <div class="tab-pane fade" id="stok-divisi" role="tabpanel">
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+                    <div class="card-header bg-white py-3 px-4">
+                        <div>
+                            <h6 class="fw-bold mb-0 text-dark">Stok Bahan Setengah Jadi per Divisi Central Kitchen</h6>
+                            <small class="text-muted">Pantau ketersediaan stok BSJ sebelum memutuskan produksi baru</small>
+                        </div>
+                    </div>
+
+                    @if(!empty($stokBsjPerDivisi))
+                        @foreach($stokBsjPerDivisi as $divisiNama => $items)
+                            <div class="px-4 pt-3 pb-2">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <span class="badge rounded-pill fs-6 px-3 py-2" style="background:#ede9fe;color:#6d28d9;">
+                                        <i class="bi bi-layers-half me-1"></i>{{ $divisiNama }}
+                                    </span>
+                                    <span class="text-muted small">{{ count($items) }} jenis BSJ</span>
+                                </div>
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-bordered table-sm align-middle mb-0">
+                                        <thead class="table-light">
+                                            <tr class="text-secondary small">
+                                                <th>NAMA BARANG (BSJ)</th>
+                                                <th class="text-center" style="width:100px;">STOK SAAT INI</th>
+                                                <th class="text-center" style="width:80px;">SATUAN</th>
+                                                <th class="text-center" style="width:120px;">STATUS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($items as $item)
+                                                <tr>
+                                                    <td class="fw-semibold">{{ $item['nama'] }}</td>
+                                                    <td class="text-center fw-bold {{ $item['jumlah'] <= 0 ? 'text-danger' : ($item['jumlah'] < 500 ? 'text-warning' : 'text-success') }}">
+                                                        {{ number_format($item['jumlah'], 0, ',', '.') }}
+                                                    </td>
+                                                    <td class="text-center text-muted">{{ $item['satuan'] }}</td>
+                                                    <td class="text-center">
+                                                        @if($item['jumlah'] <= 0)
+                                                            <span class="badge bg-danger">Habis</span>
+                                                        @elseif($item['jumlah'] < 500)
+                                                            <span class="badge bg-warning text-dark">Menipis</span>
+                                                        @else
+                                                            <span class="badge bg-success">Cukup</span>
+                                                        @endif
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        @endforeach
+                    @else
+                        <div class="p-5 text-center text-muted">
+                            <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
+                            Belum ada stok Bahan Setengah Jadi di Gudang Central Kitchen.
+                        </div>
+                    @endif
                 </div>
             </div>
 

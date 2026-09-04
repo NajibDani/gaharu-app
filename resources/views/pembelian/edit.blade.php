@@ -1,4 +1,6 @@
 <x-app-layout>
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <div class="container">
         <h4>Edit Pembelian</h4>
 
@@ -19,7 +21,7 @@
             <div class="row mb-3">
                 <div class="col-12 col-md-4 mb-3 mb-md-0">
                     <label>Supplier</label>
-                    <select name="supplier_id" class="form-control" required>
+                    <select name="supplier_id" id="supplier_id" class="form-control" required>
                         <option value="">-- Pilih Supplier --</option>
                         @foreach($suppliers as $supplier)
                             <option value="{{ $supplier->id }}"
@@ -64,7 +66,7 @@
                     <thead>
                         <tr>
                             <th>Barang</th>
-                            <th width="120">Qty</th>
+                            <th width="140">Qty</th>
                             <th width="160">Harga</th>
                             <th width="160">Batch Number</th>
                             <th width="80">Aksi</th>
@@ -72,12 +74,24 @@
                     </thead>
                     <tbody>
                         @foreach($pembelian->details as $index => $detail)
-                            <tr>
+                            @php
+                                $bItem = $detail->barang;
+                                $sPembelian = $detail->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
+                                $konv = (float)($detail->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                                $sUtama = $bItem->satuan ?? 'Pcs';
+                                $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+                                $totalUtama = $detail->qty * $konv;
+                            @endphp
+                            <tr class="item-row">
                                 <td>
-                                    <select name="items[{{ $index }}][barang_id]" class="form-control" required>
+                                    <select name="items[{{ $index }}][barang_id]" class="form-control barang-select" required>
                                         <option value="">-- Pilih Barang --</option>
                                         @foreach($barangs as $barang)
                                             <option value="{{ $barang->id }}"
+                                                data-kode="{{ $barang->kode_barang }}"
+                                                data-satuan-pembelian="{{ $barang->satuan_pembelian }}"
+                                                data-konversi-pembelian="{{ $barang->konversi_pembelian }}"
+                                                data-satuan-utama="{{ $barang->satuan }}"
                                                 {{ $detail->barang_id == $barang->id ? 'selected' : '' }}>
                                                 {{ $barang->kode_barang }} - {{ $barang->nama }}
                                             </option>
@@ -93,6 +107,14 @@
                                         value="{{ number_format($detail->qty, 2, ',', '.') }}"
                                         required
                                     >
+                                    <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;">
+                                        @if($hasKonv)
+                                            Satuan: <strong>{{ $sPembelian }}</strong><br>
+                                            <span class="text-primary">= {{ number_format($totalUtama, 2, ',', '.') }} {{ $sUtama }}</span> (1 {{ $sPembelian }} = {{ number_format($konv, 0, ',', '.') }} {{ $sUtama }})
+                                        @else
+                                            Satuan: <strong>{{ $sUtama }}</strong>
+                                        @endif
+                                    </small>
                                 </td>
 
                                 <td>
@@ -154,16 +176,33 @@
     <script>
         let rowIndex = {{ $pembelian->details->count() }};
 
+        function initBarangSelect(selectEl) {
+            if (!selectEl || selectEl.tomselect) return;
+            new TomSelect(selectEl, {
+                create: false,
+                placeholder: '-- Pilih Barang --',
+                allowEmptyOption: true,
+                maxOptions: 500,
+                onChange: function(value) {
+                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+        }
+
         document.getElementById('btn-add').addEventListener('click', function () {
             const tbody = document.querySelector('#table-items tbody');
 
             const row = `
-                <tr>
+                <tr class="item-row">
                     <td>
-                        <select name="items[${rowIndex}][barang_id]" class="form-control" required>
+                        <select name="items[${rowIndex}][barang_id]" class="form-control barang-select" required>
                             <option value="">-- Pilih Barang --</option>
                             @foreach($barangs as $barang)
-                                <option value="{{ $barang->id }}">
+                                <option value="{{ $barang->id }}"
+                                    data-kode="{{ $barang->kode_barang }}"
+                                    data-satuan-pembelian="{{ $barang->satuan_pembelian }}"
+                                    data-konversi-pembelian="{{ $barang->konversi_pembelian }}"
+                                    data-satuan-utama="{{ $barang->satuan }}">
                                     {{ $barang->kode_barang }} - {{ $barang->nama }}
                                 </option>
                             @endforeach
@@ -177,6 +216,7 @@
                             class="form-control qty-input mask-number" 
                             required
                         >
+                        <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
                     </td>
 
                     <td>
@@ -205,6 +245,11 @@
             `;
 
             tbody.insertAdjacentHTML('beforeend', row);
+
+            const newRow = tbody.lastElementChild;
+            const newSelect = newRow.querySelector('.barang-select');
+            initBarangSelect(newSelect);
+
             rowIndex++;
         });
 
@@ -220,6 +265,38 @@
             }
         });
 
+        function updateQtyHint(row) {
+            const select = row.querySelector('.barang-select');
+            const qtyInput = row.querySelector('.qty-input');
+            const hint = row.querySelector('.qty-hint');
+            if (!select || !hint) return;
+
+            const opt = select.querySelector(`option[value="${select.value}"]`);
+            if (!opt || select.value === '') {
+                hint.textContent = '';
+                return;
+            }
+
+            const satuanPembelian = opt.dataset.satuanPembelian || '';
+            const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
+            const satuanUtama = opt.dataset.satuanUtama || 'Pcs';
+            const qtyVal = getCleanNumber(qtyInput ? qtyInput.value : 0);
+
+            if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
+                const totalUtama = qtyVal * konversi;
+                hint.innerHTML = `Satuan: <strong>${satuanPembelian}</strong><br><span class="text-primary">= ${Number(totalUtama).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${satuanUtama}</span> (1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})`;
+            } else {
+                hint.innerHTML = `Satuan: <strong>${satuanUtama}</strong>`;
+            }
+        }
+
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('barang-select')) {
+                const row = e.target.closest('.item-row');
+                if (row) updateQtyHint(row);
+            }
+        });
+
         /*
         |--------------------------------------------------------------------------
         | MASK INDONESIAN NUMBER FORMAT
@@ -228,7 +305,7 @@
 
         function getCleanNumber(val) {
             if (!val) return 0;
-            let clean = val.replace(/\./g, '').replace(/,/g, '.');
+            let clean = String(val).replace(/\./g, '').replace(/,/g, '.');
             return parseFloat(clean) || 0;
         }
 
@@ -253,6 +330,11 @@
                 e.target.selectionStart = cursorPosition + (newLength - originalLength);
                 e.target.selectionEnd = cursorPosition + (newLength - originalLength);
             }
+
+            if (e.target.classList.contains('qty-input')) {
+                const row = e.target.closest('.item-row');
+                if (row) updateQtyHint(row);
+            }
         });
 
         /*
@@ -264,6 +346,20 @@
         document.querySelector('form[action*="pembelian"]').addEventListener('submit', function (e) {
             document.querySelectorAll('.mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            new TomSelect('#supplier_id', {
+                create: false,
+                placeholder: '-- Pilih Supplier --',
+                allowEmptyOption: true,
+            });
+            document.querySelectorAll('.barang-select').forEach(select => {
+                initBarangSelect(select);
+            });
+            document.querySelectorAll('.item-row').forEach(row => {
+                updateQtyHint(row);
             });
         });
     </script>

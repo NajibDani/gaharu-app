@@ -175,6 +175,11 @@
                                         <a href="{{ route('persediaan-awal.show', $item->id) }}" class="btn btn-sm btn-info text-white rounded-2 px-2 py-1" title="Lihat Rincian">
                                             <i class="bi bi-eye"></i>
                                         </a>
+                                        @if(auth()->user() && auth()->user()->isSuperAdmin())
+                                            <a href="{{ route('persediaan-awal.edit', $item->id) }}" class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1" title="Edit Transaksi (Super Admin)">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </a>
+                                        @endif
                                         <button type="button" class="btn btn-sm btn-danger rounded-2 px-2 py-1" title="Hapus Transaksi" data-bs-toggle="modal" data-bs-target="#modalHapus{{ $item->id }}">
                                             <i class="bi bi-trash"></i>
                                         </button>

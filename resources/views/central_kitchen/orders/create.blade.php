@@ -52,16 +52,25 @@
                         </select>
                     </div>
 
-                    <div class="col-md-3">
+                    <div class="col-md-6">
                         <label class="form-label form-label-custom">Tanggal Order <span class="text-danger">*</span></label>
                         <input type="date" name="tanggal" class="form-control text-sm rounded-3" value="{{ old('tanggal', date('Y-m-d')) }}" required>
                     </div>
 
-                    <div class="col-md-3">
+                    <div class="col-md-6">
                         <label class="form-label form-label-custom">Estimasi Kirim <span class="text-danger">*</span></label>
                         <input type="date" name="estimasi_kirim" class="form-control text-sm rounded-3" value="{{ old('estimasi_kirim', date('Y-m-d', strtotime('+1 day'))) }}" required>
                     </div>
+
+                    <input type="hidden" name="divisi_id" value="1">
                 </div>
+            </div>
+
+            {{-- TOMBOL TAMPILKAN SARAN --}}
+            <div id="toggle-suggestion-container" class="mb-3" style="display: none;">
+                <button type="button" class="btn btn-outline-warning text-dark fw-bold shadow-sm" id="btn-toggle-suggestions" style="border-radius: 8px;">
+                    <i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock
+                </button>
             </div>
 
             {{-- SUGGESTION RESTOCK BOX --}}
@@ -156,6 +165,40 @@
                 row.querySelector('.input-satuan').value = satuan || '-';
             }
 
+            // Delegasi Event untuk Hapus Baris & Update Satuan
+            tableBody.addEventListener('click', function(e) {
+                const btnRemove = e.target.closest('.btn-remove-row');
+                if (btnRemove && !btnRemove.disabled) {
+                    const row = btnRemove.closest('tr');
+                    if (row) {
+                        const select = row.querySelector('.select-produk');
+                        const barangId = select ? select.value : '';
+
+                        row.remove();
+                        checkRows();
+
+                        if (barangId) {
+                            const pill = document.querySelector(`#suggestion-list [data-barang-id="${barangId}"]`);
+                            if (pill) {
+                                pill.classList.remove('bg-warning-subtle');
+                                pill.classList.add('bg-white');
+                                const btn = pill.querySelector('.btn-add-single-suggest');
+                                if (btn) {
+                                    btn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Tambah';
+                                    btn.disabled = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            tableBody.addEventListener('change', function(e) {
+                if (e.target.classList.contains('select-produk')) {
+                    updateSatuan(e.target);
+                }
+            });
+
             function checkRows() {
                 const rows = tableBody.querySelectorAll('tr');
                 rows.forEach((r, idx) => {
@@ -185,8 +228,10 @@
                     targetRow = firstRow.cloneNode(true);
                     targetRow.querySelector('.btn-remove-row').removeAttribute('disabled');
                     
-                    targetRow.querySelector('.select-produk').addEventListener('change', function() { updateSatuan(this); });
-                    targetRow.querySelector('.btn-remove-row').addEventListener('click', function() { targetRow.remove(); checkRows(); });
+                    // Reset values for the new row
+                    targetRow.querySelector('.select-produk').value = '';
+                    targetRow.querySelector('.input-qty').value = '';
+                    targetRow.querySelector('.input-satuan').value = '-';
 
                     tableBody.appendChild(targetRow);
                 }
@@ -211,8 +256,10 @@
             }
 
             function fetchSuggestions(customerId) {
+                const toggleContainer = document.getElementById('toggle-suggestion-container');
                 if (!customerId) {
                     suggestionBox.style.display = 'none';
+                    toggleContainer.style.display = 'none';
                     suggestionList.innerHTML = '';
                     currentSuggestions = [];
                     return;
@@ -225,12 +272,14 @@
                         suggestionOutletName.innerText = data.outlet_name || '';
 
                         if (currentSuggestions.length > 0) {
-                            suggestionBox.style.display = 'block';
+                            toggleContainer.style.display = 'block';
+                            suggestionBox.style.display = 'none'; // Keep hidden initially
                             suggestionList.innerHTML = '';
 
                             currentSuggestions.forEach(item => {
                                 const pill = document.createElement('div');
                                 pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                                pill.dataset.barangId = item.barang_id;
                                 pill.innerHTML = `
                                     <div class="text-start">
                                         <div class="fw-bold">${item.nama}</div>
@@ -255,14 +304,31 @@
                                 suggestionList.appendChild(pill);
                             });
                         } else {
+                            toggleContainer.style.display = 'none';
                             suggestionBox.style.display = 'none';
                             suggestionList.innerHTML = '';
                         }
                     })
                     .catch(() => {
+                        toggleContainer.style.display = 'none';
                         suggestionBox.style.display = 'none';
                     });
             }
+
+            document.getElementById('btn-toggle-suggestions').addEventListener('click', function () {
+                const box = document.getElementById('suggestion-box');
+                if (box.style.display === 'none') {
+                    box.style.display = 'block';
+                    this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Sembunyikan Saran Restock';
+                    this.classList.remove('btn-outline-warning');
+                    this.classList.add('btn-warning');
+                } else {
+                    box.style.display = 'none';
+                    this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock';
+                    this.classList.remove('btn-warning');
+                    this.classList.add('btn-outline-warning');
+                }
+            });
 
             function applyAllSuggestions() {
                 if (!currentSuggestions.length) return;

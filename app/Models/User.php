@@ -52,11 +52,25 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
-    public function stockOpname()
+    public function isSuperAdmin(): bool
     {
-        return $this->hasMany(
-            StockOpname::class,
-            'created_by'
-        );
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, ['Super Admin', 'Superadmin', 'Administrator']);
+    }
+
+    public function isGudang(): bool
+    {
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, ['Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']);
+    }
+
+    public function canApprovePengeluaran(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, ['Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']);
     }
 }

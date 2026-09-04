@@ -17,6 +17,11 @@ class JournalItem extends Model
         return $this->belongsTo(ChartOfAccount::class, 'account_id', 'id');
     }
 
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(ChartOfAccount::class, 'account_id', 'id');
+    }
+
     public function journal(): BelongsTo
     {
         return $this->belongsTo(Journal::class, 'journal_id', 'id');

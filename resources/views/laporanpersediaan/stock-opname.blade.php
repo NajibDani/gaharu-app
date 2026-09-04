@@ -120,46 +120,81 @@
                         </thead>
                         <tbody>
                             @forelse($data as $opname)
-                                @foreach($opname->details as $detail)
-                                    <tr>
-                                        <td class="px-4">
-                                            <div class="fw-semibold" style="color:#d88656; font-size:12px;">{{ $opname->kode_opname }}</div>
-                                            <div class="text-muted" style="font-size:11px;">{{ \Carbon\Carbon::parse($opname->tanggal)->format('d M Y') }}</div>
-                                        </td>
-                                        <td>
-                                            <div class="fw-medium text-dark">{{ $opname->gudang->nama ?? '-' }}</div>
-                                            @if($opname->divisi)
-                                                <span class="badge bg-light text-primary border border-primary-subtle" style="font-size: 0.72rem;">
-                                                    <i class="bi bi-diagram-3 me-1"></i>{{ $opname->divisi->nama }}
-                                                </span>
-                                            @endif
-                                        </td>
-                                        <td>
-                                            <div class="fw-semibold">{{ $detail->barang->nama ?? '-' }}</div>
-                                        </td>
-                                        <td class="text-center">{{ number_format($detail->stok_sistem, 2) }}</td>
-                                        <td class="text-center fw-semibold">{{ number_format($detail->stok_fisik, 2) }}</td>
-                                        <td class="text-center">
-                                            @if($detail->selisih < 0)
-                                                <span class="text-danger fw-bold">{{ number_format($detail->selisih, 2) }}</span>
-                                            @elseif($detail->selisih > 0)
-                                                <span class="text-success fw-bold">+{{ number_format($detail->selisih, 2) }}</span>
-                                            @else
-                                                <span class="text-muted">0</span>
-                                            @endif
-                                        </td>
-                                        <td class="text-end fw-semibold {{ $detail->nilai_selisih < 0 ? 'text-danger' : ($detail->nilai_selisih > 0 ? 'text-success' : '') }}">
-                                            Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
-                                        </td>
-                                        <td class="text-center">
-                                            @if($opname->status === 'approved')
-                                                <span class="badge bg-success">Approved</span>
-                                            @else
-                                                <span class="badge bg-secondary">Draft</span>
-                                            @endif
-                                        </td>
-                                    </tr>
-                                @endforeach
+                                    @foreach($opname->details as $detail)
+                                        @php
+                                            $konv = (float) ($detail->barang->konversi_pembelian ?? 1);
+                                            $hasKonv = !empty($detail->barang->satuan_pembelian) && $konv > 1;
+                                            $satuan = $detail->barang->satuan ?? 'pcs';
+                                            $satuanBeli = $detail->barang->satuan_pembelian ?? '';
+                                        @endphp
+                                        <tr>
+                                            <td class="px-4">
+                                                <div class="fw-semibold" style="color:#d88656; font-size:12px;">{{ $opname->kode_opname }}</div>
+                                                <div class="text-muted" style="font-size:11px;">{{ \Carbon\Carbon::parse($opname->tanggal)->format('d M Y') }}</div>
+                                            </td>
+                                            <td>
+                                                <div class="fw-medium text-dark">{{ $opname->gudang->nama ?? '-' }}</div>
+                                                @if($opname->divisi)
+                                                    <span class="badge bg-light text-primary border border-primary-subtle" style="font-size: 0.72rem;">
+                                                        <i class="bi bi-diagram-3 me-1"></i>{{ $opname->divisi->nama }}
+                                                    </span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <div class="fw-semibold">{{ $detail->barang->nama ?? '-' }}</div>
+                                                @if($hasKonv)
+                                                    <small class="text-primary font-monospace" style="font-size: 0.72rem;">
+                                                        1 {{ $satuanBeli }} = {{ number_format($konv, 0, ',', '.') }} {{ $satuan }}
+                                                    </small>
+                                                @endif
+                                            </td>
+                                            <td class="text-center">
+                                                <div>{{ number_format($detail->stok_sistem, 2) }} <span class="text-muted small">{{ $satuan }}</span></div>
+                                                @if($hasKonv)
+                                                    <div class="text-primary small" style="font-size: 0.75rem;">
+                                                        ≈ {{ number_format($detail->stok_sistem / $konv, 2) }} {{ $satuanBeli }}
+                                                    </div>
+                                                @endif
+                                            </td>
+                                            <td class="text-center fw-semibold">
+                                                <div>{{ number_format($detail->stok_fisik, 2) }} <span class="text-muted small">{{ $satuan }}</span></div>
+                                                @if($hasKonv)
+                                                    <div class="text-primary small" style="font-size: 0.75rem;">
+                                                        ≈ {{ number_format($detail->stok_fisik / $konv, 2) }} {{ $satuanBeli }}
+                                                    </div>
+                                                @endif
+                                            </td>
+                                            <td class="text-center">
+                                                @if($detail->selisih < 0)
+                                                    <span class="text-danger fw-bold">{{ number_format($detail->selisih, 2) }} {{ $satuan }}</span>
+                                                    @if($hasKonv)
+                                                        <div class="text-danger small font-monospace" style="font-size: 0.75rem;">
+                                                            ({{ number_format($detail->selisih / $konv, 2) }} {{ $satuanBeli }})
+                                                        </div>
+                                                    @endif
+                                                @elseif($detail->selisih > 0)
+                                                    <span class="text-success fw-bold">+{{ number_format($detail->selisih, 2) }} {{ $satuan }}</span>
+                                                    @if($hasKonv)
+                                                        <div class="text-success small font-monospace" style="font-size: 0.75rem;">
+                                                            (+{{ number_format($detail->selisih / $konv, 2) }} {{ $satuanBeli }})
+                                                        </div>
+                                                    @endif
+                                                @else
+                                                    <span class="text-muted">0 {{ $satuan }}</span>
+                                                @endif
+                                            </td>
+                                            <td class="text-end fw-semibold {{ $detail->nilai_selisih < 0 ? 'text-danger' : ($detail->nilai_selisih > 0 ? 'text-success' : '') }}">
+                                                Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
+                                            </td>
+                                            <td class="text-center">
+                                                @if($opname->status === 'approved')
+                                                    <span class="badge bg-success">Approved</span>
+                                                @else
+                                                    <span class="badge bg-secondary">Draft</span>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
                             @empty
                                 <tr>
                                     <td colspan="8" class="text-center py-5 text-muted">

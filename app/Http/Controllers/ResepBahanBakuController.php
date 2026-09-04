@@ -23,7 +23,7 @@ class ResepBahanBakuController extends Controller
                     ->where('resep_id', $id)
                     ->get();
 
-        $master = MasterBarang::where(function($q) { $q->where('is_bahan_baku', 1)->orWhere('is_bahan_setengah_jadi', 1); })->get();
+        $master = MasterBarang::where('is_active', true)->orderBy('nama')->get();
 
         return view('resep.bahan', compact('resep', 'bahan', 'master'));
     }

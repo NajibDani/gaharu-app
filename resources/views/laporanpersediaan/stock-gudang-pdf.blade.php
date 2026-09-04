@@ -42,22 +42,41 @@
     <table class="main-table">
         <thead>
             <tr>
-                <th width="120">Kode Barang</th>
+                <th width="110">Kode Barang</th>
                 <th>Nama Barang</th>
-                <th>Gudang</th>
-                <th>Satuan</th>
-                <th class="text-right" width="100">Stok</th>
+                <th width="130">Gudang & Divisi</th>
+                <th width="80">Satuan</th>
+                <th class="text-right" width="130">Stok</th>
             </tr>
         </thead>
         <tbody>
             @foreach($data as $row)
+                @php
+                    $konversi = (float) ($row->konversi_pembelian ?? 1);
+                    $hasKonversi = !empty($row->satuan_pembelian) && $konversi > 1;
+                @endphp
                 <tr class="{{ $row->jumlah == 0 ? 'habis' : '' }}">
                     <td class="fw-bold">{{ $row->kode_barang }}</td>
                     <td>{{ $row->nama_barang }}</td>
-                    <td>{{ $row->nama_gudang }}</td>
-                    <td>{{ $row->satuan }}</td>
+                    <td>
+                        {{ $row->nama_gudang }}
+                        @if(!empty($row->nama_divisi))
+                            <span style="font-size: 9px; color: #555;">({{ $row->nama_divisi }})</span>
+                        @endif
+                    </td>
+                    <td>
+                        {{ $row->satuan }}
+                        @if($hasKonversi)
+                            <div style="font-size: 8px; color: #1e3a8a;">1 {{ $row->satuan_pembelian }} = {{ number_format($konversi, 0, ',', '.') }} {{ $row->satuan }}</div>
+                        @endif
+                    </td>
                     <td class="text-right fw-bold {{ $row->jumlah == 0 ? 'minus' : 'plus' }}">
-                        {{ number_format($row->jumlah, 2) }}
+                        {{ number_format($row->jumlah, 2) }} {{ $row->satuan }}
+                        @if($hasKonversi)
+                            <div style="font-size: 9px; font-weight: normal; color: #1e3a8a;">
+                                ({{ number_format($row->jumlah / $konversi, 2) }} {{ $row->satuan_pembelian }})
+                            </div>
+                        @endif
                     </td>
                 </tr>
             @endforeach

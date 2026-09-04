@@ -91,16 +91,41 @@
             @php $totalSub = 0; @endphp
             @foreach($pembelian->details as $idx => $detail)
                 @php 
+                    $bItem = $detail->barang;
+                    $sPembelian = $detail->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
+                    $konv = (float)($detail->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                    $sUtama = $bItem->satuan ?? 'Unit';
+                    $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+                    $unitDisplay = $sPembelian ?: $sUtama;
+
                     $qtyDiterima = $detail->qty_diterima ?? $detail->qty;
                     $subtotal = $detail->qty * $detail->harga_per_qty; 
                     $totalSub += $subtotal;
                 @endphp
                 <tr>
                     <td class="text-center">{{ $idx + 1 }}</td>
-                    <td><strong>{{ $detail->barang->nama ?? '-' }}</strong></td>
-                    <td class="text-center">{{ number_format($detail->qty, 2, ',', '.') }} {{ $detail->barang->satuan ?? 'Unit' }}</td>
-                    <td class="text-center">{{ number_format($qtyDiterima, 2, ',', '.') }} {{ $detail->barang->satuan ?? 'Unit' }}</td>
-                    <td class="text-end">Rp {{ number_format($detail->harga_per_qty, 0, ',', '.') }}</td>
+                    <td>
+                        <strong>{{ $detail->barang->nama ?? '-' }}</strong>
+                        <div style="font-size: 9.5px; color: #718096; font-family: monospace;">{{ $detail->barang->kode_barang ?? '' }}</div>
+                    </td>
+                    <td class="text-center">
+                        <strong>{{ number_format($detail->qty, 2, ',', '.') }} {{ $unitDisplay }}</strong>
+                        @if($hasKonv)
+                            <div style="font-size: 9px; color: #2b6cb0;">= {{ number_format($detail->qty * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
+                        @endif
+                    </td>
+                    <td class="text-center">
+                        <strong>{{ number_format($qtyDiterima, 2, ',', '.') }} {{ $unitDisplay }}</strong>
+                        @if($hasKonv)
+                            <div style="font-size: 9px; color: #2b6cb0;">= {{ number_format($qtyDiterima * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
+                        @endif
+                    </td>
+                    <td class="text-end">
+                        Rp {{ number_format($detail->harga_per_qty, 0, ',', '.') }} / {{ $unitDisplay }}
+                        @if($hasKonv && $konv > 0)
+                            <div style="font-size: 9px; color: #718096;">(~Rp {{ number_format($detail->harga_per_qty / $konv, 2, ',', '.') }} / {{ $sUtama }})</div>
+                        @endif
+                    </td>
                     <td class="text-end fw-bold">Rp {{ number_format($subtotal, 0, ',', '.') }}</td>
                 </tr>
             @endforeach

@@ -42,6 +42,7 @@ use App\Http\Controllers\CentralKitchenProductionController;
 use App\Http\Controllers\PersediaanAwalController;
 use App\Http\Controllers\PengaturanGajiController;
 use App\Http\Controllers\KeterlambatanController;
+use App\Http\Controllers\EventNotifikasiController;
 
 Route::get('/proposal-penawaran', function () {
     return file_get_contents(public_path('proposal/index.html'));
@@ -79,7 +80,14 @@ Route::middleware('auth')->group(function () {
         Route::get('/barang/check-nama', [BarangController::class, 'checkNama'])->name('barang.check-nama');
         Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
         Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');
+
+        // Event & Notifikasi Khusus (High Season, Promo, dll)
+        Route::patch('event-notifikasi/{id}/toggle', [EventNotifikasiController::class, 'toggleActive'])->name('event-notifikasi.toggle');
+        Route::resource('event-notifikasi', EventNotifikasiController::class)->names('event-notifikasi');
     });
+
+    // API Event Notifikasi Aktif untuk Frontend/SweetAlert (Semua User Login)
+    Route::get('/api/event-notifikasi-aktif', [EventNotifikasiController::class, 'getActiveEvents'])->name('api.event-notifikasi.aktif');
 
     // Persediaan Awal (Akses Operasional - Semua Role)
     Route::get('/persediaan-awal/template', [PersediaanAwalController::class, 'importTemplate'])->name('persediaan-awal.template');
@@ -151,6 +159,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // Pengadaan & Pengeluaran Bahan (Akses Operasional - Semua Role)
     Route::get('pengeluaran-bahan-baku/suggestions', [PengeluaranBahanBakuController::class, 'suggestions'])->name('pengeluaran-bahan-baku.suggestions');
     Route::get('pengeluaran-bahan-baku/{id}/detail-json', [PengeluaranBahanBakuController::class, 'detailJson'])->name('pengeluaran-bahan-baku.detail-json');
+    Route::get('pengeluaran-bahan-baku/{id}/cetak-pdf', [PengeluaranBahanBakuController::class, 'cetakPdf'])->name('pengeluaran-bahan-baku.cetak-pdf');
     Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
     Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
 
@@ -300,7 +309,8 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::post('/central-kitchen/produksi/store-produksi', [CentralKitchenProductionController::class, 'storeProduksi'])->name('ck-produksi.store-produksi');
     Route::post('/central-kitchen/produksi/store-and-approve', [CentralKitchenProductionController::class, 'storeAndApprove'])->name('ck-produksi.store-and-approve');
     Route::post('/central-kitchen/produksi/{id}/approve', [CentralKitchenProductionController::class, 'approveProduksi'])->name('ck-produksi.approve');
-
+    Route::get('/central-kitchen/produksi/stok-internal/create', [CentralKitchenProductionController::class, 'createStokInternal'])->name('ck-produksi.create-stok-internal');
+    Route::post('/central-kitchen/produksi/stok-internal/store', [CentralKitchenProductionController::class, 'storeStokInternal'])->name('ck-produksi.store-stok-internal');
 
     // =========================================================================
     // 5. GROUP KEPALA GUDANG & KEPALA OUTLET GAHARU

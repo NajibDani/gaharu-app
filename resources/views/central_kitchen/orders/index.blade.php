@@ -158,6 +158,7 @@
                             <th class="text-center" style="width: 50px;">NO</th>
                             <th>KODE ORDER</th>
                             <th>OUTLET PEMESAN</th>
+                            <th>DIVISI CK</th>
                             <th>TANGGAL ORDER</th>
                             <th>ESTIMASI KIRIM</th>
                             <th class="text-center">STATUS PRODUKSI</th>
@@ -171,6 +172,15 @@
                                 <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
                                 <td>
                                     <span class="badge bg-light text-dark border">{{ $p->customer->nama ?? '-' }}</span>
+                                </td>
+                                <td>
+                                    @if($p->divisi)
+                                        <span class="badge rounded-pill" style="background:#ede9fe;color:#6d28d9;font-size:0.72rem;font-weight:600;">
+                                            <i class="bi bi-layers-half me-1"></i>{{ $p->divisi->nama }}
+                                        </span>
+                                    @else
+                                        <span class="text-muted small">-</span>
+                                    @endif
                                 </td>
                                 <td>{{ date('d M Y', strtotime($p->tanggal)) }}</td>
                                 <td>
@@ -231,6 +241,12 @@
                                                                 <strong class="text-dark">{{ $p->customer->nama ?? '-' }}</strong>
                                                             </div>
                                                             <div class="col-md-3">
+                                                                <span class="text-muted d-block">Divisi CK:</span>
+                                                                <strong class="text-dark">
+                                                                    {{ $p->divisi->nama ?? '-' }}
+                                                                </strong>
+                                                            </div>
+                                                            <div class="col-md-3">
                                                                 <span class="text-muted d-block">Tanggal Order:</span>
                                                                 <strong class="text-dark">{{ date('d M Y', strtotime($p->tanggal)) }}</strong>
                                                             </div>
@@ -287,7 +303,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7" class="text-center py-5 text-muted">
+                                <td colspan="8" class="text-center py-5 text-muted">
                                     <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
                                     Belum ada data Central Kitchen Orders.
                                 </td>
@@ -320,7 +336,7 @@
                     @csrf
                     <div class="modal-body p-4">
                         <div class="row g-3 mb-4">
-                            <div class="col-md-6">
+                            <div class="col-md-12">
                                 <label class="form-label fw-bold small text-secondary">Outlet Pemesan <span class="text-danger">*</span></label>
                                 <select name="customer_id" id="modal-select-customer" class="form-select rounded-3" required>
                                     <option value="">-- Pilih Outlet Pemesan --</option>
@@ -331,14 +347,15 @@
                                     @endforeach
                                 </select>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-6">
                                 <label class="form-label fw-bold small text-secondary">Tanggal Order <span class="text-danger">*</span></label>
                                 <input type="date" name="tanggal" class="form-control rounded-3" value="{{ date('Y-m-d') }}" required>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-6">
                                 <label class="form-label fw-bold small text-secondary">Estimasi Kirim <span class="text-danger">*</span></label>
                                 <input type="date" name="estimasi_kirim" class="form-control rounded-3" value="{{ date('Y-m-d', strtotime('+1 day')) }}" required>
                             </div>
+                            <input type="hidden" name="divisi_id" value="1">
                         </div>
 
                         {{-- SUGGESTION RESTOCK BOX --}}
@@ -436,6 +453,24 @@
                 row.querySelector('.modal-input-satuan').value = satuan || '-';
             }
 
+            // Delegasi Event untuk Hapus Baris & Update Satuan
+            tableBody.addEventListener('click', function(e) {
+                const btnRemove = e.target.closest('.modal-btn-remove-row');
+                if (btnRemove && !btnRemove.disabled) {
+                    const row = btnRemove.closest('tr');
+                    if (row) {
+                        row.remove();
+                        checkRows();
+                    }
+                }
+            });
+
+            tableBody.addEventListener('change', function(e) {
+                if (e.target.classList.contains('modal-select-produk')) {
+                    updateSatuan(e.target);
+                }
+            });
+
             function checkRows() {
                 const rows = tableBody.querySelectorAll('tr');
                 rows.forEach(r => {
@@ -465,8 +500,10 @@
                     targetRow = firstRow.cloneNode(true);
                     targetRow.querySelector('.modal-btn-remove-row').removeAttribute('disabled');
                     
-                    targetRow.querySelector('.modal-select-produk').addEventListener('change', function() { updateSatuan(this); });
-                    targetRow.querySelector('.modal-btn-remove-row').addEventListener('click', function() { targetRow.remove(); checkRows(); });
+                    // Reset values for the new row
+                    targetRow.querySelector('.modal-select-produk').value = '';
+                    targetRow.querySelector('.modal-input-qty').value = '';
+                    targetRow.querySelector('.modal-input-satuan').value = '-';
 
                     tableBody.appendChild(targetRow);
                 }

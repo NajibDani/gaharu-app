@@ -19,7 +19,7 @@ class CentralKitchenOrderController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = Pesanan::centralKitchen()->with(['customer', 'details.produk', 'gudang']);
+        $query = Pesanan::centralKitchen()->with(['customer', 'details.produk', 'gudang', 'divisi']);
 
         if ($search) {
             $query->where(function($q) use ($search) {
@@ -53,6 +53,11 @@ class CentralKitchenOrderController extends Controller
             ->where('is_bahan_setengah_jadi', true)
             ->orderBy('nama', 'asc')
             ->get();
+
+        // Ambil divisi Gudang Central Kitchen
+        $gudangCk = \App\Models\MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkId = $gudangCk ? $gudangCk->id : 1;
+        $divisiCk = \App\Models\GudangDivisi::where('gudang_id', $gudangCkId)->get();
 
         // Hitung ringkasan saran restock Bahan Setengah Jadi per outlet (di bawah minimum stock)
         $outletSuggestionsSummary = [];
@@ -106,7 +111,7 @@ class CentralKitchenOrderController extends Controller
             }
         }
 
-        return view('central_kitchen.orders.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'produk', 'outletSuggestionsSummary'));
+        return view('central_kitchen.orders.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'produk', 'outletSuggestionsSummary', 'divisiCk'));
     }
 
     /**
@@ -118,12 +123,13 @@ class CentralKitchenOrderController extends Controller
             ->orWhere('nama', 'like', '%Gaharu%')
             ->orWhere('nama', 'like', '%KeJingga%')
             ->orWhere('nama', 'like', '%Kejingga%')
+            ->orWhere('nama', 'like', '%Central Kitchen%')
             ->orderBy('nama', 'asc')
             ->get();
 
         $customers = collect();
         foreach ($outletGudangs as $og) {
-            $cName = str_starts_with($og->nama, 'Gudang ') ? 'Outlet ' . substr($og->nama, 7) : $og->nama;
+            $cName = str_contains($og->nama, 'Central Kitchen') ? 'Central Kitchen' : (str_starts_with($og->nama, 'Gudang ') ? 'Outlet ' . substr($og->nama, 7) : $og->nama);
             $customer = Customer::firstOrCreate(
                 ['nama' => $cName],
                 [
@@ -139,7 +145,7 @@ class CentralKitchenOrderController extends Controller
 
         if ($customers->isEmpty()) {
             $customers = Customer::where('jenis', 'Outlet Internal')
-                ->orWhereIn('nama', ['Outlet Gaharu', 'Outlet KeJingga'])
+                ->orWhereIn('nama', ['Outlet Gaharu', 'Outlet KeJingga', 'Central Kitchen'])
                 ->get();
         }
 
@@ -237,7 +243,12 @@ class CentralKitchenOrderController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
-        return view('central_kitchen.orders.create', compact('customers', 'produk'));
+        // Ambil divisi Gudang Central Kitchen
+        $gudangCk = \App\Models\MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkId = $gudangCk ? $gudangCk->id : 1;
+        $divisiCk = \App\Models\GudangDivisi::where('gudang_id', $gudangCkId)->get();
+
+        return view('central_kitchen.orders.create', compact('customers', 'produk', 'divisiCk'));
     }
 
     /**
@@ -249,6 +260,7 @@ class CentralKitchenOrderController extends Controller
             'customer_id'    => 'required',
             'tanggal'        => 'required|date',
             'estimasi_kirim' => 'required|date',
+            'divisi_id'      => 'required|exists:gudang_divisi,id',
             'produk_id'      => 'required|array|min:1',
             'qty'            => 'required|array|min:1',
         ]);
@@ -284,13 +296,14 @@ class CentralKitchenOrderController extends Controller
                 'tanggal'           => $request->tanggal,
                 'estimasi_kirim'    => $request->estimasi_kirim,
                 'estimasi_produksi' => $request->estimasi_produksi,
-                'total_pesanan'     => 0.00, // Tanpa harga jual (HPP berpindah)
+                'total_pesanan'     => 0.00,
                 'tax_percentage'    => 0,
                 'tax_service'       => 0,
                 'status_pesanan'    => 'pending',
-                'status_pembayaran' => 'Lunas', // Bebas penagihan
+                'status_pembayaran' => 'Lunas',
                 'created_by'        => auth()->id(),
                 'gudang_id'         => $gudangId,
+                'divisi_id'         => $request->divisi_id,
             ]);
 
             foreach ($request->produk_id as $key => $produkId) {

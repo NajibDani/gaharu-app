@@ -1626,8 +1626,9 @@ class JurnalController extends Controller
 
     public function bukuPembantuIndex(Request $request)
     {
-        // 1. Tangkap jenis laporan dari parameter URL (default: 'utang')
+        // 1. Tangkap jenis laporan dari parameter URL (default: 'utang') dan kata kunci pencarian
         $jenis = $request->query('jenis', 'utang');
+        $search = trim((string) $request->query('search', ''));
 
         // 2. Ambil ID COA secara dinamis berdasarkan kode resmi di sistem
         $idPiutang      = DB::table('chart_of_accounts')->where('kode', '1201')->value('id') ?? 16;
@@ -1651,15 +1652,24 @@ class JurnalController extends Controller
                     })
                     ->select('j.id', DB::raw('COALESCE(CASE WHEN j.source_type = "pembelian" THEN j.source_id END, rcv.pembelian_id) as pembelian_id'));
 
-                $entities = DB::table('suppliers')
+                $query = DB::table('suppliers')
                     ->leftJoin('pembelian', 'suppliers.id', '=', 'pembelian.supplier_id')
                     ->leftJoinSub($jurnalSubquery, 'j_sub', 'pembelian.id', '=', 'j_sub.pembelian_id')
                     ->leftJoin('journal_items', function ($join) use ($targetAccountId) {
                         $join->on('journal_items.journal_id', '=', 'j_sub.id')
                             ->where('journal_items.journal_type', '=', 'jurnal_pembelian')
                             ->where('journal_items.account_id', '=', $targetAccountId);
-                    })
-                    ->select(
+                    });
+
+                if ($search !== '') {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('suppliers.nama', 'like', "%{$search}%")
+                          ->orWhere('suppliers.id', 'like', "%{$search}%")
+                          ->orWhere('suppliers.no_hp', 'like', "%{$search}%");
+                    });
+                }
+
+                $entities = $query->select(
                         'suppliers.id as entity_id',
                         'suppliers.nama as nama',
                         DB::raw("CONCAT('NO. ', suppliers.id) as kode_akun"),
@@ -1693,15 +1703,24 @@ class JurnalController extends Controller
                     })
                     ->select('j.id', DB::raw('COALESCE(p.pesanan_id, sh.pesanan_id) as pesanan_id'));
 
-                $entities = DB::table('customers')
+                $query = DB::table('customers')
                     ->leftJoin('pesanan', 'customers.id', '=', 'pesanan.customer_id')
                     ->leftJoinSub($jurnalSubquery, 'j_sub', 'pesanan.id', '=', 'j_sub.pesanan_id')
                     ->leftJoin('journal_items', function ($join) use ($targetAccountId) {
                         $join->on('journal_items.journal_id', '=', 'j_sub.id')
                             ->whereIn('journal_items.journal_type', ['penjualan_b2b', 'jurnal_penjualan_b2b'])
                             ->where('journal_items.account_id', '=', $targetAccountId);
-                    })
-                    ->select(
+                    });
+
+                if ($search !== '') {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('customers.nama', 'like', "%{$search}%")
+                          ->orWhere('customers.id', 'like', "%{$search}%")
+                          ->orWhere('customers.no_hp', 'like', "%{$search}%");
+                    });
+                }
+
+                $entities = $query->select(
                         'customers.id as entity_id',
                         'customers.nama as nama',
                         DB::raw("CONCAT('NO. ', customers.id) as kode_akun"),
@@ -1788,7 +1807,7 @@ class JurnalController extends Controller
             'total_pending' => $entities->where('saldo', '>', 0)->count(),
         ];
 
-        return view('buku-pembantu.index', compact('jenis', 'entities', 'summary'));
+        return view('buku-pembantu.index', compact('jenis', 'entities', 'summary', 'search'));
     }
 
     public function bukuPembantuShow(Request $request, $jenis, $id)
@@ -1800,6 +1819,8 @@ class JurnalController extends Controller
 
         $entity = null;
         $mutasi = collect();
+        $pembelianMap = [];
+        $pesananMap = [];
 
         switch ($jenis) {
             case 'utang':
@@ -1828,11 +1849,75 @@ class JurnalController extends Controller
                         'jurnal_pembelian.deskripsi as keterangan',
                         'jurnal_pembelian.no_ref as ref',
                         'journal_items.debit',
-                        'journal_items.kredit'
+                        'journal_items.kredit',
+                        'pembelian.id as pembelian_id',
+                        'pembelian.kode_pembelian as kode_transaksi'
                     )
                     ->orderBy('jurnal_pembelian.tanggal', 'asc')
                     ->orderBy('jurnal_pembelian.id', 'asc')
                     ->get();
+
+                // Ambil data lengkap pembelian terkait untuk pop-up modal rincian nota
+                $pembelianIds = $mutasi->pluck('pembelian_id')->unique()->filter()->values();
+                if ($pembelianIds->isNotEmpty()) {
+                    $pembelianModels = \App\Models\Pembelian::with(['supplier', 'gudang', 'details.barang'])
+                        ->whereIn('id', $pembelianIds)
+                        ->get();
+
+                    foreach ($pembelianModels as $pItem) {
+                        $labelMetode = match($pItem->metode_pembayaran) {
+                            'cod'    => 'COD',
+                            'termin' => 'Termin / Tempo',
+                            'dp'     => 'DP ' . ($pItem->persen_dp ? $pItem->persen_dp . '%' : ''),
+                            default  => 'Belum Dicatat',
+                        };
+
+                        $pembelianMap[$pItem->id] = [
+                            'id'                  => $pItem->id,
+                            'kode'                => $pItem->kode_pembelian,
+                            'supplier_id'         => $pItem->supplier_id,
+                            'supplier_nama'       => $pItem->supplier->nama ?? '-',
+                            'gudang_id'           => $pItem->gudang_id,
+                            'gudang_nama'         => $pItem->gudang->nama ?? '-',
+                            'tanggal'             => \Carbon\Carbon::parse($pItem->tanggal)->format('d M Y'),
+                            'tax_service'         => (float) ($pItem->tax_service ?? 0),
+                            'total'               => (float) $pItem->total,
+                            'metode'              => $pItem->metode_pembayaran,
+                            'label'               => $labelMetode,
+                            'persen_dp'           => $pItem->persen_dp,
+                            'nominal_dp'          => (float) $pItem->nominal_dp,
+                            'is_lunas'            => (bool) $pItem->is_lunas,
+                            'is_diterima'         => (bool) $pItem->is_diterima,
+                            'kekurangan'          => (float) ($pItem->is_lunas ? 0 : ($pItem->total - ($pItem->nominal_dp ?? 0))),
+                            'tanggal_jatuh_tempo' => $pItem->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($pItem->tanggal_jatuh_tempo)->format('d M Y') : null,
+                            'tanggal_pelunasan'   => $pItem->tanggal_pelunasan ? \Carbon\Carbon::parse($pItem->tanggal_pelunasan)->format('d M Y') : null,
+                            'catatan'             => $pItem->catatan_pembayaran,
+                            'details'             => $pItem->details->map(function ($d) {
+                                $bItem = $d->barang;
+                                $sPembelian = $d->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
+                                $konv = floatval($d->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                                $sUtama = $bItem->satuan ?? 'Pcs';
+                                $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+
+                                return [
+                                    'id'                 => $d->id,
+                                    'barang_id'          => $d->barang_id,
+                                    'nama'               => $bItem->nama ?? 'Barang',
+                                    'kode_barang'        => $bItem->kode_barang ?? '',
+                                    'satuan'             => $sPembelian ?: $sUtama,
+                                    'satuan_pembelian'   => $sPembelian,
+                                    'satuan_utama'       => $sUtama,
+                                    'konversi_pembelian' => $konv,
+                                    'has_konversi'       => $hasKonv,
+                                    'qty'                => floatval($d->qty),
+                                    'harga_per_qty'      => floatval($d->harga_per_qty),
+                                    'harga'              => floatval($d->harga ?? ($d->qty * $d->harga_per_qty)),
+                                    'batch_number'       => $d->batch_number,
+                                ];
+                            })->values()->toArray(),
+                        ];
+                    }
+                }
                 break;
 
             case 'piutang':
@@ -1865,11 +1950,47 @@ class JurnalController extends Controller
                         'jurnal_penjualan_b2b.deskripsi as keterangan',
                         'jurnal_penjualan_b2b.no_ref as ref',
                         'journal_items.debit',
-                        'journal_items.kredit'
+                        'journal_items.kredit',
+                        'pesanan.id as pesanan_id',
+                        'pesanan.kode_pesanan as kode_transaksi'
                     )
                     ->orderBy('jurnal_penjualan_b2b.tanggal', 'asc')
                     ->orderBy('jurnal_penjualan_b2b.id', 'asc')
                     ->get();
+
+                // Ambil data lengkap pesanan terkait untuk pop-up modal rincian nota
+                $pesananIds = $mutasi->pluck('pesanan_id')->unique()->filter()->values();
+                if ($pesananIds->isNotEmpty()) {
+                    $pesananModels = \App\Models\Pesanan::with(['customer', 'details.produk', 'pembayaran'])
+                        ->whereIn('id', $pesananIds)
+                        ->get();
+
+                    foreach ($pesananModels as $pItem) {
+                        $totalBayar = $pItem->pembayaran->sum('jumlah_bayar');
+                        $pesananMap[$pItem->id] = [
+                            'id'                => $pItem->id,
+                            'kode'              => $pItem->kode_pesanan,
+                            'customer_nama'     => $pItem->customer->nama ?? '-',
+                            'tanggal'           => \Carbon\Carbon::parse($pItem->tanggal)->format('d M Y H:i'),
+                            'status_pesanan'    => $pItem->status_pesanan,
+                            'status_pembayaran' => $pItem->status_pembayaran,
+                            'total_pesanan'     => (float) $pItem->total_pesanan,
+                            'tax_service'       => (float) $pItem->tax_service,
+                            'tax_percentage'    => (float) $pItem->tax_percentage,
+                            'total_bayar'       => (float) $totalBayar,
+                            'sisa_tagihan'      => (float) max(0, $pItem->total_pesanan - $totalBayar),
+                            'details'           => $pItem->details->map(function ($d) {
+                                return [
+                                    'nama'     => $d->produk->nama ?? 'Produk',
+                                    'qty'      => floatval($d->qty),
+                                    'satuan'   => $d->produk->satuan ?? 'pcs',
+                                    'harga'    => floatval($d->harga),
+                                    'subtotal' => floatval($d->subtotal),
+                                ];
+                            })->values()->toArray(),
+                        ];
+                    }
+                }
                 break;
         }
 
@@ -1930,7 +2051,7 @@ class JurnalController extends Controller
 
         $saldoAkhir = $isCompleted ? 0 : $runningSaldo;
 
-        return view('buku-pembantu.show', compact('jenis', 'entity', 'mutasi', 'saldoAkhir'));
+        return view('buku-pembantu.show', compact('jenis', 'entity', 'mutasi', 'saldoAkhir', 'pembelianMap', 'pesananMap'));
     }
 
     public function pembelianPostAuto(Request $request, $id)

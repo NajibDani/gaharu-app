@@ -15,7 +15,7 @@
                     <div class="row g-2 align-items-end">
                         <div class="col-md-3">
                             <label class="form-label fw-semibold small">Filter Gudang</label>
-                            <select name="gudang_id" id="filter_gudang_id" class="form-select">
+                            <select name="gudang_id" id="filter_gudang_id" class="form-select form-select-sm">
                                 <option value="">-- Semua Gudang --</option>
                                 @foreach($gudangs as $gudang)
                                     <option value="{{ $gudang->id }}" {{ $gudangId == $gudang->id ? 'selected' : '' }}>
@@ -25,16 +25,27 @@
                             </select>
                         </div>
 
-                        <div class="col-md-3" id="filter_divisi_container" style="{{ empty($divisiId) && empty($gudangId) ? 'display:none;' : '' }}">
+                        <div class="col-md-2" id="filter_divisi_container" style="{{ empty($divisiId) && empty($gudangId) ? 'display:none;' : '' }}">
                             <label class="form-label fw-semibold small">Filter Divisi</label>
-                            <select name="divisi_id" id="filter_divisi_id" class="form-select">
+                            <select name="divisi_id" id="filter_divisi_id" class="form-select form-select-sm">
                                 <option value="">-- Semua Divisi --</option>
                             </select>
                         </div>
 
-                        <div class="col-md-4">
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold small">Filter Jenis Barang</label>
+                            <select name="jenis_barang" class="form-select form-select-sm">
+                                <option value="">-- Semua Jenis --</option>
+                                <option value="bahan_baku" {{ ($jenisBarang ?? '') === 'bahan_baku' ? 'selected' : '' }}>Bahan Baku</option>
+                                <option value="bahan_setengah_jadi" {{ ($jenisBarang ?? '') === 'bahan_setengah_jadi' ? 'selected' : '' }}>Bahan Setengah Jadi</option>
+                                <option value="barang_jadi" {{ ($jenisBarang ?? '') === 'barang_jadi' ? 'selected' : '' }}>Barang Jadi</option>
+                                <option value="operational" {{ ($jenisBarang ?? '') === 'operational' ? 'selected' : '' }}>Operasional</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-3">
                             <label class="form-label fw-semibold small">Filter Barang</label>
-                            <select name="barang_id" class="form-select">
+                            <select name="barang_id" class="form-select form-select-sm">
                                 <option value="">-- Semua Barang --</option>
                                 @foreach($barangs as $barang)
                                     <option value="{{ $barang->id }}" {{ $barangId == $barang->id ? 'selected' : '' }}>
@@ -45,10 +56,10 @@
                         </div>
 
                         <div class="col-md-2 d-flex gap-1">
-                            <button type="submit" class="btn btn-primary flex-fill">
+                            <button type="submit" class="btn btn-primary btn-sm flex-fill">
                                 <i class="bi bi-filter"></i> Filter
                             </button>
-                            <a href="{{ route('stok-gudang.index') }}" class="btn btn-secondary">
+                            <a href="{{ route('stok-gudang.index') }}" class="btn btn-secondary btn-sm">
                                 Reset
                             </a>
                         </div>
@@ -63,11 +74,11 @@
                 <table class="table table-bordered table-hover align-middle">
                     <thead class="table-dark">
                         <tr>
-                            <th width="220">Gudang & Divisi</th>
-                            <th width="150">Kode Barang</th>
-                            <th>Nama Barang</th>
+                            <th width="200">Gudang & Divisi</th>
+                            <th width="140">Kode Barang</th>
+                            <th>Nama & Jenis Barang</th>
                             <th width="180">Jumlah Stok</th>
-                            <th width="150">Status</th>
+                            <th width="140">Status</th>
                         </tr>
                     </thead>
 
@@ -82,11 +93,32 @@
                                         </span>
                                     @endif
                                 </td>
-                                <td>{{ $stok->kode_barang }}</td>
-                                <td>{{ $stok->nama }}</td>
+                                <td class="font-monospace text-muted small fw-semibold">{{ $stok->kode_barang }}</td>
                                 <td>
-                                    <span class="fw-bold">{{ number_format($stok->qty, 2, ',', '.') }}</span>
-                                    <span class="text-muted small">{{ $stok->satuan }}</span>
+                                    <div class="fw-bold text-dark">{{ $stok->nama }}</div>
+                                    <div class="mt-1">
+                                        @if($stok->is_bahan_baku)
+                                            <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size: 0.72rem;">Bahan Baku</span>
+                                        @elseif($stok->is_bahan_setengah_jadi)
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 0.72rem;">Bahan Setengah Jadi</span>
+                                        @elseif($stok->is_barang_jadi)
+                                            <span class="badge bg-warning-subtle text-warning border border-warning-subtle" style="font-size: 0.72rem;">Barang Jadi</span>
+                                        @elseif($stok->is_operational)
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.72rem;">Operasional</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                <td>
+                                    <div>
+                                        <span class="fw-bold fs-6">{{ number_format($stok->qty, 2, ',', '.') }}</span>
+                                        <span class="text-muted small fw-semibold">{{ $stok->satuan }}</span>
+                                    </div>
+                                    @if(!empty($stok->satuan_pembelian) && (float)($stok->konversi_pembelian ?? 1) > 1)
+                                        <div class="small text-primary mt-1" style="font-size: 0.8rem;">
+                                            <i class="bi bi-arrow-repeat me-1"></i><strong>{{ number_format($stok->qty / (float)$stok->konversi_pembelian, 2, ',', '.') }}</strong> {{ $stok->satuan_pembelian }}
+                                            <span class="text-muted" style="font-size: 0.72rem;">(1 {{ $stok->satuan_pembelian }} = {{ number_format((float)$stok->konversi_pembelian, 0, ',', '.') }} {{ $stok->satuan }})</span>
+                                        </div>
+                                    @endif
                                 </td>
                                 <td>
                                     @if($stok->qty <= 0)
@@ -99,7 +131,7 @@
                         @empty
                             <tr>
                                 <td colspan="5" class="text-center py-4 text-muted">
-                                    Belum ada data stok.
+                                    Belum ada data stok yang sesuai dengan filter.
                                 </td>
                             </tr>
                         @endforelse

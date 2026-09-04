@@ -104,25 +104,27 @@
                 </div>
 
                 <!-- SECTION 3: TABEL DAFTAR BARANG -->
-                <div class="table-responsive border rounded-3 mb-4" style="max-height: 520px; overflow-y: auto;">
+                <div class="table-responsive border rounded-3 mb-4" style="max-height: 540px; overflow-y: auto;">
                     <table class="table table-hover align-middle mb-0 text-center" id="tableBarang">
                         <thead class="table-light sticky-top" style="z-index: 2;">
                             <tr>
                                 <th style="width: 45px;">No</th>
-                                <th class="text-start" style="width: 130px;">Kode Barang</th>
-                                <th class="text-start">Nama Barang</th>
-                                <th style="width: 130px;">Kategori</th>
-                                <th style="width: 80px;">Satuan</th>
-                                <th style="width: 100px;">Stok Saat Ini</th>
-                                <th style="width: 150px;">Qty Saldo Awal <span class="text-danger">*</span></th>
-                                <th style="width: 170px;">Harga Pokok Satuan (Rp) <span class="text-danger">*</span></th>
-                                <th class="text-end" style="width: 170px;">Subtotal Nilai (Rp)</th>
-                                <th style="width: 50px;">Aksi</th>
+                                <th class="text-start" style="width: 110px;">Kode</th>
+                                <th class="text-start" style="min-width: 160px;">Nama Barang</th>
+                                <th style="width: 110px;">Kategori</th>
+                                <th style="width: 130px;">Satuan & Konversi</th>
+                                <th style="width: 95px;">Stok Saat Ini</th>
+                                <th style="width: 130px;">Qty Input <span class="text-danger">*</span></th>
+                                <th style="width: 135px;">Satuan Input <span class="text-danger">*</span></th>
+                                <th style="width: 155px;">Harga per Satuan Input (Rp) <span class="text-danger">*</span></th>
+                                <th style="width: 155px;">Masuk ke Stok Utama</th>
+                                <th class="text-end" style="width: 140px;">Subtotal Nilai (Rp)</th>
+                                <th style="width: 45px;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyBarang">
                             <tr id="rowEmpty">
-                                <td colspan="10" class="text-center py-5 text-muted">
+                                <td colspan="11" class="text-center py-5 text-muted">
                                     <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
                                     Klik tombol <strong>"Muat Semua Barang Master"</strong> di atas untuk memuat daftar seluruh item barang.
                                 </td>
@@ -140,7 +142,7 @@
                             <span class="text-muted small"> dari <span id="summaryTotalLoaded">0</span> item</span>
                         </div>
                         <div class="col-md-3 border-end">
-                            <span class="text-muted small text-uppercase fw-bold d-block">Total Kuantitas</span>
+                            <span class="text-muted small text-uppercase fw-bold d-block">Total Kuantitas Masuk Stok</span>
                             <span class="fs-4 fw-bold text-dark" id="summaryTotalQty">0,00</span>
                         </div>
                         <div class="col-md-4">
@@ -281,10 +283,37 @@
         function renderTable(items) {
             tbodyBarang.innerHTML = '';
 
+            // Update mode alert banner if exists
+            const selectedOpt = gudangSelect.options[gudangSelect.selectedIndex];
+            const isGudangUtama = items.length > 0 ? (items[0].is_gudang_utama !== false) : true;
+
+            let bannerEl = document.getElementById('gudangModeBanner');
+            if (!bannerEl) {
+                bannerEl = document.createElement('div');
+                bannerEl.id = 'gudangModeBanner';
+                document.querySelector('.table-responsive').parentNode.insertBefore(bannerEl, document.querySelector('.table-responsive'));
+            }
+
+            if (isGudangUtama) {
+                bannerEl.innerHTML = `
+                    <div class="alert alert-primary py-2 px-3 mb-3 rounded-3 small d-flex align-items-center">
+                        <i class="bi bi-star-fill text-primary me-2"></i>
+                        <div><strong>Mode Master Gudang Utama:</strong> Anda dapat menginput kuantitas stock dan menentukan <strong>Harga Beli Satuan</strong> yang menjadi acuan patokan harga HPP seluruh sistem.</div>
+                    </div>
+                `;
+            } else {
+                bannerEl.innerHTML = `
+                    <div class="alert alert-warning py-2 px-3 mb-3 rounded-3 small d-flex align-items-center">
+                        <i class="bi bi-lock-fill text-warning me-2 fs-6"></i>
+                        <div><strong>Mode Input Stok Gudang Cabang / Operasional:</strong> Cukup isi <strong>Qty Saldo Awal</strong>. Kolom harga beli otomatis <span class="badge bg-warning text-dark">Terkunci</span> dan mengacu langsung pada harga referensi pertama dari <strong>Gudang Utama</strong>.</div>
+                    </div>
+                `;
+            }
+
             if (!items || items.length === 0) {
                 tbodyBarang.innerHTML = `
                     <tr id="rowEmpty">
-                        <td colspan="10" class="text-center py-5 text-muted">
+                        <td colspan="11" class="text-center py-5 text-muted">
                             Tidak ada data barang ditemukan.
                         </td>
                     </tr>
@@ -299,8 +328,39 @@
                 tr.setAttribute('data-kategori-id', item.kategori_id);
                 tr.setAttribute('data-nama', item.nama.toLowerCase());
                 tr.setAttribute('data-kode', item.kode_barang.toLowerCase());
+                tr.setAttribute('data-satuan-stok', item.satuan || 'pcs');
+                tr.setAttribute('data-satuan-beli', item.satuan_pembelian || item.satuan || 'pcs');
+                tr.setAttribute('data-konversi', item.konversi_pembelian || 1.00);
+                tr.setAttribute('data-harga-stok-utama', item.hpp_satuan_utama || (item.hpp_referensi || 0));
+                tr.setAttribute('data-harga-beli-utama', item.harga_beli_utama || 0);
 
-                const defaultHarga = Number(item.hpp_referensi) || 0;
+                const konversi = parseFloat(item.konversi_pembelian) || 1.00;
+                const satuanStok = item.satuan || 'pcs';
+                const satuanBeli = item.satuan_pembelian || satuanStok;
+                const hasKonversi = satuanBeli && konversi > 1 && (satuanBeli !== satuanStok || konversi !== 1);
+
+                // Default unit: jika ada konversi pembelian, default ke 'pembelian'
+                const defaultUnit = hasKonversi ? 'pembelian' : 'utama';
+                const defaultHargaInput = hasKonversi 
+                    ? Number(item.harga_beli_utama || 0)
+                    : Number(item.hpp_satuan_utama || (item.hpp_referensi || 0));
+
+                const satuanBadge = hasKonversi
+                    ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satuanBeli}</span></div>
+                       <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
+                    : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
+
+                const isReadonlyHarga = !isGudangUtama;
+                const hargaInputAttr = isReadonlyHarga
+                    ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci mengacu pada harga Gudang Utama"'
+                    : '';
+
+                const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
+
+                let unitOptionsHtml = `<option value="utama" ${defaultUnit === 'utama' ? 'selected' : ''}>${satuanStok}</option>`;
+                if (hasKonversi) {
+                    unitOptionsHtml = `<option value="pembelian" ${defaultUnit === 'pembelian' ? 'selected' : ''}>${satuanBeli} (${Number(konversi).toLocaleString('id-ID')} ${satuanStok})</option>` + unitOptionsHtml;
+                }
 
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">${idx + 1}</td>
@@ -311,13 +371,25 @@
                         <input type="hidden" name="barang_id[]" value="${item.id}">
                     </td>
                     <td><span class="badge bg-light text-dark border">${item.kategori_nama}</span></td>
-                    <td>${item.satuan}</td>
-                    <td><span class="badge bg-secondary-subtle text-secondary">${item.stok_sekarang}</span></td>
+                    <td>${satuanBadge}</td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
                     <td>
-                        <input type="number" name="qty[]" class="form-control form-control-sm text-center input-qty" step="0.01" min="0" value="0" placeholder="0">
+                        <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
-                        <input type="number" name="harga_satuan[]" class="form-control form-control-sm text-end input-harga" step="0.01" min="0" value="${defaultHarga}" placeholder="0">
+                        <select name="satuan_tipe[]" class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                            ${unitOptionsHtml}
+                        </select>
+                    </td>
+                    <td>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
+                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput}" placeholder="0" ${hargaInputAttr}>
+                        </div>
+                        ${isReadonlyHarga ? '<small class="text-muted d-block text-end" style="font-size: 9.5px;">(Ref. Gudang Utama)</small>' : ''}
+                    </td>
+                    <td class="conversion-cell text-center">
+                        <span class="text-muted small">-</span>
                     </td>
                     <td class="text-end fw-bold text-success subtotal-cell">
                         Rp 0
@@ -344,30 +416,67 @@
             const rows = tbodyBarang.querySelectorAll('tr');
 
             rows.forEach(row => {
-                const qtyInput   = row.querySelector('.input-qty');
-                const hargaInput = row.querySelector('.input-harga');
-                const subtotalCell = row.querySelector('.subtotal-cell');
-                const btnRemove = row.querySelector('.btn-remove-row');
+                const qtyInputEl     = row.querySelector('.input-qty');
+                const satuanSelectEl = row.querySelector('.input-satuan');
+                const hargaInputEl   = row.querySelector('.input-harga');
+                const conversionCell = row.querySelector('.conversion-cell');
+                const subtotalCell   = row.querySelector('.subtotal-cell');
+                const btnRemove      = row.querySelector('.btn-remove-row');
 
-                if (qtyInput && hargaInput) {
+                if (qtyInputEl && hargaInputEl) {
                     const calcRow = () => {
-                        const qty   = parseFloat(qtyInput.value) || 0;
-                        const harga = parseFloat(hargaInput.value) || 0;
-                        const subtotal = qty * harga;
+                        const konversi       = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+                        const satuanStok     = row.getAttribute('data-satuan-stok');
+                        const satuanBeli     = row.getAttribute('data-satuan-beli');
+                        const selectedUnit   = satuanSelectEl ? satuanSelectEl.value : 'pembelian';
+                        const isPembelian    = selectedUnit === 'pembelian';
 
-                        subtotalCell.innerText = 'Rp ' + subtotal.toLocaleString('id-ID', { maximumFractionDigits: 2 });
-                        
-                        if (qty > 0) {
+                        const qtyInput   = parseFloat(qtyInputEl.value) || 0;
+                        const hargaInput = parseFloat(hargaInputEl.value) || 0;
+
+                        const multiplier = isPembelian ? konversi : 1.00;
+                        const qtyStok    = qtyInput * multiplier;
+                        const hargaStok  = multiplier > 0 ? (hargaInput / multiplier) : hargaInput;
+                        const subtotal   = qtyInput * hargaInput;
+
+                        if (qtyInput > 0) {
+                            let conversionText = `
+                                <div class="small fw-bold text-primary">
+                                    ${Number(qtyStok).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${satuanStok}
+                                </div>
+                                <div class="text-muted" style="font-size: 11px;">
+                                    @ Rp ${Number(hargaStok).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} / ${satuanStok}
+                                </div>
+                            `;
+                            conversionCell.innerHTML = conversionText;
+                            subtotalCell.innerText = 'Rp ' + subtotal.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                             row.classList.add('table-success', 'bg-opacity-10');
                         } else {
+                            conversionCell.innerHTML = `<span class="text-muted small">-</span>`;
+                            subtotalCell.innerText = 'Rp 0';
                             row.classList.remove('table-success', 'bg-opacity-10');
                         }
 
                         updateSummary();
                     };
 
-                    qtyInput.addEventListener('input', calcRow);
-                    hargaInput.addEventListener('input', calcRow);
+                    // Switch satuan -> auto recalculate & update reference price if locked
+                    if (satuanSelectEl) {
+                        satuanSelectEl.addEventListener('change', function () {
+                            const isReadonly = hargaInputEl.hasAttribute('readonly');
+                            const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+                            const hargaStokUtama = parseFloat(row.getAttribute('data-harga-stok-utama')) || 0;
+                            const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
+
+                            if (isReadonly) {
+                                hargaInputEl.value = this.value === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                            }
+                            calcRow();
+                        });
+                    }
+
+                    qtyInputEl.addEventListener('input', calcRow);
+                    hargaInputEl.addEventListener('input', calcRow);
                 }
 
                 if (btnRemove) {
@@ -393,28 +502,32 @@
         // 5. Update Grand Summary
         function updateSummary() {
             const rows = tbodyBarang.querySelectorAll('tr:not(#rowEmpty)');
-            let totalFilled = 0;
-            let grandQty    = 0;
-            let grandNilai  = 0;
+            let totalFilled  = 0;
+            let grandQtyStok = 0;
+            let grandNilai   = 0;
 
             rows.forEach(r => {
-                const qtyInput   = r.querySelector('.input-qty');
-                const hargaInput = r.querySelector('.input-harga');
+                const qtyInputEl     = r.querySelector('.input-qty');
+                const satuanSelectEl = r.querySelector('.input-satuan');
+                const hargaInputEl   = r.querySelector('.input-harga');
+                const konversi       = parseFloat(r.getAttribute('data-konversi')) || 1.00;
 
-                if (qtyInput && hargaInput) {
-                    const qty   = parseFloat(qtyInput.value) || 0;
-                    const harga = parseFloat(hargaInput.value) || 0;
+                if (qtyInputEl && hargaInputEl) {
+                    const selectedUnit = satuanSelectEl ? satuanSelectEl.value : 'pembelian';
+                    const multiplier   = selectedUnit === 'pembelian' ? konversi : 1.00;
+                    const qtyInput     = parseFloat(qtyInputEl.value) || 0;
+                    const hargaInput   = parseFloat(hargaInputEl.value) || 0;
 
-                    if (qty > 0) {
+                    if (qtyInput > 0) {
                         totalFilled++;
-                        grandQty += qty;
-                        grandNilai += (qty * harga);
+                        grandQtyStok += (qtyInput * multiplier);
+                        grandNilai   += (qtyInput * hargaInput);
                     }
                 }
             });
 
             summaryTotalFilled.innerText = totalFilled;
-            summaryTotalQty.innerText    = grandQty.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            summaryTotalQty.innerText    = grandQtyStok.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             summaryTotalNilai.innerText  = 'Rp ' + grandNilai.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
         }
 

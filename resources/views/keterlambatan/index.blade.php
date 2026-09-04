@@ -321,10 +321,20 @@
     function hitungLivePotongan() {
         let jamShift = document.getElementById('modalJamShift').value;
         let jamDatang = document.getElementById('modalJamDatang').value;
+        let karyawanId = document.getElementById('modalKaryawanId').value;
+        let tanggal = document.getElementById('modalTanggal').value;
 
         if (!jamShift || !jamDatang) return;
 
-        fetch(`/keterlambatan/hitung-ajax?jam_shift=${jamShift}&jam_datang=${jamDatang}`)
+        let url = `/keterlambatan/hitung-ajax?jam_shift=${jamShift}&jam_datang=${jamDatang}`;
+        if (karyawanId) {
+            url += `&karyawan_id=${karyawanId}`;
+        }
+        if (tanggal) {
+            url += `&tanggal=${tanggal}`;
+        }
+
+        fetch(url)
             .then(res => res.json())
             .then(data => {
                 document.getElementById('previewDurasi').innerText = data.durasi_menit + ' Menit';
@@ -332,6 +342,17 @@
             })
             .catch(() => {});
     }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const triggers = ['modalKaryawanId', 'modalTanggal', 'modalJamShift', 'modalJamDatang'];
+        triggers.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', hitungLivePotongan);
+                el.addEventListener('input', hitungLivePotongan);
+            }
+        });
+    });
 
     function bukaModalTambah() {
         document.getElementById('modalTitle').innerText = 'Catat Keterlambatan Baru';

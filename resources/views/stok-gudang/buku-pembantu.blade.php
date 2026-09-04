@@ -230,7 +230,11 @@
             // Format Currency
             function formatIDR(num) {
                 if (num === null || num === undefined) return 'Rp 0';
-                return 'Rp ' + Number(num).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                const val = Number(num);
+                if (val === 0) return 'Rp 0';
+                // Jika nilai di bawah 1 atau pecahan kecil non-bulat, tampilkan hingga 4 digit desimal agar tidak terpotong menjadi Rp 0
+                const maxDecimals = (Math.abs(val) < 1 || (val % 1 !== 0 && Math.abs(val) < 100)) ? 4 : 2;
+                return 'Rp ' + val.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDecimals });
             }
 
             // Format Number Decimal

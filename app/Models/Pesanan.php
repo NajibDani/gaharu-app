@@ -22,7 +22,8 @@ class Pesanan extends Model
         'status_pesanan',
         'status_pembayaran',
         'created_by',
-        'gudang_id'
+        'gudang_id',
+        'divisi_id'
     ];
 
     public function scopeB2b($query)
@@ -75,6 +76,11 @@ class Pesanan extends Model
     public function gudang()
     {
         return $this->belongsTo(MasterGudang::class, 'gudang_id');
+    }
+
+    public function divisi()
+    {
+        return $this->belongsTo(GudangDivisi::class, 'divisi_id');
     }
 
     //untuk membatasi pengeditan setelah WO dibuat
