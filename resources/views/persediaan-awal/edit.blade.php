@@ -23,6 +23,7 @@
         <form action="{{ route('persediaan-awal.update', $persediaanAwal->id) }}" method="POST" id="formEditPersediaanAwal">
             @csrf
             @method('PUT')
+            <input type="hidden" name="items_json" id="items_json">
             <div class="card-body p-4">
                 @if ($errors->any())
                     <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
@@ -165,9 +166,8 @@
                                     class="{{ $item['qty_input'] > 0 ? 'table-success bg-opacity-10' : '' }}">
                                     <td class="text-center text-muted row-number">{{ $idx + 1 }}</td>
                                     <td class="text-start font-monospace fw-bold">{{ $item['kode_barang'] }}</td>
-                                    <td class="text-start">
+                                     <td class="text-start">
                                         <div class="fw-semibold text-dark">{{ $item['nama'] }}</div>
-                                        <input type="hidden" name="barang_id[]" value="{{ $item['barang_id'] }}">
                                     </td>
                                     <td><span class="badge bg-light text-dark border">{{ $item['kategori_nama'] }}</span></td>
                                     <td>
@@ -179,10 +179,10 @@
                                         @endif
                                     </td>
                                     <td>
-                                        <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="{{ $item['qty_input'] }}" placeholder="0">
+                                        <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="{{ $item['qty_input'] }}" placeholder="0">
                                     </td>
                                     <td>
-                                        <select name="satuan_tipe[]" class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
                                             @if($hasKonversi)
                                                 <option value="pembelian" {{ $selectedUnit === 'pembelian' ? 'selected' : '' }}>{{ $item['satuan_pembelian'] }} ({{ number_format($konversi, 0, ',', '.') }} {{ $item['satuan'] }})</option>
                                             @endif
@@ -192,7 +192,7 @@
                                     <td>
                                         <div class="input-group input-group-sm">
                                             <span class="input-group-text bg-light text-muted small">Rp</span>
-                                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="{{ $item['harga_input'] }}" placeholder="0">
+                                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="{{ $item['harga_input'] }}" placeholder="0">
                                         </div>
                                     </td>
                                     <td class="conversion-cell text-center">
@@ -361,22 +361,21 @@
                     <td class="text-start font-monospace fw-bold">${kode}</td>
                     <td class="text-start">
                         <div class="fw-semibold text-dark">${nama}</div>
-                        <input type="hidden" name="barang_id[]" value="${id}">
                     </td>
                     <td><span class="badge bg-light text-dark border">${kat}</span></td>
                     <td>${satuanBadge}</td>
                     <td>
-                        <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
+                        <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
-                        <select name="satuan_tipe[]" class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
                             ${unitOptionsHtml}
                         </select>
                     </td>
                     <td>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-light text-muted small">Rp</span>
-                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHarga}" placeholder="0">
+                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHarga}" placeholder="0">
                         </div>
                     </td>
                     <td class="conversion-cell text-center">
@@ -516,22 +515,41 @@
             });
         });
 
-        // Validasi sebelum submit
+        // Validasi dan serialisasi data JSON sebelum submit
         formEdit.addEventListener('submit', function (e) {
             const rows = tbodyBarang.querySelectorAll('tr:not(#rowEmpty)');
             let hasValidQty = false;
+            const itemsData = [];
 
             rows.forEach(r => {
+                const bId = r.getAttribute('data-id');
                 const qtyInput = r.querySelector('.input-qty');
-                if (qtyInput && parseFloat(qtyInput.value) > 0) {
+                const hargaInput = r.querySelector('.input-harga');
+                const satuanSelect = r.querySelector('.input-satuan');
+
+                const qtyVal = qtyInput ? qtyInput.value : 0;
+                const hargaVal = hargaInput ? hargaInput.value : 0;
+                const satuanVal = satuanSelect ? satuanSelect.value : 'pembelian';
+
+                if (qtyInput && parseFloat(qtyVal) > 0) {
                     hasValidQty = true;
                 }
+
+                itemsData.push({
+                    barang_id: parseInt(bId),
+                    qty: qtyVal,
+                    harga_satuan: hargaVal,
+                    satuan_tipe: satuanVal
+                });
             });
 
             if (!hasValidQty) {
                 e.preventDefault();
                 alert('Harap isi minimal 1 barang dengan Qty Persediaan Awal lebih dari 0.');
+                return;
             }
+
+            document.getElementById('items_json').value = JSON.stringify(itemsData);
         });
 
         updateSummary();

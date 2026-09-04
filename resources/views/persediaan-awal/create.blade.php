@@ -20,6 +20,7 @@
 
         <form action="{{ route('persediaan-awal.store') }}" method="POST" id="formPersediaanAwal">
             @csrf
+            <input type="hidden" name="items_json" id="items_json">
             <div class="card-body p-4">
                 @if ($errors->any())
                     <div class="alert alert-danger alert-dismissible fade show mb-4" role="alert">
@@ -368,23 +369,22 @@
                     <td class="text-start">
                         <div class="fw-semibold text-dark">${item.nama}</div>
                         <small class="text-muted">${item.jenis}</small>
-                        <input type="hidden" name="barang_id[]" value="${item.id}">
                     </td>
                     <td><span class="badge bg-light text-dark border">${item.kategori_nama}</span></td>
                     <td>${satuanBadge}</td>
                     <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
                     <td>
-                        <input type="number" name="qty[]" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
+                        <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
-                        <select name="satuan_tipe[]" class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
                             ${unitOptionsHtml}
                         </select>
                     </td>
                     <td>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
-                            <input type="number" name="harga_satuan[]" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput}" placeholder="0" ${hargaInputAttr}>
+                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput}" placeholder="0" ${hargaInputAttr}>
                         </div>
                         ${isReadonlyHarga ? '<small class="text-muted d-block text-end" style="font-size: 9.5px;">(Ref. Gudang Utama)</small>' : ''}
                     </td>
@@ -568,22 +568,41 @@
         searchBarangTabel.addEventListener('input', filterTable);
         filterKategoriTabel.addEventListener('change', filterTable);
 
-        // 8. Form Validation Sebelum Submit
+        // 8. Form Validation & Serialisasi JSON Sebelum Submit
         formPersediaanAwal.addEventListener('submit', function (e) {
             const rows = tbodyBarang.querySelectorAll('tr:not(#rowEmpty)');
             let hasValidQty = false;
+            const itemsData = [];
 
             rows.forEach(r => {
+                const bId = r.getAttribute('data-id');
                 const qtyInput = r.querySelector('.input-qty');
-                if (qtyInput && parseFloat(qtyInput.value) > 0) {
+                const hargaInput = r.querySelector('.input-harga');
+                const satuanSelect = r.querySelector('.input-satuan');
+
+                const qtyVal = qtyInput ? qtyInput.value : 0;
+                const hargaVal = hargaInput ? hargaInput.value : 0;
+                const satuanVal = satuanSelect ? satuanSelect.value : 'pembelian';
+
+                if (qtyInput && parseFloat(qtyVal) > 0) {
                     hasValidQty = true;
                 }
+
+                itemsData.push({
+                    barang_id: parseInt(bId),
+                    qty: qtyVal,
+                    harga_satuan: hargaVal,
+                    satuan_tipe: satuanVal
+                });
             });
 
             if (!hasValidQty) {
                 e.preventDefault();
                 alert('Harap isi minimal 1 barang dengan Qty Persediaan Awal lebih dari 0.');
+                return;
             }
+
+            document.getElementById('items_json').value = JSON.stringify(itemsData);
         });
 
         // Otomatis load master barang saat pertama kali halaman terbuka jika gudang tersedia

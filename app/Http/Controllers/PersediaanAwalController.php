@@ -316,6 +316,28 @@ class PersediaanAwalController extends Controller
     */
     public function store(Request $request)
     {
+        if ($request->filled('items_json')) {
+            $items = json_decode($request->items_json, true);
+            if (is_array($items)) {
+                $barangIds = [];
+                $qtys = [];
+                $hargas = [];
+                $satuanTipes = [];
+                foreach ($items as $item) {
+                    $barangIds[] = $item['barang_id'] ?? null;
+                    $qtys[] = $item['qty'] ?? 0;
+                    $hargas[] = $item['harga_satuan'] ?? 0;
+                    $satuanTipes[] = $item['satuan_tipe'] ?? 'pembelian';
+                }
+                $request->merge([
+                    'barang_id'    => $barangIds,
+                    'qty'          => $qtys,
+                    'harga_satuan' => $hargas,
+                    'satuan_tipe'  => $satuanTipes,
+                ]);
+            }
+        }
+
         $request->validate([
             'gudang_id'      => 'required|exists:master_gudang,id',
             'divisi_id'      => 'nullable|exists:gudang_divisi,id',
@@ -689,6 +711,28 @@ class PersediaanAwalController extends Controller
 
         if (Journal::isPeriodClosed($persediaanAwal->tanggal->format('Y-m-d'))) {
             return back()->with('error', 'Periode akuntansi tanggal transaksi lama sudah ditutup buku. Tidak dapat diubah.');
+        }
+
+        if ($request->filled('items_json')) {
+            $items = json_decode($request->items_json, true);
+            if (is_array($items)) {
+                $barangIds = [];
+                $qtys = [];
+                $hargas = [];
+                $satuanTipes = [];
+                foreach ($items as $item) {
+                    $barangIds[] = $item['barang_id'] ?? null;
+                    $qtys[] = $item['qty'] ?? 0;
+                    $hargas[] = $item['harga_satuan'] ?? 0;
+                    $satuanTipes[] = $item['satuan_tipe'] ?? 'pembelian';
+                }
+                $request->merge([
+                    'barang_id'    => $barangIds,
+                    'qty'          => $qtys,
+                    'harga_satuan' => $hargas,
+                    'satuan_tipe'  => $satuanTipes,
+                ]);
+            }
         }
 
         $request->validate([
