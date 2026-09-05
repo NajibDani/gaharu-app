@@ -704,9 +704,34 @@ class PembelianController extends Controller
 
             $pembelian->load('details');
             $existingDetails = $pembelian->details->keyBy('barang_id');
+            $submittedBarangIds = collect($data['items'])->pluck('barang_id')->map(fn($id) => (int)$id)->toArray();
 
-            // Hapus detail lama
-            $pembelian->details()->delete();
+            // 1. Hapus item detail yang tidak ada lagi di data input
+            foreach ($existingDetails as $oldBarangId => $oldDet) {
+                if (!in_array((int)$oldBarangId, $submittedBarangIds)) {
+                    // Hapus batch terkait di stok_gudang_batch jika ada
+                    $batches = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->get();
+                    foreach ($batches as $batch) {
+                        if ($batch->qty_masuk > 0) {
+                            $stokGudang = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
+                                ->where('gudang_id', $batch->gudang_id)
+                                ->when($batch->divisi_id, fn($q) => $q->where('divisi_id', $batch->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->lockForUpdate()
+                                ->first();
+                            if ($stokGudang) {
+                                $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
+                            }
+                        }
+                        $batch->delete();
+                    }
+
+                    // Hapus detail penerimaan terkait jika ada
+                    \App\Models\PenerimaanPembelianDetail::where('pembelian_detail_id', $oldDet->id)->delete();
+
+                    // Hapus detail pembelian
+                    $oldDet->delete();
+                }
+            }
 
             $taxService = 0;
             if (!empty($request->tax_service)) {
@@ -723,35 +748,95 @@ class PembelianController extends Controller
                 'tax_service' => $taxService,
             ]);
 
+            // 2. Insert / Update detail barang
             foreach ($data['items'] as $item) {
+                $barangId = (int) $item['barang_id'];
+                $qtyInput = (float) $item['qty'];
+                $hargaInput = (float) $item['harga'];
+                $hargaPerQty = $qtyInput > 0 ? $hargaInput / $qtyInput : 0;
 
-                $hargaPerQty = (float) $item['qty'] > 0
-                    ? (float) $item['harga'] / (float) $item['qty']
-                    : 0;
+                $oldDet = $existingDetails->get($barangId);
 
-                $oldDet = $existingDetails->get($item['barang_id']);
+                if ($oldDet) {
+                    // Update detail yang sudah ada tanpa menghapus ID-nya
+                    $qtyOld = (float) $oldDet->qty;
+                    $diffQty = $qtyInput - $qtyOld;
 
-                $detail = $pembelian->details()->create([
-                    'barang_id'          => $item['barang_id'],
-                    'qty'                => $item['qty'],
-                    'qty_diterima'       => $oldDet ? $oldDet->qty_diterima : 0,
-                    'harga'              => $item['harga'],
-                    'harga_per_qty'      => $hargaPerQty,
-                    'batch_number'       => $oldDet ? $oldDet->batch_number : 'TEMP',
-                    'metode_pembayaran'  => $oldDet ? $oldDet->metode_pembayaran : null,
-                    'persen_dp'          => $oldDet ? $oldDet->persen_dp : null,
-                    'nominal_dp'         => $oldDet ? $oldDet->nominal_dp : null,
-                    'tanggal_jatuh_tempo'=> $oldDet ? $oldDet->tanggal_jatuh_tempo : null,
-                    'tanggal_pelunasan'  => $oldDet ? $oldDet->tanggal_pelunasan : null,
-                    'catatan_pembayaran' => $oldDet ? $oldDet->catatan_pembayaran : null,
-                    'is_lunas'           => $oldDet ? $oldDet->is_lunas : false,
-                    'lunas_at'           => $oldDet ? $oldDet->lunas_at : null,
-                ]);
+                    $newQtyDiterima = $oldDet->qty_diterima;
+                    if ($pembelian->is_diterima || $oldDet->qty_diterima >= $qtyOld) {
+                        $newQtyDiterima = $qtyInput;
+                    }
 
-                if (!$oldDet || $oldDet->batch_number === 'TEMP') {
-                    $detail->update([
-                        'batch_number' => date('Ymd') . '-PB' . $detail->id,
+                    $oldDet->update([
+                        'qty'           => $qtyInput,
+                        'qty_diterima'  => $newQtyDiterima,
+                        'harga'         => $hargaInput,
+                        'harga_per_qty' => $hargaPerQty,
                     ]);
+
+                    // Update stok_gudang_batch & stok_gudang jika batch sudah dibuat
+                    $batch = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->first();
+                    if ($batch) {
+                        if ($diffQty != 0) {
+                            $batch->qty_masuk = max(0, (float)$batch->qty_masuk + $diffQty);
+                            $batch->sisa_qty  = max(0, (float)$batch->sisa_qty + $diffQty);
+                        }
+                        $batch->harga_satuan = $hargaPerQty;
+                        $batch->save();
+
+                        if ($diffQty != 0) {
+                            $stokGudang = \App\Models\StokGudang::where('barang_id', $barangId)
+                                ->where('gudang_id', $pembelian->gudang_id)
+                                ->when($batch->divisi_id, fn($q) => $q->where('divisi_id', $batch->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($stokGudang) {
+                                if ($diffQty > 0) {
+                                    $stokGudang->increment('jumlah', $diffQty);
+                                } else {
+                                    $stokGudang->decrement('jumlah', abs($diffQty));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Item baru ditambahkan
+                    $detail = $pembelian->details()->create([
+                        'barang_id'          => $barangId,
+                        'qty'                => $qtyInput,
+                        'qty_diterima'       => $pembelian->is_diterima ? $qtyInput : 0,
+                        'harga'              => $hargaInput,
+                        'harga_per_qty'      => $hargaPerQty,
+                        'batch_number'       => 'TEMP',
+                        'metode_pembayaran'  => $pembelian->metode_pembayaran,
+                        'is_lunas'           => $pembelian->is_lunas,
+                        'lunas_at'           => $pembelian->lunas_at,
+                    ]);
+
+                    $batchNo = date('Ymd') . '-PB' . $detail->id;
+                    $detail->update(['batch_number' => $batchNo]);
+
+                    if ($pembelian->is_diterima) {
+                        \App\Models\StokGudangBatch::create([
+                            'gudang_id'           => $pembelian->gudang_id,
+                            'divisi_id'           => null,
+                            'barang_id'           => $barangId,
+                            'pembelian_id'        => $pembelian->id,
+                            'pembelian_detail_id' => $detail->id,
+                            'batch_number'        => $batchNo,
+                            'harga_satuan'        => $hargaPerQty,
+                            'qty_masuk'           => $qtyInput,
+                            'sisa_qty'            => $qtyInput,
+                            'tanggal_masuk'       => $pembelian->tanggal,
+                        ]);
+
+                        $stokGudang = \App\Models\StokGudang::firstOrCreate(
+                            ['gudang_id' => $pembelian->gudang_id, 'barang_id' => $barangId, 'divisi_id' => null],
+                            ['jumlah' => 0]
+                        );
+                        $stokGudang->increment('jumlah', $qtyInput);
+                    }
                 }
             }
         });
