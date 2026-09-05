@@ -93,10 +93,30 @@
                         <tr>
                             <td class="text-start ps-4 fw-semibold text-dark">
                                 {{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}
-                                @if($r->produk && $r->produk->is_bahan_setengah_jadi)
-                                    <span class="badge bg-info-subtle text-info ms-1" style="font-size: 11px;">Bahan Setengah Jadi</span>
-                                @elseif($r->produk && $r->produk->is_barang_jadi)
-                                    <span class="badge bg-success-subtle text-success ms-1" style="font-size: 11px;">Barang Jadi</span>
+                                @if($r->produk)
+                                    @if($r->produk->is_bahan_setengah_jadi)
+                                        <span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 11px;">
+                                            <i class="bi bi-gear me-1"></i>Bahan Setengah Jadi
+                                        </span>
+                                    @elseif($r->produk->is_barang_jadi)
+                                        @if($r->produk->tipe_penjualan === 'POS Kejingga')
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" style="font-size: 11px;">
+                                                <i class="bi bi-shop me-1"></i>POS Kejingga
+                                            </span>
+                                        @elseif($r->produk->tipe_penjualan === 'POS Gaharu')
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 11px;">
+                                                <i class="bi bi-shop me-1"></i>POS Gaharu
+                                            </span>
+                                        @elseif($r->produk->tipe_penjualan === 'B2B')
+                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 11px;">
+                                                <i class="bi bi-building me-1"></i>B2B
+                                            </span>
+                                        @else
+                                            <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 11px;">
+                                                Barang Jadi
+                                            </span>
+                                        @endif
+                                    @endif
                                 @endif
                             </td>
                             <td>
@@ -174,8 +194,18 @@
                         <select name="produk_id" id="produk_id" class="form-select produk-select" required>
                             <option value="" disabled selected>-- Pilih Produk --</option>
                             @foreach($produk as $p)
+                                @php
+                                    $tipeLabel = '';
+                                    if ($p->is_bahan_setengah_jadi) {
+                                        $tipeLabel = 'Bahan Setengah Jadi';
+                                    } elseif ($p->is_barang_jadi) {
+                                        $tipeLabel = $p->tipe_penjualan ?: 'Barang Jadi';
+                                    } else {
+                                        $tipeLabel = 'Produk';
+                                    }
+                                @endphp
                                 <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}" data-has-resep="{{ $p->resep_id ? 'true' : 'false' }}">
-                                    {{ $p->nama }} {{ $p->is_bahan_setengah_jadi ? '(Bahan Setengah Jadi)' : '(Barang Jadi)' }}
+                                    {{ $p->nama }} ({{ $tipeLabel }})
                                 </option>
                             @endforeach
                         </select>

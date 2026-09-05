@@ -4,10 +4,20 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3 class="fw-bold text-dark">
             Resep: {{ $resep->produk->nama ?? 'Produk Tidak Diketahui' }}
-            @if($resep->produk && $resep->produk->is_bahan_setengah_jadi)
-                <span class="badge bg-info text-dark fs-6 ms-2 align-middle">Bahan Setengah Jadi</span>
-            @elseif($resep->produk && $resep->produk->is_barang_jadi)
-                <span class="badge bg-success fs-6 ms-2 align-middle">Barang Jadi</span>
+            @if($resep->produk)
+                @if($resep->produk->is_bahan_setengah_jadi)
+                    <span class="badge bg-info text-dark fs-6 ms-2 align-middle">Bahan Setengah Jadi</span>
+                @elseif($resep->produk->is_barang_jadi)
+                    @if($resep->produk->tipe_penjualan === 'POS Kejingga')
+                        <span class="badge bg-warning text-dark fs-6 ms-2 align-middle"><i class="bi bi-shop me-1"></i>POS Kejingga</span>
+                    @elseif($resep->produk->tipe_penjualan === 'POS Gaharu')
+                        <span class="badge bg-success fs-6 ms-2 align-middle"><i class="bi bi-shop me-1"></i>POS Gaharu</span>
+                    @elseif($resep->produk->tipe_penjualan === 'B2B')
+                        <span class="badge bg-primary fs-6 ms-2 align-middle"><i class="bi bi-building me-1"></i>B2B</span>
+                    @else
+                        <span class="badge bg-success fs-6 ms-2 align-middle">Barang Jadi</span>
+                    @endif
+                @endif
             @endif
         </h3>
         <a href="{{ route('resep.index') }}" class="btn btn-secondary rounded-3">

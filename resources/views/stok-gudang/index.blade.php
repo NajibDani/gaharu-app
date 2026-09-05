@@ -14,6 +14,11 @@
                 <form method="GET" action="{{ route('stok-gudang.index') }}">
                     <div class="row g-2 align-items-end">
                         <div class="col-md-3">
+                            <label class="form-label fw-semibold small">Cari Nama / Kode Item</label>
+                            <input type="text" name="search" class="form-control form-control-sm" placeholder="Ketik nama / kode barang..." value="{{ request('search') }}">
+                        </div>
+
+                        <div class="col-md-2">
                             <label class="form-label fw-semibold small">Filter Gudang</label>
                             <select name="gudang_id" id="filter_gudang_id" class="form-select form-select-sm">
                                 <option value="">-- Semua Gudang --</option>
@@ -43,21 +48,9 @@
                             </select>
                         </div>
 
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold small">Filter Barang</label>
-                            <select name="barang_id" class="form-select form-select-sm">
-                                <option value="">-- Semua Barang --</option>
-                                @foreach($barangs as $barang)
-                                    <option value="{{ $barang->id }}" {{ $barangId == $barang->id ? 'selected' : '' }}>
-                                        {{ $barang->kode_barang }} - {{ $barang->nama }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="col-md-2 d-flex gap-1">
+                        <div class="col-md-3 d-flex gap-1">
                             <button type="submit" class="btn btn-primary btn-sm flex-fill">
-                                <i class="bi bi-filter"></i> Filter
+                                <i class="bi bi-search"></i> Cari / Filter
                             </button>
                             <a href="{{ route('stok-gudang.index') }}" class="btn btn-secondary btn-sm">
                                 Reset

@@ -25,8 +25,11 @@
 <select name="produk_id" class="form-control produk-select">
 <option disabled selected>-- Pilih Produk --</option>
 @foreach($produk as $p)
+@php
+    $tipeLabel = $p->is_bahan_setengah_jadi ? 'Bahan Setengah Jadi' : ($p->tipe_penjualan ?: 'Barang Jadi');
+@endphp
 <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}">
-    {{ $p->nama }} {{ $p->is_bahan_setengah_jadi ? '(Bahan Setengah Jadi)' : '(Barang Jadi)' }}
+    {{ $p->nama }} ({{ $tipeLabel }})
 </option>
 @endforeach
 </select>

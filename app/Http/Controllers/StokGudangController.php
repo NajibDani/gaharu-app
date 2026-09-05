@@ -61,6 +61,14 @@ class StokGudangController extends Controller
             $query->where('master_barang.id', $barangId);
         }
 
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            $query->where(function($q) use ($search) {
+                $q->where('master_barang.nama', 'like', "%{$search}%")
+                  ->orWhere('master_barang.kode_barang', 'like', "%{$search}%");
+            });
+        }
+
         if ($jenisBarang) {
             $kolom = match($jenisBarang) {
                 'bahan_baku'          => 'master_barang.is_bahan_baku',

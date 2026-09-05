@@ -7,6 +7,13 @@
         <div class="card mb-4 shadow-sm">
             <div class="card-body">
                 <form method="GET" action="{{ route('laporan.stok-gudang') }}" class="row g-3 align-items-end">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">CARI ITEM BARANG</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white text-muted"><i class="bi bi-search"></i></span>
+                            <input type="text" name="search" class="form-control" placeholder="Cari nama atau kode barang..." value="{{ request('search') }}">
+                        </div>
+                    </div>
                     <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">GUDANG</label>
                         <select name="gudang_id" id="report_gudang_id" class="form-select form-select-sm">
@@ -24,7 +31,7 @@
                             <option value="">Semua Divisi</option>
                         </select>
                     </div>
-                    <div class="col-12 col-md-3">
+                    <div class="col-12 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">KATEGORI</label>
                         <select name="kategori_id" class="form-select form-select-sm">
                             <option value="">Semua Kategori</option>
@@ -45,16 +52,21 @@
                             <option value="operational" {{ request('jenis_utama') === 'operational' ? 'selected' : '' }}>Operational</option>
                         </select>
                     </div>
-                    <div class="col-12 col-md-3 d-flex gap-2 align-items-end">
-                        <button type="submit" class="btn btn-sm text-white px-3" style="background-color: #d88656; border: none;">
-                            <i class="bi bi-search me-1"></i> Tampilkan
+                    <div class="col-12 col-md-1 d-flex gap-1 align-items-end">
+                        <button type="submit" class="btn btn-sm text-white px-2 w-100" style="background-color: #d88656; border: none;" title="Tampilkan">
+                            <i class="bi bi-search"></i>
                         </button>
+                        @if(request()->anyFilled(['search', 'gudang_id', 'divisi_id', 'kategori_id', 'jenis_utama']))
+                            <a href="{{ route('laporan.stok-gudang') }}" class="btn btn-sm btn-outline-secondary px-2" title="Reset Filter">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </a>
+                        @endif
                         <a href="{{ route('laporan.stok-gudang', array_merge(request()->all(), ['format'=>'excel'])) }}"
-                           class="btn btn-sm text-white" style="background-color: #606060; border: none;" title="Export Excel">
+                           class="btn btn-sm text-white px-2" style="background-color: #606060; border: none;" title="Export Excel">
                             <i class="bi bi-file-earmark-spreadsheet"></i>
                         </a>
                         <a href="{{ route('laporan.stok-gudang', array_merge(request()->all(), ['format'=>'pdf'])) }}"
-                           class="btn btn-sm text-white" style="background-color: #606060; border: none;" title="Export PDF">
+                           class="btn btn-sm text-white px-2" style="background-color: #606060; border: none;" title="Export PDF">
                             <i class="bi bi-file-earmark-pdf"></i>
                         </a>
                     </div>

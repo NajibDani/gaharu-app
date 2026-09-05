@@ -155,6 +155,13 @@ class LaporanPersediaanController extends Controller
                 $query->where($kolom, true);
             }
         }
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            $query->where(function($q) use ($search) {
+                $q->where('master_barang.nama', 'like', "%{$search}%")
+                  ->orWhere('master_barang.kode_barang', 'like', "%{$search}%");
+            });
+        }
 
         // --- MENGAMBIL DATA UTAMA (TABEL) ---
         $data = $query->get();
