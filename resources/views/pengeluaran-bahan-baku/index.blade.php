@@ -493,11 +493,11 @@ function renderDetailPengeluaran(data) {
                         </button>
                     </form>
                     ${!data.is_wo ? `<a href="${data.edit_url}" class="btn btn-warning btn-sm px-3 fw-semibold"><i class="bi bi-pencil-square me-1"></i> Edit</a>` : ''}
-                    ${data.can_approve ? `
-                        <a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')">
-                            <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
-                        </a>
-                    ` : ''}
+                    ${data.can_approve ? (
+                        data.total_item_kurang > 0
+                            ? `<button type="button" class="btn btn-secondary btn-sm px-3 fw-semibold shadow-sm" disabled title="Tidak dapat di-approve karena stok di gudang sumber tidak mencukupi"><i class="bi bi-x-circle me-1"></i> Stok Kurang (Tidak Bisa Di-Approve)</button>`
+                            : `<a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')"><i class="bi bi-check-circle me-1"></i> Approve Pengeluaran</a>`
+                    ) : ''}
                 ` : ''}
             </div>
         </div>
@@ -648,11 +648,13 @@ function downloadModalAsImage() {
               (hasKonv ? `<div style="font-size:8.5px; color:#dc2626;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
             : '<span style="font-weight:600; color:#16a34a;">0</span>';
 
-        let availPill = d.stok_tersedia >= d.qty
-            ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Tersedia</span>'
-            : (d.stok_tersedia > 0
-                ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fffbeb; color:#b45309; border:1px solid #fde68a; border-radius:3px;">Kurang</span>'
-                : '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Habis (0)</span>');
+        let availPill = d.stok_tersedia > d.qty
+            ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Tersedia Penuh</span>'
+            : (d.stok_tersedia == d.qty && d.stok_tersedia > 0
+                ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fffbeb; color:#b45309; border:1px solid #fde68a; border-radius:3px;">Stok Terakhir (Segera Beli)</span>'
+                : (d.stok_tersedia > 0
+                    ? `<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Kurang ${d.kekurangan.toLocaleString('id-ID')} ${d.satuan}</span>`
+                    : '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Habis (0)</span>'));
 
         let bgRow = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
 

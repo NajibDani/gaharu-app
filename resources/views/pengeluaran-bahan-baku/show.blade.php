@@ -183,10 +183,12 @@
                                 $totalDiminta += $qtyDiminta;
                                 $totalKurang += $kurang;
 
-                                if ($stokTersedia >= $qtyDiminta) {
+                                if ($stokTersedia > $qtyDiminta) {
                                     $statusPill = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Tersedia Penuh</span>';
+                                } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
+                                    $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"><i class="bi bi-exclamation-circle me-1"></i>Stok Terakhir di Gudang (Segera Pembelian)</span>';
                                 } elseif ($stokTersedia > 0) {
-                                    $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">Kurang Sebagian</span>';
+                                    $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Kurang ' . number_format($kurang, 2, ',', '.') . ' ' . $satuan . '</span>';
                                 } else {
                                     $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Stok Habis (0)</span>';
                                 }
@@ -294,9 +296,15 @@
                     <i class="bi bi-pencil-square me-1"></i> Edit Pengeluaran
                 </a>
             @endif
-            <a href="{{ route('pengeluaran-bahan-baku.approve', $pengeluaran->id) }}" class="btn btn-success fw-semibold" onclick="return confirm('Approve pengeluaran ini dan potong stok di gudang terkait?')">
-                <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
-            </a>
+            @if($totalKurang > 0)
+                <button type="button" class="btn btn-secondary fw-semibold" disabled title="Stok di gudang sumber tidak mencukupi untuk disetujui">
+                    <i class="bi bi-x-circle me-1"></i> Stok Kurang (Tidak Bisa Di-Approve)
+                </button>
+            @else
+                <a href="{{ route('pengeluaran-bahan-baku.approve', $pengeluaran->id) }}" class="btn btn-success fw-semibold" onclick="return confirm('Approve pengeluaran ini dan potong stok di gudang terkait?')">
+                    <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
+                </a>
+            @endif
         </div>
     </div>
 @endif

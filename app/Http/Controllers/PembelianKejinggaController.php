@@ -29,12 +29,23 @@ class PembelianKejinggaController extends Controller
         $this->fifoService  = $fifoService;
     }
 
-    public function index(Request $request)
+    private function authorizeAccess()
     {
         $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            abort(403, 'Akses terbatas. Hanya Super Admin yang diizinkan mengelola pembelian luar Kejingga.');
+        if (!$user) {
+            abort(403, 'Anda belum login.');
         }
+
+        $roleName = $user->role->nama ?? '';
+        $allowedRoles = ['Super Admin', 'Superadmin', 'Administrator', 'Kepala Outlet Kejingga', 'Operasional Kejingga'];
+        if (!$user->isSuperAdmin() && !in_array($roleName, $allowedRoles)) {
+            abort(403, 'Akses terbatas. Hanya User Kejingga dan Super Admin yang diizinkan mengelola pembelian Kejingga.');
+        }
+    }
+
+    public function index(Request $request)
+    {
+        $this->authorizeAccess();
 
         $search = $request->query('search');
         $query = Pembelian::with(['supplier', 'gudang', 'user', 'details.barang'])
@@ -51,7 +62,13 @@ class PembelianKejinggaController extends Controller
 
         $pembelian = $query->orderBy('kode_pembelian', 'desc')->paginate(10)->withQueryString();
 
-        $dataPembayaran = $pembelian->mapWithKeys(function ($item) {
+        // High efficiency fetch of stok gudang Kejingga (ID 5)
+        $stokKejinggaMap = StokGudang::where('gudang_id', 5)
+            ->groupBy('barang_id')
+            ->select('barang_id', DB::raw('SUM(jumlah) as total_stok'))
+            ->pluck('total_stok', 'barang_id');
+
+        $dataPembayaran = $pembelian->mapWithKeys(function ($item) use ($stokKejinggaMap) {
             $label = match($item->metode_pembayaran) {
                 'cod'    => 'COD',
                 'termin' => 'Termin',
@@ -64,9 +81,12 @@ class PembelianKejinggaController extends Controller
                 'id'                  => $item->id,
                 'kode'                => $item->kode_pembelian,
                 'supplier_id'         => $item->supplier_id,
-                'supplier_nama'       => $item->supplier->nama ?? '-',
+                'supplier_nama'       => $item->supplier->nama ?? 'Belum Ditentukan (Draft)',
+                'supplier_telepon'    => $item->supplier->telepon ?? '-',
+                'supplier_alamat'     => $item->supplier->alamat ?? '-',
+                'user_nama'           => $item->user->nama ?? ($item->user->username ?? 'Staff Operasional'),
                 'gudang_id'           => $item->gudang_id,
-                'gudang_nama'         => $item->gudang->nama ?? '-',
+                'gudang_nama'         => $item->gudang->nama ?? 'Gudang KeJingga',
                 'tanggal'             => \Carbon\Carbon::parse($item->tanggal)->format('d M Y'),
                 'tanggal_raw'         => \Carbon\Carbon::parse($item->tanggal)->format('Y-m-d'),
                 'tax_service'         => (float) ($item->tax_service ?? 0),
@@ -78,28 +98,31 @@ class PembelianKejinggaController extends Controller
                 'is_lunas'            => (bool) $item->is_lunas,
                 'is_diterima'         => (bool) $item->is_diterima,
                 'is_terkunci'         => (bool) $item->isTerkunci(),
+                'is_draft'            => (empty($item->supplier_id) || $item->total <= 0),
                 'kekurangan'          => (float) ($item->kekurangan_pembayaran ?? ($item->is_lunas ? 0 : $item->total)),
                 'tanggal_jatuh_tempo' => $item->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($item->tanggal_jatuh_tempo)->format('d M Y') : null,
                 'tanggal_pelunasan'   => $item->tanggal_pelunasan ? \Carbon\Carbon::parse($item->tanggal_pelunasan)->format('d M Y') : null,
                 'catatan'             => $item->catatan_pembayaran,
                 'dicatat_pada'        => $item->dicatat_pada,
-                'details'             => $item->details->map(function ($d) {
+                'details'             => $item->details->map(function ($d) use ($stokKejinggaMap) {
                     $bItem = $d->barang;
                     $sPembelian = $d->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
                     $konv = floatval($d->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
                     $sUtama = $bItem->satuan ?? 'Pcs';
                     $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+                    $stokTerkini = (float) ($stokKejinggaMap[$d->barang_id] ?? 0);
 
                     return [
                         'id'                 => $d->id,
                         'barang_id'          => $d->barang_id,
                         'nama'               => $bItem->nama ?? 'Barang',
-                        'kode_barang'        => $d->barang->kode_barang ?? '',
+                        'kode_barang'        => $bItem->kode_barang ?? '',
                         'satuan'             => $sPembelian ?: $sUtama,
                         'satuan_pembelian'   => $sPembelian,
                         'satuan_utama'       => $sUtama,
                         'konversi_pembelian' => $konv,
                         'has_konversi'       => $hasKonv,
+                        'stok_kejingga'      => $stokTerkini,
                         'qty'                => (float) $d->qty,
                         'qty_diterima'       => (float) ($d->qty_diterima ?? 0),
                         'harga'              => (float) $d->harga,
@@ -119,13 +142,24 @@ class PembelianKejinggaController extends Controller
 
     public function create()
     {
-        $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            abort(403, 'Akses terbatas. Hanya Super Admin yang diizinkan mengelola pembelian luar Kejingga.');
-        }
+        $this->authorizeAccess();
 
         $suppliers = Supplier::orderBy('nama')->get();
-        $barangs   = MasterBarang::where('is_active', true)->orderBy('nama')->get();
+        
+        $stokKejinggaMap = StokGudang::where('gudang_id', 5)
+            ->groupBy('barang_id')
+            ->select('barang_id', DB::raw('SUM(jumlah) as total_stok'))
+            ->pluck('total_stok', 'barang_id');
+
+        $barangs = MasterBarang::where('is_active', true)
+            ->with(['minimumStocks'])
+            ->orderBy('nama')
+            ->get()
+            ->map(function ($b) use ($stokKejinggaMap) {
+                $b->stok_kejingga = (float) ($stokKejinggaMap[$b->id] ?? 0);
+                return $b;
+            });
+
         $gudangKejingga = MasterGudang::find(5);
 
         return view('pembelian-kejingga.create', compact('suppliers', 'barangs', 'gudangKejingga'));
@@ -133,18 +167,15 @@ class PembelianKejinggaController extends Controller
 
     public function store(Request $request)
     {
-        $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            abort(403, 'Akses terbatas.');
-        }
+        $this->authorizeAccess();
 
         $request->validate([
-            'supplier_id' => 'required|exists:suppliers,id',
-            'tanggal'     => 'required|date',
-            'items'       => 'required|array|min:1',
-            'items.*.barang_id' => 'required|exists:master_barang,id',
-            'items.*.qty'       => 'required',
-            'items.*.harga'     => 'required',
+            'supplier_id'        => 'nullable|exists:suppliers,id',
+            'tanggal'            => 'required|date',
+            'items'              => 'required|array|min:1',
+            'items.*.barang_id'  => 'required|exists:master_barang,id',
+            'items.*.qty'        => 'required',
+            'items.*.harga'      => 'nullable',
         ]);
 
         if (\App\Models\Journal::isPeriodClosed($request->tanggal)) {
@@ -173,14 +204,20 @@ class PembelianKejinggaController extends Controller
             foreach ($request->items as $it) {
                 $qtyRaw   = str_replace('.', '', $it['qty']);
                 $qtyVal   = (float) str_replace(',', '.', $qtyRaw);
-                $hargaRaw = str_replace('.', '', $it['harga']);
-                $hargaVal = (float) str_replace(',', '.', $hargaRaw);
+
+                $hargaVal = 0;
+                if (!empty($it['harga'])) {
+                    $hargaRaw = str_replace('.', '', $it['harga']);
+                    $hargaVal = (float) str_replace(',', '.', $hargaRaw);
+                }
 
                 $totalItems += $hargaVal;
                 $parsedItems[] = [
-                    'barang_id' => $it['barang_id'],
-                    'qty'       => $qtyVal,
-                    'harga'     => $hargaVal,
+                    'barang_id'          => $it['barang_id'],
+                    'satuan_pembelian'   => $it['satuan_pembelian'] ?? null,
+                    'konversi_pembelian' => isset($it['konversi_pembelian']) ? (float) $it['konversi_pembelian'] : 1.00,
+                    'qty'                => $qtyVal,
+                    'harga'              => $hargaVal,
                 ];
             }
 
@@ -188,7 +225,7 @@ class PembelianKejinggaController extends Controller
 
             $pembelian = Pembelian::create([
                 'kode_pembelian'    => $kodePembelian,
-                'supplier_id'       => $request->supplier_id,
+                'supplier_id'       => $request->supplier_id ?: null,
                 'gudang_id'         => $gudangId,
                 'tanggal'           => $request->tanggal,
                 'total'             => $grandTotal,
@@ -202,13 +239,14 @@ class PembelianKejinggaController extends Controller
             foreach ($parsedItems as $it) {
                 $barang = MasterBarang::withoutGlobalScopes()->find($it['barang_id']);
                 $hargaPerQty = $it['qty'] > 0 ? $it['harga'] / $it['qty'] : 0;
-                $satuan = $barang->satuan_pembelian ?: ($barang->satuan ?: 'pcs');
+                $satuan = $it['satuan_pembelian'] ?: ($barang->satuan_pembelian ?: ($barang->satuan ?: 'pcs'));
+                $konversi = $it['konversi_pembelian'] > 0 ? $it['konversi_pembelian'] : ($barang->konversi_pembelian ?? 1.00);
 
-                $detail = PembelianDetail::create([
+                PembelianDetail::create([
                     'pembelian_id'       => $pembelian->id,
                     'barang_id'          => $it['barang_id'],
                     'satuan_pembelian'   => $satuan,
-                    'konversi_pembelian' => $barang->konversi_pembelian ?? 1.00,
+                    'konversi_pembelian' => $konversi,
                     'qty'                => $it['qty'],
                     'qty_diterima'       => 0,
                     'harga'              => $it['harga'],
@@ -219,12 +257,173 @@ class PembelianKejinggaController extends Controller
 
             DB::commit();
 
-            return redirect()->route('pembelian-kejingga.index')->with('success', "Pembelian Kejingga ({$kodePembelian}) berhasil disimpan. Silakan catat metode pembayaran dan konfirmasi penerimaan barang.");
+            $msgSupplier = empty($request->supplier_id) ? " (Draft Permintaan tanpa Supplier)" : "";
+            return redirect()->route('pembelian-kejingga.index')->with('success', "Pembelian Kejingga ({$kodePembelian}) berhasil disimpan{$msgSupplier}.");
 
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal menyimpan pembelian Kejingga: ' . $e->getMessage())->withInput();
         }
+    }
+
+    public function show($id)
+    {
+        $this->authorizeAccess();
+
+        $pembelian = Pembelian::with(['supplier', 'gudang', 'user', 'penerimaDiterima', 'details.barang'])
+            ->where('gudang_id', 5)
+            ->findOrFail($id);
+
+        $stokKejinggaMap = StokGudang::where('gudang_id', 5)
+            ->groupBy('barang_id')
+            ->select('barang_id', DB::raw('SUM(jumlah) as total_stok'))
+            ->pluck('total_stok', 'barang_id');
+
+        return view('pembelian-kejingga.show', compact('pembelian', 'stokKejinggaMap'));
+    }
+
+    public function edit($id)
+    {
+        $this->authorizeAccess();
+
+        $pembelian = Pembelian::with('details.barang')->where('gudang_id', 5)->findOrFail($id);
+
+        if ($pembelian->isTerkunci()) {
+            return redirect()->route('pembelian-kejingga.index')
+                ->with('error', 'Purchase Order ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar atau diterima) dan tidak dapat diubah.');
+        }
+
+        $suppliers = Supplier::orderBy('nama')->get();
+
+        $stokKejinggaMap = StokGudang::where('gudang_id', 5)
+            ->groupBy('barang_id')
+            ->select('barang_id', DB::raw('SUM(jumlah) as total_stok'))
+            ->pluck('total_stok', 'barang_id');
+
+        $barangs = MasterBarang::where('is_active', true)
+            ->with(['minimumStocks'])
+            ->orderBy('nama')
+            ->get()
+            ->map(function ($b) use ($stokKejinggaMap) {
+                $b->stok_kejingga = (float) ($stokKejinggaMap[$b->id] ?? 0);
+                return $b;
+            });
+
+        $gudangKejingga = MasterGudang::find(5);
+
+        return view('pembelian-kejingga.edit', compact('pembelian', 'suppliers', 'barangs', 'gudangKejingga'));
+    }
+
+    public function update(Request $request, $id)
+    {
+        $this->authorizeAccess();
+
+        $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
+
+        if ($pembelian->isTerkunci()) {
+            return redirect()->route('pembelian-kejingga.index')
+                ->with('error', 'Purchase Order ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar atau diterima) dan tidak dapat diubah.');
+        }
+
+        $request->validate([
+            'supplier_id'        => 'nullable|exists:suppliers,id',
+            'tanggal'            => 'required|date',
+            'items'              => 'required|array|min:1',
+            'items.*.barang_id'  => 'required|exists:master_barang,id',
+            'items.*.qty'        => 'required',
+            'items.*.harga'      => 'nullable',
+        ]);
+
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal)) {
+            return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku.')->withInput();
+        }
+
+        DB::beginTransaction();
+        try {
+            $taxService = 0;
+            if (!empty($request->tax_service)) {
+                $taxService = (float) str_replace('.', '', $request->tax_service);
+            }
+
+            $totalItems = 0;
+            $parsedItems = [];
+            foreach ($request->items as $it) {
+                $qtyRaw   = str_replace('.', '', $it['qty']);
+                $qtyVal   = (float) str_replace(',', '.', $qtyRaw);
+
+                $hargaVal = 0;
+                if (!empty($it['harga'])) {
+                    $hargaRaw = str_replace('.', '', $it['harga']);
+                    $hargaVal = (float) str_replace(',', '.', $hargaRaw);
+                }
+
+                $totalItems += $hargaVal;
+                $parsedItems[] = [
+                    'barang_id'          => $it['barang_id'],
+                    'satuan_pembelian'   => $it['satuan_pembelian'] ?? null,
+                    'konversi_pembelian' => isset($it['konversi_pembelian']) ? (float) $it['konversi_pembelian'] : 1.00,
+                    'qty'                => $qtyVal,
+                    'harga'              => $hargaVal,
+                ];
+            }
+
+            $grandTotal = $totalItems + $taxService;
+
+            $pembelian->update([
+                'supplier_id' => $request->supplier_id ?: null,
+                'tanggal'     => $request->tanggal,
+                'total'       => $grandTotal,
+                'tax_service' => $taxService,
+            ]);
+
+            // Clear existing details and re-create
+            PembelianDetail::where('pembelian_id', $pembelian->id)->delete();
+
+            foreach ($parsedItems as $it) {
+                $barang = MasterBarang::withoutGlobalScopes()->find($it['barang_id']);
+                $hargaPerQty = $it['qty'] > 0 ? $it['harga'] / $it['qty'] : 0;
+                $satuan = $it['satuan_pembelian'] ?: ($barang->satuan_pembelian ?: ($barang->satuan ?: 'pcs'));
+                $konversi = $it['konversi_pembelian'] > 0 ? $it['konversi_pembelian'] : ($barang->konversi_pembelian ?? 1.00);
+
+                PembelianDetail::create([
+                    'pembelian_id'       => $pembelian->id,
+                    'barang_id'          => $it['barang_id'],
+                    'satuan_pembelian'   => $satuan,
+                    'konversi_pembelian' => $konversi,
+                    'qty'                => $it['qty'],
+                    'qty_diterima'       => 0,
+                    'harga'              => $it['harga'],
+                    'harga_per_qty'      => $hargaPerQty,
+                    'batch_number'       => date('Ymd') . '-PBKJG' . rand(100, 999),
+                ]);
+            }
+
+            DB::commit();
+
+            return redirect()->route('pembelian-kejingga.index')->with('success', "Pembelian Kejingga ({$pembelian->kode_pembelian}) berhasil diperbarui.");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal memperbarui pembelian Kejingga: ' . $e->getMessage())->withInput();
+        }
+    }
+
+    public function destroy($id)
+    {
+        $this->authorizeAccess();
+
+        $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
+
+        if ($pembelian->isTerkunci()) {
+            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar atau diterima) dan tidak dapat dihapus.');
+        }
+
+        DB::transaction(function() use ($pembelian) {
+            PembelianDetail::where('pembelian_id', $pembelian->id)->delete();
+            $pembelian->delete();
+        });
+
+        return redirect()->route('pembelian-kejingga.index')->with('success', 'Pembelian Kejingga berhasil dihapus.');
     }
 
     public function catatPembayaran(Request $request, Pembelian $pembelian)
@@ -296,6 +495,10 @@ class PembelianKejinggaController extends Controller
 
     public function terima(Request $request, Pembelian $pembelian)
     {
+        if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
+            return back()->with('error', 'Hanya Super Admin yang diizinkan untuk mengonfirmasi penerimaan barang.');
+        }
+
         if (empty($pembelian->metode_pembayaran)) {
             return back()->with('error', 'Metode pembayaran belum dicatat.');
         }

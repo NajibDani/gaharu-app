@@ -20,8 +20,8 @@
     <div class="container-fluid px-4 py-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-                <h4 class="m-0 fw-bold text-dark">Tambah Pembelian Kejingga (Luar Gaharu)</h4>
-                <p class="text-muted small mb-0">Isi draft permintaan barang atau buat Pembelian Kejingga langsung.</p>
+                <h4 class="m-0 fw-bold text-dark">Edit Pembelian Kejingga ({{ $pembelian->kode_pembelian }})</h4>
+                <p class="text-muted small mb-0">Ubah item barang, supplier, tanggal, atau harga pembelian.</p>
             </div>
             <span class="badge bg-warning text-dark px-3 py-2 fw-semibold">Gudang Tujuan: Gudang KeJingga</span>
         </div>
@@ -37,12 +37,13 @@
             </div>
         @endif
 
-        <form action="{{ route('pembelian-kejingga.store') }}" method="POST" id="formCreatePO">
+        <form action="{{ route('pembelian-kejingga.update', $pembelian->id) }}" method="POST" id="formEditPO">
             @csrf
+            @method('PUT')
 
             <div class="card form-card p-3 mb-4">
                 <div class="row g-3">
-                    {{-- SUPPLIER (OPSIONAL UNTUK DRAFT PERMINTAAN) --}}
+                    {{-- SUPPLIER --}}
                     <div class="col-12 col-md-4">
                         <label class="form-label fw-bold small text-dark mb-1">
                             Supplier / Pemasok Luar 
@@ -51,13 +52,13 @@
                         <select name="supplier_id" id="supplier_id" class="form-control">
                             <option value="">-- Kosongkan (Draft Permintaan) --</option>
                             @foreach($suppliers as $supplier)
-                                <option value="{{ $supplier->id }}" {{ old('supplier_id') == $supplier->id ? 'selected' : '' }}>
+                                <option value="{{ $supplier->id }}" {{ old('supplier_id', $pembelian->supplier_id) == $supplier->id ? 'selected' : '' }}>
                                     {{ $supplier->nama }}
                                 </option>
                             @endforeach
                         </select>
                         <small class="text-muted d-block mt-1" style="font-size: 11px;">
-                            <i class="bi bi-info-circle me-1"></i>Staff operasional dapat mengosongkan supplier untuk diisi oleh tim purchasing.
+                            <i class="bi bi-info-circle me-1"></i>Tim Purchasing dapat melengkapi supplier di sini.
                         </small>
                     </div>
 
@@ -71,7 +72,7 @@
                     {{-- TANGGAL --}}
                     <div class="col-12 col-md-4">
                         <label class="form-label fw-bold small text-dark mb-1">Tanggal Transaksi <span class="text-danger">*</span></label>
-                        <input type="date" name="tanggal" id="tanggal" class="form-control" value="{{ old('tanggal', date('Y-m-d')) }}" required>
+                        <input type="date" name="tanggal" id="tanggal" class="form-control" value="{{ old('tanggal', \Carbon\Carbon::parse($pembelian->tanggal)->format('Y-m-d')) }}" required>
                     </div>
                 </div>
             </div>
@@ -98,61 +99,90 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr class="item-row">
-                                {{-- BARANG --}}
-                                <td>
-                                    <select name="items[0][barang_id]" class="form-control barang-select" required>
-                                        <option value="">-- Pilih / Cari Barang --</option>
-                                        @foreach($barangs as $barang)
-                                            <option value="{{ $barang->id }}"
-                                                    data-kode="{{ $barang->kode_barang }}"
-                                                    data-nama="{{ $barang->nama }}"
-                                                    data-satuan-utama="{{ $barang->satuan }}"
-                                                    data-satuan-pembelian="{{ $barang->satuan_pembelian }}"
-                                                    data-konversi-pembelian="{{ $barang->konversi_pembelian ?? 1 }}"
-                                                    data-stok-kejingga="{{ $barang->stok_kejingga }}">
-                                                {{ $barang->kode_barang }} - {{ $barang->nama }} (Stok Kejingga: {{ number_format($barang->stok_kejingga, 2, ',', '.') }} {{ $barang->satuan }})
+                            @foreach($pembelian->details as $idx => $detail)
+                                @php
+                                    $bItem = $detail->barang;
+                                    $sPembelian = $detail->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
+                                    $konv = (float)($detail->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                                    $sUtama = $bItem->satuan ?? 'Pcs';
+                                    $stokKejinggaVal = (float)($stokKejinggaMap[$detail->barang_id] ?? 0);
+                                @endphp
+                                <tr class="item-row">
+                                    {{-- BARANG --}}
+                                    <td>
+                                        <select name="items[{{ $idx }}][barang_id]" class="form-control barang-select" required>
+                                            <option value="">-- Pilih / Cari Barang --</option>
+                                            @foreach($barangs as $barang)
+                                                <option value="{{ $barang->id }}"
+                                                        data-kode="{{ $barang->kode_barang }}"
+                                                        data-nama="{{ $barang->nama }}"
+                                                        data-satuan-utama="{{ $barang->satuan }}"
+                                                        data-satuan-pembelian="{{ $barang->satuan_pembelian }}"
+                                                        data-konversi-pembelian="{{ $barang->konversi_pembelian ?? 1 }}"
+                                                        data-stok-kejingga="{{ $barang->stok_kejingga }}"
+                                                        {{ $detail->barang_id == $barang->id ? 'selected' : '' }}>
+                                                    {{ $barang->kode_barang }} - {{ $barang->nama }} (Stok Kejingga: {{ number_format($barang->stok_kejingga, 2, ',', '.') }} {{ $barang->satuan }})
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        <div class="stok-info-badge mt-1" style="font-size: 11px;">
+                                            <span class="badge bg-warning text-dark border">
+                                                <i class="bi bi-box-seam me-1"></i>Persediaan Terkini Gudang Kejingga: 
+                                                <strong>{{ number_format($stokKejinggaVal, 2, ',', '.') }} {{ $sUtama }}</strong>
+                                            </span>
+                                        </div>
+                                    </td>
+
+                                    {{-- QTY INPUT --}}
+                                    <td>
+                                        <input type="text" name="items[{{ $idx }}][qty]" class="form-control qty-input mask-number" value="{{ number_format($detail->qty, 0, ',', '.') }}" placeholder="0" required>
+                                    </td>
+
+                                    {{-- PILIHAN SATUAN --}}
+                                    <td>
+                                        <select name="items[{{ $idx }}][satuan_pembelian]" class="form-select satuan-select">
+                                            <option value="{{ $sUtama }}" data-konversi="1" {{ $sPembelian === $sUtama ? 'selected' : '' }}>
+                                                {{ $sUtama }} (Satuan Utama)
                                             </option>
-                                        @endforeach
-                                    </select>
-                                    <div class="stok-info-badge mt-1" style="font-size: 11px;"></div>
-                                </td>
+                                            @if($bItem->satuan_pembelian && $bItem->konversi_pembelian > 1 && $bItem->satuan_pembelian !== $sUtama)
+                                                <option value="{{ $bItem->satuan_pembelian }}" data-konversi="{{ $bItem->konversi_pembelian }}" {{ $sPembelian === $bItem->satuan_pembelian ? 'selected' : '' }}>
+                                                    {{ $bItem->satuan_pembelian }} (1 {{ $bItem->satuan_pembelian }} = {{ number_format($bItem->konversi_pembelian, 0, ',', '.') }} {{ $sUtama }})
+                                                </option>
+                                            @endif
+                                        </select>
+                                        <input type="hidden" name="items[{{ $idx }}][konversi_pembelian]" class="konversi-input" value="{{ $konv }}">
+                                    </td>
 
-                                {{-- QTY INPUT --}}
-                                <td>
-                                    <input type="text" name="items[0][qty]" class="form-control qty-input mask-number" placeholder="0" required>
-                                </td>
+                                    {{-- TOTAL QTY UTAMA & CONVERSION INFO --}}
+                                    <td>
+                                        <div class="fw-bold text-dark total-qty-display">
+                                            {{ number_format($detail->qty * $konv, 2, ',', '.') }} {{ $sUtama }}
+                                        </div>
+                                        <small class="text-muted konversi-info-text d-block" style="font-size: 10px;">
+                                            @if($konv > 1)
+                                                ({{ number_format($detail->qty, 0, ',', '.') }} {{ $sPembelian }} @ {{ number_format($konv, 0, ',', '.') }} {{ $sUtama }})
+                                            @else
+                                                ({{ number_format($detail->qty, 0, ',', '.') }} {{ $sUtama }})
+                                            @endif
+                                        </small>
+                                    </td>
 
-                                {{-- PILIHAN SATUAN --}}
-                                <td>
-                                    <select name="items[0][satuan_pembelian]" class="form-select satuan-select">
-                                        <option value="">-- Pilih Satuan --</option>
-                                    </select>
-                                    <input type="hidden" name="items[0][konversi_pembelian]" class="konversi-input" value="1">
-                                </td>
+                                    {{-- TOTAL HARGA --}}
+                                    <td>
+                                        <input type="text" name="items[{{ $idx }}][harga]" class="form-control harga-input mask-number" value="{{ number_format($detail->harga, 0, ',', '.') }}" placeholder="0 (Opsional)">
+                                    </td>
 
-                                {{-- TOTAL QTY UTAMA & CONVERSION INFO --}}
-                                <td>
-                                    <div class="fw-bold text-dark total-qty-display">—</div>
-                                    <small class="text-muted konversi-info-text d-block" style="font-size: 10px;"></small>
-                                </td>
+                                    {{-- HARGA PER QTY --}}
+                                    <td>
+                                        <input type="text" class="form-control harga-per-qty bg-light" readonly tabindex="-1" value="{{ $detail->harga > 0 ? 'Rp ' . number_format($detail->harga_per_qty, 0, ',', '.') . ' / ' . ($sPembelian ?: $sUtama) : '—' }}">
+                                    </td>
 
-                                {{-- TOTAL HARGA --}}
-                                <td>
-                                    <input type="text" name="items[0][harga]" class="form-control harga-input mask-number" placeholder="0 (Opsional)">
-                                    <small class="text-muted" style="font-size: 10px;">Bisa diisi nanti oleh Purchasing</small>
-                                </td>
-
-                                {{-- HARGA PER QTY --}}
-                                <td>
-                                    <input type="text" class="form-control harga-per-qty bg-light" readonly tabindex="-1" placeholder="—">
-                                </td>
-
-                                {{-- AKSI --}}
-                                <td class="text-center">
-                                    <button type="button" class="btn btn-outline-danger btn-sm btn-remove" title="Hapus Baris"><i class="bi bi-trash"></i></button>
-                                </td>
-                            </tr>
+                                    {{-- AKSI --}}
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-outline-danger btn-sm btn-remove" title="Hapus Baris"><i class="bi bi-trash"></i></button>
+                                    </td>
+                                </tr>
+                            @endforeach
                         </tbody>
                     </table>
                 </div>
@@ -163,7 +193,7 @@
                             <label class="form-label fw-bold text-secondary small mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-white fw-semibold text-muted">Rp</span>
-                                <input type="text" name="tax_service" id="tax_service" class="form-control mask-number fw-bold text-end" value="{{ old('tax_service', 0) }}" placeholder="0">
+                                <input type="text" name="tax_service" id="tax_service" class="form-control mask-number fw-bold text-end" value="{{ old('tax_service', number_format($pembelian->tax_service ?? 0, 0, ',', '.')) }}" placeholder="0">
                             </div>
                         </div>
                     </div>
@@ -171,8 +201,8 @@
             </div>
 
             <div class="d-flex flex-column flex-sm-row gap-2 mb-4">
-                <button type="submit" class="btn btn-primary px-4 py-2 fw-semibold">
-                    <i class="bi bi-save me-1"></i> Simpan Pembelian / Draft Permintaan
+                <button type="submit" class="btn btn-warning text-dark px-4 py-2 fw-bold">
+                    <i class="bi bi-check-circle me-1"></i> Perbarui Pembelian Kejingga
                 </button>
                 <a href="{{ route('pembelian-kejingga.index') }}" class="btn btn-light border px-4 py-2">Batal</a>
             </div>
@@ -194,7 +224,7 @@
             @endforeach
         };
 
-        let rowIndex = 1;
+        let rowIndex = {{ count($pembelian->details) }};
 
         function formatNumberDisplay(num) {
             if (!num && num !== 0) return '';
@@ -253,7 +283,6 @@
                 return;
             }
 
-            // Display current stock in Gudang Kejingga
             badgeDiv.innerHTML = `
                 <span class="badge bg-warning text-dark border">
                     <i class="bi bi-box-seam me-1"></i>Persediaan Terkini Gudang Kejingga: 
@@ -261,7 +290,6 @@
                 </span>
             `;
 
-            // Populate Satuan choices
             let opts = `<option value="${b.satuan_utama}" data-konversi="1">${b.satuan_utama} (Satuan Utama)</option>`;
             if (b.satuan_pembelian && b.konversi_pembelian > 1 && b.satuan_pembelian !== b.satuan_utama) {
                 opts += `<option value="${b.satuan_pembelian}" data-konversi="${b.konversi_pembelian}">${b.satuan_pembelian} (1 ${b.satuan_pembelian} = ${b.konversi_pembelian.toLocaleString('id-ID')} ${b.satuan_utama})</option>`;

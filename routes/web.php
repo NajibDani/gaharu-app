@@ -95,8 +95,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/persediaan-awal/load-barang', [PersediaanAwalController::class, 'loadBarang'])->name('persediaan-awal.load-barang');
     Route::resource('persediaan-awal', PersediaanAwalController::class)->names('persediaan-awal');
 
-    // Pembelian Mandiri Kejingga (Khusus Super Admin)
-    Route::middleware(['role:Super Admin,Superadmin,Administrator'])->group(function () {
+    // Pembelian Mandiri Kejingga (Super Admin & User Kejingga)
+    Route::middleware(['role:Super Admin,Superadmin,Administrator,Kepala Outlet Kejingga,Operasional Kejingga'])->group(function () {
         Route::post('pembelian-kejingga/{pembelian}/catat-pembayaran', [\App\Http\Controllers\PembelianKejinggaController::class, 'catatPembayaran'])->name('pembelian-kejingga.catat-pembayaran');
         Route::post('pembelian-kejingga/{pembelian}/lunasi', [\App\Http\Controllers\PembelianKejinggaController::class, 'lunasi'])->name('pembelian-kejingga.lunasi');
         Route::post('pembelian-kejingga/{pembelian}/terima', [\App\Http\Controllers\PembelianKejinggaController::class, 'terima'])->name('pembelian-kejingga.terima');

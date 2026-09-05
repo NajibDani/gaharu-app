@@ -237,7 +237,7 @@
                     <a href="{{ route('pembelian.index') }}" class="{{ request()->routeIs('pembelian.*') && !request()->routeIs('pembelian-kejingga.*') ? 'active' : '' }}">
                         <i class="bi bi-bag-plus me-2" style="font-size:12px;"></i>Pembelian Bahan Baku
                     </a>
-                    @if(auth()->user() && auth()->user()->isSuperAdmin())
+                    @if($canRole(['Super Admin', 'Superadmin', 'Kepala Outlet Kejingga', 'Operasional Kejingga']))
                         <a href="{{ route('pembelian-kejingga.index') }}" class="{{ request()->routeIs('pembelian-kejingga.*') ? 'active' : '' }}">
                             <i class="bi bi-cart-plus me-2" style="font-size:12px;"></i>Pembelian Kejingga (Luar Gaharu)
                         </a>

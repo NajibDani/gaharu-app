@@ -269,10 +269,12 @@
                         @endif
                     </td>
                     <td class="text-center">
-                        @if($stokTersedia >= $qtyDiminta)
-                            <span class="status-pill status-ok">Tersedia</span>
+                        @if($stokTersedia > $qtyDiminta)
+                            <span class="status-pill status-ok">Tersedia Penuh</span>
+                        @elseif($stokTersedia == $qtyDiminta && $stokTersedia > 0)
+                            <span class="status-pill status-shortage">Stok Terakhir (Segera Beli)</span>
                         @elseif($stokTersedia > 0)
-                            <span class="status-pill status-shortage">Kurang</span>
+                            <span class="status-pill status-empty">Kurang {{ number_format($kurang, 2, ',', '.') }} {{ $satuan }}</span>
                         @else
                             <span class="status-pill status-empty">Habis (0)</span>
                         @endif

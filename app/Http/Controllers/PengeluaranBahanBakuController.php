@@ -563,12 +563,15 @@ class PengeluaranBahanBakuController extends Controller
 
             $satuan = $detail->barang->satuan ?? ($detail->satuan ?? 'pcs');
 
-            if ($stokTersedia >= $qtyDiminta) {
+            if ($stokTersedia > $qtyDiminta) {
                 $statusStok = 'Tersedia Penuh';
                 $statusColor = 'success';
+            } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
+                $statusStok = 'Stok Terakhir di Gudang (Segera Pembelian)';
+                $statusColor = 'warning';
             } elseif ($stokTersedia > 0) {
                 $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
-                $statusColor = 'warning';
+                $statusColor = 'danger';
             } else {
                 $statusStok = 'Stok Habis (0)';
                 $statusColor = 'danger';
@@ -1151,21 +1154,23 @@ class PengeluaranBahanBakuController extends Controller
                     */
 
                     // Ambil Gudang Utama (Gudang Asal)
-                    $gudangUtama = \App\Models\MasterGudang::where('nama', 'Gudang Utama')->first();
-                    $gudangAsalId = $gudangUtama ? $gudangUtama->id : 1;
+                    $gudangUtama = \App\Models\MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? \App\Models\MasterGudang::find(2);
+                    $gudangAsalId = $gudangUtama ? $gudangUtama->id : 2;
 
                     // Validasi Stok di Gudang Utama
                     foreach ($data->details as $detail) {
-                        $stokTersedia = StokGudang::where('barang_id', $detail->barang_id)
+                        $stokTersedia = (float) (StokGudang::where('barang_id', $detail->barang_id)
                             ->where('gudang_id', $gudangAsalId)
-                            ->value('jumlah') ?? 0;
+                            ->sum('jumlah') ?? 0);
 
                         if ($stokTersedia < $detail->qty) {
                             $barang = \App\Models\MasterBarang::find($detail->barang_id);
                             $namaBarang = $barang ? $barang->nama : "ID Barang: {$detail->barang_id}";
+                            $satuan = $barang->satuan ?? 'pcs';
+                            $kurang = $detail->qty - $stokTersedia;
                             
                             throw new \Exception(
-                                "Gagal Approve: Stok {$namaBarang} di Gudang Utama tidak mencukupi. (Diminta: {$detail->qty}, Tersedia: {$stokTersedia})"
+                                "Gagal Approve: Stok \"{$namaBarang}\" di Gudang Utama tidak mencukupi (Diminta: " . number_format($detail->qty, 2, ',', '.') . " {$satuan}, Tersedia: " . number_format($stokTersedia, 2, ',', '.') . " {$satuan}, Kekurangan: -" . number_format($kurang, 2, ',', '.') . " {$satuan}). Dokumen tidak dapat disetujui."
                             );
                         }
                     }
