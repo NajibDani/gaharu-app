@@ -148,6 +148,8 @@ class PembelianKejinggaController extends Controller
                         'kekurangan'          => $kekuranganDetail,
                         'is_lunas'            => (bool) $d->is_lunas,
                         'tanggal_jatuh_tempo' => $d->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($d->tanggal_jatuh_tempo)->format('d M Y') : null,
+                        'bukti_pembayaran'     => $d->bukti_pembayaran,
+                        'bukti_pembayaran_url' => $d->bukti_pembayaran ? asset('storage/' . $d->bukti_pembayaran) : null,
                     ];
                 }),
             ]];
@@ -491,6 +493,11 @@ class PembelianKejinggaController extends Controller
 
         $detail = PembelianDetail::with('pembelian')->findOrFail($detailId);
 
+        // Check if price and supplier are entered by Purchasing
+        if ((float) $detail->harga <= 0 || empty($detail->supplier_id)) {
+            return back()->with('error', '⚠️ Pembayaran tidak dapat dicatat! Nama supplier dan harga barang wajib diisi oleh tim Purchasing terlebih dahulu dengan mengedit PO.');
+        }
+
         $validated = $request->validate([
             'metode_pembayaran'   => 'required|in:cod,dp,termin',
             'tanggal_jatuh_tempo' => 'nullable|date',
@@ -498,6 +505,7 @@ class PembelianKejinggaController extends Controller
             'nominal_dp'          => 'nullable|numeric|min:0',
             'tanggal_pelunasan'   => 'required_if:metode_pembayaran,dp|nullable|date',
             'catatan_pembayaran'  => 'nullable|string|max:500',
+            'bukti_pembayaran'    => 'nullable|file|mimes:jpg,jpeg,png,pdf,webp|max:5120',
         ]);
 
         if ($validated['metode_pembayaran'] === 'dp') {
@@ -513,9 +521,14 @@ class PembelianKejinggaController extends Controller
             }
         }
 
-        DB::transaction(function() use ($validated, $detail) {
+        $buktiPath = null;
+        if ($request->hasFile('bukti_pembayaran')) {
+            $buktiPath = $request->file('bukti_pembayaran')->store('bukti_pembayaran_kejingga', 'public');
+        }
+
+        DB::transaction(function() use ($validated, $detail, $buktiPath) {
             $isLunas = ($validated['metode_pembayaran'] === 'cod');
-            $detail->update([
+            $updateData = [
                 'metode_pembayaran'   => $validated['metode_pembayaran'],
                 'persen_dp'           => $validated['persen_dp'] ?? null,
                 'nominal_dp'          => $validated['nominal_dp'] ?? null,
@@ -524,7 +537,12 @@ class PembelianKejinggaController extends Controller
                 'catatan_pembayaran'  => $validated['catatan_pembayaran'] ?? null,
                 'is_lunas'            => $isLunas,
                 'lunas_at'            => $isLunas ? now() : null,
-            ]);
+            ];
+            if ($buktiPath) {
+                $updateData['bukti_pembayaran'] = $buktiPath;
+            }
+
+            $detail->update($updateData);
 
             // Check if all details in PO are paid
             $pembelian = $detail->pembelian;
@@ -549,15 +567,32 @@ class PembelianKejinggaController extends Controller
 
         $detail = PembelianDetail::with('pembelian')->findOrFail($detailId);
 
+        if ((float) $detail->harga <= 0 || empty($detail->supplier_id)) {
+            return back()->with('error', '⚠️ Pelunasan tidak dapat dicatat! Nama supplier dan harga barang wajib diisi oleh tim Purchasing terlebih dahulu dengan mengedit PO.');
+        }
+
         if ($detail->is_lunas) {
             return back()->with('error', 'Item barang ini sudah lunas.');
         }
 
-        DB::transaction(function() use ($detail) {
-            $detail->update([
+        $request->validate([
+            'bukti_pembayaran' => 'nullable|file|mimes:jpg,jpeg,png,pdf,webp|max:5120',
+        ]);
+
+        $buktiPath = null;
+        if ($request->hasFile('bukti_pembayaran')) {
+            $buktiPath = $request->file('bukti_pembayaran')->store('bukti_pembayaran_kejingga', 'public');
+        }
+
+        DB::transaction(function() use ($detail, $buktiPath) {
+            $updateData = [
                 'is_lunas' => true,
                 'lunas_at' => now(),
-            ]);
+            ];
+            if ($buktiPath) {
+                $updateData['bukti_pembayaran'] = $buktiPath;
+            }
+            $detail->update($updateData);
 
             $pembelian = $detail->pembelian;
             $allPaid = $pembelian->details()->where('is_lunas', false)->count() === 0;
@@ -570,6 +605,26 @@ class PembelianKejinggaController extends Controller
         });
 
         return redirect()->route('pembelian-kejingga.index')->with('success', 'Pelunasan item barang berhasil dicatat.');
+    }
+
+    public function uploadBuktiDetail(Request $request, $detailId)
+    {
+        if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
+            return back()->with('error', 'Hanya Super Admin yang diizinkan mengunggah bukti pembayaran.');
+        }
+
+        $detail = PembelianDetail::findOrFail($detailId);
+
+        $request->validate([
+            'bukti_pembayaran' => 'required|file|mimes:jpg,jpeg,png,pdf,webp|max:5120',
+        ]);
+
+        if ($request->hasFile('bukti_pembayaran')) {
+            $path = $request->file('bukti_pembayaran')->store('bukti_pembayaran_kejingga', 'public');
+            $detail->update(['bukti_pembayaran' => $path]);
+        }
+
+        return redirect()->route('pembelian-kejingga.index')->with('success', 'Bukti pembayaran / nota berhasil diunggah.');
     }
 
     // ==========================================

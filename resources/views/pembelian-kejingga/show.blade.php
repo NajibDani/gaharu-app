@@ -32,7 +32,7 @@
             {{-- HEADER DOKUMEN --}}
             <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
                 <div>
-                    <h3 class="fw-bold text-dark mb-1" style="color: #1e293b;">CV. GAHARU AGUNG SEJAHTERA</h3>
+                    <h3 class="fw-bold text-dark mb-1" style="color: #1e293b;">KEJINGGA</h3>
                     <div class="text-muted small">
                         Layanan Pengadaan &amp; Logistik Operasional Kejingga<br>
                         <strong>Gudang:</strong> {{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}
@@ -215,7 +215,7 @@
             </div>
 
             <div class="mt-4 pt-2 border-top d-flex justify-content-between text-muted" style="font-size: 10px;">
-                <div>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</div>
+                <div>Dokumen Resmi Sistem ERP - KeJingga Bakehouse &amp; Resto</div>
                 <div>Dicetak pada: {{ date('d M Y H:i:s') }}</div>
             </div>
         </div>

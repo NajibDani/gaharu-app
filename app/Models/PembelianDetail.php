@@ -26,6 +26,7 @@ class PembelianDetail extends Model
         'tanggal_jatuh_tempo',
         'tanggal_pelunasan',
         'catatan_pembayaran',
+        'bukti_pembayaran',
         'is_lunas',
         'lunas_at',
     ];

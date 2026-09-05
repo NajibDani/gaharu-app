@@ -13,6 +13,17 @@
             z-index: 99999 !important;
         }
 
+        /* Multi-modal z-index stacking so submodals (catat bayar, lunasi, upload, terima) open in front of modalDetail */
+        #modalPembayaranDetail, 
+        #modalLunasiDetail, 
+        #modalUploadBuktiDetail, 
+        #modalTerimaDetail {
+            z-index: 1080 !important;
+        }
+        .modal-backdrop.show:nth-of-type(2) {
+            z-index: 1070 !important;
+        }
+
         /* ===== MOBILE RESPONSIVE STYLING FOR TABLE & MODAL ===== */
         @media (max-width: 767.98px) {
             .mobile-responsive-table thead {
@@ -156,7 +167,7 @@
                                     <span class="badge bg-success">✓ Lunas Semua Item</span>
                                 @else
                                     <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:11px;" onclick="bukaModalDetail({{ $item->id }})">
-                                        Cek Status Item (${details.where('is_lunas', true).count()}/${details.count()})
+                                        Cek Status Item ({{ $details->where('is_lunas', true)->count() }}/{{ $details->count() }})
                                     </button>
                                 @endif
                             </td>
@@ -249,9 +260,15 @@
                     <h5 class="modal-title fw-bold text-dark">Catat Pembayaran Item Barang</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="formPembayaranDetail" method="POST">
+                <form id="formPembayaranDetail" method="POST" enctype="multipart/form-data">
                     @csrf
                     <div class="modal-body pt-3">
+                        <div id="warning_harga_nol_bayar" class="alert alert-warning border-warning align-items-center mb-3" style="display:none;">
+                            <div>
+                                <strong>⚠️ Supplier &amp; Harga Barang Belum Lengkap!</strong><br>
+                                Nama Supplier dan/atau Harga Barang belum diisi oleh tim Purchasing. Harap lengkapi terlebih dahulu dengan mengedit PO sebelum mencatat pembayaran.
+                            </div>
+                        </div>
                         <div class="mb-3">
                             <label class="form-label small text-muted">Nama Barang</label>
                             <input type="text" id="bayar_detail_barang_nama" class="form-control fw-bold" readonly>
@@ -276,10 +293,15 @@
                             <label class="form-label small text-muted">Tanggal Jatuh Tempo</label>
                             <input type="date" name="tanggal_jatuh_tempo" id="tanggal_jatuh_tempo_detail" class="form-control">
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-muted fw-semibold">Upload Nota / Bukti Pembayaran (Opsional)</label>
+                            <input type="file" name="bukti_pembayaran" class="form-control" accept="image/*,.pdf">
+                            <small class="text-muted" style="font-size:11px;">Format: JPG, PNG, WEBP, PDF (Maks 5MB)</small>
+                        </div>
                     </div>
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-primary btn-sm">Simpan Pembayaran Item</button>
+                        <button type="submit" id="btn_submit_bayar" class="btn btn-primary btn-sm">Simpan Pembayaran Item</button>
                     </div>
                 </form>
             </div>
@@ -294,7 +316,7 @@
                     <h5 class="modal-title fw-bold text-dark">Pelunasan Item Barang</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="formLunasiDetail" method="POST">
+                <form id="formLunasiDetail" method="POST" enctype="multipart/form-data">
                     @csrf
                     <div class="modal-body pt-3">
                         <div class="mb-2">
@@ -305,10 +327,45 @@
                             <label class="form-label small text-muted mb-0">Total Kekurangan</label>
                             <input type="text" id="lunasi_kekurangan_text" class="form-control fw-bold text-danger" readonly>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-muted fw-semibold">Upload Nota / Bukti Pelunasan (Opsional)</label>
+                            <input type="file" name="bukti_pembayaran" class="form-control" accept="image/*,.pdf">
+                            <small class="text-muted" style="font-size:11px;">Format: JPG, PNG, WEBP, PDF (Maks 5MB)</small>
+                        </div>
                     </div>
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
                         <button type="submit" class="btn btn-success btn-sm">Konfirmasi Pelunasan Item</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL UPLOAD BUKTI PEMBAYARAN ITEM (KHUSUS SUPER ADMIN) -->
+    <div class="modal fade" id="modalUploadBuktiDetail" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow rounded-4">
+                <div class="modal-header border-bottom-0 pb-0">
+                    <h5 class="modal-title fw-bold text-dark">Upload Nota / Bukti Bayar Item</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="formUploadBuktiDetail" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <div class="modal-body pt-3">
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">Nama Barang</label>
+                            <input type="text" id="upload_detail_barang_nama" class="form-control fw-bold" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-dark fw-semibold">File Nota / Bukti Pembayaran <span class="text-danger">*</span></label>
+                            <input type="file" name="bukti_pembayaran" class="form-control" accept="image/*,.pdf" required>
+                            <small class="text-muted" style="font-size:11px;">Format: JPG, PNG, WEBP, PDF (Maks 5MB)</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top-0">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-upload me-1"></i> Simpan Nota</button>
                     </div>
                 </form>
             </div>
@@ -389,19 +446,25 @@
     </div>
 
     <!-- MODAL EDIT POP-UP -->
+    <!-- MODAL EDIT POP-UP -->
     <div class="modal fade" id="modalEdit" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow rounded-4">
-                <div class="modal-header border-bottom pb-3">
-                    <h5 class="modal-title fw-bold text-dark" id="modalEditTitle">
-                        <i class="bi bi-pencil-square text-warning me-2"></i>Edit Purchase Order Kejingga
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <form id="formEditModal" method="POST">
+            <div class="modal-content border-0 shadow rounded-4" style="max-height: 90vh;">
+                <form id="formEditModal" method="POST" style="display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; max-height: 90vh;">
                     @csrf
                     @method('PUT')
-                    <div class="modal-body p-3 p-md-4">
+                    <div class="modal-header border-bottom pb-3 d-flex align-items-center justify-content-between">
+                        <h5 class="modal-title fw-bold text-dark m-0" id="modalEditTitle">
+                            <i class="bi bi-pencil-square text-warning me-2"></i>Edit Purchase Order Kejingga
+                        </h5>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="submit" class="btn btn-success btn-sm fw-bold px-3">
+                                <i class="bi bi-check-circle-fill me-1"></i> Simpan
+                            </button>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                    </div>
+                    <div class="modal-body p-3 p-md-4" style="overflow-y: auto;">
                         <div class="row g-3 mb-4">
                             {{-- GUDANG --}}
                             <div class="col-12 col-md-6">
@@ -459,10 +522,10 @@
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer border-top-0 bg-light rounded-bottom-4">
+                    <div class="modal-footer border-top bg-light rounded-bottom-4 d-flex justify-content-between align-items-center">
                         <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-warning text-dark btn-sm fw-bold px-4">
-                            <i class="bi bi-check-circle me-1"></i> Perbarui Pembelian Kejingga
+                        <button type="submit" class="btn btn-success btn-sm fw-bold px-4">
+                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Perubahan PO
                         </button>
                     </div>
                 </form>
@@ -729,11 +792,40 @@
         document.getElementById('section_termin_detail').style.display = (val === 'termin') ? 'block' : 'none';
     }
 
-    function bukaModalBayarDetail(detailId, barangNama, totalHarga) {
+    function bukaModalBayarDetail(detailId, barangNama, totalHarga, hasSupplier) {
         document.getElementById('bayar_detail_barang_nama').value = barangNama;
-        document.getElementById('bayar_detail_total_harga').value = 'Rp ' + totalHarga.toLocaleString('id-ID');
+        document.getElementById('bayar_detail_total_harga').value = totalHarga > 0 ? 'Rp ' + totalHarga.toLocaleString('id-ID') : 'Rp 0 (Belum Diisi)';
         document.getElementById('formPembayaranDetail').action = `/pembelian-kejingga/detail/${detailId}/catat-pembayaran`;
+
+        const warnBox = document.getElementById('warning_harga_nol_bayar');
+        const submitBtn = document.getElementById('btn_submit_bayar');
+
+        if (totalHarga <= 0 || !hasSupplier) {
+            if (warnBox) warnBox.style.display = 'block';
+            if (submitBtn) submitBtn.disabled = true;
+        } else {
+            if (warnBox) warnBox.style.display = 'none';
+            if (submitBtn) submitBtn.disabled = false;
+        }
+
         new bootstrap.Modal(document.getElementById('modalPembayaranDetail')).show();
+    }
+
+    function bukaModalEditFromDetail(poId) {
+        const detailModalEl = document.getElementById('modalDetail');
+        const detailModalInst = bootstrap.Modal.getInstance(detailModalEl);
+        if (detailModalInst) {
+            detailModalInst.hide();
+        }
+        setTimeout(() => {
+            bukaModalEdit(poId);
+        }, 300);
+    }
+
+    function bukaModalUploadBukti(detailId, barangNama) {
+        document.getElementById('upload_detail_barang_nama').value = barangNama;
+        document.getElementById('formUploadBuktiDetail').action = `/pembelian-kejingga/detail/${detailId}/upload-bukti`;
+        new bootstrap.Modal(document.getElementById('modalUploadBuktiDetail')).show();
     }
 
     function bukaModalLunasiDetail(detailId, barangNama, sisa) {
@@ -778,7 +870,7 @@
         return `
             <div style="border-bottom:2px solid #0f172a; padding-bottom:12px; margin-bottom:15px; display:flex; justify-content:space-between;">
                 <div>
-                    <h3 style="margin:0; font-weight:bold; color:#0f172a;">CV GAHARU AGUNG SEJAHTERA</h3>
+                    <h3 style="margin:0; font-weight:bold; color:#0f172a;">KEJINGGA</h3>
                     <div style="font-size:12px; color:#475569; margin-top:4px;">Pengadaan & Logistik - Gudang KeJingga</div>
                 </div>
                 <div style="text-align:right;">
@@ -811,7 +903,7 @@
 
             <div style="display:flex; justify-content:space-between; text-align:center; font-size:11px; margin-top:30px; border-top:1px solid #e2e8f0; padding-top:10px;">
                 <div>Dibuat Oleh<br><br><br><strong>( ${item.user_nama} )</strong></div>
-                <div>Disetujui<br><br><br><strong>( Purchasing )</strong></div>
+                <div>Disetujui<br><br><br><strong>( Tim Purchasing )</strong></div>
                 <div>Gudang Penerima<br><br><br><strong>( Gudang Kejingga )</strong></div>
             </div>
         `;
@@ -869,10 +961,42 @@
 
             let bayarActionBtn = '';
             if (isSuperAdminUser) {
-                if (!d.metode_pembayaran) {
-                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-outline-primary mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalBayarDetail(${d.id}, '${addslashes(d.nama)}', ${d.harga})">+ Catat Bayar</button>`;
+                const needsHarga = d.harga <= 0;
+                const needsSupplier = !d.supplier_id;
+
+                if (needsHarga && needsSupplier) {
+                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2 fw-bold" style="font-size:10px;" onclick="bukaModalEditFromDetail(${item.id})" title="Klik untuk mengedit PO dan memasukkan harga & supplier"><i class="bi bi-pencil-square me-1"></i> Masukkan Harga & Supplier</button>`;
+                } else if (needsHarga) {
+                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2 fw-bold" style="font-size:10px;" onclick="bukaModalEditFromDetail(${item.id})" title="Klik untuk mengedit PO dan memasukkan harga"><i class="bi bi-tag-fill me-1"></i> Masukkan Harga</button>`;
+                } else if (needsSupplier) {
+                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2 fw-bold" style="font-size:10px;" onclick="bukaModalEditFromDetail(${item.id})" title="Klik untuk mengedit PO dan memilih supplier"><i class="bi bi-person-plus-fill me-1"></i> Pilih Supplier</button>`;
+                } else if (!d.metode_pembayaran) {
+                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-outline-primary mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalBayarDetail(${d.id}, '${addslashes(d.nama)}', ${d.harga}, true)">+ Catat Bayar</button>`;
                 } else if (!d.is_lunas && d.kekurangan > 0) {
                     bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalLunasiDetail(${d.id}, '${addslashes(d.nama)}', ${d.kekurangan})">Lunasi</button>`;
+                }
+            }
+
+            // Nota / Bukti Pembayaran UI
+            let notaColumn = '';
+            if (d.bukti_pembayaran_url) {
+                notaColumn = `
+                    <a href="${d.bukti_pembayaran_url}" target="_blank" class="btn btn-xs btn-outline-success py-1 px-2 text-decoration-none" style="font-size:10px;" title="Lihat Nota / Bukti Bayar">
+                        <i class="bi bi-file-earmark-check-fill me-1"></i> Lihat Nota
+                    </a>
+                `;
+                if (isSuperAdminUser) {
+                    notaColumn += `<br><button type="button" class="btn btn-xs btn-link text-muted p-0 mt-1" style="font-size:9px;" onclick="bukaModalUploadBukti(${d.id}, '${addslashes(d.nama)}')">Ganti Nota</button>`;
+                }
+            } else {
+                if (isSuperAdminUser) {
+                    notaColumn = `
+                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" style="font-size:10px;" onclick="bukaModalUploadBukti(${d.id}, '${addslashes(d.nama)}')">
+                            <i class="bi bi-upload me-1"></i> Upload Nota
+                        </button>
+                    `;
+                } else {
+                    notaColumn = `<span class="text-muted small" style="font-size:10px;">— Belum ada</span>`;
                 }
             }
 
@@ -895,30 +1019,33 @@
 
             detailsHtml += `
                 <tr>
-                    <td data-label="No" class="text-center">${idx + 1}</td>
-                    <td data-label="Nama Barang & Kode">
+                    <td class="text-center">${idx + 1}</td>
+                    <td>
                         <div class="fw-bold text-dark">${d.nama}</div>
-                        <div class="font-monospace text-muted small">${d.kode_barang}</div>
+                        <div class="font-monospace text-muted small" style="font-size:11px;">${d.kode_barang}</div>
                     </td>
-                    <td data-label="Supplier">
+                    <td>
                         <span class="badge bg-light text-dark border">${d.supplier_nama}</span>
                     </td>
-                    <td data-label="Stok Kejingga" class="text-center bg-light fw-semibold">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
-                    <td data-label="Qty Dipesan" class="text-center fw-bold">
+                    <td class="text-center bg-light fw-semibold">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
+                    <td class="text-center fw-bold">
                         ${d.qty.toLocaleString('id-ID')} ${d.satuan}
                         ${konvInfo}
                     </td>
-                    <td data-label="Harga / Satuan" class="text-end">
+                    <td class="text-end">
                         ${d.harga > 0 ? 'Rp ' + d.harga_per_qty.toLocaleString('id-ID') : '—'}
                     </td>
-                    <td data-label="Subtotal" class="text-end fw-bold">
+                    <td class="text-end fw-bold">
                         ${d.harga > 0 ? 'Rp ' + subtotal.toLocaleString('id-ID') : '—'}
                     </td>
-                    <td data-label="Pembayaran Item" class="text-center">
+                    <td class="text-center align-middle">
                         ${bayarBadge}
                         ${bayarActionBtn}
                     </td>
-                    <td data-label="Penerimaan Stok" class="text-center">
+                    <td class="text-center align-middle">
+                        ${notaColumn}
+                    </td>
+                    <td class="text-center align-middle">
                         ${terimaBadge}
                         ${terimaActionBtn}
                     </td>
@@ -930,7 +1057,7 @@
             <div id="po-modal-doc-render" class="p-2 p-md-3 bg-white">
                 <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3 flex-wrap gap-2">
                     <div>
-                        <h4 class="fw-bold text-dark mb-1">CV. GAHARU AGUNG SEJAHTERA</h4>
+                        <h4 class="fw-bold text-dark mb-1">KEJINGGA</h4>
                         <div class="text-muted small">
                             Pengadaan &amp; Logistik Operasional Kejingga<br>
                             <strong>Gudang:</strong> ${item.gudang_nama}
@@ -943,19 +1070,20 @@
                     </div>
                 </div>
 
-                <div class="table-responsive mb-3">
-                    <table class="table table-bordered align-middle mobile-responsive-table mb-0" style="font-size: 13px;">
+                <div class="table-responsive mb-3" style="overflow-x: auto;">
+                    <table class="table table-bordered align-middle mb-0" style="min-width: 1150px; font-size: 12px;">
                         <thead class="table-dark">
                             <tr>
-                                <th width="30" class="text-center">No</th>
-                                <th>Nama Barang &amp; Kode</th>
-                                <th width="160">Supplier</th>
-                                <th width="120" class="text-center">Stok Kejingga</th>
-                                <th width="130" class="text-center">Qty Dipesan</th>
-                                <th width="130" class="text-end">Harga / Satuan</th>
-                                <th width="140" class="text-end">Subtotal</th>
-                                <th width="140" class="text-center">Pembayaran</th>
-                                <th width="140" class="text-center">Penerimaan Stok</th>
+                                <th width="35" class="text-center">No</th>
+                                <th style="min-width: 160px;">Nama Barang &amp; Kode</th>
+                                <th style="min-width: 140px;">Supplier</th>
+                                <th style="min-width: 100px;" class="text-center">Stok Kejingga</th>
+                                <th style="min-width: 110px;" class="text-center">Qty Dipesan</th>
+                                <th style="min-width: 110px;" class="text-end">Harga / Satuan</th>
+                                <th style="min-width: 120px;" class="text-end">Subtotal</th>
+                                <th style="min-width: 160px;" class="text-center">Pembayaran</th>
+                                <th style="min-width: 110px;" class="text-center">Nota / Bukti</th>
+                                <th style="min-width: 125px;" class="text-center">Penerimaan Stok</th>
                             </tr>
                         </thead>
                         <tbody>

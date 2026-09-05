@@ -262,20 +262,21 @@
                                         $user = auth()->user();
                                         $isSuperAdmin = $user && $user->isSuperAdmin();
                                         $isGudangUser = $user && $user->isGudang();
-                                        $bisaHapusBelumBayar = $isSuperAdmin || $isGudangUser;
+                                        $bisaEditHapusBelumTerkunci = $isSuperAdmin || $isGudangUser;
                                     @endphp
 
                                     @if(!$item->isTerkunci())
-                                        {{-- Edit --}}
-                                        <button type="button"
-                                                class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
-                                                onclick="bukaModalEdit({{ $item->id }})"
-                                                title="Edit Pembelian">
-                                            <i class="bi bi-pencil-square"></i>
-                                        </button>
+                                        {{-- JIKA BELUM DITERIMA / DIBAYAR (User Gudang & Super Admin) --}}
+                                        @if($bisaEditHapusBelumTerkunci)
+                                            {{-- Edit --}}
+                                            <button type="button"
+                                                    class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
+                                                    onclick="bukaModalEdit({{ $item->id }})"
+                                                    title="Edit Pembelian">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </button>
 
-                                        {{-- Hapus --}}
-                                        @if($bisaHapusBelumBayar)
+                                            {{-- Hapus --}}
                                             <form action="{{ route('pembelian.destroy', $item->id) }}"
                                                   method="POST" class="d-inline"
                                                   onsubmit="return confirm('Yakin ingin menghapus transaksi pembelian {{ $item->kode_pembelian }}?')">
@@ -289,7 +290,17 @@
                                             </form>
                                         @endif
                                     @else
+                                        {{-- JIKA SUDAH DIBAYAR ATAU DITERIMA (KHUSUS SUPER ADMIN) --}}
                                         @if($isSuperAdmin)
+                                            {{-- Edit (Khusus Super Admin) --}}
+                                            <button type="button"
+                                                    class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
+                                                    onclick="bukaModalEdit({{ $item->id }})"
+                                                    title="Edit Pembelian (Khusus Super Admin)">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </button>
+
+                                            {{-- Hapus & Rollback (Khusus Super Admin) --}}
                                             <form action="{{ route('pembelian.destroy', $item->id) }}"
                                                   method="POST" class="d-inline"
                                                   onsubmit="return confirm('PERINGATAN SUPER ADMIN:\n\nTransaksi {{ $item->kode_pembelian }} sudah diterima/lunas. Menghapus transaksi ini akan ME-ROLLBACK / MENGURANGI stok gudang, menghapus batch FIFO terkait, dan menghapus jurnal akuntansi pembelian.\n\nApakah Anda yakin ingin melanjutkan penghapusan?')">

@@ -645,9 +645,18 @@ class PembelianController extends Controller
 
     public function edit(Pembelian $pembelian)
     {
-        if ($pembelian->isTerkunci()) {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
+
+        if ($pembelian->isTerkunci() && !$isSuperAdmin) {
             return redirect()->route('pembelian.index')
-                ->with('error', 'Pembelian ini tidak bisa diedit karena sudah diterima atau lunas.');
+                ->with('error', 'Pembelian yang sudah dibayar atau diterima barangnya hanya dapat diubah oleh Super Admin.');
+        }
+
+        if (!$pembelian->isTerkunci() && !$isSuperAdmin && !$isGudang) {
+            return redirect()->route('pembelian.index')
+                ->with('error', 'Hanya Super Admin atau User Gudang yang diizinkan mengedit transaksi pembelian.');
         }
 
         $pembelian->load('details');
@@ -675,9 +684,18 @@ class PembelianController extends Controller
 
     public function update(StorePembelianRequest $request, Pembelian $pembelian)
     {
-        if ($pembelian->isTerkunci()) {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
+
+        if ($pembelian->isTerkunci() && !$isSuperAdmin) {
             return redirect()->route('pembelian.index')
-                ->with('error', 'Pembelian ini tidak bisa diubah.');
+                ->with('error', 'Pembelian yang sudah dibayar atau diterima barangnya hanya dapat diubah oleh Super Admin.');
+        }
+
+        if (!$pembelian->isTerkunci() && !$isSuperAdmin && !$isGudang) {
+            return redirect()->route('pembelian.index')
+                ->with('error', 'Hanya Super Admin atau User Gudang yang diizinkan mengedit transaksi pembelian.');
         }
 
         $data = $request->validated();
@@ -685,8 +703,9 @@ class PembelianController extends Controller
         DB::transaction(function () use ($data, $pembelian, $request) {
 
             $pembelian->load('details');
+            $existingDetails = $pembelian->details->keyBy('barang_id');
 
-            // Hapus detail lama (belum ada stok karena belum diterima)
+            // Hapus detail lama
             $pembelian->details()->delete();
 
             $taxService = 0;
@@ -710,17 +729,30 @@ class PembelianController extends Controller
                     ? (float) $item['harga'] / (float) $item['qty']
                     : 0;
 
+                $oldDet = $existingDetails->get($item['barang_id']);
+
                 $detail = $pembelian->details()->create([
-                    'barang_id'     => $item['barang_id'],
-                    'qty'           => $item['qty'],
-                    'harga'         => $item['harga'],
-                    'harga_per_qty' => $hargaPerQty,
-                    'batch_number'  => 'TEMP',
+                    'barang_id'          => $item['barang_id'],
+                    'qty'                => $item['qty'],
+                    'qty_diterima'       => $oldDet ? $oldDet->qty_diterima : 0,
+                    'harga'              => $item['harga'],
+                    'harga_per_qty'      => $hargaPerQty,
+                    'batch_number'       => $oldDet ? $oldDet->batch_number : 'TEMP',
+                    'metode_pembayaran'  => $oldDet ? $oldDet->metode_pembayaran : null,
+                    'persen_dp'          => $oldDet ? $oldDet->persen_dp : null,
+                    'nominal_dp'         => $oldDet ? $oldDet->nominal_dp : null,
+                    'tanggal_jatuh_tempo'=> $oldDet ? $oldDet->tanggal_jatuh_tempo : null,
+                    'tanggal_pelunasan'  => $oldDet ? $oldDet->tanggal_pelunasan : null,
+                    'catatan_pembayaran' => $oldDet ? $oldDet->catatan_pembayaran : null,
+                    'is_lunas'           => $oldDet ? $oldDet->is_lunas : false,
+                    'lunas_at'           => $oldDet ? $oldDet->lunas_at : null,
                 ]);
 
-                $detail->update([
-                    'batch_number' => date('Ymd') . '-PB' . $detail->id,
-                ]);
+                if (!$oldDet || $oldDet->batch_number === 'TEMP') {
+                    $detail->update([
+                        'batch_number' => date('Ymd') . '-PB' . $detail->id,
+                    ]);
+                }
             }
         });
 
