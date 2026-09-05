@@ -18,13 +18,6 @@
         </div>
 
         <div class="d-flex align-items-center gap-2">
-            <form action="{{ route('pengeluaran-bahan-baku.index') }}" method="GET" class="d-flex gap-2">
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari no pengeluaran..." value="{{ request('search') }}" style="width: 200px; border-radius: 6px;">
-                <button type="submit" class="btn btn-sm btn-primary" style="border-radius: 6px;">Cari</button>
-                @if(request('search'))
-                    <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px;">Reset</a>
-                @endif
-            </form>
             <a href="{{ route('dashboard') }}"
                class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i>
@@ -43,6 +36,58 @@
         </div>
 
     </div>
+
+    <!-- FILTER BAR -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body py-3">
+            <form action="{{ route('pengeluaran-bahan-baku.index') }}" method="GET">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold small mb-1">Cari Kode / Keterangan</label>
+                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari no pengeluaran..." value="{{ request('search') }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-semibold small mb-1">Urutan Permintaan</label>
+                        <select name="sort" class="form-select form-select-sm">
+                            <option value="terbaru" {{ request('sort', 'terbaru') === 'terbaru' ? 'selected' : '' }}>Terbaru</option>
+                            <option value="terlama" {{ request('sort') === 'terlama' ? 'selected' : '' }}>Terlama</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-semibold small mb-1">Filter Divisi</label>
+                        <select name="divisi_id" class="form-select form-select-sm">
+                            <option value="">-- Semua Divisi --</option>
+                            @foreach($divisiList as $div)
+                                <option value="{{ $div->id }}" {{ request('divisi_id') == $div->id ? 'selected' : '' }}>
+                                    {{ $div->nama }}{{ $div->gudang ? ' ('.$div->gudang->nama.')' : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-semibold small mb-1">Dari Tanggal</label>
+                        <input type="date" name="dari" class="form-control form-control-sm" value="{{ request('dari') }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-semibold small mb-1">Sampai Tanggal</label>
+                        <input type="date" name="sampai" class="form-control form-control-sm" value="{{ request('sampai') }}">
+                    </div>
+                    <div class="col-md-1 d-flex gap-1">
+                        <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Terapkan Filter">
+                            <i class="bi bi-funnel-fill"></i> Filter
+                        </button>
+                        @if(request('search') || (request('sort') && request('sort') !== 'terbaru') || request('divisi_id') || request('dari') || request('sampai'))
+                            <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="btn btn-sm btn-secondary" title="Reset Filter">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </a>
+                        @endif
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- STATISTIK -->
 
     <!-- STATISTIK -->
     <div class="row mb-4">
@@ -188,7 +233,7 @@
                         <tr>
 
                             <td>
-                                {{ $loop->iteration }}
+                                {{ $data->firstItem() + $loop->index }}
                             </td>
 
                             <td class="fw-semibold">

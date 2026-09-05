@@ -51,6 +51,11 @@ class PengeluaranBahanBakuController extends Controller
     {
         $search = $request->query('search');
         $jenisFilter = $request->query('jenis');
+        $divisiId = $request->query('divisi_id');
+        $sort = $request->query('sort', 'terbaru');
+        $dari = $request->query('dari');
+        $sampai = $request->query('sampai');
+
         $query = DB::table('pengeluaran_bahan_baku')
                     ->join(
                         'master_gudang',
@@ -72,15 +77,34 @@ class PengeluaranBahanBakuController extends Controller
 
         if ($search) {
             $query->where(function($q) use ($search) {
-                $q->where('kode_pengeluaran', 'like', '%' . $search . '%')
-                  ->orWhere('keterangan', 'like', '%' . $search . '%');
+                $q->where('pengeluaran_bahan_baku.kode_pengeluaran', 'like', '%' . $search . '%')
+                  ->orWhere('pengeluaran_bahan_baku.keterangan', 'like', '%' . $search . '%');
             });
         }
         if ($jenisFilter) {
-            $query->where('jenis_pengeluaran', $jenisFilter);
+            $query->where('pengeluaran_bahan_baku.jenis_pengeluaran', $jenisFilter);
+        }
+        if ($divisiId) {
+            $query->where('pengeluaran_bahan_baku.divisi_id', $divisiId);
+        }
+        if ($dari) {
+            $query->whereDate('pengeluaran_bahan_baku.tanggal', '>=', $dari);
+        }
+        if ($sampai) {
+            $query->whereDate('pengeluaran_bahan_baku.tanggal', '<=', $sampai);
         }
 
-        $data = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
+        if ($sort === 'terlama') {
+            $query->orderBy('pengeluaran_bahan_baku.tanggal', 'asc')
+                  ->orderBy('pengeluaran_bahan_baku.id', 'asc');
+        } else {
+            $query->orderBy('pengeluaran_bahan_baku.tanggal', 'desc')
+                  ->orderBy('pengeluaran_bahan_baku.id', 'desc');
+        }
+
+        $data = $query->paginate(10)->withQueryString();
+
+        $divisiList = \App\Models\GudangDivisi::with('gudang')->orderBy('nama', 'asc')->get();
 
         // Hitung ringkasan saran restock per outlet/gudang cabang (selain Gudang Utama ID 1)
         $outletGudangs = MasterGudang::where('id', '!=', 1)->get();
@@ -132,7 +156,7 @@ class PengeluaranBahanBakuController extends Controller
 
         return view(
             'pengeluaran-bahan-baku.index',
-            compact('data', 'outletSuggestionsSummary')
+            compact('data', 'outletSuggestionsSummary', 'divisiList')
         );
     }
 
