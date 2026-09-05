@@ -579,8 +579,10 @@
     {{-- ══════════════════ MODAL: EDIT PEMBELIAN (MINIMALIST POP UP) ══════════════════ --}}
     <div class="modal fade" id="modalEditPembelian" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content rounded-4 border-0 shadow">
-                <div class="modal-header bg-light py-3 border-bottom">
+            <form id="formEditPembelian" method="POST" action="" class="modal-content rounded-4 border-0 shadow">
+                @csrf
+                @method('PUT')
+                <div class="modal-header bg-light py-3 border-bottom d-flex align-items-center justify-content-between">
                     <div class="d-flex align-items-center gap-2">
                         <div class="rounded-circle bg-warning bg-opacity-10 text-warning d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
                             <i class="bi bi-pencil-square fs-5 text-dark"></i>
@@ -590,87 +592,88 @@
                             <small class="text-muted">Perbarui informasi supplier, tanggal, atau rincian item barang</small>
                         </div>
                     </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="submit" class="btn btn-sm btn-success fw-bold px-3 shadow-sm">
+                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Perubahan
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
                 </div>
-                <form id="formEditPembelian" method="POST" action="">
-                    @csrf
-                    @method('PUT')
-                    <div class="modal-body p-4">
-                        <div class="row g-3 mb-3">
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-semibold text-dark small">Supplier <span class="text-danger">*</span></label>
-                                <select name="supplier_id" id="edit_supplier_id" class="form-select form-select-sm" required>
-                                    <option value="">-- Pilih Supplier --</option>
-                                    @foreach($suppliers as $supplier)
-                                        <option value="{{ $supplier->id }}">{{ $supplier->nama }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-semibold text-dark small">Gudang Tujuan <span class="text-danger">*</span></label>
-                                <select name="gudang_id" id="edit_gudang_id" class="form-select form-select-sm" required>
-                                    <option value="">-- Pilih Gudang --</option>
-                                    @foreach($gudangs as $gudang)
-                                        <option value="{{ $gudang->id }}">{{ $gudang->nama }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-semibold text-dark small">Tanggal Transaksi <span class="text-danger">*</span></label>
-                                <input type="date" name="tanggal" id="edit_tanggal" class="form-control form-control-sm" required>
-                            </div>
+                <div class="modal-body p-4">
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label fw-semibold text-dark small">Supplier <span class="text-danger">*</span></label>
+                            <select name="supplier_id" id="edit_supplier_id" class="form-select form-select-sm" required>
+                                <option value="">-- Pilih Supplier --</option>
+                                @foreach($suppliers as $supplier)
+                                    <option value="{{ $supplier->id }}">{{ $supplier->nama }}</option>
+                                @endforeach
+                            </select>
                         </div>
-
-                        <div class="d-flex justify-content-between align-items-center mb-2 pt-2 border-top">
-                            <h6 class="fw-bold mb-0 text-dark small"><i class="bi bi-boxes me-1 text-primary"></i> Daftar Barang Pembelian</h6>
-                            <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item-modal">
-                                <i class="bi bi-plus-circle me-1"></i> Tambah Baris Barang
-                            </button>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label fw-semibold text-dark small">Gudang Tujuan <span class="text-danger">*</span></label>
+                            <select name="gudang_id" id="edit_gudang_id" class="form-select form-select-sm" required>
+                                <option value="">-- Pilih Gudang --</option>
+                                @foreach($gudangs as $gudang)
+                                    <option value="{{ $gudang->id }}">{{ $gudang->nama }}</option>
+                                @endforeach
+                            </select>
                         </div>
-
-                        <div class="table-responsive border rounded-3 mb-3" style="max-height: 380px; overflow-y: auto;">
-                            <table class="table table-hover align-middle mb-0 text-center" id="table-items-modal" style="font-size: 13px;">
-                                <thead class="table-light sticky-top" style="z-index: 2;">
-                                    <tr>
-                                        <th class="text-start" style="min-width: 250px;">Barang <span class="text-danger">*</span></th>
-                                        <th style="width: 170px;">Qty <span class="text-danger">*</span></th>
-                                        <th style="width: 170px;">Harga Total Item (Rp) <span class="text-danger">*</span></th>
-                                        <th style="width: 160px;">Nomor Batch</th>
-                                        <th style="width: 50px;">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbodyEditItems">
-                                    {{-- Diisi via JS --}}
-                                </tbody>
-                            </table>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label fw-semibold text-dark small">Tanggal Transaksi <span class="text-danger">*</span></label>
+                            <input type="date" name="tanggal" id="edit_tanggal" class="form-control form-control-sm" required>
                         </div>
+                    </div>
 
-                        <div class="row justify-content-end">
-                            <div class="col-12 col-md-5">
-                                <div class="card border-0 rounded-3 p-3 bg-light">
-                                    <div class="mb-2">
-                                        <label class="form-label fw-semibold text-secondary small mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
-                                        <div class="input-group input-group-sm">
-                                            <span class="input-group-text bg-white fw-semibold text-muted">Rp</span>
-                                            <input type="text" name="tax_service" id="edit_tax_service" class="form-control mask-number fw-bold text-end bg-white" placeholder="0">
-                                        </div>
+                    <div class="d-flex justify-content-between align-items-center mb-2 pt-2 border-top">
+                        <h6 class="fw-bold mb-0 text-dark small"><i class="bi bi-boxes me-1 text-primary"></i> Daftar Barang Pembelian</h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-add-item-modal">
+                            <i class="bi bi-plus-circle me-1"></i> Tambah Baris Barang
+                        </button>
+                    </div>
+
+                    <div class="table-responsive border rounded-3 mb-3" style="max-height: 380px; overflow-y: auto;">
+                        <table class="table table-hover align-middle mb-0 text-center" id="table-items-modal" style="font-size: 13px;">
+                            <thead class="table-light sticky-top" style="z-index: 2;">
+                                <tr>
+                                    <th class="text-start" style="min-width: 250px;">Barang <span class="text-danger">*</span></th>
+                                    <th style="width: 170px;">Qty <span class="text-danger">*</span></th>
+                                    <th style="width: 170px;">Harga Total Item (Rp) <span class="text-danger">*</span></th>
+                                    <th style="width: 160px;">Nomor Batch</th>
+                                    <th style="width: 50px;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyEditItems">
+                                {{-- Diisi via JS --}}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="row justify-content-end">
+                        <div class="col-12 col-md-5">
+                            <div class="card border-0 rounded-3 p-3 bg-light">
+                                <div class="mb-2">
+                                    <label class="form-label fw-semibold text-secondary small mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-white fw-semibold text-muted">Rp</span>
+                                        <input type="text" name="tax_service" id="edit_tax_service" class="form-control mask-number fw-bold text-end bg-white" placeholder="0">
                                     </div>
-                                    <div class="d-flex justify-content-between align-items-center pt-2 border-top">
-                                        <span class="fw-bold text-dark small">Grand Total Estimasi:</span>
-                                        <span class="fw-bold text-success fs-6" id="edit_grand_total">Rp 0</span>
-                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                                    <span class="fw-bold text-dark small">Grand Total Estimasi:</span>
+                                    <span class="fw-bold text-success fs-6" id="edit_grand_total">Rp 0</span>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer bg-light py-2 border-top">
-                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-sm btn-primary px-3">
-                            <i class="bi bi-save me-1"></i> Simpan Perubahan
-                        </button>
-                    </div>
-                </form>
-            </div>
+                </div>
+                <div class="modal-footer bg-light py-2 border-top">
+                    <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-sm btn-success px-4 fw-bold shadow-sm">
+                        <i class="bi bi-check-circle-fill me-1"></i> Simpan Perubahan
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

@@ -74,7 +74,7 @@
                                     <th>KODE ORDER</th>
                                     <th>OUTLET PEMESAN</th>
                                     <th>ESTIMASI KIRIM</th>
-                                    <th>DAFTAR ITEM & TARGET QTY</th>
+                                    <th class="text-center">TOTAL ITEM</th>
                                     <th class="text-center" style="width: 220px;">AKSI</th>
                                 </tr>
                             </thead>
@@ -85,19 +85,10 @@
                                         <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
                                         <td><span class="badge bg-light text-dark border">{{ $p->customer->nama ?? '-' }}</span></td>
                                         <td>{{ date('d M Y', strtotime($p->estimasi_kirim)) }}</td>
-                                        <td>
-                                            <ul class="list-unstyled mb-0 small">
-                                                @foreach($p->details as $d)
-                                                    <li>
-                                                        <i class="bi bi-dot"></i> {{ $d->produk->nama ?? '-' }} : 
-                                                        <strong>{{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? '' }}</strong>
-                                                        <span class="text-muted small d-block ms-3" style="font-size: 10px;">
-                                                            (Stok Gudang: {{ number_format($d->stok_tersedia ?? 0, 0, ',', '.') }} | 
-                                                            Kekurangan: <span class="{{ ($d->qty_kurang ?? 0) > 0 ? 'text-danger fw-bold' : 'text-success' }}">{{ number_format($d->qty_kurang ?? 0, 0, ',', '.') }}</span>)
-                                                        </span>
-                                                    </li>
-                                                @endforeach
-                                            </ul>
+                                        <td class="text-center">
+                                            <span class="badge bg-secondary-subtle text-dark border px-3 py-2 fw-bold" style="font-size: 12px;">
+                                                <i class="bi bi-boxes me-1 text-primary"></i> {{ $p->details->count() }} Item Pesanan
+                                            </span>
                                         </td>
                                         <td class="text-center">
                                             @php
@@ -134,10 +125,10 @@
 
                                             {{-- MODAL DETAIL ORDER PENDING --}}
                                             <div class="modal fade text-start" id="modalOrder{{ $p->id }}" tabindex="-1" aria-hidden="true">
-                                                <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-dialog modal-lg modal-dialog-centered">
                                                     <div class="modal-content border-0 shadow-lg rounded-4">
-                                                        <div class="modal-header bg-dark text-white">
-                                                            <h6 class="modal-title fw-bold"><i class="bi bi-receipt me-2"></i> Detail Pesanan CK: {{ $p->kode_pesanan }}</h6>
+                                                        <div class="modal-header bg-dark text-white py-3">
+                                                            <h6 class="modal-title fw-bold mb-0"><i class="bi bi-receipt me-2"></i> Detail Pesanan CK: {{ $p->kode_pesanan }}</h6>
                                                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body p-4">
@@ -148,22 +139,52 @@
                                                                     <div class="col-12"><strong>Status:</strong> <span class="badge bg-warning text-dark">{{ ucfirst($p->status_pesanan) }}</span></div>
                                                                 </div>
                                                             </div>
-                                                            <h6 class="fw-bold mb-2 small text-uppercase text-secondary">Daftar Produk Pesanan</h6>
-                                                            <div class="table-responsive">
-                                                                <table class="table table-sm table-bordered align-middle text-center mb-0">
-                                                                    <thead class="bg-light font-weight-bold">
+                                                            <h6 class="fw-bold mb-2 small text-uppercase text-secondary"><i class="bi bi-boxes me-1 text-primary"></i> Rincian Barang / Item Pesanan</h6>
+                                                            <div class="table-responsive border rounded-3">
+                                                                <table class="table table-sm table-hover align-middle text-center mb-0" style="font-size: 13px;">
+                                                                    <thead class="table-light font-weight-bold">
                                                                         <tr>
                                                                             <th class="text-start">Nama Produk</th>
-                                                                            <th width="100">Qty Pesanan</th>
-                                                                            <th width="70">Satuan</th>
+                                                                            <th width="120" class="text-end">Qty (Gram / Dasar)</th>
+                                                                            <th width="190" class="text-center">Konversi (Per Resep)</th>
+                                                                            <th width="120" class="text-end">Stok Gudang</th>
+                                                                            <th width="120" class="text-center">Kekurangan</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody>
                                                                         @foreach($p->details as $d)
+                                                                            @php
+                                                                                $outQty = floatval($d->produk->resepBtklBop->output_qty ?? 0);
+                                                                                $outSatuan = $d->produk->resepBtklBop->satuan_output ?? ($d->produk->satuan ?? 'GR');
+                                                                                $resepCount = $outQty > 0 ? ($d->qty / $outQty) : 0;
+                                                                                $resepFmt = (fmod($resepCount, 1) == 0) ? number_format($resepCount, 0, ',', '.') : number_format($resepCount, 2, ',', '.');
+                                                                            @endphp
                                                                             <tr>
-                                                                                <td class="text-start fw-bold">{{ $d->produk->nama ?? 'N/A' }}</td>
-                                                                                <td class="fw-bold text-success">{{ number_format($d->qty, 0, ',', '.') }}</td>
-                                                                                <td>{{ $d->produk->satuan ?? 'pcs' }}</td>
+                                                                                <td class="text-start fw-bold text-dark">{{ $d->produk->nama ?? 'N/A' }}</td>
+                                                                                <td class="text-end fw-bold text-dark">
+                                                                                    {{ (fmod($d->qty, 1) == 0) ? number_format($d->qty, 0, ',', '.') : number_format($d->qty, 2, ',', '.') }} {{ $d->produk->satuan ?? 'GR' }}
+                                                                                </td>
+                                                                                <td class="text-center">
+                                                                                    @if($outQty > 0)
+                                                                                        <span class="badge bg-warning-subtle text-dark border px-2 py-1">
+                                                                                            <i class="bi bi-journal-bookmark me-1"></i>{{ $resepFmt }} Resep (@ {{ number_format($outQty, 0, ',', '.') }} {{ $outSatuan }})
+                                                                                        </span>
+                                                                                    @else
+                                                                                        <span class="text-muted small">Standard (Non-Resep)</span>
+                                                                                    @endif
+                                                                                </td>
+                                                                                <td class="text-end text-muted">
+                                                                                    {{ (fmod($d->stok_tersedia ?? 0, 1) == 0) ? number_format($d->stok_tersedia ?? 0, 0, ',', '.') : number_format($d->stok_tersedia ?? 0, 2, ',', '.') }} {{ $d->produk->satuan ?? 'GR' }}
+                                                                                </td>
+                                                                                <td class="text-center">
+                                                                                    @if(($d->qty_kurang ?? 0) > 0)
+                                                                                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold">
+                                                                                            {{ (fmod($d->qty_kurang, 1) == 0) ? number_format($d->qty_kurang, 0, ',', '.') : number_format($d->qty_kurang, 2, ',', '.') }} {{ $d->produk->satuan ?? 'GR' }}
+                                                                                        </span>
+                                                                                    @else
+                                                                                        <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check-lg me-1"></i>Stok Cukup</span>
+                                                                                    @endif
+                                                                                </td>
                                                                             </tr>
                                                                         @endforeach
                                                                     </tbody>

@@ -1,8 +1,11 @@
 <x-app-layout>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
+        .ts-dropdown { z-index: 99999 !important; }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
 
         .table-custom-header th {
@@ -225,7 +228,7 @@
 
                                     {{-- MODAL DETAIL PESANAN CK --}}
                                     <div class="modal fade text-start" id="modalDetailCkOrder{{ $p->id }}" tabindex="-1" aria-hidden="true">
-                                        <div class="modal-dialog modal-lg modal-dialog-centered">
+                                        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
                                             <div class="modal-content border-0 shadow-lg rounded-4">
                                                 <div class="modal-header bg-dark text-white">
                                                     <h5 class="modal-title fw-bold">
@@ -233,67 +236,122 @@
                                                     </h5>
                                                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                 </div>
-                                                <div class="modal-body p-4">
-                                                    <div class="p-3 mb-3 bg-light rounded-3 border-start border-4 border-primary">
-                                                        <div class="row g-2 small">
-                                                            <div class="col-md-3">
-                                                                <span class="text-muted d-block">Outlet Pemesan:</span>
+                                                <div class="modal-body p-3 p-md-4">
+                                                    <div id="po-doc-container-{{ $p->id }}" class="p-3 p-md-4 bg-white rounded-3 border">
+                                                        <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3 flex-wrap gap-2">
+                                                            <div>
+                                                                <h4 class="fw-bold text-dark mb-1">PURCHASE ORDER CENTRAL KITCHEN</h4>
+                                                                <h6 class="fw-bold text-primary mb-1">CENTRAL KITCHEN CV GAHARU AGUNG SEJAHTERA</h6>
+                                                                <div class="text-muted small">
+                                                                    Pengadaan &amp; Distribusi Bahan Setengah Jadi<br>
+                                                                    <strong>Divisi CK:</strong> {{ $p->divisi->nama ?? 'Gudang Central Kitchen' }}
+                                                                </div>
+                                                            </div>
+                                                            <div class="text-end">
+                                                                <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER</span>
+                                                                <div class="font-monospace fw-bold text-dark fs-5">#{{ $p->kode_pesanan }}</div>
+                                                                <div class="text-muted small">Tanggal: <strong>{{ date('d M Y', strtotime($p->tanggal)) }}</strong></div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="row g-2 mb-3 p-3 bg-light rounded-3 border">
+                                                            <div class="col-6 col-md-3">
+                                                                <span class="text-muted small d-block">Outlet Pemesan:</span>
                                                                 <strong class="text-dark">{{ $p->customer->nama ?? '-' }}</strong>
                                                             </div>
-                                                            <div class="col-md-3">
-                                                                <span class="text-muted d-block">Divisi CK:</span>
-                                                                <strong class="text-dark">
-                                                                    {{ $p->divisi->nama ?? '-' }}
-                                                                </strong>
-                                                            </div>
-                                                            <div class="col-md-3">
-                                                                <span class="text-muted d-block">Tanggal Order:</span>
+                                                            <div class="col-6 col-md-3">
+                                                                <span class="text-muted small d-block">Tanggal Order:</span>
                                                                 <strong class="text-dark">{{ date('d M Y', strtotime($p->tanggal)) }}</strong>
                                                             </div>
-                                                            <div class="col-md-3">
-                                                                <span class="text-muted d-block">Estimasi Kirim:</span>
+                                                            <div class="col-6 col-md-3">
+                                                                <span class="text-muted small d-block">Estimasi Kirim:</span>
                                                                 <strong class="text-dark">{{ date('d M Y', strtotime($p->estimasi_kirim)) }}</strong>
                                                             </div>
-                                                            <div class="col-md-3">
-                                                                <span class="text-muted d-block">Status Pesanan:</span>
+                                                            <div class="col-6 col-md-3">
+                                                                <span class="text-muted small d-block">Status Pesanan:</span>
                                                                 <span class="badge-subtle {{ $statusClass }}">
                                                                     {{ ucfirst($p->status_pesanan) }}
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                    </div>
 
-                                                    <h6 class="fw-bold text-dark mb-2 small text-uppercase">Daftar Produk Pesanan</h6>
-                                                    <div class="table-responsive mb-3">
-                                                        <table class="table table-bordered align-middle text-center mb-0">
-                                                            <thead class="bg-light font-weight-bold">
-                                                                <tr>
-                                                                    <th style="width: 5%;">No</th>
-                                                                    <th class="text-start">Nama Produk</th>
-                                                                    <th style="width: 20%;">Qty Pesanan</th>
-                                                                    <th style="width: 15%;">Satuan</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                @foreach($p->details as $idx => $d)
+                                                        <h6 class="fw-bold text-dark mb-2 small text-uppercase">Daftar Bahan Setengah Jadi / Barang</h6>
+                                                        <div class="table-responsive mb-3">
+                                                            <table class="table table-bordered align-middle text-center mb-0" style="font-size: 12px;">
+                                                                <thead class="table-dark">
                                                                     <tr>
-                                                                        <td>{{ $idx + 1 }}</td>
-                                                                        <td class="text-start fw-bold text-dark">
-                                                                            {{ $d->produk->nama ?? 'N/A' }}
-                                                                            <div class="text-muted small">{{ $d->produk->kode_barang ?? '' }}</div>
-                                                                        </td>
-                                                                        <td class="fw-bold text-success">{{ number_format($d->qty, 0, ',', '.') }}</td>
-                                                                        <td><span class="badge bg-light text-dark border">{{ $d->produk->satuan ?? 'pcs' }}</span></td>
+                                                                        <th style="width: 40px;">No</th>
+                                                                        <th style="width: 110px;">Kode Item</th>
+                                                                        <th class="text-start">Nama Bahan Setengah Jadi</th>
+                                                                        <th style="width: 200px;">Konversi Resep / Batch</th>
+                                                                        <th style="width: 140px;" class="text-end">Total Target Qty</th>
                                                                     </tr>
-                                                                @endforeach
-                                                            </tbody>
-                                                        </table>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach($p->details as $idx => $d)
+                                                                        @php
+                                                                            $resepObj = $d->produk->resepBtklBop ?? null;
+                                                                            $outQty = floatval($resepObj->output_qty ?? 0);
+                                                                            $outSatuan = $resepObj->satuan_output ?? ($d->produk->satuan ?? '');
+                                                                            $resepText = '-';
+                                                                            if ($outQty > 0) {
+                                                                                $resepCount = $d->qty / $outQty;
+                                                                                $resepCountFmt = (fmod($resepCount, 1) == 0) ? number_format($resepCount, 0) : number_format($resepCount, 2, ',', '.');
+                                                                                $resepText = $resepCountFmt . ' Resep (@ ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan . ')';
+                                                                            }
+                                                                        @endphp
+                                                                        <tr>
+                                                                            <td>{{ $idx + 1 }}</td>
+                                                                            <td class="font-monospace fw-bold">{{ $d->produk->kode_barang ?? '-' }}</td>
+                                                                            <td class="text-start fw-bold text-dark">
+                                                                                {{ $d->produk->nama ?? 'N/A' }}
+                                                                            </td>
+                                                                            <td>
+                                                                                @if($outQty > 0)
+                                                                                    <span class="badge bg-warning-subtle text-dark border px-2 py-1">
+                                                                                        <i class="bi bi-journal-bookmark me-1"></i>{{ $resepText }}
+                                                                                    </span>
+                                                                                @else
+                                                                                    <span class="text-muted small">Standard (Non-Resep)</span>
+                                                                                @endif
+                                                                            </td>
+                                                                            <td class="text-end fw-bold text-dark">
+                                                                                {{ (fmod($d->qty, 1) == 0) ? number_format($d->qty, 0, ',', '.') : number_format($d->qty, 2, ',', '.') }} {{ $d->produk->satuan ?? '-' }}
+                                                                            </td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+
+                                                        <div class="row text-center mt-4 pt-3 border-top" style="font-size: 11px;">
+                                                            <div class="col-4">
+                                                                <div class="text-muted">Pemesan (Outlet):</div>
+                                                                <div style="height: 35px;"></div>
+                                                                <div class="fw-bold text-dark">({{ $p->customer->nama ?? 'Kepala Outlet' }})</div>
+                                                            </div>
+                                                            <div class="col-4">
+                                                                <div class="text-muted">Central Kitchen:</div>
+                                                                <div style="height: 35px;"></div>
+                                                                <div class="fw-bold text-dark">( Dapur Pusat CV Gaharu )</div>
+                                                            </div>
+                                                            <div class="col-4">
+                                                                <div class="text-muted">Gudang &amp; Logistik:</div>
+                                                                <div style="height: 35px;"></div>
+                                                                <div class="fw-bold text-dark">( Tim Warehouse CK )</div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer bg-light py-2 justify-content-between">
-                                                    <a href="{{ route('ck-orders.cetak-pdf', $p->id) }}" target="_blank" class="btn btn-outline-danger btn-sm px-3">
-                                                        <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
-                                                    </a>
+                                                    <div class="d-flex gap-2">
+                                                        <button type="button" class="btn btn-success btn-sm px-3 fw-bold" onclick="downloadCkOrderJpg({{ $p->id }}, '{{ $p->kode_pesanan }}')">
+                                                            <i class="bi bi-file-image me-1"></i> Download JPG
+                                                        </button>
+                                                        <a href="{{ route('ck-orders.cetak-pdf', $p->id) }}" target="_blank" class="btn btn-outline-danger btn-sm px-3 fw-bold">
+                                                            <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
+                                                        </a>
+                                                    </div>
                                                     <button type="button" class="btn btn-secondary btn-sm px-4" data-bs-dismiss="modal">Tutup</button>
                                                 </div>
                                             </div>
@@ -388,29 +446,48 @@
                             <table class="table table-bordered align-middle text-center mb-0" id="modal-table-items">
                                 <thead class="bg-light font-weight-bold">
                                     <tr>
-                                        <th class="text-start">Nama Barang / Produk</th>
-                                        <th style="width: 150px;">Qty Target</th>
-                                        <th style="width: 110px;">Satuan</th>
-                                        <th style="width: 50px;">Aksi</th>
+                                        <th class="text-start" style="width: 32%;">Nama Bahan</th>
+                                        <th style="width: 15%;">Qty</th>
+                                        <th style="width: 20%;">Satuan</th>
+                                        <th style="width: 28%;">Total Qty (Konversi)</th>
+                                        <th style="width: 5%;">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="modal-item-rows">
                                     <tr>
-                                        <td>
+                                        <td class="text-start">
                                             <select name="produk_id[]" class="form-select form-select-sm modal-select-produk" required>
-                                                <option value="">-- Pilih Barang / Item --</option>
+                                                <option value="">-- Cari / Pilih Barang BSJ --</option>
                                                 @foreach($produk as $item)
-                                                    <option value="{{ $item->id }}" data-satuan="{{ $item->satuan }}">
+                                                    @php
+                                                        $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
+                                                        $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+                                                    @endphp
+                                                    <option value="{{ $item->id }}" 
+                                                            data-satuan="{{ $item->satuan }}"
+                                                            data-output-qty="{{ $outQty }}"
+                                                            data-satuan-output="{{ $outSatuan }}">
                                                         {{ $item->kode_barang }} - {{ $item->nama }}
+                                                        @if($outQty > 0)
+                                                            (1 Resep = {{ number_format($outQty, 0, ',', '.') }} {{ $outSatuan }})
+                                                        @endif
                                                     </option>
                                                 @endforeach
                                             </select>
                                         </td>
                                         <td>
-                                            <input type="number" step="any" min="0.01" name="qty[]" class="form-control form-control-sm text-end modal-input-qty" placeholder="0" required>
+                                            <input type="number" step="any" min="0.01" name="qty[]" class="form-control form-control-sm text-end modal-input-qty fw-bold" placeholder="0" required>
                                         </td>
                                         <td>
-                                            <input type="text" class="form-control form-control-sm modal-input-satuan bg-light text-center" readonly value="-">
+                                            <select name="order_mode[]" class="form-select form-select-sm modal-select-mode text-center fw-bold">
+                                                <option value="resep">Resep</option>
+                                                <option value="satuan">Satuan</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <div class="modal-konversi-info small text-start p-1 px-2 bg-light rounded border">
+                                                <span class="text-muted">-</span>
+                                            </div>
                                         </td>
                                         <td>
                                             <button type="button" class="btn btn-sm btn-outline-danger modal-btn-remove-row" disabled>
@@ -434,6 +511,17 @@
     </div>
 
     <script>
+        function downloadCkOrderJpg(id, kode) {
+            const el = document.getElementById('po-doc-container-' + id);
+            if (!el) return;
+            html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'PO-CentralKitchen-' + kode + '.jpg';
+                link.href = canvas.toDataURL('image/jpeg', 0.95);
+                link.click();
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const tableBody = document.getElementById('modal-item-rows');
             const btnAdd = document.getElementById('modal-btn-add-item');
@@ -445,20 +533,115 @@
 
             let currentSuggestions = [];
 
-            // Update satuan saat produk dipilih
-            function updateSatuan(selectEl) {
-                const selected = selectEl.options[selectEl.selectedIndex];
-                const satuan = selected ? selected.getAttribute('data-satuan') : '-';
-                const row = selectEl.closest('tr');
-                row.querySelector('.modal-input-satuan').value = satuan || '-';
+            // TomSelect instances map
+            const tomSelectInstances = new Map();
+
+            function initTomSelectOnSelect(selectEl) {
+                if (!selectEl) return null;
+                if (tomSelectInstances.has(selectEl)) {
+                    return tomSelectInstances.get(selectEl);
+                }
+                if (typeof TomSelect === 'undefined') return null;
+
+                // Clean up TomSelect attributes if cloned from an existing row
+                delete selectEl.tomselect;
+                selectEl.classList.remove('tomselected', 'ts-hidden-accessible');
+                selectEl.removeAttribute('id');
+                selectEl.removeAttribute('tabindex');
+                selectEl.removeAttribute('aria-hidden');
+                selectEl.style.display = '';
+
+                const ts = new TomSelect(selectEl, {
+                    create: false,
+                    placeholder: '-- Cari / Pilih Barang BSJ --',
+                    allowEmptyOption: true,
+                    dropdownParent: 'body',
+                    onChange: function() {
+                        const row = selectEl.closest('tr');
+                        updateModeOptions(row);
+                        updateKonversi(row);
+                    }
+                });
+                tomSelectInstances.set(selectEl, ts);
+                return ts;
             }
 
-            // Delegasi Event untuk Hapus Baris & Update Satuan
+            function updateModeOptions(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.modal-select-produk');
+                const modeEl = row.querySelector('.modal-select-mode');
+                if (!selectEl || !modeEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
+                const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+
+                const currentVal = modeEl.value;
+                modeEl.innerHTML = '';
+
+                if (outputQty > 0) {
+                    const optResep = new Option('Resep', 'resep');
+                    modeEl.add(optResep);
+                }
+
+                const optSatuan = new Option(satuanUtama.toUpperCase(), 'satuan');
+                modeEl.add(optSatuan);
+
+                if (currentVal === 'resep' && outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else {
+                    modeEl.value = 'satuan';
+                }
+            }
+
+            function updateKonversi(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.modal-select-produk');
+                const modeEl = row.querySelector('.modal-select-mode');
+                const qtyEl = row.querySelector('.modal-input-qty');
+                const infoEl = row.querySelector('.modal-konversi-info');
+
+                if (!selectEl || !modeEl || !qtyEl || !infoEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                if (!selected || !selectEl.value) {
+                    infoEl.innerHTML = '<span class="text-muted">-</span>';
+                    return;
+                }
+
+                const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
+                const outputSatuan = selected.getAttribute('data-satuan-output') || '';
+                const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const mode = modeEl.value;
+                const qtyInput = parseFloat(qtyEl.value || 0);
+
+                if (mode === 'resep' && outputQty > 0) {
+                    const totalTarget = qtyInput > 0 ? (qtyInput * outputQty) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-success" style="font-size: 0.85rem;">${totalTarget.toLocaleString('id-ID')} ${outputSatuan}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 Resep = ${outputQty.toLocaleString('id-ID')} ${outputSatuan})</div>
+                    `;
+                } else {
+                    const resepEquivalent = outputQty > 0 && qtyInput > 0 ? (qtyInput / outputQty) : 0;
+                    const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-dark" style="font-size: 0.85rem;">${qtyInput.toLocaleString('id-ID')} ${satuanUtama || '-'}</div>
+                        ${outputQty > 0 && qtyInput > 0 ? `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>` : ''}
+                    `;
+                }
+            }
+
+            // Delegasi Event untuk Hapus Baris & Update Dynamic Info
             tableBody.addEventListener('click', function(e) {
                 const btnRemove = e.target.closest('.modal-btn-remove-row');
                 if (btnRemove && !btnRemove.disabled) {
                     const row = btnRemove.closest('tr');
                     if (row) {
+                        const selectEl = row.querySelector('.modal-select-produk');
+                        if (selectEl && tomSelectInstances.has(selectEl)) {
+                            tomSelectInstances.get(selectEl).destroy();
+                            tomSelectInstances.delete(selectEl);
+                        }
                         row.remove();
                         checkRows();
                     }
@@ -466,8 +649,14 @@
             });
 
             tableBody.addEventListener('change', function(e) {
-                if (e.target.classList.contains('modal-select-produk')) {
-                    updateSatuan(e.target);
+                if (e.target.classList.contains('modal-select-produk') || e.target.classList.contains('modal-select-mode')) {
+                    updateKonversi(e.target.closest('tr'));
+                }
+            });
+
+            tableBody.addEventListener('input', function(e) {
+                if (e.target.classList.contains('modal-input-qty')) {
+                    updateKonversi(e.target.closest('tr'));
                 }
             });
 
@@ -486,7 +675,6 @@
                 const rows = tableBody.querySelectorAll('tr');
                 let targetRow = null;
 
-                // Jika baris pertama masih kosong, gunakan baris pertama
                 if (rows.length === 1) {
                     const firstSelect = rows[0].querySelector('.modal-select-produk');
                     const firstQty = rows[0].querySelector('.modal-input-qty');
@@ -498,34 +686,62 @@
                 if (!targetRow) {
                     const firstRow = rows[0];
                     targetRow = firstRow.cloneNode(true);
+                    
+                    // Cleanup TomSelect artifacts if cloned
+                    const tsWrapper = targetRow.querySelector('.ts-wrapper');
+                    if (tsWrapper) tsWrapper.remove();
+                    const oldSelect = targetRow.querySelector('select.modal-select-produk');
+                    if (oldSelect) {
+                        delete oldSelect.tomselect;
+                        oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
+                        oldSelect.removeAttribute('id');
+                        oldSelect.removeAttribute('tabindex');
+                        oldSelect.removeAttribute('aria-hidden');
+                        oldSelect.style.display = '';
+                        oldSelect.value = '';
+                    }
+
                     targetRow.querySelector('.modal-btn-remove-row').removeAttribute('disabled');
                     
                     // Reset values for the new row
-                    targetRow.querySelector('.modal-select-produk').value = '';
-                    targetRow.querySelector('.modal-input-qty').value = '';
-                    targetRow.querySelector('.modal-input-satuan').value = '-';
+                    const modeSelect = targetRow.querySelector('.modal-select-mode');
+                    if (modeSelect) modeSelect.value = 'resep';
+                    const qtyInput = targetRow.querySelector('.modal-input-qty');
+                    if (qtyInput) qtyInput.value = '';
+                    const infoBox = targetRow.querySelector('.modal-konversi-info');
+                    if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
 
                     tableBody.appendChild(targetRow);
                 }
 
                 const select = targetRow.querySelector('.modal-select-produk');
                 const inputQty = targetRow.querySelector('.modal-input-qty');
-                const inputSatuan = targetRow.querySelector('.modal-input-satuan');
 
-                if (produkId) {
-                    select.value = produkId;
-                    updateSatuan(select);
-                }
-                if (qty !== '') {
+                if (inputQty && qty !== '') {
                     inputQty.value = qty;
                 }
-                if (satuan) {
-                    inputSatuan.value = satuan;
+
+                const ts = initTomSelectOnSelect(select);
+                if (ts) {
+                    if (produkId) {
+                        ts.setValue(produkId);
+                    } else {
+                        ts.setValue('', true);
+                    }
+                } else if (select) {
+                    select.value = produkId || '';
+                    updateModeOptions(targetRow);
+                    updateKonversi(targetRow);
                 }
 
                 checkRows();
                 return targetRow;
             }
+
+            // Init TomSelect di baris pertama
+            document.querySelectorAll('.modal-select-produk').forEach(select => {
+                initTomSelectOnSelect(select);
+            });
 
             // Fetch suggestions saat customer dipilih
             function fetchSuggestions(customerId, autoApply = false) {
@@ -589,21 +805,23 @@
             function applyAllSuggestions() {
                 if (!currentSuggestions.length) return;
                 
-                // Kosongkan tabel atau mulai isi
                 const rows = tableBody.querySelectorAll('tr');
                 rows.forEach((r, idx) => {
                     if (idx > 0) r.remove();
                 });
                 const firstRow = tableBody.querySelector('tr');
-                firstRow.querySelector('.modal-select-produk').value = '';
+                const firstSelect = firstRow.querySelector('.modal-select-produk');
+                if (tomSelectInstances.has(firstSelect)) {
+                    tomSelectInstances.get(firstSelect).setValue('');
+                } else {
+                    firstSelect.value = '';
+                }
                 firstRow.querySelector('.modal-input-qty').value = '';
-                firstRow.querySelector('.modal-input-satuan').value = '-';
 
                 currentSuggestions.forEach(item => {
                     addItemRow(item.barang_id, item.suggested_qty, item.satuan);
                 });
 
-                // Update semua tombol pill
                 suggestionList.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
                     btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
                     btn.disabled = true;
@@ -615,10 +833,6 @@
             });
 
             btnApplyAll.addEventListener('click', applyAllSuggestions);
-
-            document.querySelectorAll('.modal-select-produk').forEach(select => {
-                select.addEventListener('change', function() { updateSatuan(this); });
-            });
 
             if (btnAdd) {
                 btnAdd.addEventListener('click', function() {

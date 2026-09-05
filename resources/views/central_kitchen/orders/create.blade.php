@@ -1,8 +1,11 @@
 <x-app-layout>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 
     <style>
+        .ts-dropdown { z-index: 99999 !important; }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
         .card-form { border-radius: 16px; border: 1px solid #eaeaea; background: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
         .form-label-custom { font-weight: 600; font-size: 0.82rem; color: #334155; }
@@ -10,7 +13,7 @@
         .btn-custom-orange:hover { background-color: #c06535; color: white; }
     </style>
 
-    <div class="container py-4" style="margin-top: 5.5rem !important; max-width: 960px;">
+    <div class="container py-4" style="margin-top: 5.5rem !important; max-width: 1000px;">
 
         <div class="d-flex align-items-center justify-content-between mb-4">
             <div>
@@ -94,7 +97,7 @@
 
             <div class="card card-form p-4 mb-4">
                 <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
-                    <h6 class="fw-bold text-dark mb-0">Daftar Item Barang / Bahan</h6>
+                    <h6 class="fw-bold text-dark mb-0">Daftar Item Barang / Bahan Setengah Jadi</h6>
                     <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="btn-add-item">
                         <i class="bi bi-plus-circle me-1"></i> Tambah Item
                     </button>
@@ -103,30 +106,49 @@
                 <div class="table-responsive">
                     <table class="table table-bordered align-middle" id="table-items">
                         <thead class="table-light">
-                            <tr class="text-secondary small">
-                                <th>NAMA BARANG / ITEM</th>
-                                <th style="width: 150px;">QTY TARGET</th>
-                                <th style="width: 100px;">SATUAN</th>
-                                <th style="width: 60px;" class="text-center">AKSI</th>
+                            <tr class="text-secondary small text-center">
+                                <th class="text-start" style="width: 32%;">Nama Bahan</th>
+                                <th style="width: 15%;">Qty</th>
+                                <th style="width: 20%;">Satuan</th>
+                                <th style="width: 28%;">Total Qty (Konversi)</th>
+                                <th style="width: 5%;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="item-rows">
                             <tr>
                                 <td>
                                     <select name="produk_id[]" class="form-select text-sm select-produk" required>
-                                        <option value="">-- Pilih Barang / Master Item --</option>
+                                        <option value="">-- Cari / Pilih Barang BSJ --</option>
                                         @foreach($produk as $item)
-                                            <option value="{{ $item->id }}" data-satuan="{{ $item->satuan }}">
+                                            @php
+                                                $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
+                                                $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+                                            @endphp
+                                            <option value="{{ $item->id }}" 
+                                                    data-satuan="{{ $item->satuan }}"
+                                                    data-output-qty="{{ $outQty }}"
+                                                    data-satuan-output="{{ $outSatuan }}">
                                                 {{ $item->kode_barang }} - {{ $item->nama }}
+                                                @if($outQty > 0)
+                                                    (1 Resep = {{ number_format($outQty, 0, ',', '.') }} {{ $outSatuan }})
+                                                @endif
                                             </option>
                                         @endforeach
                                     </select>
                                 </td>
                                 <td>
-                                    <input type="number" step="any" min="0.01" name="qty[]" class="form-control text-sm input-qty text-end" placeholder="0" required>
+                                    <input type="number" step="any" min="0.01" name="qty[]" class="form-control text-sm input-qty text-end fw-bold" placeholder="0" required>
                                 </td>
                                 <td>
-                                    <input type="text" class="form-control text-sm input-satuan bg-light text-center" readonly value="-">
+                                    <select name="order_mode[]" class="form-select text-sm select-mode text-center fw-bold">
+                                        <option value="resep">Resep</option>
+                                        <option value="satuan">Satuan</option>
+                                    </select>
+                                </td>
+                                <td>
+                                    <div class="konversi-info small text-start p-1 px-2 bg-light rounded border">
+                                        <span class="text-muted">-</span>
+                                    </div>
                                 </td>
                                 <td class="text-center">
                                     <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" disabled>
@@ -157,22 +179,116 @@
             const btnApplyAll = document.getElementById('btn-apply-all-suggestions');
 
             let currentSuggestions = [];
+            const tomSelectInstances = new Map();
 
-            function updateSatuan(selectEl) {
-                const selected = selectEl.options[selectEl.selectedIndex];
-                const satuan = selected ? selected.getAttribute('data-satuan') : '-';
-                const row = selectEl.closest('tr');
-                row.querySelector('.input-satuan').value = satuan || '-';
+            function initTomSelectOnSelect(selectEl) {
+                if (!selectEl) return null;
+                if (tomSelectInstances.has(selectEl)) {
+                    return tomSelectInstances.get(selectEl);
+                }
+                if (typeof TomSelect === 'undefined') return null;
+
+                // Clean up TomSelect attributes if cloned from an existing row
+                delete selectEl.tomselect;
+                selectEl.classList.remove('tomselected', 'ts-hidden-accessible');
+                selectEl.removeAttribute('id');
+                selectEl.removeAttribute('tabindex');
+                selectEl.removeAttribute('aria-hidden');
+                selectEl.style.display = '';
+
+                const ts = new TomSelect(selectEl, {
+                    create: false,
+                    placeholder: '-- Cari / Pilih Barang BSJ --',
+                    allowEmptyOption: true,
+                    dropdownParent: 'body',
+                    onChange: function() {
+                        const row = selectEl.closest('tr');
+                        updateModeOptions(row);
+                        updateKonversi(row);
+                    }
+                });
+                tomSelectInstances.set(selectEl, ts);
+                return ts;
             }
 
-            // Delegasi Event untuk Hapus Baris & Update Satuan
+            function updateModeOptions(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.select-produk');
+                const modeEl = row.querySelector('.select-mode');
+                if (!selectEl || !modeEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
+                const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+
+                const currentVal = modeEl.value;
+                modeEl.innerHTML = '';
+
+                if (outputQty > 0) {
+                    const optResep = new Option('Resep', 'resep');
+                    modeEl.add(optResep);
+                }
+
+                const optSatuan = new Option(satuanUtama.toUpperCase(), 'satuan');
+                modeEl.add(optSatuan);
+
+                if (currentVal === 'resep' && outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else {
+                    modeEl.value = 'satuan';
+                }
+            }
+
+            function updateKonversi(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.select-produk');
+                const modeEl = row.querySelector('.select-mode');
+                const qtyEl = row.querySelector('.input-qty');
+                const infoEl = row.querySelector('.konversi-info');
+
+                if (!selectEl || !modeEl || !qtyEl || !infoEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                if (!selected || !selectEl.value) {
+                    infoEl.innerHTML = '<span class="text-muted">-</span>';
+                    return;
+                }
+
+                const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
+                const outputSatuan = selected.getAttribute('data-satuan-output') || '';
+                const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const mode = modeEl.value;
+                const qtyInput = parseFloat(qtyEl.value || 0);
+
+                if (mode === 'resep' && outputQty > 0) {
+                    const totalTarget = qtyInput > 0 ? (qtyInput * outputQty) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-success" style="font-size: 0.85rem;">${totalTarget.toLocaleString('id-ID')} ${outputSatuan}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 Resep = ${outputQty.toLocaleString('id-ID')} ${outputSatuan})</div>
+                    `;
+                } else {
+                    const resepEquivalent = outputQty > 0 && qtyInput > 0 ? (qtyInput / outputQty) : 0;
+                    const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-dark" style="font-size: 0.85rem;">${qtyInput.toLocaleString('id-ID')} ${satuanUtama || '-'}</div>
+                        ${outputQty > 0 && qtyInput > 0 ? `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>` : ''}
+                    `;
+                }
+            }
+
+            // Delegasi Event untuk Hapus Baris & Update Satuan/Konversi
             tableBody.addEventListener('click', function(e) {
                 const btnRemove = e.target.closest('.btn-remove-row');
                 if (btnRemove && !btnRemove.disabled) {
                     const row = btnRemove.closest('tr');
                     if (row) {
-                        const select = row.querySelector('.select-produk');
-                        const barangId = select ? select.value : '';
+                        const selectEl = row.querySelector('.select-produk');
+                        const barangId = selectEl ? selectEl.value : '';
+
+                        if (selectEl && tomSelectInstances.has(selectEl)) {
+                            tomSelectInstances.get(selectEl).destroy();
+                            tomSelectInstances.delete(selectEl);
+                        }
 
                         row.remove();
                         checkRows();
@@ -194,14 +310,20 @@
             });
 
             tableBody.addEventListener('change', function(e) {
-                if (e.target.classList.contains('select-produk')) {
-                    updateSatuan(e.target);
+                if (e.target.classList.contains('select-produk') || e.target.classList.contains('select-mode')) {
+                    updateKonversi(e.target.closest('tr'));
+                }
+            });
+
+            tableBody.addEventListener('input', function(e) {
+                if (e.target.classList.contains('input-qty')) {
+                    updateKonversi(e.target.closest('tr'));
                 }
             });
 
             function checkRows() {
                 const rows = tableBody.querySelectorAll('tr');
-                rows.forEach((r, idx) => {
+                rows.forEach((r) => {
                     const btnDel = r.querySelector('.btn-remove-row');
                     if (rows.length === 1) {
                         btnDel.setAttribute('disabled', 'disabled');
@@ -226,34 +348,60 @@
                 if (!targetRow) {
                     const firstRow = rows[0];
                     targetRow = firstRow.cloneNode(true);
+                    
+                    const tsWrapper = targetRow.querySelector('.ts-wrapper');
+                    if (tsWrapper) tsWrapper.remove();
+                    const oldSelect = targetRow.querySelector('select.select-produk');
+                    if (oldSelect) {
+                        delete oldSelect.tomselect;
+                        oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
+                        oldSelect.removeAttribute('id');
+                        oldSelect.removeAttribute('tabindex');
+                        oldSelect.removeAttribute('aria-hidden');
+                        oldSelect.style.display = '';
+                        oldSelect.value = '';
+                    }
+
                     targetRow.querySelector('.btn-remove-row').removeAttribute('disabled');
                     
-                    // Reset values for the new row
-                    targetRow.querySelector('.select-produk').value = '';
-                    targetRow.querySelector('.input-qty').value = '';
-                    targetRow.querySelector('.input-satuan').value = '-';
+                    const modeSelect = targetRow.querySelector('.select-mode');
+                    if (modeSelect) modeSelect.value = 'resep';
+                    const qtyInput = targetRow.querySelector('.input-qty');
+                    if (qtyInput) qtyInput.value = '';
+                    const infoBox = targetRow.querySelector('.konversi-info');
+                    if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
 
                     tableBody.appendChild(targetRow);
                 }
 
                 const select = targetRow.querySelector('.select-produk');
                 const inputQty = targetRow.querySelector('.input-qty');
-                const inputSatuan = targetRow.querySelector('.input-satuan');
 
-                if (produkId) {
-                    select.value = produkId;
-                    updateSatuan(select);
-                }
-                if (qty !== '') {
+                if (inputQty && qty !== '') {
                     inputQty.value = qty;
                 }
-                if (satuan) {
-                    inputSatuan.value = satuan;
+
+                const ts = initTomSelectOnSelect(select);
+                if (ts) {
+                    if (produkId) {
+                        ts.setValue(produkId);
+                    } else {
+                        ts.setValue('', true);
+                    }
+                } else if (select) {
+                    select.value = produkId || '';
+                    updateModeOptions(targetRow);
+                    updateKonversi(targetRow);
                 }
 
                 checkRows();
                 return targetRow;
             }
+
+            // Init TomSelect di baris awal
+            document.querySelectorAll('.select-produk').forEach(select => {
+                initTomSelectOnSelect(select);
+            });
 
             function fetchSuggestions(customerId) {
                 const toggleContainer = document.getElementById('toggle-suggestion-container');
@@ -273,7 +421,7 @@
 
                         if (currentSuggestions.length > 0) {
                             toggleContainer.style.display = 'block';
-                            suggestionBox.style.display = 'none'; // Keep hidden initially
+                            suggestionBox.style.display = 'none';
                             suggestionList.innerHTML = '';
 
                             currentSuggestions.forEach(item => {
@@ -338,9 +486,13 @@
                     if (idx > 0) r.remove();
                 });
                 const firstRow = tableBody.querySelector('tr');
-                firstRow.querySelector('.select-produk').value = '';
+                const firstSelect = firstRow.querySelector('.select-produk');
+                if (tomSelectInstances.has(firstSelect)) {
+                    tomSelectInstances.get(firstSelect).setValue('');
+                } else {
+                    firstSelect.value = '';
+                }
                 firstRow.querySelector('.input-qty').value = '';
-                firstRow.querySelector('.input-satuan').value = '-';
 
                 currentSuggestions.forEach(item => {
                     addItemRow(item.barang_id, item.suggested_qty, item.satuan);
@@ -357,10 +509,6 @@
             });
 
             btnApplyAll.addEventListener('click', applyAllSuggestions);
-
-            document.querySelectorAll('.select-produk').forEach(select => {
-                select.addEventListener('change', function() { updateSatuan(this); });
-            });
 
             btnAdd.addEventListener('click', function() {
                 addItemRow();

@@ -125,7 +125,7 @@ class CentralKitchenProductionController extends Controller
 
         // Pesanan CK yang pending/siap dibuatkan WO
         $pesananCkPending = Pesanan::centralKitchen()
-            ->with(['details.produk', 'customer'])
+            ->with(['details.produk.resepBtklBop', 'customer'])
             ->whereIn('status_pesanan', ['pending', 'Draft'])
             ->orderBy('estimasi_kirim', 'asc')
             ->paginate(10, ['*'], 'pesanan_page')

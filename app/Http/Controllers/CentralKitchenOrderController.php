@@ -19,7 +19,7 @@ class CentralKitchenOrderController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = Pesanan::centralKitchen()->with(['customer', 'details.produk', 'gudang', 'divisi']);
+        $query = Pesanan::centralKitchen()->with(['customer', 'details.produk.resepBtklBop', 'gudang', 'divisi']);
 
         if ($search) {
             $query->where(function($q) use ($search) {
@@ -49,7 +49,8 @@ class CentralKitchenOrderController extends Controller
         // Ambil data outlet operasional dari Master Gudang
         $customers = $this->getOutletCustomers();
 
-        $produk = MasterBarang::where('is_active', true)
+        $produk = MasterBarang::with('resepBtklBop')
+            ->where('is_active', true)
             ->where('is_bahan_setengah_jadi', true)
             ->orderBy('nama', 'asc')
             ->get();
@@ -238,7 +239,8 @@ class CentralKitchenOrderController extends Controller
         $customers = $this->getOutletCustomers();
 
         // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) untuk Central Kitchen Order
-        $produk = MasterBarang::where('is_active', true)
+        $produk = MasterBarang::with('resepBtklBop')
+            ->where('is_active', true)
             ->where('is_bahan_setengah_jadi', true)
             ->orderBy('nama', 'asc')
             ->get();
@@ -306,13 +308,26 @@ class CentralKitchenOrderController extends Controller
                 'divisi_id'         => $request->divisi_id,
             ]);
 
+            $orderModes = $request->input('order_mode', []);
+
             foreach ($request->produk_id as $key => $produkId) {
                 if (!$produkId || floatval($request->qty[$key]) <= 0) continue;
+
+                $rawQty = floatval($request->qty[$key]);
+                $mode = $orderModes[$key] ?? 'satuan';
+                $finalQty = $rawQty;
+
+                if ($mode === 'resep') {
+                    $itemObj = MasterBarang::with('resepBtklBop')->find($produkId);
+                    if ($itemObj && $itemObj->resepBtklBop && floatval($itemObj->resepBtklBop->output_qty) > 0) {
+                        $finalQty = $rawQty * floatval($itemObj->resepBtklBop->output_qty);
+                    }
+                }
 
                 PesananDetail::create([
                     'pesanan_id' => $pesanan->id,
                     'produk_id'  => $produkId,
-                    'qty'        => $request->qty[$key],
+                    'qty'        => $finalQty,
                     'harga'      => 0.00,
                     'subtotal'   => 0.00,
                 ]);
@@ -331,7 +346,7 @@ class CentralKitchenOrderController extends Controller
      */
     public function show($id)
     {
-        $pesanan = Pesanan::centralKitchen()->with(['customer', 'details.produk', 'gudang', 'creator'])->findOrFail($id);
+        $pesanan = Pesanan::centralKitchen()->with(['customer', 'details.produk.resepBtklBop', 'gudang', 'creator'])->findOrFail($id);
         
         $woDetail = WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
         $workOrder = $woDetail ? WorkOrder::find($woDetail->work_order_id) : null;
@@ -363,7 +378,7 @@ class CentralKitchenOrderController extends Controller
      */
     public function cetakPdf($id)
     {
-        $pesanan = Pesanan::centralKitchen()->with(['customer', 'gudang', 'creator', 'details.produk'])->findOrFail($id);
+        $pesanan = Pesanan::centralKitchen()->with(['customer', 'gudang', 'creator', 'details.produk.resepBtklBop'])->findOrFail($id);
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
         $pdf->loadView('central_kitchen.orders.show-pdf', compact('pesanan'));
         return $pdf->stream('CK-Order-' . $pesanan->kode_pesanan . '.pdf');

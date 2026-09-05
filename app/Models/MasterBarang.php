@@ -136,4 +136,9 @@ public function minimumStocks()
 {
     return $this->hasMany(BarangMinimumStock::class, 'barang_id');
 }
+
+public function resepBtklBop()
+{
+    return $this->hasOne(ResepBtklBop::class, 'produk_id');
+}
 }
