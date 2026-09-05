@@ -97,9 +97,9 @@ Route::middleware('auth')->group(function () {
 
     // Pembelian Mandiri Kejingga (Super Admin & User Kejingga)
     Route::middleware(['role:Super Admin,Superadmin,Administrator,Kepala Outlet Kejingga,Operasional Kejingga'])->group(function () {
-        Route::post('pembelian-kejingga/{pembelian}/catat-pembayaran', [\App\Http\Controllers\PembelianKejinggaController::class, 'catatPembayaran'])->name('pembelian-kejingga.catat-pembayaran');
-        Route::post('pembelian-kejingga/{pembelian}/lunasi', [\App\Http\Controllers\PembelianKejinggaController::class, 'lunasi'])->name('pembelian-kejingga.lunasi');
-        Route::post('pembelian-kejingga/{pembelian}/terima', [\App\Http\Controllers\PembelianKejinggaController::class, 'terima'])->name('pembelian-kejingga.terima');
+        Route::post('pembelian-kejingga/detail/{detail}/catat-pembayaran', [\App\Http\Controllers\PembelianKejinggaController::class, 'catatPembayaranDetail'])->name('pembelian-kejingga.catat-pembayaran-detail');
+        Route::post('pembelian-kejingga/detail/{detail}/lunasi', [\App\Http\Controllers\PembelianKejinggaController::class, 'lunasiDetail'])->name('pembelian-kejingga.lunasi-detail');
+        Route::post('pembelian-kejingga/detail/{detail}/terima', [\App\Http\Controllers\PembelianKejinggaController::class, 'terimaDetail'])->name('pembelian-kejingga.terima-detail');
         Route::resource('pembelian-kejingga', \App\Http\Controllers\PembelianKejinggaController::class)->names('pembelian-kejingga');
     });
 

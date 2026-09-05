@@ -12,19 +12,57 @@
         .ts-dropdown {
             z-index: 99999 !important;
         }
+
+        /* ===== MOBILE RESPONSIVE STYLING FOR TABLE & MODAL ===== */
+        @media (max-width: 767.98px) {
+            .mobile-responsive-table thead {
+                display: none;
+            }
+            .mobile-responsive-table tbody tr {
+                display: block;
+                background: #ffffff;
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+            }
+            .mobile-responsive-table tbody td {
+                display: block;
+                width: 100% !important;
+                border: none !important;
+                padding: 5px 0 !important;
+                text-align: left !important;
+            }
+            .mobile-responsive-table tbody td::before {
+                content: attr(data-label);
+                font-weight: 700;
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                color: #64748b;
+                display: block;
+                margin-bottom: 2px;
+            }
+            .mobile-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                margin-top: 5px;
+            }
+        }
     </style>
 
     @php
         $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
     @endphp
 
-    <div class="container-fluid px-4 py-3">
+    <div class="container-fluid px-2 px-md-4 py-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-                <h4 class="m-0 fw-bold text-dark">Data Pembelian Kejingga (Luar Gaharu)</h4>
-                <p class="text-muted small mb-0">Kelola draft permintaan &amp; pembelian bahan luar khusus gudang Kejingga.</p>
+                <h4 class="m-0 fw-bold text-dark fs-5 fs-md-4">Data Pembelian Kejingga (Luar Gaharu)</h4>
+                <p class="text-muted small mb-0">Kelola draft permintaan, supplier per barang, serta pembayaran &amp; penerimaan stok per item.</p>
             </div>
-            <span class="badge bg-warning text-dark px-3 py-2 fw-semibold">Khusus Gudang KeJingga</span>
+            <span class="badge bg-warning text-dark px-3 py-2 fw-semibold d-none d-sm-inline-block">Khusus Gudang KeJingga</span>
         </div>
 
         @if(session('success'))
@@ -46,7 +84,7 @@
             </a>
 
             <form action="{{ route('pembelian-kejingga.index') }}" method="GET" class="d-flex gap-2">
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari kode/supplier..." value="{{ request('search') }}" style="width: 220px; border-radius: 6px;">
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari kode/supplier/barang..." value="{{ request('search') }}" style="width: 220px; border-radius: 6px;">
                 <button type="submit" class="btn btn-sm btn-primary" style="border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
                 @if(request('search'))
                     <a href="{{ route('pembelian-kejingga.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px; padding: 5px 15px;">Reset</a>
@@ -55,17 +93,16 @@
         </div>
 
         <div class="table-responsive">
-            <table class="table table-bordered align-middle" style="font-size:13px;">
+            <table class="table table-bordered align-middle mobile-responsive-table" style="font-size:13px;">
                 <thead class="table-light">
                     <tr>
                         <th>Kode</th>
                         <th>Tanggal</th>
-                        <th>Supplier / Pemasok</th>
+                        <th>Ringkasan Supplier / Items</th>
                         <th>Gudang</th>
-                        <th class="text-end">Total</th>
-                        <th class="text-end">Kekurangan</th>
-                        <th class="text-center">Pembayaran</th>
-                        <th class="text-center">Barang Diterima</th>
+                        <th class="text-end">Total PO</th>
+                        <th class="text-center">Status Pembayaran</th>
+                        <th class="text-center">Penerimaan Barang</th>
                         <th class="text-center" style="min-width:180px;">Aksi</th>
                     </tr>
                 </thead>
@@ -73,42 +110,39 @@
                     @forelse($pembelian as $item)
                         @php
                             $total = (float) $item->total;
-                            if ($item->metode_pembayaran === 'dp') {
-                                if ($item->nominal_dp && $item->nominal_dp > 0) {
-                                    $nominalDp = (float) $item->nominal_dp;
-                                } else {
-                                    $persenDp   = (int) ($item->persen_dp ?? 0);
-                                    $nominalDp  = $persenDp > 0 ? round($total * $persenDp / 100) : 0;
-                                }
-                            } else {
-                                $nominalDp = 0;
-                            }
-
-                            $kekurangan = match(true) {
-                                $item->metode_pembayaran === 'cod' => 0,
-                                $item->is_lunas                    => 0,
-                                $item->metode_pembayaran === 'dp'  => $total - $nominalDp,
-                                $item->metode_pembayaran === 'termin' => $total,
-                                default => 0,
+                            $details = $item->details;
+                            
+                            $suppliersInPo = $details->map(fn($d) => $d->supplier->nama ?? null)->filter()->unique();
+                            $supplierDisplay = match(true) {
+                                $suppliersInPo->count() === 1 => $suppliersInPo->first(),
+                                $suppliersInPo->count() > 1   => 'Multi Supplier (' . $suppliersInPo->count() . ')',
+                                default                       => 'Draft Permintaan Staff',
                             };
 
-                            $adaKekurangan = $kekurangan > 0 && !$item->is_lunas;
-                            $isDraft = empty($item->supplier_id) || $total <= 0;
+                            $totalReceived = $details->sum('qty_diterima');
+                            $totalOrdered = $details->sum('qty');
+                            $isFullyReceived = $totalReceived >= $totalOrdered && $totalOrdered > 0;
+                            $isPartiallyReceived = $totalReceived > 0 && !$isFullyReceived;
+
+                            $allPaid = $details->where('is_lunas', true)->count() === $details->count() && $details->count() > 0;
                         @endphp
                         <tr>
-                            <td class="font-monospace fw-bold" style="font-size:12px;">{{ $item->kode_pembelian }}</td>
-                            <td>{{ \Carbon\Carbon::parse($item->tanggal)->format('d M Y') }}</td>
-                            <td>
-                                @if($item->supplier)
-                                    <span class="fw-semibold text-dark">{{ $item->supplier->nama }}</span>
+                            <td data-label="Kode Transaksi" class="font-monospace fw-bold" style="font-size:12px;">{{ $item->kode_pembelian }}</td>
+                            <td data-label="Tanggal">{{ \Carbon\Carbon::parse($item->tanggal)->format('d M Y') }}</td>
+                            <td data-label="Supplier / Items">
+                                @if($suppliersInPo->count() > 1)
+                                    <span class="badge bg-info text-white me-1">Multi Supplier</span>
+                                @elseif($suppliersInPo->count() === 1)
+                                    <span class="fw-semibold text-dark">{{ $suppliersInPo->first() }}</span>
                                 @else
                                     <span class="badge bg-secondary font-normal" style="font-size:11px;">Draft Permintaan Staff</span>
                                 @endif
+                                <div class="text-muted small" style="font-size: 11px;">{{ $details->count() }} jenis barang</div>
                             </td>
-                            <td><span class="badge bg-warning text-dark">{{ $item->gudang->nama ?? 'Gudang KeJingga' }}</span></td>
+                            <td data-label="Gudang"><span class="badge bg-warning text-dark">{{ $item->gudang->nama ?? 'Gudang KeJingga' }}</span></td>
 
-                            {{-- TOTAL --}}
-                            <td class="text-end fw-semibold">
+                            {{-- TOTAL PO --}}
+                            <td data-label="Total PO" class="text-end fw-semibold">
                                 @if($item->total > 0)
                                     Rp {{ number_format($item->total, 0, ',', '.') }}
                                 @else
@@ -116,116 +150,37 @@
                                 @endif
                             </td>
 
-                            {{-- KEKURANGAN --}}
-                            <td class="text-end">
-                                @if(!$item->metode_pembayaran)
-                                    <span class="text-muted" style="font-size:11px;">—</span>
-                                @elseif($item->metode_pembayaran === 'cod' || $item->is_lunas)
-                                    <span class="badge bg-success" style="font-size:11px;">Lunas</span>
-                                @elseif($adaKekurangan)
-                                    <span class="fw-semibold text-danger">
-                                        Rp {{ number_format($kekurangan, 0, ',', '.') }}
-                                    </span>
+                            {{-- STATUS PEMBAYARAN --}}
+                            <td data-label="Status Pembayaran" class="text-center">
+                                @if($allPaid)
+                                    <span class="badge bg-success">✓ Lunas Semua Item</span>
                                 @else
-                                    <span class="text-muted" style="font-size:11px;">—</span>
+                                    <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size:11px;" onclick="bukaModalDetail({{ $item->id }})">
+                                        Cek Status Item (${details.where('is_lunas', true).count()}/${details.count()})
+                                    </button>
                                 @endif
                             </td>
 
-                            {{-- PEMBAYARAN (BUTTON HANYA SUPER ADMIN) --}}
-                            <td class="text-center">
-                                @if($item->metode_pembayaran)
-                                    @php
-                                        $labelMetode = match($item->metode_pembayaran) {
-                                            'cod'    => ['text' => 'COD', 'class' => 'bg-success'],
-                                            'termin' => ['text' => 'Termin', 'class' => 'bg-warning text-dark'],
-                                            'dp'     => ['text' => ($item->nominal_dp && $item->nominal_dp > 0 ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.') : 'DP ' . $item->persen_dp . '%'), 'class' => 'bg-info'],
-                                            default  => ['text' => '-', 'class' => 'bg-secondary'],
-                                        };
-                                    @endphp
-                                    <div class="d-flex flex-column align-items-center gap-1">
-                                        <span class="badge {{ $labelMetode['class'] }}">
-                                            {{ $labelMetode['text'] }}
-                                        </span>
-
-                                        @if($isSuperAdmin && $adaKekurangan)
-                                            <button type="button"
-                                                    class="btn btn-sm mt-1"
-                                                    style="background:#dd7045; color:#fff; font-size:11px; padding:2px 10px; border-radius:6px;"
-                                                    onclick="bukaModalLunasi({{ $item->id }}, '{{ $item->kode_pembelian }}', {{ $kekurangan }}, '{{ addslashes($item->supplier->nama ?? 'Belum Ada Supplier') }}')">
-                                                <i class="bi bi-cash me-1"></i>Lunasi
-                                            </button>
-                                        @elseif($item->is_lunas && $item->metode_pembayaran !== 'cod')
-                                            <span class="badge bg-success" style="font-size:10px;">✓ Lunas</span>
-                                        @endif
-                                    </div>
+                            {{-- BARANG DITERIMA --}}
+                            <td data-label="Barang Diterima" class="text-center">
+                                @if($isFullyReceived)
+                                    <span class="badge bg-success">✓ Diterima Lengkap</span>
+                                @elseif($isPartiallyReceived)
+                                    <span class="badge bg-info text-white">Parsial ({{ number_format($totalReceived, 0) }}/{{ number_format($totalOrdered, 0) }})</span>
                                 @else
-                                    @if($isSuperAdmin)
-                                        <button type="button"
-                                                class="btn btn-sm"
-                                                style="background:#606060; color:#fff; font-size:11px; padding:2px 10px;"
-                                                onclick="bukaPembayaran({{ $item->id }}, '{{ $item->kode_pembelian }}', {{ $item->total }})">
-                                            + Catat
-                                        </button>
-                                    @else
-                                        <span class="badge bg-secondary" style="font-size:10px;">Belum Dicatat</span>
-                                    @endif
-                                @endif
-                            </td>
-
-                            {{-- BARANG DITERIMA (BUTTON HANYA SUPER ADMIN) --}}
-                            <td class="text-center">
-                                @php
-                                    $totalQty = $item->details->sum('qty');
-                                    $totalReceived = $item->details->sum('qty_diterima');
-                                    $isPartiallyReceived = $totalReceived > 0 && $totalReceived < $totalQty;
-                                @endphp
-
-                                @if($item->is_diterima)
-                                    <div class="d-flex flex-column align-items-center">
-                                        <span class="badge bg-success">✓ Diterima</span>
-                                        <small class="text-muted mt-1" style="font-size:10px;">
-                                            {{ \Carbon\Carbon::parse($item->diterima_at)->format('d M Y') }}
-                                        </small>
-                                    </div>
-                                @else
-                                    @if($isPartiallyReceived)
-                                        <div class="mb-1">
-                                            <span class="badge bg-info text-white">Parsial ({{ number_format($totalReceived, 0) }}/{{ number_format($totalQty, 0) }})</span>
-                                        </div>
-                                    @endif
-
-                                    @if($isSuperAdmin)
-                                        @if(!$item->metode_pembayaran)
-                                            <button type="button"
-                                                    class="btn btn-sm"
-                                                    disabled
-                                                    title="Metode pembayaran belum dicatat."
-                                                    style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
-                                                Terima Barang
-                                            </button>
-                                        @else
-                                            <button type="button"
-                                                    class="btn btn-sm text-white"
-                                                    style="background:#0284c7; font-size:11px; padding:2px 10px;"
-                                                    onclick="bukaModalTerimaBarang({{ $item->id }})">
-                                                Terima Barang
-                                            </button>
-                                        @endif
-                                    @else
-                                        <span class="badge bg-light text-muted border" style="font-size:10px;">Belum Diterima</span>
-                                    @endif
+                                    <span class="badge bg-light text-muted border">Belum Diterima</span>
                                 @endif
                             </td>
 
                             {{-- AKSI --}}
-                            <td class="text-center" style="white-space: nowrap;">
-                                <div class="d-inline-flex align-items-center justify-content-center gap-1">
+                            <td data-label="Aksi" class="text-center" style="white-space: nowrap;">
+                                <div class="d-inline-flex align-items-center justify-content-center gap-1 mobile-actions">
                                     {{-- Detail Pop-up Modal --}}
                                     <button type="button"
                                             class="btn btn-sm btn-info text-white rounded-2 px-2 py-1"
                                             onclick="bukaModalDetail({{ $item->id }})"
                                             title="Lihat Detail PO (Pop-up)">
-                                        <i class="bi bi-eye"></i>
+                                        <i class="bi bi-eye"></i> Detail
                                     </button>
 
                                     {{-- Cetak PO (PDF) --}}
@@ -250,7 +205,7 @@
                                                 class="btn btn-sm btn-warning text-dark rounded-2 px-2 py-1"
                                                 onclick="bukaModalEdit({{ $item->id }})"
                                                 title="Edit PO (Pop-up)">
-                                            <i class="bi bi-pencil-square"></i>
+                                            <i class="bi bi-pencil-square"></i> Edit
                                         </button>
 
                                         {{-- Hapus --}}
@@ -271,7 +226,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-4 text-muted">Belum ada data pembelian Kejingga.</td>
+                            <td colspan="8" class="text-center py-4 text-muted">Belum ada data pembelian Kejingga.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -285,102 +240,109 @@
         @endif
     </div>
 
-    <!-- MODAL CATAT PEMBAYARAN (KHUSUS SUPER ADMIN) -->
+    <!-- MODAL CATAT PEMBAYARAN ITEM (KHUSUS SUPER ADMIN) -->
     @if($isSuperAdmin)
-    <div class="modal fade" id="modalPembayaran" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="modalPembayaranDetail" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow rounded-4">
                 <div class="modal-header border-bottom-0 pb-0">
-                    <h5 class="modal-title fw-bold text-dark">Catat Metode Pembayaran</h5>
+                    <h5 class="modal-title fw-bold text-dark">Catat Pembayaran Item Barang</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="formPembayaran" method="POST">
+                <form id="formPembayaranDetail" method="POST">
                     @csrf
                     <div class="modal-body pt-3">
-                        <input type="hidden" id="pembelian_id_bayar" name="pembelian_id">
                         <div class="mb-3">
-                            <label class="form-label small text-muted">Kode Pembelian</label>
-                            <input type="text" id="kode_pembelian_bayar" class="form-control font-monospace fw-bold" readonly>
+                            <label class="form-label small text-muted">Nama Barang</label>
+                            <input type="text" id="bayar_detail_barang_nama" class="form-control fw-bold" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-muted">Total Harga Item (Rp)</label>
+                            <input type="text" id="bayar_detail_total_harga" class="form-control font-monospace text-primary fw-bold" readonly>
                         </div>
                         <div class="mb-3">
                             <label class="form-label small text-muted">Metode Pembayaran</label>
-                            <select name="metode_pembayaran" id="metode_pembayaran_select" class="form-select" required onchange="toggleMetodePembayaran(this.value)">
+                            <select name="metode_pembayaran" id="metode_pembayaran_select_detail" class="form-select" required onchange="toggleMetodePembayaranDetail(this.value)">
                                 <option value="cod">COD (Bayar Lunas Saat Terima)</option>
                                 <option value="dp">DP (Uang Muka)</option>
                                 <option value="termin">Termin / Kredit</option>
                             </select>
                         </div>
-                        <div id="section_dp" class="mb-3" style="display:none;">
+                        <div id="section_dp_detail" class="mb-3" style="display:none;">
                             <label class="form-label small text-muted">Nominal DP (Rp)</label>
-                            <input type="number" name="nominal_dp" id="nominal_dp" class="form-control" placeholder="0">
+                            <input type="number" name="nominal_dp" id="nominal_dp_detail" class="form-control" placeholder="0">
                         </div>
-                        <div id="section_termin" class="mb-3" style="display:none;">
+                        <div id="section_termin_detail" class="mb-3" style="display:none;">
                             <label class="form-label small text-muted">Tanggal Jatuh Tempo</label>
-                            <input type="date" name="tanggal_jatuh_tempo" id="tanggal_jatuh_tempo" class="form-control">
+                            <input type="date" name="tanggal_jatuh_tempo" id="tanggal_jatuh_tempo_detail" class="form-control">
                         </div>
                     </div>
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-primary btn-sm">Simpan Pembayaran</button>
+                        <button type="submit" class="btn btn-primary btn-sm">Simpan Pembayaran Item</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- MODAL LUNASI (KHUSUS SUPER ADMIN) -->
-    <div class="modal fade" id="modalLunasi" tabindex="-1" aria-hidden="true">
+    <!-- MODAL LUNASI ITEM (KHUSUS SUPER ADMIN) -->
+    <div class="modal fade" id="modalLunasiDetail" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow rounded-4">
                 <div class="modal-header border-bottom-0 pb-0">
-                    <h5 class="modal-title fw-bold text-dark">Pelunasan Pembelian</h5>
+                    <h5 class="modal-title fw-bold text-dark">Pelunasan Item Barang</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="formLunasi" method="POST">
+                <form id="formLunasiDetail" method="POST">
                     @csrf
                     <div class="modal-body pt-3">
-                        <input type="hidden" id="pembelian_id_lunasi" name="pembelian_id">
                         <div class="mb-2">
-                            <label class="form-label small text-muted mb-0">Kode Pembelian</label>
-                            <input type="text" id="kode_pembelian_lunasi" class="form-control font-monospace fw-bold" readonly>
+                            <label class="form-label small text-muted mb-0">Barang</label>
+                            <input type="text" id="lunasi_detail_barang_nama" class="form-control fw-bold" readonly>
                         </div>
                         <div class="mb-3">
                             <label class="form-label small text-muted mb-0">Total Kekurangan</label>
-                            <input type="text" id="kekurangan_text" class="form-control fw-bold text-danger" readonly>
+                            <input type="text" id="lunasi_kekurangan_text" class="form-control fw-bold text-danger" readonly>
                         </div>
                     </div>
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-success btn-sm">Konfirmasi Pelunasan</button>
+                        <button type="submit" class="btn btn-success btn-sm">Konfirmasi Pelunasan Item</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- MODAL TERIMA BARANG (KHUSUS SUPER ADMIN) -->
-    <div class="modal fade" id="modalTerimaBarang" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
+    <!-- MODAL TERIMA BARANG ITEM (KHUSUS SUPER ADMIN) -->
+    <div class="modal fade" id="modalTerimaDetail" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow rounded-4">
                 <div class="modal-header border-bottom-0 pb-0">
-                    <h5 class="modal-title fw-bold text-dark">Konfirmasi Penerimaan Barang</h5>
+                    <h5 class="modal-title fw-bold text-dark">Terima Stok Item Barang</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <form id="formTerimaBarang" method="POST">
+                <form id="formTerimaDetail" method="POST">
                     @csrf
                     <div class="modal-body pt-3">
-                        <div class="table-responsive">
-                            <table class="table table-sm table-bordered align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Nama Barang</th>
-                                        <th class="text-center" width="100">Pesanan</th>
-                                        <th class="text-center" width="100">Diterima</th>
-                                        <th class="text-center" width="120">Input Terima</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbodyTerimaBarang"></tbody>
-                            </table>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-0">Nama Barang</label>
+                            <input type="text" id="terima_detail_barang_nama" class="form-control fw-bold" readonly>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-0">Qty Dipesan</label>
+                                <input type="text" id="terima_detail_qty_pesan" class="form-control bg-light" readonly>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small text-muted mb-0">Sudah Diterima</label>
+                                <input type="text" id="terima_detail_qty_diterima" class="form-control bg-light" readonly>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small text-dark fw-bold mb-1">Input Qty Terima Saat Ini <span class="text-danger">*</span></label>
+                            <input type="number" name="qty_diterima" id="terima_detail_input" class="form-control fw-bold text-primary" step="any" min="0.01" required>
                         </div>
                     </div>
                     <div class="modal-footer border-top-0">
@@ -403,7 +365,7 @@
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body p-4" id="contentDetail">
+                <div class="modal-body p-3 p-md-4" id="contentDetail">
                     {{-- Rendered dynamically --}}
                 </div>
                 <div class="modal-footer border-top-0 bg-light rounded-bottom-4">
@@ -439,52 +401,42 @@
                 <form id="formEditModal" method="POST">
                     @csrf
                     @method('PUT')
-                    <div class="modal-body p-4">
+                    <div class="modal-body p-3 p-md-4">
                         <div class="row g-3 mb-4">
-                            {{-- SUPPLIER --}}
-                            <div class="col-12 col-md-4">
-                                <label class="form-label fw-bold small text-dark mb-1">
-                                    Supplier / Pemasok Luar 
-                                    <span class="text-muted font-normal">(Opsional - Draft)</span>
-                                </label>
-                                <select name="supplier_id" id="edit_supplier_id" class="form-control">
-                                    <option value="">-- Kosongkan (Draft Permintaan) --</option>
-                                    @foreach($suppliers as $supplier)
-                                        <option value="{{ $supplier->id }}">{{ $supplier->nama }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-
                             {{-- GUDANG --}}
-                            <div class="col-12 col-md-4">
+                            <div class="col-12 col-md-6">
                                 <label class="form-label fw-bold small text-dark mb-1">Gudang Tujuan Stok</label>
                                 <input type="text" class="form-control bg-light fw-bold text-warning" value="{{ $gudangKejingga->nama ?? 'Gudang KeJingga' }}" readonly>
                                 <input type="hidden" name="gudang_id" value="5">
                             </div>
 
                             {{-- TANGGAL --}}
-                            <div class="col-12 col-md-4">
+                            <div class="col-12 col-md-6">
                                 <label class="form-label fw-bold small text-dark mb-1">Tanggal Transaksi <span class="text-danger">*</span></label>
                                 <input type="date" name="tanggal" id="edit_tanggal" class="form-control" required>
                             </div>
                         </div>
 
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <h6 class="fw-bold m-0 text-dark">Detail Barang Pembelian &amp; Konversi Satuan</h6>
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <div>
+                                <h6 class="fw-bold m-0 text-dark">Detail Items Barang &amp; Supplier</h6>
+                                <small class="text-muted">Supplier dapat diubah per baris item</small>
+                            </div>
                             <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="btn-add-edit-row">
                                 <i class="bi bi-plus-circle me-1"></i> Tambah Baris Barang
                             </button>
                         </div>
 
                         <div class="table-responsive">
-                            <table class="table table-bordered align-middle" id="table-edit-items">
+                            <table class="table table-bordered align-middle mobile-responsive-table" id="table-edit-items">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Nama Barang &amp; Stok Gudang Kejingga</th>
-                                        <th width="130">Qty Input</th>
-                                        <th width="170">Pilihan Satuan</th>
-                                        <th width="150">Total Qty (Utama)</th>
-                                        <th width="160">Total Harga (Rp)</th>
+                                        <th>Nama Barang &amp; Stok Gudang</th>
+                                        <th width="200">Supplier / Pemasok</th>
+                                        <th width="120">Qty Input</th>
+                                        <th width="160">Pilihan Satuan</th>
+                                        <th width="140">Total Qty (Utama)</th>
+                                        <th width="150">Total Harga (Rp)</th>
                                         <th width="140">Harga / Satuan</th>
                                         <th width="60" class="text-center">Aksi</th>
                                     </tr>
@@ -523,6 +475,7 @@
 
     <script>
     const dataPembayaranMap = @json($dataPembayaran);
+    const isSuperAdminUser = @json($isSuperAdmin);
 
     const barangsList = [
         @foreach($barangs as $b)
@@ -535,6 +488,12 @@
                 konversi_pembelian: {{ (float)($b->konversi_pembelian ?? 1) }},
                 stok_kejingga: {{ (float)($b->stok_kejingga ?? 0) }}
             },
+        @endforeach
+    ];
+
+    const suppliersList = [
+        @foreach($suppliers as $s)
+            { id: {{ $s->id }}, nama: "{{ addslashes($s->nama) }}" },
         @endforeach
     ];
 
@@ -603,13 +562,13 @@
         if (badgeDiv) {
             badgeDiv.innerHTML = `
                 <span class="badge bg-warning text-dark border">
-                    <i class="bi bi-box-seam me-1"></i>Persediaan Terkini Gudang Kejingga: 
+                    <i class="bi bi-box-seam me-1"></i>Stok Kejingga: 
                     <strong>${b.stok_kejingga.toLocaleString('id-ID')} ${b.satuan_utama}</strong>
                 </span>
             `;
         }
 
-        let opts = `<option value="${b.satuan_utama}" data-konversi="1">${b.satuan_utama} (Satuan Utama)</option>`;
+        let opts = `<option value="${b.satuan_utama}" data-konversi="1">${b.satuan_utama} (Utama)</option>`;
         if (b.satuan_pembelian && b.konversi_pembelian > 1 && b.satuan_pembelian !== b.satuan_utama) {
             opts += `<option value="${b.satuan_pembelian}" data-konversi="${b.konversi_pembelian}">${b.satuan_pembelian} (1 ${b.satuan_pembelian} = ${b.konversi_pembelian.toLocaleString('id-ID')} ${b.satuan_utama})</option>`;
         }
@@ -685,34 +644,45 @@
             barangOpts += `<option value="${b.id}" ${sel}>${b.kode} - ${b.nama} (Stok Kejingga: ${b.stok_kejingga.toLocaleString('id-ID')} ${b.satuan_utama})</option>`;
         });
 
+        let supplierOpts = '<option value="">-- Draft (Kosong) --</option>';
+        suppliersList.forEach(s => {
+            let sel = (d && d.supplier_id == s.id) ? 'selected' : '';
+            supplierOpts += `<option value="${s.id}" ${sel}>${s.nama}</option>`;
+        });
+
         tr.innerHTML = `
-            <td>
+            <td data-label="Nama Barang & Stok Gudang">
                 <select name="items[${editRowIndex}][barang_id]" class="form-control barang-select" required>
                     ${barangOpts}
                 </select>
                 <div class="stok-info-badge mt-1" style="font-size: 11px;"></div>
             </td>
-            <td>
+            <td data-label="Supplier / Pemasok">
+                <select name="items[${editRowIndex}][supplier_id]" class="form-select supplier-select">
+                    ${supplierOpts}
+                </select>
+            </td>
+            <td data-label="Qty Input">
                 <input type="text" name="items[${editRowIndex}][qty]" class="form-control qty-input mask-number" value="${d ? formatNumberDisplay(d.qty) : ''}" placeholder="0" required>
             </td>
-            <td>
+            <td data-label="Pilihan Satuan">
                 <select name="items[${editRowIndex}][satuan_pembelian]" class="form-select satuan-select">
                     <option value="">-- Pilih Satuan --</option>
                 </select>
                 <input type="hidden" name="items[${editRowIndex}][konversi_pembelian]" class="konversi-input" value="${d ? d.konversi_pembelian : 1}">
             </td>
-            <td>
+            <td data-label="Total Qty (Utama)">
                 <div class="fw-bold text-dark total-qty-display">—</div>
                 <small class="text-muted konversi-info-text d-block" style="font-size: 10px;"></small>
             </td>
-            <td>
+            <td data-label="Total Harga (Rp)">
                 <input type="text" name="items[${editRowIndex}][harga]" class="form-control harga-input mask-number" value="${d && d.harga > 0 ? formatNumberDisplay(d.harga) : ''}" placeholder="0 (Opsional)">
             </td>
-            <td>
+            <td data-label="Harga / Satuan">
                 <input type="text" class="form-control harga-per-qty bg-light" readonly tabindex="-1" placeholder="—">
             </td>
-            <td class="text-center">
-                <button type="button" class="btn btn-outline-danger btn-sm btn-remove-edit" title="Hapus Baris"><i class="bi bi-trash"></i></button>
+            <td data-label="Aksi" class="text-center">
+                <button type="button" class="btn btn-outline-danger btn-sm btn-remove-edit" title="Hapus Baris"><i class="bi bi-trash"></i> Hapus</button>
             </td>
         `;
 
@@ -724,7 +694,6 @@
 
         if (d && d.barang_id) {
             updateEditRowBarang(tr, d.barang_id);
-            // Select custom unit if specified
             const sSelect = tr.querySelector('.satuan-select');
             if (sSelect && d.satuan_pembelian) {
                 for (let i = 0; i < sSelect.options.length; i++) {
@@ -755,62 +724,35 @@
         }
     });
 
-    document.addEventListener('input', function(e) {
-        if (e.target.closest('#table-edit-items') && (e.target.classList.contains('qty-input') || e.target.classList.contains('harga-input'))) {
-            calcEditRow(e.target.closest('tr'));
-        }
-    });
-
-    document.addEventListener('change', function(e) {
-        if (e.target.closest('#table-edit-items') && e.target.classList.contains('satuan-select')) {
-            let tr = e.target.closest('tr');
-            let selectedOpt = e.target.options[e.target.selectedIndex];
-            let konvVal = selectedOpt ? parseFloat(selectedOpt.getAttribute('data-konversi')) || 1 : 1;
-            tr.querySelector('.konversi-input').value = konvVal;
-            calcEditRow(tr);
-        }
-    });
-
-    function bukaPembayaran(id, kode, total) {
-        document.getElementById('pembelian_id_bayar').value = id;
-        document.getElementById('kode_pembelian_bayar').value = kode;
-        document.getElementById('formPembayaran').action = `/pembelian-kejingga/${id}/catat-pembayaran`;
-        new bootstrap.Modal(document.getElementById('modalPembayaran')).show();
+    function toggleMetodePembayaranDetail(val) {
+        document.getElementById('section_dp_detail').style.display = (val === 'dp') ? 'block' : 'none';
+        document.getElementById('section_termin_detail').style.display = (val === 'termin') ? 'block' : 'none';
     }
 
-    function toggleMetodePembayaran(val) {
-        document.getElementById('section_dp').style.display = (val === 'dp') ? 'block' : 'none';
-        document.getElementById('section_termin').style.display = (val === 'termin') ? 'block' : 'none';
+    function bukaModalBayarDetail(detailId, barangNama, totalHarga) {
+        document.getElementById('bayar_detail_barang_nama').value = barangNama;
+        document.getElementById('bayar_detail_total_harga').value = 'Rp ' + totalHarga.toLocaleString('id-ID');
+        document.getElementById('formPembayaranDetail').action = `/pembelian-kejingga/detail/${detailId}/catat-pembayaran`;
+        new bootstrap.Modal(document.getElementById('modalPembayaranDetail')).show();
     }
 
-    function bukaModalLunasi(id, kode, sisa, supplier) {
-        document.getElementById('pembelian_id_lunasi').value = id;
-        document.getElementById('kode_pembelian_lunasi').value = kode;
-        document.getElementById('kekurangan_text').value = 'Rp ' + sisa.toLocaleString('id-ID');
-        document.getElementById('formLunasi').action = `/pembelian-kejingga/${id}/lunasi`;
-        new bootstrap.Modal(document.getElementById('modalLunasi')).show();
+    function bukaModalLunasiDetail(detailId, barangNama, sisa) {
+        document.getElementById('lunasi_detail_barang_nama').value = barangNama;
+        document.getElementById('lunasi_kekurangan_text').value = 'Rp ' + sisa.toLocaleString('id-ID');
+        document.getElementById('formLunasiDetail').action = `/pembelian-kejingga/detail/${detailId}/lunasi`;
+        new bootstrap.Modal(document.getElementById('modalLunasiDetail')).show();
     }
 
-    function bukaModalTerimaBarang(id) {
-        const item = dataPembayaranMap[id];
-        if (!item) return;
-        const tbody = document.getElementById('tbodyTerimaBarang');
-        tbody.innerHTML = '';
-        item.details.forEach(d => {
-            const sisa = d.qty - d.qty_diterima;
-            tbody.innerHTML += `
-                <tr>
-                    <td><strong>${d.nama}</strong> (${d.kode_barang})</td>
-                    <td class="text-center">${d.qty} ${d.satuan}</td>
-                    <td class="text-center">${d.qty_diterima} ${d.satuan}</td>
-                    <td>
-                        <input type="number" name="qty_diterima[${d.id}]" class="form-control form-control-sm text-center" value="${sisa > 0 ? sisa : 0}" min="0" max="${sisa}">
-                    </td>
-                </tr>
-            `;
-        });
-        document.getElementById('formTerimaBarang').action = `/pembelian-kejingga/${id}/terima`;
-        new bootstrap.Modal(document.getElementById('modalTerimaBarang')).show();
+    function bukaModalTerimaDetail(detailId, barangNama, qtyPesan, qtyDiterima, satuan) {
+        document.getElementById('terima_detail_barang_nama').value = barangNama;
+        document.getElementById('terima_detail_qty_pesan').value = qtyPesan + ' ' + satuan;
+        document.getElementById('terima_detail_qty_diterima').value = qtyDiterima + ' ' + satuan;
+        const sisa = qtyPesan - qtyDiterima;
+        const inputEl = document.getElementById('terima_detail_input');
+        inputEl.value = sisa > 0 ? sisa : 0;
+        inputEl.max = sisa;
+        document.getElementById('formTerimaDetail').action = `/pembelian-kejingga/detail/${detailId}/terima`;
+        new bootstrap.Modal(document.getElementById('modalTerimaDetail')).show();
     }
 
     function generateJpgHtml(item) {
@@ -820,7 +762,10 @@
             detailsHtml += `
                 <tr>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:center;">${idx + 1}</td>
-                    <td style="padding:8px; border:1px solid #cbd5e1;"><strong>${d.nama}</strong> (${d.kode_barang})</td>
+                    <td style="padding:8px; border:1px solid #cbd5e1;">
+                        <strong>${d.nama}</strong> (${d.kode_barang})<br>
+                        <small style="color:#475569;">Supplier: <strong>${d.supplier_nama}</strong></small>
+                    </td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:center; background:#f8fafc;">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:center;"><strong>${d.qty.toLocaleString('id-ID')} ${d.satuan}</strong>${konvText}</td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:center;">${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</td>
@@ -843,27 +788,16 @@
                 </div>
             </div>
 
-            <div style="display:flex; justify-content:space-between; gap:15px; margin-bottom:15px;">
-                <div style="flex:1; background:#f8fafc; border:1px solid #e2e8f0; padding:10px; border-radius:6px; font-size:12px;">
-                    <strong style="color:#64748b; text-transform:uppercase; font-size:10px;">Supplier:</strong><br>
-                    <span style="font-weight:bold; font-size:14px;">${item.supplier_nama}</span>
-                </div>
-                <div style="flex:1; background:#f8fafc; border:1px solid #e2e8f0; padding:10px; border-radius:6px; font-size:12px;">
-                    <strong style="color:#64748b; text-transform:uppercase; font-size:10px;">Status Pembayaran:</strong><br>
-                    <span>Metode: <strong>${item.label}</strong></span> | <span>Lunas: <strong>${item.is_lunas ? 'YA' : 'BELUM'}</strong></span>
-                </div>
-            </div>
-
             <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:15px;">
                 <thead>
                     <tr style="background:#0f172a; color:#ffffff;">
                         <th style="padding:8px; border:1px solid #0f172a;" width="30">No</th>
-                        <th style="padding:8px; border:1px solid #0f172a;">Nama Barang</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="130">Stok Kejingga</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Qty Order</th>
+                        <th style="padding:8px; border:1px solid #0f172a;">Barang &amp; Supplier</th>
+                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Stok Kejingga</th>
+                        <th style="padding:8px; border:1px solid #0f172a;" width="110">Qty Order</th>
                         <th style="padding:8px; border:1px solid #0f172a;" width="100">Diterima</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="130">Harga / Satuan</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="130">Subtotal</th>
+                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Harga / Satuan</th>
+                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Subtotal</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -908,7 +842,7 @@
     }
 
     // ==========================================
-    // BUKA MODAL DETAIL (POP-UP)
+    // BUKA MODAL DETAIL (POP-UP RESPONSIVE)
     // ==========================================
     function bukaModalDetail(id) {
         const item = dataPembayaranMap[id];
@@ -920,86 +854,108 @@
             let subtotal = d.harga;
             totalItemsCalculated += subtotal;
             let konvInfo = d.has_konversi ? `<div class="text-primary small" style="font-size:11px;">= ${(d.qty * d.konversi_pembelian).toLocaleString('id-ID')} ${d.satuan_utama}</div>` : '';
+            
+            // Per item Payment status UI
+            let bayarBadge = `<span class="badge bg-secondary">Belum Catat</span>`;
+            if (d.metode_pembayaran) {
+                if (d.is_lunas) {
+                    bayarBadge = `<span class="badge bg-success">✓ Lunas (${d.label_pembayaran})</span>`;
+                } else if (d.kekurangan > 0) {
+                    bayarBadge = `<span class="badge bg-warning text-dark">${d.label_pembayaran} (Sisa: Rp ${d.kekurangan.toLocaleString('id-ID')})</span>`;
+                } else {
+                    bayarBadge = `<span class="badge bg-info text-white">${d.label_pembayaran}</span>`;
+                }
+            }
+
+            let bayarActionBtn = '';
+            if (isSuperAdminUser) {
+                if (!d.metode_pembayaran) {
+                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-outline-primary mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalBayarDetail(${d.id}, '${addslashes(d.nama)}', ${d.harga})">+ Catat Bayar</button>`;
+                } else if (!d.is_lunas && d.kekurangan > 0) {
+                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalLunasiDetail(${d.id}, '${addslashes(d.nama)}', ${d.kekurangan})">Lunasi</button>`;
+                }
+            }
+
+            // Per item Reception status UI
+            let terimaBadge = `<span class="badge bg-light text-muted border">Belum Diterima</span>`;
+            if (d.is_diterima_item) {
+                terimaBadge = `<span class="badge bg-success">✓ Diterima (${d.qty_diterima}/${d.qty})</span>`;
+            } else if (d.qty_diterima > 0) {
+                terimaBadge = `<span class="badge bg-info text-white">Parsial (${d.qty_diterima}/${d.qty})</span>`;
+            }
+
+            let terimaActionBtn = '';
+            if (isSuperAdminUser && !d.is_diterima_item) {
+                if (!d.metode_pembayaran) {
+                    terimaActionBtn = `<small class="text-muted d-block mt-1" style="font-size:9px;">(Catat bayar dulu)</small>`;
+                } else {
+                    terimaActionBtn = `<button type="button" class="btn btn-xs btn-info text-white mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${d.qty_diterima}, '${d.satuan}')">Terima Stok</button>`;
+                }
+            }
+
             detailsHtml += `
                 <tr>
-                    <td class="text-center">${idx + 1}</td>
-                    <td>
+                    <td data-label="No" class="text-center">${idx + 1}</td>
+                    <td data-label="Nama Barang & Kode">
                         <div class="fw-bold text-dark">${d.nama}</div>
                         <div class="font-monospace text-muted small">${d.kode_barang}</div>
                     </td>
-                    <td class="text-center bg-light fw-semibold">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
-                    <td class="text-center fw-bold">
+                    <td data-label="Supplier">
+                        <span class="badge bg-light text-dark border">${d.supplier_nama}</span>
+                    </td>
+                    <td data-label="Stok Kejingga" class="text-center bg-light fw-semibold">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
+                    <td data-label="Qty Dipesan" class="text-center fw-bold">
                         ${d.qty.toLocaleString('id-ID')} ${d.satuan}
                         ${konvInfo}
                     </td>
-                    <td class="text-center">${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</td>
-                    <td class="text-end">
-                        ${d.harga > 0 ? 'Rp ' + d.harga_per_qty.toLocaleString('id-ID') + ' / ' + d.satuan : '—'}
+                    <td data-label="Harga / Satuan" class="text-end">
+                        ${d.harga > 0 ? 'Rp ' + d.harga_per_qty.toLocaleString('id-ID') : '—'}
                     </td>
-                    <td class="text-end fw-bold">
+                    <td data-label="Subtotal" class="text-end fw-bold">
                         ${d.harga > 0 ? 'Rp ' + subtotal.toLocaleString('id-ID') : '—'}
+                    </td>
+                    <td data-label="Pembayaran Item" class="text-center">
+                        ${bayarBadge}
+                        ${bayarActionBtn}
+                    </td>
+                    <td data-label="Penerimaan Stok" class="text-center">
+                        ${terimaBadge}
+                        ${terimaActionBtn}
                     </td>
                 </tr>
             `;
         });
 
-        let supplierCard = item.supplier_id ? `
-            <div class="fw-bold text-dark fs-6">${item.supplier_nama}</div>
-            <div class="text-muted small">No. Telp: ${item.supplier_telepon}</div>
-            <div class="text-muted small">Alamat: ${item.supplier_alamat}</div>
-        ` : `
-            <div class="badge bg-secondary px-2 py-1 fs-6">Draft Permintaan (Belum Ada Supplier)</div>
-            <div class="text-muted small mt-1">Dibuat oleh staff operasional, menunggu pengisian supplier oleh tim Purchasing.</div>
-        `;
-
         let html = `
-            <div id="po-modal-doc-render" class="p-3 bg-white">
-                <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+            <div id="po-modal-doc-render" class="p-2 p-md-3 bg-white">
+                <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3 flex-wrap gap-2">
                     <div>
                         <h4 class="fw-bold text-dark mb-1">CV. GAHARU AGUNG SEJAHTERA</h4>
                         <div class="text-muted small">
-                            Layanan Pengadaan &amp; Logistik Operasional Kejingga<br>
+                            Pengadaan &amp; Logistik Operasional Kejingga<br>
                             <strong>Gudang:</strong> ${item.gudang_nama}
                         </div>
                     </div>
                     <div class="text-end">
-                        <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER (PO)</span>
+                        <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER</span>
                         <div class="font-monospace fw-bold text-dark fs-5">#${item.kode}</div>
                         <div class="text-muted small">Tanggal: <strong>${item.tanggal}</strong></div>
                     </div>
                 </div>
 
-                <div class="row mb-4">
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded-3 border h-100">
-                            <small class="text-muted fw-bold text-uppercase d-block mb-1">Supplier / Pemasok:</small>
-                            ${supplierCard}
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="p-3 bg-light rounded-3 border h-100">
-                            <small class="text-muted fw-bold text-uppercase d-block mb-1">Status &amp; Pembayaran:</small>
-                            <div class="d-flex flex-column gap-1 small">
-                                <div>Metode Pembayaran: <strong class="text-uppercase">${item.label}</strong></div>
-                                <div>Status Pelunasan: ${item.is_lunas ? '<span class="badge bg-success">✓ LUNAS</span>' : '<span class="badge bg-danger">BELUM LUNAS</span>'}</div>
-                                <div>Status Penerimaan: ${item.is_diterima ? '<span class="badge bg-success">✓ DITERIMA</span>' : '<span class="badge bg-warning text-dark">PROSES PENERIMAAN</span>'}</div>
-                                <div>Dibuat Oleh: <strong>${item.user_nama}</strong></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="table-responsive mb-3">
-                    <table class="table table-bordered align-middle mb-0" style="font-size: 13px;">
+                    <table class="table table-bordered align-middle mobile-responsive-table mb-0" style="font-size: 13px;">
                         <thead class="table-dark">
                             <tr>
-                                <th width="40" class="text-center">No</th>
+                                <th width="30" class="text-center">No</th>
                                 <th>Nama Barang &amp; Kode</th>
-                                <th width="150" class="text-center">Stok Gudang Kejingga</th>
-                                <th width="140" class="text-center">Qty Dipesan</th>
-                                <th width="130" class="text-center">Qty Diterima</th>
-                                <th width="150" class="text-end">Harga / Satuan</th>
-                                <th width="160" class="text-end">Subtotal</th>
+                                <th width="160">Supplier</th>
+                                <th width="120" class="text-center">Stok Kejingga</th>
+                                <th width="130" class="text-center">Qty Dipesan</th>
+                                <th width="130" class="text-end">Harga / Satuan</th>
+                                <th width="140" class="text-end">Subtotal</th>
+                                <th width="140" class="text-center">Pembayaran</th>
+                                <th width="140" class="text-center">Penerimaan Stok</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1009,12 +965,12 @@
                 </div>
 
                 <div class="row mb-3">
-                    <div class="col-6 offset-6">
+                    <div class="col-12 col-md-6 offset-md-6">
                         <table class="table table-borderless table-sm text-end mb-0">
                             ${item.tax_service > 0 ? `
                                 <tr>
-                                    <td class="text-muted">Subtotal Barang:</td>
-                                    <td class="fw-bold">Rp ${totalItemsCalculated.toLocaleString('id-ID')}</td>
+                                    <td class="text-muted">Subtotal Items:</td>
+                                    <td class="fw-bold">Rp ${(item.total - item.tax_service).toLocaleString('id-ID')}</td>
                                 </tr>
                                 <tr>
                                     <td class="text-muted">Tax / Service / Ongkir:</td>
@@ -1073,8 +1029,13 @@
         new bootstrap.Modal(document.getElementById('modalDetail')).show();
     }
 
+    // Helper addslashes for JS strings
+    function addslashes(str) {
+        return (str + '').replace(/[\\"']/g, '\\$&').replace(/\u0000/g, '\\0');
+    }
+
     // ==========================================
-    // BUKA MODAL EDIT (POP-UP)
+    // BUKA MODAL EDIT (POP-UP RESPONSIVE)
     // ==========================================
     function bukaModalEdit(id) {
         const item = dataPembayaranMap[id];
@@ -1088,11 +1049,9 @@
         document.getElementById('modalEditTitle').innerHTML = `<i class="bi bi-pencil-square text-warning me-2"></i>Edit Purchase Order (${item.kode})`;
         document.getElementById('formEditModal').action = `/pembelian-kejingga/${id}`;
 
-        document.getElementById('edit_supplier_id').value = item.supplier_id || '';
         document.getElementById('edit_tanggal').value = item.tanggal_raw;
         document.getElementById('edit_tax_service').value = item.tax_service > 0 ? formatNumberDisplay(item.tax_service) : '';
 
-        // Reset table items
         const tbody = document.querySelector('#table-edit-items tbody');
         tbody.innerHTML = '';
         editRowIndex = 0;

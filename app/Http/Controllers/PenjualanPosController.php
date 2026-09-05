@@ -863,14 +863,17 @@ class PenjualanPosController extends Controller
         $fullName = trim($itemName . ' ' . $variantName);
         
         $applyTipeFilter = function ($query) use ($gudangId) {
-            if ($gudangId == 2) {
+            $gudangObj = $gudangId ? MasterGudang::find($gudangId) : null;
+            $gudangNama = $gudangObj ? strtolower($gudangObj->nama) : '';
+
+            if ($gudangId == 2 || str_contains($gudangNama, 'gaharu')) {
                 $query->where(function ($q) {
                     $q->where('tipe_penjualan', 'POS Gaharu')->orWhereNull('tipe_penjualan');
-                });
-            } elseif ($gudangId == 4) {
+                })->orderByRaw("CASE WHEN tipe_penjualan = 'POS Gaharu' THEN 1 ELSE 2 END");
+            } elseif ($gudangId == 4 || $gudangId == 5 || str_contains($gudangNama, 'kejingga')) {
                 $query->where(function ($q) {
                     $q->where('tipe_penjualan', 'POS Kejingga')->orWhereNull('tipe_penjualan');
-                });
+                })->orderByRaw("CASE WHEN tipe_penjualan = 'POS Kejingga' THEN 1 ELSE 2 END");
             }
         };
 

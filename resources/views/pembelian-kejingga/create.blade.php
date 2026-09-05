@@ -7,7 +7,7 @@
             overflow: visible !important;
         }
         .ts-dropdown {
-            z-index: 9999 !important;
+            z-index: 99999 !important;
         }
         .form-card {
             border: 1px solid #e2e8f0;
@@ -15,15 +15,46 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.05);
             background: #fff;
         }
+
+        /* ===== MOBILE RESPONSIVE STYLING ===== */
+        @media (max-width: 767.98px) {
+            .mobile-responsive-table thead {
+                display: none;
+            }
+            .mobile-responsive-table tbody tr.item-row {
+                display: block;
+                background: #ffffff;
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 15px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+            }
+            .mobile-responsive-table tbody td {
+                display: block;
+                width: 100% !important;
+                border: none !important;
+                padding: 6px 0 !important;
+            }
+            .mobile-responsive-table tbody td::before {
+                content: attr(data-label);
+                font-weight: 700;
+                font-size: 0.75rem;
+                text-transform: uppercase;
+                color: #64748b;
+                display: block;
+                margin-bottom: 3px;
+            }
+        }
     </style>
 
-    <div class="container-fluid px-4 py-3">
+    <div class="container-fluid px-2 px-md-4 py-3">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-                <h4 class="m-0 fw-bold text-dark">Tambah Pembelian Kejingga (Luar Gaharu)</h4>
-                <p class="text-muted small mb-0">Isi draft permintaan barang atau buat Pembelian Kejingga langsung.</p>
+                <h4 class="m-0 fw-bold text-dark fs-5 fs-md-4">Tambah Pembelian Kejingga (Luar Gaharu)</h4>
+                <p class="text-muted small mb-0">Setiap baris barang dapat diisi supplier dan harga secara fleksibel.</p>
             </div>
-            <span class="badge bg-warning text-dark px-3 py-2 fw-semibold">Gudang Tujuan: Gudang KeJingga</span>
+            <span class="badge bg-warning text-dark px-3 py-2 fw-semibold d-none d-sm-inline-block">Gudang KeJingga</span>
         </div>
 
         @if($errors->any())
@@ -40,67 +71,52 @@
         <form action="{{ route('pembelian-kejingga.store') }}" method="POST" id="formCreatePO">
             @csrf
 
-            <div class="card form-card p-3 mb-4">
+            <div class="card form-card p-3 mb-3">
                 <div class="row g-3">
-                    {{-- SUPPLIER (OPSIONAL UNTUK DRAFT PERMINTAAN) --}}
-                    <div class="col-12 col-md-4">
-                        <label class="form-label fw-bold small text-dark mb-1">
-                            Supplier / Pemasok Luar 
-                            <span class="text-muted font-normal">(Opsional - Kosongkan jika Draft Permintaan Staff)</span>
-                        </label>
-                        <select name="supplier_id" id="supplier_id" class="form-control">
-                            <option value="">-- Kosongkan (Draft Permintaan) --</option>
-                            @foreach($suppliers as $supplier)
-                                <option value="{{ $supplier->id }}" {{ old('supplier_id') == $supplier->id ? 'selected' : '' }}>
-                                    {{ $supplier->nama }}
-                                </option>
-                            @endforeach
-                        </select>
-                        <small class="text-muted d-block mt-1" style="font-size: 11px;">
-                            <i class="bi bi-info-circle me-1"></i>Staff operasional dapat mengosongkan supplier untuk diisi oleh tim purchasing.
-                        </small>
-                    </div>
-
                     {{-- GUDANG --}}
-                    <div class="col-12 col-md-4">
+                    <div class="col-12 col-md-6">
                         <label class="form-label fw-bold small text-dark mb-1">Gudang Tujuan Stok</label>
                         <input type="text" class="form-control bg-light fw-bold text-warning" value="{{ $gudangKejingga->nama ?? 'Gudang KeJingga' }}" readonly>
                         <input type="hidden" name="gudang_id" value="5">
                     </div>
 
                     {{-- TANGGAL --}}
-                    <div class="col-12 col-md-4">
+                    <div class="col-12 col-md-6">
                         <label class="form-label fw-bold small text-dark mb-1">Tanggal Transaksi <span class="text-danger">*</span></label>
                         <input type="date" name="tanggal" id="tanggal" class="form-control" value="{{ old('tanggal', date('Y-m-d')) }}" required>
                     </div>
                 </div>
             </div>
 
-            <div class="card form-card p-3 mb-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="fw-bold m-0 text-dark">Detail Barang Pembelian &amp; Konversi Satuan</h5>
+            <div class="card form-card p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div>
+                        <h5 class="fw-bold m-0 text-dark">Detail Items Barang &amp; Supplier</h5>
+                        <small class="text-muted">Supplier diisi per baris barang (kosongkan jika draft permintaan)</small>
+                    </div>
                     <button type="button" class="btn btn-sm btn-outline-primary fw-semibold" id="btn-add">
                         <i class="bi bi-plus-circle me-1"></i> Tambah Baris Barang
                     </button>
                 </div>
 
                 <div class="table-responsive">
-                    <table class="table table-bordered align-middle" id="table-items">
+                    <table class="table table-bordered align-middle mobile-responsive-table" id="table-items">
                         <thead class="table-light">
                             <tr>
-                                <th>Nama Barang &amp; Stok Gudang Kejingga</th>
-                                <th width="140">Qty Input</th>
-                                <th width="180">Pilihan Satuan</th>
-                                <th width="160">Total Qty (Utama)</th>
-                                <th width="170">Total Harga (Rp)</th>
-                                <th width="150">Harga / Satuan</th>
-                                <th width="70" class="text-center">Aksi</th>
+                                <th>Nama Barang &amp; Stok Gudang</th>
+                                <th width="200">Supplier / Pemasok</th>
+                                <th width="120">Qty Input</th>
+                                <th width="160">Pilihan Satuan</th>
+                                <th width="140">Total Qty (Utama)</th>
+                                <th width="150">Total Harga (Rp)</th>
+                                <th width="140">Harga / Satuan</th>
+                                <th width="60" class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr class="item-row">
                                 {{-- BARANG --}}
-                                <td>
+                                <td data-label="Nama Barang & Stok Gudang">
                                     <select name="items[0][barang_id]" class="form-control barang-select" required>
                                         <option value="">-- Pilih / Cari Barang --</option>
                                         @foreach($barangs as $barang)
@@ -118,39 +134,48 @@
                                     <div class="stok-info-badge mt-1" style="font-size: 11px;"></div>
                                 </td>
 
+                                {{-- SUPPLIER PER BARIS ITEM --}}
+                                <td data-label="Supplier / Pemasok">
+                                    <select name="items[0][supplier_id]" class="form-select supplier-select">
+                                        <option value="">-- Draft (Kosong) --</option>
+                                        @foreach($suppliers as $supplier)
+                                            <option value="{{ $supplier->id }}">{{ $supplier->nama }}</option>
+                                        @endforeach
+                                    </select>
+                                </td>
+
                                 {{-- QTY INPUT --}}
-                                <td>
+                                <td data-label="Qty Input">
                                     <input type="text" name="items[0][qty]" class="form-control qty-input mask-number" placeholder="0" required>
                                 </td>
 
                                 {{-- PILIHAN SATUAN --}}
-                                <td>
+                                <td data-label="Pilihan Satuan">
                                     <select name="items[0][satuan_pembelian]" class="form-select satuan-select">
                                         <option value="">-- Pilih Satuan --</option>
                                     </select>
                                     <input type="hidden" name="items[0][konversi_pembelian]" class="konversi-input" value="1">
                                 </td>
 
-                                {{-- TOTAL QTY UTAMA & CONVERSION INFO --}}
-                                <td>
+                                {{-- TOTAL QTY UTAMA --}}
+                                <td data-label="Total Qty (Utama)">
                                     <div class="fw-bold text-dark total-qty-display">—</div>
                                     <small class="text-muted konversi-info-text d-block" style="font-size: 10px;"></small>
                                 </td>
 
                                 {{-- TOTAL HARGA --}}
-                                <td>
+                                <td data-label="Total Harga (Rp)">
                                     <input type="text" name="items[0][harga]" class="form-control harga-input mask-number" placeholder="0 (Opsional)">
-                                    <small class="text-muted" style="font-size: 10px;">Bisa diisi nanti oleh Purchasing</small>
                                 </td>
 
                                 {{-- HARGA PER QTY --}}
-                                <td>
+                                <td data-label="Harga / Satuan">
                                     <input type="text" class="form-control harga-per-qty bg-light" readonly tabindex="-1" placeholder="—">
                                 </td>
 
                                 {{-- AKSI --}}
-                                <td class="text-center">
-                                    <button type="button" class="btn btn-outline-danger btn-sm btn-remove" title="Hapus Baris"><i class="bi bi-trash"></i></button>
+                                <td data-label="Aksi" class="text-center">
+                                    <button type="button" class="btn btn-outline-danger btn-sm btn-remove" title="Hapus Baris"><i class="bi bi-trash"></i> Hapus</button>
                                 </td>
                             </tr>
                         </tbody>
@@ -194,6 +219,13 @@
             @endforeach
         };
 
+        const suppliersListHtml = `
+            <option value="">-- Draft (Kosong) --</option>
+            @foreach($suppliers as $supplier)
+                <option value="{{ $supplier->id }}">{{ addslashes($supplier->nama) }}</option>
+            @endforeach
+        `;
+
         let rowIndex = 1;
 
         function formatNumberDisplay(num) {
@@ -226,7 +258,7 @@
 
         function initTomSelect(el) {
             if (el.tomselect) return;
-            const ts = new TomSelect(el, {
+            new TomSelect(el, {
                 create: false,
                 sortField: { field: "text", direction: "asc" },
                 placeholder: "-- Pilih / Cari Barang --",
@@ -246,33 +278,34 @@
             const selectSatuan = tr.querySelector('.satuan-select');
             
             if (!b) {
-                badgeDiv.innerHTML = '';
-                selectSatuan.innerHTML = '<option value="">-- Pilih Satuan --</option>';
+                if (badgeDiv) badgeDiv.innerHTML = '';
+                if (selectSatuan) selectSatuan.innerHTML = '<option value="">-- Pilih Satuan --</option>';
                 tr.querySelector('.konversi-input').value = 1;
                 calcRow(tr);
                 return;
             }
 
-            // Display current stock in Gudang Kejingga
-            badgeDiv.innerHTML = `
-                <span class="badge bg-warning text-dark border">
-                    <i class="bi bi-box-seam me-1"></i>Persediaan Terkini Gudang Kejingga: 
-                    <strong>${b.stok_kejingga.toLocaleString('id-ID')} ${b.satuan_utama}</strong>
-                </span>
-            `;
+            if (badgeDiv) {
+                badgeDiv.innerHTML = `
+                    <span class="badge bg-warning text-dark border">
+                        <i class="bi bi-box-seam me-1"></i>Stok Kejingga: 
+                        <strong>${b.stok_kejingga.toLocaleString('id-ID')} ${b.satuan_utama}</strong>
+                    </span>
+                `;
+            }
 
-            // Populate Satuan choices
-            let opts = `<option value="${b.satuan_utama}" data-konversi="1">${b.satuan_utama} (Satuan Utama)</option>`;
+            let opts = `<option value="${b.satuan_utama}" data-konversi="1">${b.satuan_utama} (Utama)</option>`;
             if (b.satuan_pembelian && b.konversi_pembelian > 1 && b.satuan_pembelian !== b.satuan_utama) {
                 opts += `<option value="${b.satuan_pembelian}" data-konversi="${b.konversi_pembelian}">${b.satuan_pembelian} (1 ${b.satuan_pembelian} = ${b.konversi_pembelian.toLocaleString('id-ID')} ${b.satuan_utama})</option>`;
             }
 
-            selectSatuan.innerHTML = opts;
-            selectSatuan.selectedIndex = (b.satuan_pembelian && b.konversi_pembelian > 1) ? 1 : 0;
-            
-            let selectedOpt = selectSatuan.options[selectSatuan.selectedIndex];
-            let konvVal = selectedOpt ? parseFloat(selectedOpt.getAttribute('data-konversi')) || 1 : 1;
-            tr.querySelector('.konversi-input').value = konvVal;
+            if (selectSatuan) {
+                selectSatuan.innerHTML = opts;
+                selectSatuan.selectedIndex = (b.satuan_pembelian && b.konversi_pembelian > 1) ? 1 : 0;
+                let selectedOpt = selectSatuan.options[selectSatuan.selectedIndex];
+                let konvVal = selectedOpt ? parseFloat(selectedOpt.getAttribute('data-konversi')) || 1 : 1;
+                tr.querySelector('.konversi-input').value = konvVal;
+            }
 
             calcRow(tr);
         }
@@ -283,15 +316,15 @@
             const b = barangsMap[barangId];
 
             const qtyInput = tr.querySelector('.qty-input');
-            const qtyVal = unformatNumber(qtyInput.value);
+            const qtyVal = unformatNumber(qtyInput ? qtyInput.value : 0);
 
             const selectSatuan = tr.querySelector('.satuan-select');
-            const selectedOpt = selectSatuan ? selectSatuan.options[selectSatuan.selectedIndex] : null;
+            const selectedOpt = selectSatuan && selectSatuan.selectedIndex >= 0 ? selectSatuan.options[selectSatuan.selectedIndex] : null;
             const konvVal = selectedOpt ? parseFloat(selectedOpt.getAttribute('data-konversi')) || 1 : 1;
             tr.querySelector('.konversi-input').value = konvVal;
 
             const hargaInput = tr.querySelector('.harga-input');
-            const hargaVal = unformatNumber(hargaInput.value);
+            const hargaVal = unformatNumber(hargaInput ? hargaInput.value : 0);
 
             const totalQtyDisplay = tr.querySelector('.total-qty-display');
             const konversiInfoText = tr.querySelector('.konversi-info-text');
@@ -301,28 +334,31 @@
                 const totalMainQty = qtyVal * konvVal;
                 const unitChosen = selectSatuan ? selectSatuan.value : b.satuan_utama;
                 
-                totalQtyDisplay.innerHTML = `${formatNumberDisplay(totalMainQty)} ${b.satuan_utama}`;
+                if (totalQtyDisplay) totalQtyDisplay.innerHTML = `${formatNumberDisplay(totalMainQty)} ${b.satuan_utama}`;
 
-                if (konvVal > 1) {
-                    konversiInfoText.innerHTML = `(${formatNumberDisplay(qtyVal)} ${unitChosen} @ ${formatNumberDisplay(konvVal)} ${b.satuan_utama})`;
-                } else {
-                    konversiInfoText.innerHTML = `(${formatNumberDisplay(qtyVal)} ${b.satuan_utama})`;
+                if (konversiInfoText) {
+                    if (konvVal > 1) {
+                        konversiInfoText.innerHTML = `(${formatNumberDisplay(qtyVal)} ${unitChosen} @ ${formatNumberDisplay(konvVal)} ${b.satuan_utama})`;
+                    } else {
+                        konversiInfoText.innerHTML = `(${formatNumberDisplay(qtyVal)} ${b.satuan_utama})`;
+                    }
                 }
 
-                if (hargaVal > 0) {
-                    let perQty = hargaVal / qtyVal;
-                    perQtyInput.value = 'Rp ' + formatNumberDisplay(Math.round(perQty)) + ' / ' + unitChosen;
-                } else {
-                    perQtyInput.value = '—';
+                if (perQtyInput) {
+                    if (hargaVal > 0) {
+                        let perQty = hargaVal / qtyVal;
+                        perQtyInput.value = 'Rp ' + formatNumberDisplay(Math.round(perQty)) + ' / ' + unitChosen;
+                    } else {
+                        perQtyInput.value = '—';
+                    }
                 }
             } else {
-                totalQtyDisplay.innerHTML = '—';
-                konversiInfoText.innerHTML = '';
-                perQtyInput.value = '—';
+                if (totalQtyDisplay) totalQtyDisplay.innerHTML = '—';
+                if (konversiInfoText) konversiInfoText.innerHTML = '';
+                if (perQtyInput) perQtyInput.value = '—';
             }
         }
 
-        document.getElementById('supplier_id') && initTomSelect(document.getElementById('supplier_id'));
         document.querySelectorAll('.barang-select').forEach(initTomSelect);
 
         document.addEventListener('input', function(e) {
@@ -346,7 +382,7 @@
             let tr = document.createElement('tr');
             tr.className = 'item-row';
             tr.innerHTML = `
-                <td>
+                <td data-label="Nama Barang & Stok Gudang">
                     <select name="items[${rowIndex}][barang_id]" class="form-control barang-select" required>
                         <option value="">-- Pilih / Cari Barang --</option>
                         @foreach($barangs as $barang)
@@ -363,28 +399,32 @@
                     </select>
                     <div class="stok-info-badge mt-1" style="font-size: 11px;"></div>
                 </td>
-                <td>
+                <td data-label="Supplier / Pemasok">
+                    <select name="items[${rowIndex}][supplier_id]" class="form-select supplier-select">
+                        ${suppliersListHtml}
+                    </select>
+                </td>
+                <td data-label="Qty Input">
                     <input type="text" name="items[${rowIndex}][qty]" class="form-control qty-input mask-number" placeholder="0" required>
                 </td>
-                <td>
+                <td data-label="Pilihan Satuan">
                     <select name="items[${rowIndex}][satuan_pembelian]" class="form-select satuan-select">
                         <option value="">-- Pilih Satuan --</option>
                     </select>
                     <input type="hidden" name="items[${rowIndex}][konversi_pembelian]" class="konversi-input" value="1">
                 </td>
-                <td>
+                <td data-label="Total Qty (Utama)">
                     <div class="fw-bold text-dark total-qty-display">—</div>
                     <small class="text-muted konversi-info-text d-block" style="font-size: 10px;"></small>
                 </td>
-                <td>
+                <td data-label="Total Harga (Rp)">
                     <input type="text" name="items[${rowIndex}][harga]" class="form-control harga-input mask-number" placeholder="0 (Opsional)">
-                    <small class="text-muted" style="font-size: 10px;">Bisa diisi nanti oleh Purchasing</small>
                 </td>
-                <td>
+                <td data-label="Harga / Satuan">
                     <input type="text" class="form-control harga-per-qty bg-light" readonly tabindex="-1" placeholder="—">
                 </td>
-                <td class="text-center">
-                    <button type="button" class="btn btn-outline-danger btn-sm btn-remove" title="Hapus Baris"><i class="bi bi-trash"></i></button>
+                <td data-label="Aksi" class="text-center">
+                    <button type="button" class="btn btn-outline-danger btn-sm btn-remove" title="Hapus Baris"><i class="bi bi-trash"></i> Hapus</button>
                 </td>
             `;
             tbody.appendChild(tr);
