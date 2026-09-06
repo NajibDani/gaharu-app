@@ -1,5 +1,5 @@
 <x-app-layout>
-    <div class="container py-4">
+    <div class="container-fluid px-2 px-md-4 py-3">
         <!-- HEADER -->
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
@@ -9,7 +9,7 @@
         </div>
 
         <!-- FILTER CARD -->
-        <div class="card border-0 shadow-sm mb-4" style="border-radius: 12px; background: linear-gradient(145deg, #ffffff, #f8f9fa);">
+        <div class="card border-0 shadow-sm mb-4 rounded-3">
             <div class="card-body p-4">
                 <form method="GET" action="{{ route('stok-gudang.buku-pembantu.index') }}" id="formFilter">
                     <div class="row g-3">
@@ -43,7 +43,7 @@
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Cari Barang</label>
                             <div class="input-group">
                                 <input type="text" name="search" class="form-control border-2" style="border-radius: 8px 0 0 8px;" placeholder="Kode / Nama..." value="{{ $search }}">
-                                <button type="submit" class="btn btn-primary px-3" style="border-radius: 0 8px 8px 0;">
+                                <button type="submit" class="btn text-white px-3 min-hitbox" style="background-color: #DE8958; border: none; border-radius: 0 8px 8px 0;">
                                     <i class="bi bi-search"></i>
                                 </button>
                             </div>
@@ -51,10 +51,10 @@
                     </div>
 
                     <div class="d-flex justify-content-end mt-3 gap-2">
-                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="btn btn-light border fw-semibold px-4" style="border-radius: 8px;">
+                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="btn btn-light border fw-semibold px-4 min-hitbox d-inline-flex align-items-center justify-content-center" style="border-radius: 8px;">
                             <i class="bi bi-arrow-counterclockwise me-1"></i> Reset
                         </a>
-                        <button type="submit" class="btn btn-primary fw-semibold px-4" style="border-radius: 8px; background: linear-gradient(135deg, #0d6efd, #0b5ed7);">
+                        <button type="submit" class="btn text-white fw-semibold px-4 min-hitbox" style="border-radius: 8px; background-color: #DE8958; border: none;">
                             <i class="bi bi-funnel me-1"></i> Terapkan Filter
                         </button>
                     </div>
@@ -63,17 +63,17 @@
         </div>
 
         <!-- ITEMS TABLE CARD -->
-        <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+        <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light text-uppercase text-secondary" style="font-size: 12px; letter-spacing: 0.8px;">
+                    <thead style="background-color: #715745; color: white;" class="text-uppercase" style="font-size: 12px; letter-spacing: 0.8px;">
                         <tr>
-                            <th class="ps-4 py-3">Kode Barang</th>
-                            <th class="py-3">Nama Barang</th>
-                            <th class="py-3">Satuan</th>
-                            <th class="py-3">Jenis Barang</th>
-                            <th class="text-end py-3">Stok Akhir Periodik</th>
-                            <th class="text-center py-3" width="150">Aksi</th>
+                            <th class="ps-4 py-3 text-white">Kode Barang</th>
+                            <th class="py-3 text-white">Nama Barang</th>
+                            <th class="py-3 text-white">Satuan</th>
+                            <th class="py-3 text-white">Jenis Barang</th>
+                            <th class="text-end py-3 text-white">Stok Akhir Periodik</th>
+                            <th class="text-center py-3 text-white" width="150">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="text-dark" style="font-size: 14px;">
@@ -136,7 +136,7 @@
     <div class="modal fade" id="modalMutasi" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg" style="border-radius: 14px;">
-                <div class="modal-header bg-dark text-white border-0 px-4 py-3" style="border-radius: 14px 14px 0 0;">
+                <div class="modal-header text-white border-0 px-4 py-3" style="background-color: #715745; border-radius: 14px 14px 0 0;">
                     <div>
                         <h5 class="modal-title fw-bold" id="modalBarangTitle">Rincian Buku Pembantu</h5>
                         <p class="text-white-50 mb-0 font-monospace" style="font-size: 12px;" id="modalBarangSubtitle"></p>

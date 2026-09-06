@@ -26,14 +26,20 @@ class ProduksiController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
+        $customerId = $request->query('customer_id');
 
-        // 1. Pesanan B2B yang Pending / Siap dibuatkan WO
-        $pesananB2BPending = \App\Models\Pesanan::where(function($q) {
+        // 1. Pesanan Cold Kitchen yang Pending / Siap dibuatkan WO
+        $pesananQuery = \App\Models\Pesanan::where(function($q) {
                 $q->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
             })
             ->with(['details.produk', 'customer'])
-            ->whereIn('status_pesanan', ['pending', 'Draft', 'Siap diproduksi'])
-            ->whereIn('status_pembayaran', ['DP', 'Lunas'])
+            ->whereIn('status_pesanan', ['pending', 'Draft', 'Siap diproduksi']);
+
+        if ($customerId) {
+            $pesananQuery->where('customer_id', $customerId);
+        }
+
+        $pesananB2BPending = $pesananQuery
             ->orderBy('estimasi_kirim', 'asc')
             ->paginate(10, ['*'], 'pesanan_page')
             ->withQueryString();
@@ -62,13 +68,19 @@ class ProduksiController extends Controller
             return $p;
         });
 
-        // 2. Filter Work Order B2B
+        // 2. Filter Work Order Cold Kitchen
         $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resep.bahan'])
             ->where(function($q) {
                 $q->whereHas('details.pesanan', function($pq) {
                     $pq->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
                 })->orWhereDoesntHave('details.pesanan');
             });
+
+        if ($customerId) {
+            $queryWo->whereHas('details.pesanan', function($pq) use ($customerId) {
+                $pq->where('customer_id', $customerId);
+            });
+        }
 
         if ($search) {
             $queryWo->where('kode_wo', 'like', '%' . $search . '%');
@@ -159,13 +171,19 @@ class ProduksiController extends Controller
             return $wo;
         });
 
-        // 3. Riwayat Produksi B2B
+        // 3. Riwayat Produksi Cold Kitchen
         $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer'])
             ->where(function($q) {
                 $q->whereHas('pesanan', function($pq) {
                     $pq->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
                 })->orWhereDoesntHave('pesanan');
             });
+
+        if ($customerId) {
+            $queryProduksi->whereHas('pesanan', function($pq) use ($customerId) {
+                $pq->where('customer_id', $customerId);
+            });
+        }
 
         if ($search) {
             $queryProduksi->where('kode_produksi', 'like', '%' . $search . '%');
@@ -177,7 +195,9 @@ class ProduksiController extends Controller
         $totalDraft = (clone $queryProduksi)->where('status_produksi', 'Draft')->count();
         $totalApproved = (clone $queryProduksi)->where('status_produksi', 'Selesai')->count();
 
-        return view('produksi.index', compact('pesananB2BPending', 'woList', 'riwayatProduksi', 'totalData', 'totalDraft', 'totalApproved'));
+        $customers = \App\Models\Customer::orderBy('nama')->get();
+
+        return view('produksi.index', compact('pesananB2BPending', 'woList', 'riwayatProduksi', 'totalData', 'totalDraft', 'totalApproved', 'customers', 'customerId'));
     }
 
     /**
@@ -192,9 +212,6 @@ class ProduksiController extends Controller
         ]);
 
         $pesanan = \App\Models\Pesanan::findOrFail($request->pesanan_id);
-        if ($pesanan->status_pembayaran === 'Belum Bayar') {
-            return back()->with('error', 'Gagal! Pesanan ini belum membayar DP / Lunas.');
-        }
 
         DB::beginTransaction();
         try {
@@ -255,12 +272,16 @@ class ProduksiController extends Controller
      */
     public function storeAndApprove(Request $request)
     {
-        $request->validate([
-            'work_order_id'    => 'required',
-            'tanggal_produksi' => 'required|date',
-            'produk_id'        => 'required|array',
-            'qty_hasil'        => 'required|array',
-        ]);
+        $woIdsInput = $request->input('work_order_ids') ?? $request->input('work_order_id');
+        if (is_array($woIdsInput)) {
+            $woIds = array_filter($woIdsInput);
+        } else {
+            $woIds = array_filter(explode(',', strval($woIdsInput)));
+        }
+
+        if (empty($woIds)) {
+            return back()->with('error', 'Gagal: Tidak ada Work Order valid yang dipilih.')->withInput();
+        }
 
         if (\App\Models\Journal::isPeriodClosed($request->tanggal_produksi)) {
             return back()->with('error', 'Gagal: Periode akuntansi untuk tanggal ' . date('d/m/Y', strtotime($request->tanggal_produksi)) . ' sudah ditutup buku.')->withInput();
@@ -268,8 +289,12 @@ class ProduksiController extends Controller
 
         DB::beginTransaction();
         try {
-            $wo = WorkOrder::with('details.produk')->findOrFail($request->work_order_id);
-            $pesananIdUtama = $wo->details->pluck('pesanan_id')->first();
+            $workOrders = WorkOrder::with('details.produk')->whereIn('id', $woIds)->get();
+            if ($workOrders->isEmpty()) {
+                throw new \Exception('Work Order yang dipilih tidak ditemukan.');
+            }
+
+            $pesananIdUtama = $workOrders->pluck('details')->flatten()->pluck('pesanan_id')->filter()->first();
             $pesanan = \App\Models\Pesanan::find($pesananIdUtama);
 
             $gudangBahan = MasterGudang::where('kategori', 'Produksi')->first() 
@@ -294,7 +319,7 @@ class ProduksiController extends Controller
                 throw new \Exception('Harap masukkan minimal 1 produk dengan Qty hasil lebih dari 0.');
             }
 
-            $kodeProduksi = 'PRD-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+            $kodeProduksi = 'PRD-BATCH-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
             $produksiId = DB::table('produksi')->insertGetId([
                 'kode_produksi'   => $kodeProduksi,
@@ -318,19 +343,6 @@ class ProduksiController extends Controller
                 $produk = MasterBarang::find($produkId);
                 if (!$produk) {
                     throw new \Exception("ID Produk {$produkId} tidak valid.");
-                }
-
-                $wod = $wo->details->where('produk_id', $produkId)->first();
-                $targetRencana = $wod ? floatval($wod->qty_rencana) : $qtyHasil;
-                $sudahAlokasi = DB::table('alokasi_produksi_pesanan')
-                    ->where('pesanan_id', $pesananIdUtama)
-                    ->where('produk_id', $produkId)
-                    ->sum('qty_alokasi') ?? 0;
-                $sisaTarget = max(0, $targetRencana - $sudahAlokasi);
-
-                if ($qtyHasil > $sisaTarget && $sisaTarget > 0) {
-                    $namaProd = $produk ? $produk->nama : 'Produk';
-                    throw new \Exception("Qty input untuk {$namaProd} ({$qtyHasil}) melebihi sisa kekurangan ({$sisaTarget}).");
                 }
 
                 $totalBbbProduk = 0;
@@ -442,44 +454,71 @@ class ProduksiController extends Controller
                     'created_by'       => auth()->id() ?? 1,
                 ]);
 
-                // Alokasi pesanan
-                if ($pesananIdUtama) {
+                // Alokasi pesanan secara fleksibel ke seluruh WO yang dipilih dalam batch ini
+                $qtySisaAlokasi = $qtyHasil;
+                $wodList = DB::table('work_order_detail')
+                    ->whereIn('work_order_id', $woIds)
+                    ->where('produk_id', $produkId)
+                    ->get();
+
+                foreach ($wodList as $wod) {
+                    if ($qtySisaAlokasi <= 0) break;
+
+                    $sudah = DB::table('alokasi_produksi_pesanan')
+                        ->where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->sum('qty_alokasi') ?? 0;
+
+                    $kurangWod = max(0, floatval($wod->qty_rencana) - floatval($sudah));
+                    if ($kurangWod <= 0) continue;
+
+                    $porsi = min($qtySisaAlokasi, $kurangWod);
+
                     ProduksiPesanan::create([
                         'produksi_id'       => $produksiId,
-                        'pesanan_id'        => $pesananIdUtama,
+                        'pesanan_id'        => $wod->pesanan_id,
                         'produk_id'         => $produkId,
-                        'qty_alokasi'       => $qtyHasil,
+                        'qty_alokasi'       => $porsi,
                         'qty_terkirim'      => 0,
                         'hpp_per_unit'      => $hppPerUnit,
-                        'total_hpp_alokasi' => $totalHppProduk,
+                        'total_hpp_alokasi' => $hppPerUnit * $porsi,
                     ]);
+
+                    $qtySisaAlokasi -= $porsi;
                 }
             }
 
-            // Update status WO & Pesanan
-            $allDone = true;
-            foreach ($wo->details as $wod) {
-                $totalTarget = floatval($wod->qty_rencana);
-                $sudahAlokasi = DB::table('alokasi_produksi_pesanan')
-                    ->where('pesanan_id', $wod->pesanan_id)
-                    ->where('produk_id', $wod->produk_id)
-                    ->sum('qty_alokasi') ?? 0;
-                if ($sudahAlokasi < $totalTarget) {
-                    $allDone = false;
-                    break;
+            // Update status seluruh Work Order yang diproses dalam batch ini
+            foreach ($workOrders as $wo) {
+                $allDone = true;
+                foreach ($wo->details as $wod) {
+                    $totalTarget = floatval($wod->qty_rencana);
+                    $sudahAlokasi = DB::table('alokasi_produksi_pesanan')
+                        ->where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->sum('qty_alokasi') ?? 0;
+                    if ($sudahAlokasi < $totalTarget) {
+                        $allDone = false;
+                        break;
+                    }
                 }
-            }
 
-            $wo->update(['status_wo' => $allDone ? 'Selesai' : 'Diproses']);
-            if ($pesanan && $allDone) {
-                $pesanan->update(['status_pesanan' => 'Siap kirim']);
+                $wo->update(['status_wo' => $allDone ? 'Selesai' : 'Diproses']);
+                
+                $pId = $wo->details->pluck('pesanan_id')->first();
+                if ($pId && $allDone) {
+                    $pObj = \App\Models\Pesanan::find($pId);
+                    if ($pObj) {
+                        $pObj->update(['status_pesanan' => 'Siap kirim']);
+                    }
+                }
             }
 
             DB::commit();
-            return redirect()->route('produksi.index', ['tab' => 'prod'])->with('success', 'Hasil Produksi B2B berhasil disimpan dan di-Approve! HPP dan stok telah diperbarui.');
+            return redirect()->route('produksi.index', ['tab' => 'prod'])->with('success', 'Hasil Produksi Batch B2B (' . count($workOrders) . ' WO) berhasil disimpan dan di-Approve! HPP dan stok telah diperbarui.');
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Gagal memproses hasil produksi: ' . $e->getMessage());
+            return back()->with('error', 'Gagal memproses hasil produksi batch: ' . $e->getMessage());
         }
     }
 

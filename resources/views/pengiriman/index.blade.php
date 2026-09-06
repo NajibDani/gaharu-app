@@ -3,19 +3,19 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8f9fa; }
-        .table-custom-header th { background-color: #6a4126 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.85rem; padding: 12px; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
+        .table-custom-header th { background-color: #715745 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.85rem; padding: 12px; }
         .table-custom-body td { font-size: 0.85rem; padding: 12px; vertical-align: middle; }
-        .btn-custom-orange { background-color: #db7946; color: white; border: none; }
-        .btn-custom-orange:hover { background-color: #c06535; color: white; }
-        .summary-card { border-radius: 12px; border: 1px solid #eaeaea; background: #ffffff; padding: 16px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-        .filter-pill { border-radius: 20px; padding: 6px 16px; font-size: 0.85rem; font-weight: 600; text-decoration: none; display: inline-block; transition: all 0.2s ease; border: 1px solid #dee2e6; color: #495057; background: #ffffff; }
+        .btn-custom-orange { background-color: #DE8958; color: white; border: none; }
+        .btn-custom-orange:hover { background-color: #C87443; color: white; }
+        .summary-card { border-radius: 12px; border: 1px solid #DCD3CB; background: #ffffff; padding: 16px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .filter-pill { border-radius: 20px; padding: 7px 18px; font-size: 0.85rem; font-weight: 600; text-decoration: none; display: inline-block; transition: all 0.2s ease; border: 1px solid #DCD3CB; color: #495057; background: #ffffff; }
         .filter-pill:hover { background: #f1f3f5; color: #212529; }
-        .filter-pill.active { background: #db7946; color: #ffffff; border-color: #db7946; }
-        .action-btn { border-radius: 6px; padding: 5px 12px; font-size: 0.85rem; font-weight: 500; }
+        .filter-pill.active { background: #DE8958; color: #ffffff; border-color: #DE8958; }
+        .action-btn { border-radius: 7px; padding: 6px 12px; font-size: 0.85rem; font-weight: 600; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
     </style>
 
-    <div class="container-fluid py-4 mb-5">
+    <div class="container-fluid px-2 px-md-4 py-3 mb-5">
         
         {{-- HEADER SECTION --}}
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -159,15 +159,9 @@
                                     <div class="d-flex justify-content-center gap-1 flex-wrap">
                                         @if(!$isFullyShipped)
                                             {{-- Tombol Kirim (untuk Belum Kirim & Sebagian Terkirim) --}}
-                                            @if(!$isCK && $pesanan->status_pembayaran !== 'Lunas')
-                                                <button type="button" class="btn action-btn btn-secondary shadow-sm disabled" title="Pesanan B2B Belum Lunas" disabled style="opacity: 0.6;">
-                                                    <i class="bi bi-lock-fill me-1"></i> Belum Lunas
-                                                </button>
-                                            @else
-                                                <button type="button" class="btn action-btn btn-custom-orange shadow-sm d-flex align-items-center gap-1 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalKirimPesanan{{ $pesanan->id }}" title="Kirim Sisa Pesanan">
-                                                    <i class="bi bi-send-fill"></i> Kirim
-                                                </button>
-                                            @endif
+                                            <button type="button" class="btn action-btn btn-custom-orange shadow-sm d-flex align-items-center gap-1 fw-semibold" data-bs-toggle="modal" data-bs-target="#modalKirimPesanan{{ $pesanan->id }}" title="Kirim Sisa Pesanan">
+                                                <i class="bi bi-send-fill"></i> Kirim
+                                            </button>
                                         @endif
 
                                         @if($hasAnyShipment)
@@ -179,7 +173,7 @@
                                     </div>
 
                                     {{-- MODAL PROSES PENGIRIMAN POP-UP (DIRECT DISPATCH) --}}
-                                    @if(!$isFullyShipped && ($isCK || $pesanan->status_pembayaran === 'Lunas'))
+                                    @if(!$isFullyShipped)
                                         <div class="modal fade text-start" id="modalKirimPesanan{{ $pesanan->id }}" tabindex="-1" aria-hidden="true">
                                             <div class="modal-dialog modal-lg modal-dialog-centered">
                                                 <div class="modal-content border-0 shadow-lg rounded-4">

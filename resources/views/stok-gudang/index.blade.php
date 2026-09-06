@@ -1,25 +1,25 @@
 <x-app-layout>
 
-    <div class="container">
+    <div class="container-fluid px-2 px-md-4 py-3">
 
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="fw-bold">
+            <h4 class="fw-bold mb-0">
                 Stok Gudang
             </h4>
         </div>
 
         <!-- FILTER -->
-        <div class="card shadow-sm mb-3">
-            <div class="card-body">
+        <div class="card shadow-sm mb-3 border-0 rounded-3">
+            <div class="card-body p-3">
                 <form method="GET" action="{{ route('stok-gudang.index') }}">
                     <div class="row g-2 align-items-end">
-                        <div class="col-md-3">
-                            <label class="form-label fw-semibold small">Cari Nama / Kode Item</label>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label fw-semibold small mb-1">Cari Nama / Kode Item</label>
                             <input type="text" name="search" class="form-control form-control-sm" placeholder="Ketik nama / kode barang..." value="{{ request('search') }}">
                         </div>
 
-                        <div class="col-md-2">
-                            <label class="form-label fw-semibold small">Filter Gudang</label>
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold small mb-1">Filter Gudang</label>
                             <select name="gudang_id" id="filter_gudang_id" class="form-select form-select-sm">
                                 <option value="">-- Semua Gudang --</option>
                                 @foreach($gudangs as $gudang)
@@ -30,15 +30,15 @@
                             </select>
                         </div>
 
-                        <div class="col-md-2" id="filter_divisi_container" style="{{ empty($divisiId) && empty($gudangId) ? 'display:none;' : '' }}">
-                            <label class="form-label fw-semibold small">Filter Divisi</label>
+                        <div class="col-12 col-sm-6 col-md-2" id="filter_divisi_container" style="{{ empty($divisiId) && empty($gudangId) ? 'display:none;' : '' }}">
+                            <label class="form-label fw-semibold small mb-1">Filter Divisi</label>
                             <select name="divisi_id" id="filter_divisi_id" class="form-select form-select-sm">
                                 <option value="">-- Semua Divisi --</option>
                             </select>
                         </div>
 
-                        <div class="col-md-2">
-                            <label class="form-label fw-semibold small">Filter Jenis Barang</label>
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold small mb-1">Filter Jenis Barang</label>
                             <select name="jenis_barang" class="form-select form-select-sm">
                                 <option value="">-- Semua Jenis --</option>
                                 <option value="bahan_baku" {{ ($jenisBarang ?? '') === 'bahan_baku' ? 'selected' : '' }}>Bahan Baku</option>
@@ -48,11 +48,11 @@
                             </select>
                         </div>
 
-                        <div class="col-md-3 d-flex gap-1">
-                            <button type="submit" class="btn btn-primary btn-sm flex-fill">
-                                <i class="bi bi-search"></i> Cari / Filter
+                        <div class="col-12 col-sm-6 col-md-3 d-flex gap-1">
+                            <button type="submit" class="btn btn-sm text-white flex-fill min-hitbox" style="background-color: #DE8958; border: none;">
+                                <i class="bi bi-search me-1"></i> Filter
                             </button>
-                            <a href="{{ route('stok-gudang.index') }}" class="btn btn-secondary btn-sm">
+                            <a href="{{ route('stok-gudang.index') }}" class="btn btn-secondary btn-sm min-hitbox d-inline-flex align-items-center">
                                 Reset
                             </a>
                         </div>
@@ -62,18 +62,19 @@
         </div>
 
         <!-- TABEL -->
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <table class="table table-bordered table-hover align-middle">
-                    <thead class="table-dark">
-                        <tr>
-                            <th width="200">Gudang & Divisi</th>
-                            <th width="140">Kode Barang</th>
-                            <th>Nama & Jenis Barang</th>
-                            <th width="180">Jumlah Stok</th>
-                            <th width="140">Status</th>
-                        </tr>
-                    </thead>
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover align-middle mb-0">
+                        <thead style="background-color: #715745; color: white;">
+                            <tr>
+                                <th class="text-white" width="200">Gudang & Divisi</th>
+                                <th class="text-white" width="140">Kode Barang</th>
+                                <th class="text-white">Nama & Jenis Barang</th>
+                                <th class="text-white" width="180">Jumlah Stok</th>
+                                <th class="text-white" width="140">Status</th>
+                            </tr>
+                        </thead>
 
                     <tbody>
                         @forelse($stokGudang as $stok)
@@ -130,13 +131,14 @@
                         @endforelse
                     </tbody>
                 </table>
+            </div>
 
-                <div class="mt-3">
+            @if($stokGudang->hasPages())
+                <div class="p-3 border-top">
                     {{ $stokGudang->links() }}
                 </div>
-            </div>
+            @endif
         </div>
-
     </div>
 
     <script>

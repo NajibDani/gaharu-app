@@ -1,62 +1,62 @@
 <x-app-layout>
 
-<div class="container py-4">
+<div class="container-fluid px-2 px-md-4 py-3">
 
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h3 class="fw-bold mb-0">Penjualan POS</h3>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <h3 class="fw-bold mb-0 text-dark">Penjualan POS</h3>
 
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <form action="{{ route('penjualan_pos.index') }}" method="GET" class="d-flex gap-2 flex-wrap">
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari no transaksi..." value="{{ request('search') }}" style="width: 200px; border-radius: 6px;">
-                <button type="submit" class="btn btn-sm btn-primary" style="border-radius: 6px;">Cari</button>
+        <div class="d-flex align-items-center gap-2 flex-wrap w-100 w-md-auto justify-content-start justify-content-md-end">
+            <form action="{{ route('penjualan_pos.index') }}" method="GET" class="d-flex gap-2 flex-wrap flex-grow-1 flex-md-grow-0">
+                <input type="text" name="search" class="form-control form-control-sm flex-grow-1" placeholder="Cari no transaksi..." value="{{ request('search') }}" style="min-width: 170px; border-radius: 8px; border: 1px solid #DCD3CB; padding: 8px 12px;">
+                <button type="submit" class="btn btn-sm text-white" style="background-color: #DE8958; border-radius: 8px; border: none; padding: 8px 16px; font-weight: 600;">Cari</button>
                 @if(request('search'))
-                    <a href="{{ route('penjualan_pos.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px;">Reset</a>
+                    <a href="{{ route('penjualan_pos.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 8px; padding: 8px 16px;">Reset</a>
                 @endif
             </form>
             <a href="{{ route('penjualan_pos.laporan') }}"
-               class="btn btn-success px-4 shadow-sm">
-               📊 Lihat Laporan
+               class="btn btn-sm btn-outline-secondary px-3 shadow-sm rounded-3 fw-semibold d-inline-flex align-items-center gap-1" style="min-height: 38px;">
+               📊 Laporan
             </a>
 
-            <button type="button" class="btn btn-outline-success px-4 shadow-sm" data-bs-toggle="modal" data-bs-target="#importMokaModal">
-               📥 Import Moka POS
+            <button type="button" class="btn btn-sm btn-outline-dark px-3 shadow-sm rounded-3 fw-semibold d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#importMokaModal" style="min-height: 38px;">
+               📥 Import Moka
             </button>
 
             <a href="{{ route('penjualan_pos.create') }}"
-               class="btn btn-primary px-4 shadow-sm">
-               + Tambah Transaksi
+               class="btn btn-sm text-white px-3 shadow-sm rounded-3 fw-semibold d-inline-flex align-items-center gap-1" style="background-color: #DE8958; min-height: 38px;">
+               <i class="bi bi-plus-circle-fill"></i> Tambah Transaksi
             </a>
         </div>
     </div>
 
     @if(session('success'))
-    <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+    <div class="alert alert-success alert-dismissible fade show shadow-sm rounded-3" role="alert">
         <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
     @endif
 
     @if(session('error'))
-    <div class="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
+    <div class="alert alert-danger alert-dismissible fade show shadow-sm rounded-3" role="alert">
         <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ session('error') }}
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
     @endif
 
-    <div class="card shadow-sm border-0">
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4">
         <div class="card-body p-0">
             
             <div class="table-responsive">
-                <table class="table table-hover align-middle text-nowrap mb-0">
+                <table class="table table-hover align-middle mb-0">
 
-                    <thead class="table-dark">
+                    <thead class="table-custom-header">
                         <tr>
-                            <th class="ps-3">Kode Transaksi</th>
-                            <th>Tanggal</th>
-                            <th>Gudang / Outlet</th>
-                            <th class="text-end">Total Omzet</th>
-                            <th class="text-center">Status</th>
-                            <th class="text-center">Aksi</th>
+                            <th class="ps-3" style="background-color: #715745 !important;">Kode Transaksi</th>
+                            <th style="background-color: #715745 !important;">Tanggal</th>
+                            <th style="background-color: #715745 !important;">Gudang / Outlet</th>
+                            <th class="text-end" style="background-color: #715745 !important;">Total Omzet</th>
+                            <th class="text-center" style="background-color: #715745 !important;">Status</th>
+                            <th class="text-center" style="background-color: #715745 !important;">Aksi</th>
                         </tr>
                     </thead>
 

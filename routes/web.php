@@ -153,7 +153,9 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::resource('customer', CustomerController::class)->names('customer');
     });
 
-    // Pesanan B2B (Akses Operasional - Semua Role)
+    // Pesanan B2B / Cold Kitchen (Akses Operasional - Semua Role)
+    Route::post('/pesanan/pembayaran-massal', [PesananController::class, 'pembayaranMassal'])->name('pesanan.pembayaran-massal');
+    Route::post('/pesanan/{id}/update-harga-jual', [PesananController::class, 'updateHargaJual'])->name('pesanan.update-harga-jual');
     Route::get('/pesanan/{id}/cetak-pdf', [PesananController::class, 'cetakSoPdf'])->name('pesanan.cetak-pdf');
     Route::resource('pesanan', PesananController::class)->names('pesanan');
     Route::resource('pesanan-detail', PesananDetailController::class);
@@ -306,8 +308,10 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // 4B. GROUP CENTRAL KITCHEN (Akses Operasional - Semua Role)
     // =========================================================================
     // CK Orders
+    Route::post('/central-kitchen/orders/pembayaran-massal', [CentralKitchenOrderController::class, 'pembayaranMassal'])->name('ck-orders.pembayaran-massal');
     Route::get('/central-kitchen/orders/suggestions', [CentralKitchenOrderController::class, 'suggestions'])->name('ck-orders.suggestions');
     Route::get('/central-kitchen/orders/{id}/cetak-pdf', [CentralKitchenOrderController::class, 'cetakPdf'])->name('ck-orders.cetak-pdf');
+    Route::post('/central-kitchen/orders/{id}/pembayaran', [CentralKitchenOrderController::class, 'simpanPembayaran'])->name('ck-orders.bayar');
     Route::resource('central-kitchen/orders', CentralKitchenOrderController::class)->names('ck-orders');
 
     // CK Production

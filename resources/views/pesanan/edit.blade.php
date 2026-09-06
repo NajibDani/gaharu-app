@@ -77,7 +77,7 @@
                     </label>
 
                     <select name="customer_id"
-                            class="form-select">
+                            class="form-select select2">
 
                         @foreach($customers as $customer)
 
@@ -95,19 +95,14 @@
                 </div>
 
                 <div class="row">
-                    <div class="col-12 col-md-4 mb-3">
-                        <label class="form-label">Tanggal Transaksi</label>
+                    <div class="col-12 col-md-6 mb-3">
+                        <label class="form-label fw-semibold text-secondary">Tanggal Permintaan</label>
                         <input type="datetime-local" name="tanggal" class="form-control" value="{{ date('Y-m-d\TH:i', strtotime($pesanan->tanggal)) }}" required>
                     </div>
 
-                    <div class="col-12 col-md-4 mb-3">
-                        <label class="form-label">Estimasi Tanggal Produksi</label>
-                        <input type="date" name="estimasi_produksi" class="form-control" value="{{ $pesanan->estimasi_produksi }}">
-                    </div>
-
-                    <div class="col-12 col-md-4 mb-4">
-                        <label class="form-label">Estimasi Kirim</label>
-                        <input type="datetime-local" name="estimasi_kirim" class="form-control" value="{{ date('Y-m-d\TH:i', strtotime($pesanan->estimasi_kirim)) }}" required>
+                    <div class="col-12 col-md-6 mb-3">
+                        <label class="form-label fw-semibold text-secondary">Estimasi Kirim (Opsional)</label>
+                        <input type="datetime-local" name="estimasi_kirim" class="form-control" value="{{ $pesanan->estimasi_kirim ? date('Y-m-d\TH:i', strtotime($pesanan->estimasi_kirim)) : '' }}">
                     </div>
                 </div>
 
@@ -143,7 +138,7 @@
                                 <td>
 
                                     <select name="produk_id[]"
-                                            class="form-select produk">
+                                            class="form-select produk select2">
 
                                         @foreach($produk as $p)
 
@@ -234,82 +229,64 @@
 
 </div>
 
+@push('scripts')
 <script>
+    function hitungSubtotal(row)
+    {
+        let qty = parseFloat(row.querySelector('.qty').value) || 0;
+        let harga = parseFloat(row.querySelector('.harga').value) || 0;
+        let subtotal = qty * harga;
 
-function hitungSubtotal(row)
-{
-    let qty =
-        parseFloat(row.querySelector('.qty').value) || 0;
+        row.querySelector('.subtotal').value = subtotal;
 
-    let harga =
-        parseFloat(row.querySelector('.harga').value) || 0;
-
-    let subtotal = qty * harga;
-
-    row.querySelector('.subtotal').value = subtotal;
-
-    hitungTotal();
-}
-
-function hitungTotal()
-{
-    let subtotal = 0;
-
-    document.querySelectorAll('.subtotal')
-    .forEach(function(item) {
-        subtotal += parseFloat(item.value) || 0;
-    });
-
-    document.getElementById('subtotal_pesanan').value = subtotal;
-
-    let taxPercentage = parseFloat(document.getElementById('tax_percentage').value) || 0;
-    let taxAmount = subtotal * (taxPercentage / 100);
-    let total = subtotal + taxAmount;
-
-    document.getElementById('total_pesanan').value = total.toFixed(2);
-}
-
-document.getElementById('tax_percentage').addEventListener('input', hitungTotal);
-
-// Trigger initial calculation
-
-// Perubahan QTY atau HARGA secara manual menggunakan input event
-document.addEventListener('input', function(e) {
-
-    if (e.target.classList.contains('qty') || e.target.classList.contains('harga')) {
-
-        let row = e.target.closest('tr');
-
-        hitungSubtotal(row);
+        hitungTotal();
     }
-});
 
-// Perubahan PRODUK (Otomatis mengganti harga sesuai data-harga)
-document.addEventListener('change', function(e) {
+    function hitungTotal()
+    {
+        let subtotal = 0;
 
-    if (e.target.classList.contains('produk')) {
+        document.querySelectorAll('.subtotal')
+        .forEach(function(item) {
+            subtotal += parseFloat(item.value) || 0;
+        });
 
-        let row = e.target.closest('tr');
-        
-        let selectedOption = e.target.options[e.target.selectedIndex];
-        let harga = selectedOption ? parseFloat(selectedOption.getAttribute('data-harga')) || 0 : 0;
+        document.getElementById('subtotal_pesanan').value = subtotal;
 
-        row.querySelector('.harga').value = harga;
+        let taxPercentage = parseFloat(document.getElementById('tax_percentage').value) || 0;
+        let taxAmount = subtotal * (taxPercentage / 100);
+        let total = subtotal + taxAmount;
 
-        hitungSubtotal(row);
+        document.getElementById('total_pesanan').value = total.toFixed(2);
     }
-});
 
-// LOAD AWAL (Hitung total saat halaman pertama kali dibuka)
-document.addEventListener('DOMContentLoaded', function() {
-    document.querySelectorAll('tbody tr').forEach(function(row) {
-        hitungSubtotal(row);
+    $(document).ready(function() {
+        $('.select2').select2({
+            theme: 'bootstrap-5',
+            width: '100%'
+        });
+
+        document.getElementById('tax_percentage').addEventListener('input', hitungTotal);
+
+        $(document).on('input', '.qty, .harga', function() {
+            let row = this.closest('tr');
+            hitungSubtotal(row);
+        });
+
+        $(document).on('change', '.produk', function() {
+            let row = this.closest('tr');
+            let selectedOption = $(this).find(':selected');
+            let harga = selectedOption.length ? parseFloat(selectedOption.data('harga')) || 0 : 0;
+
+            $(row).find('.harga').val(harga);
+            hitungSubtotal(row);
+        });
+
+        // LOAD AWAL
+        document.querySelectorAll('tbody tr').forEach(function(row) {
+            hitungSubtotal(row);
+        });
     });
-});
-
 </script>
-
-</body>
-</html>
-
+@endpush
 </x-app-layout>

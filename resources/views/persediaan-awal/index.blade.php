@@ -6,7 +6,7 @@
     <!-- Stat Cards -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-md-4">
-            <div class="card border-0 shadow-sm rounded-3 h-100" style="background: linear-gradient(135deg, #d88656 0%, #b86230 100%); color: white;">
+            <div class="card border-0 shadow-sm rounded-3 h-100" style="background: linear-gradient(135deg, #DE8958 0%, #B86230 100%); color: white;">
                 <div class="card-body p-3 d-flex align-items-center justify-content-between">
                     <div>
                         <div class="text-white-50 small text-uppercase fw-bold">Total Transaksi</div>
@@ -66,7 +66,7 @@
                     </button>
 
                     <!-- Tombol Input Baru -->
-                    <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm text-white rounded-2 px-3" style="background-color: #d88656; border: none;">
+                    <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm text-white rounded-2 px-3 min-hitbox d-inline-flex align-items-center justify-content-center" style="background-color: #DE8958; border: none;">
                         <i class="bi bi-plus-lg me-1"></i> Input Persediaan Awal
                     </a>
                 </div>
@@ -96,7 +96,7 @@
                     <input type="text" name="search" class="form-control form-control-sm rounded-2" placeholder="Kode transaksi / keterangan..." value="{{ request('search') }}">
                 </div>
                 <div class="col-12 col-md-2 d-flex align-items-end gap-1">
-                    <button type="submit" class="btn btn-sm text-white flex-grow-1 rounded-2" style="background-color: #d88656; border: none;">
+                    <button type="submit" class="btn btn-sm text-white flex-grow-1 rounded-2 min-hitbox" style="background-color: #DE8958; border: none;">
                         <i class="bi bi-search me-1"></i> Filter
                     </button>
                     @if(request()->hasAny(['gudang_id', 'divisi_id', 'start_date', 'end_date', 'search']))
@@ -127,18 +127,18 @@
 
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0 text-center">
-                    <thead class="table-light">
+                    <thead style="background-color: #715745; color: white;">
                         <tr>
-                            <th class="text-center" style="width: 50px;">No</th>
-                            <th class="text-start">Kode Transaksi</th>
-                            <th>Tanggal</th>
-                            <th class="text-start">Gudang / Lokasi</th>
-                            <th>Total Item</th>
-                            <th>Total Qty</th>
-                            <th class="text-end">Total Nilai (Rp)</th>
-                            <th class="text-start">Keterangan</th>
-                            <th>Petugas</th>
-                            <th style="width: 120px;">Aksi</th>
+                            <th class="text-center text-white" style="width: 50px;">No</th>
+                            <th class="text-start text-white">Kode Transaksi</th>
+                            <th class="text-white">Tanggal</th>
+                            <th class="text-start text-white">Gudang / Lokasi</th>
+                            <th class="text-white">Total Item</th>
+                            <th class="text-white">Total Qty</th>
+                            <th class="text-end text-white">Total Nilai (Rp)</th>
+                            <th class="text-start text-white">Keterangan</th>
+                            <th class="text-white">Petugas</th>
+                            <th class="text-white" style="width: 120px;">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -146,7 +146,7 @@
                             <tr>
                                 <td class="text-center text-muted">{{ $data->firstItem() + $index }}</td>
                                 <td class="text-start">
-                                    <a href="{{ route('persediaan-awal.show', $item->id) }}" class="fw-bold text-decoration-none" style="color: #d88656;">
+                                    <a href="{{ route('persediaan-awal.show', $item->id) }}" class="fw-bold text-decoration-none" style="color: #DE8958;">
                                         {{ $item->kode_transaksi }}
                                     </a>
                                 </td>
@@ -221,7 +221,7 @@
                                     <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
                                     Belum ada data transaksi persediaan awal.
                                     <div class="mt-2">
-                                        <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm text-white rounded-2 px-3" style="background-color: #d88656;">
+                                        <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm text-white rounded-2 px-3 min-hitbox d-inline-flex align-items-center justify-content-center" style="background-color: #DE8958;">
                                             <i class="bi bi-plus-lg me-1"></i> Buat Persediaan Awal Baru
                                         </a>
                                     </div>
@@ -244,7 +244,7 @@
     <div class="modal fade" id="modalImportExcel" tabindex="-1" aria-labelledby="modalImportExcelLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow rounded-3">
-                <div class="modal-header text-white" style="background-color: #d88656;">
+                <div class="modal-header text-white" style="background-color: #715745;">
                     <h5 class="modal-title fw-bold" id="modalImportExcelLabel">
                         <i class="bi bi-file-earmark-excel me-2"></i> Import Persediaan Awal dari Excel
                     </h5>
@@ -291,7 +291,7 @@
                     </div>
                     <div class="modal-footer border-0 px-4 pb-4 pt-0">
                         <button type="button" class="btn btn-light border px-4" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn text-white px-4" style="background-color: #d88656;">Import & Simpan</button>
+                        <button type="submit" class="btn text-white px-4 min-hitbox" style="background-color: #DE8958;">Import & Simpan</button>
                     </div>
                 </form>
             </div>
@@ -306,8 +306,8 @@
             font-size: 14px !important;
         }
         .custom-input:focus {
-            border-color: #d88656 !important;
-            box-shadow: 0 0 0 3px rgba(216, 134, 86, 0.15) !important;
+            border-color: #DE8958 !important;
+            box-shadow: 0 0 0 3px rgba(222, 137, 88, 0.15) !important;
         }
         .btn-close-white {
             filter: invert(1) grayscale(1) brightness(2);

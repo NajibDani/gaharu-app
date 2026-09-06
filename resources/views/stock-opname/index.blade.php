@@ -19,7 +19,8 @@
 
         <div>
             <button
-                class="btn btn-primary px-4"
+                class="btn text-white px-4 min-hitbox d-inline-flex align-items-center justify-content-center"
+                style="background-color: #DE8958; border: none;"
                 data-bs-toggle="modal"
                 data-bs-target="#createOpnameModal">
                 <i class="bi bi-plus-circle me-2"></i>
@@ -72,11 +73,11 @@
                     </select>
                 </div>
                 <div class="col-12 col-md-2 d-flex align-items-end gap-1" style="padding-top: 22px;">
-                    <button type="submit" class="btn btn-sm btn-primary flex-fill">
+                    <button type="submit" class="btn btn-sm text-white flex-fill min-hitbox" style="background-color: #DE8958; border: none;">
                         <i class="bi bi-funnel me-1"></i> Filter
                     </button>
                     @if(request()->hasAny(['search', 'gudang_id', 'kategori_id', 'jenis_barang']))
-                        <a href="{{ route('stock-opname.index') }}" class="btn btn-sm btn-secondary" title="Reset Filter">
+                        <a href="{{ route('stock-opname.index') }}" class="btn btn-sm btn-secondary d-inline-flex align-items-center justify-content-center" title="Reset Filter">
                             <i class="bi bi-arrow-clockwise"></i>
                         </a>
                     @endif
@@ -86,16 +87,24 @@
     </div>
 
     @if(session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
+        <div class="alert alert-success alert-dismissible fade show m-3 d-flex align-items-center" role="alert">
+            <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+            <div>{{ session('success') }}</div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
     @endif
 
     @if(session('error'))
-        <div class="alert alert-danger">{{ session('error') }}</div>
+        <div class="alert alert-danger alert-dismissible fade show m-3 d-flex align-items-center" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+            <div>{{ session('error') }}</div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
     @endif
 
     {{-- SUMMARY CARD --}}
-    <div class="row mb-4">
-        <div class="col-md-4">
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted mb-2">Total Stock Opname</div>
@@ -104,7 +113,7 @@
             </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-12 col-md-4">
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted mb-2">Draft</div>
@@ -113,7 +122,7 @@
             </div>
         </div>
 
-        <div class="col-md-4">
+        <div class="col-12 col-md-4">
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body">
                     <div class="text-muted mb-2">Approved</div>
@@ -132,14 +141,14 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table align-middle mb-0">
-                    <thead style="background:#7A4517;color:white;">
+                    <thead style="background-color: #715745; color: white;">
                         <tr>
-                            <th>Kode</th>
-                            <th>Tanggal</th>
-                            <th>Gudang & Divisi</th>
-                            <th>Petugas</th>
-                            <th>Status</th>
-                            <th width="180">Aksi</th>
+                            <th class="text-white">Kode</th>
+                            <th class="text-white">Tanggal</th>
+                            <th class="text-white">Gudang & Divisi</th>
+                            <th class="text-white">Petugas</th>
+                            <th class="text-white">Status</th>
+                            <th class="text-white" width="180">Aksi</th>
                         </tr>
                     </thead>
 
@@ -194,9 +203,9 @@
 
 {{-- MODAL CREATE --}}
 <div class="modal fade" id="createOpnameModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-md">
+    <div class="modal-dialog modal-md modal-dialog-centered">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header text-white" style="background:#A55A1A;">
+            <div class="modal-header text-white" style="background-color: #715745;">
                 <h5 class="modal-title fw-bold">Buat Stock Opname</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -230,7 +239,7 @@
 
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Batal</button>
-                    <button type="submit" class="btn btn-primary px-4">
+                    <button type="submit" class="btn text-white px-4 min-hitbox" style="background-color: #DE8958; border: none;">
                         <i class="bi bi-play-circle me-1"></i> Mulai Opname
                     </button>
                 </div>
@@ -241,9 +250,9 @@
 
 {{-- MODAL DETAIL & APPROVE --}}
 <div class="modal fade" id="detailOpnameModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
+    <div class="modal-dialog modal-xl modal-fullscreen-sm-down modal-dialog-centered">
         <div class="modal-content border-0 shadow">
-            <div class="modal-header text-white" style="background:#7A4517;">
+            <div class="modal-header text-white" style="background-color: #715745;">
                 <h5 class="modal-title fw-bold">Detail Stock Opname</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -428,13 +437,13 @@ function renderDetailOpname(data) {
         <div class="table-responsive">
             <table class="table align-middle mb-0">
                 <thead>
-                    <tr style="background:#7A4517;color:white">
-                        <th>No</th>
-                        <th>Barang</th>
-                        <th>Stok Sistem</th>
-                        <th>Stok Fisik</th>
-                        <th>Selisih</th>
-                        <th>Nilai Selisih</th>
+                    <tr style="background-color:#715745;color:white">
+                        <th class="text-white">No</th>
+                        <th class="text-white">Barang</th>
+                        <th class="text-white">Stok Sistem</th>
+                        <th class="text-white">Stok Fisik</th>
+                        <th class="text-white">Selisih</th>
+                        <th class="text-white">Nilai Selisih</th>
                     </tr>
                 </thead>
                 <tbody>

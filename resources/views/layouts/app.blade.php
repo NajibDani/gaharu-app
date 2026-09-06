@@ -12,6 +12,8 @@
     <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700&display=swap" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -21,21 +23,32 @@
     ])
 
     <style>
+        :root {
+            --gaharu-primary: #DE8958;
+            --gaharu-primary-hover: #C87443;
+            --gaharu-brown: #715745;
+            --gaharu-dark: #1A1A1A;
+            --gaharu-gray: #DCD3CB;
+            --gaharu-bg: #F9F7F5;
+        }
+
         /* ── GLOBAL ── */
         body {
-            background: #fbf9f6;
+            background: var(--gaharu-bg);
+            color: var(--gaharu-dark);
             margin: 0;
             font-family: 'Figtree', sans-serif;
+            overflow-x: hidden;
         }
 
         main {
-            padding: 24px 32px !important;
+            padding: clamp(16px, 2.5vw, 24px) clamp(16px, 3.5vw, 32px) !important;
         }
 
         /* ── CARD & TABLE ── */
         .card {
-            border: 1px solid #eadfd4;
-            border-radius: 16px;
+            border: 1px solid var(--gaharu-gray);
+            border-radius: 14px;
             background: white;
             box-shadow: 0 4px 12px rgba(0, 0, 0, .03);
         }
@@ -44,27 +57,57 @@
             margin-bottom: 0;
         }
 
-        .table thead th {
-            background: #5a3416;
-            color: white;
+        .table thead th, .table-custom-header th {
+            background: var(--gaharu-brown) !important;
+            color: white !important;
             border: none;
+        }
+
+        /* ── SELECT2 CUSTOM ── */
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted {
+            background-color: var(--gaharu-primary) !important;
+            color: #fff !important;
+        }
+        .select2-container--bootstrap-5.select2-container--focus .select2-selection,
+        .select2-container--bootstrap-5.select2-container--open .select2-selection {
+            border-color: var(--gaharu-primary) !important;
+            box-shadow: 0 0 0 0.25rem rgba(222, 137, 88, 0.25) !important;
         }
 
         /* ── SIDEBAR ── */
         .sidebar {
             width: 260px;
-            min-height: 100vh;
+            height: 100vh;
+            overflow-y: auto;
+            position: sticky;
+            top: 0;
             background: #606060;
-            /* abu-abu */
             border-right: none;
             color: #ffffff;
             flex-shrink: 0;
+            z-index: 1050;
+            transition: transform .3s ease-in-out, box-shadow .3s ease-in-out;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 5px;
+        }
+        .sidebar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
         }
 
         .sidebar-logo {
             text-align: center;
             padding: 24px 10px;
             border-bottom: 1px solid #4a4a4a;
+            position: relative;
+            background: transparent;
         }
 
         .sidebar-logo a {
@@ -86,26 +129,35 @@
             justify-content: space-between;
             align-items: center;
             padding: 12px 20px;
-            /* rata kiri, tidak center */
             color: #ffffff;
             font-weight: 700;
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             cursor: pointer;
-            transition: color .2s;
+            transition: color .2s, background .2s;
             text-decoration: none;
         }
 
-        .menu-parent:hover,
+        .menu-parent:hover {
+            color: #d88656;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
         .menu-parent.active-menu-root {
             color: #d88656;
-            /* terracota saat hover / aktif */
+            background: rgba(216, 134, 86, 0.12);
         }
 
         /* chevron ikut warna parent */
         .menu-parent .chevron-icon {
             color: inherit;
+            font-size: 12px;
+            transition: transform .2s;
+        }
+
+        .menu-parent:hover .chevron-icon {
+            color: #d88656;
         }
 
         /* ── SUBMENU (rincian menu) ── */
@@ -116,7 +168,8 @@
             padding-left: 0;
             margin: 0 0 8px 0;
             background: #545454;
-            /* sedikit lebih gelap dari sidebar */
+            border-top: none;
+            border-bottom: none;
         }
 
         .menu-group.open .submenu-content {
@@ -140,11 +193,10 @@
             margin-top: 0;
         }
 
-        /* link submenu — menjorok lebih ke kanan dari parent */
+        /* link submenu */
         .submenu-content a {
             display: block;
             padding: 9px 20px 9px 44px;
-            /* indent 44px vs parent 20px */
             text-decoration: none;
             color: #e0e0e0;
             font-size: 13.5px;
@@ -163,7 +215,6 @@
             background: rgba(216, 134, 86, .12);
             border-left: 3px solid #d88656;
             padding-left: 41px;
-            /* kompensasi border 3px */
         }
 
         /* ── STEP FLOW items (B2B, CK) ── */
@@ -174,7 +225,7 @@
         }
 
         .submenu-content a.submenu-step.active {
-            padding-left: 37px; /* kompensasi border 3px */
+            padding-left: 37px;
         }
 
         .step-badge {
@@ -185,8 +236,8 @@
             height: 17px;
             min-width: 17px;
             border-radius: 50%;
-            background: rgba(216, 134, 86, .25);
-            color: #d88656;
+            background: rgba(222, 137, 88, .25);
+            color: var(--gaharu-primary);
             font-size: 9px;
             font-weight: 700;
             margin-right: 8px;
@@ -196,7 +247,7 @@
 
         .submenu-content a.submenu-step:hover .step-badge,
         .submenu-content a.submenu-step.active .step-badge {
-            background: #d88656;
+            background: var(--gaharu-primary);
             color: #fff;
         }
 
@@ -204,7 +255,7 @@
             width: calc(100% - 40px);
             margin: 0 20px;
             border: none;
-            background: #d88656;
+            background: var(--gaharu-primary);
             color: white;
             border-radius: 8px;
             padding: 10px;
@@ -214,7 +265,7 @@
         }
 
         .logout-btn:hover {
-            background: #c87443;
+            background: var(--gaharu-primary-hover);
         }
 
         /* ── LAYOUT & CONTENT ── */
@@ -222,33 +273,98 @@
             flex: 1;
             display: flex;
             flex-direction: column;
+            min-width: 0;
         }
 
         .topbar {
             background: white;
-            padding: 16px 32px;
-            border-bottom: 1px solid #eadfd4;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--gaharu-gray);
             display: flex;
-            justify-content: flex-end;
+            justify-content: space-between;
             align-items: center;
         }
 
         .page-header-container {
-            padding: 32px 32px 0 32px;
+            padding: clamp(16px, 3vw, 32px) clamp(16px, 3.5vw, 32px) 0 clamp(16px, 3.5vw, 32px);
         }
 
         .page-header-container h2 {
-            color: #111;
-            font-size: 26px;
+            color: var(--gaharu-dark);
+            font-size: clamp(20px, 4vw, 26px);
             font-weight: 800;
             margin: 0;
         }
 
-        /* ── BUTTON & BADGE ── */
-        .btn-primary {
-            background: #d88656 !important;
+        /* ── BUTTON & BADGE BRAND COLOR ── */
+        .btn-primary, .btn-custom-orange, .btn-gaharu-primary {
+            background: var(--gaharu-primary) !important;
             border: none !important;
+            color: white !important;
             border-radius: 8px;
+        }
+
+        .btn-primary:hover, .btn-custom-orange:hover, .btn-gaharu-primary:hover {
+            background: var(--gaharu-primary-hover) !important;
+            color: white !important;
+        }
+
+        .btn-outline-primary {
+            border-color: var(--gaharu-primary) !important;
+            color: var(--gaharu-primary) !important;
+        }
+
+        .btn-outline-primary:hover {
+            background-color: var(--gaharu-primary) !important;
+            color: white !important;
+        }
+
+        /* ── MOBILE RESPONSIVE DRAWER & TOUCH OPTIMIZATION ── */
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(2px);
+            z-index: 1040;
+        }
+
+        @media (max-width: 991.98px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                bottom: 0;
+                height: 100vh;
+                transform: translateX(-100%);
+                box-shadow: 0 0 25px rgba(0,0,0,0.35);
+            }
+
+            body.sidebar-open .sidebar {
+                transform: translateX(0);
+            }
+
+            body.sidebar-open .sidebar-backdrop {
+                display: block;
+            }
+
+            .topbar {
+                padding: 10px 16px;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .table-responsive {
+                -webkit-overflow-scrolling: touch;
+            }
+            .form-control, .form-select {
+                font-size: 16px !important;
+            }
+            .btn-action-base {
+                width: 36px !important;
+                height: 36px !important;
+                font-size: 0.9rem !important;
+            }
         }
 
         .btn-primary:hover {
@@ -417,14 +533,20 @@
         @endif
     </div>
 
-    <div class="d-flex min-vh-100">
+    <div class="d-flex min-vh-100 position-relative">
+
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
         @include('layouts.navigation')
 
         <div class="content-wrapper">
 
             <header class="topbar">
-                <div class="d-flex align-items-center">
+                <button class="btn btn-light d-lg-none border-0 p-2 me-auto shadow-sm rounded-3 d-flex align-items-center justify-content-center" id="sidebarToggleMobile" type="button" aria-label="Toggle Menu" style="width: 40px; height: 40px;">
+                    <i class="bi bi-list fs-4 text-dark"></i>
+                </button>
+
+                <div class="d-flex align-items-center ms-auto">
                     <div class="text-end me-3">
                         <div class="fw-bold text-dark text-capitalize" style="font-size: 14px;">
                             {{ Auth::user()->nama }}
@@ -475,8 +597,34 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
-        // ── Auto-dismiss popup toast (sukses/error) ──
+        // ── Offcanvas Mobile Navigation Drawer JS ──
         document.addEventListener('DOMContentLoaded', function () {
+            var toggleBtn = document.getElementById('sidebarToggleMobile');
+            var closeBtn = document.getElementById('sidebarCloseMobile');
+            var backdrop = document.getElementById('sidebarBackdrop');
+
+            function toggleSidebar() {
+                document.body.classList.toggle('sidebar-open');
+            }
+
+            function closeSidebar() {
+                document.body.classList.remove('sidebar-open');
+            }
+
+            if (toggleBtn) toggleBtn.addEventListener('click', toggleSidebar);
+            if (closeBtn) closeBtn.addEventListener('click', closeSidebar);
+            if (backdrop) backdrop.addEventListener('click', closeSidebar);
+
+            // Auto close mobile menu when clicking nav link on mobile screens
+            document.querySelectorAll('.sidebar-menu a').forEach(function(link) {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth < 992) {
+                        closeSidebar();
+                    }
+                });
+            });
+
+            // ── Auto-dismiss popup toast (sukses/error) ──
             document.querySelectorAll('.popup-toast').forEach(function (toast) {
                 var delay = parseInt(toast.getAttribute('data-autohide')) || 4000;
 
@@ -559,6 +707,21 @@
                 displaySequentialSweetAlert(events, index + 1);
             });
         }
+    </script>
+
+    <!-- jQuery & Select2 JS -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            if (typeof $.fn.select2 !== 'undefined') {
+                $('.select2').select2({
+                    theme: 'bootstrap-5',
+                    width: '100%',
+                    placeholder: $(this).data('placeholder') || '-- Pilih --'
+                });
+            }
+        });
     </script>
 
     @stack('scripts')

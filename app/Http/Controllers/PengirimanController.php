@@ -135,9 +135,6 @@ class PengirimanController extends Controller
         }
 
         $isCentralKitchen = ($pesanan->tipe_pesanan ?? 'b2b') === 'central_kitchen';
-        if (!$isCentralKitchen && $pesanan->status_pembayaran !== 'Lunas') {
-            return back()->with('error', 'Gagal memproses pengiriman: Pesanan B2B ini belum lunas.');
-        }
 
         DB::beginTransaction();
         try {
@@ -154,24 +151,22 @@ class PengirimanController extends Controller
                 ?? MasterGudang::where('kategori', 'Produksi')->first();
             if (!$gudangB2B) throw new \Exception('Gudang Central Kitchen / Produksi tidak ditemukan.');
 
-            // Tentukan gudang tujuan outlet jika ini pesanan Central Kitchen
+            // Tentukan gudang tujuan outlet (berlaku untuk Central Kitchen maupun Cold Kitchen jika pemesan adalah outlet)
             $gudangTujuanOutlet = null;
-            if ($isCentralKitchen) {
-                // Gunakan gudang_id pesanan jika tersedia DAN bukan gudang CK (sumber)
-                if ($pesanan->gudang_id && $pesanan->gudang_id != $gudangB2B->id) {
-                    $gudangTujuanOutlet = MasterGudang::find($pesanan->gudang_id);
-                }
-                // Fallback: resolusi dari nama customer
-                if (!$gudangTujuanOutlet) {
-                    $customer = DB::table('customers')->where('id', $pesanan->customer_id)->first();
-                    $custNama = strtolower($customer->nama ?? '');
-                    if (str_contains($custNama, 'kejingga')) {
-                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%KeJingga%')
-                            ->orWhere('nama', 'like', '%Kejingga%')->first();
-                    } else {
-                        $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%Gaharu%')
-                            ->where('kategori', 'Operasional')->first();
-                    }
+            // Gunakan gudang_id pesanan jika tersedia DAN bukan gudang asal
+            if ($pesanan->gudang_id && $pesanan->gudang_id != $gudangB2B->id) {
+                $gudangTujuanOutlet = MasterGudang::find($pesanan->gudang_id);
+            }
+            // Fallback: resolusi dari nama customer/outlet
+            if (!$gudangTujuanOutlet && $pesanan->customer_id) {
+                $customer = DB::table('customers')->where('id', $pesanan->customer_id)->first();
+                $custNama = strtolower($customer->nama ?? '');
+                if (str_contains($custNama, 'kejingga')) {
+                    $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%KeJingga%')
+                        ->orWhere('nama', 'like', '%Kejingga%')->first();
+                } elseif (str_contains($custNama, 'gaharu')) {
+                    $gudangTujuanOutlet = MasterGudang::where('nama', 'like', '%Gaharu%')
+                        ->where('kategori', 'Operasional')->first();
                 }
             }
 
@@ -245,8 +240,8 @@ class PengirimanController extends Controller
                     'created_by'     => auth()->id() ?? 1,
                 ]);
 
-                // JIKA CENTRAL KITCHEN: Masukkan stok & batch ke Gudang Outlet Pemesan dengan nilai HPP
-                if ($isCentralKitchen && $gudangTujuanOutlet) {
+                // Masukkan stok & batch ke Gudang Outlet Pemesan (berlaku untuk Central Kitchen & Cold Kitchen)
+                if ($gudangTujuanOutlet) {
                     $stokOutlet = DB::table('stok_gudang')
                         ->where('gudang_id', $gudangTujuanOutlet->id)
                         ->where('barang_id', $barangId)

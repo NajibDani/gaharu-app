@@ -26,14 +26,18 @@ class CentralKitchenProductionController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
+        $customerId = $request->query('customer_id');
 
         // Filter WO yang berasal dari pesanan Central Kitchen
         $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
         $gudangCkId = $gudangCk ? $gudangCk->id : 5;
 
         $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resep.bahan'])
-            ->whereHas('details.pesanan', function($q) {
+            ->whereHas('details.pesanan', function($q) use ($customerId) {
                 $q->where('tipe_pesanan', 'central_kitchen');
+                if ($customerId) {
+                    $q->where('customer_id', $customerId);
+                }
             });
 
         if ($search) {
@@ -124,9 +128,15 @@ class CentralKitchenProductionController extends Controller
         });
 
         // Pesanan CK yang pending/siap dibuatkan WO
-        $pesananCkPending = Pesanan::centralKitchen()
+        $pesananCkQuery = Pesanan::centralKitchen()
             ->with(['details.produk.resepBtklBop', 'customer'])
-            ->whereIn('status_pesanan', ['pending', 'Draft'])
+            ->whereIn('status_pesanan', ['pending', 'Draft']);
+
+        if ($customerId) {
+            $pesananCkQuery->where('customer_id', $customerId);
+        }
+
+        $pesananCkPending = $pesananCkQuery
             ->orderBy('estimasi_kirim', 'asc')
             ->paginate(10, ['*'], 'pesanan_page')
             ->withQueryString();
@@ -142,10 +152,17 @@ class CentralKitchenProductionController extends Controller
 
         // Riwayat Produksi CK dengan detail produk & pesanan
         $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer', 'divisi'])
-            ->whereHas('pesanan', function($q) {
-                $q->where('tipe_pesanan', 'central_kitchen');
-            })
-            ->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
+            ->where(function($q) use ($customerId) {
+                $q->whereHas('pesanan', function($pq) use ($customerId) {
+                    $pq->where('tipe_pesanan', 'central_kitchen');
+                    if ($customerId) {
+                        $pq->where('customer_id', $customerId);
+                    }
+                });
+                if (!$customerId) {
+                    $q->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
+                }
+            });
 
         if ($search) {
             $queryProduksi->where('kode_produksi', 'like', '%' . $search . '%');
@@ -204,7 +221,9 @@ class CentralKitchenProductionController extends Controller
             }
         }
 
-        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjPerDivisi'));
+        $customers = \App\Models\Customer::orderBy('nama')->get();
+
+        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjPerDivisi', 'customers', 'customerId'));
     }
 
     /**
@@ -528,18 +547,25 @@ class CentralKitchenProductionController extends Controller
      */
     public function storeAndApprove(Request $request)
     {
-        $request->validate([
-            'work_order_id'    => 'required',
-            'tanggal_produksi' => 'required|date',
-            'produk_id'        => 'required|array',
-            'qty_hasil'        => 'required|array',
-            'divisi_id'        => 'nullable|exists:gudang_divisi,id',
-        ]);
+        $woIdsInput = $request->input('work_order_ids') ?? $request->input('work_order_id');
+        if (is_array($woIdsInput)) {
+            $woIds = array_filter($woIdsInput);
+        } else {
+            $woIds = array_filter(explode(',', strval($woIdsInput)));
+        }
+
+        if (empty($woIds)) {
+            return back()->with('error', 'Gagal: Tidak ada Work Order Central Kitchen valid yang dipilih.')->withInput();
+        }
 
         DB::beginTransaction();
         try {
-            $wo = WorkOrder::with('details.produk')->findOrFail($request->work_order_id);
-            $pesananIdUtama = $wo->details->pluck('pesanan_id')->first();
+            $workOrders = WorkOrder::with('details.produk')->whereIn('id', $woIds)->get();
+            if ($workOrders->isEmpty()) {
+                throw new \Exception('Work Order Central Kitchen yang dipilih tidak ditemukan.');
+            }
+
+            $pesananIdUtama = $workOrders->pluck('details')->flatten()->pluck('pesanan_id')->filter()->first();
             $pesanan = Pesanan::find($pesananIdUtama);
 
             $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
@@ -580,8 +606,8 @@ class CentralKitchenProductionController extends Controller
                 }
             }
 
-            // Kode Produksi
-            $kodeProduksi = 'PRD-CK-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+            // Kode Produksi Batch
+            $kodeProduksi = 'PRD-CK-BATCH-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
             $produksiId = DB::table('produksi')->insertGetId([
                 'kode_produksi'   => $kodeProduksi,
@@ -604,20 +630,6 @@ class CentralKitchenProductionController extends Controller
                 if ($qtyHasil <= 0) continue;
 
                 $produk = MasterBarang::find($produkId);
-
-                // Validasi agar tidak melebihi sisa target
-                $wod = $wo->details->where('produk_id', $produkId)->first();
-                $targetRencana = $wod ? floatval($wod->qty_rencana) : $qtyHasil;
-                $sudahAlokasi = DB::table('alokasi_produksi_pesanan')
-                    ->where('pesanan_id', $pesananIdUtama)
-                    ->where('produk_id', $produkId)
-                    ->sum('qty_alokasi') ?? 0;
-                $sisaTarget = max(0, $targetRencana - $sudahAlokasi);
-
-                if ($qtyHasil > $sisaTarget && $sisaTarget > 0) {
-                    $namaProd = $produk ? $produk->nama : 'Produk';
-                    throw new \Exception("Qty input untuk {$namaProd} ({$qtyHasil}) melebihi sisa kekurangan ({$sisaTarget}).");
-                }
 
                 $totalBbbProduk = 0;
                 if ($produk && $produk->resep_id) {
@@ -714,65 +726,97 @@ class CentralKitchenProductionController extends Controller
                     'created_by'       => auth()->id() ?? 1,
                 ]);
 
-                $isInternalCk = false;
-                if ($pesanan) {
-                    $custNama = strtolower($pesanan->customer_nama ?? $pesanan->customer->nama ?? '');
-                    if (str_contains($custNama, 'central kitchen')) {
-                        $isInternalCk = true;
-                    }
-                }
+                // Alokasi pesanan CK secara fleksibel ke seluruh WO yang dipilih dalam batch ini
+                $qtySisaAlokasi = $qtyHasil;
+                $wodList = DB::table('work_order_detail')
+                    ->whereIn('work_order_id', $woIds)
+                    ->where('produk_id', $produkId)
+                    ->get();
 
-                // Alokasi pesanan CK
-                ProduksiPesanan::create([
-                    'produksi_id'       => $produksiId,
-                    'pesanan_id'        => $pesananIdUtama,
-                    'produk_id'         => $produkId,
-                    'qty_alokasi'       => $qtyHasil,
-                    'qty_terkirim'      => $isInternalCk ? $qtyHasil : 0,
-                    'hpp_per_unit'      => $hppPerUnit,
-                    'total_hpp_alokasi' => $hppKeseluruhan,
-                ]);
-            }
+                foreach ($wodList as $wod) {
+                    if ($qtySisaAlokasi <= 0) break;
 
-            // Cek apakah seluruh item WO sudah 100% selesai
-            $woAllDone = true;
-            foreach ($wo->details as $wod) {
-                $totalSelesai = DB::table('alokasi_produksi_pesanan')
-                    ->where('pesanan_id', $pesananIdUtama)
-                    ->where('produk_id', $wod->produk_id)
-                    ->sum('qty_alokasi') ?? 0;
-                if (floatval($totalSelesai) < floatval($wod->qty_rencana)) {
-                    $woAllDone = false;
-                    break;
-                }
-            }
+                    $sudah = DB::table('alokasi_produksi_pesanan')
+                        ->where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->sum('qty_alokasi') ?? 0;
 
-            if ($woAllDone) {
-                $wo->update(['status_wo' => 'Selesai']);
-                if ($pesanan) {
+                    $kurangWod = max(0, floatval($wod->qty_rencana) - floatval($sudah));
+                    if ($kurangWod <= 0) continue;
+
+                    $porsi = min($qtySisaAlokasi, $kurangWod);
+
+                    $pesananItem = Pesanan::find($wod->pesanan_id);
                     $isInternalCk = false;
-                    $custNama = strtolower($pesanan->customer_nama ?? $pesanan->customer->nama ?? '');
-                    if (str_contains($custNama, 'central kitchen')) {
-                        $isInternalCk = true;
+                    if ($pesananItem) {
+                        $custNama = strtolower($pesananItem->customer_nama ?? $pesananItem->customer->nama ?? '');
+                        if (str_contains($custNama, 'central kitchen')) {
+                            $isInternalCk = true;
+                        }
                     }
-                    $pesanan->update(['status_pesanan' => $isInternalCk ? 'Selesai' : 'Siap kirim']);
+
+                    ProduksiPesanan::create([
+                        'produksi_id'       => $produksiId,
+                        'pesanan_id'        => $wod->pesanan_id,
+                        'produk_id'         => $produkId,
+                        'qty_alokasi'       => $porsi,
+                        'qty_terkirim'      => $isInternalCk ? $porsi : 0,
+                        'hpp_per_unit'      => $hppPerUnit,
+                        'total_hpp_alokasi' => $hppPerUnit * $porsi,
+                    ]);
+
+                    // Update harga di PesananDetail sesuai HPP murni (tanpa keuntungan)
+                    PesananDetail::where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $produkId)
+                        ->update([
+                            'harga'    => $hppPerUnit,
+                            'subtotal' => DB::raw('qty * ' . $hppPerUnit),
+                        ]);
+
+                    $qtySisaAlokasi -= $porsi;
                 }
-            } else {
-                $wo->update(['status_wo' => 'Diproses']);
-                if ($pesanan && $pesanan->status_pesanan === 'pending') {
-                    $pesanan->update(['status_pesanan' => 'Diproses']);
+            }
+
+            // Update status & total seluruh Work Order dan Pesanan yang diproses dalam batch ini
+            foreach ($workOrders as $wo) {
+                $woAllDone = true;
+                foreach ($wo->details as $wod) {
+                    $totalTarget = floatval($wod->qty_rencana);
+                    $totalSelesai = DB::table('alokasi_produksi_pesanan')
+                        ->where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->sum('qty_alokasi') ?? 0;
+                    if (floatval($totalSelesai) < $totalTarget) {
+                        $woAllDone = false;
+                        break;
+                    }
+                }
+
+                $wo->update(['status_wo' => $woAllDone ? 'Selesai' : 'Diproses']);
+                
+                $pId = $wo->details->pluck('pesanan_id')->first();
+                if ($pId) {
+                    $pObj = Pesanan::find($pId);
+                    if ($pObj) {
+                        $custNama = strtolower($pObj->customer_nama ?? $pObj->customer->nama ?? '');
+                        $isInternalCk = str_contains($custNama, 'central kitchen');
+                        
+                        // Hitung ulang total pesanan berdasarkan HPP yang sudah di-update
+                        $newTotalHpp = PesananDetail::where('pesanan_id', $pObj->id)->sum('subtotal');
+                        $pObj->update([
+                            'total_pesanan'  => $newTotalHpp,
+                            'tax_service'    => 0,
+                            'status_pesanan' => $woAllDone ? ($isInternalCk ? 'Selesai' : 'Siap kirim') : ($pObj->status_pesanan === 'pending' ? 'Diproses' : $pObj->status_pesanan),
+                        ]);
+                    }
                 }
             }
 
             DB::commit();
-            $pesanSukses = $woAllDone 
-                ? 'Produksi Central Kitchen berhasil di-approve! Seluruh target WO selesai dan siap dikirim ke outlet.'
-                : 'Produksi Central Kitchen berhasil di-approve! Sisa kekurangan target masih dapat diproduksi kembali.';
-
-            return redirect()->route('ck-produksi.index')->with('success', $pesanSukses);
+            return redirect()->route('ck-produksi.index')->with('success', 'Produksi Batch Central Kitchen (' . count($workOrders) . ' WO) berhasil di-approve! HPP dan stok telah diperbarui.');
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->back()->with('error', 'Gagal memproses produksi CK: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Gagal memproses produksi CK batch: ' . $e->getMessage());
         }
     }
 
@@ -932,6 +976,23 @@ class CentralKitchenProductionController extends Controller
                     'qty_terkirim'      => $isInternalCk ? $qtyHasil : 0,
                     'hpp_per_unit'      => $hppPerUnit,
                     'total_hpp_alokasi' => $hppKeseluruhan,
+                ]);
+
+                // Update harga di PesananDetail sesuai HPP murni (tanpa keuntungan)
+                PesananDetail::where('pesanan_id', $produksi->pesanan_id)
+                    ->where('produk_id', $produkId)
+                    ->update([
+                        'harga'    => $hppPerUnit,
+                        'subtotal' => DB::raw('qty * ' . $hppPerUnit),
+                    ]);
+            }
+
+            // Hitung ulang total pesanan CK berdasarkan HPP
+            if ($produksi->pesanan_id) {
+                $newTotalHpp = PesananDetail::where('pesanan_id', $produksi->pesanan_id)->sum('subtotal');
+                DB::table('pesanan')->where('id', $produksi->pesanan_id)->update([
+                    'total_pesanan' => $newTotalHpp,
+                    'tax_service'   => 0,
                 ]);
             }
 

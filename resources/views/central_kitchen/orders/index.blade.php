@@ -6,40 +6,40 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         .ts-dropdown { z-index: 99999 !important; }
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
 
         .table-custom-header th {
-            background-color: #6a4126 !important;
+            background-color: #715745 !important;
             color: #ffffff !important;
             font-weight: 600;
             border-bottom: none;
-            font-size: 0.78rem;
-            padding: 10px 10px;
+            font-size: 0.8rem;
+            padding: 12px 10px;
             white-space: nowrap;
         }
         .table-custom-body td {
-            font-size: 0.8rem;
-            padding: 8px 10px;
+            font-size: 0.82rem;
+            padding: 10px;
             vertical-align: middle;
             border-bottom: 1px solid #f1f5f9;
-            line-height: 1.3;
+            line-height: 1.4;
         }
-        .table-custom-body tr:hover td { background-color: #fafafa; }
+        .table-custom-body tr:hover td { background-color: #fcfbfa; }
 
-        .btn-custom-orange { background-color: #db7946; color: white; border: none; font-weight: 600; font-size: 0.85rem; padding: 8px 16px; border-radius: 8px; transition: all 0.2s; }
-        .btn-custom-orange:hover { background-color: #c06535; color: white; }
-        .summary-card { border-radius: 12px; border: 1px solid #eaeaea; background: #ffffff; padding: 14px 18px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .btn-custom-orange { background-color: #DE8958; color: white; border: none; font-weight: 600; font-size: 0.85rem; padding: 9px 18px; border-radius: 8px; transition: all 0.2s; }
+        .btn-custom-orange:hover { background-color: #C87443; color: white; }
+        .summary-card { border-radius: 12px; border: 1px solid #DCD3CB; background: #ffffff; padding: 16px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
 
-        .badge-subtle { border-radius: 6px; padding: 3px 9px; font-weight: 600; font-size: 0.7rem; display: inline-block; text-transform: capitalize; line-height: 1.4; }
-        .badge-status-pending { background-color: #fef3c7; color: #d97706; }
-        .badge-status-proses { background-color: #e0f2fe; color: #0369a1; }
-        .badge-status-ready { background-color: #e0e7ff; color: #4338ca; }
-        .badge-status-selesai { background-color: #dcfce7; color: #15803d; }
-        .badge-status-batal { background-color: #fee2e2; color: #b91c1c; }
+        .badge-subtle { border-radius: 6px; padding: 4px 10px; font-weight: 600; font-size: 0.72rem; display: inline-block; text-transform: capitalize; line-height: 1.4; }
+        .badge-status-pending { background-color: #FFF8E1; color: #E65100; }
+        .badge-status-proses { background-color: #E3F2FD; color: #0D47A1; }
+        .badge-status-ready { background-color: #EDE7F6; color: #4A148C; }
+        .badge-status-selesai { background-color: #E8F5E9; color: #1B5E20; }
+        .badge-status-batal { background-color: #FFEBEE; color: #B71C1C; }
 
         .action-btn-group { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: nowrap; }
         .btn-action-base {
-            border-radius: 7px; width: 30px; height: 30px; font-size: 0.82rem;
+            border-radius: 8px; width: 34px; height: 34px; font-size: 0.85rem;
             border: none; display: inline-flex; align-items: center; justify-content: center;
             text-decoration: none; transition: all 0.2s; background-color: transparent; flex-shrink: 0;
         }
@@ -54,7 +54,7 @@
         .btn-action-pdf:hover { background-color: #b91c1c; color: white !important; }
     </style>
 
-    <div class="container py-4" style="margin-top: 5.5rem !important;">
+    <div class="container-fluid px-2 px-md-4 py-3">
 
         {{-- ALERT MESSAGES --}}
         @if(session('success'))
@@ -142,7 +142,12 @@
         {{-- TABLE CARD --}}
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
             <div class="card-header bg-white py-3 px-4 border-bottom border-light d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h6 class="fw-bold mb-0 text-dark">Daftar Central Kitchen Orders</h6>
+                <div class="d-flex align-items-center gap-2">
+                    <h6 class="fw-bold mb-0 text-dark">Daftar Central Kitchen Orders</h6>
+                    <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarCk" data-bs-toggle="modal" data-bs-target="#modalBulkBayarCk" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
+                        <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedCk">0</span>)
+                    </button>
+                </div>
 
                 <form method="GET" action="{{ route('ck-orders.index') }}" class="d-flex align-items-center" style="max-width: 300px;">
                     <div class="input-group input-group-sm">
@@ -158,19 +163,39 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-custom-header">
                         <tr>
-                            <th class="text-center" style="width: 50px;">NO</th>
+                            <th class="text-center" style="width: 40px;">
+                                <input type="checkbox" id="checkAllCk" class="form-check-input" title="Pilih Semua">
+                            </th>
+                            <th class="text-center" style="width: 45px;">NO</th>
                             <th>KODE ORDER</th>
                             <th>OUTLET PEMESAN</th>
                             <th>DIVISI CK</th>
                             <th>TANGGAL ORDER</th>
                             <th>ESTIMASI KIRIM</th>
+                            <th class="text-end">TOTAL HPP</th>
                             <th class="text-center">STATUS PRODUKSI</th>
+                            <th class="text-center">STATUS BAYAR</th>
                             <th class="text-center" style="width: 140px;">AKSI</th>
                         </tr>
                     </thead>
                     <tbody class="table-custom-body">
                         @forelse($pesanan as $index => $p)
+                            @php
+                                $totalNilaiItem = $p->total_harga ?? $p->total_pesanan ?? 0;
+                                $sudahBayarItem = isset($p->pembayaran) ? $p->pembayaran->sum('jumlah_bayar') : 0;
+                                $sisaTagihanItem = max(0, $totalNilaiItem - $sudahBayarItem);
+                                $isLunasOrBatal = ($p->status_pembayaran == 'Lunas' || in_array(strtolower($p->status_pesanan ?? ''), ['batal', 'dibatalkan']));
+                            @endphp
                             <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input check-ck-order" 
+                                           value="{{ $p->id }}" 
+                                           data-kode="{{ $p->kode_pesanan }}" 
+                                           data-customer="{{ $p->customer->nama ?? '-' }}" 
+                                           data-total="{{ $totalNilaiItem }}" 
+                                           data-sisa="{{ $sisaTagihanItem }}"
+                                           {{ ($isLunasOrBatal || $sisaTagihanItem <= 0) ? 'disabled' : '' }}>
+                                </td>
                                 <td class="text-center fw-semibold text-muted">{{ $pesanan->firstItem() + $index }}</td>
                                 <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
                                 <td>
@@ -191,6 +216,9 @@
                                         {{ date('d M Y', strtotime($p->estimasi_kirim)) }}
                                     </span>
                                 </td>
+                                <td class="text-end fw-bold text-dark">
+                                    Rp {{ number_format($totalNilaiItem, 0, ',', '.') }}
+                                </td>
                                 <td class="text-center">
                                     @php
                                         $statusClass = 'badge-status-pending';
@@ -207,6 +235,15 @@
                                     </span>
                                 </td>
                                 <td class="text-center">
+                                    @if($p->status_pembayaran == 'Lunas')
+                                        <span class="badge-subtle badge-status-selesai">Lunas</span>
+                                    @elseif($p->status_pembayaran == 'DP')
+                                        <span class="badge-subtle badge-status-pending">DP</span>
+                                    @else
+                                        <span class="badge-subtle badge-status-batal">Belum</span>
+                                    @endif
+                                </td>
+                                <td class="text-center">
                                     <div class="action-btn-group">
                                         <button type="button" class="btn-action-base btn-action-eye" data-bs-toggle="modal" data-bs-target="#modalDetailCkOrder{{ $p->id }}" title="Lihat Detail Pesanan">
                                             <i class="bi bi-eye"></i>
@@ -214,6 +251,12 @@
                                         <a href="{{ route('ck-orders.cetak-pdf', $p->id) }}" target="_blank" class="btn-action-base btn-action-pdf" title="Cetak PDF">
                                             <i class="bi bi-file-earmark-pdf"></i>
                                         </a>
+
+                                        @if(isset($p->customer) && !str_contains(strtolower($p->customer->nama), 'gaharu'))
+                                            <button type="button" class="btn-action-base btn-action-eye bg-success-subtle text-success border-success-subtle" data-bs-toggle="modal" data-bs-target="#modalBayarCk{{ $p->id }}" title="Input Pembayaran & Upload Bukti">
+                                                <i class="bi bi-cash-stack"></i>
+                                            </button>
+                                        @endif
 
                                         @if(!$p->wo_status)
                                             <form action="{{ route('ck-orders.destroy', $p->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus pesanan ini?')">
@@ -225,6 +268,85 @@
                                             </form>
                                         @endif
                                     </div>
+
+                                    {{-- MODAL BAYAR CK (jika customer non-Gaharu) --}}
+                                    @if(isset($p->customer) && !str_contains(strtolower($p->customer->nama), 'gaharu'))
+                                    <div class="modal fade text-start" id="modalBayarCk{{ $p->id }}" tabindex="-1" aria-hidden="true">
+                                        <div class="modal-dialog modal-dialog-centered">
+                                            <form action="{{ route('ck-orders.bayar', $p->id) }}" method="POST" class="w-100" enctype="multipart/form-data">
+                                                @csrf
+                                                <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                                                    <div class="modal-header text-white border-0 p-4" style="background-color: #715745;">
+                                                        <h5 class="modal-title fw-bold d-flex align-items-center gap-2"><i class="bi bi-shield-check"></i> Form Input Pembayaran &amp; Upload Bukti</h5>
+                                                        <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body p-4 bg-white">
+                                                        @php
+                                                            $totalNilai = $p->total_harga ?? $p->total_pesanan ?? 0;
+                                                            $sudahDibayar = isset($p->pembayaran) ? $p->pembayaran->sum('jumlah_bayar') : 0;
+                                                            $sisaTagihan = max(0, $totalNilai - $sudahDibayar);
+                                                        @endphp
+
+                                                        <div class="p-3 rounded-3 mb-4" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                                            <span class="text-muted d-block small mb-1">Invoice / Pesanan: <strong class="text-dark">#{{ $p->kode_pesanan }}</strong></span>
+                                                            <span class="text-muted d-block small mb-1">Pelanggan: <strong class="text-dark">{{ $p->customer->nama }}</strong></span>
+                                                            <span class="text-muted d-block small">Total Tagihan:</span>
+                                                            <h3 class="fw-bold text-dark mb-2">Rp {{ number_format($totalNilai, 0, ',', '.') }}</h3>
+                                                            <div class="text-muted small">Sisa Tagihan: <strong class="text-success">Rp {{ number_format($sisaTagihan, 0, ',', '.') }}</strong></div>
+                                                        </div>
+
+                                                        <div class="mb-3">
+                                                            <label class="form-label fw-semibold small text-secondary">Jumlah Bayar (Rp)</label>
+                                                            <div class="input-group">
+                                                                <span class="input-group-text bg-light border-end-0 fw-semibold text-muted">Rp</span>
+                                                                <input type="number" name="jumlah_bayar" class="form-control border-start-0" min="1" placeholder="Masukkan nominal pembayaran" required style="outline: none; box-shadow: none;">
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="row">
+                                                            <div class="col-md-6 mb-3">
+                                                                <label class="form-label fw-semibold small text-secondary">Tanggal Bayar</label>
+                                                                <input type="date" name="tanggal_bayar" class="form-control" value="{{ date('Y-m-d') }}" required>
+                                                                <div class="d-flex gap-1 flex-wrap mt-1">
+                                                                    <button type="button" class="btn btn-xs btn-outline-primary btn-quick-akhir-bulan py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'ini')">
+                                                                        <i class="bi bi-calendar-check me-1"></i> Akhir Bulan Ini
+                                                                    </button>
+                                                                    <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'depan')">
+                                                                        <i class="bi bi-calendar-plus me-1"></i> Akhir Bulan Depan
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div class="col-md-6 mb-3">
+                                                                <label class="form-label fw-semibold small text-secondary">Metode Pembayaran</label>
+                                                                <select name="metode_pembayaran" class="form-select text-secondary" required onchange="handleMetodePembayaranChange(this)">
+                                                                    <option value="Cash">Cash / Tunai</option>
+                                                                    <option value="Transfer">Transfer Bank</option>
+                                                                    <option value="QRIS">QRIS</option>
+                                                                    <option value="COD">COD (Cash on Delivery)</option>
+                                                                    <option value="Termin">Termin / Piutang</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+
+                                                        <div class="mb-3">
+                                                            <label class="form-label fw-semibold small text-secondary">Catatan Tambahan</label>
+                                                            <textarea name="catatan" class="form-control" rows="2" placeholder="Nomor referensi, catatan pembayaran..."></textarea>
+                                                        </div>
+
+                                                        <div class="mb-0">
+                                                            <label class="form-label fw-semibold small text-secondary">Upload Bukti Pembayaran <span class="text-muted">(bisa &gt;1 file)</span></label>
+                                                            <input type="file" name="bukti_file[]" class="form-control" accept="image/*" multiple>
+                                                        </div>
+                                                    </div>
+                                                    <div class="modal-footer border-0 p-4 pt-0 bg-white">
+                                                        <button type="button" class="btn btn-light px-4 rounded-3 text-secondary" data-bs-dismiss="modal" style="font-size:0.85rem; font-weight:600;">Kembali</button>
+                                                        <button type="submit" class="btn btn-custom-orange px-4 rounded-3 fw-semibold border-0" style="background-color: #715745; color: white;">Simpan Pembayaran</button>
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                    @endif
 
                                     {{-- MODAL DETAIL PESANAN CK --}}
                                     <div class="modal fade text-start" id="modalDetailCkOrder{{ $p->id }}" tabindex="-1" aria-hidden="true">
@@ -361,7 +483,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="text-center py-5 text-muted">
+                                <td colspan="11" class="text-center py-5 text-muted">
                                     <i class="bi bi-inbox fs-2 d-block mb-2 text-secondary"></i>
                                     Belum ada data Central Kitchen Orders.
                                 </td>
@@ -376,6 +498,90 @@
                     {{ $pesanan->links() }}
                 </div>
             @endif
+        </div>
+
+        {{-- MODAL BAYAR MASSAL CK --}}
+        <div class="modal fade text-start" id="modalBulkBayarCk" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-lg">
+                <form action="{{ route('ck-orders.pembayaran-massal') }}" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                        <div class="modal-header text-white border-0 p-4" style="background-color: #715745;">
+                            <h5 class="modal-title fw-bold d-flex align-items-center gap-2">
+                                <i class="bi bi-wallet2"></i> Pelunasan Massal Multi-Nota (Central Kitchen)
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4 bg-white">
+                            <div class="alert alert-info py-2 px-3 small mb-3">
+                                <i class="bi bi-info-circle me-1"></i> Anda memilih <strong id="bulkSelectedCountCk">0</strong> order Central Kitchen untuk dilunasi sekaligus pada akhir bulan/termin. Biaya dihitung murni dari FIFO HPP bahan baku.
+                            </div>
+
+                            <div id="bulkCkHiddenInputs"></div>
+
+                            <div class="table-responsive mb-3" style="max-height: 220px; overflow-y: auto;">
+                                <table class="table table-sm table-bordered align-middle mb-0">
+                                    <thead class="table-light small">
+                                        <tr>
+                                            <th>Kode Order</th>
+                                            <th>Outlet Pemesan</th>
+                                            <th class="text-end">Sisa Tagihan (HPP)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="bulkCkTableBody" class="small">
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="table-warning fw-bold">
+                                            <td colspan="2" class="text-end">Total Pelunasan HPP:</td>
+                                            <td class="text-end text-success" id="bulkTotalBayarDisplayCk">Rp 0</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-semibold small text-secondary">Tanggal Pembayaran</label>
+                                    <input type="date" name="tanggal_bayar" class="form-control" value="{{ date('Y-m-d') }}" required>
+                                    <div class="d-flex gap-1 flex-wrap mt-1">
+                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'ini')">
+                                            <i class="bi bi-calendar-check me-1"></i> Akhir Bulan Ini
+                                        </button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'depan')">
+                                            <i class="bi bi-calendar-plus me-1"></i> Akhir Bulan Depan
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label fw-semibold small text-secondary">Metode Pembayaran</label>
+                                    <select name="metode_pembayaran" class="form-select text-secondary" required>
+                                        <option value="Transfer">Transfer Bank</option>
+                                        <option value="Cash">Cash / Tunai</option>
+                                        <option value="QRIS">QRIS</option>
+                                        <option value="Termin">Termin / Piutang</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold small text-secondary">Catatan Pembayaran</label>
+                                <textarea name="catatan" class="form-control" rows="2" placeholder="Contoh: Pelunasan biaya HPP CK outlet akhir bulan..."></textarea>
+                            </div>
+
+                            <div class="mb-0">
+                                <label class="form-label fw-semibold small text-secondary">Upload Bukti Pembayaran <span class="text-muted">(bisa >1 gambar)</span></label>
+                                <input type="file" name="bukti_file[]" class="form-control" accept="image/*" multiple>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 p-4 pt-0 bg-white">
+                            <button type="button" class="btn btn-light px-4 rounded-3 text-secondary" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-success px-4 rounded-3 fw-semibold">
+                                <i class="bi bi-check-circle-fill me-1"></i> Proses Pelunasan Massal
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -851,6 +1057,136 @@
                     fetchSuggestions(custId, true);
                 });
             });
+
+            // Bulk Selection & Payment Logic for Central Kitchen
+            var checkAllCk = document.getElementById('checkAllCk');
+            var checkboxesCk = document.querySelectorAll('.check-ck-order');
+            var btnBulkCk = document.getElementById('btnBulkBayarCk');
+            var countBadgeCk = document.getElementById('countSelectedCk');
+
+            function updateBulkCkState() {
+                var selected = document.querySelectorAll('.check-ck-order:checked');
+                var count = selected.length;
+                if (countBadgeCk) countBadgeCk.textContent = count;
+
+                if (count > 0) {
+                    btnBulkCk.classList.remove('d-none');
+                    btnBulkCk.classList.add('d-inline-flex');
+                } else {
+                    btnBulkCk.classList.add('d-none');
+                    btnBulkCk.classList.remove('d-inline-flex');
+                }
+
+                if (checkAllCk) {
+                    var enabledCount = document.querySelectorAll('.check-ck-order:not([disabled])').length;
+                    checkAllCk.checked = (enabledCount > 0 && count === enabledCount);
+                }
+            }
+
+            if (checkAllCk) {
+                checkAllCk.addEventListener('change', function() {
+                    var isChecked = this.checked;
+                    checkboxesCk.forEach(function(cb) {
+                        if (!cb.disabled) {
+                            cb.checked = isChecked;
+                        }
+                    });
+                    updateBulkCkState();
+                });
+            }
+
+            checkboxesCk.forEach(function(cb) {
+                cb.addEventListener('change', updateBulkCkState);
+            });
+
+            var modalBulkCk = document.getElementById('modalBulkBayarCk');
+            if (modalBulkCk) {
+                modalBulkCk.addEventListener('show.bs.modal', function() {
+                    var selected = document.querySelectorAll('.check-ck-order:checked');
+                    var containerInputs = document.getElementById('bulkCkHiddenInputs');
+                    var tbody = document.getElementById('bulkCkTableBody');
+                    var countEl = document.getElementById('bulkSelectedCountCk');
+                    var totalEl = document.getElementById('bulkTotalBayarDisplayCk');
+
+                    containerInputs.innerHTML = '';
+                    tbody.innerHTML = '';
+                    var totalBayar = 0;
+
+                    selected.forEach(function(cb) {
+                        var id = cb.value;
+                        var kode = cb.getAttribute('data-kode');
+                        var customer = cb.getAttribute('data-customer');
+                        var sisa = parseFloat(cb.getAttribute('data-sisa')) || 0;
+                        totalBayar += sisa;
+
+                        var hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = 'pesanan_ids[]';
+                        hidden.value = id;
+                        containerInputs.appendChild(hidden);
+
+                        var tr = document.createElement('tr');
+                        tr.innerHTML = '<td><strong>#' + kode + '</strong></td>' +
+                                       '<td>' + customer + '</td>' +
+                                       '<td class="text-end text-success fw-semibold">Rp ' + sisa.toLocaleString('id-ID') + '</td>';
+                        tbody.appendChild(tr);
+                    });
+
+                    countEl.textContent = selected.length;
+                    totalEl.textContent = 'Rp ' + totalBayar.toLocaleString('id-ID');
+                });
+            }
         });
+
+        function setTanggalAkhirBulan(btn, mode) {
+            var container = btn.closest('.modal-body') || btn.closest('form');
+            if (!container) return;
+            var input = container.querySelector('input[name="tanggal_bayar"]');
+            if (!input) return;
+
+            var now = new Date();
+            var year = now.getFullYear();
+            var month = now.getMonth() + (mode === 'depan' ? 1 : 0);
+            var lastDay = new Date(year, month + 1, 0);
+
+            var yyyy = lastDay.getFullYear();
+            var mm = String(lastDay.getMonth() + 1).padStart(2, '0');
+            var dd = String(lastDay.getDate()).padStart(2, '0');
+            input.value = yyyy + '-' + mm + '-' + dd;
+        }
+
+        function handleMetodePembayaranChange(selectEl) {
+            var container = selectEl.closest('.modal-body') || selectEl.closest('form');
+            var inputBayar = container ? container.querySelector('input[name="jumlah_bayar"]') : null;
+
+            if (selectEl.value === 'Termin' || selectEl.value === 'COD') {
+                if (inputBayar) {
+                    inputBayar.min = "0";
+                    inputBayar.required = false;
+                    if (!inputBayar.value || inputBayar.value === "") {
+                        inputBayar.value = "0";
+                    }
+                    inputBayar.placeholder = "0 (Termin / Piutang)";
+                }
+
+                if (selectEl.value === 'Termin') {
+                    var btnQuick = container ? container.querySelector('.btn-quick-akhir-bulan') : null;
+                    if (btnQuick) {
+                        btnQuick.click();
+                    } else {
+                        setTanggalAkhirBulan(selectEl, 'ini');
+                    }
+                }
+            } else {
+                if (inputBayar) {
+                    inputBayar.min = "1";
+                    inputBayar.required = true;
+                    if (inputBayar.value === "0") {
+                        inputBayar.value = "";
+                    }
+                    inputBayar.placeholder = "Masukkan nominal pembayaran";
+                }
+            }
+        }
     </script>
 </x-app-layout>

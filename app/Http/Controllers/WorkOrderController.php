@@ -51,10 +51,6 @@ class WorkOrderController extends Controller
     {
         $pesanan = Pesanan::findOrFail($request->pesanan_id);
 
-        if ($pesanan->status_pembayaran == 'Belum Bayar') {
-            return back()->with('error', 'Gagal! Pesanan ini belum membayar DP.');
-        }
-
         DB::beginTransaction();
         try {
             $wo = WorkOrder::create([
@@ -107,14 +103,6 @@ class WorkOrderController extends Controller
         // Validate that items exist
         if (!$request->pesanan_id || !is_array($request->pesanan_id) || count($request->pesanan_id) === 0) {
             return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Tidak ada item yang bisa dibuatkan Work Order. Pastikan masih ada sisa kebutuhan produksi.');
-        }
-
-        $cekBayar = Pesanan::whereIn('id', $request->pesanan_id)
-                            ->where('status_pembayaran', 'Belum Bayar')
-                            ->exists();
-    
-        if ($cekBayar) {
-            return redirect()->route('produksi.index', ['tab' => 'wo'])->with('error', 'Salah satu pesanan belum membayar DP!');
         }
 
         DB::beginTransaction();

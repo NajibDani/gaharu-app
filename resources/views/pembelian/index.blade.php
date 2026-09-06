@@ -3,26 +3,26 @@
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <x-slot name="header">Pembelian</x-slot>
 
-    <div class="container">
+    <div class="container-fluid px-2 px-md-4 py-3">
 
-        <h4>Data Pembelian</h4>
+        <h4 class="fw-bold text-dark mb-3">Data Pembelian</h4>
 
         @if(session('success'))
-            <div class="alert alert-success">{{ session('success') }}</div>
+            <div class="alert alert-success rounded-3 shadow-sm">{{ session('success') }}</div>
         @endif
         @if(session('error'))
-            <div class="alert alert-danger d-flex align-items-center gap-2">
+            <div class="alert alert-danger rounded-3 shadow-sm d-flex align-items-center gap-2">
                 <i class="bi bi-exclamation-triangle-fill"></i> {{ session('error') }}
             </div>
         @endif
 
         {{-- ALERT SARAN RESTOCK BAHAN BAKU GUDANG UTAMA --}}
         @if(!empty($countLowStockUtama) && $countLowStockUtama > 0)
-            <div class="card border-0 shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-left: 5px solid #f97316 !important;">
+            <div class="card border-0 shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-left: 5px solid #DE8958 !important;">
                 <div class="card-body p-3 p-md-4">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                         <div class="d-flex align-items-center gap-3">
-                            <div class="rounded-circle bg-warning text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                            <div class="rounded-circle text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px; background-color: #DE8958;">
                                 <i class="bi bi-lightbulb-fill"></i>
                             </div>
                             <div>
@@ -34,7 +34,7 @@
                                 </p>
                             </div>
                         </div>
-                        <a href="{{ route('pembelian.create') }}" class="btn btn-warning text-dark fw-bold shadow-sm">
+                        <a href="{{ route('pembelian.create') }}" class="btn text-white fw-bold shadow-sm" style="background-color: #DE8958;">
                             <i class="bi bi-plus-circle-fill me-1"></i> Buat Pembelian & Lihat Saran
                         </a>
                     </div>
@@ -43,34 +43,35 @@
         @endif
 
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <a href="{{ route('pembelian.create') }}" class="btn btn-primary mb-0">
-                Tambah Pembelian
+            <a href="{{ route('pembelian.create') }}" class="btn text-white mb-0 shadow-sm fw-semibold" style="background-color: #DE8958; border-radius: 8px;">
+                + Tambah Pembelian
             </a>
 
-            <form action="{{ route('pembelian.index') }}" method="GET" class="d-flex gap-2">
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari kode/supplier..." value="{{ request('search') }}" style="width: 220px; border-radius: 6px;">
-                <button type="submit" class="btn btn-sm btn-primary" style="border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
+            <form action="{{ route('pembelian.index') }}" method="GET" class="d-flex gap-2 flex-grow-1 flex-md-grow-0">
+                <input type="text" name="search" class="form-control form-control-sm flex-grow-1" placeholder="Cari kode/supplier..." value="{{ request('search') }}" style="min-width: 180px; border-radius: 8px; border: 1px solid #DCD3CB; padding: 7px 12px;">
+                <button type="submit" class="btn btn-sm text-white" style="background-color: #DE8958; border-radius: 8px; border: none; padding: 7px 16px; font-weight: 600;">Cari</button>
                 @if(request('search'))
-                    <a href="{{ route('pembelian.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px; padding: 5px 15px;">Reset</a>
+                    <a href="{{ route('pembelian.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 8px; padding: 7px 16px;">Reset</a>
                 @endif
             </form>
         </div>
 
-        <div class="table-responsive">
-            <table class="table table-bordered align-middle" style="font-size:13px;">
-                <thead>
-                    <tr>
-                        <th>Kode</th>
-                        <th>Tanggal</th>
-                        <th>Supplier</th>
-                        <th>Gudang</th>
-                        <th class="text-end">Total</th>
-                        <th class="text-end">Kekurangan</th>
-                        <th class="text-center">Pembayaran</th>
-                        <th class="text-center">Barang Diterima</th>
-                        <th class="text-center" style="min-width:160px;">Aksi</th>
-                    </tr>
-                </thead>
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-custom-header">
+                        <tr>
+                            <th style="background-color: #715745 !important;">Kode</th>
+                            <th style="background-color: #715745 !important;">Tanggal</th>
+                            <th style="background-color: #715745 !important;">Supplier</th>
+                            <th style="background-color: #715745 !important;">Gudang</th>
+                            <th class="text-end" style="background-color: #715745 !important;">Total</th>
+                            <th class="text-end" style="background-color: #715745 !important;">Kekurangan</th>
+                            <th class="text-center" style="background-color: #715745 !important;">Pembayaran</th>
+                            <th class="text-center" style="background-color: #715745 !important;">Barang Diterima</th>
+                            <th class="text-center" style="min-width:160px; background-color: #715745 !important;">Aksi</th>
+                        </tr>
+                    </thead>
                 <tbody>
                     @forelse($pembelian as $item)
                         @php

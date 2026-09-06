@@ -3,35 +3,37 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
-        .table-custom-header th { background-color: #6a4126 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.78rem; padding: 10px; }
-        .table-custom-body td { font-size: 0.8rem; padding: 8px 10px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
-        .btn-custom-orange { background-color: #db7946; color: white; border: none; font-weight: 600; font-size: 0.85rem; padding: 8px 16px; border-radius: 8px; }
-        .btn-custom-orange:hover { background-color: #c06535; color: white; }
-        .nav-tabs .nav-link { color: #64748b; font-weight: 600; font-size: 0.85rem; border: none; border-bottom: 2px solid transparent; padding: 10px 16px; }
-        .nav-tabs .nav-link.active { color: #db7946; border-bottom: 2px solid #db7946; background: transparent; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
+        .table-custom-header th { background-color: #715745 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.8rem; padding: 12px 10px; }
+        .table-custom-body td { font-size: 0.82rem; padding: 10px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
+        .btn-custom-orange { background-color: #DE8958; color: white; border: none; font-weight: 600; font-size: 0.85rem; padding: 8px 16px; border-radius: 8px; }
+        .btn-custom-orange:hover { background-color: #C87443; color: white; }
+        .nav-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; border-bottom: 2px solid #DCD3CB; padding-bottom: 2px; }
+        .nav-tabs .nav-item { flex-shrink: 0; }
+        .nav-tabs .nav-link { color: #64748b; font-weight: 600; font-size: 0.85rem; border: none; border-bottom: 3px solid transparent; padding: 10px 16px; white-space: nowrap; }
+        .nav-tabs .nav-link.active { color: #DE8958; border-bottom: 3px solid #DE8958; background: transparent; font-weight: 700; }
     </style>
 
-    <div class="container py-4" style="margin-top: 5.5rem !important;">
-
-        @if(session('success'))
-            <div class="alert alert-success alert-dismissible fade show rounded-3 text-sm mb-3" role="alert">
-                <i class="bi bi-check-circle-fill me-2"></i> {{ session('success') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        @endif
-        @if(session('error'))
-            <div class="alert alert-danger alert-dismissible fade show rounded-3 text-sm mb-3" role="alert">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i> {{ session('error') }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        @endif
+    <div class="container-fluid px-2 px-md-4 py-3">
 
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <div>
                 <h4 class="fw-bold text-dark mb-1">Central Kitchen Production</h4>
-                <p class="text-muted small mb-0">Manajemen Work Order (WO) & Hasil Produksi Dapur Pusat</p>
+                <p class="text-muted small mb-0">Manajemen Work Order (WO) &amp; Hasil Produksi Central Kitchen</p>
             </div>
+            <form action="{{ route('ck-produksi.index') }}" method="GET" class="d-flex gap-2 align-items-center flex-wrap">
+                <select name="customer_id" class="form-select form-select-sm" style="min-width: 180px; border-radius: 8px; border: 1px solid #DCD3CB;" onchange="this.form.submit()">
+                    <option value="">-- Semua Outlet Pemesan --</option>
+                    @if(isset($customers))
+                        @foreach($customers as $c)
+                            <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
+                        @endforeach
+                    @endif
+                </select>
+                @if(request('customer_id'))
+                    <a href="{{ route('ck-produksi.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 8px; padding: 6px 12px;">Reset</a>
+                @endif
+            </form>
         </div>
 
         {{-- TABS NAVIGATION --}}
@@ -213,13 +215,19 @@
             {{-- TAB 2: WO LIST (DETAIL & INPUT PRODUKSI VIA POPUP) --}}
             <div class="tab-pane fade" id="wo-list" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-                    <div class="card-header bg-white py-3 px-4">
+                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="fw-bold mb-0 text-dark">Daftar Work Order Central Kitchen</h6>
+                        <button type="button" class="btn btn-sm btn-success fw-semibold shadow-sm" id="btnBatchProduksiCk" disabled onclick="openBatchProduksiCkModal()">
+                            <i class="bi bi-layers-fill me-1"></i> Produksi Batch WO Terpilih (<span id="countSelectedWoCk">0</span>)
+                        </button>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-custom-header">
                                 <tr>
+                                    <th class="text-center" style="width: 40px;">
+                                        <input class="form-check-input border-secondary" type="checkbox" id="checkAllWoCk">
+                                    </th>
                                     <th class="text-center" style="width: 50px;">NO</th>
                                     <th>KODE WO</th>
                                     <th>OUTLET PEMESAN</th>
@@ -232,6 +240,16 @@
                             <tbody class="table-custom-body">
                                 @forelse($woList as $index => $wo)
                                     <tr>
+                                        <td class="text-center">
+                                            @if(!$wo->is_all_completed)
+                                                <input class="form-check-input border-secondary wo-check-ck" type="checkbox" 
+                                                    value="{{ $wo->id }}" 
+                                                    data-wo-json='@json($wo)'
+                                                    onchange="updateWoBatchSelectionCk()">
+                                            @else
+                                                <i class="bi bi-check2-circle text-success" title="WO Selesai"></i>
+                                            @endif
+                                        </td>
                                         <td class="text-center">{{ $index + 1 }}</td>
                                         <td class="fw-bold text-dark">{{ $wo->kode_wo }}</td>
                                         <td><span class="badge bg-light text-dark border">{{ $wo->customer_nama }}</span></td>
@@ -281,6 +299,9 @@
                                                     <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 px-2" data-bs-toggle="modal" data-bs-target="#modalWo{{ $wo->id }}">
                                                         <i class="bi bi-eye me-1"></i> Detail (Selesai)
                                                     </button>
+                                                    <a href="{{ route('pengiriman.index', ['tipe' => 'central_kitchen', 'search' => $wo->kode_wo]) }}" class="btn btn-sm btn-outline-primary rounded-3 px-2 fw-semibold" title="Kirim ke Logistik Outlet">
+                                                        <i class="bi bi-truck me-1"></i> Kirim
+                                                    </a>
                                                 @endif
                                             </div>
 
@@ -520,6 +541,12 @@
                                                     <i class="bi bi-eye me-1"></i> Detail
                                                 </button>
 
+                                                @if(strtolower($prod->status_produksi) == 'selesai')
+                                                    <a href="{{ route('pengiriman.index', ['tipe' => 'central_kitchen', 'search' => $prod->pesanan->kode_pesanan ?? $prod->kode_produksi]) }}" class="btn btn-sm btn-outline-primary rounded-3 px-2 fw-semibold" title="Kirim ke Logistik Outlet">
+                                                        <i class="bi bi-truck me-1"></i> Kirim
+                                                    </a>
+                                                @endif
+
                                                  @if(strtolower($prod->status_produksi) == 'draft')
                                                     <form action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Approve Produksi CK? HPP per unit akan dihitung otomatis & barang masuk stok CK.')">
                                                         @csrf
@@ -707,4 +734,243 @@
 
         </div>
     </div>
+
+    {{-- MODAL BATCH PRODUKSI CK --}}
+    <div class="modal fade text-start" id="modalBatchProduksiCk" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
+            <div class="modal-content border-0 shadow-lg rounded-4">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-layers-fill me-2"></i> Produksi Batch Work Order (Central Kitchen)
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form action="{{ route('ck-produksi.store-and-approve') }}" method="POST" onsubmit="return confirm('Simpan hasil produksi batch CK & Approve HPP otomatis untuk semua WO terpilih?')">
+                    @csrf
+                    <div id="containerHiddenWoIdsCk"></div>
+
+                    <div class="modal-body p-4">
+                        <div id="batchCkDefisitAlert"></div>
+
+                        <div class="p-3 mb-3 bg-light rounded-3 border-start border-4 border-success">
+                            <div class="small">
+                                <span class="text-muted d-block fw-semibold mb-1">Daftar Work Order CK Terpilih (<span id="batchCkWoCount">0</span> WO):</span>
+                                <div id="batchCkWoListPills" class="d-flex flex-wrap gap-1"></div>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-secondary small">Tanggal Hasil Produksi</label>
+                                <input type="date" name="tanggal_produksi" class="form-control" value="{{ date('Y-m-d') }}" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-secondary small">Gudang Penyimpanan</label>
+                                <input type="text" class="form-control bg-light" value="Gudang Central Kitchen" readonly>
+                            </div>
+                        </div>
+
+                        <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rekapitulasi Item & Input Qty Selesai Batch CK</h6>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-bordered align-middle text-center mb-0">
+                                <thead class="bg-light font-weight-bold">
+                                    <tr>
+                                        <th style="width: 5%;">No</th>
+                                        <th class="text-start">Nama Produk</th>
+                                        <th style="width: 15%;">Target Total</th>
+                                        <th style="width: 15%;">Sudah Jadi</th>
+                                        <th style="width: 18%;">Total Sisa</th>
+                                        <th style="width: 22%;">Input Qty Selesai</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyBatchCkItems">
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
+                            <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+                            <div>
+                                Menekan <strong>Simpan Batch & Approve HPP</strong> akan memotong stok bahan baku resep CK secara agregat (FIFO), mengalokasikan hasil produksi secara berurutan ke masing-masing WO terpilih, dan memperbarui status WO/Pesanan outlet secara otomatis.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-success px-4 fw-bold">
+                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {{-- SCRIPT BATCH PRODUKSI CK --}}
+    <script>
+        function updateWoBatchSelectionCk() {
+            const checks = document.querySelectorAll('.wo-check-ck:checked');
+            const btn = document.getElementById('btnBatchProduksiCk');
+            const countSpan = document.getElementById('countSelectedWoCk');
+            const checkAll = document.getElementById('checkAllWoCk');
+
+            if (countSpan) countSpan.textContent = checks.length;
+            if (btn) btn.disabled = (checks.length === 0);
+
+            const allChecks = document.querySelectorAll('.wo-check-ck');
+            if (checkAll && allChecks.length > 0) {
+                checkAll.checked = (checks.length === allChecks.length);
+            }
+        }
+
+        function openBatchProduksiCkModal() {
+            const selectedChecks = document.querySelectorAll('.wo-check-ck:checked');
+            if (selectedChecks.length === 0) return;
+
+            const hiddenContainer = document.getElementById('containerHiddenWoIdsCk');
+            const woListPills = document.getElementById('batchCkWoListPills');
+            const woCountSpan = document.getElementById('batchCkWoCount');
+            const alertDiv = document.getElementById('batchCkDefisitAlert');
+            const tbody = document.getElementById('tbodyBatchCkItems');
+
+            hiddenContainer.innerHTML = '';
+            woListPills.innerHTML = '';
+            tbody.innerHTML = '';
+            alertDiv.innerHTML = '';
+
+            woCountSpan.textContent = selectedChecks.length;
+
+            let consolidatedProducts = {};
+            let defisitBahanMap = {};
+            let hasDefisit = false;
+
+            selectedChecks.forEach(chk => {
+                const woData = JSON.parse(chk.getAttribute('data-wo-json'));
+                
+                // Hidden input
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'work_order_ids[]';
+                input.value = woData.id;
+                hiddenContainer.appendChild(input);
+
+                // Badge pill
+                const pill = document.createElement('span');
+                pill.className = 'badge bg-secondary text-white me-1 mb-1 p-2 font-monospace';
+                pill.textContent = woData.kode_wo + ' (' + (woData.customer_nama || '-') + ')';
+                woListPills.appendChild(pill);
+
+                // Check defisit bahan
+                if (!woData.is_bahan_sufficient && woData.defisit_bahan && woData.defisit_bahan.length > 0) {
+                    hasDefisit = true;
+                    woData.defisit_bahan.forEach(def => {
+                        const key = def.nama;
+                        if (!defisitBahanMap[key]) {
+                            defisitBahanMap[key] = { nama: def.nama, stok: def.stok, butuh: 0, kurang: 0, satuan: def.satuan };
+                        }
+                        defisitBahanMap[key].butuh += parseFloat(def.butuh || 0);
+                        defisitBahanMap[key].kurang += parseFloat(def.kurang || 0);
+                    });
+                }
+
+                // Consolidate items
+                if (woData.items_progress) {
+                    woData.items_progress.forEach(item => {
+                        const pId = item.produk_id;
+                        if (!consolidatedProducts[pId]) {
+                            consolidatedProducts[pId] = {
+                                produk_id: pId,
+                                nama_produk: item.nama_produk,
+                                kode_barang: item.kode_barang,
+                                satuan: item.satuan,
+                                target: 0,
+                                sudah: 0,
+                                sisa: 0
+                            };
+                        }
+                        consolidatedProducts[pId].target += parseFloat(item.target || 0);
+                        consolidatedProducts[pId].sudah += parseFloat(item.sudah || 0);
+                        consolidatedProducts[pId].sisa += parseFloat(item.sisa || 0);
+                    });
+                }
+            });
+
+            // Render Alert Defisit
+            if (hasDefisit) {
+                let listHtml = '<ul class="mb-0 ps-3">';
+                Object.values(defisitBahanMap).forEach(def => {
+                    listHtml += `<li>${def.nama}: Tersedia <strong>${def.stok} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang} ${def.satuan}</span>)</li>`;
+                });
+                listHtml += '</ul>';
+                alertDiv.innerHTML = `
+                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
+                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
+                        <div>
+                            <strong>Perhatian Aggregat Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
+                            ${listHtml}
+                        </div>
+                    </div>
+                `;
+            } else {
+                alertDiv.innerHTML = `
+                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2 rounded-3 mb-3 small">
+                        <i class="bi bi-check-circle-fill fs-6 text-success"></i>
+                        <span><strong>Bahan Baku Siap:</strong> Stok bahan baku di Gudang Central Kitchen mencukupi seluruh kebutuhan gabungan Work Order terpilih.</span>
+                    </div>
+                `;
+            }
+
+            // Render consolidated products table
+            let idx = 1;
+            Object.values(consolidatedProducts).forEach(item => {
+                const tr = document.createElement('tr');
+                const sisaDisplay = item.sisa > 0 ? item.sisa.toLocaleString('id-ID') + ' ' + item.satuan : '<span class="badge bg-success">Tercapai</span>';
+                
+                let inputCol = '';
+                if (item.sisa > 0) {
+                    inputCol = `
+                        <input type="hidden" name="produk_id[]" value="${item.produk_id}">
+                        <div class="input-group input-group-sm">
+                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold" 
+                                min="0" max="${item.sisa}" step="any" value="${item.sisa}" required>
+                            <span class="input-group-text">${item.satuan}</span>
+                        </div>
+                    `;
+                } else {
+                    inputCol = `
+                        <input type="hidden" name="produk_id[]" value="${item.produk_id}">
+                        <input type="hidden" name="qty_hasil[]" value="0">
+                        <span class="text-muted small">Sudah Selesai</span>
+                    `;
+                }
+
+                tr.innerHTML = `
+                    <td>${idx++}</td>
+                    <td class="text-start">
+                        <div class="fw-bold text-dark">${item.nama_produk}</div>
+                        <div class="text-muted small">${item.kode_barang || ''}</div>
+                    </td>
+                    <td class="fw-semibold">${item.target.toLocaleString('id-ID')} ${item.satuan}</td>
+                    <td class="fw-bold text-success">${item.sudah.toLocaleString('id-ID')} ${item.satuan}</td>
+                    <td class="fw-bold text-danger">${sisaDisplay}</td>
+                    <td>${inputCol}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            const modal = new bootstrap.Modal(document.getElementById('modalBatchProduksiCk'));
+            modal.show();
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            const checkAllWoCk = document.getElementById('checkAllWoCk');
+            if (checkAllWoCk) {
+                checkAllWoCk.addEventListener('change', function () {
+                    const allChecks = document.querySelectorAll('.wo-check-ck');
+                    allChecks.forEach(c => c.checked = checkAllWoCk.checked);
+                    updateWoBatchSelectionCk();
+                });
+            }
+        });
+    </script>
 </x-app-layout>

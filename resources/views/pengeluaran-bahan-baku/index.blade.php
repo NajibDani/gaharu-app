@@ -1,13 +1,13 @@
 <x-app-layout>
 
-<div class="container-fluid">
+<div class="container-fluid px-2 px-md-4 py-3">
 
     <!-- HEADER -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
 
         <div>
 
-            <h2 class="fw-bold mb-0">
+            <h2 class="fw-bold mb-0 text-dark">
                 Pengeluaran Bahan Baku
             </h2>
 
@@ -17,19 +17,19 @@
 
         </div>
 
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
             <a href="{{ route('dashboard') }}"
                class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i>
                 Dashboard
             </a>
             <a href="{{ route('pengeluaran-bahan-baku.create', ['jenis' => 'wasted']) }}"
-               class="btn btn-warning text-dark fw-bold" title="Pengeluaran Stok Wasted / Busuk / Rusak">
+               class="btn btn-outline-danger fw-bold" title="Pengeluaran Stok Wasted / Busuk / Rusak">
                 <i class="bi bi-trash3-fill me-1"></i>
                 Tambah Wasted / Busuk
             </a>
             <a href="{{ route('pengeluaran-bahan-baku.create') }}"
-               class="btn btn-primary">
+               class="btn text-white fw-bold shadow-sm" style="background-color: #DE8958;">
                 <i class="bi bi-plus-circle"></i>
                 Tambah Transfer
             </a>
@@ -38,7 +38,7 @@
     </div>
 
     <!-- FILTER BAR -->
-    <div class="card shadow-sm mb-4">
+    <div class="card border-0 shadow-sm rounded-4 mb-4" style="border: 1px solid #DCD3CB !important;">
         <div class="card-body py-3">
             <form action="{{ route('pengeluaran-bahan-baku.index') }}" method="GET">
                 <div class="row g-2 align-items-end">
@@ -209,16 +209,16 @@
 
                 <table class="table table-hover align-middle">
 
-                    <thead class="table-dark">
+                    <thead class="table-custom-header">
 
                         <tr>
 
-                            <th>No</th>
-                            <th>Kode</th>
-                            <th>Gudang & Divisi Tujuan</th>
-                            <th>Tanggal</th>
-                            <th>Status</th>
-                            <th width="180">
+                            <th style="background-color: #715745 !important;">No</th>
+                            <th style="background-color: #715745 !important;">Kode</th>
+                            <th style="background-color: #715745 !important;">Gudang & Divisi Tujuan</th>
+                            <th style="background-color: #715745 !important;">Tanggal</th>
+                            <th style="background-color: #715745 !important;">Status</th>
+                            <th width="180" style="background-color: #715745 !important;">
                                 Aksi
                             </th>
 
