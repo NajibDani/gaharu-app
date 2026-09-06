@@ -43,6 +43,32 @@ class PembelianKejinggaController extends Controller
         }
     }
 
+    /**
+     * Pastikan selalu ada valid supplier_id untuk tabel pembelian induk
+     * agar terhindar dari constraint NOT NULL di level database MySQL.
+     */
+    private function resolveSupplierId($supplierId = null)
+    {
+        if (!empty($supplierId)) {
+            return (int) $supplierId;
+        }
+
+        try {
+            $defaultSupplier = Supplier::firstOrCreate(
+                ['nama' => 'Supplier Luar / Umum (KeJingga)'],
+                [
+                    'kode'      => 'SUP-KJG-GEN',
+                    'telepon'   => '-',
+                    'alamat'    => 'KeJingga Outlet',
+                    'is_active' => true,
+                ]
+            );
+            return $defaultSupplier->id;
+        } catch (\Throwable $e) {
+            return Supplier::first()?->id ?? 1;
+        }
+    }
+
     public function index(Request $request)
     {
         $this->authorizeAccess();
@@ -247,7 +273,7 @@ class PembelianKejinggaController extends Controller
 
             $grandTotal = $totalItems + $taxService;
 
-            // Set main supplier_id from first item if available, or null
+            // Set main supplier_id from first item if available, or fallback to default supplier
             $firstSupplierId = null;
             foreach ($parsedItems as $pit) {
                 if ($pit['supplier_id']) {
@@ -255,10 +281,11 @@ class PembelianKejinggaController extends Controller
                     break;
                 }
             }
+            $resolvedSupplierId = $this->resolveSupplierId($firstSupplierId);
 
             $pembelian = Pembelian::create([
                 'kode_pembelian'    => $kodePembelian,
-                'supplier_id'       => $firstSupplierId,
+                'supplier_id'       => $resolvedSupplierId,
                 'gudang_id'         => $gudangId,
                 'tanggal'           => $request->tanggal,
                 'total'             => $grandTotal,
@@ -410,9 +437,10 @@ class PembelianKejinggaController extends Controller
                     break;
                 }
             }
+            $resolvedSupplierId = $this->resolveSupplierId($firstSupplierId);
 
             $pembelian->update([
-                'supplier_id' => $firstSupplierId,
+                'supplier_id' => $resolvedSupplierId,
                 'tanggal'     => $request->tanggal,
                 'total'       => $grandTotal,
                 'tax_service' => $taxService,
