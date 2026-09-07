@@ -138,7 +138,8 @@ class GudangController extends Controller
                     }
                 }
             } else {
-                // Jika kategori diubah dari Operasional ke selain Operasional, opsional hapus divisi
+                // Gudang non-operasional (Utama, Central Kitchen, Cold Kitchen / Produksi) tidak memiliki divisi
+                GudangDivisi::where('gudang_id', $gudang->id)->delete();
             }
         });
 
@@ -175,10 +176,10 @@ class GudangController extends Controller
         }
 
         $isOperasional = strtolower($gudang->kategori) === 'operasional';
-        $divisi = $gudang->divisi->map(fn($d) => [
+        $divisi = $isOperasional ? $gudang->divisi->map(fn($d) => [
             'id'   => $d->id,
             'nama' => $d->nama,
-        ]);
+        ]) : [];
 
         return response()->json([
             'success'        => true,

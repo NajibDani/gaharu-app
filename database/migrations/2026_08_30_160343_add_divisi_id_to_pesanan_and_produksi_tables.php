@@ -24,27 +24,7 @@ return new class extends Migration
             });
         }
 
-        // Seed divisions for Gudang Central Kitchen (Gudang ID: 1)
-        $gudangCk = DB::table('master_gudang')->where('nama', 'like', '%Central Kitchen%')->first();
-        if ($gudangCk) {
-            $divisions = ['Kitchen', 'Barista', 'Server'];
-            foreach ($divisions as $divName) {
-                $exists = DB::table('gudang_divisi')
-                    ->where('gudang_id', $gudangCk->id)
-                    ->where('nama', $divName)
-                    ->exists();
-
-                if (!$exists) {
-                    DB::table('gudang_divisi')->insert([
-                        'gudang_id'  => $gudangCk->id,
-                        'nama'       => $divName,
-                        'keterangan' => 'Divisi ' . $divName . ' untuk ' . $gudangCk->nama,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            }
-        }
+        // Central Kitchen & Cold Kitchen are non-operasional warehouses and do NOT have divisions
     }
 
     /**

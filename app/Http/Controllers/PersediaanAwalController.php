@@ -211,6 +211,9 @@ class PersediaanAwalController extends Controller
 
         $gudangPilihan = $gudangId ? MasterGudang::find($gudangId) : null;
         $isGudangUtama = $gudangPilihan ? (strtolower($gudangPilihan->kategori) === 'utama' || $gudangPilihan->id == $gudangUtamaId) : true;
+        if ($gudangPilihan && strtolower($gudangPilihan->kategori) !== 'operasional') {
+            $divisiId = null;
+        }
 
         $hargaUtamaMap = $this->getHargaGudangUtamaMap();
 
@@ -350,9 +353,14 @@ class PersediaanAwalController extends Controller
         ]);
 
         $gudang = MasterGudang::with('divisi')->findOrFail($request->gudang_id);
-        if (strtolower($gudang->kategori) === 'operasional' && $gudang->divisi->count() > 0 && empty($request->divisi_id)) {
+        $isOperasional = (strtolower($gudang->kategori) === 'operasional');
+        if ($isOperasional && $gudang->divisi->count() > 0 && empty($request->divisi_id)) {
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $gudang->nama . '.'])->withInput();
         }
+
+        // Gudang non-operasional (Central Kitchen, Cold Kitchen, Gudang Utama) tidak memiliki divisi
+        $divisiId = ($isOperasional && $gudang->divisi->count() > 0) ? $request->divisi_id : null;
+        $request->merge(['divisi_id' => $divisiId]);
 
         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
         $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;

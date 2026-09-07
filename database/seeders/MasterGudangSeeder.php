@@ -15,6 +15,16 @@ class MasterGudangSeeder extends Seeder
     {
         $data = [
             [
+                'nama' => 'Gudang Central Kitchen',
+                'kategori' => 'Produksi',
+                'divisi' => [],
+            ],
+            [
+                'nama' => 'Gudang Cold Kitchen',
+                'kategori' => 'Produksi',
+                'divisi' => [],
+            ],
+            [
                 'nama' => 'Gudang Utama',
                 'kategori' => 'Utama',
                 'divisi' => [],
@@ -23,11 +33,6 @@ class MasterGudangSeeder extends Seeder
                 'nama' => 'Gudang Gaharu',
                 'kategori' => 'Operasional',
                 'divisi' => ['Kitchen', 'Barista', 'Server'],
-            ],
-            [
-                'nama' => 'Gudang B2B',
-                'kategori' => 'Produksi',
-                'divisi' => [],
             ],
             [
                 'nama' => 'Gudang KeJingga',

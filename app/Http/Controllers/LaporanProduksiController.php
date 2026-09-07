@@ -82,7 +82,7 @@ class LaporanProduksiController extends Controller
                     $row->kode_produksi,
                     $row->kode_wo ?? '-',
                     $row->nama_produk,
-                    $row->nama_gudang ?? 'Gudang B2B',
+                    $row->nama_gudang ?? 'Gudang Cold Kitchen',
                     $row->qty_target,
                     $row->qty_hasil,
                     strtoupper($row->status_produksi ?? 'SELESAI'),

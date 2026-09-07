@@ -202,29 +202,38 @@
 
         let allLoadedItems = [];
 
-        // 1. Tangani pemilihan gudang & update dropdown divisi
+        // 1. Tangani pemilihan gudang & update dropdown divisi (Khusus Gudang Operasional)
         function updateDivisi() {
             const selectedOpt = gudangSelect.options[gudangSelect.selectedIndex];
             if (!selectedOpt || !selectedOpt.value) {
                 divisiWrapper.style.display = 'none';
                 divisiSelect.removeAttribute('required');
                 divisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                divisiSelect.value = '';
                 return;
             }
 
+            const kategori = (selectedOpt.getAttribute('data-kategori') || '').toLowerCase();
             const divisiData = selectedOpt.getAttribute('data-divisi') ? JSON.parse(selectedOpt.getAttribute('data-divisi')) : [];
 
-            if (divisiData && divisiData.length > 0) {
+            // Hanya gudang kategori 'operasional' (seperti Gudang Gaharu & Gudang KeJingga) yang memiliki divisi
+            if (kategori === 'operasional' && divisiData && divisiData.length > 0) {
                 divisiWrapper.style.display = 'block';
                 divisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
                 divisiData.forEach(d => {
                     divisiSelect.innerHTML += `<option value="${d.id}">${d.nama}</option>`;
                 });
                 divisiSelect.setAttribute('required', 'required');
+
+                const oldDivisiId = "{{ old('divisi_id') }}";
+                if (oldDivisiId && divisiSelect.querySelector(`option[value="${oldDivisiId}"]`)) {
+                    divisiSelect.value = oldDivisiId;
+                }
             } else {
                 divisiWrapper.style.display = 'none';
                 divisiSelect.removeAttribute('required');
                 divisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                divisiSelect.value = '';
             }
         }
 
