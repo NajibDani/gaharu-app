@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ChartOfAccount;
+use App\Models\EventNotifikasi;
 use App\Models\GudangDivisi;
 use App\Models\Journal;
 use App\Models\JurnalPenyesuaian;
@@ -1479,6 +1480,7 @@ class PersediaanAwalController extends Controller
             $barangMapByName = $allBarang->keyBy(fn($b) => strtolower(preg_replace('/\s+/', ' ', trim((string)$b->nama))));
 
             $validItems = [];
+            $newBarangsCreated = [];
             for ($i = 1; $i < count($rows); $i++) {
                 $row = $rows[$i];
                 $kodeBarang = $get($row, $colKode);
@@ -1559,6 +1561,7 @@ class PersediaanAwalController extends Controller
                     if (!empty($normNama)) {
                         $barangMapByName->put($normNama, $barang);
                     }
+                    $newBarangsCreated[] = $barang->nama;
                 }
 
                 if (!$barang) continue;
@@ -1779,11 +1782,39 @@ class PersediaanAwalController extends Controller
                 ]);
             }
 
+            if (count($newBarangsCreated) > 0) {
+                $preview = implode(', ', array_slice($newBarangsCreated, 0, 5));
+                if (count($newBarangsCreated) > 5) {
+                    $preview .= ' dan ' . (count($newBarangsCreated) - 5) . ' lainnya';
+                }
+                try {
+                    EventNotifikasi::create([
+                        'judul'           => count($newBarangsCreated) . ' Item Barang Baru Ditambahkan (Import Persediaan Awal)',
+                        'pesan'           => "Sebanyak <b>" . count($newBarangsCreated) . "</b> item barang baru otomatis didaftarkan ke Master Barang dari Import Persediaan Awal: " . $preview . ".",
+                        'menu_target'     => 'semua',
+                        'tanggal_mulai'   => now()->toDateString(),
+                        'tanggal_selesai' => now()->addDays(3)->toDateString(),
+                        'tipe_icon'       => 'info',
+                        'is_active'       => true,
+                        'created_by'      => Auth::id() ?? 1,
+                    ]);
+                } catch (\Exception $e) {}
+            }
+
             DB::commit();
+
+            $successMsg = "Import Persediaan Awal berhasil! {$totalItem} barang dicatat dengan total nilai Rp " . number_format($totalNilai, 0, ',', '.');
+            if (count($newBarangsCreated) > 0) {
+                $preview = implode(', ', array_slice($newBarangsCreated, 0, 5));
+                if (count($newBarangsCreated) > 5) {
+                    $preview .= ' dan ' . (count($newBarangsCreated) - 5) . ' lainnya';
+                }
+                $successMsg .= " (" . count($newBarangsCreated) . " item baru otomatis ditambahkan ke Master Barang: {$preview})";
+            }
 
             return redirect()
                 ->route('persediaan-awal.show', $persediaanAwal->id)
-                ->with('success', "Import Persediaan Awal berhasil! {$totalItem} barang dicatat dengan total nilai Rp " . number_format($totalNilai, 0, ',', '.'));
+                ->with('success', $successMsg);
 
         } catch (\Exception $e) {
             DB::rollBack();

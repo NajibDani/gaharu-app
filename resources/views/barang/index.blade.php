@@ -130,6 +130,9 @@
                             <td class="font-monospace">{{ $d->kode_barang }}</td>
                             <td class="text-start fw-semibold">
                                 {{ $d->nama }}
+                                @if($d->created_at && $d->created_at->diffInDays(now()) < 3)
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 0.7rem;"><i class="bi bi-stars"></i> Baru</span>
+                                @endif
                                 @if(!$d->is_active) <span class="badge bg-secondary ms-2">Non-Aktif</span> @endif
                             </td>
                             <td>{{ $d->kategori->nama ?? '-' }}</td>
@@ -872,6 +875,10 @@
                         <strong id="hapusNama" class="text-dark"></strong>?
                         Tindakan ini tidak dapat dibatalkan.
                     </p>
+                    <div class="alert alert-warning py-2 px-3 mt-3 mb-0 d-flex align-items-center gap-2" style="font-size: 12px; border-radius: 8px;">
+                        <i class="bi bi-info-circle-fill text-warning fs-6 flex-shrink-0"></i>
+                        <span>Barang yang belum memiliki riwayat <strong>transfer</strong> atau <strong>produksi</strong> dapat dihapus beserta data persediaan awalnya. Jika barang sudah dipakai operasional, silakan gunakan tombol <strong>Nonaktifkan</strong>.</span>
+                    </div>
                 </div>
 
                 <div class="modal-footer border-0 px-4 pb-4 pt-0">

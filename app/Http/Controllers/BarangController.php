@@ -3,10 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Imports\MasterBarangImporter;
+use App\Models\EventNotifikasi;
 use App\Models\MasterBarang;
 use App\Models\Kategori;
 use App\Models\ResepBtklBop;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -250,8 +253,26 @@ class BarangController extends Controller
                     }
                 }
             }
+
+            // Buat Event Notifikasi untuk penambahan item barang baru
+            $kategori = Kategori::find($request->kategori_id);
+            $katNama = $kategori ? $kategori->nama : '-';
+            try {
+                EventNotifikasi::create([
+                    'judul'           => 'Item Barang Baru: ' . $barang->nama,
+                    'pesan'           => "Item barang baru <b>{$barang->nama}</b> ({$barang->kode_barang}) kategori {$katNama} dengan satuan {$barang->satuan} telah ditambahkan ke sistem.",
+                    'menu_target'     => 'semua',
+                    'tanggal_mulai'   => now()->toDateString(),
+                    'tanggal_selesai' => now()->addDays(3)->toDateString(),
+                    'tipe_icon'       => 'info',
+                    'is_active'       => true,
+                    'created_by'      => auth()->id() ?? 1,
+                ]);
+            } catch (\Exception $ne) {
+                // Abaikan jika notifikasi gagal agar proses utama tetap berhasil
+            }
     
-            return redirect()->route('barang.index')->with('success', 'Data berhasil ditambah');
+            return redirect()->route('barang.index')->with('success', "Item barang '{$barang->nama}' ({$barang->kode_barang}) berhasil ditambahkan.");
     
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->withErrors(['error' => 'Gagal simpan: ' . $e->getMessage()]);
@@ -412,23 +433,60 @@ class BarangController extends Controller
 
     public function destroy(MasterBarang $barang)
     {
-        // Cek apakah barang sudah dipakai di tabel manapun
-        $dipakai = \Illuminate\Support\Facades\DB::table('pembelian_detail')
-                    ->where('barang_id', $barang->id)->exists()
-                || \Illuminate\Support\Facades\DB::table('stok_gudang')
-                    ->where('barang_id', $barang->id)->exists()
-                || \Illuminate\Support\Facades\DB::table('pengeluaran_bahan_baku_detail')
-                    ->where('barang_id', $barang->id)->exists()
-                || \Illuminate\Support\Facades\DB::table('stock_opname_detail')
-                    ->where('barang_id', $barang->id)->exists();
+        // 1. Cek riwayat transfer / pengiriman
+        $hasTransfer = DB::table('pengiriman_detail')->where('barang_id', $barang->id)->exists()
+            || DB::table('pesanan_detail')->where('produk_id', $barang->id)->exists()
+            || DB::table('transaksi_stok')->where('barang_id', $barang->id)->whereIn('source_type', ['pengiriman', 'transfer_ck'])->exists();
 
-        if ($dipakai) {
-            return back()->with('error', 'Barang sudah digunakan dalam transaksi dan tidak bisa dihapus. Gunakan fitur nonaktifkan jika barang tidak lagi dipakai.');
+        if ($hasTransfer) {
+            return back()->with('error', "Barang '{$barang->nama}' ({$barang->kode_barang}) tidak dapat dihapus karena sudah memiliki riwayat transfer / pengiriman. Silakan gunakan tombol Nonaktifkan jika barang tidak lagi digunakan.");
         }
 
-        $barang->delete();
+        // 2. Cek riwayat produksi / resep
+        $hasProduksi = DB::table('produksi_detail')->where('produk_id', $barang->id)->exists()
+            || DB::table('work_order_detail')->where('produk_id', $barang->id)->exists()
+            || DB::table('alokasi_produksi_pesanan')->where('produk_id', $barang->id)->exists()
+            || DB::table('resep_bahanbaku')->where('bahan_id', $barang->id)->exists()
+            || DB::table('resep_bahanbaku_alternatif')->where('bahan_id', $barang->id)->exists()
+            || DB::table('resep_btkl_bop')->where('produk_id', $barang->id)->exists()
+            || DB::table('transaksi_stok')->where('barang_id', $barang->id)->whereIn('source_type', ['produksi', 'produksi_ck'])->exists();
 
-        return back()->with('success', 'Barang berhasil dihapus.');
+        if ($hasProduksi) {
+            return back()->with('error', "Barang '{$barang->nama}' ({$barang->kode_barang}) tidak dapat dihapus karena sudah memiliki riwayat produksi atau terdaftar di resep. Silakan gunakan tombol Nonaktifkan jika barang tidak lagi dipakai.");
+        }
+
+        // 3. Cek riwayat transaksi operasional lain (pembelian, penjualan POS, pengeluaran bahan baku, stock opname)
+        $hasTransaksiLain = DB::table('pembelian_detail')->where('barang_id', $barang->id)->exists()
+            || DB::table('penerimaan_pembelian_detail')->where('barang_id', $barang->id)->exists()
+            || DB::table('penjualanpos_detail')->where('produk_id', $barang->id)->exists()
+            || DB::table('pengeluaran_bahan_baku_detail')->where('barang_id', $barang->id)->exists()
+            || DB::table('stock_opname_detail')->where('barang_id', $barang->id)->exists()
+            || DB::table('transaksi_stok')->where('barang_id', $barang->id)->whereIn('source_type', ['pembelian', 'pembelian_kejingga', 'pengeluaran_bahan_baku'])->exists();
+
+        if ($hasTransaksiLain) {
+            return back()->with('error', "Barang '{$barang->nama}' ({$barang->kode_barang}) tidak dapat dihapus karena sudah memiliki riwayat transaksi pembelian/penjualan/operasional. Silakan gunakan tombol Nonaktifkan jika barang tidak lagi dipakai.");
+        }
+
+        // Jika belum memiliki riwayat transaksi/pergerakan riil, bersihkan data saldo awal & relasi master
+        try {
+            DB::transaction(function () use ($barang) {
+                if (Schema::hasTable('fifo_layers')) {
+                    DB::table('fifo_layers')->where('barang_id', $barang->id)->delete();
+                }
+                DB::table('transaksi_stok')->where('barang_id', $barang->id)->delete();
+                DB::table('stok_gudang_batch')->where('barang_id', $barang->id)->delete();
+                DB::table('stok_gudang')->where('barang_id', $barang->id)->delete();
+                DB::table('persediaan_awal_detail')->where('barang_id', $barang->id)->delete();
+                DB::table('barang_minimum_stock')->where('barang_id', $barang->id)->delete();
+                DB::table('harga_barang_pos')->where('barang_id', $barang->id)->delete();
+
+                $barang->delete();
+            });
+
+            return back()->with('success', "Barang '{$barang->nama}' ({$barang->kode_barang}) berhasil dihapus.");
+        } catch (\Exception $e) {
+            return back()->with('error', "Gagal menghapus barang: " . $e->getMessage());
+        }
     }
 
     public function toggleStatus($id)
@@ -695,6 +753,21 @@ class BarangController extends Controller
 
         $importer = new MasterBarangImporter();
         $result = $importer->import($request->file('file')->getRealPath());
+
+        if (!empty($result['created']) && $result['created'] > 0) {
+            try {
+                EventNotifikasi::create([
+                    'judul'           => "{$result['created']} Item Barang Baru Ditambahkan (Import)",
+                    'pesan'           => "Sebanyak <b>{$result['created']}</b> item barang baru telah berhasil didaftarkan ke Master Barang melalui fitur Import Excel.",
+                    'menu_target'     => 'semua',
+                    'tanggal_mulai'   => now()->toDateString(),
+                    'tanggal_selesai' => now()->addDays(3)->toDateString(),
+                    'tipe_icon'       => 'info',
+                    'is_active'       => true,
+                    'created_by'      => auth()->id() ?? 1,
+                ]);
+            } catch (\Exception $e) {}
+        }
 
         return back()
             ->with('import_result_barang', $result)
