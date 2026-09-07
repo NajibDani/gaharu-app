@@ -49,7 +49,7 @@
                                     <option value="{{ $g->id }}" 
                                         {{ old('gudang_id', $defaultGudangId) == $g->id ? 'selected' : '' }}
                                         data-kategori="{{ strtolower($g->kategori) }}" 
-                                        data-divisi="{{ json_encode($g->divisi) }}">
+                                        data-divisi="{{ strtolower($g->kategori) === 'operasional' ? json_encode($g->divisi) : '[]' }}">
                                         {{ $g->nama }} ({{ $g->kategori }})
                                     </option>
                                 @endforeach

@@ -1240,10 +1240,64 @@ class PersediaanAwalController extends Controller
     */
     public function importTemplate(Request $request)
     {
+        $format = $request->query('format', 'full');
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Persediaan Awal');
 
+        if ($format === 'simple') {
+            $headers = ['nama_barang', 'satuan', 'qty'];
+            $sheet->fromArray($headers, null, 'A1');
+
+            $sheet->getStyle('A1:C1')->getFont()->setBold(true);
+            $sheet->getStyle('A1:C1')->getFont()->getColor()->setRGB('FFFFFF');
+            $sheet->getStyle('A1:C1')->getFill()
+                ->setFillType(Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('D88656');
+
+            // Isi master barang aktif yang sudah ada sebagai referensi
+            $barangs = MasterBarang::where('is_active', true)
+                ->orderBy('nama', 'asc')
+                ->get();
+
+            $rowNum = 2;
+            foreach ($barangs as $b) {
+                $sheet->setCellValue('A' . $rowNum, $b->nama);
+                $sheet->setCellValue('B' . $rowNum, $b->satuan ?: 'pcs');
+                $sheet->setCellValue('C' . $rowNum, 0);
+                $rowNum++;
+            }
+
+            foreach (range('A', 'C') as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
+
+            // Sheet Panduan
+            $guideSheet = $spreadsheet->createSheet();
+            $guideSheet->setTitle('Panduan');
+            $guideSheet->fromArray([
+                ['Kolom', 'Wajib?', 'Keterangan'],
+                ['nama_barang', 'Ya', 'Nama barang/bahan (bisa juga memakai header "nama").'],
+                ['satuan', 'Ya', 'Satuan barang (misal: kg, gr, pcs, pack, liter, botol, dus, dll).'],
+                ['qty', 'Ya', 'Jumlah kuantitas saldo awal fisik persediaan di gudang.'],
+            ], null, 'A1');
+            $guideSheet->getStyle('A1:C1')->getFont()->setBold(true);
+            foreach (['A', 'B', 'C'] as $col) {
+                $guideSheet->getColumnDimension($col)->setWidth(30);
+            }
+
+            $spreadsheet->setActiveSheetIndex(0);
+            $writer = new Xlsx($spreadsheet);
+            $fileName = 'template_persediaan_awal_simpel_' . date('Ymd_His') . '.xlsx';
+
+            return response()->streamDownload(function () use ($writer) {
+                $writer->save('php://output');
+            }, $fileName, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            ]);
+        }
+
+        // Format Lengkap
         $headers = [
             'kode_barang', 'nama_barang', 'kategori', 'satuan_stok', 'satuan_beli', 'konversi', 'qty_beli_awal', 'harga_beli_satuan',
         ];
@@ -1333,9 +1387,14 @@ class PersediaanAwalController extends Controller
         ]);
 
         $gudang = MasterGudang::with('divisi')->findOrFail($request->gudang_id);
-        if (strtolower($gudang->kategori) === 'operasional' && $gudang->divisi->count() > 0 && empty($request->divisi_id)) {
+        $isOperasional = (strtolower($gudang->kategori) === 'operasional');
+        if ($isOperasional && $gudang->divisi->count() > 0 && empty($request->divisi_id)) {
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $gudang->nama . '.'])->withInput();
         }
+
+        // Gudang non-operasional (Central Kitchen, Cold Kitchen, Gudang Utama) tidak memiliki divisi
+        $divisiId = ($isOperasional && $gudang->divisi->count() > 0) ? $request->divisi_id : null;
+        $request->merge(['divisi_id' => $divisiId]);
 
         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
         $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
@@ -1360,14 +1419,45 @@ class PersediaanAwalController extends Controller
                 return back()->with('error', 'File Excel kosong atau tidak memiliki baris data.');
             }
 
-            $headerRow = array_map(fn ($h) => strtolower(trim((string) $h)), $rows[0]);
-            $colIndex  = array_flip($headerRow);
-
-            if (!isset($colIndex['kode_barang'])) {
-                return back()->with('error', "Kolom 'kode_barang' tidak ditemukan di header Excel.");
+            $rawHeaders = $rows[0];
+            $headerMap  = [];
+            foreach ($rawHeaders as $idx => $h) {
+                if ($h === null || $h === '') continue;
+                $clean = strtolower(trim((string) $h));
+                $clean = str_replace([' ', '-', '.'], '_', $clean);
+                $clean = preg_replace('/_+/', '_', $clean);
+                $headerMap[$clean] = $idx;
             }
 
-            $get = fn(array $r, string $key) => isset($colIndex[$key], $r[$colIndex[$key]]) ? trim((string) $r[$colIndex[$key]]) : '';
+            $findCol = function (array $aliases) use ($headerMap) {
+                foreach ($aliases as $alias) {
+                    if (isset($headerMap[$alias])) {
+                        return $headerMap[$alias];
+                    }
+                }
+                return null;
+            };
+
+            $colKode     = $findCol(['kode_barang', 'kode', 'code', 'barcode']);
+            $colNama     = $findCol(['nama_barang', 'nama', 'item', 'nama_item', 'barang', 'deskripsi']);
+            $colSatuan   = $findCol(['satuan', 'satuan_stok', 'satuan_beli', 'satuan_pembelian', 'satuan_barang', 'unit']);
+            $colQty      = $findCol(['qty', 'qty_awal', 'qty_beli_awal', 'jumlah', 'kuantitas', 'quantity', 'stok', 'saldo']);
+            $colHarga    = $findCol(['harga_satuan', 'harga_beli_satuan', 'harga_beli', 'harga', 'price', 'hpp']);
+            $colKategori = $findCol(['kategori', 'kategori_barang', 'category']);
+            $colKonversi = $findCol(['konversi', 'konversi_pembelian', 'faktor_konversi']);
+
+            if ($colKode === null && $colNama === null) {
+                return back()->with('error', "Header Excel tidak valid. File harus memiliki kolom 'nama' (atau 'nama_barang') atau 'kode_barang'.")->withInput();
+            }
+
+            if ($colQty === null) {
+                return back()->with('error', "Kolom kuantitas ('qty', 'qty_awal', atau 'jumlah') tidak ditemukan di header Excel.")->withInput();
+            }
+
+            $get = function (array $r, ?int $col) {
+                return ($col !== null && isset($r[$col])) ? trim((string) $r[$col]) : '';
+            };
+
             $num = function ($val, $default = 0) {
                 if ($val === '' || $val === null) return $default;
                 if (is_numeric($val)) return (float) $val;
@@ -1386,15 +1476,21 @@ class PersediaanAwalController extends Controller
 
             $allBarang = MasterBarang::all();
             $barangMapByCode = $allBarang->keyBy('kode_barang');
-            $barangMapByName = $allBarang->keyBy(fn($b) => strtolower(trim((string)$b->nama)));
+            $barangMapByName = $allBarang->keyBy(fn($b) => strtolower(preg_replace('/\s+/', ' ', trim((string)$b->nama))));
 
             $validItems = [];
             for ($i = 1; $i < count($rows); $i++) {
                 $row = $rows[$i];
-                $kodeBarang = $get($row, 'kode_barang');
-                $namaBarang = $get($row, 'nama_barang') ?: ($get($row, 'nama') ?: '');
-                $normNama   = strtolower(trim((string)$namaBarang));
+                $kodeBarang = $get($row, $colKode);
+                $namaBarang = $get($row, $colNama);
+                $satuanRaw  = $get($row, $colSatuan);
+                $qtyVal     = $get($row, $colQty);
 
+                if ($kodeBarang === '' && $namaBarang === '') {
+                    continue;
+                }
+
+                $normNama = strtolower(preg_replace('/\s+/', ' ', trim($namaBarang)));
                 $barang = null;
 
                 // 1. Prioritaskan pencocokan via kode_barang (karena kode unik untuk setiap item & kategori)
@@ -1403,32 +1499,63 @@ class PersediaanAwalController extends Controller
                 }
 
                 // 2. Jika tidak ditemukan via kode, cari berdasarkan nama_barang
-                if (!$barang && !empty($normNama) && $barangMapByName->has($normNama)) {
-                    $barang = $barangMapByName->get($normNama);
+                if (!$barang && !empty($normNama)) {
+                    if ($barangMapByName->has($normNama)) {
+                        $barang = $barangMapByName->get($normNama);
+                    } else {
+                        $dbBarang = MasterBarang::whereRaw('LOWER(TRIM(nama)) = ?', [$normNama])->first();
+                        if ($dbBarang) {
+                            $barang = $dbBarang;
+                            $barangMapByName->put($normNama, $barang);
+                            $barangMapByCode->put($barang->kode_barang, $barang);
+                        }
+                    }
                 }
 
                 // 3. Jika barang belum ada sama sekali di database, buat otomatis di master_barang
-                if (!$barang && !empty($kodeBarang)) {
-                    $katName = strtoupper(trim((string)$get($row, 'kategori')));
-                    $kategori = Kategori::firstOrCreate(['nama' => $katName ?: 'BAHAN BAKU'], ['prefix' => substr($kodeBarang, 0, 3)]);
+                if (!$barang && (!empty($namaBarang) || !empty($kodeBarang))) {
+                    $katName = strtoupper($get($row, $colKategori));
+                    if (empty($katName)) {
+                        $katName = 'BAHAN BAKU';
+                    }
+                    $kategori = Kategori::firstOrCreate(
+                        ['nama' => $katName],
+                        ['prefix' => 'BB']
+                    );
 
+                    $finalKode = $kodeBarang;
+                    if (empty($finalKode)) {
+                        $prefix = strtoupper($kategori->prefix ?: 'BB');
+                        $lastBarang = MasterBarang::where('kode_barang', 'like', $prefix . '%')
+                            ->orderByRaw('CAST(SUBSTRING(kode_barang, ' . (strlen($prefix) + 1) . ') AS UNSIGNED) DESC')
+                            ->first();
+                        $nextNumber = 1;
+                        if ($lastBarang) {
+                            $lastNumber = (int) substr($lastBarang->kode_barang, strlen($prefix));
+                            $nextNumber = $lastNumber + 1;
+                        }
+                        $finalKode = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+                    }
+
+                    $satuanFinal = !empty($satuanRaw) ? strtoupper($satuanRaw) : 'PCS';
                     $isBahanBaku = ($katName === 'BAHAN BAKU') ? 1 : 0;
                     $isBahanSetengahJadi = ($katName === 'BAHAN SETENGAH JADI') ? 1 : 0;
-                    $isBarangJadi = ($katName === 'MAKANAN & MINUMAN') ? 1 : 0;
+                    $isBarangJadi = ($katName === 'MAKANAN & MINUMAN' || $katName === 'BARANG JADI') ? 1 : 0;
 
                     $barang = MasterBarang::create([
-                        'kode_barang'            => $kodeBarang,
-                        'nama'                   => $namaBarang ?: $kodeBarang,
+                        'kode_barang'            => $finalKode,
+                        'nama'                   => $namaBarang ?: $finalKode,
                         'kategori_id'            => $kategori->id,
-                        'satuan'                 => strtoupper(trim((string)$get($row, 'satuan_stok'))) ?: 'PCS',
-                        'satuan_pembelian'       => strtoupper(trim((string)$get($row, 'satuan_beli'))) ?: 'PCS',
-                        'konversi_pembelian'     => $num($get($row, 'konversi') ?: 1),
-                        'is_bahan_baku'          => $isBahanBaku,
+                        'satuan'                 => $satuanFinal,
+                        'satuan_pembelian'       => $satuanFinal,
+                        'konversi_pembelian'     => $num($get($row, $colKonversi) ?: 1),
+                        'is_bahan_baku'          => $isBahanBaku ?: 1,
                         'is_bahan_setengah_jadi' => $isBahanSetengahJadi,
                         'is_barang_jadi'         => $isBarangJadi,
                         'is_active'              => 1,
                     ]);
-                    $barangMapByCode->put($kodeBarang, $barang);
+
+                    $barangMapByCode->put($finalKode, $barang);
                     if (!empty($normNama)) {
                         $barangMapByName->put($normNama, $barang);
                     }
@@ -1437,35 +1564,38 @@ class PersediaanAwalController extends Controller
                 if (!$barang) continue;
 
                 // Baca konversi dari Excel terlebih dahulu, fallback ke database
-                $excelKonversi = $num($get($row, 'konversi') ?: ($get($row, 'konversi_pembelian') ?: ($get($row, 'faktor_konversi') ?: 0)));
+                $excelKonversi = $num($get($row, $colKonversi));
                 $konversi = $excelKonversi > 0 ? $excelKonversi : (float) ($barang->konversi_pembelian ?: 1.00);
                 if ($konversi <= 0) $konversi = 1.00;
 
-                // Baca satuan beli dari Excel terlebih dahulu, fallback ke database
-                $excelSatuanBeli = $get($row, 'satuan_beli') ?: ($get($row, 'satuan_pembelian') ?: '');
-                $satuanBeli = !empty($excelSatuanBeli) ? $excelSatuanBeli : ($barang->satuan_pembelian ?: $barang->satuan);
+                $satuanBeli = $barang->satuan_pembelian ?: ($barang->satuan ?: 'PCS');
+                $satuanStok = $barang->satuan ?: 'PCS';
 
-                // Sinkronkan ke master barang jika di Excel terdapat data konversi / satuan beli yang baru / diperbarui
-                if ($excelKonversi > 0 && ($excelKonversi != $barang->konversi_pembelian || (!empty($excelSatuanBeli) && $excelSatuanBeli != $barang->satuan_pembelian))) {
-                    $barang->update([
-                        'satuan_pembelian'   => $satuanBeli,
-                        'konversi_pembelian' => $konversi,
-                    ]);
+                // Tentukan pengali berdasarkan satuan di Excel
+                if (!empty($satuanRaw)) {
+                    if (strcasecmp($satuanRaw, $satuanStok) === 0) {
+                        $multiplier = 1.00;
+                    } elseif (strcasecmp($satuanRaw, $satuanBeli) === 0) {
+                        $multiplier = $konversi;
+                    } else {
+                        $multiplier = 1.00;
+                    }
+                } else {
+                    $multiplier = ($colKode !== null && $colSatuan === null) ? $konversi : 1.00;
                 }
 
-                $qtyInput = $num($get($row, 'qty_beli_awal') ?: ($get($row, 'qty_awal') ?: ($get($row, 'qty') ?: 0)));
+                $qtyInput = $num($qtyVal);
+                $qtyStok = $qtyInput * $multiplier;
 
                 if ($isGudangUtama) {
-                    $hargaInput = $num($get($row, 'harga_beli_satuan') ?: ($get($row, 'harga_satuan') ?: ($get($row, 'harga') ?: ($barang->hpp_referensi * $konversi))));
-                    $hargaStok = $konversi > 0 ? (max(0, $hargaInput) / $konversi) : max(0, $hargaInput);
+                    $hargaInput = $num($get($row, $colHarga) ?: ($barang->hpp_referensi * $multiplier));
+                    $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
                 } else {
                     // Gudang non-Utama: harga otomatis mengikuti harga referensi Gudang Utama
                     $hargaStok = (float) ($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
-                    $hargaInput = $hargaStok * $konversi;
+                    $hargaInput = $hargaStok * $multiplier;
                 }
 
-                // Simpan seluruh baris barang (termasuk yang bernilai 0) agar urutan baris sesuai dengan file Excel
-                $qtyStok = $qtyInput * $konversi;
                 $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
 
                 $validItems[] = [
@@ -1473,6 +1603,7 @@ class PersediaanAwalController extends Controller
                     'barang'             => $barang,
                     'qty_input'          => $qtyInput,
                     'harga_input'        => max(0, $hargaInput),
+                    'satuan_dipilih'     => !empty($satuanRaw) ? $satuanRaw : $satuanStok,
                     'satuan_pembelian'   => $satuanBeli,
                     'konversi_pembelian' => $konversi,
                     'qty_stok'           => $qtyStok,
@@ -1508,7 +1639,7 @@ class PersediaanAwalController extends Controller
                 'kode_transaksi' => $kodeTransaksi,
                 'tanggal'        => $tanggal,
                 'gudang_id'      => $request->gudang_id,
-                'divisi_id'      => $request->divisi_id,
+                'divisi_id'      => $divisiId,
                 'total_item'     => $totalItem,
                 'total_qty'      => $totalQty,
                 'total_nilai'    => $totalNilai,
@@ -1546,8 +1677,8 @@ class PersediaanAwalController extends Controller
                 // Update Stok Gudang
                 $stokQuery = StokGudang::where('barang_id', $item['barang_id'])
                     ->where('gudang_id', $request->gudang_id);
-                if ($request->divisi_id) {
-                    $stokQuery->where('divisi_id', $request->divisi_id);
+                if ($divisiId) {
+                    $stokQuery->where('divisi_id', $divisiId);
                 } else {
                     $stokQuery->whereNull('divisi_id');
                 }
@@ -1561,7 +1692,7 @@ class PersediaanAwalController extends Controller
                     StokGudang::create([
                         'barang_id' => $item['barang_id'],
                         'gudang_id' => $request->gudang_id,
-                        'divisi_id' => $request->divisi_id,
+                        'divisi_id' => $divisiId,
                         'jumlah'    => $item['qty_stok'],
                     ]);
                 }
@@ -1570,7 +1701,7 @@ class PersediaanAwalController extends Controller
                 if ($item['qty_stok'] > 0) {
                     StokGudangBatch::create([
                         'gudang_id'           => $request->gudang_id,
-                        'divisi_id'           => $request->divisi_id,
+                        'divisi_id'           => $divisiId,
                         'supplier_id'         => $defaultSupplierId,
                         'barang_id'           => $item['barang_id'],
                         'pembelian_id'        => $defaultPembelianId,
@@ -1590,7 +1721,7 @@ class PersediaanAwalController extends Controller
                         'source_type'      => 'saldo_awal',
                         'source_id'        => $persediaanAwal->id,
                         'gudang_tujuan_id' => $request->gudang_id,
-                        'divisi_tujuan_id' => $request->divisi_id,
+                        'divisi_tujuan_id' => $divisiId,
                         'barang_id'        => $item['barang_id'],
                         'qty'              => $item['qty_stok'],
                         'total_harga'      => $item['total_nilai'],

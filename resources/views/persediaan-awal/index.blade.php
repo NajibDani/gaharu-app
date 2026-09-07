@@ -56,9 +56,23 @@
                 </div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <!-- Tombol Download Template Excel -->
-                    <a href="{{ route('persediaan-awal.template') }}" class="btn btn-sm btn-outline-secondary rounded-2 px-3">
-                        <i class="bi bi-file-earmark-arrow-down me-1"></i> Template Excel
-                    </a>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle rounded-2 px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-file-earmark-arrow-down me-1"></i> Template Excel
+                        </button>
+                        <ul class="dropdown-menu shadow-sm border-0 rounded-3">
+                            <li>
+                                <a class="dropdown-item small py-2" href="{{ route('persediaan-awal.template', ['format' => 'simple']) }}">
+                                    <i class="bi bi-file-earmark-text me-2 text-primary"></i> Template Simpel (Nama, Satuan, Qty)
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item small py-2" href="{{ route('persediaan-awal.template', ['format' => 'full']) }}">
+                                    <i class="bi bi-file-earmark-spreadsheet me-2 text-success"></i> Template Lengkap (Dengan Kode Barang)
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
 
                     <!-- Tombol Import Excel -->
                     <button type="button" class="btn btn-sm btn-outline-primary rounded-2 px-3" data-bs-toggle="modal" data-bs-target="#modalImportExcel">
@@ -253,16 +267,29 @@
                 <form action="{{ route('persediaan-awal.import') }}" method="POST" enctype="multipart/form-data">
                     @csrf
                     <div class="modal-body p-4 text-start">
-                        <p class="text-muted small mb-3">
-                            Unduh template excel, isi kolom <strong>qty_awal</strong> dan <strong>harga_satuan</strong>, lalu unggah kembali melalui form ini.
-                        </p>
+                        <div class="alert alert-info py-2 px-3 small mb-3 border-0 rounded-3" style="background-color: #f0f7ff; border-left: 4px solid #0d6efd !important;">
+                            <div class="fw-bold text-dark mb-1"><i class="bi bi-file-earmark-excel-fill text-primary me-1"></i> Format Fleksibel Import:</div>
+                            <div class="text-muted mb-2">Anda dapat mengunggah file Excel berisi kolom <strong>nama, satuan, dan qty</strong> (tanpa kode barang), maupun format template lengkap.</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <a href="{{ route('persediaan-awal.template', ['format' => 'simple']) }}" class="btn btn-sm btn-outline-primary py-1 px-2 rounded-2 text-decoration-none" style="font-size: 11px;">
+                                    <i class="bi bi-download me-1"></i> Unduh Template Simpel (Nama, Satuan, Qty)
+                                </a>
+                                <a href="{{ route('persediaan-awal.template', ['format' => 'full']) }}" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-2 text-decoration-none" style="font-size: 11px;">
+                                    <i class="bi bi-download me-1"></i> Unduh Template Lengkap
+                                </a>
+                            </div>
+                        </div>
 
                         <div class="mb-3">
                             <label class="form-label small fw-bold text-muted">Pilih Gudang Target <span class="text-danger">*</span></label>
                             <select name="gudang_id" class="form-select custom-input" required id="importGudangSelect">
                                 <option value="">-- Pilih Gudang --</option>
                                 @foreach($gudangs as $g)
-                                    <option value="{{ $g->id }}" data-kategori="{{ strtolower($g->kategori) }}" data-divisi="{{ json_encode($g->divisi) }}">{{ $g->nama }} ({{ $g->kategori }})</option>
+                                    <option value="{{ $g->id }}" 
+                                        data-kategori="{{ strtolower($g->kategori) }}" 
+                                        data-divisi="{{ strtolower($g->kategori) === 'operasional' ? json_encode($g->divisi) : '[]' }}">
+                                        {{ $g->nama }} ({{ $g->kategori }})
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
@@ -321,24 +348,40 @@
             const importDivisiWrapper = document.getElementById('importDivisiWrapper');
             const importDivisiSelect = document.getElementById('importDivisiSelect');
 
-            if (importGudang) {
-                importGudang.addEventListener('change', function () {
-                    const selectedOpt = importGudang.options[importGudang.selectedIndex];
-                    const divisiData = selectedOpt.getAttribute('data-divisi') ? JSON.parse(selectedOpt.getAttribute('data-divisi')) : [];
+            function updateImportDivisi() {
+                if (!importGudang || !importDivisiWrapper || !importDivisiSelect) return;
+                const selectedOpt = importGudang.options[importGudang.selectedIndex];
+                if (!selectedOpt || !selectedOpt.value) {
+                    importDivisiWrapper.style.display = 'none';
+                    importDivisiSelect.removeAttribute('required');
+                    importDivisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                    importDivisiSelect.value = '';
+                    return;
+                }
 
-                    if (divisiData && divisiData.length > 0) {
-                        importDivisiWrapper.style.display = 'block';
-                        importDivisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
-                        divisiData.forEach(d => {
-                            importDivisiSelect.innerHTML += `<option value="${d.id}">${d.nama}</option>`;
-                        });
-                        importDivisiSelect.setAttribute('required', 'required');
-                    } else {
-                        importDivisiWrapper.style.display = 'none';
-                        importDivisiSelect.removeAttribute('required');
-                        importDivisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
-                    }
-                });
+                const kategori = (selectedOpt.getAttribute('data-kategori') || '').toLowerCase();
+                const divisiData = selectedOpt.getAttribute('data-divisi') ? JSON.parse(selectedOpt.getAttribute('data-divisi')) : [];
+
+                // Hanya gudang kategori 'operasional' (seperti Gudang Gaharu & Gudang KeJingga) yang memiliki divisi
+                // Gudang Central Kitchen, Cold Kitchen, dan Gudang Utama TIDAK memiliki divisi
+                if (kategori === 'operasional' && divisiData && divisiData.length > 0) {
+                    importDivisiWrapper.style.display = 'block';
+                    importDivisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                    divisiData.forEach(d => {
+                        importDivisiSelect.innerHTML += `<option value="${d.id}">${d.nama}</option>`;
+                    });
+                    importDivisiSelect.setAttribute('required', 'required');
+                } else {
+                    importDivisiWrapper.style.display = 'none';
+                    importDivisiSelect.removeAttribute('required');
+                    importDivisiSelect.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                    importDivisiSelect.value = '';
+                }
+            }
+
+            if (importGudang) {
+                importGudang.addEventListener('change', updateImportDivisi);
+                updateImportDivisi();
             }
         });
     </script>
