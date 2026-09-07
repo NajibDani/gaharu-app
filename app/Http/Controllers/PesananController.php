@@ -11,6 +11,7 @@ use App\Models\WorkOrder;
 use App\Models\WorkOrderDetail;
 use App\Models\Pembayaran;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\DB;
 
 class PesananController extends Controller
 {
@@ -171,6 +172,17 @@ class PesananController extends Controller
     {
         $pesanan = Pesanan::with('details.produk')->findOrFail($id);
 
+        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+        if ($sudahWO) {
+            return redirect()->route('pesanan.index')
+                ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+        }
+
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->route('pesanan.index')
+                ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.');
+        }
+
         $customers = Customer::all();
         $produk = MasterBarang::where('is_barang_jadi', 1)->where('is_active', true)->get();
 
@@ -183,6 +195,12 @@ class PesananController extends Controller
     public function update(Request $request, string $id)
     {
         $pesanan = Pesanan::findOrFail($id);
+
+        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+        if ($sudahWO) {
+            return redirect()->route('pesanan.index')
+                ->with('error', 'Gagal memperbarui: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+        }
 
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
             return redirect()->back()->withErrors(['tanggal' => 'Pesanan ini berada pada periode akuntansi yang sudah ditutup buku. Tidak dapat mengubah pesanan.'])->withInput();
@@ -203,11 +221,7 @@ class PesananController extends Controller
             return redirect()->back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku. Tidak dapat mengubah tanggal transaksi ke periode yang ditutup.'])->withInput();
         }
 
-        if (date('Y-m-d', strtotime($request->tanggal)) < date('Y-m-d')) {
-            return redirect()->back()->withErrors(['tanggal' => 'Tanggal transaksi tidak boleh sebelum hari ini.'])->withInput();
-        }
-
-        if (date('Y-m-d', strtotime($request->estimasi_kirim)) < date('Y-m-d', strtotime($request->tanggal))) {
+        if ($request->estimasi_kirim && date('Y-m-d', strtotime($request->estimasi_kirim)) < date('Y-m-d', strtotime($request->tanggal))) {
             return redirect()->back()->withErrors(['estimasi_kirim' => 'Estimasi kirim tidak boleh sebelum tanggal transaksi.'])->withInput();
         }
 
@@ -227,74 +241,75 @@ class PesananController extends Controller
             }
         }
 
-        $pesanan = Pesanan::findOrFail($id);
+        DB::beginTransaction();
+        try {
+            $subtotalDpp = 0;
+            $itemsData = [];
 
-        $taxPercentage = floatval($request->tax_percentage ?? 0);
-        $subtotalDpp = 0;
-        foreach ($request->subtotal as $sub) {
-            $subtotalDpp += floatval($sub);
-        }
-        $taxAmount = round($subtotalDpp * ($taxPercentage / 100), 2);
-        $totalPesanan = $subtotalDpp + $taxAmount;
-    
-        // update header pesanan
-        $pesanan->update([
-            'customer_id' => $request->customer_id,
-            'tanggal' => $request->tanggal,
-            'estimasi_kirim' => $request->estimasi_kirim,
-            'estimasi_produksi' => $request->estimasi_produksi,
-            'total_pesanan' => $totalPesanan,
-            'tax_percentage' => $taxPercentage,
-            'tax_service' => $taxAmount,
-        ]);
-    
-        // hapus detail lama
-        PesananDetail::where(
-            'pesanan_id',
-            $pesanan->id
-        )->delete();
-    
-        // simpan ulang detail baru
-        foreach ($request->produk_id as $key => $produk) {
-    
-            if (!$produk) {
-                continue;
+            // Ambil harga lama jika ada per produk_id
+            $oldPrices = $pesanan->details->pluck('harga', 'produk_id')->toArray();
+
+            foreach ($request->produk_id as $key => $produkId) {
+                if (!$produkId) continue;
+                $qtyVal = floatval($request->qty[$key] ?? 0);
+                if ($qtyVal <= 0) continue;
+
+                $hargaVal = isset($request->harga[$key]) ? floatval($request->harga[$key]) : ($oldPrices[$produkId] ?? 0);
+                $subtotalVal = isset($request->subtotal[$key]) && floatval($request->subtotal[$key]) > 0
+                    ? floatval($request->subtotal[$key])
+                    : ($qtyVal * $hargaVal);
+
+                $subtotalDpp += $subtotalVal;
+                $itemsData[] = [
+                    'produk_id' => $produkId,
+                    'qty'       => $qtyVal,
+                    'harga'     => $hargaVal,
+                    'subtotal'  => $subtotalVal,
+                ];
             }
-    
-            PesananDetail::create([
-                'pesanan_id' => $pesanan->id,
-                'produk_id' => $produk,
-                'qty' => $request->qty[$key],
-                'harga' => $request->harga[$key],
-                'subtotal' => $request->subtotal[$key],
+
+            $taxPercentage = floatval($request->tax_percentage ?? $pesanan->tax_percentage ?? 0);
+            $taxAmount = round($subtotalDpp * ($taxPercentage / 100), 2);
+            $totalPesanan = $subtotalDpp + $taxAmount;
+
+            $pesanan->update([
+                'customer_id'       => $request->customer_id,
+                'tanggal'           => $request->tanggal,
+                'estimasi_kirim'    => $request->estimasi_kirim ?: $request->tanggal,
+                'estimasi_produksi' => $request->estimasi_produksi ?? $pesanan->estimasi_produksi,
+                'total_pesanan'     => $totalPesanan,
+                'tax_percentage'    => $taxPercentage,
+                'tax_service'       => $taxAmount,
             ]);
+
+            // Hapus detail lama dan ganti detail baru
+            PesananDetail::where('pesanan_id', $pesanan->id)->delete();
+            foreach ($itemsData as $item) {
+                PesananDetail::create([
+                    'pesanan_id' => $pesanan->id,
+                    'produk_id'  => $item['produk_id'],
+                    'qty'        => $item['qty'],
+                    'harga'      => $item['harga'],
+                    'subtotal'   => $item['subtotal'],
+                ]);
+            }
+
+            // Hitung ulang status pembayaran
+            $totalBayarSelesai = $pesanan->pembayaran()->sum('jumlah_bayar');
+            if ($totalPesanan > 0 && $totalBayarSelesai >= $totalPesanan) {
+                $pesanan->update(['status_pembayaran' => 'Lunas']);
+            } elseif ($totalBayarSelesai > 0) {
+                $pesanan->update(['status_pembayaran' => 'DP']);
+            } else {
+                $pesanan->update(['status_pembayaran' => 'Belum Bayar']);
+            }
+
+            DB::commit();
+            return redirect()->route('pesanan.index')->with('success', 'Permintaan Cold Kitchen #' . $pesanan->kode_pesanan . ' berhasil diperbarui!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal memperbarui permintaan: ' . $e->getMessage())->withInput();
         }
-    
-        // ===================================================================
-        // TAMBAHKAN LOGIKA OTOMATIS HITUNG ULANG STATUS PEMBAYARAN DI SINI
-        // ===================================================================
-        // 1. Hitung total uang yang sudah pernah dibayarkan sebelumnya
-        $totalBayarSelesai = $pesanan->pembayaran()->sum('jumlah_bayar');
-    
-        // 2. Bandingkan dengan total_pesanan yang baru setelah di-edit
-        if ($totalBayarSelesai >= $pesanan->total_pesanan) {
-            // Jika uang yang masuk pas atau lebih, status jadi Lunas
-            $pesanan->update(['status_pembayaran' => 'Lunas']);
-        } elseif ($totalBayarSelesai > 0) {
-            // Jika uang masuk kurang dari total baru tapi sudah pernah bayar, status turun ke DP
-            $pesanan->update(['status_pembayaran' => 'DP']);
-        } else {
-            // Jika memang belum pernah ada pembayaran sama sekali
-            $pesanan->update(['status_pembayaran' => 'Belum Bayar']);
-        }
-        // ===================================================================
-    
-        return redirect()
-            ->route('pesanan.index')
-            ->with(
-                'success',
-                'Pesanan berhasil diupdate dan status keuangan disesuaikan'
-            );
     }
 
     /**
@@ -369,7 +384,7 @@ class PesananController extends Controller
         $pesanan = Pesanan::findOrFail($id);
 
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
-            return redirect()->route('pesanan.index')->with('error', 'Gagal menghapus: Kontrak pesanan berada pada periode akuntansi yang sudah ditutup buku.');
+            return redirect()->route('pesanan.index')->with('error', 'Gagal menghapus: Permintaan berada pada periode akuntansi yang sudah ditutup buku.');
         }
 
         // PROTEKSI NYATA: Jika sudah masuk WO, tidak boleh dihapus sama sekali
@@ -379,10 +394,24 @@ class PesananController extends Controller
                 ->with('error', 'Data tidak bisa dihapus karena relasi logistik Work Order (WO) sudah terbentuk.');
         }
 
-        PesananDetail::where('pesanan_id', $pesanan->id)->delete();
-        $pesanan->delete();
+        $sudahKirim = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->exists();
+        if ($sudahKirim) {
+            return redirect()->route('pesanan.index')
+                ->with('error', 'Data tidak bisa dihapus karena sudah ada riwayat pengiriman logistik.');
+        }
 
-        return redirect()->route('pesanan.index')->with('success', 'Kontrak pesanan berhasil dihapus permanen');
+        DB::beginTransaction();
+        try {
+            Pembayaran::where('pesanan_id', $pesanan->id)->delete();
+            PesananDetail::where('pesanan_id', $pesanan->id)->delete();
+            $pesanan->delete();
+
+            DB::commit();
+            return redirect()->route('pesanan.index')->with('success', 'Permintaan Cold Kitchen #' . $pesanan->kode_pesanan . ' berhasil dihapus permanen.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->route('pesanan.index')->with('error', 'Gagal menghapus data: ' . $e->getMessage());
+        }
     }
     
     /**

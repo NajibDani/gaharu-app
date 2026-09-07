@@ -17,13 +17,25 @@
                 <h4 class="fw-bold text-dark mb-1">Detail Central Kitchen Order</h4>
                 <p class="text-muted small mb-0">Kode Pesanan: <span class="fw-bold text-primary">{{ $pesanan->kode_pesanan }}</span></p>
             </div>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 flex-wrap align-items-center">
                 <button type="button" class="btn btn-success btn-sm rounded-3 fw-bold px-3" onclick="downloadJpgPO()">
                     <i class="bi bi-file-image me-1"></i> Download JPG
                 </button>
                 <a href="{{ route('ck-orders.cetak-pdf', $pesanan->id) }}" target="_blank" class="btn btn-outline-danger btn-sm rounded-3 px-3">
                     <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
                 </a>
+                @if(!$workOrder)
+                    <a href="{{ route('ck-orders.edit', $pesanan->id) }}" class="btn btn-warning btn-sm rounded-3 fw-bold px-3 text-dark">
+                        <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
+                    </a>
+                    <form action="{{ route('ck-orders.destroy', $pesanan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus pesanan #{{ $pesanan->kode_pesanan }}?')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3">
+                            <i class="bi bi-trash me-1"></i> Hapus
+                        </button>
+                    </form>
+                @endif
                 <a href="{{ route('ck-orders.index') }}" class="btn btn-outline-secondary btn-sm rounded-3 px-3">
                     <i class="bi bi-arrow-left me-1"></i> Kembali
                 </a>

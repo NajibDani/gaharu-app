@@ -356,22 +356,170 @@ class CentralKitchenOrderController extends Controller
     }
 
     /**
-     * Hapus Central Kitchen Order
+     * Form edit Central Kitchen Order
      */
-    public function destroy($id)
+    public function edit($id)
+    {
+        $pesanan = Pesanan::centralKitchen()->with(['details.produk.resepBtklBop', 'customer'])->findOrFail($id);
+
+        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+        if ($sudahWO) {
+            return redirect()->route('ck-orders.index')
+                ->with('error', 'Gagal mengedit: Order #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+        }
+
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->route('ck-orders.index')
+                ->with('error', 'Gagal mengedit: Order #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.');
+        }
+
+        $customers = $this->getOutletCustomers();
+
+        $produk = MasterBarang::with('resepBtklBop')
+            ->where('is_active', true)
+            ->where('is_bahan_setengah_jadi', true)
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        $gudangCk = \App\Models\MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkId = $gudangCk ? $gudangCk->id : 1;
+        $divisiCk = \App\Models\GudangDivisi::where('gudang_id', $gudangCkId)->get();
+
+        return view('central_kitchen.orders.edit', compact('pesanan', 'customers', 'produk', 'divisiCk'));
+    }
+
+    /**
+     * Update Central Kitchen Order
+     */
+    public function update(Request $request, $id)
     {
         $pesanan = Pesanan::centralKitchen()->findOrFail($id);
 
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
         if ($sudahWO) {
             return redirect()->route('ck-orders.index')
-                ->with('error', 'Gagal menghapus: Order ini sudah diproses dalam Work Order Produksi.');
+                ->with('error', 'Gagal memperbarui: Order ini sudah diproses dalam Work Order Produksi.');
         }
 
-        PesananDetail::where('pesanan_id', $pesanan->id)->delete();
-        $pesanan->delete();
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->back()->withErrors(['tanggal' => 'Order ini berada pada periode akuntansi yang sudah ditutup buku.'])->withInput();
+        }
 
-        return redirect()->route('ck-orders.index')->with('success', 'Central Kitchen Order berhasil dihapus.');
+        $request->validate([
+            'customer_id'    => 'required',
+            'tanggal'        => 'required|date',
+            'estimasi_kirim' => 'required|date',
+            'divisi_id'      => 'nullable|exists:gudang_divisi,id',
+            'produk_id'      => 'required|array|min:1',
+            'qty'            => 'required|array|min:1',
+        ]);
+
+        if (date('Y-m-d', strtotime($request->estimasi_kirim)) < date('Y-m-d', strtotime($request->tanggal))) {
+            return redirect()->back()->withErrors(['estimasi_kirim' => 'Estimasi kirim tidak boleh sebelum tanggal pesanan.'])->withInput();
+        }
+
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal)) {
+            return redirect()->back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku.'])->withInput();
+        }
+
+        DB::beginTransaction();
+        try {
+            $customer = Customer::findOrFail($request->customer_id);
+            $custNama = strtolower($customer->nama);
+            $gudangOutlet = null;
+
+            if (str_contains($custNama, 'kejingga')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')
+                    ->orWhere('nama', 'like', '%Kejingga%')->first();
+            } elseif (str_contains($custNama, 'gaharu')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')
+                    ->where('kategori', 'Operasional')->first();
+            } else {
+                $gudangOutlet = \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
+            }
+            $gudangId = $gudangOutlet ? $gudangOutlet->id : $pesanan->gudang_id;
+
+            $pesanan->update([
+                'customer_id'       => $request->customer_id,
+                'tanggal'           => $request->tanggal,
+                'estimasi_kirim'    => $request->estimasi_kirim,
+                'estimasi_produksi' => $request->estimasi_produksi,
+                'gudang_id'         => $gudangId,
+                'divisi_id'         => $request->divisi_id ?? $pesanan->divisi_id,
+            ]);
+
+            // Hapus detail lama dan masukkan detail baru
+            PesananDetail::where('pesanan_id', $pesanan->id)->delete();
+
+            $orderModes = $request->input('order_mode', []);
+
+            foreach ($request->produk_id as $key => $produkId) {
+                if (!$produkId || floatval($request->qty[$key] ?? 0) <= 0) continue;
+
+                $rawQty = floatval($request->qty[$key]);
+                $mode = $orderModes[$key] ?? 'satuan';
+                $finalQty = $rawQty;
+
+                if ($mode === 'resep') {
+                    $itemObj = MasterBarang::with('resepBtklBop')->find($produkId);
+                    if ($itemObj && $itemObj->resepBtklBop && floatval($itemObj->resepBtklBop->output_qty) > 0) {
+                        $finalQty = $rawQty * floatval($itemObj->resepBtklBop->output_qty);
+                    }
+                }
+
+                PesananDetail::create([
+                    'pesanan_id' => $pesanan->id,
+                    'produk_id'  => $produkId,
+                    'qty'        => $finalQty,
+                    'harga'      => 0.00,
+                    'subtotal'   => 0.00,
+                ]);
+            }
+
+            DB::commit();
+            return redirect()->route('ck-orders.index')->with('success', 'Central Kitchen Order #' . $pesanan->kode_pesanan . ' berhasil diperbarui!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal memperbarui pesanan: ' . $e->getMessage())->withInput();
+        }
+    }
+
+    /**
+     * Hapus Central Kitchen Order
+     */
+    public function destroy($id)
+    {
+        $pesanan = Pesanan::centralKitchen()->findOrFail($id);
+
+        if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            return redirect()->route('ck-orders.index')
+                ->with('error', 'Gagal menghapus: Order berada pada periode akuntansi yang sudah ditutup buku.');
+        }
+
+        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+        if ($sudahWO) {
+            return redirect()->route('ck-orders.index')
+                ->with('error', 'Gagal menghapus: Order #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+        }
+
+        $sudahKirim = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->exists();
+        if ($sudahKirim) {
+            return redirect()->route('ck-orders.index')
+                ->with('error', 'Gagal menghapus: Order #' . $pesanan->kode_pesanan . ' sudah memiliki riwayat pengiriman logistik.');
+        }
+
+        DB::beginTransaction();
+        try {
+            Pembayaran::where('pesanan_id', $pesanan->id)->delete();
+            PesananDetail::where('pesanan_id', $pesanan->id)->delete();
+            $pesanan->delete();
+
+            DB::commit();
+            return redirect()->route('ck-orders.index')->with('success', 'Central Kitchen Order #' . $pesanan->kode_pesanan . ' berhasil dihapus.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->route('ck-orders.index')->with('error', 'Gagal menghapus pesanan: ' . $e->getMessage());
+        }
     }
 
     /**

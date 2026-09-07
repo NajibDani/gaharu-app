@@ -37,21 +37,68 @@
         .badge-status-selesai { background-color: #E8F5E9; color: #1B5E20; }
         .badge-status-batal { background-color: #FFEBEE; color: #B71C1C; }
 
-        .action-btn-group { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: nowrap; }
+        .action-btn-group { display: inline-flex; justify-content: center; align-items: center; gap: 5px; flex-wrap: nowrap; }
         .btn-action-base {
-            border-radius: 8px; width: 34px; height: 34px; font-size: 0.85rem;
-            border: none; display: inline-flex; align-items: center; justify-content: center;
-            text-decoration: none; transition: all 0.2s; background-color: transparent; flex-shrink: 0;
+            border-radius: 7px; width: 32px; height: 32px; font-size: 0.82rem;
+            border: 1px solid transparent; display: inline-flex; align-items: center; justify-content: center;
+            text-decoration: none; transition: all 0.15s ease-in-out; background-color: transparent; flex-shrink: 0;
         }
 
-        .btn-action-eye { background-color: #f0f9ff; color: #0369a1 !important; border: 1px solid #e0f2fe; }
-        .btn-action-eye:hover { background-color: #0369a1; color: white !important; }
+        .btn-action-eye { background-color: #f0f9ff; color: #0369a1 !important; border-color: #e0f2fe; }
+        .btn-action-eye:hover { background-color: #0284c7; color: white !important; border-color: #0284c7; }
 
-        .btn-action-delete { background-color: #fef2f2; color: #b91c1c !important; border: 1px solid #fee2e2; cursor: pointer; }
-        .btn-action-delete:hover { background-color: #b91c1c; color: white !important; }
+        .btn-action-edit { background-color: #fffbec; color: #b45309 !important; border-color: #fef3c7; cursor: pointer; }
+        .btn-action-edit:hover { background-color: #b45309; color: white !important; border-color: #b45309; }
 
-        .btn-action-pdf { background-color: #fee2e2; color: #b91c1c !important; border: 1px solid #fca5a5; }
-        .btn-action-pdf:hover { background-color: #b91c1c; color: white !important; }
+        .btn-action-delete { background-color: #fef2f2; color: #b91c1c !important; border-color: #fee2e2; cursor: pointer; }
+        .btn-action-delete:hover { background-color: #b91c1c; color: white !important; border-color: #b91c1c; }
+
+        .btn-action-pdf { background-color: #fef2f2; color: #b91c1c !important; border-color: #fee2e2; }
+        .btn-action-pdf:hover { background-color: #dc2626; color: white !important; border-color: #dc2626; }
+
+        .btn-action-more { background-color: #f8fafc; color: #64748b !important; border-color: #e2e8f0; }
+        .btn-action-more:hover, .btn-action-more.show { background-color: #475569; color: white !important; border-color: #475569; }
+
+        .dropdown-menu-actions {
+            min-width: 195px;
+            padding: 6px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+            z-index: 1080;
+        }
+        .dropdown-menu-actions .dropdown-item {
+            border-radius: 6px;
+            font-size: 0.81rem;
+            padding: 7px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+        .dropdown-menu-actions .dropdown-item i {
+            font-size: 0.9rem;
+            width: 18px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .dropdown-menu-actions .dropdown-item:hover:not(.disabled) {
+            background-color: #f1f5f9;
+        }
+        .dropdown-menu-actions .dropdown-item.text-danger:hover:not(.disabled) {
+            background-color: #fef2f2;
+            color: #dc2626 !important;
+        }
+        .dropdown-menu-actions .dropdown-item.text-success:hover:not(.disabled) {
+            background-color: #f0fdf4;
+            color: #16a34a !important;
+        }
+        .dropdown-menu-actions .dropdown-item.disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+            background-color: transparent;
+        }
     </style>
 
     <div class="container-fluid px-2 px-md-4 py-3">
@@ -167,15 +214,15 @@
                                 <input type="checkbox" id="checkAllCk" class="form-check-input" title="Pilih Semua">
                             </th>
                             <th class="text-center" style="width: 45px;">NO</th>
-                            <th>KODE ORDER</th>
-                            <th>OUTLET PEMESAN</th>
-                            <th>DIVISI CK</th>
-                            <th>TANGGAL ORDER</th>
-                            <th>ESTIMASI KIRIM</th>
-                            <th class="text-end">TOTAL HPP</th>
-                            <th class="text-center">STATUS PRODUKSI</th>
-                            <th class="text-center">STATUS BAYAR</th>
-                            <th class="text-center" style="width: 140px;">AKSI</th>
+                            <th class="text-nowrap" style="min-width: 145px;">KODE ORDER</th>
+                            <th class="text-nowrap">OUTLET PEMESAN</th>
+                            <th class="text-nowrap">DIVISI CK</th>
+                            <th class="text-nowrap">TANGGAL ORDER</th>
+                            <th class="text-nowrap">ESTIMASI KIRIM</th>
+                            <th class="text-end text-nowrap">TOTAL HPP</th>
+                            <th class="text-center text-nowrap">STATUS PRODUKSI</th>
+                            <th class="text-center text-nowrap">STATUS BAYAR</th>
+                            <th class="text-center text-nowrap" style="width: 125px;">AKSI</th>
                         </tr>
                     </thead>
                     <tbody class="table-custom-body">
@@ -197,11 +244,11 @@
                                            {{ ($isLunasOrBatal || $sisaTagihanItem <= 0) ? 'disabled' : '' }}>
                                 </td>
                                 <td class="text-center fw-semibold text-muted">{{ $pesanan->firstItem() + $index }}</td>
-                                <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
-                                <td>
+                                <td class="fw-bold text-dark text-nowrap" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; letter-spacing: -0.2px;">{{ $p->kode_pesanan }}</td>
+                                <td class="text-nowrap">
                                     <span class="badge bg-light text-dark border">{{ $p->customer->nama ?? '-' }}</span>
                                 </td>
-                                <td>
+                                <td class="text-nowrap">
                                     @if($p->divisi)
                                         <span class="badge rounded-pill" style="background:#ede9fe;color:#6d28d9;font-size:0.72rem;font-weight:600;">
                                             <i class="bi bi-layers-half me-1"></i>{{ $p->divisi->nama }}
@@ -210,16 +257,16 @@
                                         <span class="text-muted small">-</span>
                                     @endif
                                 </td>
-                                <td>{{ date('d M Y', strtotime($p->tanggal)) }}</td>
-                                <td>
+                                <td class="text-nowrap">{{ date('d M Y', strtotime($p->tanggal)) }}</td>
+                                <td class="text-nowrap">
                                     <span class="fw-medium {{ strtotime($p->estimasi_kirim) < strtotime(date('Y-m-d')) ? 'text-danger' : 'text-dark' }}">
                                         {{ date('d M Y', strtotime($p->estimasi_kirim)) }}
                                     </span>
                                 </td>
-                                <td class="text-end fw-bold text-dark">
+                                <td class="text-end fw-bold text-dark text-nowrap">
                                     Rp {{ number_format($totalNilaiItem, 0, ',', '.') }}
                                 </td>
-                                <td class="text-center">
+                                <td class="text-center text-nowrap">
                                     @php
                                         $statusClass = 'badge-status-pending';
                                         if (in_array(strtolower($p->status_pesanan), ['proses', 'diproses', 'ready', 'siap kirim'])) {
@@ -234,7 +281,7 @@
                                         {{ ucfirst($p->status_pesanan) }}
                                     </span>
                                 </td>
-                                <td class="text-center">
+                                <td class="text-center text-nowrap">
                                     @if($p->status_pembayaran == 'Lunas')
                                         <span class="badge-subtle badge-status-selesai">Lunas</span>
                                     @elseif($p->status_pembayaran == 'DP')
@@ -243,30 +290,75 @@
                                         <span class="badge-subtle badge-status-batal">Belum</span>
                                     @endif
                                 </td>
-                                <td class="text-center">
+                                <td class="text-center text-nowrap">
                                     <div class="action-btn-group">
+                                        {{-- 1. Tombol Detail --}}
                                         <button type="button" class="btn-action-base btn-action-eye" data-bs-toggle="modal" data-bs-target="#modalDetailCkOrder{{ $p->id }}" title="Lihat Detail Pesanan">
                                             <i class="bi bi-eye"></i>
                                         </button>
+
+                                        {{-- 2. Tombol Cetak PDF --}}
                                         <a href="{{ route('ck-orders.cetak-pdf', $p->id) }}" target="_blank" class="btn-action-base btn-action-pdf" title="Cetak PDF">
                                             <i class="bi bi-file-earmark-pdf"></i>
                                         </a>
 
-                                        @if(isset($p->customer) && !str_contains(strtolower($p->customer->nama), 'gaharu'))
-                                            <button type="button" class="btn-action-base btn-action-eye bg-success-subtle text-success border-success-subtle" data-bs-toggle="modal" data-bs-target="#modalBayarCk{{ $p->id }}" title="Input Pembayaran & Upload Bukti">
-                                                <i class="bi bi-cash-stack"></i>
+                                        {{-- 3. Dropdown Menu Opsi (Edit, Hapus, Bayar, Status WO) --}}
+                                        <div class="dropdown">
+                                            <button class="btn-action-base btn-action-more" type="button" data-bs-toggle="dropdown" data-bs-strategy="fixed" data-bs-boundary="viewport" aria-expanded="false" title="Menu Opsi">
+                                                <i class="bi bi-three-dots-vertical"></i>
                                             </button>
-                                        @endif
+                                            <ul class="dropdown-menu dropdown-menu-end dropdown-menu-actions">
+                                                @if(!$p->wo_status)
+                                                    <li>
+                                                        <a class="dropdown-item text-dark" href="{{ route('ck-orders.edit', $p->id) }}">
+                                                            <i class="bi bi-pencil-square text-warning"></i> Edit Pesanan
+                                                        </a>
+                                                    </li>
+                                                @else
+                                                    <li>
+                                                        <span class="dropdown-item disabled text-muted py-2" title="Terkunci: sudah masuk Work Order">
+                                                            <i class="bi bi-lock text-secondary"></i>
+                                                            <span>
+                                                                Edit Terkunci
+                                                                <small class="d-block text-muted" style="font-size: 0.68rem;">WO: {{ ucfirst($p->wo_status) }}</small>
+                                                            </span>
+                                                        </span>
+                                                    </li>
+                                                @endif
 
-                                        @if(!$p->wo_status)
-                                            <form action="{{ route('ck-orders.destroy', $p->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus pesanan ini?')">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="btn-action-base btn-action-delete" title="Hapus">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        @endif
+                                                @if(isset($p->customer) && !str_contains(strtolower($p->customer->nama), 'gaharu'))
+                                                    <li>
+                                                        <a class="dropdown-item text-success" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalBayarCk{{ $p->id }}">
+                                                            <i class="bi bi-cash-stack"></i> Input Pembayaran
+                                                        </a>
+                                                    </li>
+                                                @endif
+
+                                                <li><hr class="dropdown-divider my-1"></li>
+
+                                                @if(!$p->wo_status)
+                                                    <li>
+                                                        <form action="{{ route('ck-orders.destroy', $p->id) }}" method="POST" class="m-0 p-0" onsubmit="return confirm('Apakah Anda yakin ingin menghapus pesanan #{{ $p->kode_pesanan }}?')">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="dropdown-item text-danger w-100">
+                                                                <i class="bi bi-trash"></i> Hapus Pesanan
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                @else
+                                                    <li>
+                                                        <span class="dropdown-item disabled text-muted py-2" title="Terkunci: sudah masuk Work Order">
+                                                            <i class="bi bi-lock text-secondary"></i>
+                                                            <span>
+                                                                Hapus Terkunci
+                                                                <small class="d-block text-muted" style="font-size: 0.68rem;">WO aktif</small>
+                                                            </span>
+                                                        </span>
+                                                    </li>
+                                                @endif
+                                            </ul>
+                                        </div>
                                     </div>
 
                                     {{-- MODAL BAYAR CK (jika customer non-Gaharu) --}}
@@ -465,16 +557,32 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div class="modal-footer bg-light py-2 justify-content-between">
-                                                    <div class="d-flex gap-2">
+                                                <div class="modal-footer bg-light py-2 justify-content-between flex-wrap gap-2">
+                                                    <div class="d-flex gap-2 flex-wrap">
                                                         <button type="button" class="btn btn-success btn-sm px-3 fw-bold" onclick="downloadCkOrderJpg({{ $p->id }}, '{{ $p->kode_pesanan }}')">
                                                             <i class="bi bi-file-image me-1"></i> Download JPG
                                                         </button>
                                                         <a href="{{ route('ck-orders.cetak-pdf', $p->id) }}" target="_blank" class="btn btn-outline-danger btn-sm px-3 fw-bold">
                                                             <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
                                                         </a>
+                                                        @if(!$p->wo_status)
+                                                            <a href="{{ route('ck-orders.edit', $p->id) }}" class="btn btn-warning btn-sm px-3 fw-bold text-dark">
+                                                                <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
+                                                            </a>
+                                                        @endif
                                                     </div>
-                                                    <button type="button" class="btn btn-secondary btn-sm px-4" data-bs-dismiss="modal">Tutup</button>
+                                                    <div class="d-flex gap-2">
+                                                        @if(!$p->wo_status)
+                                                            <form action="{{ route('ck-orders.destroy', $p->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus pesanan #{{ $p->kode_pesanan }}?')">
+                                                                @csrf
+                                                                @method('DELETE')
+                                                                <button type="submit" class="btn btn-outline-danger btn-sm px-3 fw-bold">
+                                                                    <i class="bi bi-trash me-1"></i> Hapus Pesanan
+                                                                </button>
+                                                            </form>
+                                                        @endif
+                                                        <button type="button" class="btn btn-secondary btn-sm px-4" data-bs-dismiss="modal">Tutup</button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

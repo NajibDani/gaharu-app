@@ -1,26 +1,35 @@
 <x-app-layout>
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Detail Pesanan</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    </head>
+    @php
+        $sudahWO = \App\Models\WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+    @endphp
 
-    <body style="background-color: #f5f6fa;">
-
-    <div class="container mt-5">
-
-        <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="container mt-4 mb-5">
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <div>
-                <h2 class="fw-bold mb-0">Detail Pesanan</h2>
-                <small class="text-muted">Informasi lengkap transaksi pesanan</small>
+                <h3 class="fw-bold mb-0 text-dark">Detail Permintaan Cold Kitchen</h3>
+                <small class="text-muted">Informasi lengkap pesanan &amp; status produksi: <span class="fw-bold text-primary">#{{ $pesanan->kode_pesanan }}</span></small>
             </div>
-            <div class="d-flex gap-2">
-                <a href="{{ route('pesanan.kwitansi', $pesanan->id) }}" class="btn btn-primary btn-sm shadow-sm" target="_blank">
-                    <i class="bi bi-printer"></i> Cetak Kwitansi
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+                @if(!$sudahWO)
+                    <a href="{{ route('pesanan.edit', $pesanan->id) }}" class="btn btn-warning btn-sm shadow-sm text-dark fw-bold px-3">
+                        <i class="bi bi-pencil-square me-1"></i> Edit
+                    </a>
+                    <form action="{{ route('pesanan.destroy', $pesanan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus permintaan #{{ $pesanan->kode_pesanan }}?')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger btn-sm shadow-sm fw-bold px-3">
+                            <i class="bi bi-trash me-1"></i> Hapus
+                        </button>
+                    </form>
+                @endif
+                <a href="{{ route('pesanan.kwitansi', $pesanan->id) }}" class="btn btn-outline-primary btn-sm shadow-sm px-3" target="_blank">
+                    <i class="bi bi-printer me-1"></i> Cetak Kwitansi
                 </a>
-                <a href="{{ route('pesanan.index') }}" class="btn btn-secondary btn-sm shadow-sm">
-                    <i class="bi bi-arrow-left"></i> Kembali
+                <a href="{{ route('pesanan.cetak-pdf', $pesanan->id) }}" class="btn btn-outline-danger btn-sm shadow-sm px-3" target="_blank">
+                    <i class="bi bi-file-earmark-pdf me-1"></i> Cetak SO
+                </a>
+                <a href="{{ route('pesanan.index') }}" class="btn btn-secondary btn-sm shadow-sm px-3">
+                    <i class="bi bi-arrow-left me-1"></i> Kembali
                 </a>
             </div>
         </div>
@@ -188,7 +197,4 @@
             </div>
         </div>
     </div>
-
-    </body>
-    </html>
 </x-app-layout>

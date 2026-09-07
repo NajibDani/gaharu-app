@@ -24,26 +24,42 @@
                 <h4 class="fw-bold text-dark mb-1">Produksi Cold Kitchen</h4>
                 <p class="text-muted small mb-0">Manajemen terpadu Work Order (WO), Alokasi Bahan Baku &amp; Hasil Produksi Cold Kitchen</p>
             </div>
-            <div class="d-flex gap-2 flex-wrap align-items-center w-100 w-md-auto justify-content-start justify-content-md-end">
-                <form action="{{ route('produksi.index') }}" method="GET" class="d-flex gap-2 align-items-center flex-grow-1 flex-md-grow-0 flex-wrap">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <form action="{{ route('produksi.index') }}" method="GET" class="d-flex align-items-center gap-2 m-0 flex-wrap">
                     @if(request('tab'))
                         <input type="hidden" name="tab" value="{{ request('tab') }}">
                     @endif
-                    <select name="customer_id" class="form-select form-select-sm" style="min-width: 170px; border-radius: 8px; border: 1px solid #DCD3CB;" onchange="this.form.submit()">
-                        <option value="">-- Semua Customer / Outlet --</option>
-                        @if(isset($customers))
-                            @foreach($customers as $c)
-                                <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
-                            @endforeach
-                        @endif
-                    </select>
-                    <input type="text" name="search" class="form-control form-control-sm flex-grow-1" placeholder="Cari kode WO / Produksi..." value="{{ request('search') }}" style="min-width: 180px; border-radius: 8px; border: 1px solid #DCD3CB; padding: 8px 12px;">
-                    <button type="submit" class="btn btn-sm btn-custom-orange" style="border-radius: 8px; padding: 8px 16px;">Cari</button>
+
+                    {{-- Dropdown Filter Outlet --}}
+                    <div style="width: 200px;">
+                        <select name="customer_id" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px;" onchange="this.form.submit()">
+                            <option value="">-- Semua Outlet --</option>
+                            @if(isset($customers))
+                                @foreach($customers as $c)
+                                    <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
+                                @endforeach
+                            @endif
+                        </select>
+                    </div>
+
+                    {{-- Search Input Group Terintegrasi --}}
+                    <div class="input-group input-group-sm" style="width: 250px;">
+                        <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari kode WO / Produksi..." value="{{ request('search') }}" style="border-radius: 8px 0 0 8px; border: 1px solid #DCD3CB; height: 36px;">
+                        <button type="submit" class="btn btn-custom-orange d-inline-flex align-items-center gap-1" style="border-radius: 0 8px 8px 0; height: 36px; padding: 0 14px; font-weight: 600;">
+                            <i class="bi bi-search"></i> Cari
+                        </button>
+                    </div>
+
+                    {{-- Tombol Reset --}}
                     @if(request('search') || request('customer_id'))
-                        <a href="{{ route('produksi.index', request('tab') ? ['tab' => request('tab')] : []) }}" class="btn btn-sm btn-secondary" style="border-radius: 8px; padding: 8px 16px;">Reset</a>
+                        <a href="{{ route('produksi.index', request('tab') ? ['tab' => request('tab')] : []) }}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="border-radius: 8px; height: 36px; width: 36px;" title="Reset Filter">
+                            <i class="bi bi-x-lg"></i>
+                        </a>
                     @endif
                 </form>
-                <a href="{{ route('dashboard') }}" class="btn btn-secondary text-white rounded-3 shadow-sm px-3 action-btn d-flex align-items-center gap-2">
+
+                {{-- Tombol Kembali ke Dashboard --}}
+                <a href="{{ route('dashboard') }}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2" style="border-radius: 8px; height: 36px; padding: 0 14px; font-weight: 600; white-space: nowrap;">
                     <i class="bi bi-arrow-left"></i> Dashboard
                 </a>
             </div>
@@ -51,28 +67,48 @@
 
         {{-- SUMMARY CARDS --}}
         <div class="row mb-4 g-3">
-            <div class="col-12 col-md-3">
-                <div class="summary-card">
-                    <span class="text-secondary mb-1 d-block fw-medium small">Order Siap Dibuat WO</span>
-                    <h4 class="fw-bold text-primary mb-0">{{ $pesananB2BPending->total() }} Pesanan</h4>
+            <div class="col-6 col-md-3">
+                <div class="summary-card d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; background-color: #eff6ff; color: #2563eb; font-size: 1.25rem;">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted mb-1 d-block fw-medium" style="font-size: 0.76rem;">Order Siap Dibuat WO</span>
+                        <h5 class="fw-bold text-dark mb-0">{{ number_format($pesananB2BPending->total()) }} <small class="text-muted fw-normal" style="font-size: 0.75rem;">Pesanan</small></h5>
+                    </div>
                 </div>
             </div>
-            <div class="col-12 col-md-3">
-                <div class="summary-card">
-                    <span class="text-secondary mb-1 d-block fw-medium small">Work Order Aktif</span>
-                    <h4 class="fw-bold text-dark mb-0">{{ $woList->total() }} WO</h4>
+            <div class="col-6 col-md-3">
+                <div class="summary-card d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; background-color: #f1f5f9; color: #475569; font-size: 1.25rem;">
+                        <i class="bi bi-file-earmark-text"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted mb-1 d-block fw-medium" style="font-size: 0.76rem;">Work Order Aktif</span>
+                        <h5 class="fw-bold text-dark mb-0">{{ number_format($woList->total()) }} <small class="text-muted fw-normal" style="font-size: 0.75rem;">WO</small></h5>
+                    </div>
                 </div>
             </div>
-            <div class="col-12 col-md-3">
-                <div class="summary-card">
-                    <span class="text-secondary mb-1 d-block fw-medium small">Draft Produksi</span>
-                    <h4 class="fw-bold text-warning mb-0">{{ $totalDraft }} Draft</h4>
+            <div class="col-6 col-md-3">
+                <div class="summary-card d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; background-color: #fffbeb; color: #d97706; font-size: 1.25rem;">
+                        <i class="bi bi-hourglass-split"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted mb-1 d-block fw-medium" style="font-size: 0.76rem;">Draft Produksi</span>
+                        <h5 class="fw-bold text-warning mb-0">{{ number_format($totalDraft) }} <small class="text-muted fw-normal" style="font-size: 0.75rem;">Draft</small></h5>
+                    </div>
                 </div>
             </div>
-            <div class="col-12 col-md-3">
-                <div class="summary-card">
-                    <span class="text-secondary mb-1 d-block fw-medium small">Produksi Selesai</span>
-                    <h4 class="fw-bold text-success mb-0">{{ $totalApproved }} Selesai</h4>
+            <div class="col-6 col-md-3">
+                <div class="summary-card d-flex align-items-center gap-3">
+                    <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; background-color: #f0fdf4; color: #16a34a; font-size: 1.25rem;">
+                        <i class="bi bi-check2-circle"></i>
+                    </div>
+                    <div>
+                        <span class="text-muted mb-1 d-block fw-medium" style="font-size: 0.76rem;">Produksi Selesai</span>
+                        <h5 class="fw-bold text-success mb-0">{{ number_format($totalApproved) }} <small class="text-muted fw-normal" style="font-size: 0.75rem;">Selesai</small></h5>
+                    </div>
                 </div>
             </div>
         </div>
@@ -120,12 +156,12 @@
                                     <th class="text-center" style="width: 40px;">
                                         <input class="form-check-input border-secondary" type="checkbox" id="checkAll">
                                     </th>
-                                    <th style="width: 14%;">KODE PESANAN</th>
-                                    <th style="width: 18%;">CUSTOMER</th>
-                                    <th style="width: 12%;">ESTIMASI KIRIM</th>
-                                    <th>DAFTAR ITEM & TARGET QTY</th>
-                                    <th class="text-center" style="width: 12%;">STATUS BAYAR</th>
-                                    <th class="text-center" style="width: 180px;">AKSI</th>
+                                    <th class="text-nowrap" style="width: 15%;">KODE PESANAN</th>
+                                    <th class="text-nowrap" style="width: 18%;">CUSTOMER</th>
+                                    <th class="text-center text-nowrap" style="width: 14%;">ESTIMASI KIRIM</th>
+                                    <th class="text-nowrap">DAFTAR ITEM &amp; TARGET QTY</th>
+                                    <th class="text-center text-nowrap" style="width: 12%;">STATUS BAYAR</th>
+                                    <th class="text-center text-nowrap" style="width: 160px;">AKSI</th>
                                 </tr>
                             </thead>
                             <tbody class="table-custom-body bg-white">
@@ -151,25 +187,25 @@
                                                 <i class="bi bi-check2-circle text-success" title="Semua item sudah dibuatkan WO"></i>
                                             @endif
                                         </td>
-                                            <td class="fw-bold text-dark">{{ $p->kode_pesanan }}</td>
-                                            <td>
-                                                <span class="fw-semibold text-dark">{{ $p->customer->nama ?? ($p->customer->name ?? '-') }}</span>
-                                            </td>
-                                            <td>
-                                                @php
-                                                    $tglKirim = \Carbon\Carbon::parse($p->estimasi_kirim)->startOfDay();
-                                                    $hariIni = \Carbon\Carbon::now()->startOfDay();
-                                                    $selisih = $hariIni->diffInDays($tglKirim, false);
-                                                @endphp
-                                                @if($selisih < 0)
-                                                    <span class="badge bg-danger">Terlambat</span>
-                                                @elseif($selisih == 0)
-                                                    <span class="badge bg-danger">Hari Ini</span>
-                                                @elseif($selisih <= 2)
-                                                    <span class="badge bg-warning text-dark">Mepet</span>
-                                                @endif
-                                                <div class="small text-muted">{{ $tglKirim->format('d M Y') }}</div>
-                                            </td>
+                                        <td class="fw-bold text-dark text-nowrap" style="font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.82rem;">{{ $p->kode_pesanan }}</td>
+                                        <td class="text-nowrap">
+                                            <span class="fw-semibold text-dark">{{ $p->customer->nama ?? ($p->customer->name ?? '-') }}</span>
+                                        </td>
+                                        <td class="text-center text-nowrap">
+                                            @php
+                                                $tglKirim = \Carbon\Carbon::parse($p->estimasi_kirim)->startOfDay();
+                                                $hariIni = \Carbon\Carbon::now()->startOfDay();
+                                                $selisih = $hariIni->diffInDays($tglKirim, false);
+                                            @endphp
+                                            @if($selisih < 0)
+                                                <span class="badge bg-danger">Terlambat</span>
+                                            @elseif($selisih == 0)
+                                                <span class="badge bg-danger">Hari Ini</span>
+                                            @elseif($selisih <= 2)
+                                                <span class="badge bg-warning text-dark">Mepet</span>
+                                            @endif
+                                            <div class="small text-muted">{{ $tglKirim->format('d M Y') }}</div>
+                                        </td>
                                             <td>
                                                 <ul class="list-unstyled mb-0 small">
                                                     @foreach($p->details as $d)
