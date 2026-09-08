@@ -120,15 +120,15 @@
     <div class="container-fluid px-2 px-md-4 py-3">
 
         {{-- HEADER SECTION --}}
-        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div class="d-flex justify-content-between align-items-start align-items-md-center mb-4 flex-column flex-md-row gap-3">
             <div>
                 <h4 class="mb-1 fw-bold text-dark" style="font-weight: 800; letter-spacing: -0.5px;">Permintaan Cold Kitchen</h4>
                 <p class="text-muted mb-0 small"><i class="bi bi-info-circle me-1"></i> Manajemen pengajuan permintaan barang ke Cold Kitchen &amp; pencatatan harga/pembayaran.</p>
             </div>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <form action="{{ route('pesanan.index') }}" method="GET" class="d-flex align-items-center gap-2 m-0 flex-wrap">
+            <div class="d-flex align-items-center gap-2 flex-wrap w-100 w-md-auto">
+                <form action="{{ route('pesanan.index') }}" method="GET" class="d-flex align-items-center gap-2 m-0 flex-wrap w-100 w-md-auto flex-grow-1">
                     {{-- Dropdown Outlet --}}
-                    <div style="width: 200px;">
+                    <div class="flex-grow-1" style="min-width: 160px;">
                         <select name="customer_id" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px;" onchange="this.form.submit()">
                             <option value="">-- Semua Outlet --</option>
                             @if(isset($customers))
@@ -140,7 +140,7 @@
                     </div>
 
                     {{-- Search Input Group Terintegrasi --}}
-                    <div class="input-group input-group-sm" style="width: 240px;">
+                    <div class="input-group input-group-sm flex-grow-1" style="min-width: 180px;">
                         <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari permintaan/customer..." value="{{ request('search') }}" style="border-radius: 8px 0 0 8px; border: 1px solid #DCD3CB; height: 36px;">
                         <button type="submit" class="btn text-white d-inline-flex align-items-center gap-1" style="background-color: #DE8958; border-radius: 0 8px 8px 0; height: 36px; padding: 0 14px; font-weight: 600;">
                             <i class="bi bi-search"></i> Cari
@@ -159,7 +159,7 @@
                     <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedPesanan">0</span>)
                 </button>
 
-                <a href="{{ route('pesanan.create') }}" class="btn btn-custom-orange shadow-sm d-inline-flex align-items-center justify-content-center gap-2" style="height: 36px; padding: 0 16px; border-radius: 8px; white-space: nowrap;">
+                <a href="{{ route('pesanan.create') }}" class="btn btn-custom-orange shadow-sm d-inline-flex align-items-center justify-content-center gap-2 w-100 w-sm-auto" style="height: 36px; padding: 0 16px; border-radius: 8px; white-space: nowrap;">
                     <i class="bi bi-plus-circle-fill"></i> Tambah Permintaan Baru
                 </a>
             </div>

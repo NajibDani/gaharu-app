@@ -4,34 +4,46 @@
 
     <style>
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
-        .table-custom-header th { background-color: #715745 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.8rem; padding: 12px 10px; }
+        .table-custom-header th { background-color: #715745 !important; color: #ffffff !important; font-weight: 600; border-bottom: none; font-size: 0.8rem; padding: 12px 10px; white-space: nowrap; }
         .table-custom-body td { font-size: 0.82rem; padding: 10px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
         .btn-custom-orange { background-color: #DE8958; color: white; border: none; font-weight: 600; font-size: 0.85rem; padding: 8px 16px; border-radius: 8px; }
         .btn-custom-orange:hover { background-color: #C87443; color: white; }
         .summary-card { border-radius: 12px; border: 1px solid #DCD3CB; background: #ffffff; padding: 16px 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-        .nav-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; border-bottom: 2px solid #DCD3CB; padding-bottom: 2px; }
+        .nav-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; border-bottom: 2px solid #DCD3CB; padding-bottom: 2px; scrollbar-width: none; }
+        .nav-tabs::-webkit-scrollbar { display: none; }
         .nav-tabs .nav-item { flex-shrink: 0; }
         .nav-tabs .nav-link { color: #64748b; font-weight: 600; font-size: 0.88rem; border: none; border-bottom: 3px solid transparent; padding: 10px 18px; white-space: nowrap; }
         .nav-tabs .nav-link.active { color: #DE8958; border-bottom: 3px solid #DE8958; background: transparent; font-weight: 700; }
         .action-btn { border-radius: 7px; padding: 6px 12px; font-size: 0.82rem; font-weight: 600; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+
+        /* Action Box & Responsive Grid */
+        .action-box { min-width: 175px; max-width: 220px; margin: 0 auto; }
+        .action-box .btn-group .btn { border-radius: 6px; }
+        .action-box .btn-group > .btn:not(:first-child) { margin-left: -1px; }
+
+        @media (max-width: 767.98px) {
+            .table-custom-header th { padding: 10px 8px; font-size: 0.75rem; }
+            .table-custom-body td { padding: 8px 6px; font-size: 0.78rem; }
+            .action-box { min-width: 160px; }
+        }
     </style>
 
     <div class="container-fluid px-2 px-md-4 py-3 mb-5">
 
         {{-- HEADER SECTION --}}
-        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div class="d-flex justify-content-between align-items-start align-items-md-center mb-4 flex-column flex-md-row gap-3">
             <div>
                 <h4 class="fw-bold text-dark mb-1">Produksi Cold Kitchen</h4>
                 <p class="text-muted small mb-0">Manajemen terpadu Work Order (WO), Alokasi Bahan Baku &amp; Hasil Produksi Cold Kitchen</p>
             </div>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <form action="{{ route('produksi.index') }}" method="GET" class="d-flex align-items-center gap-2 m-0 flex-wrap">
+            <div class="d-flex align-items-center gap-2 flex-wrap w-100 w-md-auto">
+                <form action="{{ route('produksi.index') }}" method="GET" class="d-flex align-items-center gap-2 m-0 flex-wrap w-100 w-md-auto flex-grow-1">
                     @if(request('tab'))
                         <input type="hidden" name="tab" value="{{ request('tab') }}">
                     @endif
 
                     {{-- Dropdown Filter Outlet --}}
-                    <div style="width: 200px;">
+                    <div class="flex-grow-1" style="min-width: 160px;">
                         <select name="customer_id" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px;" onchange="this.form.submit()">
                             <option value="">-- Semua Outlet --</option>
                             @if(isset($customers))
@@ -43,7 +55,7 @@
                     </div>
 
                     {{-- Search Input Group Terintegrasi --}}
-                    <div class="input-group input-group-sm" style="width: 250px;">
+                    <div class="input-group input-group-sm flex-grow-1" style="min-width: 180px;">
                         <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari kode WO / Produksi..." value="{{ request('search') }}" style="border-radius: 8px 0 0 8px; border: 1px solid #DCD3CB; height: 36px;">
                         <button type="submit" class="btn btn-custom-orange d-inline-flex align-items-center gap-1" style="border-radius: 0 8px 8px 0; height: 36px; padding: 0 14px; font-weight: 600;">
                             <i class="bi bi-search"></i> Cari
@@ -230,26 +242,33 @@
                                                     <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">{{ $p->status_pembayaran }}</span>
                                                 @endif
                                             </td>
-                                            <td class="text-center">
-                                                <div class="d-flex justify-content-center gap-1">
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-3" data-bs-toggle="modal" data-bs-target="#modalOrderB2B{{ $p->id }}">
-                                                        <i class="bi bi-eye"></i> Detail
-                                                    </button>
+                                            <td class="text-center text-nowrap">
+                                                <div class="action-box d-flex justify-content-center">
                                                     @if($p->is_fully_wo)
-                                                        <button type="button" class="btn btn-sm btn-secondary rounded-3 fw-semibold opacity-75" disabled title="Work Order sudah lengkap dibuat">
-                                                            <i class="bi bi-check-circle me-1"></i> WO Sudah Dibuat
-                                                        </button>
+                                                        <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
+                                                            <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalOrderB2B{{ $p->id }}">
+                                                                <i class="bi bi-eye"></i> Detail
+                                                            </button>
+                                                            <button type="button" class="btn btn-secondary fw-semibold opacity-75 d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" disabled title="Work Order sudah lengkap dibuat">
+                                                                <i class="bi bi-check-circle"></i> Selesai WO
+                                                            </button>
+                                                        </div>
                                                     @else
-                                                        <form action="{{ route('produksi.store-wo') }}" method="POST" class="d-inline" onsubmit="return confirm('Buat Work Order (WO) untuk pesanan {{ $p->kode_pesanan }}?')">
+                                                        <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
+                                                            <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalOrderB2B{{ $p->id }}">
+                                                                <i class="bi bi-eye"></i> Detail
+                                                            </button>
+                                                            <button type="button" class="btn btn-custom-orange fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('Buat Work Order (WO) untuk pesanan {{ $p->kode_pesanan }}?')) document.getElementById('formStoreWoB2B{{ $p->id }}').submit();">
+                                                                <i class="bi bi-gear-fill"></i> Buat WO
+                                                            </button>
+                                                        </div>
+                                                        <form id="formStoreWoB2B{{ $p->id }}" action="{{ route('produksi.store-wo') }}" method="POST" class="d-none">
                                                             @csrf
                                                             <input type="hidden" name="pesanan_id" value="{{ $p->id }}">
                                                             @foreach($p->details as $d)
                                                                 <input type="hidden" name="produk_id[]" value="{{ $d->produk_id }}">
                                                                 <input type="hidden" name="qty_rencana[]" value="{{ $d->sisa_wo_qty ?? $d->qty }}">
                                                             @endforeach
-                                                            <button type="submit" class="btn btn-sm btn-primary rounded-3 fw-semibold">
-                                                                <i class="bi bi-gear-fill me-1"></i> Buat WO
-                                                            </button>
                                                         </form>
                                                     @endif
                                                 </div>
@@ -321,9 +340,9 @@
             {{-- TAB 2: WORK ORDERS LIST (DETAIL & INPUT PRODUKSI VIA POPUP) --}}
             <div class="tab-pane fade {{ $activeTab === 'wo' ? 'show active' : '' }}" id="wo-list" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-3">
-                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="card-header bg-white py-3 px-3 px-md-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="fw-bold mb-0 text-dark">Daftar Work Order (WO) B2B</h6>
-                        <button type="button" class="btn btn-sm btn-success fw-semibold shadow-sm" id="btnBatchProduksiB2B" disabled onclick="openBatchProduksiB2BModal()">
+                        <button type="button" class="btn btn-sm btn-success fw-semibold shadow-sm w-100 w-sm-auto" id="btnBatchProduksiB2B" disabled onclick="openBatchProduksiB2BModal()">
                             <i class="bi bi-layers-fill me-1"></i> Produksi Batch WO Terpilih (<span id="countSelectedWoB2B">0</span>)
                         </button>
                     </div>
@@ -334,13 +353,13 @@
                                     <th class="text-center" style="width: 40px;">
                                         <input class="form-check-input border-secondary" type="checkbox" id="checkAllWoB2B">
                                     </th>
-                                    <th class="text-center" style="width: 50px;">NO</th>
-                                    <th>KODE WO</th>
-                                    <th>CUSTOMER / PESANAN</th>
-                                    <th>TANGGAL WO</th>
-                                    <th>TARGET & REALISASI</th>
-                                    <th>STATUS</th>
-                                    <th class="text-center" style="width: 260px;">AKSI</th>
+                                    <th class="text-center text-nowrap" style="width: 45px;">NO</th>
+                                    <th class="text-nowrap">KODE WO</th>
+                                    <th class="text-nowrap">CUSTOMER / PESANAN</th>
+                                    <th class="text-nowrap">TANGGAL WO</th>
+                                    <th class="text-nowrap">TARGET &amp; REALISASI</th>
+                                    <th class="text-nowrap text-center">STATUS</th>
+                                    <th class="text-center text-nowrap" style="width: 210px;">AKSI</th>
                                 </tr>
                             </thead>
                             <tbody class="table-custom-body bg-white">
@@ -356,14 +375,14 @@
                                                 <i class="bi bi-check2-circle text-success" title="WO Selesai"></i>
                                             @endif
                                         </td>
-                                        <td class="text-center text-muted">{{ $index + 1 }}</td>
-                                        <td class="fw-bold text-dark">{{ $wo->kode_wo }}</td>
-                                        <td>
+                                        <td class="text-center text-muted text-nowrap">{{ $index + 1 }}</td>
+                                        <td class="fw-bold text-dark text-nowrap">{{ $wo->kode_wo }}</td>
+                                        <td class="text-nowrap">
                                             <div class="fw-semibold text-dark">{{ $wo->customer_nama }}</div>
                                             <div class="text-muted small">Ref: {{ $wo->pesanan_kode }}</div>
                                         </td>
-                                        <td>{{ date('d M Y H:i', strtotime($wo->tanggal_wo)) }}</td>
-                                        <td>
+                                        <td class="text-nowrap">{{ date('d M Y H:i', strtotime($wo->tanggal_wo)) }}</td>
+                                        <td class="text-nowrap">
                                             <div class="small">
                                                 <span class="fw-bold text-success">{{ number_format($wo->total_selesai, 0, ',', '.') }}</span> / 
                                                 <span class="fw-bold text-dark">{{ number_format($wo->total_target, 0, ',', '.') }}</span>
@@ -374,7 +393,7 @@
                                                 @endif
                                             </div>
                                         </td>
-                                        <td>
+                                        <td class="text-center text-nowrap">
                                             @if($wo->is_all_completed || strtolower($wo->status_wo) == 'selesai')
                                                 <span class="badge bg-success">Selesai</span>
                                             @elseif($wo->is_bahan_sufficient || strtolower($wo->status_wo) == 'diproses')
@@ -387,39 +406,52 @@
                                                 </span>
                                             @endif
                                         </td>
-                                        <td class="text-center">
-                                            <div class="d-flex justify-content-center gap-1 flex-wrap">
-                                                @if(!$wo->is_all_completed && !$wo->is_bahan_sufficient)
-                                                    <form action="{{ route('wo.kirim_produksi', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO {{ $wo->kode_wo }}?')">
-                                                        @csrf
-                                                        <button type="submit" class="btn btn-sm btn-outline-warning rounded-3 action-btn fw-semibold" title="Minta Bahan Baku ke Gudang Utama">
-                                                            <i class="bi bi-box-arrow-right"></i> Minta Bahan
-                                                        </button>
-                                                    </form>
-                                                @endif
-
+                                        <td class="text-center text-nowrap">
+                                            <div class="action-box d-flex flex-column gap-1">
+                                                {{-- 1. TOMBOL UTAMA (PRIMARY) --}}
                                                 @if(!$wo->is_all_completed)
-                                                    <button type="button" class="btn btn-sm btn-success rounded-3 action-btn fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#modalWoB2B{{ $wo->id }}">
-                                                        <i class="bi bi-hammer me-1"></i> Input & Approve
+                                                    <button type="button" class="btn btn-sm btn-success w-100 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-1 py-1 px-2" style="border-radius: 7px; height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalWoB2B{{ $wo->id }}">
+                                                        <i class="bi bi-hammer"></i> Input &amp; Approve
                                                     </button>
                                                 @else
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 action-btn" data-bs-toggle="modal" data-bs-target="#modalWoB2B{{ $wo->id }}">
-                                                        <i class="bi bi-eye me-1"></i> Detail
-                                                    </button>
-                                                    <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $wo->kode_wo]) }}" class="btn btn-sm btn-outline-primary rounded-3 action-btn fw-semibold" title="Kirim ke Logistik Outlet">
-                                                        <i class="bi bi-truck me-1"></i> Kirim
+                                                    <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
+                                                        <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalWoB2B{{ $wo->id }}">
+                                                            <i class="bi bi-eye"></i> Detail
+                                                        </button>
+                                                        <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $wo->kode_wo]) }}" class="btn btn-custom-orange fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" title="Kirim ke Logistik Outlet">
+                                                            <i class="bi bi-truck"></i> Kirim
+                                                        </a>
+                                                    </div>
+                                                @endif
+
+                                                {{-- 2. TOMBOL PENDUKUNG (AUXILIARY) --}}
+                                                @php
+                                                    $needBahanB2b = !$wo->is_all_completed && !$wo->is_bahan_sufficient;
+                                                    $canEditQtyB2b = auth()->user() && auth()->user()->isSuperAdmin() && !$wo->is_terkirim;
+                                                @endphp
+                                                <div class="btn-group btn-group-sm w-100" role="group">
+                                                    @if($needBahanB2b)
+                                                        <button type="button" class="btn btn-outline-warning text-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 px-1" style="font-size: 0.74rem;" onclick="if(confirm('Minta bahan baku dari Gudang Utama untuk WO {{ $wo->kode_wo }}?')) document.getElementById('formMintaBahanB2B{{ $wo->id }}').submit();" title="Minta Bahan Baku ke Gudang Utama">
+                                                            <i class="bi bi-box-arrow-right"></i> Bahan
+                                                        </button>
+                                                    @endif
+
+                                                    @if($canEditQtyB2b)
+                                                        <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 px-1" style="font-size: 0.74rem;" data-bs-toggle="modal" data-bs-target="#modalEditQty{{ $wo->id }}" title="Edit Qty WO (Khusus Superadmin)">
+                                                            <i class="bi bi-pencil-square"></i> Edit
+                                                        </button>
+                                                    @endif
+
+                                                    <a href="{{ route('wo.cetak-pdf', $wo->id) }}" class="btn btn-outline-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 px-1" style="font-size: 0.74rem;" title="Cetak Surat WO">
+                                                        <i class="bi bi-printer"></i> Cetak
                                                     </a>
-                                                @endif
+                                                </div>
 
-                                                @if(auth()->user() && auth()->user()->isSuperAdmin() && !$wo->is_terkirim)
-                                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-3 action-btn fw-semibold" data-bs-toggle="modal" data-bs-target="#modalEditQty{{ $wo->id }}" title="Edit Qty WO (Khusus Superadmin)">
-                                                        <i class="bi bi-pencil-square"></i> Edit Qty
-                                                    </button>
+                                                @if($needBahanB2b)
+                                                    <form id="formMintaBahanB2B{{ $wo->id }}" action="{{ route('wo.kirim_produksi', $wo->id) }}" method="POST" class="d-none">
+                                                        @csrf
+                                                    </form>
                                                 @endif
-
-                                                <a href="{{ route('wo.cetak-pdf', $wo->id) }}" class="btn btn-sm btn-outline-dark rounded-3 action-btn" title="Cetak Surat WO">
-                                                    <i class="bi bi-printer"></i>
-                                                </a>
                                             </div>
 
                                             {{-- MODAL DETAIL & INPUT PRODUKSI WO B2B --}}
@@ -726,15 +758,15 @@
                         <table class="table table-hover align-middle mb-0 table-custom-body">
                             <thead class="table-custom-header text-center">
                                 <tr>
-                                    <th width="5%" class="py-3">No</th>
-                                    <th width="15%" class="text-start">Kode Produksi</th>
-                                    <th width="14%" class="text-start">Customer / Ref</th>
-                                    <th width="10%">Tanggal</th>
-                                    <th class="text-start">Nama Produk</th>
-                                    <th width="10%">Qty Hasil</th>
-                                    <th width="12%" class="text-end">HPP Total</th>
-                                    <th width="10%">Status</th>
-                                    <th width="14%">Aksi</th>
+                                    <th width="5%" class="py-3 text-nowrap">No</th>
+                                    <th width="15%" class="text-start text-nowrap">Kode Produksi</th>
+                                    <th width="14%" class="text-start text-nowrap">Customer / Ref</th>
+                                    <th width="10%" class="text-nowrap">Tanggal</th>
+                                    <th class="text-start text-nowrap">Nama Produk</th>
+                                    <th width="10%" class="text-nowrap">Qty Hasil</th>
+                                    <th width="12%" class="text-end text-nowrap">HPP Total</th>
+                                    <th width="10%" class="text-nowrap">Status</th>
+                                    <th width="14%" class="text-nowrap">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white">
@@ -746,20 +778,20 @@
                                     @foreach($p->details as $index => $detail)
                                         <tr>
                                             @if($index === 0)
-                                                <td rowspan="{{ $rowCount }}" class="text-center text-secondary">{{ $no++ }}</td>
-                                                <td rowspan="{{ $rowCount }}" class="text-start fw-bold text-dark">{{ $p->kode_produksi }}</td>
-                                                <td rowspan="{{ $rowCount }}" class="text-start text-dark fw-medium">
+                                                <td rowspan="{{ $rowCount }}" class="text-center text-secondary text-nowrap">{{ $no++ }}</td>
+                                                <td rowspan="{{ $rowCount }}" class="text-start fw-bold text-dark text-nowrap">{{ $p->kode_produksi }}</td>
+                                                <td rowspan="{{ $rowCount }}" class="text-start text-dark fw-medium text-nowrap">
                                                     {{ $p->pesanan->customer->nama ?? ($p->pesanan->customer->name ?? 'B2B Customer') }}
                                                     <div class="text-muted small">{{ $p->pesanan->kode_pesanan ?? '-' }}</div>
                                                 </td>
-                                                <td rowspan="{{ $rowCount }}" class="text-center text-secondary">
+                                                <td rowspan="{{ $rowCount }}" class="text-center text-secondary text-nowrap">
                                                     {{ $p->tanggal_mulai ? \Carbon\Carbon::parse($p->tanggal_mulai)->format('d/m/Y') : '-' }}
                                                 </td>
                                             @endif
 
                                             <td class="text-start text-dark fw-semibold">{{ $detail->produk->nama ?? 'Produk' }}</td>
-                                            <td class="text-center"><span class="badge bg-info-subtle text-info border px-2 py-1">{{ (int) $detail->qty }} Unit</span></td>
-                                            <td class="text-end fw-medium text-success">
+                                            <td class="text-center text-nowrap"><span class="badge bg-info-subtle text-info border px-2 py-1">{{ (int) $detail->qty }} Unit</span></td>
+                                            <td class="text-end fw-medium text-success text-nowrap">
                                                 @if($p->status_produksi === 'Draft')
                                                     <span class="text-muted fst-italic">Menunggu</span>
                                                 @else
@@ -768,42 +800,47 @@
                                             </td>
 
                                             @if($index === 0)
-                                                <td rowspan="{{ $rowCount }}" class="text-center">
+                                                <td rowspan="{{ $rowCount }}" class="text-center text-nowrap">
                                                     @if($p->status_produksi === 'Draft')
                                                         <span class="badge bg-warning-subtle text-warning border px-2 py-1"><i class="bi bi-file-earmark-text"></i> Draft</span>
                                                     @else
                                                         <span class="badge bg-success-subtle text-success border px-2 py-1"><i class="bi bi-check-all"></i> Selesai</span>
                                                     @endif
                                                 </td>
-                                                <td rowspan="{{ $rowCount }}" class="text-center">
-                                                    <div class="d-flex justify-content-center gap-1">
-                                                        <a href="{{ route('produksi.show', $p->id) }}" class="btn btn-sm btn-info text-white shadow-sm action-btn" title="Lihat Detail">
-                                                            <i class="bi bi-eye"></i>
-                                                        </a>
-
-                                                        @if($p->status_produksi === 'Draft')
-                                                            <a href="{{ route('produksi.edit', $p->id) }}" class="btn btn-sm btn-warning text-dark shadow-sm action-btn" title="Edit">
-                                                                <i class="bi bi-pencil"></i>
+                                                <td rowspan="{{ $rowCount }}" class="text-center text-nowrap">
+                                                    <div class="action-box d-flex justify-content-center">
+                                                        <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
+                                                            <a href="{{ route('produksi.show', $p->id) }}" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Lihat Detail">
+                                                                <i class="bi bi-eye"></i>
                                                             </a>
-                                                            <form action="{{ route('produksi.approve', $p->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Approve produksi ini?')">
-                                                                @csrf
-                                                                <button type="submit" class="btn btn-sm btn-success text-white shadow-sm action-btn" title="Approve">
+
+                                                            @if($p->status_produksi === 'Draft')
+                                                                <a href="{{ route('produksi.edit', $p->id) }}" class="btn btn-outline-warning text-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Edit">
+                                                                    <i class="bi bi-pencil"></i>
+                                                                </a>
+                                                                <button type="button" class="btn btn-success fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('Approve produksi ini?')) document.getElementById('formApproveB2bProd{{ $p->id }}').submit();" title="Approve">
                                                                     <i class="bi bi-check-lg"></i>
                                                                 </button>
-                                                            </form>
-                                                            <form action="{{ route('produksi.destroy', $p->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Hapus draft produksi ini?')">
-                                                                @csrf @method('DELETE')
-                                                                <button type="submit" class="btn btn-sm btn-danger text-white shadow-sm action-btn" title="Hapus">
+                                                                <button type="button" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('Hapus draft produksi ini?')) document.getElementById('formHapusB2bProd{{ $p->id }}').submit();" title="Hapus">
                                                                     <i class="bi bi-trash"></i>
                                                                 </button>
+                                                            @else
+                                                                <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-outline-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Cetak PDF">
+                                                                    <i class="bi bi-printer"></i>
+                                                                </a>
+                                                                <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $p->pesanan->kode_pesanan ?? $p->kode_produksi]) }}" class="btn btn-custom-orange fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" title="Kirim ke Logistik Outlet">
+                                                                    <i class="bi bi-truck"></i> Kirim
+                                                                </a>
+                                                            @endif
+                                                        </div>
+
+                                                        @if($p->status_produksi === 'Draft')
+                                                            <form id="formApproveB2bProd{{ $p->id }}" action="{{ route('produksi.approve', $p->id) }}" method="POST" class="d-none">
+                                                                @csrf
                                                             </form>
-                                                        @else
-                                                            <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-sm btn-outline-dark shadow-sm action-btn" title="Cetak PDF">
-                                                                <i class="bi bi-printer"></i>
-                                                            </a>
-                                                            <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $p->pesanan->kode_pesanan ?? $p->kode_produksi]) }}" class="btn btn-sm btn-outline-primary shadow-sm action-btn fw-semibold" title="Kirim ke Logistik Outlet">
-                                                                <i class="bi bi-truck"></i> Kirim
-                                                            </a>
+                                                            <form id="formHapusB2bProd{{ $p->id }}" action="{{ route('produksi.destroy', $p->id) }}" method="POST" class="d-none">
+                                                                @csrf @method('DELETE')
+                                                            </form>
                                                         @endif
                                                     </div>
                                                 </td>

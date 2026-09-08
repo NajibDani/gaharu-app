@@ -123,8 +123,8 @@
                 <h4 class="fw-bold text-dark mb-1">Central Kitchen Orders</h4>
                 <p class="text-muted small mb-0">Kelola permintaan barang & bahan setengah jadi dari Outlet (Gaharu & KeJingga)</p>
             </div>
-            <div>
-                <button type="button" class="btn btn-custom-orange shadow-sm d-inline-flex align-items-center" data-bs-toggle="modal" data-bs-target="#modalCreateCkOrder">
+            <div class="w-100 w-sm-auto">
+                <button type="button" class="btn btn-custom-orange shadow-sm d-inline-flex align-items-center justify-content-center w-100 w-sm-auto" data-bs-toggle="modal" data-bs-target="#modalCreateCkOrder">
                     <i class="bi bi-plus-circle me-2"></i> Buat Pesanan CK
                 </button>
             </div>
@@ -188,16 +188,16 @@
 
         {{-- TABLE CARD --}}
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="card-header bg-white py-3 px-4 border-bottom border-light d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div class="d-flex align-items-center gap-2">
-                    <h6 class="fw-bold mb-0 text-dark">Daftar Central Kitchen Orders</h6>
+            <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom border-light d-flex justify-content-between align-items-center flex-column flex-md-row gap-2">
+                <div class="d-flex align-items-center justify-content-between w-100 w-md-auto gap-2">
+                    <h6 class="fw-bold mb-0 text-dark text-nowrap">Daftar Central Kitchen Orders</h6>
                     <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarCk" data-bs-toggle="modal" data-bs-target="#modalBulkBayarCk" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
                         <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedCk">0</span>)
                     </button>
                 </div>
 
-                <form method="GET" action="{{ route('ck-orders.index') }}" class="d-flex align-items-center" style="max-width: 300px;">
-                    <div class="input-group input-group-sm">
+                <form method="GET" action="{{ route('ck-orders.index') }}" class="d-flex align-items-center w-100 w-md-auto" style="max-width: 320px;">
+                    <div class="input-group input-group-sm w-100">
                         <input type="text" name="search" class="form-control border-end-0" placeholder="Cari Kode / Outlet..." value="{{ request('search') }}">
                         <button class="btn btn-outline-secondary border-start-0" type="submit">
                             <i class="bi bi-search"></i>
