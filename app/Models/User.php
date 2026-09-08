@@ -73,4 +73,16 @@ class User extends Authenticatable
         $roleName = $this->role->nama ?? '';
         return in_array($roleName, ['Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']);
     }
+
+    public function isGaharu(): bool
+    {
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, ['Operasional Gaharu', 'Kepala Outlet Gaharu'])
+            || str_contains(strtolower($roleName), 'gaharu');
+    }
+
+    public function canEditWoQty(): bool
+    {
+        return $this->isSuperAdmin() || $this->isGaharu();
+    }
 }

@@ -1058,13 +1058,13 @@ class CentralKitchenProductionController extends Controller
     }
 
     /**
-     * Edit Qty Work Order (Khusus Superadmin, Hanya untuk WO yang Belum Terkirim)
+     * Edit Qty Work Order (Superadmin & User Gaharu, Hanya untuk WO yang Belum Terkirim)
      */
     public function editQtyWo(Request $request, $id)
     {
         $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            abort(403, 'Akses ditolak: Fitur edit kuantitas Work Order hanya dapat diakses oleh Superadmin.');
+        if (!$user || !$user->canEditWoQty()) {
+            abort(403, 'Akses ditolak: Fitur edit kuantitas Work Order hanya dapat diakses oleh Superadmin dan user Gaharu.');
         }
 
         $request->validate([

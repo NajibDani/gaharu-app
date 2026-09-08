@@ -427,7 +427,7 @@
                                                 {{-- 2. TOMBOL PENDUKUNG (AUXILIARY) --}}
                                                 @php
                                                     $needBahanB2b = !$wo->is_all_completed && !$wo->is_bahan_sufficient;
-                                                    $canEditQtyB2b = auth()->user() && auth()->user()->isSuperAdmin() && !$wo->is_terkirim;
+                                                    $canEditQtyB2b = auth()->user() && auth()->user()->canEditWoQty() && !$wo->is_terkirim;
                                                 @endphp
                                                 <div class="btn-group btn-group-sm w-100" role="group">
                                                     @if($needBahanB2b)
@@ -437,7 +437,7 @@
                                                     @endif
 
                                                     @if($canEditQtyB2b)
-                                                        <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 px-1" style="font-size: 0.74rem;" data-bs-toggle="modal" data-bs-target="#modalEditQty{{ $wo->id }}" title="Edit Qty WO (Khusus Superadmin)">
+                                                        <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 px-1" style="font-size: 0.74rem;" data-bs-toggle="modal" data-bs-target="#modalEditQty{{ $wo->id }}" title="Edit Qty WO">
                                                             <i class="bi bi-pencil-square"></i> Edit
                                                         </button>
                                                     @endif
@@ -647,8 +647,8 @@
                                                 </div>
                                             </div>
 
-                                            @if(auth()->user() && auth()->user()->isSuperAdmin() && !$wo->is_terkirim)
-                                                {{-- MODAL EDIT QTY WORK ORDER KHUSUS SUPERADMIN --}}
+                                            @if(auth()->user() && auth()->user()->canEditWoQty() && !$wo->is_terkirim)
+                                                {{-- MODAL EDIT QTY WORK ORDER (SUPERADMIN & GAHARU) --}}
                                                 <div class="modal fade text-start" id="modalEditQty{{ $wo->id }}" tabindex="-1" aria-hidden="true">
                                                     <div class="modal-dialog modal-lg modal-dialog-centered">
                                                         <div class="modal-content border-0 shadow-lg rounded-4">
@@ -664,7 +664,7 @@
                                                                     <div class="alert alert-warning border-warning d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
                                                                         <i class="bi bi-shield-lock-fill fs-5 text-warning flex-shrink-0"></i>
                                                                         <div>
-                                                                            <strong>Hak Akses Khusus Superadmin:</strong> Anda dapat mengedit kuantitas item pada Work Order ini karena pesanan <strong>belum terkirim</strong>. Sistem akan otomatis menyesuaikan alokasi pesanan, stok jadi, dan perhitungan total HPP.
+                                                                            <strong>Hak Akses:</strong> Anda dapat mengedit kuantitas item pada Work Order ini karena pesanan <strong>belum terkirim</strong>. Sistem akan otomatis menyesuaikan alokasi pesanan, stok jadi, dan perhitungan total HPP.
                                                                         </div>
                                                                     </div>
 
