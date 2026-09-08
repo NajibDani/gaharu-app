@@ -466,7 +466,7 @@
                                                         </div>
 
                                                         @if(!$wo->is_all_completed)
-                                                        <form action="{{ route('produksi.store-and-approve') }}" method="POST" onsubmit="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
+                                                        <form action="{{ route('produksi.store-and-approve') }}" method="POST">
                                                             @csrf
                                                             <input type="hidden" name="work_order_id" value="{{ $wo->id }}">
 
@@ -574,11 +574,23 @@
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div class="modal-footer bg-light">
-                                                                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                                                                <button type="submit" class="btn btn-success px-4 fw-bold">
-                                                                    <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
-                                                                </button>
+                                                            <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
+                                                                <div>
+                                                                    @if(!($wo->is_bahan_sufficient ?? true))
+                                                                        <span class="text-danger small fw-semibold">
+                                                                            <i class="bi bi-lock-fill me-1"></i> Bahan baku belum mencukupi. Harap minta bahan terlebih dahulu.
+                                                                        </span>
+                                                                    @endif
+                                                                </div>
+                                                                <div class="d-flex gap-2">
+                                                                    <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                                                                    <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas Work Order ini?')">
+                                                                        <i class="bi bi-save me-1"></i> Simpan Draft
+                                                                    </button>
+                                                                    <button type="submit" name="action" value="approve" class="btn btn-success px-4 fw-bold" @if(!($wo->is_bahan_sufficient ?? true)) disabled title="Approval dinonaktifkan: Bahan baku belum mencukupi" @endif onclick="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
+                                                                        <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         </form>
                                                         @else
@@ -877,7 +889,7 @@
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <form action="{{ route('produksi.store-and-approve') }}" method="POST" onsubmit="return confirm('Simpan hasil produksi batch & Approve HPP otomatis untuk semua WO terpilih?')">
+                <form action="{{ route('produksi.store-and-approve') }}" method="POST">
                     @csrf
                     <div id="containerHiddenWoIdsB2B"></div>
 
@@ -927,9 +939,12 @@
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer bg-light">
+                    <div class="modal-footer bg-light d-flex justify-content-end gap-2">
                         <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-success px-4 fw-bold">
+                        <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas batch ini?')">
+                            <i class="bi bi-save me-1"></i> Simpan Draft Batch
+                        </button>
+                        <button type="submit" name="action" value="approve" class="btn btn-success px-4 fw-bold" onclick="return confirm('Simpan hasil produksi batch & Approve HPP otomatis untuk semua WO terpilih?')">
                             <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
                         </button>
                     </div>

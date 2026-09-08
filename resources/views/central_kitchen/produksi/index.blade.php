@@ -367,7 +367,7 @@
                                                         </div>
 
                                                         @if(!$wo->is_all_completed)
-                                                        <form action="{{ route('ck-produksi.store-and-approve') }}" method="POST" onsubmit="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
+                                                        <form action="{{ route('ck-produksi.store-and-approve') }}" method="POST">
                                                             @csrf
                                                             <input type="hidden" name="work_order_id" value="{{ $wo->id }}">
 
@@ -573,7 +573,10 @@
                                                                 </div>
                                                                 <div class="d-flex gap-2">
                                                                     <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                                                                    <button type="submit" class="btn btn-success px-4 fw-bold" @if(!($wo->can_approve ?? false)) disabled title="Approval dinonaktifkan: Lengkapi resep dan minta bahan terlebih dahulu" @endif>
+                                                                    <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas Work Order ini?')">
+                                                                        <i class="bi bi-save me-1"></i> Simpan Draft
+                                                                    </button>
+                                                                    <button type="submit" name="action" value="approve" class="btn btn-success px-4 fw-bold" @if(!($wo->can_approve ?? false)) disabled title="Approval dinonaktifkan: Lengkapi resep dan minta bahan terlebih dahulu" @endif onclick="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
                                                                         <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
                                                                     </button>
                                                                 </div>
@@ -1009,7 +1012,7 @@
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <form action="{{ route('ck-produksi.store-and-approve') }}" method="POST" onsubmit="return confirm('Simpan hasil produksi batch CK & Approve HPP otomatis untuk semua WO terpilih?')">
+                <form action="{{ route('ck-produksi.store-and-approve') }}" method="POST">
                     @csrf
                     <div id="containerHiddenWoIdsCk"></div>
 
@@ -1063,7 +1066,10 @@
                         <div id="batchCkFooterNotice"></div>
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                            <button type="submit" id="btnSubmitBatchCk" class="btn btn-success px-4 fw-bold">
+                            <button type="submit" name="action" value="draft" id="btnDraftBatchCk" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas batch CK ini?')">
+                                <i class="bi bi-save me-1"></i> Simpan Draft Batch
+                            </button>
+                            <button type="submit" name="action" value="approve" id="btnSubmitBatchCk" class="btn btn-success px-4 fw-bold" onclick="return confirm('Simpan hasil produksi batch CK & Approve HPP otomatis untuk semua WO terpilih?')">
                                 <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
                             </button>
                         </div>

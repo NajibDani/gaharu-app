@@ -671,7 +671,113 @@ class CentralKitchenProductionController extends Controller
                 throw new \Exception('Harap masukkan minimal 1 produk dengan Qty hasil lebih dari 0.');
             }
 
-            // Validasi formulasi resep & ketersediaan bahan baku di Gudang CK sebelum eksekusi
+            $isDraft = ($request->input('action') === 'draft');
+
+            if ($isDraft) {
+                // SIMPAN DRAFT PERUBAHAN QTY (Dapat disimpan tanpa formulasi resep / bahan baku)
+                $pesananIdsToRecount = [];
+                foreach ($request->produk_id as $key => $produkId) {
+                    $rawQty = floatval($request->qty_hasil[$key] ?? 0);
+                    $unitChoice = $inputSatuanList[$key] ?? 'dasar';
+                    $qtyHasil = $rawQty;
+
+                    $produk = MasterBarang::find($produkId);
+                    if ($unitChoice === 'konversi' && $produk && floatval($produk->konversi_pembelian) > 1) {
+                        $qtyHasil = $rawQty * floatval($produk->konversi_pembelian);
+                    }
+
+                    // Update qty_rencana pada work_order_detail untuk seluruh WO yang dipilih
+                    $wodList = DB::table('work_order_detail')
+                        ->whereIn('work_order_id', $woIds)
+                        ->where('produk_id', $produkId)
+                        ->get();
+
+                    foreach ($wodList as $wod) {
+                        DB::table('work_order_detail')
+                            ->where('id', $wod->id)
+                            ->update([
+                                'qty_rencana' => $qtyHasil,
+                                'updated_at'  => now(),
+                            ]);
+
+                        $pesDetail = PesananDetail::where('pesanan_id', $wod->pesanan_id)
+                            ->where('produk_id', $produkId)
+                            ->first();
+                        if ($pesDetail) {
+                            $harga = floatval($pesDetail->harga);
+                            $pesDetail->update([
+                                'qty'      => $qtyHasil,
+                                'subtotal' => $qtyHasil * $harga,
+                            ]);
+                            $pesananIdsToRecount[$wod->pesanan_id] = $wod->pesanan_id;
+                        }
+                    }
+                }
+
+                // Hitung ulang total pesanan
+                foreach ($pesananIdsToRecount as $pId) {
+                    $newTotal = PesananDetail::where('pesanan_id', $pId)->sum('subtotal');
+                    Pesanan::where('id', $pId)->update(['total_pesanan' => $newTotal]);
+                }
+
+                // Pastikan status WO tetap Draft
+                WorkOrder::whereIn('id', $woIds)->update(['status_wo' => 'Draft', 'updated_at' => now()]);
+
+                // Buat atau perbarui draft Produksi di tabel produksi
+                $existingDraftProd = Produksi::where('pesanan_id', $pesananIdUtama)
+                    ->where('status_produksi', 'Draft')
+                    ->first();
+
+                if ($existingDraftProd) {
+                    $existingDraftProd->update([
+                        'tanggal_mulai' => $request->tanggal_produksi ?? now(),
+                        'divisi_id'     => $request->divisi_id,
+                        'updated_at'    => now(),
+                    ]);
+                    DB::table('produksi_detail')->where('produksi_id', $existingDraftProd->id)->delete();
+                    $draftProdId = $existingDraftProd->id;
+                } else {
+                    $kodeProduksiDraft = 'PRD-CK-DRAFT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+                    $draftProdId = DB::table('produksi')->insertGetId([
+                        'kode_produksi'   => $kodeProduksiDraft,
+                        'pesanan_id'      => $pesananIdUtama,
+                        'tanggal_mulai'   => $request->tanggal_produksi ?? now(),
+                        'tanggal_selesai' => null,
+                        'status_produksi' => 'Draft',
+                        'gudang_bahan_id' => $gudangCkId,
+                        'gudang_hasil_id' => $gudangCkId,
+                        'divisi_id'       => $request->divisi_id,
+                        'created_by'      => auth()->id() ?? 1,
+                        'created_at'      => now(),
+                        'updated_at'      => now(),
+                    ]);
+                }
+
+                foreach ($request->produk_id as $key => $produkId) {
+                    $rawQty = floatval($request->qty_hasil[$key] ?? 0);
+                    if ($rawQty <= 0) continue;
+                    $unitChoice = $inputSatuanList[$key] ?? 'dasar';
+                    $qtyHasil = $rawQty;
+                    $produk = MasterBarang::find($produkId);
+                    if ($unitChoice === 'konversi' && $produk && floatval($produk->konversi_pembelian) > 1) {
+                        $qtyHasil = $rawQty * floatval($produk->konversi_pembelian);
+                    }
+
+                    DB::table('produksi_detail')->insert([
+                        'produksi_id' => $draftProdId,
+                        'produk_id'   => $produkId,
+                        'qty'         => $qtyHasil,
+                        'hpp_total'   => 0,
+                        'created_at'  => now(),
+                        'updated_at'  => now(),
+                    ]);
+                }
+
+                DB::commit();
+                return redirect()->back()->with('success', 'Draft perubahan kuantitas berhasil disimpan! Anda dapat melakukan approval produksi setelah formulasi resep dan bahan baku dilengkapi.');
+            }
+
+            // Validasi formulasi resep & ketersediaan bahan baku di Gudang CK sebelum eksekusi (Khusus Approve)
             $fifoService = app(\App\Services\FifoService::class);
             foreach ($request->produk_id as $key => $produkId) {
                 $rawQty = floatval($request->qty_hasil[$key] ?? 0);
@@ -705,6 +811,13 @@ class CentralKitchenProductionController extends Controller
                         throw new \Exception("Approval belum dapat dilakukan: Stok bahan baku {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan lakukan permintaan bahan terlebih dahulu.");
                     }
                 }
+            }
+
+            // Bersihkan draft produksi sebelumnya jika ada untuk pesanan ini agar tidak ada duplikasi draft setelah approve
+            $oldDraft = Produksi::where('pesanan_id', $pesananIdUtama)->where('status_produksi', 'Draft')->first();
+            if ($oldDraft) {
+                DB::table('produksi_detail')->where('produksi_id', $oldDraft->id)->delete();
+                $oldDraft->delete();
             }
 
             // Kode Produksi Batch

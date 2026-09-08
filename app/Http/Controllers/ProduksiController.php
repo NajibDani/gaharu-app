@@ -332,6 +332,101 @@ class ProduksiController extends Controller
                 throw new \Exception('Harap masukkan minimal 1 produk dengan Qty hasil lebih dari 0.');
             }
 
+            $isDraft = ($request->input('action') === 'draft');
+
+            if ($isDraft) {
+                // SIMPAN DRAFT PERUBAHAN QTY (B2B / Cold Kitchen)
+                $pesananIdsToRecount = [];
+                foreach ($request->produk_id as $key => $produkId) {
+                    $qtyHasil = floatval($request->qty_hasil[$key] ?? 0);
+
+                    // Update qty_rencana pada work_order_detail
+                    $wodList = DB::table('work_order_detail')
+                        ->whereIn('work_order_id', $woIds)
+                        ->where('produk_id', $produkId)
+                        ->get();
+
+                    foreach ($wodList as $wod) {
+                        DB::table('work_order_detail')
+                            ->where('id', $wod->id)
+                            ->update([
+                                'qty_rencana' => $qtyHasil,
+                                'updated_at'  => now(),
+                            ]);
+
+                        $pesDetail = \App\Models\PesananDetail::where('pesanan_id', $wod->pesanan_id)
+                            ->where('produk_id', $produkId)
+                            ->first();
+                        if ($pesDetail) {
+                            $harga = floatval($pesDetail->harga);
+                            $pesDetail->update([
+                                'qty'      => $qtyHasil,
+                                'subtotal' => $qtyHasil * $harga,
+                            ]);
+                            $pesananIdsToRecount[$wod->pesanan_id] = $wod->pesanan_id;
+                        }
+                    }
+                }
+
+                foreach ($pesananIdsToRecount as $pId) {
+                    $newTotal = \App\Models\PesananDetail::where('pesanan_id', $pId)->sum('subtotal');
+                    \App\Models\Pesanan::where('id', $pId)->update(['total_pesanan' => $newTotal]);
+                }
+
+                WorkOrder::whereIn('id', $woIds)->update(['status_wo' => 'Draft', 'updated_at' => now()]);
+
+                $existingDraftProd = \App\Models\Produksi::where('pesanan_id', $pesananIdUtama)
+                    ->where('status_produksi', 'Draft')
+                    ->first();
+
+                if ($existingDraftProd) {
+                    $existingDraftProd->update([
+                        'tanggal_mulai' => $request->tanggal_produksi ?? now(),
+                        'updated_at'    => now(),
+                    ]);
+                    DB::table('produksi_detail')->where('produksi_id', $existingDraftProd->id)->delete();
+                    $draftProdId = $existingDraftProd->id;
+                } else {
+                    $kodeProduksiDraft = 'PRD-DRAFT-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+                    $draftProdId = DB::table('produksi')->insertGetId([
+                        'kode_produksi'   => $kodeProduksiDraft,
+                        'pesanan_id'      => $pesananIdUtama,
+                        'tanggal_mulai'   => $request->tanggal_produksi ?? now(),
+                        'tanggal_selesai' => null,
+                        'status_produksi' => 'Draft',
+                        'gudang_bahan_id' => $gudangBahanId,
+                        'gudang_hasil_id' => $gudangHasilId,
+                        'created_by'      => auth()->id() ?? 1,
+                        'created_at'      => now(),
+                        'updated_at'      => now(),
+                    ]);
+                }
+
+                foreach ($request->produk_id as $key => $produkId) {
+                    $qtyHasil = floatval($request->qty_hasil[$key] ?? 0);
+                    if ($qtyHasil <= 0) continue;
+
+                    DB::table('produksi_detail')->insert([
+                        'produksi_id' => $draftProdId,
+                        'produk_id'   => $produkId,
+                        'qty'         => $qtyHasil,
+                        'hpp_total'   => 0,
+                        'created_at'  => now(),
+                        'updated_at'  => now(),
+                    ]);
+                }
+
+                DB::commit();
+                return redirect()->back()->with('success', 'Draft perubahan kuantitas berhasil disimpan!');
+            }
+
+            // Bersihkan draft produksi sebelumnya jika ada untuk pesanan ini agar tidak ada duplikasi draft setelah approve
+            $oldDraft = \App\Models\Produksi::where('pesanan_id', $pesananIdUtama)->where('status_produksi', 'Draft')->first();
+            if ($oldDraft) {
+                DB::table('produksi_detail')->where('produksi_id', $oldDraft->id)->delete();
+                $oldDraft->delete();
+            }
+
             $kodeProduksi = 'PRD-BATCH-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
 
             $produksiId = DB::table('produksi')->insertGetId([
