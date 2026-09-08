@@ -83,7 +83,7 @@
                             <i class="bi bi-wallet2 me-2" style="font-size:12px;"></i>Dashboard Keuangan
                         </a>
                     @endif
-                    @if($canRole(['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi']))
+                    @if($canRole(['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga']))
                         <a href="{{ route('laporan.produksi.dashboard') }}" class="{{ request()->routeIs('laporan.produksi.dashboard') ? 'active' : '' }}">
                             <i class="bi bi-gear-wide me-2" style="font-size:12px;"></i>Dashboard Produksi
                         </a>
@@ -211,7 +211,7 @@
                     <a href="{{ route('penjualan_pos.index') }}" class="{{ request()->routeIs('penjualan_pos.index') ? 'active' : '' }}">
                         <i class="bi bi-receipt me-2" style="font-size:12px;"></i>Rekap Penjualan POS
                     </a>
-                    @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu']))
+                    @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga']))
                         <a href="{{ route('customer.index') }}" class="{{ request()->routeIs('customer.*') ? 'active' : '' }}">
                             <i class="bi bi-people me-2" style="font-size:12px;"></i>Pelanggan Cold Kitchen
                         </a>
@@ -223,7 +223,7 @@
             {{-- ========================================================================= --}}
             {{-- CENTRAL KITCHEN & COLD KITCHEN (Nomor 5) --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Management', 'Direktur Keuangan']))
+            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Management', 'Direktur Keuangan']))
             <div class="menu-group {{ $produksiActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -307,7 +307,7 @@
                 <div class="submenu-content">
                     @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">PENJUALAN</div>
-                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Management', 'Direktur Keuangan']))
+                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
                             <a href="{{ route('laporan.penjualan') }}" class="{{ request()->routeIs('laporan.penjualan') ? 'active' : '' }}">
                                 <i class="bi bi-building me-2" style="font-size:12px;"></i>Laporan Penjualan Cold Kitchen
                             </a>
@@ -315,7 +315,7 @@
                         <a href="{{ route('penjualan_pos.laporan') }}" class="{{ request()->routeIs('penjualan_pos.laporan') ? 'active' : '' }}">
                             <i class="bi bi-receipt me-2" style="font-size:12px;"></i>Laporan Penjualan POS
                         </a>
-                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Management', 'Direktur Keuangan']))
+                        @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
                             <a href="{{ route('laporan.hpp') }}" class="{{ request()->routeIs('laporan.hpp') ? 'active' : '' }}">
                                 <i class="bi bi-cpu me-2" style="font-size:12px;"></i>Laporan HPP Produk
                             </a>
@@ -370,7 +370,7 @@
                         </a>
                     @endif
 
-                    @if($canRole(['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Management', 'Direktur Keuangan']))
+                    @if($canRole(['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">PRODUKSI</div>
                         <a href="{{ route('laporan.rekapitulasi') }}" class="{{ request()->routeIs('laporan.rekapitulasi') ? 'active' : '' }}">
                             <i class="bi bi-gear-wide-connected me-2" style="font-size:12px;"></i>Rekapitulasi Produksi
