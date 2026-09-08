@@ -719,6 +719,8 @@
                                                                                                 <div class="small text-primary font-monospace" style="font-size: 11px;">
                                                                                                     ({{ number_format($packSaatIni, ($packSaatIni == intval($packSaatIni) ? 0 : 2), ',', '.') }} {{ $satBeli }} @ {{ number_format($konvVal, 0, ',', '.') }} {{ $satDasar }})
                                                                                                 </div>
+                                                                                            @else
+                                                                                                <div class="small text-muted font-monospace" style="font-size: 11px;">-</div>
                                                                                             @endif
                                                                                         </td>
                                                                                         <td>
@@ -731,16 +733,21 @@
                                                                                                     data-satuan-dasar="{{ $satDasar }}"
                                                                                                     data-satuan-konv="{{ $satBeli }}" required>
                                                                                                 @if($hasKonv)
-                                                                                                    <select name="satuan_input_edit[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 85px; flex: 0 0 85px; padding-left: 6px; padding-right: 20px; font-size: 0.78rem;">
+                                                                                                    <select name="satuan_input_edit[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 100px; flex: 0 0 100px; padding-left: 8px; padding-right: 22px; font-size: 0.78rem;">
                                                                                                         <option value="dasar">{{ strtoupper($satDasar) }}</option>
                                                                                                         <option value="konversi">{{ $satBeli }}</option>
                                                                                                     </select>
                                                                                                 @else
-                                                                                                    <input type="hidden" name="satuan_input_edit[]" value="dasar">
-                                                                                                    <span class="input-group-text bg-light fw-bold text-muted" style="width: 58px; flex: 0 0 58px; justify-content: center; font-size: 0.78rem;">{{ strtoupper($satDasar) }}</span>
+                                                                                                    <select name="satuan_input_edit[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 100px; flex: 0 0 100px; padding-left: 8px; padding-right: 22px; font-size: 0.78rem;">
+                                                                                                        <option value="dasar">{{ strtoupper($satDasar) }}</option>
+                                                                                                    </select>
                                                                                                 @endif
                                                                                             </div>
-                                                                                            <div class="live-konversi-edit-info small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>
+                                                                                            <div class="live-konversi-edit-info small text-end mt-1 font-monospace" style="font-size: 11px; min-height: 16.5px;">
+                                                                                                @if(!$hasKonv)
+                                                                                                    <span class="text-muted">-</span>
+                                                                                                @endif
+                                                                                            </div>
                                                                                         </td>
                                                                                     </tr>
                                                                                 @endforeach
@@ -1325,7 +1332,8 @@
                     infoBox.style.display = 'block';
                 }
             } else {
-                infoBox.style.display = 'none';
+                infoBox.innerHTML = `<span class="text-muted font-monospace">-</span>`;
+                infoBox.style.display = 'block';
             }
         }
 
