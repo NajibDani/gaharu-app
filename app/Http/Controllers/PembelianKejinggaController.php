@@ -495,10 +495,17 @@ class PembelianKejinggaController extends Controller
     {
         $this->authorizeAccess();
 
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
         $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
 
-        if ($pembelian->isTerkunci()) {
-            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar atau diterima) dan tidak dapat dihapus.');
+        if ($pembelian->isReceived()) {
+            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah diterima fisiknya dan tidak dapat dihapus.');
+        }
+
+        if ($pembelian->isTerkunci() && !$isSuperAdmin) {
+            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar) dan hanya dapat dihapus oleh Super Admin.');
         }
 
         DB::transaction(function() use ($pembelian) {
@@ -506,7 +513,7 @@ class PembelianKejinggaController extends Controller
             $pembelian->delete();
         });
 
-        return redirect()->route('pembelian-kejingga.index')->with('success', 'Pembelian Kejingga berhasil dihapus.');
+        return redirect()->route('pembelian-kejingga.index')->with('success', 'Purchase Order Kejingga berhasil dihapus.');
     }
 
     // ==========================================

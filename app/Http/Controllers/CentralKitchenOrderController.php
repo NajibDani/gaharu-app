@@ -41,6 +41,9 @@ class CentralKitchenOrderController extends Controller
             } else {
                 $p->wo_status = null;
             }
+            $p->is_sent = \App\Models\Pengiriman::where('pesanan_id', $p->id)
+                ->where('status_pengiriman', 'Selesai')
+                ->exists() || ($p->total_qty_terkirim ?? 0) > 0;
         }
 
         $totalPesanan = Pesanan::centralKitchen()->count();
@@ -495,10 +498,14 @@ class CentralKitchenOrderController extends Controller
     }
 
     /**
-     * Hapus Central Kitchen Order
+     * Hapus Central Kitchen Order (Purchase Order CK)
+     * Superadmin dapat menghapus PO yang belum terkirim (masa uji coba)
      */
     public function destroy($id)
     {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
         $pesanan = Pesanan::centralKitchen()->findOrFail($id);
 
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
@@ -506,29 +513,106 @@ class CentralKitchenOrderController extends Controller
                 ->with('error', 'Gagal menghapus: Order berada pada periode akuntansi yang sudah ditutup buku.');
         }
 
-        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
-        if ($sudahWO) {
+        // Cek apakah sudah ada pengiriman yang statusnya Selesai (sudah terkirim)
+        $sudahKirim = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)
+            ->where('status_pengiriman', 'Selesai')
+            ->exists();
+
+        if ($sudahKirim || ($pesanan->total_qty_terkirim ?? 0) > 0) {
             return redirect()->route('ck-orders.index')
-                ->with('error', 'Gagal menghapus: Order #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+                ->with('error', 'Gagal menghapus: Purchase Order #' . $pesanan->kode_pesanan . ' sudah terkirim / memiliki riwayat pengiriman logistik yang selesai.');
         }
 
-        $sudahKirim = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->exists();
-        if ($sudahKirim) {
+        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+
+        // Jika sudah masuk WO dan BUKAN Super Admin, tolak
+        if ($sudahWO && !$isSuperAdmin) {
             return redirect()->route('ck-orders.index')
-                ->with('error', 'Gagal menghapus: Order #' . $pesanan->kode_pesanan . ' sudah memiliki riwayat pengiriman logistik.');
+                ->with('error', 'Gagal menghapus: Order #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi. Hanya Superadmin yang dapat menghapus Purchase Order yang belum terkirim.');
         }
 
         DB::beginTransaction();
         try {
+            // 1. Bersihkan Jurnal Penjualan B2B jika ada
+            $pembayaranIds = Pembayaran::where('pesanan_id', $pesanan->id)->pluck('id')->toArray();
+            $pengirimanDraftIds = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->pluck('id')->toArray();
+
+            $jurnals = DB::table('jurnal_penjualan_b2b')
+                ->where(function($q) use ($pembayaranIds, $pengirimanDraftIds) {
+                    if (!empty($pembayaranIds)) {
+                        $q->where(function($sub) use ($pembayaranIds) {
+                            $sub->where('source_type', 'pembayaran')->whereIn('source_id', $pembayaranIds);
+                        });
+                    }
+                    if (!empty($pengirimanDraftIds)) {
+                        $q->orWhere(function($sub) use ($pengirimanDraftIds) {
+                            $sub->where('source_type', 'pengiriman')->whereIn('source_id', $pengirimanDraftIds);
+                        });
+                    }
+                })->get();
+
+            foreach ($jurnals as $j) {
+                DB::table('journal_items')->where('journal_id', $j->id)->whereIn('journal_type', ['penjualan_b2b', 'jurnal_penjualan_b2b'])->delete();
+                DB::table('jurnal_penjualan_b2b')->where('id', $j->id)->delete();
+            }
+
+            // 2. Hapus Pembayaran
             Pembayaran::where('pesanan_id', $pesanan->id)->delete();
+
+            // 3. Hapus Pengiriman draft (beserta detail)
+            if (!empty($pengirimanDraftIds)) {
+                DB::table('pengiriman_detail')->whereIn('pengiriman_id', $pengirimanDraftIds)->delete();
+                DB::table('pengiriman')->whereIn('id', $pengirimanDraftIds)->delete();
+            }
+
+            // 4. Hapus Alokasi Produksi Pesanan
+            DB::table('alokasi_produksi_pesanan')->where('pesanan_id', $pesanan->id)->delete();
+
+            // 5. Tangani Relasi Produksi terkait pesanan ini
+            $produksis = \App\Models\Produksi::where('pesanan_id', $pesanan->id)->get();
+            foreach ($produksis as $prod) {
+                if ($prod->status_produksi === 'Selesai') {
+                    $prodDetails = DB::table('produksi_detail')->where('produksi_id', $prod->id)->get();
+                    foreach ($prodDetails as $pDet) {
+                        $stok = \App\Models\StokGudang::where('barang_id', $pDet->produk_id)
+                            ->where('gudang_id', $prod->gudang_hasil_id)
+                            ->first();
+                        if ($stok) {
+                            $stok->decrement('jumlah', (float) $pDet->qty);
+                        }
+                    }
+                    DB::table('stok_gudang_batch')->where('produksi_id', $prod->id)->delete();
+                    DB::table('transaksi_stok')->where('source_id', $prod->id)->where('source_type', 'produksi_ck')->delete();
+                }
+
+                if (\Illuminate\Support\Facades\Schema::hasTable('permintaan_bahan_baku')) {
+                    DB::table('permintaan_bahan_baku')->where('produksi_id', $prod->id)->delete();
+                }
+                DB::table('produksi_detail')->where('produksi_id', $prod->id)->delete();
+                $prod->delete();
+            }
+
+            // 6. Hapus Work Order Detail & Hapus Work Order jika sudah kosong
+            $woDetails = WorkOrderDetail::where('pesanan_id', $pesanan->id)->get();
+            $woIds = $woDetails->pluck('work_order_id')->unique()->toArray();
+            WorkOrderDetail::where('pesanan_id', $pesanan->id)->delete();
+
+            foreach ($woIds as $woId) {
+                $sisaDetail = WorkOrderDetail::where('work_order_id', $woId)->count();
+                if ($sisaDetail === 0) {
+                    WorkOrder::where('id', $woId)->delete();
+                }
+            }
+
+            // 7. Hapus Pesanan Detail & Pesanan
             PesananDetail::where('pesanan_id', $pesanan->id)->delete();
             $pesanan->delete();
 
             DB::commit();
-            return redirect()->route('ck-orders.index')->with('success', 'Central Kitchen Order #' . $pesanan->kode_pesanan . ' berhasil dihapus.');
+            return redirect()->route('ck-orders.index')->with('success', 'Purchase Order Central Kitchen #' . $pesanan->kode_pesanan . ' dan seluruh data terkait berhasil dihapus.');
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->route('ck-orders.index')->with('error', 'Gagal menghapus pesanan: ' . $e->getMessage());
+            return redirect()->route('ck-orders.index')->with('error', 'Gagal menghapus Purchase Order: ' . $e->getMessage());
         }
     }
 

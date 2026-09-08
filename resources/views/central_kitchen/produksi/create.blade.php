@@ -112,7 +112,7 @@
                                 <tr class="text-secondary small">
                                     <th>NAMA BARANG / ITEM</th>
                                     <th class="text-center" style="width: 150px;">TARGET RENCANA</th>
-                                    <th style="width: 200px;">QTY HASIL REALISASI</th>
+                                    <th style="width: 220px; min-width: 200px;">QTY HASIL REALISASI</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -148,28 +148,29 @@
                                                 </div>
                                             @endif
                                         </td>
-                                        <td>
+                                        <td style="min-width: 200px; width: 220px;">
                                             @php
                                                 $hasKonv = $item->produk && !empty($item->produk->satuan_pembelian) && floatval($item->produk->konversi_pembelian) > 1;
                                                 $konvVal = $hasKonv ? floatval($item->produk->konversi_pembelian) : 1;
                                                 $satuanDasar = $item->produk->satuan ?? 'unit';
                                                 $satuanKonv = $hasKonv ? strtoupper($item->produk->satuan_pembelian) : '';
                                             @endphp
-                                            <div class="input-group input-group-sm">
+                                            <div class="input-group input-group-sm flex-nowrap shadow-sm" style="min-width: 180px;">
                                                 <input type="number" step="any" min="0" name="qty_hasil[]" 
-                                                    class="form-control text-sm fw-bold text-success text-end input-qty-hasil-create" 
+                                                    class="form-control text-sm fw-bold text-success text-end input-qty-hasil-create px-2" 
+                                                    style="min-width: 95px;"
                                                     value="{{ $item->sisa_target }}" 
                                                     data-konversi="{{ $konvVal }}"
                                                     data-satuan-dasar="{{ $satuanDasar }}"
                                                     data-satuan-konv="{{ $satuanKonv }}" required>
                                                 @if($hasKonv)
-                                                    <select name="satuan_input[]" class="form-select select-unit-create fw-bold" style="max-width: 90px;">
+                                                    <select name="satuan_input[]" class="form-select select-unit-create fw-bold text-center bg-light text-primary" style="width: 85px; flex: 0 0 85px; padding-left: 6px; padding-right: 20px; font-size: 0.78rem;">
                                                         <option value="dasar">{{ strtoupper($satuanDasar) }}</option>
                                                         <option value="konversi">{{ $satuanKonv }}</option>
                                                     </select>
                                                 @else
                                                     <input type="hidden" name="satuan_input[]" value="dasar">
-                                                    <span class="input-group-text text-muted">{{ $satuanDasar }}</span>
+                                                    <span class="input-group-text bg-light text-muted fw-bold" style="width: 58px; flex: 0 0 58px; justify-content: center; font-size: 0.78rem;">{{ strtoupper($satuanDasar) }}</span>
                                                 @endif
                                             </div>
                                             <div class="live-konversi-create small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>

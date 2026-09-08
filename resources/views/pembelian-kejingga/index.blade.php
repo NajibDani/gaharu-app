@@ -210,6 +210,9 @@
                                     </button>
 
                                     {{-- FLEKSIBEL EDIT & HAPUS POP-UP --}}
+                                    @php
+                                        $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+                                    @endphp
                                     @if(!$item->isTerkunci())
                                         {{-- Edit Pop-up Modal --}}
                                         <button type="button"
@@ -229,6 +232,19 @@
                                                     class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
                                                     title="Hapus Pembelian / Draft">
                                                 <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    @elseif($isSuperAdmin && !$item->isReceived())
+                                        {{-- Super Admin Hapus PO yang Belum Diterima/Terkirim --}}
+                                        <form action="{{ route('pembelian-kejingga.destroy', $item->id) }}"
+                                              method="POST" class="d-inline"
+                                              onsubmit="return confirm('PERHATIAN (Superadmin):\nYakin ingin menghapus Purchase Order {{ $item->kode_pembelian }} yang belum diterima ini?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit"
+                                                    class="btn btn-sm btn-danger rounded-2 px-2 py-1 fw-semibold"
+                                                    title="Hapus PO (Super Admin)">
+                                                <i class="bi bi-trash3-fill"></i> Hapus PO
                                             </button>
                                         </form>
                                     @endif

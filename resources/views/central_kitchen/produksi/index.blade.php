@@ -351,12 +351,12 @@
                                                             @csrf
                                                         </form>
                                                     @endif
-                                                @endif
+                                                </div>
                                             </div>
 
                                             {{-- MODAL DETAIL & INPUT PRODUKSI WO --}}
                                             <div class="modal fade text-start" id="modalWo{{ $wo->id }}" tabindex="-1" aria-hidden="true">
-                                                <div class="modal-dialog modal-lg modal-dialog-centered">
+                                                <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
                                                     <div class="modal-content border-0 shadow-lg rounded-4">
                                                         <div class="modal-header {{ ($wo->can_approve ?? false) ? 'bg-success' : 'bg-dark' }} text-white">
                                                             <h5 class="modal-title fw-bold">
@@ -452,15 +452,15 @@
                                                                 {{-- TABEL INPUT PER PRODUK --}}
                                                                 <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rincian Item & Input Qty Selesai</h6>
                                                                 <div class="table-responsive mb-3">
-                                                                    <table class="table table-bordered align-middle text-center mb-0">
+                                                                    <table class="table table-bordered align-middle text-center mb-0" style="min-width: 820px;">
                                                                         <thead class="bg-light font-weight-bold">
                                                                             <tr>
-                                                                                <th style="width: 5%;">No</th>
-                                                                                <th class="text-start">Nama Produk</th>
-                                                                                <th style="width: 15%;">Target WO</th>
-                                                                                <th style="width: 15%;">Sudah Jadi</th>
-                                                                                <th style="width: 18%;">Sisa Kekurangan</th>
-                                                                                <th style="width: 22%;">Input Qty Selesai</th>
+                                                                                <th style="width: 45px;">No</th>
+                                                                                <th class="text-start" style="min-width: 200px;">Nama Produk</th>
+                                                                                <th style="width: 155px; min-width: 135px;">Target WO</th>
+                                                                                <th style="width: 110px; min-width: 90px;">Sudah Jadi</th>
+                                                                                <th style="width: 155px; min-width: 135px;">Sisa Kekurangan</th>
+                                                                                <th style="width: 230px; min-width: 210px;">Input Qty Selesai</th>
                                                                             </tr>
                                                                         </thead>
                                                                         <tbody>
@@ -514,26 +514,27 @@
                                                                                             <span class="badge bg-success">Tercapai</span>
                                                                                         @endif
                                                                                     </td>
-                                                                                    <td>
+                                                                                    <td style="min-width: 210px; width: 230px;">
                                                                                         <input type="hidden" name="produk_id[]" value="{{ $item['produk_id'] }}">
                                                                                         @php
                                                                                             $hasKonversi = !empty($item['satuan_pembelian']) && floatval($item['konversi']) > 1;
                                                                                             $valSisa = $item['sisa'] > 0 ? floatval($item['sisa']) : floatval($item['target']);
                                                                                         @endphp
-                                                                                        <div class="input-group input-group-sm">
-                                                                                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold input-qty-hasil-ck" 
+                                                                                        <div class="input-group input-group-sm flex-nowrap shadow-sm" style="min-width: 190px;">
+                                                                                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold input-qty-hasil-ck px-2" 
+                                                                                                style="min-width: 100px;"
                                                                                                 min="0" step="any" value="{{ $valSisa }}" 
                                                                                                 data-konversi="{{ $hasKonversi ? floatval($item['konversi']) : 1 }}"
                                                                                                 data-satuan-dasar="{{ $item['satuan'] }}"
                                                                                                 data-satuan-konv="{{ $hasKonversi ? $item['satuan_pembelian'] : '' }}" required>
                                                                                             @if($hasKonversi)
-                                                                                                <select name="satuan_input[]" class="form-select select-unit-hasil-ck fw-bold" style="max-width: 90px;">
+                                                                                                <select name="satuan_input[]" class="form-select select-unit-hasil-ck fw-bold text-center bg-light text-primary" style="width: 85px; flex: 0 0 85px; padding-left: 6px; padding-right: 20px; font-size: 0.78rem;">
                                                                                                     <option value="dasar">{{ strtoupper($item['satuan']) }}</option>
                                                                                                     <option value="konversi">{{ strtoupper($item['satuan_pembelian']) }}</option>
                                                                                                 </select>
                                                                                             @else
                                                                                                 <input type="hidden" name="satuan_input[]" value="dasar">
-                                                                                                <span class="input-group-text">{{ $item['satuan'] }}</span>
+                                                                                                <span class="input-group-text bg-light fw-bold text-muted" style="width: 58px; flex: 0 0 58px; justify-content: center; font-size: 0.78rem;">{{ strtoupper($item['satuan']) }}</span>
                                                                                             @endif
                                                                                         </div>
                                                                                         <div class="live-konversi-info small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>
@@ -999,7 +1000,7 @@
 
     {{-- MODAL BATCH PRODUKSI CK --}}
     <div class="modal fade text-start" id="modalBatchProduksiCk" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
             <div class="modal-content border-0 shadow-lg rounded-4">
                 <div class="modal-header bg-success text-white">
                     <h5 class="modal-title fw-bold">
@@ -1034,15 +1035,15 @@
 
                         <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rekapitulasi Item & Input Qty Selesai Batch CK</h6>
                         <div class="table-responsive mb-3">
-                            <table class="table table-bordered align-middle text-center mb-0">
+                            <table class="table table-bordered align-middle text-center mb-0" style="min-width: 820px;">
                                 <thead class="bg-light font-weight-bold">
                                     <tr>
-                                        <th style="width: 5%;">No</th>
-                                        <th class="text-start">Nama Produk</th>
-                                        <th style="width: 15%;">Target Total</th>
-                                        <th style="width: 15%;">Sudah Jadi</th>
-                                        <th style="width: 18%;">Total Sisa</th>
-                                        <th style="width: 22%;">Input Qty Selesai</th>
+                                        <th style="width: 45px;">No</th>
+                                        <th class="text-start" style="min-width: 200px;">Nama Produk</th>
+                                        <th style="width: 155px; min-width: 135px;">Target Total</th>
+                                        <th style="width: 110px; min-width: 90px;">Sudah Jadi</th>
+                                        <th style="width: 155px; min-width: 135px;">Total Sisa</th>
+                                        <th style="width: 230px; min-width: 210px;">Input Qty Selesai</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbodyBatchCkItems">
@@ -1290,7 +1291,7 @@
                     let selectUnit = '';
                     if (hasKonv) {
                         selectUnit = `
-                            <select name="satuan_input[]" class="form-select select-unit-hasil-ck fw-bold" style="max-width: 90px;">
+                            <select name="satuan_input[]" class="form-select select-unit-hasil-ck fw-bold text-center bg-light text-primary" style="width: 85px; flex: 0 0 85px; padding-left: 6px; padding-right: 20px; font-size: 0.78rem;">
                                 <option value="dasar">${item.satuan.toUpperCase()}</option>
                                 <option value="konversi">${item.satuan_pembelian.toUpperCase()}</option>
                             </select>
@@ -1298,14 +1299,15 @@
                     } else {
                         selectUnit = `
                             <input type="hidden" name="satuan_input[]" value="dasar">
-                            <span class="input-group-text">${item.satuan}</span>
+                            <span class="input-group-text bg-light fw-bold text-muted" style="width: 58px; flex: 0 0 58px; justify-content: center; font-size: 0.78rem;">${item.satuan.toUpperCase()}</span>
                         `;
                     }
 
                     inputCol = `
                         <input type="hidden" name="produk_id[]" value="${item.produk_id}">
-                        <div class="input-group input-group-sm">
-                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold input-qty-hasil-ck" 
+                        <div class="input-group input-group-sm flex-nowrap shadow-sm" style="min-width: 190px;">
+                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold input-qty-hasil-ck px-2" 
+                                style="min-width: 100px;"
                                 min="0" step="any" value="${item.sisa}" 
                                 data-konversi="${hasKonv ? item.konversi : 1}"
                                 data-satuan-dasar="${item.satuan}"
@@ -1337,7 +1339,7 @@
                     <td class="fw-semibold"><div>${item.target.toLocaleString('id-ID')} ${item.satuan}</div>${targetSub}</td>
                     <td class="fw-bold text-success"><div>${item.sudah.toLocaleString('id-ID')} ${item.satuan}</div>${sudahSub}</td>
                     <td class="fw-bold text-danger">${sisaDisplay}</td>
-                    <td>${inputCol}</td>
+                    <td style="min-width: 210px; width: 230px;">${inputCol}</td>
                 `;
                 tbody.appendChild(tr);
             });

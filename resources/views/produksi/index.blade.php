@@ -456,7 +456,7 @@
 
                                             {{-- MODAL DETAIL & INPUT PRODUKSI WO B2B --}}
                                             <div class="modal fade text-start" id="modalWoB2B{{ $wo->id }}" tabindex="-1" aria-hidden="true">
-                                                 <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
+                                                 <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
                                                     <div class="modal-content border-0 shadow-lg rounded-4">
                                                         <div class="modal-header text-white" style="background-color: #715745;">
                                                             <h5 class="modal-title fw-bold">
@@ -520,7 +520,7 @@
 
                                                                 <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rincian Item & Input Qty Selesai</h6>
                                                                 <div class="table-responsive mb-3">
-                                                                    <table class="table table-bordered align-middle text-center mb-0">
+                                                                    <table class="table table-bordered align-middle text-center mb-0" style="min-width: 780px;">
                                                                         <thead class="bg-light font-weight-bold">
                                                                             <tr>
                                                                                 <th style="width: 5%;">No</th>
@@ -528,7 +528,7 @@
                                                                                 <th style="width: 15%;">Target WO</th>
                                                                                 <th style="width: 15%;">Sudah Jadi</th>
                                                                                 <th style="width: 18%;">Sisa Kekurangan</th>
-                                                                                <th style="width: 22%;">Input Qty Selesai</th>
+                                                                                <th style="width: 200px; min-width: 180px;">Input Qty Selesai</th>
                                                                             </tr>
                                                                         </thead>
                                                                         <tbody>
@@ -548,13 +548,13 @@
                                                                                             <span class="badge bg-success">Tercapai</span>
                                                                                         @endif
                                                                                     </td>
-                                                                                    <td>
+                                                                                    <td style="min-width: 180px;">
                                                                                         <input type="hidden" name="produk_id[]" value="{{ $item['produk_id'] }}">
                                                                                         @if($item['sisa'] > 0)
-                                                                                            <div class="input-group input-group-sm">
+                                                                                            <div class="input-group input-group-sm flex-nowrap shadow-sm" style="min-width: 150px;">
                                                                                                 <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold" 
-                                                                                                    min="0" step="any" value="{{ $item['sisa'] }}" required>
-                                                                                                <span class="input-group-text">{{ $item['satuan'] }}</span>
+                                                                                                    min="0" step="any" value="{{ $item['sisa'] }}" style="min-width: 90px;" required>
+                                                                                                <span class="input-group-text fw-semibold bg-light text-secondary" style="min-width: 50px;">{{ $item['satuan'] }}</span>
                                                                                             </div>
                                                                                         @else
                                                                                             <input type="hidden" name="qty_hasil[]" value="0">

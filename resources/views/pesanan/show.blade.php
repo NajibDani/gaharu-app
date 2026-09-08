@@ -1,6 +1,8 @@
 <x-app-layout>
     @php
         $sudahWO = \App\Models\WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+        $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+        $isSent = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->where('status_pengiriman', 'Selesai')->exists() || ($pesanan->total_qty_terkirim ?? 0) > 0;
     @endphp
 
     <div class="container mt-4 mb-5">
@@ -19,6 +21,14 @@
                         @method('DELETE')
                         <button type="submit" class="btn btn-danger btn-sm shadow-sm fw-bold px-3">
                             <i class="bi bi-trash me-1"></i> Hapus
+                        </button>
+                    </form>
+                @elseif($isSuperAdmin && !$isSent)
+                    <form action="{{ route('pesanan.destroy', $pesanan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('PERHATIAN (Superadmin):\nApakah Anda yakin ingin menghapus Purchase Order / Permintaan #{{ $pesanan->kode_pesanan }}?\n\nSemua relasi Work Order dan data produksi terkait yang belum terkirim akan dibatalkan/dihapus secara bersih.')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger btn-sm shadow-sm fw-bold px-3">
+                            <i class="bi bi-trash3-fill me-1"></i> Hapus PO (Superadmin)
                         </button>
                     </form>
                 @endif

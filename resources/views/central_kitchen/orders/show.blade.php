@@ -24,6 +24,10 @@
                 <a href="{{ route('ck-orders.cetak-pdf', $pesanan->id) }}" target="_blank" class="btn btn-outline-danger btn-sm rounded-3 px-3">
                     <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
                 </a>
+                @php
+                    $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+                    $isSent = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->where('status_pengiriman', 'Selesai')->exists() || ($pesanan->total_qty_terkirim ?? 0) > 0;
+                @endphp
                 @if(!$workOrder)
                     <a href="{{ route('ck-orders.edit', $pesanan->id) }}" class="btn btn-warning btn-sm rounded-3 fw-bold px-3 text-dark">
                         <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
@@ -33,6 +37,14 @@
                         @method('DELETE')
                         <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3">
                             <i class="bi bi-trash me-1"></i> Hapus
+                        </button>
+                    </form>
+                @elseif($isSuperAdmin && !$isSent)
+                    <form action="{{ route('ck-orders.destroy', $pesanan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('PERHATIAN (Superadmin):\nApakah Anda yakin ingin menghapus Purchase Order #{{ $pesanan->kode_pesanan }}?\n\nSemua relasi Work Order dan data produksi terkait yang belum terkirim akan dibatalkan/dihapus secara bersih.')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger btn-sm rounded-3 fw-bold px-3">
+                            <i class="bi bi-trash3-fill me-1"></i> Hapus PO (Superadmin)
                         </button>
                     </form>
                 @endif

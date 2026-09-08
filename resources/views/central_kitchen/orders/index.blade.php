@@ -336,6 +336,11 @@
 
                                                 <li><hr class="dropdown-divider my-1"></li>
 
+                                                @php
+                                                    $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+                                                    $isSent = $p->is_sent ?? false;
+                                                @endphp
+
                                                 @if(!$p->wo_status)
                                                     <li>
                                                         <form action="{{ route('ck-orders.destroy', $p->id) }}" method="POST" class="m-0 p-0" onsubmit="return confirm('Apakah Anda yakin ingin menghapus pesanan #{{ $p->kode_pesanan }}?')">
@@ -346,13 +351,23 @@
                                                             </button>
                                                         </form>
                                                     </li>
+                                                @elseif($isSuperAdmin && !$isSent)
+                                                    <li>
+                                                        <form action="{{ route('ck-orders.destroy', $p->id) }}" method="POST" class="m-0 p-0" onsubmit="return confirm('PERHATIAN (Superadmin):\nApakah Anda yakin ingin menghapus Purchase Order #{{ $p->kode_pesanan }}?\n\nSemua relasi Work Order dan data produksi terkait yang belum terkirim akan dibatalkan/dihapus secara bersih.')">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="dropdown-item text-danger w-100 fw-semibold">
+                                                                <i class="bi bi-trash3-fill text-danger"></i> Hapus PO (Superadmin)
+                                                            </button>
+                                                        </form>
+                                                    </li>
                                                 @else
                                                     <li>
-                                                        <span class="dropdown-item disabled text-muted py-2" title="Terkunci: sudah masuk Work Order">
+                                                        <span class="dropdown-item disabled text-muted py-2" title="{{ $isSent ? 'Terkunci: pesanan sudah dikirim' : 'Terkunci: sudah masuk Work Order' }}">
                                                             <i class="bi bi-lock text-secondary"></i>
                                                             <span>
                                                                 Hapus Terkunci
-                                                                <small class="d-block text-muted" style="font-size: 0.68rem;">WO aktif</small>
+                                                                <small class="d-block text-muted" style="font-size: 0.68rem;">{{ $isSent ? 'Sudah Terkirim' : 'WO aktif' }}</small>
                                                             </span>
                                                         </span>
                                                     </li>
