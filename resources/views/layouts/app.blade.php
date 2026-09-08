@@ -722,6 +722,29 @@
                 });
             }
         });
+
+        // Auto Keep-Alive: Ping server setiap 10 menit agar sesi tidak expired saat tab dibuka lama di tablet/HP/PC
+        setInterval(function() {
+            fetch("{{ route('ping-session') }}", {
+                headers: { 'Accept': 'application/json' }
+            })
+            .then(response => {
+                if (response.status === 419 || response.status === 401) {
+                    window.location.href = "{{ route('login') }}";
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data && data.csrf) {
+                    let metaCsrf = document.querySelector('meta[name="csrf-token"]');
+                    if (metaCsrf) metaCsrf.setAttribute('content', data.csrf);
+                    document.querySelectorAll('input[name="_token"]').forEach(input => {
+                        input.value = data.csrf;
+                    });
+                }
+            })
+            .catch(() => {});
+        }, 10 * 60 * 1000);
     </script>
 
     @stack('scripts')

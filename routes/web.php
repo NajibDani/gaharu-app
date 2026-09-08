@@ -402,7 +402,14 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
         Route::resource('penggajian', PenggajianController::class);
     });
-    });
 
+    // Session Keepalive / Ping Route (mencegah session timeout saat tab browser dibuka lama)
+    Route::get('/ping-session', function () {
+        return response()->json([
+            'status' => 'ok',
+            'csrf'   => csrf_token(),
+        ]);
+    })->name('ping-session');
+});
 
 require __DIR__.'/auth.php';
