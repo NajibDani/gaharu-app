@@ -253,24 +253,6 @@ class BarangController extends Controller
                     }
                 }
             }
-
-            // Buat Event Notifikasi untuk penambahan item barang baru
-            $kategori = Kategori::find($request->kategori_id);
-            $katNama = $kategori ? $kategori->nama : '-';
-            try {
-                EventNotifikasi::create([
-                    'judul'           => 'Item Barang Baru: ' . $barang->nama,
-                    'pesan'           => "Item barang baru <b>{$barang->nama}</b> ({$barang->kode_barang}) kategori {$katNama} dengan satuan {$barang->satuan} telah ditambahkan ke sistem.",
-                    'menu_target'     => 'semua',
-                    'tanggal_mulai'   => now()->toDateString(),
-                    'tanggal_selesai' => now()->addDays(3)->toDateString(),
-                    'tipe_icon'       => 'info',
-                    'is_active'       => true,
-                    'created_by'      => auth()->id() ?? 1,
-                ]);
-            } catch (\Exception $ne) {
-                // Abaikan jika notifikasi gagal agar proses utama tetap berhasil
-            }
     
             return redirect()->route('barang.index')->with('success', "Item barang '{$barang->nama}' ({$barang->kode_barang}) berhasil ditambahkan.");
     
@@ -753,21 +735,6 @@ class BarangController extends Controller
 
         $importer = new MasterBarangImporter();
         $result = $importer->import($request->file('file')->getRealPath());
-
-        if (!empty($result['created']) && $result['created'] > 0) {
-            try {
-                EventNotifikasi::create([
-                    'judul'           => "{$result['created']} Item Barang Baru Ditambahkan (Import)",
-                    'pesan'           => "Sebanyak <b>{$result['created']}</b> item barang baru telah berhasil didaftarkan ke Master Barang melalui fitur Import Excel.",
-                    'menu_target'     => 'semua',
-                    'tanggal_mulai'   => now()->toDateString(),
-                    'tanggal_selesai' => now()->addDays(3)->toDateString(),
-                    'tipe_icon'       => 'info',
-                    'is_active'       => true,
-                    'created_by'      => auth()->id() ?? 1,
-                ]);
-            } catch (\Exception $e) {}
-        }
 
         return back()
             ->with('import_result_barang', $result)

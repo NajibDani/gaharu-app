@@ -411,6 +411,12 @@
                                                     </a>
                                                 @endif
 
+                                                @if(auth()->user() && auth()->user()->isSuperAdmin() && !$wo->is_terkirim)
+                                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-3 action-btn fw-semibold" data-bs-toggle="modal" data-bs-target="#modalEditQty{{ $wo->id }}" title="Edit Qty WO (Khusus Superadmin)">
+                                                        <i class="bi bi-pencil-square"></i> Edit Qty
+                                                    </button>
+                                                @endif
+
                                                 <a href="{{ route('wo.cetak-pdf', $wo->id) }}" class="btn btn-sm btn-outline-dark rounded-3 action-btn" title="Cetak Surat WO">
                                                     <i class="bi bi-printer"></i>
                                                 </a>
@@ -515,7 +521,7 @@
                                                                                         @if($item['sisa'] > 0)
                                                                                             <div class="input-group input-group-sm">
                                                                                                 <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold" 
-                                                                                                    min="0" max="{{ $item['sisa'] }}" step="any" value="{{ $item['sisa'] }}" required>
+                                                                                                    min="0" step="any" value="{{ $item['sisa'] }}" required>
                                                                                                 <span class="input-group-text">{{ $item['satuan'] }}</span>
                                                                                             </div>
                                                                                         @else
@@ -532,7 +538,7 @@
                                                                 <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
                                                                     <i class="bi bi-info-circle-fill me-2 fs-5"></i>
                                                                     <div>
-                                                                        Menekan tombol <strong>Simpan & Approve HPP</strong> akan menghitung HPP FIFO otomatis, memotong bahan baku, menambah stok jadi, dan mengalokasikan pesanan.
+                                                                        Staff produksi dapat menginput kuantitas rill selesai (bisa lebih kecil atau lebih besar dari target). Menekan tombol <strong>Simpan & Approve HPP</strong> akan menghitung HPP FIFO otomatis, memotong bahan baku, menambah stok jadi, memperbarui total pesanan, dan menyelesaikan Work Order.
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -596,6 +602,98 @@
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            @if(auth()->user() && auth()->user()->isSuperAdmin() && !$wo->is_terkirim)
+                                                {{-- MODAL EDIT QTY WORK ORDER KHUSUS SUPERADMIN --}}
+                                                <div class="modal fade text-start" id="modalEditQty{{ $wo->id }}" tabindex="-1" aria-hidden="true">
+                                                    <div class="modal-dialog modal-lg modal-dialog-centered">
+                                                        <div class="modal-content border-0 shadow-lg rounded-4">
+                                                            <div class="modal-header text-white" style="background-color: #854d0e;">
+                                                                <h5 class="modal-title fw-bold">
+                                                                    <i class="bi bi-pencil-square me-2"></i> Edit Qty Work Order: {{ $wo->kode_wo }}
+                                                                </h5>
+                                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <form action="{{ route('produksi.edit-qty-wo', $wo->id) }}" method="POST" onsubmit="return confirm('Simpan perubahan kuantitas Work Order ini?')">
+                                                                @csrf
+                                                                <div class="modal-body p-4">
+                                                                    <div class="alert alert-warning border-warning d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-shield-lock-fill fs-5 text-warning flex-shrink-0"></i>
+                                                                        <div>
+                                                                            <strong>Hak Akses Khusus Superadmin:</strong> Anda dapat mengedit kuantitas item pada Work Order ini karena pesanan <strong>belum terkirim</strong>. Sistem akan otomatis menyesuaikan alokasi pesanan, stok jadi, dan perhitungan total HPP.
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="p-3 mb-3 bg-light rounded-3 border-start border-4 border-warning">
+                                                                        <div class="row g-2 small">
+                                                                            <div class="col-md-4">
+                                                                                <span class="text-muted d-block">Kode Work Order:</span>
+                                                                                <strong class="text-dark">{{ $wo->kode_wo }}</strong>
+                                                                            </div>
+                                                                            <div class="col-md-4">
+                                                                                <span class="text-muted d-block">Customer B2B:</span>
+                                                                                <strong class="text-dark">{{ $wo->customer_nama }}</strong>
+                                                                            </div>
+                                                                            <div class="col-md-4">
+                                                                                <span class="text-muted d-block">Status Saat Ini:</span>
+                                                                                <span class="badge {{ strtolower($wo->status_wo) == 'selesai' ? 'bg-success' : 'bg-warning text-dark' }}">{{ $wo->status_wo }}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <h6 class="fw-bold text-dark mb-2 small text-uppercase">Daftar Item & Penyesuaian Kuantitas</h6>
+                                                                    <div class="table-responsive mb-3">
+                                                                        <table class="table table-bordered align-middle text-center mb-0">
+                                                                            <thead class="table-light">
+                                                                                <tr>
+                                                                                    <th style="width: 5%;">No</th>
+                                                                                    <th class="text-start">Nama Produk</th>
+                                                                                    <th style="width: 25%;">Qty Saat Ini</th>
+                                                                                    <th style="width: 35%;">Qty Baru</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                @foreach($wo->details as $idx => $wod)
+                                                                                    <tr>
+                                                                                        <td>{{ $idx + 1 }}</td>
+                                                                                        <td class="text-start">
+                                                                                            <div class="fw-bold text-dark">{{ $wod->produk->nama ?? 'Produk' }}</div>
+                                                                                            <div class="text-muted small">{{ $wod->produk->kode_barang ?? '-' }}</div>
+                                                                                        </td>
+                                                                                        <td class="fw-semibold">
+                                                                                            {{ number_format($wod->qty_rencana, 0, ',', '.') }} {{ $wod->produk->satuan ?? 'pcs' }}
+                                                                                        </td>
+                                                                                        <td>
+                                                                                            <input type="hidden" name="detail_id[]" value="{{ $wod->id }}">
+                                                                                            <input type="hidden" name="produk_id[]" value="{{ $wod->produk_id }}">
+                                                                                            <div class="input-group input-group-sm">
+                                                                                                <input type="number" name="qty_baru[]" class="form-control text-end fw-bold" 
+                                                                                                    min="0.01" step="any" value="{{ floatval($wod->qty_rencana) }}" required>
+                                                                                                <span class="input-group-text">{{ $wod->produk->satuan ?? 'pcs' }}</span>
+                                                                                            </div>
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                @endforeach
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+
+                                                                    <div class="mb-0">
+                                                                        <label class="form-label fw-bold text-secondary small">Alasan / Catatan Penyesuaian (Opsional):</label>
+                                                                        <input type="text" name="alasan_edit" class="form-control form-control-sm" placeholder="Contoh: Koreksi kuantitas sebelum pengiriman">
+                                                                    </div>
+                                                                </div>
+                                                                <div class="modal-footer bg-light">
+                                                                    <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                                                                    <button type="submit" class="btn btn-warning px-4 fw-bold text-dark">
+                                                                        <i class="bi bi-check2-circle me-1"></i> Simpan Perubahan Qty
+                                                                    </button>
+                                                                </div>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </td>
                                     </tr>
                                 @empty
@@ -1014,7 +1112,7 @@
                         <input type="hidden" name="produk_id[]" value="${item.produk_id}">
                         <div class="input-group input-group-sm">
                             <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold" 
-                                min="0" max="${item.sisa}" step="any" value="${item.sisa}" required>
+                                min="0" step="any" value="${item.sisa}" required>
                             <span class="input-group-text">${item.satuan}</span>
                         </div>
                     `;

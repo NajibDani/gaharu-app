@@ -291,6 +291,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::get('/produksi/{id}/cetak-pdf', [ProduksiController::class, 'cetakPdf'])->name('produksi.cetak-pdf');
     Route::resource('produksi', ProduksiController::class);
     Route::post('/produksi/{id}/approve', [ProduksiController::class, 'approve'])->name('produksi.approve');
+    Route::post('/produksi/wo/{id}/edit-qty', [ProduksiController::class, 'editQtyWo'])->name('produksi.edit-qty-wo');
 
     // Pengiriman / Delivery (Akses Operasional - Semua Role)
     Route::get('/pengiriman', [PengirimanController::class, 'index'])->name('pengiriman.index');
@@ -324,6 +325,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::post('/central-kitchen/produksi/{id}/approve', [CentralKitchenProductionController::class, 'approveProduksi'])->name('ck-produksi.approve');
     Route::get('/central-kitchen/produksi/stok-internal/create', [CentralKitchenProductionController::class, 'createStokInternal'])->name('ck-produksi.create-stok-internal');
     Route::post('/central-kitchen/produksi/stok-internal/store', [CentralKitchenProductionController::class, 'storeStokInternal'])->name('ck-produksi.store-stok-internal');
+    Route::post('/central-kitchen/produksi/wo/{id}/edit-qty', [CentralKitchenProductionController::class, 'editQtyWo'])->name('ck-produksi.edit-qty-wo');
 
     // =========================================================================
     // 5. GROUP KEPALA GUDANG & KEPALA OUTLET GAHARU

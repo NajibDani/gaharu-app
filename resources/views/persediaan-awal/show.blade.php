@@ -35,6 +35,75 @@
         </div>
 
         <div class="card-body p-4">
+            @if(session('import_result'))
+                @php $res = session('import_result'); @endphp
+                <div class="alert alert-dismissible fade show border-0 shadow-sm rounded-3 mb-4 p-3" 
+                     style="background-color: #ffffff; border-left: 5px solid {{ $res['gagal'] > 0 ? ($res['berhasil'] > 0 ? '#DE8958' : '#dc3545') : '#198754' }} !important;" 
+                     role="alert">
+                    <div class="d-flex align-items-start gap-3">
+                        <div class="rounded-circle p-2 d-flex align-items-center justify-content-center text-white flex-shrink-0"
+                             style="width: 42px; height: 42px; background-color: {{ $res['gagal'] > 0 ? ($res['berhasil'] > 0 ? '#DE8958' : '#dc3545') : '#198754' }};">
+                            <i class="bi {{ $res['gagal'] > 0 ? ($res['berhasil'] > 0 ? 'bi-exclamation-triangle-fill' : 'bi-x-circle-fill') : 'bi-check-circle-fill' }} fs-5"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1 fw-bold text-dark">Hasil Import Persediaan Awal</h6>
+                            <div class="fs-6 fw-bold text-dark my-1">
+                                {{ $res['pesan'] }}
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2.5 py-1.5 rounded-2">
+                                    <i class="bi bi-check2 me-1"></i> <strong>{{ $res['berhasil'] }}</strong> persediaan awal berhasil masuk
+                                </span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1.5 rounded-2">
+                                    <i class="bi bi-plus-circle me-1"></i> <strong>{{ $res['item_baru'] }}</strong> item baru
+                                </span>
+                                <span class="badge {{ $res['gagal'] > 0 ? 'bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25' : 'bg-secondary bg-opacity-10 text-muted' }} px-2.5 py-1.5 rounded-2">
+                                    <i class="bi {{ $res['gagal'] > 0 ? 'bi-exclamation-circle' : 'bi-dash-circle' }} me-1"></i> <strong>{{ $res['gagal'] }}</strong> gagal
+                                </span>
+                            </div>
+
+                            @if(!empty($res['new_items']) && count($res['new_items']) > 0)
+                                <div class="small text-muted mt-2 pt-1">
+                                    <i class="bi bi-box-seam me-1 text-primary"></i> <strong>Item baru didaftarkan ke Master Barang:</strong> {{ implode(', ', array_slice($res['new_items'], 0, 10)) }}{{ count($res['new_items']) > 10 ? ' dan ' . (count($res['new_items']) - 10) . ' lainnya' : '' }}
+                                </div>
+                            @endif
+
+                            @if(!empty($res['failed_rows']) && count($res['failed_rows']) > 0)
+                                <div class="mt-2 pt-2 border-top">
+                                    <a class="text-danger small fw-semibold text-decoration-none d-inline-flex align-items-center gap-1" data-bs-toggle="collapse" href="#collapseFailedRowsShow" role="button" aria-expanded="false" aria-controls="collapseFailedRowsShow">
+                                        <i class="bi bi-chevron-down"></i> Lihat rincian {{ count($res['failed_rows']) }} baris yang gagal
+                                    </a>
+                                    <div class="collapse mt-2" id="collapseFailedRowsShow">
+                                        <div class="table-responsive bg-light rounded border" style="max-height: 220px; overflow-y: auto;">
+                                            <table class="table table-sm table-striped mb-0 small">
+                                                <thead class="table-light sticky-top">
+                                                    <tr>
+                                                        <th style="width: 90px;">Baris Excel</th>
+                                                        <th>Nama / Kode Barang</th>
+                                                        <th>Alasan Gagal</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach($res['failed_rows'] as $fr)
+                                                        <tr>
+                                                            <td class="text-muted fw-bold">Baris {{ $fr['baris'] ?? '-' }}</td>
+                                                            <td>{{ $fr['item'] ?? '-' }}</td>
+                                                            <td class="text-danger">{{ $fr['alasan'] ?? 'Format data tidak valid' }}</td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                </div>
+            @endif
+
             @if(session('success'))
                 <div class="alert alert-success alert-dismissible fade show mb-4 d-flex align-items-center" role="alert">
                     <i class="bi bi-check-circle-fill me-2 fs-5"></i>
