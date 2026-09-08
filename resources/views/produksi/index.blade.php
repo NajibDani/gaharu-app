@@ -692,29 +692,55 @@
                                                                                 <tr>
                                                                                     <th style="width: 5%;">No</th>
                                                                                     <th class="text-start">Nama Produk</th>
-                                                                                    <th style="width: 25%;">Qty Saat Ini</th>
-                                                                                    <th style="width: 35%;">Qty Baru</th>
+                                                                                    <th style="width: 28%;">Qty Saat Ini</th>
+                                                                                    <th style="width: 42%; min-width: 220px;">Qty Baru</th>
                                                                                 </tr>
                                                                             </thead>
                                                                             <tbody>
                                                                                 @foreach($wo->details as $idx => $wod)
+                                                                                    @php
+                                                                                        $p = $wod->produk;
+                                                                                        $satDasar = $p->satuan ?? 'pcs';
+                                                                                        $hasKonv = !empty($p->satuan_pembelian) && floatval($p->konversi_pembelian ?? 1) > 1;
+                                                                                        $satBeli = $hasKonv ? strtoupper($p->satuan_pembelian) : '';
+                                                                                        $konvVal = $hasKonv ? floatval($p->konversi_pembelian) : 1;
+                                                                                        $qtySaatIni = floatval($wod->qty_rencana);
+                                                                                    @endphp
                                                                                     <tr>
                                                                                         <td>{{ $idx + 1 }}</td>
                                                                                         <td class="text-start">
-                                                                                            <div class="fw-bold text-dark">{{ $wod->produk->nama ?? 'Produk' }}</div>
-                                                                                            <div class="text-muted small">{{ $wod->produk->kode_barang ?? '-' }}</div>
+                                                                                            <div class="fw-bold text-dark">{{ $p->nama ?? 'Produk' }}</div>
+                                                                                            <div class="text-muted small">{{ $p->kode_barang ?? '-' }}</div>
                                                                                         </td>
                                                                                         <td class="fw-semibold">
-                                                                                            {{ number_format($wod->qty_rencana, 0, ',', '.') }} {{ $wod->produk->satuan ?? 'pcs' }}
+                                                                                            <div>{{ number_format($qtySaatIni, ($qtySaatIni == intval($qtySaatIni) ? 0 : 2), ',', '.') }} {{ $satDasar }}</div>
+                                                                                            @if($hasKonv)
+                                                                                                @php $packSaatIni = $qtySaatIni / $konvVal; @endphp
+                                                                                                <div class="small text-primary font-monospace" style="font-size: 11px;">
+                                                                                                    ({{ number_format($packSaatIni, ($packSaatIni == intval($packSaatIni) ? 0 : 2), ',', '.') }} {{ $satBeli }} @ {{ number_format($konvVal, 0, ',', '.') }} {{ $satDasar }})
+                                                                                                </div>
+                                                                                            @endif
                                                                                         </td>
                                                                                         <td>
                                                                                             <input type="hidden" name="detail_id[]" value="{{ $wod->id }}">
                                                                                             <input type="hidden" name="produk_id[]" value="{{ $wod->produk_id }}">
-                                                                                            <div class="input-group input-group-sm">
-                                                                                                <input type="number" name="qty_baru[]" class="form-control text-end fw-bold" 
-                                                                                                    min="0.01" step="any" value="{{ floatval($wod->qty_rencana) }}" required>
-                                                                                                <span class="input-group-text">{{ $wod->produk->satuan ?? 'pcs' }}</span>
+                                                                                            <div class="input-group input-group-sm flex-nowrap shadow-sm">
+                                                                                                <input type="number" name="qty_baru[]" class="form-control text-end fw-bold input-qty-edit-wo px-2" 
+                                                                                                    min="0.01" step="any" value="{{ $qtySaatIni }}" 
+                                                                                                    data-konversi="{{ $konvVal }}"
+                                                                                                    data-satuan-dasar="{{ $satDasar }}"
+                                                                                                    data-satuan-konv="{{ $satBeli }}" required>
+                                                                                                @if($hasKonv)
+                                                                                                    <select name="satuan_input_edit[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 85px; flex: 0 0 85px; padding-left: 6px; padding-right: 20px; font-size: 0.78rem;">
+                                                                                                        <option value="dasar">{{ strtoupper($satDasar) }}</option>
+                                                                                                        <option value="konversi">{{ $satBeli }}</option>
+                                                                                                    </select>
+                                                                                                @else
+                                                                                                    <input type="hidden" name="satuan_input_edit[]" value="dasar">
+                                                                                                    <span class="input-group-text bg-light fw-bold text-muted" style="width: 58px; flex: 0 0 58px; justify-content: center; font-size: 0.78rem;">{{ strtoupper($satDasar) }}</span>
+                                                                                                @endif
                                                                                             </div>
+                                                                                            <div class="live-konversi-edit-info small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>
                                                                                         </td>
                                                                                     </tr>
                                                                                 @endforeach
@@ -1243,6 +1269,73 @@
                     const tab = new bootstrap.Tab(triggerEl);
                     tab.show();
                 }
+            }
+        });
+
+        // Live calculation helper untuk Edit Qty WO Superadmin
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('input-qty-edit-wo')) {
+                updateLiveKonversiEdit(e.target);
+            }
+        });
+
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('select-unit-edit-wo')) {
+                const row = e.target.closest('td');
+                const inputQty = row.querySelector('.input-qty-edit-wo');
+                if (!inputQty) return;
+
+                const konversi = parseFloat(inputQty.getAttribute('data-konversi') || 1);
+                let val = parseFloat(inputQty.value || 0);
+
+                if (konversi > 1 && val > 0) {
+                    if (e.target.value === 'konversi') {
+                        val = val / konversi;
+                    } else {
+                        val = val * konversi;
+                    }
+                    inputQty.value = (val % 1 === 0) ? val.toFixed(0) : parseFloat(val.toFixed(2));
+                }
+                updateLiveKonversiEdit(inputQty);
+            }
+        });
+
+        function updateLiveKonversiEdit(inputEl) {
+            const container = inputEl.closest('td');
+            if (!container) return;
+            const unitSelect = container.querySelector('.select-unit-edit-wo');
+            const infoBox = container.querySelector('.live-konversi-edit-info');
+            if (!infoBox) return;
+
+            const konversi = parseFloat(inputEl.getAttribute('data-konversi') || 1);
+            const satuanDasar = inputEl.getAttribute('data-satuan-dasar') || '';
+            const satuanKonv = inputEl.getAttribute('data-satuan-konv') || '';
+            const qtyVal = parseFloat(inputEl.value || 0);
+            const unitVal = unitSelect ? unitSelect.value : 'dasar';
+
+            if (konversi > 1 && satuanKonv && qtyVal > 0) {
+                if (unitVal === 'konversi') {
+                    const totalGramasi = qtyVal * konversi;
+                    infoBox.innerHTML = `= <strong class="text-primary">${totalGramasi.toLocaleString('id-ID')} ${satuanDasar}</strong> (@ ${konversi.toLocaleString('id-ID')} ${satuanDasar})`;
+                    infoBox.style.display = 'block';
+                } else {
+                    const totalPack = qtyVal / konversi;
+                    const packFmt = (totalPack % 1 === 0) ? totalPack.toFixed(0) : totalPack.toFixed(2);
+                    infoBox.innerHTML = `= <strong class="text-success">${packFmt} ${satuanKonv}</strong> (@ ${konversi.toLocaleString('id-ID')} ${satuanDasar})`;
+                    infoBox.style.display = 'block';
+                }
+            } else {
+                infoBox.style.display = 'none';
+            }
+        }
+
+        // Tampilkan info konversi langsung saat modal Edit Qty terbuka
+        document.addEventListener('shown.bs.modal', function(e) {
+            const modalEl = e.target;
+            if (modalEl && modalEl.id && modalEl.id.startsWith('modalEditQty')) {
+                modalEl.querySelectorAll('.input-qty-edit-wo').forEach(input => {
+                    updateLiveKonversiEdit(input);
+                });
             }
         });
     </script>

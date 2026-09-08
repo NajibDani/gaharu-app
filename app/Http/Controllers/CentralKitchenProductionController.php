@@ -1095,7 +1095,15 @@ class CentralKitchenProductionController extends Controller
                 if (!$wod) continue;
 
                 $oldQty = floatval($wod->qty_rencana);
-                $newQty = floatval($request->qty_baru[$key] ?? 0);
+                $rawQty = floatval($request->qty_baru[$key] ?? 0);
+                $unitChoice = $request->satuan_input_edit[$key] ?? 'dasar';
+                $newQty = $rawQty;
+
+                $produk = $wod->produk ?? MasterBarang::find($wod->produk_id);
+                if ($unitChoice === 'konversi' && $produk && floatval($produk->konversi_pembelian) > 1) {
+                    $newQty = $rawQty * floatval($produk->konversi_pembelian);
+                }
+
                 if ($newQty < 0) {
                     throw new \Exception("Kuantitas produk tidak boleh negatif.");
                 }
