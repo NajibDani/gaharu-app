@@ -27,18 +27,24 @@
 @foreach($produk as $p)
 @php
     $tipeLabel = $p->is_bahan_setengah_jadi ? 'Bahan Setengah Jadi' : ($p->tipe_penjualan ?: 'Barang Jadi');
+    $pSatKonv = $p->satuan_pembelian ? strtoupper($p->satuan_pembelian) : '';
+    $pKonvVal = floatval($p->konversi_pembelian ?? 1);
 @endphp
-<option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}">
+<option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}" data-satuan-konversi="{{ $pSatKonv }}" data-konversi="{{ $pKonvVal }}">
     {{ $p->nama }} ({{ $tipeLabel }})
+    @if($pSatKonv && $pKonvVal > 1)
+        - 1 {{ $pSatKonv }} = {{ number_format($pKonvVal, 0, ',', '.') }} {{ $p->satuan }}
+    @endif
 </option>
 @endforeach
 </select>
+<small class="text-primary d-none mt-1 fw-bold" id="konversi-help-create"></small>
 </div>
 
 {{-- OUTPUT --}}
 <div class="mb-3">
 <label>Output per Batch</label>
-<input type="number" name="output_qty" class="form-control">
+<input type="number" name="output_qty" id="output_qty_create" class="form-control">
 </div>
 
 {{-- SATUAN OUTPUT (AUTO) --}}
@@ -176,9 +182,18 @@ document.querySelectorAll('#table-bahan tr').forEach(row => {
 document.addEventListener('change', function(e) {
     if (e.target.classList.contains('produk-select')) {
         let select = e.target;
-        let satuan = select.options[select.selectedIndex].dataset.satuan;
+        let opt = select.options[select.selectedIndex];
+        let satuan = opt ? opt.dataset.satuan : '';
 
         document.querySelector('.satuan-output').value = satuan ?? '';
+
+        let help = document.getElementById('konversi-help-create');
+        if (help && opt && opt.dataset.satuanKonversi && parseFloat(opt.dataset.konversi || 1) > 1) {
+            help.textContent = `Konversi: 1 ${opt.dataset.satuanKonversi} = ${Number(opt.dataset.konversi).toLocaleString('id-ID')} ${opt.dataset.satuan}. Output per batch bisa diisi per porsi/pack atau total gramasi.`;
+            help.classList.remove('d-none');
+        } else if (help) {
+            help.classList.add('d-none');
+        }
     }
 });
 

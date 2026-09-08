@@ -318,7 +318,12 @@ class CentralKitchenOrderController extends Controller
                 $mode = $orderModes[$key] ?? 'satuan';
                 $finalQty = $rawQty;
 
-                if ($mode === 'resep') {
+                if ($mode === 'konversi') {
+                    $itemObj = MasterBarang::find($produkId);
+                    if ($itemObj && floatval($itemObj->konversi_pembelian) > 1) {
+                        $finalQty = $rawQty * floatval($itemObj->konversi_pembelian);
+                    }
+                } elseif ($mode === 'resep') {
                     $itemObj = MasterBarang::with('resepBtklBop')->find($produkId);
                     if ($itemObj && $itemObj->resepBtklBop && floatval($itemObj->resepBtklBop->output_qty) > 0) {
                         $finalQty = $rawQty * floatval($itemObj->resepBtklBop->output_qty);
@@ -460,7 +465,12 @@ class CentralKitchenOrderController extends Controller
                 $mode = $orderModes[$key] ?? 'satuan';
                 $finalQty = $rawQty;
 
-                if ($mode === 'resep') {
+                if ($mode === 'konversi') {
+                    $itemObj = MasterBarang::find($produkId);
+                    if ($itemObj && floatval($itemObj->konversi_pembelian) > 1) {
+                        $finalQty = $rawQty * floatval($itemObj->konversi_pembelian);
+                    }
+                } elseif ($mode === 'resep') {
                     $itemObj = MasterBarang::with('resepBtklBop')->find($produkId);
                     if ($itemObj && $itemObj->resepBtklBop && floatval($itemObj->resepBtklBop->output_qty) > 0) {
                         $finalQty = $rawQty * floatval($itemObj->resepBtklBop->output_qty);

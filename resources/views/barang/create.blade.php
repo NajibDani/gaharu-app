@@ -45,8 +45,21 @@
                     </div>
 
                     <div class="col-md-6 mb-3">
-                        <label class="fw-semibold small text-muted">Satuan</label>
-                        <input type="text" name="satuan" class="form-control" required placeholder="Contoh: kg, pcs, liter">
+                        <label class="fw-semibold small text-muted">Satuan Utama</label>
+                        <input type="text" name="satuan" id="satuan" class="form-control" required placeholder="Contoh: kg, pcs, liter, gr, ml">
+                        <small class="form-text text-danger d-none" id="satuan-helper">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).</small>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="fw-semibold small text-muted" id="label-satuan-pembelian">Satuan Pembelian (Opsional)</label>
+                        <input type="text" name="satuan_pembelian" id="satuan_pembelian" class="form-control" value="{{ old('satuan_pembelian') }}" placeholder="Contoh: botol, dus, karton">
+                        <small class="text-muted d-block mt-1" id="help-satuan-pembelian" style="font-size: 0.75rem;">Satuan kemasan saat beli dari supplier.</small>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label class="fw-semibold small text-muted" id="label-konversi-pembelian">Konversi Satuan Pembelian (Opsional)</label>
+                        <input type="number" name="konversi_pembelian" id="konversi_pembelian" class="form-control" value="{{ old('konversi_pembelian', 1) }}" placeholder="Contoh: 1000" min="0.01" step="any">
+                        <small class="text-muted d-block mt-1" id="help-konversi-pembelian" style="font-size: 0.75rem;">1 satuan pembelian = berapa satuan utama.</small>
                     </div>
 
                     <div class="col-md-6 mb-3">
@@ -127,16 +140,40 @@ document.addEventListener("DOMContentLoaded", function () {
     const tipePenjualanSelect = document.getElementById('tipe_penjualan');
 
     function toggleForm() {
+        const satuanHelper = document.getElementById('satuan-helper');
+        const lblSatuanBeli = document.getElementById('label-satuan-pembelian');
+        const lblKonversiBeli = document.getElementById('label-konversi-pembelian');
+        const helpSatuanBeli = document.getElementById('help-satuan-pembelian');
+        const helpKonversiBeli = document.getElementById('help-konversi-pembelian');
+        const inpSatuanBeli = document.getElementById('satuan_pembelian');
+        const inpKonversiBeli = document.getElementById('konversi_pembelian');
+
         if (jenis.value === "BAHAN_SETENGAH_JADI") {
             groupMinStock.style.display = "none";
             groupMinStockBsj.style.display = "block";
             minStockInput.value = "";
+            if (satuanHelper) satuanHelper.classList.remove('d-none');
+
+            if (lblSatuanBeli) lblSatuanBeli.innerHTML = 'Satuan Konversi / Porsi / Pack <span class="text-primary">(BSJ)</span>';
+            if (lblKonversiBeli) lblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML)</span>';
+            if (inpSatuanBeli) inpSatuanBeli.placeholder = 'Contoh: PACK, PORSI, CUP';
+            if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 100 (jika 1 PACK = 100 GR)';
+            if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan takaran untuk resep/permintaan produksi (misal: PACK/PORSI).';
+            if (helpKonversiBeli) helpKonversiBeli.textContent = 'Berapa gram atau ml isi dalam 1 porsi/pack ini.';
         } else if (jenis.value === "BAHAN_BAKU") {
             groupMinStock.style.display = "block";
             groupMinStockBsj.style.display = "none";
             if (minStockCk) minStockCk.value = "";
             if (minStockKejingga) minStockKejingga.value = "";
             if (minStockGaharu) minStockGaharu.value = "";
+            if (satuanHelper) satuanHelper.classList.add('d-none');
+
+            if (lblSatuanBeli) lblSatuanBeli.textContent = 'Satuan Pembelian (Opsional)';
+            if (lblKonversiBeli) lblKonversiBeli.textContent = 'Konversi Satuan Pembelian (Opsional)';
+            if (inpSatuanBeli) inpSatuanBeli.placeholder = 'Contoh: botol, dus, karton';
+            if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 1000';
+            if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan kemasan saat beli dari supplier.';
+            if (helpKonversiBeli) helpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         } else {
             groupMinStock.style.display = "none";
             groupMinStockBsj.style.display = "none";
@@ -144,6 +181,14 @@ document.addEventListener("DOMContentLoaded", function () {
             if (minStockCk) minStockCk.value = "";
             if (minStockKejingga) minStockKejingga.value = "";
             if (minStockGaharu) minStockGaharu.value = "";
+            if (satuanHelper) satuanHelper.classList.add('d-none');
+
+            if (lblSatuanBeli) lblSatuanBeli.textContent = 'Satuan Pembelian (Opsional)';
+            if (lblKonversiBeli) lblKonversiBeli.textContent = 'Konversi Satuan Pembelian (Opsional)';
+            if (inpSatuanBeli) inpSatuanBeli.placeholder = 'Contoh: botol, dus, karton';
+            if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 1000';
+            if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan kemasan saat beli dari supplier.';
+            if (helpKonversiBeli) helpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         }
 
         if (jenis.value === "BARANG_JADI") {

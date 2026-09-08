@@ -269,20 +269,36 @@
                                         </td>
                                         <td>
                                             @if($wo->is_all_completed || strtolower($wo->status_wo) == 'selesai')
-                                                <span class="badge bg-success">Selesai</span>
-                                            @elseif($wo->is_bahan_sufficient || strtolower($wo->status_wo) == 'diproses')
-                                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-                                                    <i class="bi bi-check-circle me-1"></i> Bahan Cukup (Siap)
+                                                <span class="badge bg-success"><i class="bi bi-check-all me-1"></i> Selesai</span>
+                                            @elseif(($wo->has_missing_resep ?? false) && !($wo->is_bahan_sufficient ?? true))
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" title="Menu belum ada resep & stok bahan kurang">
+                                                    <i class="bi bi-x-circle me-1"></i> Resep & Bahan Belum Siap
+                                                </span>
+                                            @elseif($wo->has_missing_resep ?? false)
+                                                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1" title="Menu belum memiliki formulasi resep">
+                                                    <i class="bi bi-journal-x me-1"></i> Belum Ada Resep
+                                                </span>
+                                            @elseif(!($wo->is_bahan_sufficient ?? true))
+                                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1" title="Bahan baku di Gudang CK belum mencukupi">
+                                                    <i class="bi bi-exclamation-triangle me-1"></i> Bahan Kurang
                                                 </span>
                                             @else
-                                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1" title="Bahan baku di Gudang CK belum mencukupi">
-                                                    <i class="bi bi-exclamation-circle me-1"></i> Draft (Bahan Kurang)
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                                    <i class="bi bi-check-circle me-1"></i> Siap Produksi
                                                 </span>
                                             @endif
                                         </td>
                                         <td class="text-center">
                                             <div class="d-flex justify-content-center gap-1 flex-wrap">
-                                                @if(!$wo->is_all_completed && !$wo->is_bahan_sufficient)
+                                                {{-- Tombol Isi Resep jika ada menu tanpa resep --}}
+                                                @if(!$wo->is_all_completed && ($wo->has_missing_resep ?? false))
+                                                    <a href="{{ route('resep.create') }}" target="_blank" class="btn btn-sm btn-outline-danger rounded-3 px-2 fw-semibold" title="Isi resep untuk menu yang belum terdaftar">
+                                                        <i class="bi bi-journal-plus"></i> Isi Resep
+                                                    </a>
+                                                @endif
+
+                                                {{-- Tombol Minta Bahan jika bahan kurang --}}
+                                                @if(!$wo->is_all_completed && !($wo->is_bahan_sufficient ?? true))
                                                     <form action="{{ route('ck-produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')">
                                                         @csrf
                                                         <button type="submit" class="btn btn-sm btn-outline-warning rounded-3 fw-semibold" title="Minta Bahan Baku ke Gudang Utama">
@@ -292,9 +308,15 @@
                                                 @endif
 
                                                 @if(!$wo->is_all_completed)
-                                                    <button type="button" class="btn btn-sm btn-success rounded-3 px-2 fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#modalWo{{ $wo->id }}">
-                                                        <i class="bi bi-hammer me-1"></i> Input & Approve
-                                                    </button>
+                                                    @if($wo->can_approve ?? false)
+                                                        <button type="button" class="btn btn-sm btn-success rounded-3 px-2 fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#modalWo{{ $wo->id }}">
+                                                            <i class="bi bi-hammer me-1"></i> Input & Approve
+                                                        </button>
+                                                    @else
+                                                        <button type="button" class="btn btn-sm btn-secondary rounded-3 px-2 fw-semibold shadow-sm" data-bs-toggle="modal" data-bs-target="#modalWo{{ $wo->id }}" title="Approval terkunci: Resep belum lengkap atau bahan baku kurang">
+                                                            <i class="bi bi-lock-fill me-1"></i> Input & Approve
+                                                        </button>
+                                                    @endif
                                                 @else
                                                     <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 px-2" data-bs-toggle="modal" data-bs-target="#modalWo{{ $wo->id }}">
                                                         <i class="bi bi-eye me-1"></i> Detail (Selesai)
@@ -315,7 +337,7 @@
                                             <div class="modal fade text-start" id="modalWo{{ $wo->id }}" tabindex="-1" aria-hidden="true">
                                                 <div class="modal-dialog modal-lg modal-dialog-centered">
                                                     <div class="modal-content border-0 shadow-lg rounded-4">
-                                                        <div class="modal-header bg-success text-white">
+                                                        <div class="modal-header {{ ($wo->can_approve ?? false) ? 'bg-success' : 'bg-dark' }} text-white">
                                                             <h5 class="modal-title fw-bold">
                                                                 <i class="bi bi-gear-wide-connected me-2"></i> Detail Work Order & Input Hasil Produksi: {{ $wo->kode_wo }}
                                                             </h5>
@@ -328,22 +350,52 @@
                                                             <input type="hidden" name="work_order_id" value="{{ $wo->id }}">
 
                                                             <div class="modal-body p-4">
-                                                                @if(!$wo->is_bahan_sufficient && !empty($wo->defisit_bahan))
-                                                                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                                                                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
-                                                                        <div>
-                                                                            <strong>Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
-                                                                            <ul class="mb-0 ps-3">
-                                                                                @foreach($wo->defisit_bahan as $def)
-                                                                                    <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
+                                                                {{-- ALERT PERINGATAN: MENU BELUM MEMILIKI RESEP --}}
+                                                                @if($wo->has_missing_resep ?? false)
+                                                                    <div class="alert alert-danger border-danger d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-x-circle-fill fs-5 text-danger mt-1 flex-shrink-0"></i>
+                                                                        <div class="flex-grow-1">
+                                                                            <strong class="d-block mb-1">Approval Dikunci - Menu Belum Memiliki Resep:</strong>
+                                                                            <span>Menu berikut belum memiliki formulasi resep bahan baku sehingga HPP tidak dapat dihitung dan proses produksi tidak dapat di-approve:</span>
+                                                                            <ul class="mb-2 mt-1 ps-3">
+                                                                                @foreach($wo->produk_tanpa_resep ?? [] as $ptr)
+                                                                                    <li><strong>{{ $ptr['nama_produk'] }}</strong> ({{ $ptr['kode_barang'] }})</li>
                                                                                 @endforeach
                                                                             </ul>
+                                                                            <a href="{{ route('resep.create') }}" target="_blank" class="btn btn-sm btn-danger fw-semibold">
+                                                                                <i class="bi bi-journal-plus me-1"></i> Isi Resep Menu Sekarang
+                                                                            </a>
                                                                         </div>
                                                                     </div>
-                                                                @else
-                                                                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2 rounded-3 mb-3 small">
-                                                                        <i class="bi bi-check-circle-fill fs-6 text-success"></i>
-                                                                        <span><strong>Bahan Baku Siap:</strong> Stok bahan baku di Gudang Central Kitchen mencukupi seluruh kebutuhan resep. Anda dapat langsung memproses produksi.</span>
+                                                                @endif
+
+                                                                {{-- ALERT PERINGATAN: BAHAN BAKU KURANG --}}
+                                                                @if(!($wo->is_bahan_sufficient ?? true) && !empty($wo->defisit_bahan))
+                                                                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-exclamation-triangle-fill fs-5 text-warning mt-1 flex-shrink-0"></i>
+                                                                        <div class="flex-grow-1">
+                                                                            <strong class="d-block mb-1">Approval Dikunci - Bahan Baku di Central Kitchen Kurang:</strong>
+                                                                            <span>Stok bahan baku di Gudang Central Kitchen belum mencukupi untuk memenuhi kebutuhan produksi WO ini:</span>
+                                                                            <ul class="mb-2 mt-1 ps-3">
+                                                                                @foreach($wo->defisit_bahan as $def)
+                                                                                    <li>{{ $def['nama'] }}: Tersedia <strong>{{ number_format($def['stok'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ number_format($def['butuh'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ number_format($def['kurang'], 0, ',', '.') }} {{ $def['satuan'] }}</span>)</li>
+                                                                                @endforeach
+                                                                            </ul>
+                                                                            <form action="{{ route('ck-produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')">
+                                                                                @csrf
+                                                                                <button type="submit" class="btn btn-sm btn-warning text-dark fw-bold">
+                                                                                    <i class="bi bi-box-arrow-right me-1"></i> Lakukan Permintaan Bahan Sekarang
+                                                                                </button>
+                                                                            </form>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
+
+                                                                {{-- ALERT SUKSES: SIAP APPROVE --}}
+                                                                @if(!($wo->has_missing_resep ?? false) && ($wo->is_bahan_sufficient ?? true))
+                                                                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-check-circle-fill fs-5 text-success"></i>
+                                                                        <span><strong>Resep & Bahan Baku Siap:</strong> Seluruh menu memiliki resep dan stok bahan baku di Gudang Central Kitchen mencukupi. Anda dapat langsung memproses approval produksi.</span>
                                                                     </div>
                                                                 @endif
 
@@ -397,23 +449,73 @@
                                                                                     <td class="text-start">
                                                                                         <div class="fw-bold text-dark">{{ $item['nama_produk'] }}</div>
                                                                                         <div class="text-muted small">{{ $item['kode_barang'] }}</div>
+                                                                                        @if(!($item['has_resep'] ?? true))
+                                                                                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle mt-1" style="font-size: 11px;">
+                                                                                                <i class="bi bi-journal-x"></i> Belum ada resep
+                                                                                            </span>
+                                                                                            <a href="{{ route('resep.create') }}" target="_blank" class="text-danger small ms-1 fw-semibold text-decoration-underline" style="font-size: 11px;">
+                                                                                                Isi Resep
+                                                                                            </a>
+                                                                                        @else
+                                                                                            <span class="badge bg-success-subtle text-success border border-success-subtle mt-1" style="font-size: 11px;">
+                                                                                                <i class="bi bi-check2"></i> Resep Siap
+                                                                                            </span>
+                                                                                        @endif
                                                                                     </td>
-                                                                                    <td class="fw-semibold">{{ number_format($item['target'], 0, ',', '.') }} {{ $item['satuan'] }}</td>
-                                                                                    <td class="fw-bold text-success">{{ number_format($item['sudah'], 0, ',', '.') }} {{ $item['satuan'] }}</td>
+                                                                                    <td class="fw-semibold">
+                                                                                        <div>{{ number_format($item['target'], 0, ',', '.') }} {{ $item['satuan'] }}</div>
+                                                                                        @if(!empty($item['satuan_pembelian']) && floatval($item['konversi']) > 1)
+                                                                                            @php $targetPack = $item['target'] / $item['konversi']; @endphp
+                                                                                            <div class="small text-primary font-monospace" style="font-size: 11px;">
+                                                                                                ({{ number_format($targetPack, ($targetPack == intval($targetPack) ? 0 : 2), ',', '.') }} {{ $item['satuan_pembelian'] }} @ {{ number_format($item['konversi'], 0, ',', '.') }} {{ $item['satuan'] }})
+                                                                                            </div>
+                                                                                        @endif
+                                                                                    </td>
+                                                                                    <td class="fw-bold text-success">
+                                                                                        <div>{{ number_format($item['sudah'], 0, ',', '.') }} {{ $item['satuan'] }}</div>
+                                                                                        @if(!empty($item['satuan_pembelian']) && floatval($item['konversi']) > 1 && $item['sudah'] > 0)
+                                                                                            @php $sudahPack = $item['sudah'] / $item['konversi']; @endphp
+                                                                                            <div class="small text-muted font-monospace" style="font-size: 11px;">
+                                                                                                ({{ number_format($sudahPack, ($sudahPack == intval($sudahPack) ? 0 : 2), ',', '.') }} {{ $item['satuan_pembelian'] }})
+                                                                                            </div>
+                                                                                        @endif
+                                                                                    </td>
                                                                                     <td class="fw-bold text-danger">
                                                                                         @if($item['sisa'] > 0)
-                                                                                            {{ number_format($item['sisa'], 0, ',', '.') }} {{ $item['satuan'] }}
+                                                                                            <div>{{ number_format($item['sisa'], 0, ',', '.') }} {{ $item['satuan'] }}</div>
+                                                                                            @if(!empty($item['satuan_pembelian']) && floatval($item['konversi']) > 1)
+                                                                                                @php $sisaPack = $item['sisa'] / $item['konversi']; @endphp
+                                                                                                <div class="small text-danger font-monospace" style="font-size: 11px;">
+                                                                                                    ({{ number_format($sisaPack, ($sisaPack == intval($sisaPack) ? 0 : 2), ',', '.') }} {{ $item['satuan_pembelian'] }})
+                                                                                                </div>
+                                                                                            @endif
                                                                                         @else
                                                                                             <span class="badge bg-success">Tercapai</span>
                                                                                         @endif
                                                                                     </td>
                                                                                     <td>
                                                                                         <input type="hidden" name="produk_id[]" value="{{ $item['produk_id'] }}">
+                                                                                        @php
+                                                                                            $hasKonversi = !empty($item['satuan_pembelian']) && floatval($item['konversi']) > 1;
+                                                                                            $valSisa = $item['sisa'] > 0 ? floatval($item['sisa']) : floatval($item['target']);
+                                                                                        @endphp
                                                                                         <div class="input-group input-group-sm">
-                                                                                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold" 
-                                                                                                min="0" step="any" value="{{ $item['sisa'] > 0 ? floatval($item['sisa']) : floatval($item['target']) }}" required>
-                                                                                            <span class="input-group-text">{{ $item['satuan'] }}</span>
+                                                                                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold input-qty-hasil-ck" 
+                                                                                                min="0" step="any" value="{{ $valSisa }}" 
+                                                                                                data-konversi="{{ $hasKonversi ? floatval($item['konversi']) : 1 }}"
+                                                                                                data-satuan-dasar="{{ $item['satuan'] }}"
+                                                                                                data-satuan-konv="{{ $hasKonversi ? $item['satuan_pembelian'] : '' }}" required>
+                                                                                            @if($hasKonversi)
+                                                                                                <select name="satuan_input[]" class="form-select select-unit-hasil-ck fw-bold" style="max-width: 90px;">
+                                                                                                    <option value="dasar">{{ strtoupper($item['satuan']) }}</option>
+                                                                                                    <option value="konversi">{{ strtoupper($item['satuan_pembelian']) }}</option>
+                                                                                                </select>
+                                                                                            @else
+                                                                                                <input type="hidden" name="satuan_input[]" value="dasar">
+                                                                                                <span class="input-group-text">{{ $item['satuan'] }}</span>
+                                                                                            @endif
                                                                                         </div>
+                                                                                        <div class="live-konversi-info small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>
                                                                                         @if($item['sisa'] <= 0)
                                                                                             <small class="text-success d-block text-end mt-1" style="font-size: 11px;">Target awal sudah tercapai</small>
                                                                                         @endif
@@ -431,11 +533,27 @@
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div class="modal-footer bg-light">
-                                                                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                                                                <button type="submit" class="btn btn-success px-4 fw-bold">
-                                                                    <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
-                                                                </button>
+                                                            <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
+                                                                <div>
+                                                                    @if(!($wo->can_approve ?? false))
+                                                                        <span class="text-danger small fw-semibold">
+                                                                            <i class="bi bi-lock-fill me-1"></i> Tombol approval dinonaktifkan:
+                                                                            @if(($wo->has_missing_resep ?? false) && !($wo->is_bahan_sufficient ?? true))
+                                                                                Harap isi resep & minta bahan terlebih dahulu.
+                                                                            @elseif($wo->has_missing_resep ?? false)
+                                                                                Harap isi resep menu terlebih dahulu.
+                                                                            @else
+                                                                                Harap lakukan permintaan bahan terlebih dahulu.
+                                                                            @endif
+                                                                        </span>
+                                                                    @endif
+                                                                </div>
+                                                                <div class="d-flex gap-2">
+                                                                    <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                                                                    <button type="submit" class="btn btn-success px-4 fw-bold" @if(!($wo->can_approve ?? false)) disabled title="Approval dinonaktifkan: Lengkapi resep dan minta bahan terlebih dahulu" @endif>
+                                                                        <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         </form>
                                                         @else
@@ -644,9 +762,14 @@
                                                 @endif
 
                                                  @if(strtolower($prod->status_produksi) == 'draft')
+                                                    @if($prod->has_missing_resep ?? false)
+                                                        <a href="{{ route('resep.create') }}" target="_blank" class="btn btn-sm btn-outline-danger rounded-3" title="Menu belum memiliki resep, silakan isi resep terlebih dahulu">
+                                                            <i class="bi bi-journal-plus"></i> Isi Resep
+                                                        </a>
+                                                    @endif
                                                     <form action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Approve Produksi CK? HPP per unit akan dihitung otomatis & barang masuk stok CK.')">
                                                         @csrf
-                                                        <button type="submit" class="btn btn-sm btn-success rounded-3" {{ (isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient) ? 'disabled' : '' }} title="{{ (isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient) ? 'Stok bahan baku di Gudang CK belum mencukupi' : 'Approve' }}">
+                                                        <button type="submit" class="btn btn-sm btn-success rounded-3" {{ (!($prod->can_approve ?? false)) ? 'disabled' : '' }} title="{{ (!($prod->can_approve ?? false)) ? 'Approval dinonaktifkan: Menu belum memiliki resep atau bahan baku di CK belum mencukupi' : 'Approve' }}">
                                                             <i class="bi bi-check-circle me-1"></i> Approve
                                                         </button>
                                                     </form>
@@ -664,6 +787,24 @@
                                                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body p-4">
+                                                            @if(strtolower($prod->status_produksi) == 'draft' && ($prod->has_missing_resep ?? false))
+                                                                <div class="alert alert-danger border-danger d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
+                                                                    <i class="bi bi-x-circle-fill fs-5 text-danger mt-1 flex-shrink-0"></i>
+                                                                    <div class="flex-grow-1">
+                                                                        <strong class="d-block mb-1">Approval Dikunci - Menu Belum Memiliki Resep:</strong>
+                                                                        <span>Menu berikut belum memiliki formulasi resep bahan baku sehingga HPP tidak dapat dihitung dan approval produksi tidak dapat diproses:</span>
+                                                                        <ul class="mb-2 mt-1 ps-3">
+                                                                            @foreach($prod->produk_tanpa_resep ?? [] as $ptr)
+                                                                                <li><strong>{{ $ptr['nama_produk'] }}</strong> ({{ $ptr['kode_barang'] ?? '-' }})</li>
+                                                                            @endforeach
+                                                                        </ul>
+                                                                        <a href="{{ route('resep.create') }}" target="_blank" class="btn btn-sm btn-danger fw-semibold">
+                                                                            <i class="bi bi-journal-plus me-1"></i> Isi Resep Menu Sekarang
+                                                                        </a>
+                                                                    </div>
+                                                                </div>
+                                                            @endif
+
                                                             @if(strtolower($prod->status_produksi) == 'draft' && isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient && !empty($prod->defisit_bahan))
                                                                 <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
                                                                     <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
@@ -743,7 +884,7 @@
                                                             @if(strtolower($prod->status_produksi) == 'draft')
                                                                 <form action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" onsubmit="return confirm('Approve Produksi CK sekarang?')">
                                                                     @csrf
-                                                                    <button type="submit" class="btn btn-success btn-sm px-3" {{ (isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient) ? 'disabled' : '' }}>
+                                                                    <button type="submit" class="btn btn-success btn-sm px-3" {{ (!($prod->can_approve ?? false)) ? 'disabled' : '' }}>
                                                                         <i class="bi bi-check-circle me-1"></i> Approve & Hitung HPP
                                                                     </button>
                                                                 </form>
@@ -891,11 +1032,14 @@
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-success px-4 fw-bold">
-                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
-                        </button>
+                    <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
+                        <div id="batchCkFooterNotice"></div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" id="btnSubmitBatchCk" class="btn btn-success px-4 fw-bold">
+                                <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -938,7 +1082,9 @@
 
             let consolidatedProducts = {};
             let defisitBahanMap = {};
+            let missingResepMap = {};
             let hasDefisit = false;
+            let hasMissingResep = false;
 
             selectedChecks.forEach(chk => {
                 const woData = JSON.parse(chk.getAttribute('data-wo-json'));
@@ -955,6 +1101,14 @@
                 pill.className = 'badge bg-secondary text-white me-1 mb-1 p-2 font-monospace';
                 pill.textContent = woData.kode_wo + ' (' + (woData.customer_nama || '-') + ')';
                 woListPills.appendChild(pill);
+
+                // Check missing resep
+                if (woData.has_missing_resep && woData.produk_tanpa_resep && woData.produk_tanpa_resep.length > 0) {
+                    hasMissingResep = true;
+                    woData.produk_tanpa_resep.forEach(ptr => {
+                        missingResepMap[ptr.produk_id] = ptr;
+                    });
+                }
 
                 // Check defisit bahan
                 if (!woData.is_bahan_sufficient && woData.defisit_bahan && woData.defisit_bahan.length > 0) {
@@ -979,75 +1133,184 @@
                                 nama_produk: item.nama_produk,
                                 kode_barang: item.kode_barang,
                                 satuan: item.satuan,
+                                satuan_pembelian: item.satuan_pembelian || '',
+                                konversi: parseFloat(item.konversi || 1),
                                 target: 0,
                                 sudah: 0,
-                                sisa: 0
+                                sisa: 0,
+                                has_resep: (item.has_resep !== false)
                             };
                         }
                         consolidatedProducts[pId].target += parseFloat(item.target || 0);
                         consolidatedProducts[pId].sudah += parseFloat(item.sudah || 0);
                         consolidatedProducts[pId].sisa += parseFloat(item.sisa || 0);
+                        if (item.has_resep === false) {
+                            consolidatedProducts[pId].has_resep = false;
+                        }
                     });
                 }
             });
+
+            let alertsHtml = '';
+
+            // Render Alert Missing Resep
+            if (hasMissingResep) {
+                let listHtml = '<ul class="mb-2 ps-3">';
+                Object.values(missingResepMap).forEach(ptr => {
+                    listHtml += `<li><strong>${ptr.nama_produk}</strong> (${ptr.kode_barang || '-'})</li>`;
+                });
+                listHtml += '</ul>';
+                alertsHtml += `
+                    <div class="alert alert-danger border-danger d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
+                        <i class="bi bi-x-circle-fill fs-5 text-danger mt-1 flex-shrink-0"></i>
+                        <div class="flex-grow-1">
+                            <strong class="d-block mb-1">Approval Batch Dikunci - Terdapat Menu Belum Memiliki Resep:</strong>
+                            <span>Menu berikut belum memiliki formulasi resep sehingga HPP tidak dapat dihitung:</span>
+                            ${listHtml}
+                            <a href="{{ route('resep.create') }}" target="_blank" class="btn btn-sm btn-danger fw-semibold">
+                                <i class="bi bi-journal-plus me-1"></i> Isi Resep Menu Sekarang
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }
 
             // Render Alert Defisit
             if (hasDefisit) {
                 let listHtml = '<ul class="mb-0 ps-3">';
                 Object.values(defisitBahanMap).forEach(def => {
-                    listHtml += `<li>${def.nama}: Tersedia <strong>${def.stok} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang} ${def.satuan}</span>)</li>`;
+                    listHtml += `<li>${def.nama}: Tersedia <strong>${def.stok.toLocaleString('id-ID')} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh.toLocaleString('id-ID')} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang.toLocaleString('id-ID')} ${def.satuan}</span>)</li>`;
                 });
                 listHtml += '</ul>';
-                alertDiv.innerHTML = `
+                alertsHtml += `
                     <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
                         <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
                         <div>
-                            <strong>Perhatian Aggregat Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
+                            <strong class="d-block mb-1">Approval Batch Dikunci - Bahan Baku di Central Kitchen Kurang:</strong>
                             ${listHtml}
                         </div>
                     </div>
                 `;
-            } else {
-                alertDiv.innerHTML = `
-                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2 rounded-3 mb-3 small">
-                        <i class="bi bi-check-circle-fill fs-6 text-success"></i>
-                        <span><strong>Bahan Baku Siap:</strong> Stok bahan baku di Gudang Central Kitchen mencukupi seluruh kebutuhan gabungan Work Order terpilih.</span>
+            }
+
+            if (!hasMissingResep && !hasDefisit) {
+                alertsHtml = `
+                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                        <i class="bi bi-check-circle-fill fs-5 text-success"></i>
+                        <span><strong>Resep & Bahan Baku Siap:</strong> Seluruh menu memiliki resep dan stok bahan baku di Gudang Central Kitchen mencukupi kebutuhan seluruh Work Order terpilih.</span>
                     </div>
                 `;
+            }
+
+            alertDiv.innerHTML = alertsHtml;
+
+            // Submit button lock
+            const submitBtn = document.getElementById('btnSubmitBatchCk');
+            const footerNotice = document.getElementById('batchCkFooterNotice');
+            const canApproveBatch = (!hasMissingResep && !hasDefisit);
+
+            if (submitBtn) {
+                submitBtn.disabled = !canApproveBatch;
+            }
+
+            if (footerNotice) {
+                if (!canApproveBatch) {
+                    let msg = 'Harap lengkapi ';
+                    if (hasMissingResep && hasDefisit) {
+                        msg += 'resep menu dan lakukan permintaan bahan terlebih dahulu.';
+                    } else if (hasMissingResep) {
+                        msg += 'resep menu terlebih dahulu.';
+                    } else {
+                        msg += 'permintaan bahan baku terlebih dahulu.';
+                    }
+                    footerNotice.innerHTML = `<span class="text-danger small fw-semibold"><i class="bi bi-lock-fill me-1"></i> ${msg}</span>`;
+                } else {
+                    footerNotice.innerHTML = '';
+                }
             }
 
             // Render consolidated products table
             let idx = 1;
             Object.values(consolidatedProducts).forEach(item => {
                 const tr = document.createElement('tr');
-                const sisaDisplay = item.sisa > 0 ? item.sisa.toLocaleString('id-ID') + ' ' + item.satuan : '<span class="badge bg-success">Tercapai</span>';
+                const sisaVal = item.sisa > 0 ? item.sisa : item.target;
+                const hasKonv = (item.satuan_pembelian && item.konversi > 1);
+
+                let targetSub = '';
+                if (hasKonv) {
+                    const tPack = item.target / item.konversi;
+                    targetSub = `<div class="small text-primary font-monospace" style="font-size: 11px;">(${tPack.toLocaleString('id-ID')} ${item.satuan_pembelian} @ ${item.konversi.toLocaleString('id-ID')} ${item.satuan})</div>`;
+                }
+
+                let sudahSub = '';
+                if (hasKonv && item.sudah > 0) {
+                    const sPack = item.sudah / item.konversi;
+                    sudahSub = `<div class="small text-muted font-monospace" style="font-size: 11px;">(${sPack.toLocaleString('id-ID')} ${item.satuan_pembelian})</div>`;
+                }
+
+                let sisaDisplay = '';
+                if (item.sisa > 0) {
+                    let sPackSub = '';
+                    if (hasKonv) {
+                        const sPack = item.sisa / item.konversi;
+                        sPackSub = `<div class="small text-danger font-monospace" style="font-size: 11px;">(${sPack.toLocaleString('id-ID')} ${item.satuan_pembelian})</div>`;
+                    }
+                    sisaDisplay = `<div>${item.sisa.toLocaleString('id-ID')} ${item.satuan}</div>${sPackSub}`;
+                } else {
+                    sisaDisplay = '<span class="badge bg-success">Tercapai</span>';
+                }
                 
                 let inputCol = '';
                 if (item.sisa > 0) {
+                    let selectUnit = '';
+                    if (hasKonv) {
+                        selectUnit = `
+                            <select name="satuan_input[]" class="form-select select-unit-hasil-ck fw-bold" style="max-width: 90px;">
+                                <option value="dasar">${item.satuan.toUpperCase()}</option>
+                                <option value="konversi">${item.satuan_pembelian.toUpperCase()}</option>
+                            </select>
+                        `;
+                    } else {
+                        selectUnit = `
+                            <input type="hidden" name="satuan_input[]" value="dasar">
+                            <span class="input-group-text">${item.satuan}</span>
+                        `;
+                    }
+
                     inputCol = `
                         <input type="hidden" name="produk_id[]" value="${item.produk_id}">
                         <div class="input-group input-group-sm">
-                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold" 
-                                min="0" step="any" value="${item.sisa}" required>
-                            <span class="input-group-text">${item.satuan}</span>
+                            <input type="number" name="qty_hasil[]" class="form-control text-end fw-bold input-qty-hasil-ck" 
+                                min="0" step="any" value="${item.sisa}" 
+                                data-konversi="${hasKonv ? item.konversi : 1}"
+                                data-satuan-dasar="${item.satuan}"
+                                data-satuan-konv="${hasKonv ? item.satuan_pembelian : ''}" required>
+                            ${selectUnit}
                         </div>
+                        <div class="live-konversi-info small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>
                     `;
                 } else {
                     inputCol = `
                         <input type="hidden" name="produk_id[]" value="${item.produk_id}">
                         <input type="hidden" name="qty_hasil[]" value="0">
+                        <input type="hidden" name="satuan_input[]" value="dasar">
                         <span class="text-muted small">Sudah Selesai</span>
                     `;
                 }
+
+                const resepBadge = !item.has_resep 
+                    ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle mt-1" style="font-size: 11px;"><i class="bi bi-journal-x"></i> Belum ada resep</span> <a href="{{ route('resep.create') }}" target="_blank" class="text-danger small ms-1 fw-semibold text-decoration-underline" style="font-size: 11px;">Isi Resep</a>`
+                    : `<span class="badge bg-success-subtle text-success border border-success-subtle mt-1" style="font-size: 11px;"><i class="bi bi-check2"></i> Resep Siap</span>`;
 
                 tr.innerHTML = `
                     <td>${idx++}</td>
                     <td class="text-start">
                         <div class="fw-bold text-dark">${item.nama_produk}</div>
                         <div class="text-muted small">${item.kode_barang || ''}</div>
+                        ${resepBadge}
                     </td>
-                    <td class="fw-semibold">${item.target.toLocaleString('id-ID')} ${item.satuan}</td>
-                    <td class="fw-bold text-success">${item.sudah.toLocaleString('id-ID')} ${item.satuan}</td>
+                    <td class="fw-semibold"><div>${item.target.toLocaleString('id-ID')} ${item.satuan}</div>${targetSub}</td>
+                    <td class="fw-bold text-success"><div>${item.sudah.toLocaleString('id-ID')} ${item.satuan}</div>${sudahSub}</td>
                     <td class="fw-bold text-danger">${sisaDisplay}</td>
                     <td>${inputCol}</td>
                 `;
@@ -1056,6 +1319,52 @@
 
             const modal = new bootstrap.Modal(document.getElementById('modalBatchProduksiCk'));
             modal.show();
+        }
+
+        // Live calculation helper untuk input hasil produksi CK (baik modal single WO maupun batch modal)
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('input-qty-hasil-ck')) {
+                updateLiveKonversiOutput(e.target);
+            }
+        });
+
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('select-unit-hasil-ck')) {
+                const row = e.target.closest('td');
+                const inputQty = row.querySelector('.input-qty-hasil-ck');
+                if (inputQty) {
+                    updateLiveKonversiOutput(inputQty);
+                }
+            }
+        });
+
+        function updateLiveKonversiOutput(inputEl) {
+            const container = inputEl.closest('td');
+            if (!container) return;
+            const unitSelect = container.querySelector('.select-unit-hasil-ck');
+            const infoBox = container.querySelector('.live-konversi-info');
+            if (!infoBox) return;
+
+            const konversi = parseFloat(inputEl.getAttribute('data-konversi') || 1);
+            const satuanDasar = inputEl.getAttribute('data-satuan-dasar') || '';
+            const satuanKonv = inputEl.getAttribute('data-satuan-konv') || '';
+            const qtyVal = parseFloat(inputEl.value || 0);
+            const unitVal = unitSelect ? unitSelect.value : 'dasar';
+
+            if (konversi > 1 && satuanKonv && qtyVal > 0) {
+                if (unitVal === 'konversi') {
+                    const totalGramasi = qtyVal * konversi;
+                    infoBox.innerHTML = `= <strong class="text-primary">${totalGramasi.toLocaleString('id-ID')} ${satuanDasar}</strong> (@ ${konversi.toLocaleString('id-ID')} ${satuanDasar})`;
+                    infoBox.style.display = 'block';
+                } else {
+                    const totalPack = qtyVal / konversi;
+                    const packFmt = (totalPack % 1 === 0) ? totalPack.toFixed(0) : totalPack.toFixed(2);
+                    infoBox.innerHTML = `= <strong class="text-success">${packFmt} ${satuanKonv}</strong> (@ ${konversi.toLocaleString('id-ID')} ${satuanDasar})`;
+                    infoBox.style.display = 'block';
+                }
+            } else {
+                infoBox.style.display = 'none';
+            }
         }
 
         document.addEventListener("DOMContentLoaded", function () {

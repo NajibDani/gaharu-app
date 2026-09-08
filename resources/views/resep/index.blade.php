@@ -203,12 +203,21 @@
                                     } else {
                                         $tipeLabel = 'Produk';
                                     }
+                                    $pSatuanKonv = $p->satuan_pembelian ? strtoupper($p->satuan_pembelian) : '';
+                                    $pKonv = floatval($p->konversi_pembelian ?? 1);
                                 @endphp
-                                <option value="{{ $p->id }}" data-satuan="{{ $p->satuan }}" data-has-resep="{{ $p->resep_id ? 'true' : 'false' }}">
+                                <option value="{{ $p->id }}" 
+                                        data-satuan="{{ $p->satuan }}" 
+                                        data-satuan-konversi="{{ $pSatuanKonv }}"
+                                        data-konversi="{{ $pKonv }}"
+                                        data-has-resep="{{ $p->resep_id ? 'true' : 'false' }}">
                                     {{ $p->nama }} ({{ $tipeLabel }})
                                 </option>
                             @endforeach
                         </select>
+                        <div id="resep-konversi-info" class="small text-primary mt-1 d-none font-monospace fw-semibold">
+                            <i class="bi bi-info-circle me-1"></i> <span id="resep-konversi-text"></span>
+                        </div>
                         <small class="text-danger d-none mt-1 d-block" id="edit-produk-warning">
                             <i class="fas fa-info-circle me-1"></i> Produk tidak dapat diganti saat mengedit resep.
                         </small>
@@ -711,11 +720,21 @@ document.addEventListener("DOMContentLoaded", function () {
         let opt = this.options[this.selectedIndex];
         inputSatuanOutput.value = opt ? (opt.dataset.satuan ?? '') : '';
 
+        const konvInfoBox = document.getElementById('resep-konversi-info');
+        const konvInfoText = document.getElementById('resep-konversi-text');
+        if (opt && opt.dataset.satuanKonversi && parseFloat(opt.dataset.konversi || 1) > 1) {
+            konvInfoText.textContent = `Konversi: 1 ${opt.dataset.satuanKonversi} = ${Number(opt.dataset.konversi).toLocaleString('id-ID')} ${opt.dataset.satuan}. Anda dapat menyusun resep per 1 ${opt.dataset.satuanKonversi} (Output: ${Number(opt.dataset.konversi).toLocaleString('id-ID')} ${opt.dataset.satuan}) atau per batch.`;
+            konvInfoBox.classList.remove('d-none');
+        } else if (konvInfoBox) {
+            konvInfoBox.classList.add('d-none');
+        }
+
         // Prevent selecting product with existing recipe during creation (POST method)
         if (formMethod.value === "POST" && opt && opt.dataset.hasResep === 'true') {
             alert('Produk ini sudah memiliki resep! Silakan pilih produk lain.');
             produkChoices.setChoiceByValue('');
             inputSatuanOutput.value = '';
+            if (konvInfoBox) konvInfoBox.classList.add('d-none');
         }
     });
 

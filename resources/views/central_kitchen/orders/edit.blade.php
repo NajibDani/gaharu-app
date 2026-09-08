@@ -131,12 +131,17 @@
                                     $itemObj = $detail->produk;
                                     $outQty = floatval($itemObj->resepBtklBop->output_qty ?? 0);
                                     $outSatuan = $itemObj->resepBtklBop->satuan_output ?? ($itemObj->satuan ?? '');
+                                    $pSatuanKonversi = $itemObj->satuan_pembelian ? strtoupper($itemObj->satuan_pembelian) : '';
+                                    $pKonversiVal = floatval($itemObj->konversi_pembelian ?? 1);
                                     
-                                    // Deteksi apakah awalnya diisi via resep atau satuan
-                                    $isResep = false;
+                                    // Deteksi mode: konversi, resep, atau satuan
+                                    $initMode = 'satuan';
                                     $initQty = $detail->qty;
-                                    if ($outQty > 0 && fmod($detail->qty, $outQty) == 0 && $detail->qty >= $outQty) {
-                                        $isResep = true;
+                                    if ($pSatuanKonversi && $pKonversiVal > 1 && fmod($detail->qty, $pKonversiVal) == 0 && $detail->qty >= $pKonversiVal) {
+                                        $initMode = 'konversi';
+                                        $initQty = $detail->qty / $pKonversiVal;
+                                    } elseif ($outQty > 0 && fmod($detail->qty, $outQty) == 0 && $detail->qty >= $outQty) {
+                                        $initMode = 'resep';
                                         $initQty = $detail->qty / $outQty;
                                     }
                                 @endphp
@@ -148,14 +153,20 @@
                                                 @php
                                                     $pOutQty = floatval($item->resepBtklBop->output_qty ?? 0);
                                                     $pOutSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+                                                    $pSatuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
+                                                    $pKonversiVal = floatval($item->konversi_pembelian ?? 1);
                                                 @endphp
                                                 <option value="{{ $item->id }}" 
                                                         data-satuan="{{ $item->satuan }}"
                                                         data-output-qty="{{ $pOutQty }}"
                                                         data-satuan-output="{{ $pOutSatuan }}"
+                                                        data-satuan-konversi="{{ $pSatuanKonversi }}"
+                                                        data-konversi="{{ $pKonversiVal }}"
                                                         {{ $detail->produk_id == $item->id ? 'selected' : '' }}>
                                                     {{ $item->kode_barang }} - {{ $item->nama }}
-                                                    @if($pOutQty > 0)
+                                                    @if($pSatuanKonversi && $pKonversiVal > 1)
+                                                        (1 {{ $pSatuanKonversi }} = {{ number_format($pKonversiVal, 0, ',', '.') }} {{ $item->satuan }})
+                                                    @elseif($pOutQty > 0)
                                                         (1 Resep = {{ number_format($pOutQty, 0, ',', '.') }} {{ $pOutSatuan }})
                                                     @endif
                                                 </option>
@@ -166,11 +177,14 @@
                                         <input type="number" step="any" min="0.01" name="qty[]" class="form-control text-sm input-qty text-end fw-bold" value="{{ $initQty }}" placeholder="0" required>
                                     </td>
                                     <td>
-                                        <select name="order_mode[]" class="form-select text-sm select-mode text-center fw-bold" data-init-mode="{{ $isResep ? 'resep' : 'satuan' }}">
-                                            @if($outQty > 0)
-                                                <option value="resep" {{ $isResep ? 'selected' : '' }}>Resep</option>
+                                        <select name="order_mode[]" class="form-select text-sm select-mode text-center fw-bold" data-init-mode="{{ $initMode }}">
+                                            @if($pSatuanKonversi && $pKonversiVal > 1)
+                                                <option value="konversi" {{ $initMode === 'konversi' ? 'selected' : '' }}>{{ $pSatuanKonversi }} ({{ number_format($pKonversiVal, 0, ',', '.') }} {{ $itemObj->satuan }})</option>
                                             @endif
-                                            <option value="satuan" {{ !$isResep ? 'selected' : '' }}>{{ strtoupper($itemObj->satuan ?? 'SATUAN') }}</option>
+                                            @if($outQty > 0)
+                                                <option value="resep" {{ $initMode === 'resep' ? 'selected' : '' }}>Resep</option>
+                                            @endif
+                                            <option value="satuan" {{ $initMode === 'satuan' ? 'selected' : '' }}>{{ strtoupper($itemObj->satuan ?? 'SATUAN') }}</option>
                                         </select>
                                     </td>
                                     <td>
@@ -292,9 +306,17 @@
                 const selected = selectEl.options[selectEl.selectedIndex];
                 const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
                 const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+                const satuanKonversi = (selected && selectEl.value) ? (selected.getAttribute('data-satuan-konversi') || '') : '';
+                const konversiVal = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-konversi') || 1) : 1;
 
                 const currentVal = preserveMode ? (modeEl.getAttribute('data-init-mode') || modeEl.value) : modeEl.value;
                 modeEl.innerHTML = '';
+
+                // Opsi Konversi / Pack / Porsi jika ada
+                if (satuanKonversi && konversiVal > 1) {
+                    const optKonversi = new Option(satuanKonversi + ' (' + konversiVal.toLocaleString('id-ID') + ' ' + satuanUtama + ')', 'konversi');
+                    modeEl.add(optKonversi);
+                }
 
                 if (outputQty > 0) {
                     const optResep = new Option('Resep', 'resep');
@@ -304,10 +326,14 @@
                 const optSatuan = new Option(satuanUtama.toUpperCase(), 'satuan');
                 modeEl.add(optSatuan);
 
-                if (currentVal === 'resep' && outputQty > 0) {
+                if (currentVal === 'konversi' && satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (currentVal === 'resep' && outputQty > 0) {
                     modeEl.value = 'resep';
                 } else if (currentVal === 'satuan') {
                     modeEl.value = 'satuan';
+                } else if (satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
                 } else {
                     modeEl.value = outputQty > 0 ? 'resep' : 'satuan';
                 }
@@ -331,6 +357,8 @@
                 const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
                 const outputSatuan = selected.getAttribute('data-satuan-output') || '';
                 const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const satuanKonversi = selected.getAttribute('data-satuan-konversi') || '';
+                const konversiVal = parseFloat(selected.getAttribute('data-konversi') || 1);
                 const mode = modeEl.value;
                 const rawQty = parseFloat(qtyEl.value || 0);
 
@@ -339,21 +367,28 @@
                     return;
                 }
 
-                if (mode === 'resep') {
+                if (mode === 'konversi' && konversiVal > 1) {
+                    const totalGramasi = rawQty * konversiVal;
+                    infoEl.innerHTML = `<strong>${rawQty} ${satuanKonversi}</strong> = <span class="text-primary fw-bold">${totalGramasi.toLocaleString('id-ID')} ${satuanUtama}</span>`;
+                } else if (mode === 'resep') {
                     if (outputQty > 0) {
                         const totalHasil = rawQty * outputQty;
-                        infoEl.innerHTML = `<strong>${rawQty} Resep</strong> = <span class="text-primary fw-bold">${totalHasil.toLocaleString('id-ID')} ${outputSatuan}</span>`;
+                        infoEl.innerHTML = `<strong>${rawQty} Resep</strong> = <span class="text-success fw-bold">${totalHasil.toLocaleString('id-ID')} ${outputSatuan}</span>`;
                     } else {
                         infoEl.innerHTML = `<strong>${rawQty}</strong> ${satuanUtama}`;
                     }
                 } else {
-                    if (outputQty > 0) {
+                    let helper = '';
+                    if (satuanKonversi && konversiVal > 1) {
+                        const hitungPack = rawQty / konversiVal;
+                        const packFmt = (hitungPack % 1 === 0) ? hitungPack : hitungPack.toFixed(2);
+                        helper = `(setara <span class="text-primary fw-bold">${packFmt} ${satuanKonversi}</span>)`;
+                    } else if (outputQty > 0) {
                         const hitungResep = rawQty / outputQty;
                         const resepFmt = (hitungResep % 1 === 0) ? hitungResep : hitungResep.toFixed(2);
-                        infoEl.innerHTML = `<strong>${rawQty} ${satuanUtama}</strong> (setara <span class="text-success fw-bold">${resepFmt} Resep</span>)`;
-                    } else {
-                        infoEl.innerHTML = `<strong>${rawQty}</strong> ${satuanUtama}`;
+                        helper = `(setara <span class="text-success fw-bold">${resepFmt} Resep</span>)`;
                     }
+                    infoEl.innerHTML = `<strong>${rawQty} ${satuanUtama}</strong> ${helper}`;
                 }
             }
 

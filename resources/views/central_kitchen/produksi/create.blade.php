@@ -64,12 +64,40 @@
                 <div class="card card-form p-4 mb-4">
                     <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Hasil Fisik Produksi</h6>
 
+                    @if(!empty($hasMissingResep) && !empty($produkTanpaResep))
+                        <div class="alert alert-danger border-danger d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
+                            <i class="bi bi-exclamation-octagon-fill fs-6 text-danger mt-1"></i>
+                            <div class="w-100">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <strong>Resep Belum Diisi:</strong>
+                                    <a href="{{ route('resep.create') }}" class="btn btn-danger btn-sm py-0 px-2 fw-semibold" style="font-size: 0.75rem;" target="_blank">
+                                        <i class="bi bi-journal-plus me-1"></i> Isi Resep Sekarang
+                                    </a>
+                                </div>
+                                <p class="mb-1 text-muted">Approval produksi nantinya tidak dapat dilakukan sebelum menu-menu berikut memiliki resep:</p>
+                                <ul class="mb-0 ps-3">
+                                    @foreach($produkTanpaResep as $ptr)
+                                        <li><strong>{{ $ptr['nama_produk'] }}</strong> (Kode: {{ $ptr['kode_barang'] }})</li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        </div>
+                    @endif
+
                     @if(isset($isBahanSufficient) && !$isBahanSufficient && !empty($defisitBahan))
                         <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
                             <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
-                            <div>
-                                <strong>Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
-                                <ul class="mb-0 ps-3">
+                            <div class="w-100">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <strong>Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
+                                    <form action="{{ route('ck-produksi.kirim-bahan', $selectedWoId) }}" method="POST" class="d-inline" onsubmit="return confirm('Kirim permintaan bahan untuk WO ini ke Gudang?');">
+                                        @csrf
+                                        <button type="submit" class="btn btn-warning text-dark btn-sm py-0 px-2 fw-semibold" style="font-size: 0.75rem;">
+                                            <i class="bi bi-box-arrow-up-right me-1"></i> Minta Bahan Sekarang
+                                        </button>
+                                    </form>
+                                </div>
+                                <ul class="mb-0 ps-3 mt-1">
                                     @foreach($defisitBahan as $def)
                                         <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
                                     @endforeach
@@ -89,19 +117,62 @@
                             </thead>
                             <tbody>
                                 @foreach($items as $item)
+                                    @php
+                                        $itemHasResep = $item->produk && $item->produk->resep_id && $item->produk->resep && $item->produk->resep->count() > 0;
+                                    @endphp
                                     <tr>
                                         <td>
                                             <input type="hidden" name="produk_id[]" value="{{ $item->produk_id }}">
-                                            <span class="fw-bold text-dark">{{ $item->produk->nama ?? 'Produk' }}</span>
+                                            <div class="d-flex align-items-center justify-content-between">
+                                                <span class="fw-bold text-dark">{{ $item->produk->nama ?? 'Produk' }}</span>
+                                                @if(!$itemHasResep)
+                                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-2" style="font-size: 0.7rem;">
+                                                        <i class="bi bi-exclamation-circle me-1"></i>Belum Ada Resep
+                                                    </span>
+                                                @else
+                                                    <span class="badge bg-success-subtle text-success border border-success-subtle ms-2" style="font-size: 0.7rem;">
+                                                        <i class="bi bi-check-circle me-1"></i>Resep Siap
+                                                    </span>
+                                                @endif
+                                            </div>
                                         </td>
                                         <td class="text-center fw-semibold text-muted">
-                                            {{ number_format($item->total_target, 2) }} {{ $item->produk->satuan ?? '' }}
+                                            <div>{{ number_format($item->total_target, 0, ',', '.') }} {{ $item->produk->satuan ?? '' }}</div>
+                                            @if($item->produk && !empty($item->produk->satuan_pembelian) && floatval($item->produk->konversi_pembelian) > 1)
+                                                @php
+                                                    $konvVal = floatval($item->produk->konversi_pembelian);
+                                                    $packTarget = $item->total_target / $konvVal;
+                                                @endphp
+                                                <div class="small text-primary font-monospace" style="font-size: 11px;">
+                                                    ({{ number_format($packTarget, ($packTarget == intval($packTarget) ? 0 : 2), ',', '.') }} {{ strtoupper($item->produk->satuan_pembelian) }} @ {{ number_format($konvVal, 0, ',', '.') }} {{ $item->produk->satuan }})
+                                                </div>
+                                            @endif
                                         </td>
                                         <td>
+                                            @php
+                                                $hasKonv = $item->produk && !empty($item->produk->satuan_pembelian) && floatval($item->produk->konversi_pembelian) > 1;
+                                                $konvVal = $hasKonv ? floatval($item->produk->konversi_pembelian) : 1;
+                                                $satuanDasar = $item->produk->satuan ?? 'unit';
+                                                $satuanKonv = $hasKonv ? strtoupper($item->produk->satuan_pembelian) : '';
+                                            @endphp
                                             <div class="input-group input-group-sm">
-                                                <input type="number" step="0.01" min="0.01" name="qty_hasil[]" class="form-control text-sm fw-bold text-success" value="{{ $item->sisa_target }}" required>
-                                                <span class="input-group-text text-muted">{{ $item->produk->satuan ?? 'unit' }}</span>
+                                                <input type="number" step="any" min="0" name="qty_hasil[]" 
+                                                    class="form-control text-sm fw-bold text-success text-end input-qty-hasil-create" 
+                                                    value="{{ $item->sisa_target }}" 
+                                                    data-konversi="{{ $konvVal }}"
+                                                    data-satuan-dasar="{{ $satuanDasar }}"
+                                                    data-satuan-konv="{{ $satuanKonv }}" required>
+                                                @if($hasKonv)
+                                                    <select name="satuan_input[]" class="form-select select-unit-create fw-bold" style="max-width: 90px;">
+                                                        <option value="dasar">{{ strtoupper($satuanDasar) }}</option>
+                                                        <option value="konversi">{{ $satuanKonv }}</option>
+                                                    </select>
+                                                @else
+                                                    <input type="hidden" name="satuan_input[]" value="dasar">
+                                                    <span class="input-group-text text-muted">{{ $satuanDasar }}</span>
+                                                @endif
                                             </div>
+                                            <div class="live-konversi-create small text-end mt-1 font-monospace" style="font-size: 11px; display: none;"></div>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -145,6 +216,52 @@
                 const divisiFromUrl = params.get('divisi_id');
                 if (divisiFromUrl) {
                     divisiSelect.value = divisiFromUrl;
+                }
+            }
+
+            // Live calculation helper untuk input hasil produksi
+            document.addEventListener('input', function(e) {
+                if (e.target.classList.contains('input-qty-hasil-create')) {
+                    updateLiveKonversiCreate(e.target);
+                }
+            });
+
+            document.addEventListener('change', function(e) {
+                if (e.target.classList.contains('select-unit-create')) {
+                    const row = e.target.closest('td');
+                    const inputQty = row.querySelector('.input-qty-hasil-create');
+                    if (inputQty) {
+                        updateLiveKonversiCreate(inputQty);
+                    }
+                }
+            });
+
+            function updateLiveKonversiCreate(inputEl) {
+                const container = inputEl.closest('td');
+                if (!container) return;
+                const unitSelect = container.querySelector('.select-unit-create');
+                const infoBox = container.querySelector('.live-konversi-create');
+                if (!infoBox) return;
+
+                const konversi = parseFloat(inputEl.getAttribute('data-konversi') || 1);
+                const satuanDasar = inputEl.getAttribute('data-satuan-dasar') || '';
+                const satuanKonv = inputEl.getAttribute('data-satuan-konv') || '';
+                const qtyVal = parseFloat(inputEl.value || 0);
+                const unitVal = unitSelect ? unitSelect.value : 'dasar';
+
+                if (konversi > 1 && satuanKonv && qtyVal > 0) {
+                    if (unitVal === 'konversi') {
+                        const totalGramasi = qtyVal * konversi;
+                        infoBox.innerHTML = `= <strong class="text-primary">${totalGramasi.toLocaleString('id-ID')} ${satuanDasar}</strong> (@ ${konversi.toLocaleString('id-ID')} ${satuanDasar})`;
+                        infoBox.style.display = 'block';
+                    } else {
+                        const totalPack = qtyVal / konversi;
+                        const packFmt = (totalPack % 1 === 0) ? totalPack.toFixed(0) : totalPack.toFixed(2);
+                        infoBox.innerHTML = `= <strong class="text-success">${packFmt} ${satuanKonv}</strong> (@ ${konversi.toLocaleString('id-ID')} ${satuanDasar})`;
+                        infoBox.style.display = 'block';
+                    }
+                } else {
+                    infoBox.style.display = 'none';
                 }
             }
         });

@@ -776,13 +776,19 @@
                                                     @php
                                                         $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
                                                         $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+                                                        $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
+                                                        $konversiVal = floatval($item->konversi_pembelian ?? 1);
                                                     @endphp
                                                     <option value="{{ $item->id }}" 
                                                             data-satuan="{{ $item->satuan }}"
                                                             data-output-qty="{{ $outQty }}"
-                                                            data-satuan-output="{{ $outSatuan }}">
+                                                            data-satuan-output="{{ $outSatuan }}"
+                                                            data-satuan-konversi="{{ $satuanKonversi }}"
+                                                            data-konversi="{{ $konversiVal }}">
                                                         {{ $item->kode_barang }} - {{ $item->nama }}
-                                                        @if($outQty > 0)
+                                                        @if($satuanKonversi && $konversiVal > 1)
+                                                            (1 {{ $satuanKonversi }} = {{ number_format($konversiVal, 0, ',', '.') }} {{ $item->satuan }})
+                                                        @elseif($outQty > 0)
                                                             (1 Resep = {{ number_format($outQty, 0, ',', '.') }} {{ $outSatuan }})
                                                         @endif
                                                     </option>
@@ -889,9 +895,17 @@
                 const selected = selectEl.options[selectEl.selectedIndex];
                 const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
                 const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+                const satuanKonversi = (selected && selectEl.value) ? (selected.getAttribute('data-satuan-konversi') || '') : '';
+                const konversiVal = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-konversi') || 1) : 1;
 
                 const currentVal = modeEl.value;
                 modeEl.innerHTML = '';
+
+                // Opsi Satuan Konversi / Pack / Porsi jika ada
+                if (satuanKonversi && konversiVal > 1) {
+                    const optKonversi = new Option(satuanKonversi + ' (' + konversiVal.toLocaleString('id-ID') + ' ' + satuanUtama + ')', 'konversi');
+                    modeEl.add(optKonversi);
+                }
 
                 if (outputQty > 0) {
                     const optResep = new Option('Resep', 'resep');
@@ -901,8 +915,12 @@
                 const optSatuan = new Option(satuanUtama.toUpperCase(), 'satuan');
                 modeEl.add(optSatuan);
 
-                if (currentVal === 'resep' && outputQty > 0) {
+                if (currentVal === 'konversi' && satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (currentVal === 'resep' && outputQty > 0) {
                     modeEl.value = 'resep';
+                } else if (satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
                 } else {
                     modeEl.value = 'satuan';
                 }
@@ -926,21 +944,37 @@
                 const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
                 const outputSatuan = selected.getAttribute('data-satuan-output') || '';
                 const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const satuanKonversi = selected.getAttribute('data-satuan-konversi') || '';
+                const konversiVal = parseFloat(selected.getAttribute('data-konversi') || 1);
                 const mode = modeEl.value;
                 const qtyInput = parseFloat(qtyEl.value || 0);
 
-                if (mode === 'resep' && outputQty > 0) {
+                if (mode === 'konversi' && konversiVal > 1) {
+                    const totalGramasi = qtyInput > 0 ? (qtyInput * konversiVal) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-primary" style="font-size: 0.85rem;">${totalGramasi.toLocaleString('id-ID')} ${satuanUtama}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 ${satuanKonversi} = ${konversiVal.toLocaleString('id-ID')} ${satuanUtama})</div>
+                    `;
+                } else if (mode === 'resep' && outputQty > 0) {
                     const totalTarget = qtyInput > 0 ? (qtyInput * outputQty) : 0;
                     infoEl.innerHTML = `
                         <div class="fw-bold text-success" style="font-size: 0.85rem;">${totalTarget.toLocaleString('id-ID')} ${outputSatuan}</div>
                         <div class="text-muted" style="font-size: 0.72rem;">(1 Resep = ${outputQty.toLocaleString('id-ID')} ${outputSatuan})</div>
                     `;
                 } else {
-                    const resepEquivalent = outputQty > 0 && qtyInput > 0 ? (qtyInput / outputQty) : 0;
-                    const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                    let helperText = '';
+                    if (satuanKonversi && konversiVal > 1 && qtyInput > 0) {
+                        const packEquivalent = qtyInput / konversiVal;
+                        const packFmt = (packEquivalent % 1 === 0) ? packEquivalent.toFixed(0) : packEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${packFmt} ${satuanKonversi})</div>`;
+                    } else if (outputQty > 0 && qtyInput > 0) {
+                        const resepEquivalent = qtyInput / outputQty;
+                        const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>`;
+                    }
                     infoEl.innerHTML = `
                         <div class="fw-bold text-dark" style="font-size: 0.85rem;">${qtyInput.toLocaleString('id-ID')} ${satuanUtama || '-'}</div>
-                        ${outputQty > 0 && qtyInput > 0 ? `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>` : ''}
+                        ${helperText}
                     `;
                 }
             }
@@ -1044,9 +1078,9 @@
                     }
                 } else if (select) {
                     select.value = produkId || '';
-                    updateModeOptions(targetRow);
-                    updateKonversi(targetRow);
                 }
+                updateModeOptions(targetRow);
+                updateKonversi(targetRow);
 
                 checkRows();
                 return targetRow;
