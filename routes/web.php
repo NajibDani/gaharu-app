@@ -172,6 +172,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::get('pengeluaran-bahan-baku/{id}/detail-json', [PengeluaranBahanBakuController::class, 'detailJson'])->name('pengeluaran-bahan-baku.detail-json');
     Route::get('pengeluaran-bahan-baku/{id}/cetak-pdf', [PengeluaranBahanBakuController::class, 'cetakPdf'])->name('pengeluaran-bahan-baku.cetak-pdf');
     Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
+    Route::delete('pengeluaran-bahan-baku/{id}/detail/{detailId}', [PengeluaranBahanBakuController::class, 'destroyDetail'])->name('pengeluaran-bahan-baku.detail.destroy');
     Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
 
     Route::get('pembelian/suggestions', [PembelianController::class, 'suggestions'])->name('pembelian.suggestions');

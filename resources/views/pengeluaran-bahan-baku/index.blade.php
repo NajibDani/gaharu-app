@@ -294,9 +294,11 @@
                                     @php
                                         $user = auth()->user();
                                         $canApprove = $user && $user->canApprovePengeluaran();
+                                        $isSuperAdmin = $user && $user->isSuperAdmin();
+                                        $isDraft = strtolower($item->status) === 'draft';
                                     @endphp
 
-                                    @if(strtolower($item->status) == 'draft')
+                                    @if($isDraft)
                                         <a href="{{ route('pengeluaran-bahan-baku.edit', $item->id) }}"
                                            class="btn btn-warning btn-sm" title="Edit Permintaan / Pengeluaran">
                                             <i class="bi bi-pencil"></i>
@@ -315,6 +317,19 @@
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="btn btn-danger btn-sm text-white" title="Hapus Draft">
+                                                <i class="bi bi-trash-fill"></i>
+                                            </button>
+                                        </form>
+                                    @elseif($isSuperAdmin)
+                                        {{-- SUPER ADMIN BOLEH EDIT & HAPUS APPROVED --}}
+                                        <a href="{{ route('pengeluaran-bahan-baku.edit', $item->id) }}"
+                                           class="btn btn-warning btn-sm" title="Edit Pengeluaran (Super Admin)">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </a>
+                                        <form action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline" onsubmit="return confirm('PERINGATAN SUPER ADMIN: Dokumen {{ $item->kode_pengeluaran }} ini telah disetujui.\nMenghapusnya akan membatalkan pemotongan/mutasi stok dan mengembalikannya ke gudang asal.\n\nYakin ingin menghapus?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="btn btn-danger btn-sm text-white" title="Hapus Pengeluaran Approved (Super Admin)">
                                                 <i class="bi bi-trash-fill"></i>
                                             </button>
                                         </form>
@@ -468,6 +483,8 @@ function renderDetailPengeluaran(data) {
         return 'Rp ' + num.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDec });
     };
 
+    let canModifyItems = data.is_superadmin || !data.is_approved;
+
     let rows = '';
     data.details.forEach(function (d, index) {
         let hasKonv = d.has_konversi;
@@ -480,6 +497,16 @@ function renderDetailPengeluaran(data) {
             : `<span class="text-success fw-semibold"><i class="bi bi-check2"></i> 0</span>`;
 
         let statusPill = `<span class="badge bg-${d.status_color}-subtle text-${d.status_color} border border-${d.status_color}-subtle px-2 py-1">${d.status_stok}</span>`;
+
+        let deleteItemBtn = canModifyItems ? `
+            <td class="text-center">
+                ${data.details.length > 1 ? `
+                    <button type="button" class="btn btn-outline-danger btn-sm p-1" title="Hapus item ${d.nama_barang}" onclick="deleteModalDetailItem(${data.id}, ${d.id}, '${d.nama_barang.replace(/'/g, "\\'")}', ${data.is_approved})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                ` : `<span class="text-muted small">-</span>`}
+            </td>
+        ` : '';
 
         rows += `
             <tr>
@@ -512,6 +539,7 @@ function renderDetailPengeluaran(data) {
                 <td class="text-end fw-bold text-dark">
                     ${formatCurrency(d.total_harga)}
                 </td>
+                ${deleteItemBtn}
             </tr>
         `;
     });
@@ -543,7 +571,18 @@ function renderDetailPengeluaran(data) {
                             ? `<button type="button" class="btn btn-secondary btn-sm px-3 fw-semibold shadow-sm" disabled title="Tidak dapat di-approve karena stok di gudang sumber tidak mencukupi"><i class="bi bi-x-circle me-1"></i> Stok Kurang (Tidak Bisa Di-Approve)</button>`
                             : `<a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')"><i class="bi bi-check-circle me-1"></i> Approve Pengeluaran</a>`
                     ) : ''}
-                ` : ''}
+                ` : (data.is_superadmin ? `
+                    <form action="${data.delete_url}" method="POST" class="d-inline" onsubmit="return confirm('PERINGATAN SUPERADMIN: Dokumen ini telah disetujui.\nMenghapus dokumen ini akan membatalkan pemotongan/mutasi stok secara otomatis.\n\nYakin ingin menghapus seluruh dokumen?')">
+                        <input type="hidden" name="_token" value="${csrfToken}">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm" title="Hapus Dokumen Approved">
+                            <i class="bi bi-trash-fill me-1"></i> Hapus Dokumen (Superadmin)
+                        </button>
+                    </form>
+                    <a href="${data.edit_url}" class="btn btn-warning btn-sm px-3 fw-semibold shadow-sm">
+                        <i class="bi bi-pencil-square me-1"></i> Edit Pengeluaran (Superadmin)
+                    </a>
+                ` : '')}
             </div>
         </div>
     `;
@@ -641,6 +680,7 @@ function renderDetailPengeluaran(data) {
                             <th width="130">Ketersediaan</th>
                             <th width="110" class="text-end">Harga Satuan</th>
                             <th width="130" class="text-end">Total HPP</th>
+                            ${canModifyItems ? '<th width="50" class="text-center">Aksi</th>' : ''}
                         </tr>
                     </thead>
                     <tbody>
@@ -650,6 +690,7 @@ function renderDetailPengeluaran(data) {
                         <tr>
                             <th colspan="7" class="text-end fw-bold">Total Nilai HPP ${!data.is_approved ? '<span class="text-muted fw-normal small">(Estimasi)</span>' : ''}:</th>
                             <th class="text-end fw-bold fs-6" style="color:#7A4517;">${formatCurrency(data.grand_total)}</th>
+                            ${canModifyItems ? '<th></th>' : ''}
                         </tr>
                     </tfoot>
                 </table>
@@ -901,6 +942,38 @@ function printModalContent() {
         printWindow.print();
         printWindow.close();
     }, 500);
+}
+
+function deleteModalDetailItem(pengeluaranId, detailId, namaBarang, isApproved) {
+    let warningMsg = isApproved
+        ? `PERINGATAN SUPER ADMIN:\nDokumen ini telah disetujui (Approved).\nMenghapus item "${namaBarang}" akan membatalkan pemotongan/mutasi stok dan mengembalikan stok ke posisi semula.\n\nYakin ingin menghapus item ini?`
+        : `Yakin ingin menghapus item "${namaBarang}" dari dokumen ini?`;
+
+    if (!confirm(warningMsg)) return;
+
+    let csrfToken = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
+
+    fetch(`/pengeluaran-bahan-baku/${pengeluaranId}/detail/${detailId}`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': csrfToken,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.success) {
+            // Refresh detail modal
+            showDetailPengeluaran(pengeluaranId);
+        } else {
+            alert(res.message || 'Gagal menghapus item.');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Terjadi kesalahan saat menghapus item.');
+    });
 }
 </script>
 

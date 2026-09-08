@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\PengeluaranBahanBaku;
+use App\Models\PengeluaranBahanBakuFifo;
 use App\Models\MasterGudang;
 use App\Models\StokGudangBatch;
 
@@ -109,6 +110,18 @@ class PengeluaranBahanBakuService
                         'harga_per_qty'       => $layer['harga_per_qty'], // Harga modal ikut terbawa otomatis!
                         'is_habis'            => false,
                     ]);
+
+                    if (!empty($layer['batch_id'])) {
+                        PengeluaranBahanBakuFifo::create([
+                            'pengeluaran_id' => $pengeluaran->id,
+                            'detail_id'      => $detail->id,
+                            'batch_id'       => $layer['batch_id'],
+                            'batch_number'   => $layer['batch_number'],
+                            'qty_keluar'     => $layer['qty_keluar'],
+                            'harga_per_qty'  => $layer['harga_per_qty'],
+                            'total_harga'    => $totalHarga,
+                        ]);
+                    }
                 }
 
                 // Update detail dengan nominal HPP FIFO yang benar

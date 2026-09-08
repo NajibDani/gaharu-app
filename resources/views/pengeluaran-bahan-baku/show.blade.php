@@ -160,6 +160,9 @@
                             <th width="140" class="text-center">Ketersediaan</th>
                             <th width="140" class="text-end">Harga Satuan</th>
                             <th width="160" class="text-end">Total HPP</th>
+                            @if($isSuperAdmin || $pengeluaran->status === 'draft')
+                                <th width="60" class="text-center">Aksi</th>
+                            @endif
                         </tr>
                     </thead>
                     <tbody>
@@ -206,7 +209,7 @@
                                     {{ number_format($qtyDiminta, 2, ',', '.') }} <span class="text-muted fw-normal small">{{ $satuan }}</span>
                                     @if($hasKonv)
                                         <div class="text-primary fw-normal small" style="font-size: 11px;">
-                                            = {{ number_format($qtyDiminta / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
+                                             = {{ number_format($qtyDiminta / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
                                         </div>
                                     @endif
                                 </td>
@@ -249,10 +252,25 @@
                                 <td class="text-end fw-bold text-dark">
                                     Rp {{ number_format($detail->hpp_total, $decHppShow, ',', '.') }}
                                 </td>
+                                @if($isSuperAdmin || $pengeluaran->status === 'draft')
+                                    <td class="text-center">
+                                        @if($pengeluaran->details->count() > 1)
+                                            <form action="{{ route('pengeluaran-bahan-baku.detail.destroy', [$pengeluaran->id, $detail->id]) }}" method="POST" class="d-inline" onsubmit="return confirm('Hapus item {{ $detail->barang->nama ?? 'ini' }} dari pengeluaran? {{ $isApproved ? 'Stok akan otomatis dikembalikan ke gudang asal.' : '' }}')">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-outline-danger btn-sm p-1" title="Hapus Item Ini">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </form>
+                                        @else
+                                            <span class="text-muted small" title="Satu-satunya item">-</span>
+                                        @endif
+                                    </td>
+                                @endif
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">Tidak ada detail bahan baku.</td>
+                                <td colspan="{{ ($isSuperAdmin || $pengeluaran->status === 'draft') ? 9 : 8 }}" class="text-center text-muted py-4">Tidak ada detail bahan baku.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -268,6 +286,9 @@
                             <td class="text-end fs-6" style="color:#7A4517;">
                                 Rp {{ number_format($grandTotal, 2, ',', '.') }}
                             </td>
+                            @if($isSuperAdmin || $pengeluaran->status === 'draft')
+                                <td></td>
+                            @endif
                         </tr>
                     </tfoot>
                 </table>
@@ -305,6 +326,38 @@
                     <i class="bi bi-check-circle me-1"></i> Approve Pengeluaran
                 </a>
             @endif
+        </div>
+    </div>
+@elseif($isApproved && $isSuperAdmin)
+    <div class="card border-warning shadow-sm rounded-4 mt-4" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-left: 5px solid #f59e0b !important;">
+        <div class="card-body p-3 p-md-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold text-dark mb-1">
+                            Akses Khusus Super Admin: Edit & Hapus Pengeluaran Approved
+                        </h6>
+                        <p class="text-muted small mb-0">
+                            Dokumen ini telah disetujui (Approved). Sebagai Super Admin, Anda dapat mengedit item / kuantitas atau menghapus pengeluaran ini jika terjadi kesalahan. Sistem akan secara otomatis membalikkan (rollback) dan menyinkronkan stok di gudang terkait.
+                        </p>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <a href="{{ route('pengeluaran-bahan-baku.edit', $pengeluaran->id) }}" class="btn btn-warning fw-semibold shadow-sm">
+                        <i class="bi bi-pencil-square me-1"></i> Edit Pengeluaran (Super Admin)
+                    </a>
+                    <form action="{{ route('pengeluaran-bahan-baku.destroy', $pengeluaran->id) }}" method="POST" class="d-inline" onsubmit="return confirm('PERINGATAN SUPER ADMIN:\nDokumen {{ $pengeluaran->kode_pengeluaran }} ini telah disetujui.\nMenghapus dokumen ini akan membatalkan seluruh mutasi stok dan mengembalikan stok ke gudang asal.\n\nYakin ingin melanjutkan penghapusan?')">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="btn btn-danger fw-semibold shadow-sm">
+                            <i class="bi bi-trash-fill me-1"></i> Hapus Seluruh Dokumen
+                        </button>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 @endif

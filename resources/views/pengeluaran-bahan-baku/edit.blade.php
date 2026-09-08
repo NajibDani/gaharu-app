@@ -40,6 +40,24 @@
     </div>
 </div>
 
+@if(!empty($isApproved))
+    <div class="alert alert-warning border-warning shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-left: 5px solid #f59e0b !important;">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-warning text-dark d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                <i class="bi bi-shield-exclamation"></i>
+            </div>
+            <div>
+                <h6 class="fw-bold text-dark mb-1">
+                    Mode Edit Super Admin (Dokumen Sudah Disetujui / Approved)
+                </h6>
+                <p class="text-muted small mb-0">
+                    Dokumen pengeluaran ini sebelumnya telah disetujui. Menyimpan perubahan (menambah/menghapus barang atau mengubah kuantitas) akan <strong>secara otomatis membalikkan mutasi stok lama</strong> dan <strong>menerapkan alokasi stok baru</strong> di Gudang Utama dan Gudang Tujuan.
+                </p>
+            </div>
+        </div>
+    </div>
+@endif
+
 <div class="card shadow-sm border-0 rounded-4">
     <div class="card-header text-white fw-bold py-3"
         style="background:#9c4f18; border-radius:24px 24px 0 0;">
