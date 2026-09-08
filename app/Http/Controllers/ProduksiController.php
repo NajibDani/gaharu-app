@@ -28,6 +28,8 @@ class ProduksiController extends Controller
     */
     public function index(Request $request)
     {
+        MasterBarang::syncAllResepIds();
+
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
 
@@ -454,8 +456,9 @@ class ProduksiController extends Controller
                 }
 
                 $totalBbbProduk = 0;
-                if ($produk->resep_id) {
-                    $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
+                $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                if ($resepId) {
+                    $resepItems = ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
                         $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
                         
@@ -1164,7 +1167,8 @@ class ProduksiController extends Controller
                     throw new \Exception("ID Produk {$produkId} tidak valid.");
                 }
 
-                if (is_null($produk->resep_id)) {
+                $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                if (is_null($resepId)) {
                     throw new \Exception("Produk '{$produk->nama}' belum memiliki resep.");
                 }
 
@@ -1174,7 +1178,7 @@ class ProduksiController extends Controller
                 $outputQty = ($biayaTambahan && floatval($biayaTambahan->output_qty) > 0) ? floatval($biayaTambahan->output_qty) : 1;
 
                 // A. FIFO BAHAN BAKU
-                $resepItems = ResepBahanBaku::where('resep_id', $produk->resep_id)->with(['bahan', 'alternatif.bahan'])->get();
+                $resepItems = ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get();
 
                 foreach ($resepItems as $item) {
                     $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;

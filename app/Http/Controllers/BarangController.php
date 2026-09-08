@@ -20,6 +20,8 @@ class BarangController extends Controller
 
     public function index(Request $request)
     {
+        MasterBarang::syncAllResepIds();
+
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';
         $gudangRole = $roleName === 'Kepala Gudang' ? 'Kepala Gudang' : null;
@@ -348,7 +350,9 @@ class BarangController extends Controller
     
         $data->update([
             'kategori_id' => $request->kategori_id,
-            'resep_id'    => $request->resep_id, 
+            'resep_id'    => $request->filled('resep_id') 
+                ? $request->resep_id 
+                : ($data->resep_id ?: ($data->resepBtklBop ? $data->resepBtklBop->id : null)), 
             'kode_barang' => $request->kode_barang,
             'nama'        => $request->nama,
             'satuan'      => $request->satuan,

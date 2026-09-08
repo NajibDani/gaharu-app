@@ -15,6 +15,8 @@ class ResepBtklBopController extends Controller
 {
     public function index(Request $request)
     {
+        MasterBarang::syncAllResepIds();
+
         $search = $request->query('search');
 
         $query = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku.bahan', 'bahanbaku.alternatif.bahan']);

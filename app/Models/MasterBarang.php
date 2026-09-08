@@ -119,10 +119,28 @@ public function firstFifoLayer()
         return 'UMUM';
     }
 
+    public function getResepIdAttribute($value)
+    {
+        if (!empty($value)) {
+            return $value;
+        }
+        if ($this->relationLoaded('resepBtklBop') && $this->resepBtklBop) {
+            return $this->resepBtklBop->id;
+        }
+        return $this->resepBtklBop()->value('id');
+    }
+
     public function resep()
     {
-        // Gunakan hasMany karena satu resep_id memiliki banyak item bahan baku
-        return $this->hasMany(ResepBahanBaku::class, 'resep_id', 'resep_id');
+        // Hubungkan langsung ke resep_bahanbaku melalui tabel header resep_btkl_bop
+        return $this->hasManyThrough(
+            ResepBahanBaku::class,
+            ResepBtklBop::class,
+            'produk_id', // Foreign key on resep_btkl_bop
+            'resep_id',  // Foreign key on resep_bahanbaku
+            'id',        // Local key on master_barang
+            'id'         // Local key on resep_btkl_bop
+        );
     }
 public function stockOpnameDetails()
 {
@@ -141,4 +159,18 @@ public function resepBtklBop()
 {
     return $this->hasOne(ResepBtklBop::class, 'produk_id');
 }
+
+    /**
+     * Auto-heal & sinkronkan kolom resep_id di tabel master_barang dengan resep_btkl_bop
+     */
+    public static function syncAllResepIds(): void
+    {
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->join('resep_btkl_bop', 'master_barang.id', '=', 'resep_btkl_bop.produk_id')
+            ->where(function ($q) {
+                $q->whereNull('master_barang.resep_id')
+                  ->orWhereColumn('master_barang.resep_id', '!=', 'resep_btkl_bop.id');
+            })
+            ->update(['master_barang.resep_id' => \Illuminate\Support\Facades\DB::raw('resep_btkl_bop.id')]);
+    }
 }
