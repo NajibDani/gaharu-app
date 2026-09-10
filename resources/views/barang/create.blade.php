@@ -46,8 +46,8 @@
 
                     <div class="col-md-6 mb-3">
                         <label class="fw-semibold small text-muted">Satuan Utama</label>
-                        <input type="text" name="satuan" id="satuan" class="form-control" required placeholder="Contoh: kg, pcs, liter, gr, ml">
-                        <small class="form-text text-danger d-none" id="satuan-helper">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).</small>
+                        <input type="text" name="satuan" id="satuan" class="form-control" required placeholder="Contoh: kg, pcs, liter, gr, ml, porsi">
+                        <small class="form-text text-danger d-none" id="satuan-helper">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.</small>
                     </div>
 
                     <div class="col-md-6 mb-3">
@@ -155,11 +155,11 @@ document.addEventListener("DOMContentLoaded", function () {
             if (satuanHelper) satuanHelper.classList.remove('d-none');
 
             if (lblSatuanBeli) lblSatuanBeli.innerHTML = 'Satuan Konversi / Porsi / Pack <span class="text-primary">(BSJ)</span>';
-            if (lblKonversiBeli) lblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML)</span>';
+            if (lblKonversiBeli) lblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML/Porsi)</span>';
             if (inpSatuanBeli) inpSatuanBeli.placeholder = 'Contoh: PACK, PORSI, CUP';
             if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 100 (jika 1 PACK = 100 GR)';
             if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan takaran untuk resep/permintaan produksi (misal: PACK/PORSI).';
-            if (helpKonversiBeli) helpKonversiBeli.textContent = 'Berapa gram atau ml isi dalam 1 porsi/pack ini.';
+            if (helpKonversiBeli) helpKonversiBeli.textContent = 'Berapa gram, ml, atau porsi isi dalam 1 porsi/pack ini.';
         } else if (jenis.value === "BAHAN_BAKU") {
             groupMinStock.style.display = "block";
             groupMinStockBsj.style.display = "none";

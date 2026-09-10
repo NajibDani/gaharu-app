@@ -36,9 +36,9 @@ class BahanSetengahJadiSatuanTest extends TestCase
         $response = $this->post(route('barang.store'), [
             'kategori_id' => $kategori->id,
             'kode_barang' => 'BB-100',
-            'nama' => 'Test BSJ Portions',
+            'nama' => 'Test BSJ Box',
             'jenis_utama' => 'BAHAN_SETENGAH_JADI',
-            'satuan' => 'PORSI',
+            'satuan' => 'BOX',
             'minimum_stock_ck' => 10,
         ]);
 
@@ -80,6 +80,23 @@ class BahanSetengahJadiSatuanTest extends TestCase
         $this->assertDatabaseHas('master_barang', [
             'kode_barang' => 'BB-102',
             'satuan' => 'ML',
+            'is_bahan_setengah_jadi' => true,
+        ]);
+
+        // Test PORSI/porsi
+        $response3 = $this->post(route('barang.store'), [
+            'kategori_id' => $kategori->id,
+            'kode_barang' => 'BB-103',
+            'nama' => 'Test BSJ Porsi',
+            'jenis_utama' => 'BAHAN_SETENGAH_JADI',
+            'satuan' => 'porsi',
+            'minimum_stock_ck' => 10,
+        ]);
+
+        $response3->assertRedirect(route('barang.index'));
+        $this->assertDatabaseHas('master_barang', [
+            'kode_barang' => 'BB-103',
+            'satuan' => 'PORSI',
             'is_bahan_setengah_jadi' => true,
         ]);
     }

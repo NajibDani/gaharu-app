@@ -210,14 +210,16 @@ class MasterBarangImporter
 
             if ($jenisUtama === 'BAHAN_SETENGAH_JADI') {
                 $satuanClean = strtoupper(trim($satuan));
-                if (!in_array($satuanClean, ['GR', 'ML', 'GRAM', 'MILILITER'])) {
-                    $this->errors[] = "Baris {$excelRowNum}: Untuk Bahan Setengah Jadi, satuan '{$satuan}' tidak valid (harus gram/gr atau mililiter/ml), dilewati.";
+                if (!in_array($satuanClean, ['GR', 'ML', 'GRAM', 'MILILITER', 'PORSI'])) {
+                    $this->errors[] = "Baris {$excelRowNum}: Untuk Bahan Setengah Jadi, satuan '{$satuan}' tidak valid (harus gram/gr, mililiter/ml, atau porsi), dilewati.";
                     continue;
                 }
                 if ($satuanClean === 'GRAM') {
                     $satuan = 'GR';
                 } elseif ($satuanClean === 'MILILITER') {
                     $satuan = 'ML';
+                } elseif ($satuanClean === 'PORSI') {
+                    $satuan = 'PORSI';
                 } else {
                     $satuan = $satuanClean;
                 }

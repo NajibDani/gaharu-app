@@ -327,9 +327,9 @@
 
                         <div class="col-md-6 mb-3">
                             <label class="custom-label">Satuan Utama</label>
-                            <input type="text" name="satuan" id="satuan_input_create" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter, ml">
+                            <input type="text" name="satuan" id="satuan_input_create" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter, ml, porsi">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            <small class="form-text text-danger d-none" id="satuan-helper-create">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).</small>
+                            <small class="form-text text-danger d-none" id="satuan-helper-create">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.</small>
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -696,9 +696,9 @@
 
                         <div class="col-md-6 mb-3">
                             <label class="custom-label">Satuan Utama</label>
-                            <input type="text" name="satuan" id="editSatuan" class="form-control custom-input @error('satuan') is-invalid @enderror" required placeholder="Contoh: kg, pcs, liter, ml">
+                            <input type="text" name="satuan" id="editSatuan" class="form-control custom-input @error('satuan') is-invalid @enderror" required placeholder="Contoh: kg, pcs, liter, ml, porsi">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            <small class="form-text text-danger d-none" id="satuan-helper-edit">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).</small>
+                            <small class="form-text text-danger d-none" id="satuan-helper-edit">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.</small>
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -997,11 +997,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             // Khusus BSJ: jadikan satuan konversi / porsi / pack
             if (lblSatuanBeli) lblSatuanBeli.innerHTML = 'Satuan Konversi / Porsi / Pack <span class="text-primary">(BSJ)</span>';
-            if (lblKonversiBeli) lblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML)</span>';
+            if (lblKonversiBeli) lblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML/Porsi)</span>';
             if (inpSatuanBeli) inpSatuanBeli.placeholder = 'Contoh: PACK, PORSI, CUP';
             if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 100 (jika 1 PACK = 100 GR)';
             if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan takaran untuk resep/permintaan produksi (misal: PACK/PORSI).';
-            if (helpKonversiBeli) helpKonversiBeli.textContent = 'Berapa gram atau ml isi dalam 1 porsi/pack ini.';
+            if (helpKonversiBeli) helpKonversiBeli.textContent = 'Berapa gram, ml, atau porsi isi dalam 1 porsi/pack ini.';
         } else {
             groupMinStock.style.display = "none";
             if (groupMinStockBb) groupMinStockBb.style.display = "none";
@@ -1207,11 +1207,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
             // Khusus BSJ
             if (editLblSatuanBeli) editLblSatuanBeli.innerHTML = 'Satuan Konversi / Porsi / Pack <span class="text-primary">(BSJ)</span>';
-            if (editLblKonversiBeli) editLblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML)</span>';
+            if (editLblKonversiBeli) editLblKonversiBeli.innerHTML = 'Isi per Porsi / Pack <span class="text-primary">(dalam Gram/ML/Porsi)</span>';
             if (editInpSatuanBeli) editInpSatuanBeli.placeholder = 'Contoh: PACK, PORSI, CUP';
             if (editInpKonversiBeli) editInpKonversiBeli.placeholder = 'Contoh: 100 (jika 1 PACK = 100 GR)';
             if (editHelpSatuanBeli) editHelpSatuanBeli.textContent = 'Satuan takaran untuk resep/permintaan produksi (misal: PACK/PORSI).';
-            if (editHelpKonversiBeli) editHelpKonversiBeli.textContent = 'Berapa gram atau ml isi dalam 1 porsi/pack ini.';
+            if (editHelpKonversiBeli) editHelpKonversiBeli.textContent = 'Berapa gram, ml, atau porsi isi dalam 1 porsi/pack ini.';
         } else {
             editGroupMinStock.style.display = "none";
             if (editGroupMinStockBb) editGroupMinStockBb.style.display = "none";

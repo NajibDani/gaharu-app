@@ -148,9 +148,9 @@ class BarangController extends Controller
 
         if ($request->jenis_utama === 'BAHAN_SETENGAH_JADI') {
             $request->validate([
-                'satuan' => 'required|in:gr,ml,GR,ML,gram,mililiter,Gram,Mililiter',
+                'satuan' => 'required|in:gr,ml,porsi,GR,ML,PORSI,gram,mililiter,Gram,Mililiter,Porsi',
             ], [
-                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).',
+                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.',
             ]);
             
             $satuanUpper = strtoupper(trim($request->satuan));
@@ -158,6 +158,8 @@ class BarangController extends Controller
                 $satuanUpper = 'GR';
             } elseif ($satuanUpper === 'MILILITER') {
                 $satuanUpper = 'ML';
+            } elseif ($satuanUpper === 'PORSI') {
+                $satuanUpper = 'PORSI';
             }
             $request->merge(['satuan' => $satuanUpper]);
         }
@@ -298,9 +300,9 @@ class BarangController extends Controller
 
         if ($request->jenis_utama === 'BAHAN_SETENGAH_JADI') {
             $request->validate([
-                'satuan' => 'required|in:gr,ml,GR,ML,gram,mililiter,Gram,Mililiter',
+                'satuan' => 'required|in:gr,ml,porsi,GR,ML,PORSI,gram,mililiter,Gram,Mililiter,Porsi',
             ], [
-                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr) atau mililiter (ml).',
+                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.',
             ]);
             
             $satuanUpper = strtoupper(trim($request->satuan));
@@ -308,6 +310,8 @@ class BarangController extends Controller
                 $satuanUpper = 'GR';
             } elseif ($satuanUpper === 'MILILITER') {
                 $satuanUpper = 'ML';
+            } elseif ($satuanUpper === 'PORSI') {
+                $satuanUpper = 'PORSI';
             }
             $request->merge(['satuan' => $satuanUpper]);
         }
