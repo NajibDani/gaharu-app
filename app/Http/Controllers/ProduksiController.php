@@ -212,7 +212,15 @@ class ProduksiController extends Controller
 
         $customers = \App\Models\Customer::orderBy('nama')->get();
 
-        return view('produksi.index', compact('pesananB2BPending', 'woList', 'riwayatProduksi', 'totalData', 'totalDraft', 'totalApproved', 'customers', 'customerId'));
+        $allProdukCold = MasterBarang::where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_barang_jadi', true)
+                  ->orWhere('is_bahan_setengah_jadi', true);
+            })
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        return view('produksi.index', compact('pesananB2BPending', 'woList', 'riwayatProduksi', 'totalData', 'totalDraft', 'totalApproved', 'customers', 'customerId', 'allProdukCold'));
     }
 
     /**
@@ -670,9 +678,14 @@ class ProduksiController extends Controller
         }
 
         $request->validate([
-            'detail_id'   => 'required|array',
-            'qty_baru'    => 'required|array',
-            'alasan_edit' => 'nullable|string|max:255',
+            'detail_id'          => 'nullable|array',
+            'qty_baru'           => 'nullable|array',
+            'satuan_input_edit'  => 'nullable|array',
+            'deleted_detail_ids' => 'nullable|array',
+            'new_produk_id'      => 'nullable|array',
+            'new_qty'            => 'nullable|array',
+            'new_satuan_input'   => 'nullable|array',
+            'alasan_edit'        => 'nullable|string|max:255',
         ]);
 
         $wo = WorkOrder::with(['details.produk', 'details.pesanan'])->findOrFail($id);
@@ -686,6 +699,25 @@ class ProduksiController extends Controller
             return back()->with('error', 'Gagal: Work Order ' . $wo->kode_wo . ' sudah memiliki pengiriman berstatus Selesai dan tidak dapat diedit lagi.');
         }
 
+        // Tentukan pesanan ID default dari detail yang ada
+        $defaultPesananId = $pesananIds->first() ?? null;
+
+        // Validasi: Pastikan setelah hapus & tambah, WO tidak kosong
+        $deletedIds = collect($request->deleted_detail_ids ?? [])->map(fn($v) => intval($v))->filter()->toArray();
+        $existingDetailIds = $wo->details->pluck('id')->toArray();
+        $remainingCount = count(array_diff($existingDetailIds, $deletedIds));
+        $newValidCount = 0;
+        if (!empty($request->new_produk_id)) {
+            foreach ($request->new_produk_id as $nKey => $nPid) {
+                if (!empty($nPid) && floatval($request->new_qty[$nKey] ?? 0) > 0) {
+                    $newValidCount++;
+                }
+            }
+        }
+        if (($remainingCount + $newValidCount) <= 0) {
+            return back()->with('error', 'Gagal: Work Order harus memiliki minimal 1 item produk. Tidak dapat menghapus seluruh item.');
+        }
+
         DB::beginTransaction();
         try {
             $gudangB2B = MasterGudang::where('nama', 'like', '%Cold Kitchen%')->first()
@@ -695,88 +727,283 @@ class ProduksiController extends Controller
             $gudangB2BId = $gudangB2B ? $gudangB2B->id : 4;
             $isSelesai = (strtolower($wo->status_wo) === 'selesai');
 
-            foreach ($request->detail_id as $key => $detailId) {
-                $wod = WorkOrderDetail::where('work_order_id', $wo->id)->where('id', $detailId)->first();
-                if (!$wod) continue;
+            // 1. PROSES HAPUS ITEM (DELETED DETAILS)
+            if (!empty($deletedIds)) {
+                foreach ($deletedIds as $delId) {
+                    $delWod = WorkOrderDetail::where('work_order_id', $wo->id)->where('id', $delId)->first();
+                    if (!$delWod) continue;
 
-                $oldQty = floatval($wod->qty_rencana);
-                $rawQty = floatval($request->qty_baru[$key] ?? 0);
-                $unitChoice = $request->satuan_input_edit[$key] ?? 'dasar';
-                $newQty = $rawQty;
+                    $delQty = floatval($delWod->qty_rencana);
+                    $delProdukId = $delWod->produk_id;
+                    $delPesananId = $delWod->pesanan_id;
 
-                $produk = $wod->produk ?? MasterBarang::find($wod->produk_id);
-                if ($unitChoice === 'konversi' && $produk && floatval($produk->konversi_pembelian) > 1) {
-                    $newQty = $rawQty * floatval($produk->konversi_pembelian);
-                }
-
-                if ($newQty < 0) {
-                    throw new \Exception("Kuantitas produk tidak boleh negatif.");
-                }
-
-                $deltaQty = $newQty - $oldQty;
-
-                // Update WorkOrderDetail
-                $wod->update(['qty_rencana' => $newQty]);
-
-                // Update PesananDetail
-                $pesDetail = PesananDetail::where('pesanan_id', $wod->pesanan_id)
-                    ->where('produk_id', $wod->produk_id)
-                    ->first();
-                if ($pesDetail) {
-                    $hargaUnit = floatval($pesDetail->harga);
-                    $pesDetail->update([
-                        'qty'      => $newQty,
-                        'subtotal' => $newQty * $hargaUnit,
-                    ]);
-                }
-
-                // Jika WO sudah Selesai (sudah dialokasikan hasil produksinya):
-                if ($isSelesai) {
-                    $alokasiList = ProduksiPesanan::where('pesanan_id', $wod->pesanan_id)
-                        ->where('produk_id', $wod->produk_id)
-                        ->get();
-
-                    if ($alokasiList->isNotEmpty()) {
-                        $lastAlokasi = $alokasiList->last();
-                        $hppPerUnit  = floatval($lastAlokasi->hpp_per_unit);
-                        $newAlokasiQty = max(0, floatval($lastAlokasi->qty_alokasi) + $deltaQty);
-                        $lastAlokasi->update([
-                            'qty_alokasi'       => $newAlokasiQty,
-                            'total_hpp_alokasi' => $newAlokasiQty * $hppPerUnit,
-                        ]);
-
-                        // Update produksi_detail terkait
-                        $prodDetail = DB::table('produksi_detail')
-                            ->where('produksi_id', $lastAlokasi->produksi_id)
-                            ->where('produk_id', $wod->produk_id)
-                            ->first();
-                        if ($prodDetail) {
-                            $newProdQty = max(0, floatval($prodDetail->qty) + $deltaQty);
-                            DB::table('produksi_detail')
-                                ->where('id', $prodDetail->id)
-                                ->update([
-                                    'qty'       => $newProdQty,
-                                    'hpp_total' => $newProdQty * $hppPerUnit,
-                                ]);
-                        }
+                    // Hapus dari PesananDetail
+                    if ($delPesananId) {
+                        PesananDetail::where('pesanan_id', $delPesananId)
+                            ->where('produk_id', $delProdukId)
+                            ->delete();
                     }
 
-                    // Sesuaikan stok jadi jika ada selisih
-                    if ($deltaQty != 0) {
+                    // Jika WO sudah Selesai, kurangi/batalkan alokasi & stok
+                    if ($isSelesai && $delQty > 0) {
+                        $alokasiList = ProduksiPesanan::where('pesanan_id', $delPesananId)
+                            ->where('produk_id', $delProdukId)
+                            ->get();
+
+                        if ($alokasiList->isNotEmpty()) {
+                            $lastAlokasi = $alokasiList->last();
+                            $hppPerUnit  = floatval($lastAlokasi->hpp_per_unit);
+                            $newAlokasiQty = max(0, floatval($lastAlokasi->qty_alokasi) - $delQty);
+                            if ($newAlokasiQty <= 0) {
+                                $lastAlokasi->delete();
+                            } else {
+                                $lastAlokasi->update([
+                                    'qty_alokasi'       => $newAlokasiQty,
+                                    'total_hpp_alokasi' => $newAlokasiQty * $hppPerUnit,
+                                ]);
+                            }
+
+                            $prodDetail = DB::table('produksi_detail')
+                                ->where('produksi_id', $lastAlokasi->produksi_id)
+                                ->where('produk_id', $delProdukId)
+                                ->first();
+                            if ($prodDetail) {
+                                $newProdQty = max(0, floatval($prodDetail->qty) - $delQty);
+                                if ($newProdQty <= 0) {
+                                    DB::table('produksi_detail')->where('id', $prodDetail->id)->delete();
+                                } else {
+                                    DB::table('produksi_detail')
+                                        ->where('id', $prodDetail->id)
+                                        ->update([
+                                            'qty'       => $newProdQty,
+                                            'hpp_total' => $newProdQty * $hppPerUnit,
+                                        ]);
+                                }
+                            }
+                        }
+
+                        // Kurangi stok Gudang Cold Kitchen
                         $stokGudang = StokGudang::where('gudang_id', $gudangB2BId)
-                            ->where('barang_id', $wod->produk_id)
+                            ->where('barang_id', $delProdukId)
                             ->first();
                         if ($stokGudang) {
-                            $stokGudang->increment('jumlah', $deltaQty);
+                            $stokGudang->decrement('jumlah', min(floatval($stokGudang->jumlah), $delQty));
                         }
 
                         $batch = StokGudangBatch::where('gudang_id', $gudangB2BId)
-                            ->where('barang_id', $wod->produk_id)
+                            ->where('barang_id', $delProdukId)
                             ->latest()
                             ->first();
                         if ($batch) {
-                            $batch->increment('qty_masuk', $deltaQty);
-                            $batch->increment('qty_sisa', $deltaQty);
+                            $batch->decrement('qty_masuk', min(floatval($batch->qty_masuk), $delQty));
+                            $batch->decrement('qty_sisa', min(floatval($batch->qty_sisa), $delQty));
+                        }
+                    }
+
+                    // Hapus record WorkOrderDetail
+                    $delWod->delete();
+                }
+            }
+
+            // 2. PROSES UPDATE QTY ITEM EKSISTING
+            if (!empty($request->detail_id) && is_array($request->detail_id)) {
+                foreach ($request->detail_id as $key => $detailId) {
+                    if (in_array(intval($detailId), $deletedIds)) {
+                        continue; // Lewati yang sudah dihapus
+                    }
+
+                    $wod = WorkOrderDetail::where('work_order_id', $wo->id)->where('id', $detailId)->first();
+                    if (!$wod) continue;
+
+                    $oldQty = floatval($wod->qty_rencana);
+                    $rawQty = floatval($request->qty_baru[$key] ?? 0);
+                    $unitChoice = $request->satuan_input_edit[$key] ?? 'dasar';
+                    $newQty = $rawQty;
+
+                    $produk = $wod->produk ?? MasterBarang::find($wod->produk_id);
+                    if ($unitChoice === 'konversi' && $produk && floatval($produk->konversi_pembelian) > 1) {
+                        $newQty = $rawQty * floatval($produk->konversi_pembelian);
+                    }
+
+                    if ($newQty <= 0) {
+                        throw new \Exception("Kuantitas produk '{$produk->nama}' harus lebih dari 0. Jika ingin menghapus, gunakan tombol hapus baris.");
+                    }
+
+                    $deltaQty = $newQty - $oldQty;
+
+                    // Update WorkOrderDetail
+                    $wod->update(['qty_rencana' => $newQty]);
+
+                    // Update PesananDetail
+                    $pesDetail = PesananDetail::where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->first();
+                    if ($pesDetail) {
+                        $hargaUnit = floatval($pesDetail->harga);
+                        $pesDetail->update([
+                            'qty'      => $newQty,
+                            'subtotal' => $newQty * $hargaUnit,
+                        ]);
+                    }
+
+                    // Jika WO sudah Selesai (sudah dialokasikan hasil produksinya):
+                    if ($isSelesai) {
+                        $alokasiList = ProduksiPesanan::where('pesanan_id', $wod->pesanan_id)
+                            ->where('produk_id', $wod->produk_id)
+                            ->get();
+
+                        if ($alokasiList->isNotEmpty()) {
+                            $lastAlokasi = $alokasiList->last();
+                            $hppPerUnit  = floatval($lastAlokasi->hpp_per_unit);
+                            $newAlokasiQty = max(0, floatval($lastAlokasi->qty_alokasi) + $deltaQty);
+                            $lastAlokasi->update([
+                                'qty_alokasi'       => $newAlokasiQty,
+                                'total_hpp_alokasi' => $newAlokasiQty * $hppPerUnit,
+                            ]);
+
+                            // Update produksi_detail terkait
+                            $prodDetail = DB::table('produksi_detail')
+                                ->where('produksi_id', $lastAlokasi->produksi_id)
+                                ->where('produk_id', $wod->produk_id)
+                                ->first();
+                            if ($prodDetail) {
+                                $newProdQty = max(0, floatval($prodDetail->qty) + $deltaQty);
+                                DB::table('produksi_detail')
+                                    ->where('id', $prodDetail->id)
+                                    ->update([
+                                        'qty'       => $newProdQty,
+                                        'hpp_total' => $newProdQty * $hppPerUnit,
+                                    ]);
+                            }
+                        }
+
+                        // Sesuaikan stok jadi jika ada selisih
+                        if ($deltaQty != 0) {
+                            $stokGudang = StokGudang::where('gudang_id', $gudangB2BId)
+                                ->where('barang_id', $wod->produk_id)
+                                ->first();
+                            if ($stokGudang) {
+                                $stokGudang->increment('jumlah', $deltaQty);
+                            }
+
+                            $batch = StokGudangBatch::where('gudang_id', $gudangB2BId)
+                                ->where('barang_id', $wod->produk_id)
+                                ->latest()
+                                ->first();
+                            if ($batch) {
+                                $batch->increment('qty_masuk', $deltaQty);
+                                $batch->increment('qty_sisa', $deltaQty);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. PROSES TAMBAH ITEM BARU
+            if (!empty($request->new_produk_id) && is_array($request->new_produk_id)) {
+                foreach ($request->new_produk_id as $nIdx => $newPid) {
+                    if (empty($newPid)) continue;
+                    $rawNewQty = floatval($request->new_qty[$nIdx] ?? 0);
+                    if ($rawNewQty <= 0) continue;
+
+                    $produkNew = MasterBarang::find($newPid);
+                    if (!$produkNew) continue;
+
+                    $unitChoiceNew = $request->new_satuan_input[$nIdx] ?? 'dasar';
+                    $finalNewQty = $rawNewQty;
+                    if ($unitChoiceNew === 'konversi' && floatval($produkNew->konversi_pembelian) > 1) {
+                        $finalNewQty = $rawNewQty * floatval($produkNew->konversi_pembelian);
+                    }
+
+                    // Tentukan harga satuan produk
+                    $hargaSatuan = floatval($produkNew->harga_jual_b2b ?? 0);
+                    if ($hargaSatuan <= 0) {
+                        $hargaSatuan = floatval($produkNew->hpp_referensi ?? 0);
+                    }
+
+                    // Buat / Update PesananDetail
+                    if ($defaultPesananId) {
+                        $pesDetail = PesananDetail::where('pesanan_id', $defaultPesananId)
+                            ->where('produk_id', $newPid)
+                            ->first();
+
+                        if ($pesDetail) {
+                            $updatedQty = floatval($pesDetail->qty) + $finalNewQty;
+                            $pesDetail->update([
+                                'qty'      => $updatedQty,
+                                'subtotal' => $updatedQty * floatval($pesDetail->harga ?: $hargaSatuan),
+                            ]);
+                        } else {
+                            PesananDetail::create([
+                                'pesanan_id' => $defaultPesananId,
+                                'produk_id'  => $newPid,
+                                'qty'        => $finalNewQty,
+                                'harga'      => $hargaSatuan,
+                                'subtotal'   => $finalNewQty * $hargaSatuan,
+                            ]);
+                        }
+                    }
+
+                    // Buat WorkOrderDetail
+                    WorkOrderDetail::create([
+                        'work_order_id' => $wo->id,
+                        'pesanan_id'    => $defaultPesananId,
+                        'produk_id'     => $newPid,
+                        'qty_rencana'   => $finalNewQty,
+                    ]);
+
+                    // Jika WO sudah Selesai, tambahkan stok & alokasi untuk produk baru ini
+                    if ($isSelesai) {
+                        $lastProduksi = Produksi::where('pesanan_id', $defaultPesananId)
+                            ->where('status_produksi', 'Selesai')
+                            ->latest()
+                            ->first();
+
+                        $hppUnitBaru = floatval($produkNew->hpp_referensi ?? 0);
+
+                        if ($lastProduksi) {
+                            // Alokasi produksi pesanan
+                            ProduksiPesanan::create([
+                                'produksi_id'       => $lastProduksi->id,
+                                'pesanan_id'        => $defaultPesananId,
+                                'produk_id'         => $newPid,
+                                'qty_alokasi'       => $finalNewQty,
+                                'hpp_per_unit'      => $hppUnitBaru,
+                                'total_hpp_alokasi' => $finalNewQty * $hppUnitBaru,
+                            ]);
+
+                            // Detail produksi
+                            DB::table('produksi_detail')->insert([
+                                'produksi_id' => $lastProduksi->id,
+                                'produk_id'   => $newPid,
+                                'qty'         => $finalNewQty,
+                                'hpp_total'   => $finalNewQty * $hppUnitBaru,
+                                'created_at'  => now(),
+                                'updated_at'  => now(),
+                            ]);
+                        }
+
+                        // Tambah ke StokGudang Cold Kitchen
+                        $stokGudang = StokGudang::where('gudang_id', $gudangB2BId)
+                            ->where('barang_id', $newPid)
+                            ->first();
+                        if ($stokGudang) {
+                            $stokGudang->increment('jumlah', $finalNewQty);
+                        } else {
+                            StokGudang::create([
+                                'gudang_id' => $gudangB2BId,
+                                'barang_id' => $newPid,
+                                'jumlah'    => $finalNewQty,
+                            ]);
+                        }
+
+                        $batch = StokGudangBatch::where('gudang_id', $gudangB2BId)
+                            ->where('barang_id', $newPid)
+                            ->latest()
+                            ->first();
+                        if ($batch) {
+                            $batch->increment('qty_masuk', $finalNewQty);
+                            $batch->increment('qty_sisa', $finalNewQty);
                         }
                     }
                 }
@@ -798,10 +1025,10 @@ class ProduksiController extends Controller
             }
 
             DB::commit();
-            return redirect()->back()->with('success', "Kuantitas Work Order {$wo->kode_wo} berhasil diperbarui oleh Superadmin!");
+            return redirect()->back()->with('success', "Detail Work Order {$wo->kode_wo} berhasil diperbarui oleh Superadmin!");
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->back()->with('error', 'Gagal memperbarui kuantitas WO: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Gagal memperbarui WO: ' . $e->getMessage());
         }
     }
 

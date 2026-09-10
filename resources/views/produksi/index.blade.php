@@ -685,15 +685,21 @@
                                                                         </div>
                                                                     </div>
 
-                                                                    <h6 class="fw-bold text-dark mb-2 small text-uppercase">Daftar Item & Penyesuaian Kuantitas</h6>
+                                                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                                                        <h6 class="fw-bold text-dark mb-0 small text-uppercase">Daftar Item & Penyesuaian Kuantitas</h6>
+                                                                        <button type="button" class="btn btn-sm btn-outline-success fw-semibold btn-add-item-wo" data-target-table="#tableEditWoCold{{ $wo->id }}">
+                                                                            <i class="bi bi-plus-circle me-1"></i> Tambah Item Baru
+                                                                        </button>
+                                                                    </div>
                                                                     <div class="table-responsive mb-3">
-                                                                        <table class="table table-bordered align-middle text-center mb-0">
+                                                                        <table class="table table-bordered align-middle text-center mb-0" id="tableEditWoCold{{ $wo->id }}">
                                                                             <thead class="table-light">
                                                                                 <tr>
                                                                                     <th style="width: 5%;">No</th>
                                                                                     <th class="text-start">Nama Produk</th>
-                                                                                    <th style="width: 28%;">Qty Saat Ini</th>
-                                                                                    <th style="width: 42%; min-width: 220px;">Qty Baru</th>
+                                                                                    <th style="width: 25%;">Qty Saat Ini</th>
+                                                                                    <th style="width: 40%; min-width: 210px;">Qty Baru</th>
+                                                                                    <th style="width: 8%;">Aksi</th>
                                                                                 </tr>
                                                                             </thead>
                                                                             <tbody>
@@ -706,8 +712,8 @@
                                                                                         $konvVal = $hasKonv ? floatval($p->konversi_pembelian) : 1;
                                                                                         $qtySaatIni = floatval($wod->qty_rencana);
                                                                                     @endphp
-                                                                                    <tr>
-                                                                                        <td>{{ $idx + 1 }}</td>
+                                                                                    <tr class="row-item-wo">
+                                                                                        <td class="row-number">{{ $idx + 1 }}</td>
                                                                                         <td class="text-start">
                                                                                             <div class="fw-bold text-dark">{{ $p->nama ?? 'Produk' }}</div>
                                                                                             <div class="text-muted small">{{ $p->kode_barang ?? '-' }}</div>
@@ -749,21 +755,27 @@
                                                                                                 @endif
                                                                                             </div>
                                                                                         </td>
+                                                                                        <td>
+                                                                                            <button type="button" class="btn btn-outline-danger btn-sm rounded-3 btn-delete-existing-row" data-detail-id="{{ $wod->id }}" title="Hapus item ini dari Work Order">
+                                                                                                <i class="bi bi-trash"></i>
+                                                                                            </button>
+                                                                                        </td>
                                                                                     </tr>
                                                                                 @endforeach
                                                                             </tbody>
                                                                         </table>
                                                                     </div>
+                                                                    <div class="deleted-inputs-container"></div>
 
                                                                     <div class="mb-0">
                                                                         <label class="form-label fw-bold text-secondary small">Alasan / Catatan Penyesuaian (Opsional):</label>
-                                                                        <input type="text" name="alasan_edit" class="form-control form-control-sm" placeholder="Contoh: Koreksi kuantitas sebelum pengiriman">
+                                                                        <input type="text" name="alasan_edit" class="form-control form-control-sm" placeholder="Contoh: Koreksi kuantitas atau penyesuaian menu sebelum pengiriman">
                                                                     </div>
                                                                 </div>
                                                                 <div class="modal-footer bg-light">
                                                                     <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
                                                                     <button type="submit" class="btn btn-warning px-4 fw-bold text-dark">
-                                                                        <i class="bi bi-check2-circle me-1"></i> Simpan Perubahan Qty
+                                                                        <i class="bi bi-check2-circle me-1"></i> Simpan Perubahan WO
                                                                     </button>
                                                                 </div>
                                                             </form>
@@ -1346,5 +1358,160 @@
                 });
             }
         });
+
+        // Produk list Cold Kitchen untuk baris baru
+        const allProdukColdOptions = @json($allProdukCold ?? []);
+
+        // Handler tombol Hapus Baris Eksisting
+        document.addEventListener('click', function(e) {
+            const btnDelExisting = e.target.closest('.btn-delete-existing-row');
+            if (btnDelExisting) {
+                const row = btnDelExisting.closest('tr');
+                const table = row.closest('table');
+                const modal = row.closest('.modal');
+                const detailId = btnDelExisting.getAttribute('data-detail-id');
+                
+                // Hitung jumlah baris yang masih terlihat
+                const visibleRows = table.querySelectorAll('tbody tr:not([style*="display: none"])');
+                if (visibleRows.length <= 1) {
+                    alert('Work Order harus memiliki minimal 1 item produk. Tidak dapat menghapus seluruh item.');
+                    return;
+                }
+
+                if (confirm('Hapus item ini dari Work Order dan pesanan?')) {
+                    // Sembunyikan baris
+                    row.style.display = 'none';
+                    // Nonaktifkan required di dalam baris agar form tetap valid
+                    row.querySelectorAll('input, select').forEach(el => el.disabled = true);
+                    
+                    // Tambahkan hidden input deleted_detail_ids[]
+                    const container = modal.querySelector('.deleted-inputs-container');
+                    if (container) {
+                        const hiddenInput = document.createElement('input');
+                        hiddenInput.type = 'hidden';
+                        hiddenInput.name = 'deleted_detail_ids[]';
+                        hiddenInput.value = detailId;
+                        container.appendChild(hiddenInput);
+                    }
+                    renumberRowsCold(table);
+                }
+            }
+
+            // Handler tombol Hapus Baris Baru
+            const btnDelNew = e.target.closest('.btn-delete-new-row');
+            if (btnDelNew) {
+                const row = btnDelNew.closest('tr');
+                const table = row.closest('table');
+                row.remove();
+                renumberRowsCold(table);
+            }
+
+            // Handler tombol Tambah Baris Baru
+            const btnAdd = e.target.closest('.btn-add-item-wo');
+            if (btnAdd) {
+                const targetTableSel = btnAdd.getAttribute('data-target-table');
+                const table = document.querySelector(targetTableSel);
+                if (!table) return;
+                const tbody = table.querySelector('tbody');
+
+                let optionsHtml = '<option value="">-- Pilih Produk / Item --</option>';
+                allProdukColdOptions.forEach(p => {
+                    const satDasar = p.satuan || 'pcs';
+                    const hasKonv = p.satuan_pembelian && parseFloat(p.konversi_pembelian) > 1;
+                    const satKonv = hasKonv ? p.satuan_pembelian.toUpperCase() : '';
+                    const konvVal = hasKonv ? parseFloat(p.konversi_pembelian) : 1;
+                    optionsHtml += `<option value="${p.id}" data-satuan-dasar="${satDasar}" data-satuan-konv="${satKonv}" data-konversi="${konvVal}">
+                        ${p.nama} (${p.kode_barang || '-'})
+                    </option>`;
+                });
+
+                const newRow = document.createElement('tr');
+                newRow.className = 'row-item-wo table-success-subtle';
+                newRow.innerHTML = `
+                    <td class="row-number">#</td>
+                    <td class="text-start">
+                        <select name="new_produk_id[]" class="form-select form-select-sm select-new-produk-wo fw-bold text-dark" required>
+                            ${optionsHtml}
+                        </select>
+                        <div class="small text-muted mt-1 produk-desc-label">Pilih produk yang ingin ditambahkan</div>
+                    </td>
+                    <td class="fw-semibold text-muted">
+                        <span class="badge bg-info text-dark">Item Baru</span>
+                    </td>
+                    <td>
+                        <div class="input-group input-group-sm flex-nowrap shadow-sm">
+                            <input type="number" name="new_qty[]" class="form-control text-end fw-bold input-qty-edit-wo px-2" 
+                                min="0.01" step="any" placeholder="0" 
+                                data-konversi="1" data-satuan-dasar="pcs" data-satuan-konv="" required>
+                            <select name="new_satuan_input[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 100px; flex: 0 0 100px; padding-left: 8px; padding-right: 22px; font-size: 0.78rem;">
+                                <option value="dasar">PCS</option>
+                            </select>
+                        </div>
+                        <div class="live-konversi-edit-info small text-end mt-1 font-monospace" style="font-size: 11px; min-height: 16.5px;">
+                            <span class="text-muted">-</span>
+                        </div>
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-outline-danger btn-sm rounded-3 btn-delete-new-row" title="Batalkan tambah item ini">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(newRow);
+                renumberRowsCold(table);
+            }
+        });
+
+        // Handler ganti produk pada baris baru
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('select-new-produk-wo')) {
+                const selectEl = e.target;
+                const row = selectEl.closest('tr');
+                const selectedOpt = selectEl.selectedOptions[0];
+                const inputQty = row.querySelector('.input-qty-edit-wo');
+                const unitSelect = row.querySelector('.select-unit-edit-wo');
+                const descLabel = row.querySelector('.produk-desc-label');
+
+                if (!selectedOpt || !selectedOpt.value) {
+                    if (descLabel) descLabel.textContent = 'Pilih produk yang ingin ditambahkan';
+                    return;
+                }
+
+                const satDasar = selectedOpt.getAttribute('data-satuan-dasar') || 'pcs';
+                const satKonv = selectedOpt.getAttribute('data-satuan-konv') || '';
+                const konvVal = parseFloat(selectedOpt.getAttribute('data-konversi') || 1);
+
+                if (descLabel) {
+                    if (konvVal > 1 && satKonv) {
+                        descLabel.textContent = `1 ${satKonv} = ${konvVal.toLocaleString('id-ID')} ${satDasar}`;
+                    } else {
+                        descLabel.textContent = `Satuan dasar: ${satDasar}`;
+                    }
+                }
+
+                inputQty.setAttribute('data-satuan-dasar', satDasar);
+                inputQty.setAttribute('data-satuan-konv', satKonv);
+                inputQty.setAttribute('data-konversi', konvVal);
+
+                // Update opsi satuan
+                let unitOptions = `<option value="dasar">${satDasar.toUpperCase()}</option>`;
+                if (konvVal > 1 && satKonv) {
+                    unitOptions += `<option value="konversi">${satKonv}</option>`;
+                }
+                unitSelect.innerHTML = unitOptions;
+
+                updateLiveKonversiEdit(inputQty);
+            }
+        });
+
+        function renumberRowsCold(table) {
+            let num = 1;
+            table.querySelectorAll('tbody tr').forEach(row => {
+                if (row.style.display !== 'none') {
+                    const numCell = row.querySelector('.row-number');
+                    if (numCell) numCell.textContent = num++;
+                }
+            });
+        }
     </script>
 </x-app-layout>
