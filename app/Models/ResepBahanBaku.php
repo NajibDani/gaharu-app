@@ -25,4 +25,18 @@ class ResepBahanBaku extends Model
     {
         return $this->hasMany(ResepBahanBakuAlternatif::class, 'resep_bahanbaku_id')->orderBy('prioritas');
     }
+
+    public function getSatuanAttribute($value)
+    {
+        if ($this->relationLoaded('bahan') && $this->bahan) {
+            return $this->bahan->satuan ?: $value;
+        }
+        if ($this->bahan_id) {
+            $satuan = $this->bahan()->value('satuan');
+            if ($satuan) {
+                return $satuan;
+            }
+        }
+        return $value;
+    }
 }

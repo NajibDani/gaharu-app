@@ -20,4 +20,18 @@ class ResepBtklBop extends Model
     {
         return $this->hasMany(ResepBahanBaku::class, 'resep_id');
     }
+
+    public function getSatuanOutputAttribute($value)
+    {
+        if ($this->relationLoaded('produk') && $this->produk) {
+            return $this->produk->satuan ?: $value;
+        }
+        if ($this->produk_id) {
+            $satuan = $this->produk()->value('satuan');
+            if ($satuan) {
+                return $satuan;
+            }
+        }
+        return $value;
+    }
 }

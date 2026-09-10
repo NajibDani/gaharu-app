@@ -34,12 +34,12 @@ value="{{ (int) $data->output_qty }}" class="form-control">
 <label>Satuan Output</label>
 
 <input type="text"
-value="{{ $data->satuan_output }}"
+value="{{ $data->produk->satuan ?? $data->satuan_output }}"
 class="form-control" readonly>
 
 <input type="hidden"
 name="satuan_output"
-value="{{ $data->satuan_output }}">
+value="{{ $data->produk->satuan ?? $data->satuan_output }}">
 </div>
 
 {{-- BTKL --}}
@@ -89,7 +89,7 @@ value="{{ (int) $b->qty_bahan }}" class="form-control">
 
 <td>
 <input type="text" name="satuan[]" 
-value="{{ $b->satuan }}" 
+value="{{ $b->bahan->satuan ?? $b->satuan }}" 
 class="form-control" readonly>
 </td>
 

@@ -31,7 +31,7 @@
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body bg-info text-white rounded-3">
                     <small class="text-uppercase fw-bold opacity-75">Target Produksi</small>
-                    <h4 class="mb-0 fw-bold">{{ (int) $resep->output_qty }} {{ $resep->satuan_output }}</h4>
+                    <h4 class="mb-0 fw-bold">{{ (int) $resep->output_qty }} {{ $resep->produk->satuan ?? $resep->satuan_output }}</h4>
                 </div>
             </div>
         </div>
@@ -86,7 +86,7 @@
                         </td>
                         <td class="text-center">{{ $b->qty_bahan }}</td>
                         <td class="text-center">
-                            <span class="badge bg-secondary opacity-75 px-3">{{ $b->satuan ?? '-' }}</span>
+                            <span class="badge bg-secondary opacity-75 px-3">{{ $b->bahan->satuan ?? $b->satuan ?? '-' }}</span>
                         </td>
                     </tr>
                     @empty

@@ -111,7 +111,7 @@ class ResepImporter
                 $this->errors[] = "Produk '{$kodeProduk}': output_qty tidak valid (harus > 0), resep dilewati.";
                 continue;
             }
-            $satuanOutput = $get($firstRow, 'satuan_output') ?: 'Batch';
+            $satuanOutput = ($produk->satuan) ?: ($get($firstRow, 'satuan_output') ?: 'Batch');
             $btkl         = $numeric($get($firstRow, 'btkl_per_batch'), 0);
             $bop          = $numeric($get($firstRow, 'bop_per_batch'), 0);
 
@@ -142,7 +142,7 @@ class ResepImporter
                 } else {
                     $bahanGrouped[$bahan->id] = [
                         'qty'    => $qtyBahan,
-                        'satuan' => $satuanBahan !== '' ? $satuanBahan : ($bahan->satuan ?? '-'),
+                        'satuan' => ($bahan->satuan) ?: ($satuanBahan !== '' ? $satuanBahan : '-'),
                     ];
                 }
             }

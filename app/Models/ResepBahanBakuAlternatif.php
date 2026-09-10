@@ -19,4 +19,18 @@ class ResepBahanBakuAlternatif extends Model
     {
         return $this->belongsTo(ResepBahanBaku::class, 'resep_bahanbaku_id');
     }
+
+    public function getSatuanAttribute($value)
+    {
+        if ($this->relationLoaded('bahan') && $this->bahan) {
+            return $this->bahan->satuan ?: $value;
+        }
+        if ($this->bahan_id) {
+            $satuan = $this->bahan()->value('satuan');
+            if ($satuan) {
+                return $satuan;
+            }
+        }
+        return $value;
+    }
 }

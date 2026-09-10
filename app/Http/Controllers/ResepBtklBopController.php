@@ -16,6 +16,7 @@ class ResepBtklBopController extends Controller
     public function index(Request $request)
     {
         MasterBarang::syncAllResepIds();
+        MasterBarang::syncAllResepSatuan();
 
         $search = $request->query('search');
 
@@ -96,11 +97,14 @@ class ResepBtklBopController extends Controller
             }
         }
 
+        $produk = MasterBarang::find($request->produk_id);
+        $satuanOutput = ($produk && $produk->satuan) ? $produk->satuan : ($request->satuan_output ?? 'Batch');
+
         // 1. Simpan header resep
         $resep = ResepBtklBop::create([
             'produk_id' => $request->produk_id,
             'output_qty' => $request->output_qty,
-            'satuan_output' => $request->satuan_output ?? 'Batch',
+            'satuan_output' => $satuanOutput,
             'btkl_per_batch' => $request->btkl_per_batch ?? 0,
             'bop_per_batch' => $request->bop_per_batch ?? 0,
         ]);
@@ -113,16 +117,17 @@ class ResepBtklBopController extends Controller
         // 2. Simpan Bahan Baku dan Alternatif
         foreach ($request->bahan_ids as $i => $item_bahan_ids) {
             $qty = $request->qty_bahan[$i] ?? 0;
-            $satuan = $request->satuan[$i] ?? '-';
             
             // Bahan utama adalah item pertama (indeks 0)
             $primary_bahan_id = $item_bahan_ids[0];
+            $bahan = MasterBarang::find($primary_bahan_id);
+            $satuanBahan = ($bahan && $bahan->satuan) ? $bahan->satuan : ($request->satuan[$i] ?? '-');
 
             $resepBahan = ResepBahanBaku::create([
                 'resep_id' => $resep->id,
                 'bahan_id' => $primary_bahan_id,
                 'qty_bahan' => $qty,
-                'satuan' => $satuan,
+                'satuan' => $satuanBahan,
             ]);
 
             // Alternatif adalah item berikutnya (indeks 1, 2, dst)
@@ -176,11 +181,14 @@ class ResepBtklBopController extends Controller
             }
         }
 
+        $produk = MasterBarang::find($request->produk_id);
+        $satuanOutput = ($produk && $produk->satuan) ? $produk->satuan : ($request->satuan_output ?? $resep->satuan_output);
+
         // 1. Update header
         $resep->update([
             'produk_id' => $request->produk_id,
             'output_qty' => $request->output_qty,
-            'satuan_output' => $request->satuan_output,
+            'satuan_output' => $satuanOutput,
             'btkl_per_batch' => $request->btkl_per_batch ?? 0,
             'bop_per_batch' => $request->bop_per_batch ?? 0,
         ]);
@@ -195,16 +203,17 @@ class ResepBtklBopController extends Controller
 
         foreach ($request->bahan_ids as $i => $item_bahan_ids) {
             $qty = $request->qty_bahan[$i] ?? 0;
-            $satuan = $request->satuan[$i] ?? '-';
             
             // Bahan utama adalah item pertama (indeks 0)
             $primary_bahan_id = $item_bahan_ids[0];
+            $bahan = MasterBarang::find($primary_bahan_id);
+            $satuanBahan = ($bahan && $bahan->satuan) ? $bahan->satuan : ($request->satuan[$i] ?? '-');
 
             $resepBahan = ResepBahanBaku::create([
                 'resep_id' => $id,
                 'bahan_id' => $primary_bahan_id,
                 'qty_bahan' => $qty,
-                'satuan' => $satuan,
+                'satuan' => $satuanBahan,
             ]);
 
             // Alternatif adalah item berikutnya (indeks 1, 2, dst)

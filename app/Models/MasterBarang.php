@@ -173,4 +173,24 @@ public function resepBtklBop()
             })
             ->update(['master_barang.resep_id' => \Illuminate\Support\Facades\DB::raw('resep_btkl_bop.id')]);
     }
+
+    /**
+     * Auto-heal & sinkronkan satuan resep dan bahan baku dengan satuan di master_barang
+     */
+    public static function syncAllResepSatuan(): void
+    {
+        \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
+            ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+            ->whereNotNull('master_barang.satuan')
+            ->where('master_barang.satuan', '!=', '')
+            ->whereColumn('resep_btkl_bop.satuan_output', '!=', 'master_barang.satuan')
+            ->update(['resep_btkl_bop.satuan_output' => \Illuminate\Support\Facades\DB::raw('master_barang.satuan')]);
+
+        \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+            ->join('master_barang', 'resep_bahanbaku.bahan_id', '=', 'master_barang.id')
+            ->whereNotNull('master_barang.satuan')
+            ->where('master_barang.satuan', '!=', '')
+            ->whereColumn('resep_bahanbaku.satuan', '!=', 'master_barang.satuan')
+            ->update(['resep_bahanbaku.satuan' => \Illuminate\Support\Facades\DB::raw('master_barang.satuan')]);
+    }
 }

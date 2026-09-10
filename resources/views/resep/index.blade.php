@@ -121,7 +121,7 @@
                             </td>
                             <td>
                                 <span class="badge bg-light text-dark border px-3 py-2 fw-medium">
-                                    {{ (int) $r->output_qty }} {{ $r->satuan_output }}
+                                    {{ (int) $r->output_qty }} {{ $r->produk->satuan ?? $r->satuan_output }}
                                 </span>
                             </td>
                             <td>
@@ -135,7 +135,7 @@
                                             data-id="{{ $r->id }}"
                                             data-produk_id="{{ $r->produk_id }}"
                                             data-output_qty="{{ (int) $r->output_qty }}"
-                                            data-satuan_output="{{ $r->satuan_output }}"
+                                            data-satuan_output="{{ $r->produk->satuan ?? $r->satuan_output }}"
                                             data-btkl="{{ (int) $r->btkl_per_batch }}"
                                             data-bop="{{ (int) $r->bop_per_batch }}"
                                             data-bahanbaku="{{ json_encode($r->bahanbaku) }}"
@@ -812,11 +812,19 @@ document.addEventListener("DOMContentLoaded", function () {
             warningProduk.classList.remove('d-none');
 
             document.getElementById('output_qty').value = this.dataset.output_qty;
-            inputSatuanOutput.value = this.dataset.satuan_output;
+            const selectedProdOption = selectProduk.querySelector(`option[value="${this.dataset.produk_id}"]`);
+            const currentProdSatuan = (selectedProdOption && selectedProdOption.dataset.satuan) ? selectedProdOption.dataset.satuan : this.dataset.satuan_output;
+            inputSatuanOutput.value = currentProdSatuan || this.dataset.satuan_output || '-';
 
             tbodyBahan.innerHTML = '';
             
             const arrayBahanBaku = JSON.parse(this.dataset.bahanbaku);
+
+            const getMasterSatuan = (bahanId, fallback) => {
+                if (!bahanId) return fallback || '-';
+                const opt = rowBlueprint.querySelector(`select.search-select-alternatif option[value="${bahanId}"]`);
+                return (opt && opt.dataset.satuan) ? opt.dataset.satuan : (fallback || '-');
+            };
 
             if (arrayBahanBaku && arrayBahanBaku.length > 0) {
                 arrayBahanBaku.forEach((item, rowIndex) => {
@@ -829,7 +837,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     pBadge.className = 'alt-chip';
                     pBadge.dataset.value = item.bahan_id;
                     pBadge.dataset.nama = item.bahan ? item.bahan.nama : 'Bahan';
-                    pBadge.dataset.satuan = item.satuan;
+                    const primarySatuan = (item.bahan && item.bahan.satuan) ? item.bahan.satuan : getMasterSatuan(item.bahan_id, item.satuan);
+                    pBadge.dataset.satuan = primarySatuan;
                     container.appendChild(pBadge);
 
                     // Add Alternatives
@@ -839,7 +848,8 @@ document.addEventListener("DOMContentLoaded", function () {
                             aBadge.className = 'alt-chip';
                             aBadge.dataset.value = alt.bahan_id;
                             aBadge.dataset.nama = alt.bahan ? alt.bahan.nama : 'Bahan';
-                            aBadge.dataset.satuan = item.satuan;
+                            const altSatuan = (alt.bahan && alt.bahan.satuan) ? alt.bahan.satuan : getMasterSatuan(alt.bahan_id, primarySatuan);
+                            aBadge.dataset.satuan = altSatuan;
                             container.appendChild(aBadge);
                         });
                     }
