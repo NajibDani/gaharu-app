@@ -101,6 +101,7 @@ Route::middleware('auth')->group(function () {
         Route::post('pembelian-kejingga/detail/{detail}/lunasi', [\App\Http\Controllers\PembelianKejinggaController::class, 'lunasiDetail'])->name('pembelian-kejingga.lunasi-detail');
         Route::post('pembelian-kejingga/detail/{detail}/terima', [\App\Http\Controllers\PembelianKejinggaController::class, 'terimaDetail'])->name('pembelian-kejingga.terima-detail');
         Route::post('pembelian-kejingga/detail/{detail}/upload-bukti', [\App\Http\Controllers\PembelianKejinggaController::class, 'uploadBuktiDetail'])->name('pembelian-kejingga.upload-bukti-detail');
+        Route::post('pembelian-kejingga/bayar-massal', [\App\Http\Controllers\PembelianKejinggaController::class, 'bayarMassalDetail'])->name('pembelian-kejingga.bayar-massal-detail');
         Route::resource('pembelian-kejingga', \App\Http\Controllers\PembelianKejinggaController::class)->names('pembelian-kejingga');
     });
 

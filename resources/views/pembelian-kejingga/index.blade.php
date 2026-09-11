@@ -358,6 +358,82 @@
         </div>
     </div>
 
+    <!-- MODAL LUNASI / BAYAR GABUNGAN MASSAL PER SUPPLIER (1 NOTA) -->
+    <div class="modal fade" id="modalBayarMassalDetail" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow rounded-4">
+                <div class="modal-header border-bottom pb-3">
+                    <h5 class="modal-title fw-bold text-dark">
+                        <i class="bi bi-receipt-cutoff text-success me-2"></i>Pelunasan Bersama (1 Nota Bukti Bayar)
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="formBayarMassalDetail" action="{{ route('pembelian-kejingga.bayar-massal-detail') }}" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <div class="modal-body p-3 p-md-4">
+                        <div class="alert alert-info border-info d-flex align-items-center mb-3">
+                            <i class="bi bi-info-circle-fill fs-4 me-3 text-info"></i>
+                            <div class="small">
+                                Anda memilih untuk melunasi beberapa item barang sekaligus dari supplier yang sama dalam <strong>1 nota bukti pembayaran bersama</strong>.
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small text-muted mb-0">Nama Supplier</label>
+                                <input type="text" id="massal_supplier_nama" class="form-control fw-bold bg-light" readonly>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label small text-muted mb-0">Total Pelunasan (Rp)</label>
+                                <input type="text" id="massal_total_kekurangan" class="form-control fw-bold text-success font-monospace fs-6 bg-light" readonly>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small text-muted mb-1 fw-bold">Daftar Item Barang Terpilih:</label>
+                            <div class="table-responsive border rounded-3" style="max-height: 220px; overflow-y: auto;">
+                                <table class="table table-sm table-striped align-middle mb-0" style="font-size: 12px;">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Nama Barang</th>
+                                            <th class="text-center">Qty</th>
+                                            <th class="text-end">Nominal Dilunasi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="massal_items_list">
+                                        {{-- Rendered dynamically via JS --}}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {{-- Hidden input IDs --}}
+                        <div id="massal_hidden_inputs"></div>
+
+                        <div class="mb-3">
+                            <label class="form-label small text-dark fw-bold mb-1">
+                                Upload 1 Nota / Bukti Pembayaran Bersama <span class="text-danger">*</span>
+                            </label>
+                            <input type="file" name="bukti_pembayaran" class="form-control" accept="image/*,.pdf" required>
+                            <small class="text-muted" style="font-size: 11px;">Format: JPG, PNG, WEBP, PDF (Maks 5MB). File ini akan otomatis ditautkan ke semua item barang di atas.</small>
+                        </div>
+
+                        <div class="mb-0">
+                            <label class="form-label small text-muted mb-1">Catatan Tambahan (Opsional)</label>
+                            <input type="text" name="catatan" class="form-control form-control-sm" placeholder="Contoh: Transfer gabungan via BCA, Nota No. 1234">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top bg-light rounded-bottom-4">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-success btn-sm fw-bold">
+                            <i class="bi bi-check-circle-fill me-1"></i> Konfirmasi Pelunasan Bersama
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL UPLOAD BUKTI PEMBAYARAN ITEM (KHUSUS SUPER ADMIN) -->
     <div class="modal fade" id="modalUploadBuktiDetail" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -1033,6 +1109,15 @@
                 }
             }
 
+            // Checkbox untuk pelunasan massal per supplier
+            let checkboxHtml = '';
+            if (isSuperAdminUser && !d.is_lunas && d.harga > 0 && d.supplier_id) {
+                let nominalBayarItem = d.kekurangan > 0 ? d.kekurangan : d.harga;
+                checkboxHtml = `<input type="checkbox" class="form-check-input item-check-massal border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-supplier-id="${d.supplier_id}" data-supplier-nama="${addslashes(d.supplier_nama)}" data-nominal="${nominalBayarItem}" data-qty="${d.qty} ${d.satuan}" title="Centang untuk melunasi bersama">`;
+            } else {
+                checkboxHtml = `<span class="text-muted small">—</span>`;
+            }
+
             // Nota / Bukti Pembayaran UI
             let notaColumn = '';
             if (d.bukti_pembayaran_url) {
@@ -1075,8 +1160,9 @@
             }
 
             detailsHtml += `
-                <tr>
-                    <td class="text-center">${idx + 1}</td>
+                <tr id="row-detail-${d.id}">
+                    <td class="text-center align-middle">${checkboxHtml}</td>
+                    <td class="text-center align-middle">${idx + 1}</td>
                     <td>
                         <div class="fw-bold text-dark">${d.nama}</div>
                         <div class="font-monospace text-muted small" style="font-size:11px;">${d.kode_barang}</div>
@@ -1127,10 +1213,30 @@
                     </div>
                 </div>
 
+                <!-- TOOLBAR AKSI MASSAL PER SUPPLIER -->
+                <div id="toolbar-massal-supplier" class="alert alert-success border-success py-2 px-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2 shadow-sm rounded-3" style="display: none !important;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-check2-all text-success fs-4"></i>
+                        <div>
+                            <span class="fw-bold text-dark" id="toolbar-massal-info">0 item terpilih</span>
+                            <div class="small text-muted" id="toolbar-massal-sub">Supplier: -</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-2" style="font-size: 11px;" onclick="batalPilihMassal()">
+                            Batal Pilih
+                        </button>
+                        <button type="button" class="btn btn-success btn-sm fw-bold py-1 px-3 shadow-sm" style="font-size: 12px;" onclick="bukaModalBayarMassal()">
+                            <i class="bi bi-receipt-cutoff me-1"></i> Lunasi Terpilih (1 Nota)
+                        </button>
+                    </div>
+                </div>
+
                 <div class="table-responsive mb-3" style="overflow-x: auto;">
-                    <table class="table table-bordered align-middle mb-0" style="min-width: 1150px; font-size: 12px;">
+                    <table class="table table-bordered align-middle mb-0" style="min-width: 1200px; font-size: 12px;">
                         <thead class="table-dark">
                             <tr>
+                                <th width="35" class="text-center" title="Pilih Item">Pilih</th>
                                 <th width="35" class="text-center">No</th>
                                 <th style="min-width: 160px;">Nama Barang &amp; Kode</th>
                                 <th style="min-width: 140px;">Supplier</th>
@@ -1192,6 +1298,9 @@
 
         document.getElementById('contentDetail').innerHTML = html;
 
+        // Pasang event listener checkbox massal
+        initCheckboxMassalListeners();
+
         document.getElementById('btnDownloadJpgModal').onclick = function() {
             downloadJpgDirect(id);
         };
@@ -1217,6 +1326,110 @@
     // Helper addslashes for JS strings
     function addslashes(str) {
         return (str + '').replace(/[\\"']/g, '\\$&').replace(/\u0000/g, '\\0');
+    }
+
+    // ==========================================
+    // LOGIKA PELUNASAN GABUNGAN MASSAL (1 NOTA)
+    // ==========================================
+    let selectedMassalItems = []; // [{ id, nama, supplierId, supplierNama, nominal, qty }]
+
+    function initCheckboxMassalListeners() {
+        selectedMassalItems = [];
+        updateMassalToolbar();
+
+        const checkboxes = document.querySelectorAll('.item-check-massal');
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', function() {
+                const id = parseInt(this.getAttribute('data-id'));
+                const nama = this.getAttribute('data-nama');
+                const supplierId = this.getAttribute('data-supplier-id');
+                const supplierNama = this.getAttribute('data-supplier-nama');
+                const nominal = parseFloat(this.getAttribute('data-nominal')) || 0;
+                const qty = this.getAttribute('data-qty');
+
+                if (this.checked) {
+                    // Validasi: pastikan supplier sama dengan item yang sudah terpilih
+                    if (selectedMassalItems.length > 0) {
+                        const currentSupplierId = selectedMassalItems[0].supplierId;
+                        if (currentSupplierId !== supplierId) {
+                            alert(`⚠️ Perhatian:\nAnda hanya dapat memilih item dari supplier yang sama dalam 1 nota pelunasan bersama.\n\nItem terpilih saat ini dari supplier: ${selectedMassalItems[0].supplierNama}.\nAnda memilih item dari supplier: ${supplierNama}.`);
+                            this.checked = false;
+                            return;
+                        }
+                    }
+
+                    selectedMassalItems.push({ id, nama, supplierId, supplierNama, nominal, qty });
+                    const row = document.getElementById(`row-detail-${id}`);
+                    if (row) row.classList.add('table-success');
+                } else {
+                    selectedMassalItems = selectedMassalItems.filter(it => it.id !== id);
+                    const row = document.getElementById(`row-detail-${id}`);
+                    if (row) row.classList.remove('table-success');
+                }
+
+                updateMassalToolbar();
+            });
+        });
+    }
+
+    function updateMassalToolbar() {
+        const toolbar = document.getElementById('toolbar-massal-supplier');
+        if (!toolbar) return;
+
+        if (selectedMassalItems.length > 0) {
+            toolbar.style.setProperty('display', 'flex', 'important');
+            const totalNominal = selectedMassalItems.reduce((acc, it) => acc + it.nominal, 0);
+            const count = selectedMassalItems.length;
+            const supplierNama = selectedMassalItems[0].supplierNama;
+
+            document.getElementById('toolbar-massal-info').innerText = `${count} item terpilih (Total: Rp ${totalNominal.toLocaleString('id-ID')})`;
+            document.getElementById('toolbar-massal-sub').innerText = `Supplier: ${supplierNama}`;
+        } else {
+            toolbar.style.setProperty('display', 'none', 'important');
+        }
+    }
+
+    function batalPilihMassal() {
+        document.querySelectorAll('.item-check-massal').forEach(cb => {
+            cb.checked = false;
+        });
+        document.querySelectorAll('#po-modal-doc-render table tbody tr').forEach(tr => {
+            tr.classList.remove('table-success');
+        });
+        selectedMassalItems = [];
+        updateMassalToolbar();
+    }
+
+    function bukaModalBayarMassal() {
+        if (selectedMassalItems.length === 0) {
+            alert('Pilih minimal 1 item barang terlebih dahulu.');
+            return;
+        }
+
+        const supplierNama = selectedMassalItems[0].supplierNama;
+        const totalNominal = selectedMassalItems.reduce((acc, it) => acc + it.nominal, 0);
+
+        document.getElementById('massal_supplier_nama').value = supplierNama;
+        document.getElementById('massal_total_kekurangan').value = 'Rp ' + totalNominal.toLocaleString('id-ID');
+
+        // Render table list
+        let rowsHtml = '';
+        let hiddenInputsHtml = '';
+        selectedMassalItems.forEach(it => {
+            rowsHtml += `
+                <tr>
+                    <td class="fw-bold">${it.nama}</td>
+                    <td class="text-center">${it.qty}</td>
+                    <td class="text-end fw-bold text-success">Rp ${it.nominal.toLocaleString('id-ID')}</td>
+                </tr>
+            `;
+            hiddenInputsHtml += `<input type="hidden" name="detail_ids[]" value="${it.id}">`;
+        });
+
+        document.getElementById('massal_items_list').innerHTML = rowsHtml;
+        document.getElementById('massal_hidden_inputs').innerHTML = hiddenInputsHtml;
+
+        new bootstrap.Modal(document.getElementById('modalBayarMassalDetail')).show();
     }
 
     // ==========================================

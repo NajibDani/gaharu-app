@@ -645,6 +645,93 @@ class PembelianKejinggaController extends Controller
         return redirect()->route('pembelian-kejingga.index')->with('success', 'Pelunasan item barang berhasil dicatat.');
     }
 
+    public function bayarMassalDetail(Request $request)
+    {
+        if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
+            return back()->with('error', 'Hanya Super Admin yang diizinkan untuk memproses pembayaran/pelunasan.');
+        }
+
+        $request->validate([
+            'detail_ids'       => 'required|array|min:1',
+            'detail_ids.*'     => 'required|integer|exists:pembelian_detail,id',
+            'bukti_pembayaran' => 'nullable|file|mimes:jpg,jpeg,png,pdf,webp|max:5120',
+            'catatan'          => 'nullable|string|max:500',
+        ]);
+
+        $details = PembelianDetail::with(['pembelian', 'supplier', 'barang'])
+            ->whereIn('id', $request->detail_ids)
+            ->get();
+
+        if ($details->isEmpty()) {
+            return back()->with('error', 'Tidak ada item barang yang dipilih.');
+        }
+
+        // 1. Validasi: Semua item harus memiliki supplier_id yang sama
+        $supplierIds = $details->pluck('supplier_id')->filter()->unique();
+        if ($supplierIds->count() > 1) {
+            return back()->with('error', '⚠️ Gagal! Item yang dipilih harus berasal dari supplier yang sama untuk dapat dibayarkan dalam 1 nota.');
+        }
+
+        // 2. Validasi: Pastikan semua item sudah memiliki harga > 0 dan supplier_id terisi
+        foreach ($details as $d) {
+            if ((float)$d->harga <= 0 || empty($d->supplier_id)) {
+                return back()->with('error', "⚠️ Item '{$d->barang->nama}' belum memiliki nama supplier atau harga barang yang valid. Lengkapi terlebih dahulu.");
+            }
+        }
+
+        // 3. Upload bukti pembayaran / nota jika ada (1 nota untuk semua item terpilih)
+        $buktiPath = null;
+        if ($request->hasFile('bukti_pembayaran')) {
+            $buktiPath = $request->file('bukti_pembayaran')->store('bukti_pembayaran_kejingga', 'public');
+        }
+
+        DB::transaction(function() use ($details, $buktiPath, $request) {
+            $pembelianIds = [];
+
+            foreach ($details as $detail) {
+                $updateData = [
+                    'is_lunas' => true,
+                    'lunas_at' => now(),
+                ];
+
+                // Jika metode pembayaran belum diset sebelumnya, set default ke COD/Lunas Langsung
+                if (empty($detail->metode_pembayaran)) {
+                    $updateData['metode_pembayaran'] = 'cod';
+                }
+
+                if ($buktiPath) {
+                    $updateData['bukti_pembayaran'] = $buktiPath;
+                }
+
+                if (!empty($request->catatan)) {
+                    $updateData['catatan_pembayaran'] = $request->catatan;
+                }
+
+                $detail->update($updateData);
+                $pembelianIds[] = $detail->pembelian_id;
+            }
+
+            // Periksa dan update status PO jika seluruh detail di PO tersebut sudah lunas
+            $uniquePembelianIds = array_unique($pembelianIds);
+            foreach ($uniquePembelianIds as $pId) {
+                $po = Pembelian::find($pId);
+                if ($po) {
+                    $unpaidCount = $po->details()->where('is_lunas', false)->count();
+                    if ($unpaidCount === 0) {
+                        $po->update([
+                            'is_lunas' => true,
+                            'lunas_at' => now(),
+                        ]);
+                    }
+                }
+            }
+        });
+
+        $count = $details->count();
+        $supplierName = $details->first()->supplier->nama ?? 'Supplier';
+        return redirect()->route('pembelian-kejingga.index')->with('success', "Berhasil melunasi {$count} item barang dari {$supplierName} dalam 1 nota pembayaran.");
+    }
+
     public function uploadBuktiDetail(Request $request, $detailId)
     {
         if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
