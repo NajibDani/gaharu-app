@@ -1,14 +1,24 @@
+@php
+    $isKejingga = str_contains(strtolower($pembelian->kode_pembelian ?? ''), 'kjg') 
+        || str_contains(strtolower($pembelian->gudang->nama ?? ''), 'kejingga') 
+        || ($pembelian->gudang_id == 5);
+    $headerBg = $isKejingga ? '#10b981' : '#d97706';
+    $companyTitle = $isKejingga ? 'KEJINGGA' : 'CV GAHARU AGUNG SEJAHTERA';
+    $companySubtitle = $isKejingga ? 'Pembelanjaan Mandiri Outlet KeJingga ke Supplier' : 'Pengadaan & Logistik Bahan Baku Operasional';
+    $docTitle = $isKejingga ? 'PURCHASE ORDER KEJINGGA' : 'PURCHASE ORDER BAHAN BAKU';
+    $accentColor = $isKejingga ? '#10b981' : '#d97706';
+@endphp
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>PURCHASE ORDER BAHAN BAKU - {{ $pembelian->kode_pembelian }}</title>
+    <title>{{ $docTitle }} - {{ $pembelian->kode_pembelian }}</title>
     <style>
         body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4; margin: 0; padding: 15px; }
 
-        /* HEADER COLOR BLOCK - KUNING / AMBER (BAHAN BAKU) */
+        /* HEADER COLOR BLOCK - HIJAU MUDA (KEJINGGA MANDIRI) / KUNING AMBER (BAHAN BAKU GAHARU) */
         .header-block {
-            background-color: #d97706;
+            background-color: {{ $headerBg }};
             color: #ffffff;
             padding: 14px 18px;
             border-radius: 6px;
@@ -95,16 +105,16 @@
 </head>
 <body>
 
-    {{-- HEADER BLOCK - WARNA KUNING / AMBER (BAHAN BAKU) --}}
+    {{-- HEADER BLOCK --}}
     <div class="header-block">
         <table class="header-table">
             <tr>
                 <td style="vertical-align: middle;">
-                    <div class="company-name">CV GAHARU AGUNG SEJAHTERA</div>
-                    <div class="sub-company">Pengadaan &amp; Logistik Bahan Baku Operasional</div>
+                    <div class="company-name">{{ $companyTitle }}</div>
+                    <div class="sub-company">{{ $companySubtitle }}</div>
                 </td>
                 <td style="vertical-align: middle; text-align: right;">
-                    <div class="doc-badge-title">PURCHASE ORDER BAHAN BAKU</div>
+                    <div class="doc-badge-title">{{ $docTitle }}</div>
                     <div class="doc-code">#{{ $pembelian->kode_pembelian }}</div>
                 </td>
             </tr>
@@ -115,13 +125,13 @@
     <table class="info-grid">
         <tr>
             <td class="info-label">Judul Dokumen</td>
-            <td class="info-value"><strong>PURCHASE ORDER BAHAN BAKU</strong></td>
+            <td class="info-value"><strong>{{ $docTitle }}</strong></td>
             <td class="info-label">Tanggal Order</td>
             <td class="info-value"><strong>{{ \Carbon\Carbon::parse($pembelian->tanggal)->format('d F Y') }}</strong></td>
         </tr>
         <tr>
             <td class="info-label">Outlet Pemesan</td>
-            <td class="info-value"><strong style="color: #d97706; font-size: 12px;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
+            <td class="info-value"><strong style="color: {{ $accentColor }}; font-size: 12px;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
             <td class="info-label">Gudang Sumber</td>
             <td class="info-value"><strong>{{ $pembelian->supplier->nama ?? '-' }}</strong> <span style="font-size: 10px; color: #64748b;">(Supplier / Vendor)</span></td>
         </tr>
@@ -188,13 +198,13 @@
                     <td class="text-center">
                         <strong>{{ number_format($detail->qty, 2, ',', '.') }} {{ $unitDisplay }}</strong>
                         @if($hasKonv)
-                            <div style="font-size: 8.5px; color: #d97706;">= {{ number_format($detail->qty * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
+                            <div style="font-size: 8.5px; color: {{ $accentColor }};">= {{ number_format($detail->qty * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
                         @endif
                     </td>
                     <td class="text-center">
                         <strong>{{ number_format($qtyDiterima, 2, ',', '.') }} {{ $unitDisplay }}</strong>
                         @if($hasKonv)
-                            <div style="font-size: 8.5px; color: #d97706;">= {{ number_format($qtyDiterima * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
+                            <div style="font-size: 8.5px; color: {{ $accentColor }};">= {{ number_format($qtyDiterima * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
                         @endif
                     </td>
                     <td class="text-end">
@@ -214,7 +224,7 @@
         <table class="total-table">
             <tr>
                 <td class="fw-bold">Total Pembelian:</td>
-                <td class="text-end fw-bold" style="font-size: 13px; color: #d97706;">
+                <td class="text-end fw-bold" style="font-size: 13px; color: {{ $accentColor }};">
                     Rp {{ number_format($pembelian->total ?? $totalSub, 0, ',', '.') }}
                 </td>
             </tr>
@@ -247,17 +257,17 @@
                 <span style="font-size: 9.5px; color: #64748b;">Penyedia Bahan Baku</span>
             </td>
             <td>
-                Gudang &amp; Management<br><br>
+                Gudang Penerima<br><br>
                 <div class="sign-space"></div>
                 <strong>( {{ $pembelian->penerimaDiterima->nama ?? $pembelian->penerimaDiterima->name ?? 'Petugas Gudang' }} )</strong><br>
-                <span style="font-size: 9.5px; color: #64748b;">CV Gaharu Agung Sejahtera</span>
+                <span style="font-size: 9.5px; color: #64748b;">{{ $isKejingga ? 'Gudang KeJingga' : 'CV Gaharu Agung Sejahtera' }}</span>
             </td>
         </tr>
     </table>
 
     <table class="footer-note">
         <tr>
-            <td>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</td>
+            <td>Dokumen Resmi Sistem ERP - {{ $isKejingga ? 'Outlet KeJingga' : 'CV Gaharu Agung Sejahtera' }}</td>
             <td style="text-align: right;">Dicetak pada: {{ date('d/m/Y H:i') }}</td>
         </tr>
     </table>

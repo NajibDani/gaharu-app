@@ -49,24 +49,30 @@
         </div>
 
         {{-- TABS NAVIGATION --}}
+        @php
+            $activeTab = request('tab', 'pending');
+        @endphp
         <ul class="nav nav-tabs mb-4" id="ckTab" role="tablist">
             <li class="nav-item">
-                <button class="nav-link active" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending-orders" type="button">
+                <button class="nav-link {{ $activeTab === 'pending' ? 'active' : '' }}" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending-orders" type="button">
                     <i class="bi bi-clock-history me-1"></i> Order CK Masuk (Siap Buat WO)
+                    @if($pesananCkPending->total() > 0)
+                        <span class="badge bg-danger rounded-pill ms-1">{{ $pesananCkPending->total() }}</span>
+                    @endif
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" id="wo-tab" data-bs-toggle="tab" data-bs-target="#wo-list" type="button">
+                <button class="nav-link {{ $activeTab === 'wo' ? 'active' : '' }}" id="wo-tab" data-bs-toggle="tab" data-bs-target="#wo-list" type="button">
                     <i class="bi bi-file-earmark-text me-1"></i> Work Orders (WO CK)
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" id="prod-tab" data-bs-toggle="tab" data-bs-target="#prod-history" type="button">
+                <button class="nav-link {{ $activeTab === 'prod' ? 'active' : '' }}" id="prod-tab" data-bs-toggle="tab" data-bs-target="#prod-history" type="button">
                     <i class="bi bi-check2-all me-1"></i> Riwayat Produksi CK
                 </button>
             </li>
             <li class="nav-item">
-                <button class="nav-link" id="stok-tab" data-bs-toggle="tab" data-bs-target="#stok-divisi" type="button">
+                <button class="nav-link {{ $activeTab === 'stok' ? 'active' : '' }}" id="stok-tab" data-bs-toggle="tab" data-bs-target="#stok-divisi" type="button">
                     <i class="bi bi-layers-half me-1"></i> Stok BSJ per Divisi
                 </button>
             </li>
@@ -75,7 +81,7 @@
         <div class="tab-content" id="ckTabContent">
 
             {{-- TAB 1: ORDER CK MASUK --}}
-            <div class="tab-pane fade show active" id="pending-orders" role="tabpanel">
+            <div class="tab-pane fade {{ $activeTab === 'pending' ? 'show active' : '' }}" id="pending-orders" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
                     <div class="card-header bg-white py-3 px-4">
                         <h6 class="fw-bold mb-0 text-dark">Pesanan Central Kitchen yang Siap Diproduksi</h6>
@@ -105,21 +111,13 @@
                                             </span>
                                         </td>
                                         <td class="text-center text-nowrap">
-                                            @php
-                                                $isAllSufficient = true;
-                                                foreach($p->details as $d) {
-                                                    if (($d->qty_kurang ?? 0) > 0) {
-                                                        $isAllSufficient = false;
-                                                    }
-                                                }
-                                            @endphp
                                             <div class="action-box d-flex justify-content-center">
                                                 <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
                                                     <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalOrder{{ $p->id }}">
                                                         <i class="bi bi-eye"></i> Detail
                                                     </button>
-                                                    <button type="button" class="btn {{ $isAllSufficient ? 'btn-success' : 'btn-custom-orange' }} fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('{{ $isAllSufficient ? 'Seluruh stok barang sudah tersedia. Alokasikan stok untuk pesanan ini?' : 'Buat Work Order (WO) untuk sisa kekurangan pesanan ini?' }}')) document.getElementById('formStoreWo{{ $p->id }}').submit();">
-                                                        <i class="bi {{ $isAllSufficient ? 'bi-check-circle-fill' : 'bi-gear-fill' }}"></i> {{ $isAllSufficient ? 'Alokasikan' : 'Buat WO' }}
+                                                    <button type="button" class="btn btn-custom-orange fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('Buat Work Order (WO) untuk pesanan {{ $p->kode_pesanan }}?')) document.getElementById('formStoreWo{{ $p->id }}').submit();">
+                                                        <i class="bi bi-gear-fill"></i> Buat WO
                                                     </button>
                                                 </div>
                                                 <form id="formStoreWo{{ $p->id }}" action="{{ route('ck-produksi.store-wo') }}" method="POST" class="d-none">
@@ -127,7 +125,7 @@
                                                     <input type="hidden" name="pesanan_id" value="{{ $p->id }}">
                                                     @foreach($p->details as $d)
                                                         <input type="hidden" name="produk_id[]" value="{{ $d->produk_id }}">
-                                                        <input type="hidden" name="qty_rencana[]" value="{{ $d->qty_kurang }}">
+                                                        <input type="hidden" name="qty_rencana[]" value="{{ $d->qty }}">
                                                     @endforeach
                                                 </form>
                                             </div>
@@ -220,7 +218,7 @@
             </div>
 
             {{-- TAB 2: WO LIST (DETAIL & INPUT PRODUKSI VIA POPUP) --}}
-            <div class="tab-pane fade" id="wo-list" role="tabpanel">
+            <div class="tab-pane fade {{ $activeTab === 'wo' ? 'show active' : '' }}" id="wo-list" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
                     <div class="card-header bg-white py-3 px-3 px-md-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="fw-bold mb-0 text-dark">Daftar Work Order Central Kitchen</h6>
@@ -1099,7 +1097,7 @@
             </div>
 
             {{-- TAB 3: RIWAYAT PRODUKSI CK (DETAIL POPUP) --}}
-            <div class="tab-pane fade" id="prod-history" role="tabpanel">
+            <div class="tab-pane fade {{ $activeTab === 'prod' ? 'show active' : '' }}" id="prod-history" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
                     <div class="card-header bg-white py-3 px-4">
                         <h6 class="fw-bold mb-0 text-dark">Riwayat Produksi Central Kitchen</h6>
@@ -1312,7 +1310,7 @@
             </div>
 
             {{-- TAB 4: STOK BSJ PER DIVISI CK --}}
-            <div class="tab-pane fade" id="stok-divisi" role="tabpanel">
+            <div class="tab-pane fade {{ $activeTab === 'stok' ? 'show active' : '' }}" id="stok-divisi" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
                     <div class="card-header bg-white py-3 px-4">
                         <div>
@@ -2006,6 +2004,17 @@
                     allChecks.forEach(c => c.checked = checkAllWoCk.checked);
                     updateWoBatchSelectionCk();
                 });
+            }
+
+            // Aktifkan tab sesuai parameter URL (?tab=wo, ?tab=pending, dll)
+            const urlParams = new URLSearchParams(window.location.search);
+            const tabParam = urlParams.get('tab');
+            if (tabParam) {
+                const triggerEl = document.querySelector(`#${tabParam}-tab`);
+                if (triggerEl && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                    const tabInstance = bootstrap.Tab.getOrCreateInstance(triggerEl);
+                    tabInstance.show();
+                }
             }
         });
     </script>

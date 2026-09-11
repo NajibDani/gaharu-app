@@ -29,15 +29,15 @@
 
         {{-- DOCUMENT CONTAINER (WILL BE RENDERED TO JPG) --}}
         <div id="po-document-container" class="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white" style="max-width: 1000px; margin: 0 auto;">
-            {{-- HEADER BLOCK - WARNA KUNING / AMBER (BAHAN BAKU) --}}
-            <div class="p-3 rounded-3 mb-3 text-white" style="background-color: #d97706;">
+            {{-- HEADER BLOCK - WARNA HIJAU MUDA (KEJINGGA MANDIRI) --}}
+            <div class="p-3 rounded-3 mb-3 text-white" style="background-color: #10b981;">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div>
-                        <div class="fw-bold fs-5 text-uppercase" style="letter-spacing: 0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
-                        <div class="small opacity-95">Pengadaan &amp; Logistik Bahan Baku Operasional</div>
+                        <div class="fw-bold fs-5 text-uppercase" style="letter-spacing: 0.5px;">KEJINGGA</div>
+                        <div class="small opacity-95">Pembelanjaan Mandiri Outlet KeJingga ke Supplier</div>
                     </div>
                     <div class="text-end">
-                        <div class="fw-bold fs-6 text-uppercase">PURCHASE ORDER BAHAN BAKU</div>
+                        <div class="fw-bold fs-6 text-uppercase">PURCHASE ORDER KEJINGGA</div>
                         <div class="font-monospace fw-bold fs-5">#{{ $pembelian->kode_pembelian }}</div>
                     </div>
                 </div>
@@ -49,13 +49,13 @@
                     <tbody>
                         <tr>
                             <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Judul Dokumen</td>
-                            <td class="fw-bold text-dark" style="width: 32%;">PURCHASE ORDER BAHAN BAKU</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">PURCHASE ORDER KEJINGGA</td>
                             <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Tanggal Order</td>
                             <td class="fw-bold text-dark" style="width: 32%;">{{ \Carbon\Carbon::parse($pembelian->tanggal)->format('d F Y') }}</td>
                         </tr>
                         <tr>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
-                            <td><strong class="fs-6" style="color: #d97706;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
+                            <td><strong class="fs-6" style="color: #10b981;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
                             <td><strong>{{ $pembelian->supplier->nama ?? 'Draft (Belum Ada Supplier)' }}</strong> <span class="text-muted small">(Supplier / Pemasok)</span></td>
                         </tr>
@@ -171,7 +171,7 @@
                             @endif
                             <tr class="border-top">
                                 <td class="fs-5 fw-bold text-dark">Total Purchase Order:</td>
-                                <td class="fs-5 fw-bold text-primary">Rp {{ number_format($pembelian->total, 0, ',', '.') }}</td>
+                                <td class="fs-5 fw-bold" style="color: #10b981;">Rp {{ number_format($pembelian->total, 0, ',', '.') }}</td>
                             </tr>
                             @if($pembelian->nominal_dp > 0)
                             <tr>
@@ -191,7 +191,7 @@
             {{-- TANDA TANGAN / OTORISASI --}}
             <div class="row text-center mt-4 pt-3 border-top">
                 <div class="col-4">
-                    <div class="text-muted small">Dibuat Oleh (Operasional):</div>
+                    <div class="text-muted small">Dibuat Oleh (KeJingga):</div>
                     <div style="height: 50px;"></div>
                     <div class="fw-bold text-dark">({{ $pembelian->user->nama ?? ($pembelian->user->username ?? 'Staff Operasional') }})</div>
                 </div>
@@ -208,7 +208,7 @@
             </div>
 
             <div class="mt-4 pt-2 border-top d-flex justify-content-between text-muted" style="font-size: 10px;">
-                <div>Dokumen Resmi Sistem ERP - KeJingga Bakehouse &amp; Resto</div>
+                <div>Dokumen Resmi Sistem ERP - Outlet KeJingga</div>
                 <div>Dicetak pada: {{ date('d M Y H:i:s') }}</div>
             </div>
         </div>

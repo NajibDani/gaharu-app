@@ -372,39 +372,29 @@ class CentralKitchenProductionController extends Controller
             'qty_rencana' => 'required|array',
         ]);
 
-        $pesanan = Pesanan::centralKitchen()->findOrFail($request->pesanan_id);
+        $pesanan = Pesanan::centralKitchen()->with('details')->findOrFail($request->pesanan_id);
 
         DB::beginTransaction();
         try {
             $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
             $gudangCkId = $gudangCk ? $gudangCk->id : 5;
 
-            // Check if there is any quantity to produce
-            $hasQtyToProduce = false;
+            // Map kuantitas rencana yang dikirimkan dari form
+            $qtyMap = [];
             foreach ($request->produk_id as $key => $produk_id) {
-                $qty = floatval($request->qty_rencana[$key] ?? 0);
-                if ($qty > 0) {
-                    $hasQtyToProduce = true;
-                }
+                $qtyMap[$produk_id] = floatval($request->qty_rencana[$key] ?? 0);
             }
 
-            if (!$hasQtyToProduce) {
-                $custNama = strtolower($pesanan->customer_nama ?? $pesanan->customer->nama ?? '');
-                $targetStatus = str_contains($custNama, 'central kitchen') ? 'Selesai' : 'Siap kirim';
-                
-                $pesanan->update(['status_pesanan' => $targetStatus]);
-                
-                DB::commit();
-                return redirect()->route('ck-produksi.index')->with('success', 'Stok sudah mencukupi di Gudang CK. Pesanan otomatis dialokasikan dari stok dan siap dikirim tanpa perlu WO baru!');
-            }
-
-            // Cek ketersediaan bahan baku di Gudang Central Kitchen
+            // Cek ketersediaan bahan baku di Gudang Central Kitchen untuk seluruh item pesanan
             $isBahanCukup = true;
-            foreach ($request->produk_id as $key => $produk_id) {
-                $qty = floatval($request->qty_rencana[$key] ?? 0);
+            foreach ($pesanan->details as $pd) {
+                $qty = isset($qtyMap[$pd->produk_id]) && $qtyMap[$pd->produk_id] > 0 
+                    ? $qtyMap[$pd->produk_id] 
+                    : floatval($pd->qty);
+
                 if ($qty <= 0) continue;
 
-                $produk = MasterBarang::with('resep.bahan')->find($produk_id);
+                $produk = MasterBarang::with('resep.bahan')->find($pd->produk_id);
                 if ($produk && $produk->resep) {
                     foreach ($produk->resep as $resep) {
                         $kebutuhan = floatval($resep->qty_bahan) * $qty;
@@ -425,14 +415,17 @@ class CentralKitchenProductionController extends Controller
                 'created_by' => auth()->id(),
             ]);
 
-            foreach ($request->produk_id as $key => $produk_id) {
-                if (floatval($request->qty_rencana[$key]) <= 0) continue;
+            // Masukkan SELURUH item pesanan ke dalam Work Order Detail agar tidak ada item yang hilang
+            foreach ($pesanan->details as $pd) {
+                $qty = isset($qtyMap[$pd->produk_id]) && $qtyMap[$pd->produk_id] > 0 
+                    ? $qtyMap[$pd->produk_id] 
+                    : floatval($pd->qty);
 
                 WorkOrderDetail::create([
                     'work_order_id' => $wo->id,
                     'pesanan_id'    => $pesanan->id,
-                    'produk_id'     => $produk_id,
-                    'qty_rencana'   => $request->qty_rencana[$key],
+                    'produk_id'     => $pd->produk_id,
+                    'qty_rencana'   => $qty,
                 ]);
             }
 
@@ -440,9 +433,9 @@ class CentralKitchenProductionController extends Controller
 
             DB::commit();
             $msg = $isBahanCukup 
-                ? 'Work Order Central Kitchen berhasil dibuat! Bahan baku mencukupi di Gudang CK, siap langsung diproduksi.' 
-                : 'Work Order Central Kitchen berhasil dibuat! Bahan baku belum mencukupi, silakan buat permintaan bahan jika diperlukan.';
-            return redirect()->route('ck-produksi.index')->with('success', $msg);
+                ? 'Work Order Central Kitchen (' . $wo->kode_wo . ') berhasil dibuat! Bahan baku mencukupi di Gudang CK, siap langsung diproduksi.' 
+                : 'Work Order Central Kitchen (' . $wo->kode_wo . ') berhasil dibuat! Bahan baku belum mencukupi, silakan buat permintaan bahan jika diperlukan.';
+            return redirect()->route('ck-produksi.index', ['tab' => 'wo'])->with('success', $msg);
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal membuat WO CK: ' . $e->getMessage());

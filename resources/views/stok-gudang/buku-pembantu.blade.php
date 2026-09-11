@@ -70,7 +70,7 @@
                         <tr>
                             <th class="ps-4 py-3 text-white">Kode Barang</th>
                             <th class="py-3 text-white">Nama Barang</th>
-                            <th class="py-3 text-white">Satuan</th>
+                            <th class="py-3 text-white">Satuan & Konversi Beli</th>
                             <th class="py-3 text-white">Jenis Barang</th>
                             <th class="text-end py-3 text-white">Stok Akhir Periodik</th>
                             <th class="text-center py-3 text-white" width="150">Aksi</th>
@@ -78,13 +78,27 @@
                     </thead>
                     <tbody class="text-dark" style="font-size: 14px;">
                         @forelse($items as $item)
+                            @php
+                                $hasKonversi = !empty($item->satuan_pembelian) && (float)($item->konversi_pembelian ?? 1) > 1;
+                                $konversiFaktor = (float)($item->konversi_pembelian ?? 1);
+                                $stokAkhirBeli = $hasKonversi ? ($item->stok_akhir / $konversiFaktor) : null;
+                            @endphp
                             <tr>
                                 <td class="ps-4 font-monospace fw-bold text-primary">{{ $item->kode_barang }}</td>
                                 <td>
                                     <div class="fw-semibold">{{ $item->nama }}</div>
                                     <small class="text-muted" style="font-size: 11px;">Kategori: {{ $item->kategori->nama ?? '-' }}</small>
                                 </td>
-                                <td><span class="badge bg-secondary-subtle text-secondary-emphasis px-2.5 py-1.5" style="font-size: 12px;">{{ $item->satuan }}</span></td>
+                                <td>
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis px-2.5 py-1.5" style="font-size: 12px;">{{ $item->satuan }}</span>
+                                    @if($hasKonversi)
+                                        <div class="mt-1">
+                                            <span class="badge bg-light text-dark border px-2 py-1" style="font-size: 11px;" title="1 {{ $item->satuan_pembelian }} = {{ number_format($konversiFaktor, 0, ',', '.') }} {{ $item->satuan }}">
+                                                <i class="bi bi-box-seam me-1 text-primary"></i>1 {{ $item->satuan_pembelian }} = {{ number_format($konversiFaktor, 0, ',', '.') }} {{ $item->satuan }}
+                                            </span>
+                                        </div>
+                                    @endif
+                                </td>
                                 <td>
                                     @if($item->is_bahan_baku)
                                         <span class="badge bg-primary-subtle text-primary px-3 py-1.5">Bahan Baku</span>
@@ -99,7 +113,12 @@
                                     @endif
                                 </td>
                                 <td class="text-end fw-bold text-dark pe-4">
-                                    {{ number_format($item->stok_akhir, 2, ',', '.') }} {{ $item->satuan }}
+                                    <div>{{ number_format($item->stok_akhir, 2, ',', '.') }} {{ $item->satuan }}</div>
+                                    @if($hasKonversi && $stokAkhirBeli !== null)
+                                        <small class="text-primary fw-normal d-block mt-0.5" style="font-size: 12px;">
+                                            &asymp; {{ number_format($stokAkhirBeli, 2, ',', '.') }} {{ $item->satuan_pembelian }}
+                                        </small>
+                                    @endif
                                 </td>
                                 <td class="text-center py-3">
                                     <button type="button" 
@@ -108,7 +127,9 @@
                                             data-barang-id="{{ $item->id }}"
                                             data-barang-nama="{{ $item->nama }}"
                                             data-barang-kode="{{ $item->kode_barang }}"
-                                            data-barang-satuan="{{ $item->satuan }}">
+                                            data-barang-satuan="{{ $item->satuan }}"
+                                            data-satuan-pembelian="{{ $item->satuan_pembelian }}"
+                                            data-konversi-pembelian="{{ $item->konversi_pembelian }}">
                                         <i class="bi bi-clock-history me-1"></i> Rincian Mutasi
                                     </button>
                                 </td>
@@ -146,22 +167,28 @@
                 <div class="modal-body p-4" style="background-color: #f8f9fa;">
                     <!-- Filter Info Row -->
                     <div class="row g-3 mb-4">
-                        <div class="col-6 col-md-4">
-                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3">
+                        <div class="col-6 col-md-3">
+                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3 h-100">
                                 <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 11px;">Gudang</small>
                                 <span class="fw-bold text-dark fs-6" id="infoGudangText">Semua Gudang</span>
                             </div>
                         </div>
-                        <div class="col-6 col-md-4">
-                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3">
+                        <div class="col-6 col-md-3">
+                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3 h-100">
                                 <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 11px;">Periode</small>
                                 <span class="fw-bold text-dark fs-6" id="infoPeriodeText">-</span>
                             </div>
                         </div>
-                        <div class="col-12 col-md-4">
-                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3">
-                                <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 11px;">Satuan Barang</small>
+                        <div class="col-6 col-md-3">
+                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3 h-100">
+                                <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 11px;">Satuan Stok Dasar</small>
                                 <span class="fw-bold text-primary fs-6" id="infoSatuanText">-</span>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="p-3 bg-white border border-2 border-primary-subtle rounded-3 h-100">
+                                <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 11px;">Satuan Pembelian</small>
+                                <span class="fw-bold text-success fs-6" id="infoSatuanBeliText">-</span>
                             </div>
                         </div>
                     </div>
@@ -176,7 +203,7 @@
 
                     <!-- TABLE CONTENT -->
                     <div id="tableState" class="table-responsive d-none bg-white rounded-3 shadow-sm border border-light">
-                        <table class="table table-bordered align-middle mb-0" style="min-width: 900px; font-size: 13px;">
+                        <table class="table table-bordered align-middle mb-0" style="min-width: 950px; font-size: 13px;">
                             <thead class="table-light text-secondary text-uppercase fw-bold" style="font-size: 11px;">
                                 <tr>
                                     <th rowspan="2" class="text-center align-middle" width="100">Tanggal</th>
@@ -187,15 +214,15 @@
                                 </tr>
                                 <tr>
                                     <!-- Masuk -->
-                                    <th class="text-end table-success py-1.5" width="80">Qty</th>
-                                    <th class="text-end table-success py-1.5" width="110">Harga Sat.</th>
+                                    <th class="text-end table-success py-1.5" width="100">Qty</th>
+                                    <th class="text-end table-success py-1.5" width="130">Harga Satuan</th>
                                     <th class="text-end table-success py-1.5" width="120">Total</th>
                                     <!-- Keluar -->
-                                    <th class="text-end table-danger py-1.5" width="80">Qty</th>
-                                    <th class="text-end table-danger py-1.5" width="110">Harga Sat.</th>
+                                    <th class="text-end table-danger py-1.5" width="100">Qty</th>
+                                    <th class="text-end table-danger py-1.5" width="130">Harga Satuan</th>
                                     <th class="text-end table-danger py-1.5" width="120">Total</th>
                                     <!-- Saldo -->
-                                    <th class="text-end table-primary py-1.5" width="90">Qty</th>
+                                    <th class="text-end table-primary py-1.5" width="110">Qty</th>
                                     <th class="text-end table-primary py-1.5" width="130">Total Nilai</th>
                                 </tr>
                             </thead>
@@ -222,6 +249,7 @@
             const infoGudang = document.getElementById('infoGudangText');
             const infoPeriode = document.getElementById('infoPeriodeText');
             const infoSatuan = document.getElementById('infoSatuanText');
+            const infoSatuanBeli = document.getElementById('infoSatuanBeliText');
 
             const loadingState = document.getElementById('loadingState');
             const tableState = document.getElementById('tableState');
@@ -238,9 +266,9 @@
             }
 
             // Format Number Decimal
-            function formatNumber(num) {
+            function formatNumber(num, maxDec = 2) {
                 if (num === null || num === undefined) return '0';
-                return Number(num).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                return Number(num).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDec });
             }
 
             document.querySelectorAll('.btn-detail-mutasi').forEach(btn => {
@@ -249,6 +277,8 @@
                     const nama = this.dataset.barangNama;
                     const kode = this.dataset.barangKode;
                     const satuan = this.dataset.barangSatuan;
+                    const satBeli = this.dataset.satuanPembelian || '';
+                    const konversi = parseFloat(this.dataset.konversiPembelian) || 1;
 
                     // Ambil nilai filter saat ini
                     const form = document.getElementById('formFilter');
@@ -273,6 +303,12 @@
                     infoPeriode.textContent = formatTgl(start_date) + ' s/d ' + formatTgl(end_date);
                     infoSatuan.textContent = satuan;
 
+                    if (satBeli && konversi > 1) {
+                        infoSatuanBeli.innerHTML = `${satBeli} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${satBeli} = ${formatNumber(konversi, 0)} ${satuan})</small>`;
+                    } else {
+                        infoSatuanBeli.textContent = satBeli ? satBeli : satuan;
+                    }
+
                     // Tampilkan Spinner & Sembunyikan Tabel
                     loadingState.classList.remove('d-none');
                     tableState.classList.add('d-none');
@@ -292,8 +328,37 @@
                             loadingState.classList.add('d-none');
                             tableState.classList.remove('d-none');
 
+                            const bInfo = data.barang || {};
+                            const satuanDasar = bInfo.satuan || satuan;
+                            const satuanBeliRes = bInfo.satuan_pembelian || satBeli;
+                            const konvFaktor = parseFloat(bInfo.konversi_pembelian) || konversi;
+                            const isConverted = satuanBeliRes && konvFaktor > 1;
+
+                            if (isConverted) {
+                                infoSatuanBeli.innerHTML = `${satuanBeliRes} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${satuanBeliRes} = ${formatNumber(konvFaktor, 0)} ${satuanDasar})</small>`;
+                            }
+
+                            // Helper Qty Cell
+                            const renderQtyCell = (qtyVal, qtyBeliVal, colorClass = '') => {
+                                let res = `<span class="${colorClass}">${formatNumber(qtyVal)} ${satuanDasar}</span>`;
+                                if (isConverted && qtyBeliVal !== undefined && qtyBeliVal !== null) {
+                                    res += `<div class="text-muted fw-normal" style="font-size: 11px;">&asymp; ${formatNumber(qtyBeliVal, 2)} ${satuanBeliRes}</div>`;
+                                }
+                                return res;
+                            };
+
+                            // Helper Price Cell
+                            const renderPriceCell = (priceVal, priceBeliVal, colorClass = '') => {
+                                let res = `<span class="${colorClass}">${formatIDR(priceVal)}<span class="text-muted fw-normal" style="font-size: 10px;">/${satuanDasar}</span></span>`;
+                                if (isConverted && priceBeliVal !== undefined && priceBeliVal !== null) {
+                                    res += `<div class="text-primary fw-semibold" style="font-size: 11px;">&asymp; ${formatIDR(priceBeliVal)}<span class="text-muted fw-normal" style="font-size: 10px;">/${satuanBeliRes}</span></div>`;
+                                }
+                                return res;
+                            };
+
                             // 1. Baris Saldo Awal
                             const saQty = Number(data.saldo_awal.qty);
+                            const saQtyBeli = data.saldo_awal.qty_pembelian !== undefined ? Number(data.saldo_awal.qty_pembelian) : (isConverted ? saQty / konvFaktor : null);
                             const saNilai = Number(data.saldo_awal.nilai);
 
                             let html = `
@@ -309,7 +374,7 @@
                                     <td class="text-end">—</td>
                                     <td class="text-end">—</td>
                                     <!-- Saldo -->
-                                    <td class="text-end">${formatNumber(saQty)}</td>
+                                    <td class="text-end">${renderQtyCell(saQty, saQtyBeli)}</td>
                                     <td class="text-end">${formatIDR(saNilai)}</td>
                                 </tr>
                             `;
@@ -317,8 +382,12 @@
                             // 2. Baris-Baris Mutasi Berjalan
                             data.mutasi.forEach(m => {
                                 const qty = Number(m.qty);
+                                const qtyBeli = m.qty_pembelian !== undefined ? Number(m.qty_pembelian) : (isConverted ? qty / konvFaktor : null);
                                 const total = Number(m.total_harga);
                                 const sat = Number(m.harga_satuan);
+                                const satBeliPrice = m.harga_satuan_pembelian !== undefined ? Number(m.harga_satuan_pembelian) : (isConverted ? sat * konvFaktor : null);
+                                const saldoQ = Number(m.saldo_qty);
+                                const saldoQBeli = m.saldo_qty_pembelian !== undefined ? Number(m.saldo_qty_pembelian) : (isConverted ? saldoQ / konvFaktor : null);
 
                                 html += `
                                     <tr>
@@ -326,17 +395,17 @@
                                         <td>${m.keterangan}</td>
                                         
                                         <!-- MASUK -->
-                                        <td class="text-end text-success fw-bold">${m.is_masuk ? formatNumber(qty) : '—'}</td>
-                                        <td class="text-end text-success">${m.is_masuk ? formatIDR(sat) : '—'}</td>
+                                        <td class="text-end">${m.is_masuk ? renderQtyCell(qty, qtyBeli, 'text-success fw-bold') : '—'}</td>
+                                        <td class="text-end">${m.is_masuk ? renderPriceCell(sat, satBeliPrice, 'text-success') : '—'}</td>
                                         <td class="text-end text-success fw-semibold">${m.is_masuk ? formatIDR(total) : '—'}</td>
                                         
                                         <!-- KELUAR -->
-                                        <td class="text-end text-danger fw-bold">${!m.is_masuk ? formatNumber(qty) : '—'}</td>
-                                        <td class="text-end text-danger">${!m.is_masuk ? formatIDR(sat) : '—'}</td>
+                                        <td class="text-end">${!m.is_masuk ? renderQtyCell(qty, qtyBeli, 'text-danger fw-bold') : '—'}</td>
+                                        <td class="text-end">${!m.is_masuk ? renderPriceCell(sat, satBeliPrice, 'text-danger') : '—'}</td>
                                         <td class="text-end text-danger fw-semibold">${!m.is_masuk ? formatIDR(total) : '—'}</td>
                                         
                                         <!-- SALDO BERJALAN -->
-                                        <td class="text-end fw-bold">${formatNumber(m.saldo_qty)}</td>
+                                        <td class="text-end fw-bold">${renderQtyCell(saldoQ, saldoQBeli)}</td>
                                         <td class="text-end fw-bold text-primary">${formatIDR(m.saldo_nilai)}</td>
                                     </tr>
                                 `;
@@ -344,6 +413,7 @@
 
                             // 3. Baris Saldo Akhir
                             const sfQty = Number(data.saldo_akhir.qty);
+                            const sfQtyBeli = data.saldo_akhir.qty_pembelian !== undefined ? Number(data.saldo_akhir.qty_pembelian) : (isConverted ? sfQty / konvFaktor : null);
                             const sfNilai = Number(data.saldo_akhir.nilai);
 
                             html += `
@@ -359,7 +429,7 @@
                                     <td class="text-end">—</td>
                                     <td class="text-end">—</td>
                                     <!-- Saldo -->
-                                    <td class="text-end">${formatNumber(sfQty)}</td>
+                                    <td class="text-end">${renderQtyCell(sfQty, sfQtyBeli, 'fw-bold')}</td>
                                     <td class="text-end text-primary">${formatIDR(sfNilai)}</td>
                                 </tr>
                             `;

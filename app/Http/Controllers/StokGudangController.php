@@ -400,22 +400,35 @@ class StokGudangController extends Controller
                     'keterangan' => $keterangan,
                     'is_masuk' => $isMasuk,
                     'qty' => $qty,
+                    'qty_pembelian' => $konversiBarang > 1 ? ($qty / $konversiBarang) : $qty,
                     'harga_satuan' => $hargaSatuan,
+                    'harga_satuan_pembelian' => $konversiBarang > 1 ? ($hargaSatuan * $konversiBarang) : $hargaSatuan,
                     'total_harga' => $totalHarga,
                     'saldo_qty' => $runningQty,
+                    'saldo_qty_pembelian' => $konversiBarang > 1 ? ($runningQty / $konversiBarang) : $runningQty,
                     'saldo_nilai' => $runningNilai,
                 ];
             }
         }
 
         return response()->json([
+            'barang' => [
+                'id' => $barang ? $barang->id : $barangId,
+                'nama' => $barang ? $barang->nama : '',
+                'kode_barang' => $barang ? $barang->kode_barang : '',
+                'satuan' => $satuanStok,
+                'satuan_pembelian' => $satuanBeliDefault,
+                'konversi_pembelian' => $konversiBarang,
+            ],
             'saldo_awal' => [
                 'qty' => $saQty,
+                'qty_pembelian' => $konversiBarang > 1 ? ($saQty / $konversiBarang) : $saQty,
                 'nilai' => $saNilai
             ],
             'mutasi' => $mutations,
             'saldo_akhir' => [
                 'qty' => $runningQty,
+                'qty_pembelian' => $konversiBarang > 1 ? ($runningQty / $konversiBarang) : $runningQty,
                 'nilai' => $runningNilai
             ]
         ]);

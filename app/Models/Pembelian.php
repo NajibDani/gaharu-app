@@ -116,6 +116,11 @@ class Pembelian extends Model
         return !$this->is_diterima;
     }
 
+    public function isReceived(): bool
+    {
+        return (bool) $this->is_diterima;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | HELPER: apakah perlu tombol lunasi

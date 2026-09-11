@@ -884,14 +884,14 @@
         });
 
         return `
-            <!-- HEADER BLOCK - WARNA KUNING / AMBER (BAHAN BAKU) -->
-            <div style="background-color:#d97706; color:#ffffff; padding:14px 18px; border-radius:6px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
+            <!-- HEADER BLOCK - WARNA HIJAU MUDA (KEJINGGA MANDIRI) -->
+            <div style="background-color:#10b981; color:#ffffff; padding:14px 18px; border-radius:6px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <div style="font-size:16px; font-weight:bold; letter-spacing:0.5px; text-transform:uppercase;">CV GAHARU AGUNG SEJAHTERA</div>
-                    <div style="font-size:10.5px; opacity:0.95; margin-top:2px;">Pengadaan & Logistik Bahan Baku Operasional</div>
+                    <div style="font-size:16px; font-weight:bold; letter-spacing:0.5px; text-transform:uppercase;">KEJINGGA</div>
+                    <div style="font-size:10.5px; opacity:0.95; margin-top:2px;">Pembelanjaan Mandiri Outlet KeJingga ke Supplier</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-size:14px; font-weight:bold; text-transform:uppercase;">PURCHASE ORDER BAHAN BAKU</div>
+                    <div style="font-size:14px; font-weight:bold; text-transform:uppercase;">PURCHASE ORDER KEJINGGA</div>
                     <div style="font-family:monospace; font-weight:bold; font-size:13px; margin-top:2px;">#${item.kode}</div>
                 </div>
             </div>
@@ -900,13 +900,13 @@
             <table style="width:100%; border-collapse:collapse; background-color:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:15px; font-size:11px;">
                 <tr>
                     <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Judul Dokumen</td>
-                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">PURCHASE ORDER BAHAN BAKU</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">PURCHASE ORDER KEJINGGA</td>
                     <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Tanggal Order</td>
                     <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">${item.tanggal}</td>
                 </tr>
                 <tr>
                     <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Outlet Pemesan</td>
-                    <td style="padding:6px 10px; font-weight:bold; color:#d97706; border-bottom:1px solid #e2e8f0;">Gudang KeJingga</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#10b981; border-bottom:1px solid #e2e8f0;">Gudang KeJingga</td>
                     <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Gudang Sumber</td>
                     <td style="padding:6px 10px; color:#0f172a; border-bottom:1px solid #e2e8f0;"><strong>${item.details[0]?.supplier_nama || 'Supplier Bahan'}</strong> <span style="font-size:10px; color:#64748b;">(Pemasok)</span></td>
                 </tr>
@@ -938,13 +938,18 @@
             </table>
 
             <div style="text-align:right; font-size:13px; font-weight:bold; color:#0f172a; margin-bottom:20px;">
-                Total Purchase Order: <span style="color:#d97706; font-size:15px;">Rp ${item.total.toLocaleString('id-ID')}</span>
+                Total Purchase Order: <span style="color:#10b981; font-size:15px;">Rp ${item.total.toLocaleString('id-ID')}</span>
             </div>
 
             <div style="display:flex; justify-content:space-between; text-align:center; font-size:10.5px; margin-top:25px; border-top:1px solid #e2e8f0; padding-top:10px;">
-                <div>Dibuat Oleh (Operasional)<br><br><br><strong>( ${item.user_nama} )</strong></div>
+                <div>Dibuat Oleh (KeJingga)<br><br><br><strong>( ${item.user_nama} )</strong></div>
                 <div>Supplier / Vendor<br><br><br><strong>( Pemasok Bahan )</strong></div>
                 <div>Gudang Penerima<br><br><br><strong>( Gudang Kejingga )</strong></div>
+            </div>
+
+            <div style="margin-top:20px; border-top:1px dashed #cbd5e1; padding-top:8px; font-size:9.5px; color:#94a3b8; display:flex; justify-content:space-between;">
+                <div>Dokumen Resmi Sistem ERP - Outlet KeJingga</div>
+                <div>Dicetak pada: ${new Date().toLocaleDateString('id-ID', {day:'2-digit', month:'2-digit', year:'numeric'})}</div>
             </div>
         `;
     }
@@ -1099,12 +1104,12 @@
                     <div>
                         <h4 class="fw-bold text-dark mb-1">KEJINGGA</h4>
                         <div class="text-muted small">
-                            Pengadaan &amp; Logistik Operasional Kejingga<br>
+                            Pembelanjaan Mandiri Outlet KeJingga ke Supplier<br>
                             <strong>Gudang:</strong> ${item.gudang_nama}
                         </div>
                     </div>
                     <div class="text-end">
-                        <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER</span>
+                        <span class="badge text-white px-3 py-2 fs-6 fw-bold mb-2" style="background-color: #10b981;">PURCHASE ORDER KEJINGGA</span>
                         <div class="font-monospace fw-bold text-dark fs-5">#${item.kode}</div>
                         <div class="text-muted small">Tanggal: <strong>${item.tanggal}</strong></div>
                     </div>
@@ -1147,7 +1152,7 @@
                             ` : ''}
                             <tr class="border-top">
                                 <td class="fs-5 fw-bold text-dark">Total Purchase Order:</td>
-                                <td class="fs-5 fw-bold text-primary">Rp ${item.total.toLocaleString('id-ID')}</td>
+                                <td class="fs-5 fw-bold" style="color: #10b981;">Rp ${item.total.toLocaleString('id-ID')}</td>
                             </tr>
                         </table>
                     </div>
