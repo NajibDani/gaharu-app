@@ -90,6 +90,18 @@
                         value="{{ date('Y-m-d') }}"
                         required>
                 </div>
+
+                {{-- KETERANGAN / CATATAN --}}
+                <div class="col-12 mt-2">
+                    <label class="form-label fw-semibold text-secondary small mb-1">Keterangan / Catatan Pembelian <span class="text-muted fw-normal">(Opsional)</span></label>
+                    <input
+                        type="text"
+                        name="keterangan"
+                        id="keterangan"
+                        class="form-control"
+                        placeholder="Contoh: Pengadaan bahan baku mingguan, kebutuhan mendesak, dll."
+                        value="{{ old('keterangan') }}">
+                </div>
             </div>
 
             <hr>

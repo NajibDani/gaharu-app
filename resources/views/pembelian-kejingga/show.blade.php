@@ -76,6 +76,12 @@
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Pembayaran</td>
                             <td><strong>{{ strtoupper($pembelian->metode_pembayaran ?: 'COD') }}</strong> <span class="text-muted small">({{ $pembelian->user->nama ?? ($pembelian->user->username ?? 'Staff') }})</span></td>
                         </tr>
+                        @if($pembelian->keterangan)
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Keterangan</td>
+                            <td colspan="3">{{ $pembelian->keterangan }}</td>
+                        </tr>
+                        @endif
                     </tbody>
                 </table>
             </div>

@@ -65,6 +65,7 @@
                             <th style="background-color: #715745 !important;">Tanggal</th>
                             <th style="background-color: #715745 !important;">Supplier</th>
                             <th style="background-color: #715745 !important;">Gudang</th>
+                            <th style="background-color: #715745 !important; min-width: 140px;">Keterangan</th>
                             <th class="text-end" style="background-color: #715745 !important;">Total</th>
                             <th class="text-end" style="background-color: #715745 !important;">Kekurangan</th>
                             <th class="text-center" style="background-color: #715745 !important;">Pembayaran</th>
@@ -107,6 +108,13 @@
                             <td>{{ \Carbon\Carbon::parse($item->tanggal)->format('d M Y') }}</td>
                             <td>{{ $item->supplier->nama ?? '-' }}</td>
                             <td>{{ $item->gudang->nama ?? '-' }}</td>
+                            <td>
+                                @if($item->keterangan)
+                                    <span class="text-dark small" title="{{ $item->keterangan }}">{{ \Illuminate\Support\Str::limit($item->keterangan, 35) }}</span>
+                                @else
+                                    <span class="text-muted small">—</span>
+                                @endif
+                            </td>
     
                             {{-- TOTAL --}}
                             <td class="text-end fw-semibold">
@@ -320,7 +328,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="text-center py-4 text-muted">Belum ada data pembelian.</td>
+                            <td colspan="10" class="text-center py-4 text-muted">Belum ada data pembelian.</td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -624,6 +632,10 @@
                             <label class="form-label fw-semibold text-dark small">Tanggal Transaksi <span class="text-danger">*</span></label>
                             <input type="date" name="tanggal" id="edit_tanggal" class="form-control form-control-sm" required>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold text-dark small">Keterangan / Catatan Pembelian <span class="text-muted fw-normal">(Opsional)</span></label>
+                            <input type="text" name="keterangan" id="edit_keterangan" class="form-control form-control-sm" placeholder="Contoh: Pengadaan bahan baku mingguan, kebutuhan mendesak, dll.">
+                        </div>
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center mb-2 pt-2 border-top">
@@ -785,6 +797,13 @@
                             </div>
                         </div>
                     </div>
+                    ${data.keterangan ? `
+                    <div class="col-12 mt-2">
+                        <div class="p-2 px-3 bg-light rounded-3 border d-flex align-items-center gap-2">
+                            <span class="text-muted small text-uppercase fw-bold flex-shrink-0"><i class="bi bi-info-circle me-1 text-primary"></i>Keterangan:</span>
+                            <span class="small text-dark fw-medium">${data.keterangan}</span>
+                        </div>
+                    </div>` : ''}
                 </div>
 
                 <!-- Tabel Detail Barang -->
@@ -971,6 +990,7 @@
             document.getElementById('edit_supplier_id').value = data.supplier_id || '';
             document.getElementById('edit_gudang_id').value = data.gudang_id || '';
             document.getElementById('edit_tanggal').value = data.tanggal_raw || '';
+            document.getElementById('edit_keterangan').value = data.keterangan || '';
             document.getElementById('edit_tax_service').value = Number(data.tax_service || 0).toLocaleString('id-ID');
 
             const tbody = document.getElementById('tbodyEditItems');

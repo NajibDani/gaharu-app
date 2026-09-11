@@ -64,6 +64,13 @@
                         <span class="badge bg-warning text-dark">Belum Lunas</span>
                     @endif
                 </p>
+
+                @if($pembelian->keterangan)
+                    <p class="mb-0">
+                        <strong>Keterangan:</strong> 
+                        {{ $pembelian->keterangan }}
+                    </p>
+                @endif
             </div>
         </div>
 

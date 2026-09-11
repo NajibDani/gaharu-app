@@ -160,6 +160,14 @@
             </td>
         </tr>
         @endif
+        @if($pembelian->keterangan)
+        <tr>
+            <td class="info-label">Keterangan</td>
+            <td class="info-value" colspan="3">
+                {{ $pembelian->keterangan }}
+            </td>
+        </tr>
+        @endif
     </table>
 
     {{-- TABEL ITEM BARANG --}}

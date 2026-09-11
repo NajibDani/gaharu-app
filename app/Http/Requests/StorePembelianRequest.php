@@ -21,6 +21,7 @@ class StorePembelianRequest extends FormRequest
             'supplier_id' => ['required', 'exists:suppliers,id'],
             'gudang_id' => ['required', 'exists:master_gudang,id'],
             'tanggal' => ['required', 'date'],
+            'keterangan' => ['nullable', 'string', 'max:1000'],
             'tax_service' => ['nullable', 'string'],
 
             'items' => ['required', 'array', 'min:1'],

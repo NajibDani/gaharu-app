@@ -14,6 +14,7 @@ class Pembelian extends Model
         'gudang_id',
         'tanggal',
         'total',
+        'keterangan',
         'created_by',
         // Pembayaran
         'metode_pembayaran',

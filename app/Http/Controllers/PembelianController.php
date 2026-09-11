@@ -43,6 +43,7 @@ class PembelianController extends Controller
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('kode_pembelian', 'like', '%' . $search . '%')
+                  ->orWhere('keterangan', 'like', '%' . $search . '%')
                   ->orWhereHas('supplier', function($sq) use ($search) {
                       $sq->where('nama', 'like', '%' . $search . '%');
                   });
@@ -55,8 +56,8 @@ class PembelianController extends Controller
             $label = match($item->metode_pembayaran) {
                 'cod'    => 'COD',
                 'termin' => 'Termin',
-                'dp'     => $item->nominal_dp && $item->nominal_dp > 0 
-                            ? 'DP Rp ' . number_format((float) $item->nominal_dp, 0, ',', '.')
+                'dp'     => $item->nominal_dp && $item->nominal_dp > 0
+                            ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.')
                             : 'DP ' . $item->persen_dp . '%',
                 default  => '-',
             };
@@ -69,6 +70,7 @@ class PembelianController extends Controller
                 'gudang_nama'         => $item->gudang->nama ?? '-',
                 'tanggal'             => \Carbon\Carbon::parse($item->tanggal)->format('d M Y'),
                 'tanggal_raw'         => \Carbon\Carbon::parse($item->tanggal)->format('Y-m-d'),
+                'keterangan'          => $item->keterangan ?? '',
                 'tax_service'         => (float) ($item->tax_service ?? 0),
                 'total'               => (float) $item->total,
                 'metode'              => $item->metode_pembayaran,
@@ -297,6 +299,7 @@ class PembelianController extends Controller
                 'supplier_id'    => $data['supplier_id'],
                 'gudang_id'      => $data['gudang_id'],
                 'tanggal'        => $data['tanggal'],
+                'keterangan'     => $data['keterangan'] ?? null,
                 'total'          => $total,
                 'tax_service'    => $taxService,
                 'created_by'     => auth()->id(),
@@ -744,6 +747,7 @@ class PembelianController extends Controller
                 'supplier_id' => $data['supplier_id'],
                 'gudang_id'   => $data['gudang_id'],
                 'tanggal'     => $data['tanggal'],
+                'keterangan'  => $data['keterangan'] ?? null,
                 'total'       => $total,
                 'tax_service' => $taxService,
             ]);
