@@ -294,18 +294,23 @@ class PembelianController extends Controller
 
             $total = collect($data['items'])->sum(fn($item) => (float) $item['harga']) + $taxService;
 
-            $pembelian = Pembelian::create([
+            $createData = [
                 'kode_pembelian' => $this->generateKodePembelian($data['tanggal']),
                 'supplier_id'    => $data['supplier_id'],
                 'gudang_id'      => $data['gudang_id'],
                 'tanggal'        => $data['tanggal'],
-                'keterangan'     => $data['keterangan'] ?? null,
                 'total'          => $total,
                 'tax_service'    => $taxService,
                 'created_by'     => auth()->id(),
                 'is_diterima'    => false,
                 'is_lunas'       => false,
-            ]);
+            ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'keterangan')) {
+                $createData['keterangan'] = $data['keterangan'] ?? null;
+            }
+
+            $pembelian = Pembelian::create($createData);
 
             foreach ($data['items'] as $item) {
 
@@ -743,14 +748,19 @@ class PembelianController extends Controller
 
             $total = collect($data['items'])->sum(fn($item) => (float) $item['harga']) + $taxService;
 
-            $pembelian->update([
+            $updateData = [
                 'supplier_id' => $data['supplier_id'],
                 'gudang_id'   => $data['gudang_id'],
                 'tanggal'     => $data['tanggal'],
-                'keterangan'  => $data['keterangan'] ?? null,
                 'total'       => $total,
                 'tax_service' => $taxService,
-            ]);
+            ];
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'keterangan')) {
+                $updateData['keterangan'] = $data['keterangan'] ?? null;
+            }
+
+            $pembelian->update($updateData);
 
             // 2. Insert / Update detail barang
             foreach ($data['items'] as $item) {

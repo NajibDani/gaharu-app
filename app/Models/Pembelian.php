@@ -34,13 +34,6 @@ class Pembelian extends Model
         'lunas_at',
         'nominal_pelunasan',
         'catatan_pelunasan',
-        'is_diterima',
-    'is_lunas',
-    'lunas_at', 
-    'nominal_pelunasan',
-    'catatan_pelunasan',
-      'diterima_at',    
-    'diterima_oleh',
         'tax_service',
     ];
 

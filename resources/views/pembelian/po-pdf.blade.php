@@ -214,6 +214,9 @@
                         @if($hasKonv)
                             <div style="font-size: 8.5px; color: {{ $accentColor }};">= {{ number_format($qtyDiterima * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
                         @endif
+                        @if($detail->tanggal_diterima)
+                            <div style="font-size: 8px; color: #059669; margin-top: 2px;">Tgl: {{ \Carbon\Carbon::parse($detail->tanggal_diterima)->format('d/m/Y') }}</div>
+                        @endif
                     </td>
                     <td class="text-end">
                         Rp {{ number_format($detail->harga_per_qty, 0, ',', '.') }} / {{ $unitDisplay }}

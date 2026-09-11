@@ -16,6 +16,7 @@ class PembelianDetail extends Model
         'konversi_pembelian',
         'qty',
         'qty_diterima',
+        'tanggal_diterima',
         'harga',
         'harga_per_qty',
         'batch_number',
@@ -34,6 +35,7 @@ class PembelianDetail extends Model
     protected $casts = [
         'qty'                => 'decimal:2',
         'qty_diterima'       => 'decimal:2',
+        'tanggal_diterima'   => 'datetime',
         'harga'              => 'decimal:2',
         'harga_per_qty'      => 'decimal:2',
         'nominal_dp'         => 'decimal:2',

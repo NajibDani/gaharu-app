@@ -414,6 +414,10 @@
                             </div>
                         </div>
                         <div class="mb-3">
+                            <label class="form-label small text-dark fw-bold mb-1">Tanggal Diterima Barang <span class="text-danger">*</span></label>
+                            <input type="date" name="tanggal_diterima" id="terima_detail_tanggal" class="form-control fw-bold" value="{{ date('Y-m-d') }}" required>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label small text-dark fw-bold mb-1">Input Qty Terima Saat Ini <span class="text-danger">*</span></label>
                             <input type="number" name="qty_diterima" id="terima_detail_input" class="form-control fw-bold text-primary" step="any" min="0.01" required>
                         </div>
@@ -859,6 +863,10 @@
         const inputEl = document.getElementById('terima_detail_input');
         inputEl.value = sisa > 0 ? sisa : 0;
         inputEl.max = sisa;
+        const tglEl = document.getElementById('terima_detail_tanggal');
+        if (tglEl) {
+            tglEl.value = new Date().toISOString().split('T')[0];
+        }
         document.getElementById('formTerimaDetail').action = `/pembelian-kejingga/detail/${detailId}/terima`;
         new bootstrap.Modal(document.getElementById('modalTerimaDetail')).show();
     }
@@ -876,7 +884,10 @@
                     </td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:center; background:#f8fafc;">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:center;"><strong>${d.qty.toLocaleString('id-ID')} ${d.satuan}</strong>${konvText}</td>
-                    <td style="padding:8px; border:1px solid #cbd5e1; text-align:center;">${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</td>
+                    <td style="padding:8px; border:1px solid #cbd5e1; text-align:center;">
+                        <strong>${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</strong>
+                        ${d.tanggal_diterima ? `<br><small style="color:#059669; font-size:9.5px;">Tgl: ${d.tanggal_diterima}</small>` : ''}
+                    </td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:right;">${d.harga > 0 ? 'Rp ' + d.harga_per_qty.toLocaleString('id-ID') : '—'}</td>
                     <td style="padding:8px; border:1px solid #cbd5e1; text-align:right; font-weight:bold;">${d.harga > 0 ? 'Rp ' + d.harga.toLocaleString('id-ID') : '—'}</td>
                 </tr>
@@ -1047,10 +1058,11 @@
 
             // Per item Reception status UI
             let terimaBadge = `<span class="badge bg-light text-muted border">Belum Diterima</span>`;
+            let tglTerimaInfo = d.tanggal_diterima ? `<div class="text-muted mt-1" style="font-size:10px;"><i class="bi bi-calendar-check text-success me-1"></i>Tgl: <strong>${d.tanggal_diterima}</strong></div>` : '';
             if (d.is_diterima_item) {
-                terimaBadge = `<span class="badge bg-success">✓ Diterima (${d.qty_diterima}/${d.qty})</span>`;
+                terimaBadge = `<span class="badge bg-success">✓ Diterima (${d.qty_diterima}/${d.qty})</span>${tglTerimaInfo}`;
             } else if (d.qty_diterima > 0) {
-                terimaBadge = `<span class="badge bg-info text-white">Parsial (${d.qty_diterima}/${d.qty})</span>`;
+                terimaBadge = `<span class="badge bg-info text-white">Parsial (${d.qty_diterima}/${d.qty})</span>${tglTerimaInfo}`;
             }
 
             let terimaActionBtn = '';

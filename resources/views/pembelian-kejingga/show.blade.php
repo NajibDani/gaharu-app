@@ -133,7 +133,12 @@
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    {{ number_format($detail->qty_diterima ?? 0, 2, ',', '.') }} {{ $unitDisplay }}
+                                    <div class="fw-semibold text-dark">{{ number_format($detail->qty_diterima ?? 0, 2, ',', '.') }} {{ $unitDisplay }}</div>
+                                    @if($detail->tanggal_diterima)
+                                        <small class="text-muted d-block mt-1 font-normal" style="font-size: 10.5px;">
+                                            <i class="bi bi-calendar-check text-success me-1"></i>{{ \Carbon\Carbon::parse($detail->tanggal_diterima)->format('d M Y') }}
+                                        </small>
+                                    @endif
                                 </td>
                                 <td class="text-end">
                                     @if($detail->harga > 0)

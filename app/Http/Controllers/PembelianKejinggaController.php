@@ -165,6 +165,8 @@ class PembelianKejinggaController extends Controller
                         'qty'                => $qtyDetail,
                         'qty_diterima'       => $qtyDiterimaDetail,
                         'is_diterima_item'   => ($qtyDiterimaDetail >= $qtyDetail && $qtyDetail > 0),
+                        'tanggal_diterima'   => $d->tanggal_diterima ? \Carbon\Carbon::parse($d->tanggal_diterima)->format('d M Y') : null,
+                        'tanggal_diterima_raw'=> $d->tanggal_diterima ? \Carbon\Carbon::parse($d->tanggal_diterima)->format('Y-m-d') : null,
                         'harga'              => $hargaDetail,
                         'harga_per_qty'      => (float) $d->harga_per_qty,
                         'metode_pembayaran'   => $d->metode_pembayaran,
@@ -467,6 +469,7 @@ class PembelianKejinggaController extends Controller
                     'konversi_pembelian' => $konversi,
                     'qty'                => $it['qty'],
                     'qty_diterima'       => $oldDet ? $oldDet->qty_diterima : 0,
+                    'tanggal_diterima'   => $oldDet ? $oldDet->tanggal_diterima : null,
                     'harga'              => $it['harga'],
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => $oldDet ? $oldDet->batch_number : (date('Ymd') . '-PBKJG' . rand(100, 999)),
@@ -678,17 +681,19 @@ class PembelianKejinggaController extends Controller
         }
 
         $request->validate([
-            'qty_diterima' => 'required|numeric|min:0.01',
+            'qty_diterima'     => 'required|numeric|min:0.01',
+            'tanggal_diterima' => 'nullable|date',
         ]);
 
         $qtyBaruInput = floatval($request->qty_diterima);
         $sisaMax = floatval($detail->qty) - floatval($detail->qty_diterima);
+        $tglDiterima = $request->tanggal_diterima ? \Carbon\Carbon::parse($request->tanggal_diterima) : now();
 
         if ($qtyBaruInput > $sisaMax) {
             return back()->with('error', "Qty diterima ({$qtyBaruInput}) tidak boleh melebihi sisa pesanan ({$sisaMax}).");
         }
 
-        DB::transaction(function () use ($detail, $qtyBaruInput) {
+        DB::transaction(function () use ($detail, $qtyBaruInput, $tglDiterima) {
             $pembelian = $detail->pembelian;
 
             $noPenerimaan = 'RCV-KJG-' . date('Ymd') . '-' . rand(100, 999);
@@ -699,12 +704,15 @@ class PembelianKejinggaController extends Controller
             $penerimaan = \App\Models\PenerimaanPembelian::create([
                 'pembelian_id'  => $pembelian->id,
                 'no_penerimaan' => $noPenerimaan,
-                'tanggal'       => now(),
+                'tanggal'       => $tglDiterima,
                 'created_by'    => auth()->id()
             ]);
 
             $accReceived = floatval($detail->qty_diterima ?? 0);
-            $detail->update(['qty_diterima' => $accReceived + $qtyBaruInput]);
+            $detail->update([
+                'qty_diterima'     => $accReceived + $qtyBaruInput,
+                'tanggal_diterima' => $tglDiterima,
+            ]);
 
             $penerimaan->details()->create([
                 'pembelian_detail_id' => $detail->id,
