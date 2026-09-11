@@ -31,6 +31,8 @@ class CentralKitchenProductionController extends Controller
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
 
+        $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+
         // Filter WO yang berasal dari pesanan Central Kitchen
         $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
         $gudangCkId = $gudangCk ? $gudangCk->id : 5;
@@ -64,6 +66,7 @@ class CentralKitchenProductionController extends Controller
             $agregatKebutuhan = [];
             $produkTanpaResep = [];
             $hasMissingResep = false;
+            $rekapBahanMap = [];
 
             foreach ($wo->details as $wod) {
                 $target = floatval($wod->qty_rencana);
@@ -104,39 +107,110 @@ class CentralKitchenProductionController extends Controller
                     'has_resep'        => $hasResep,
                 ];
 
-                // Cek kebutuhan bahan untuk sisa target produksi CK
-                if ($hasResep && $sisa > 0) {
+                // Hitung kebutuhan bahan baku (untuk total target WO dan sisa target)
+                if ($hasResep) {
                     foreach ($wod->produk->resep as $resep) {
-                        $qtyButuh = floatval($resep->qty_bahan) * $sisa;
-                        if (!isset($agregatKebutuhan[$resep->bahan_id])) {
-                            $agregatKebutuhan[$resep->bahan_id] = [
-                                'nama'   => $resep->bahan->nama ?? 'Bahan',
-                                'butuh'  => 0,
-                                'satuan' => $resep->bahan->satuan ?? 'pcs',
+                        $bahanId = $resep->bahan_id;
+                        $qtyPerUnit = floatval($resep->qty_bahan);
+                        $butuhTarget = $qtyPerUnit * $target;
+                        $butuhSisa = $qtyPerUnit * $sisa;
+
+                        if (!isset($rekapBahanMap[$bahanId])) {
+                            $rekapBahanMap[$bahanId] = [
+                                'bahan_id'    => $bahanId,
+                                'kode_barang' => $resep->bahan->kode_barang ?? '-',
+                                'nama_bahan'  => $resep->bahan->nama ?? ('Bahan #' . $bahanId),
+                                'satuan'      => $resep->bahan->satuan ?? ($resep->satuan ?? 'pcs'),
+                                'total_butuh' => 0,
+                                'sisa_butuh'  => 0,
+                                'breakdown'   => [],
                             ];
                         }
-                        $agregatKebutuhan[$resep->bahan_id]['butuh'] += $qtyButuh;
+
+                        $rekapBahanMap[$bahanId]['total_butuh'] += $butuhTarget;
+                        $rekapBahanMap[$bahanId]['sisa_butuh'] += $butuhSisa;
+
+                        $rekapBahanMap[$bahanId]['breakdown'][] = [
+                            'nama_produk'    => $wod->produk->nama ?? ('Produk #' . $wod->produk_id),
+                            'kode_produk'    => $wod->produk->kode_barang ?? '-',
+                            'target_produk'  => $target,
+                            'sisa_produk'    => $sisa,
+                            'satuan_produk'  => $wod->produk->satuan ?? 'pcs',
+                            'qty_per_unit'   => $qtyPerUnit,
+                            'subtotal_total' => $butuhTarget,
+                            'subtotal_sisa'  => $butuhSisa,
+                        ];
+
+                        if ($sisa > 0) {
+                            if (!isset($agregatKebutuhan[$bahanId])) {
+                                $agregatKebutuhan[$bahanId] = [
+                                    'nama'   => $resep->bahan->nama ?? 'Bahan',
+                                    'butuh'  => 0,
+                                    'satuan' => $resep->bahan->satuan ?? 'pcs',
+                                ];
+                            }
+                            $agregatKebutuhan[$bahanId]['butuh'] += $butuhSisa;
+                        }
                     }
                 }
             }
 
-            // Validasi kecukupan bahan baku di Gudang Central Kitchen
+            // Ambil stok terkini di Gudang Central Kitchen untuk seluruh bahan yang direkap
+            $bahanIds = array_keys($rekapBahanMap);
+            $stokGudangCk = !empty($bahanIds)
+                ? StokGudang::where('gudang_id', $gudangCkId)
+                    ->whereIn('barang_id', $bahanIds)
+                    ->pluck('jumlah', 'barang_id')
+                    ->toArray()
+                : [];
+
             $isBahanSufficient = true;
             $defisitBahan = [];
+            $rekapBahanList = [];
+            $totalBahanKurang = 0;
+            $totalBahanCukup = 0;
 
-            foreach ($agregatKebutuhan as $bahanId => $dataBahan) {
-                $stokGudang = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $bahanId)->value('jumlah') ?? 0);
-                if ($stokGudang < $dataBahan['butuh']) {
+            foreach ($rekapBahanMap as $bahanId => $dataBahan) {
+                $stok = floatval($stokGudangCk[$bahanId] ?? 0);
+                // Jika WO masih ada sisa produksi, gunakan sisa_butuh; jika sudah komplit, gunakan total_butuh
+                $refButuh = ($totalSisa > 0) ? $dataBahan['sisa_butuh'] : $dataBahan['total_butuh'];
+                $isCukup = ($stok >= $refButuh);
+                $kurang = max(0, $refButuh - $stok);
+                $selisih = $stok - $refButuh;
+
+                if (!$isCukup) {
                     $isBahanSufficient = false;
-                    $defisitBahan[] = [
-                        'nama'   => $dataBahan['nama'],
-                        'butuh'  => $dataBahan['butuh'],
-                        'stok'   => $stokGudang,
-                        'kurang' => $dataBahan['butuh'] - $stokGudang,
-                        'satuan' => $dataBahan['satuan'],
-                    ];
+                    $totalBahanKurang++;
+                    if ($totalSisa > 0) {
+                        $defisitBahan[] = [
+                            'nama'   => $dataBahan['nama_bahan'],
+                            'butuh'  => $dataBahan['sisa_butuh'],
+                            'stok'   => $stok,
+                            'kurang' => $kurang,
+                            'satuan' => $dataBahan['satuan'],
+                        ];
+                    }
+                } else {
+                    $totalBahanCukup++;
                 }
+
+                $dataBahan['stok_ck'] = $stok;
+                $dataBahan['is_cukup'] = $isCukup;
+                $dataBahan['kurang'] = $kurang;
+                $dataBahan['selisih'] = $selisih;
+                $dataBahan['ref_butuh'] = $refButuh;
+                $dataBahan['persen_stok'] = ($refButuh > 0) ? min(100, round(($stok / $refButuh) * 100)) : 100;
+
+                $rekapBahanList[] = $dataBahan;
             }
+
+            // Urutkan bahan baku: yang kurang ditaruh paling atas, lalu urut abjad nama
+            usort($rekapBahanList, function($a, $b) {
+                if ($a['is_cukup'] === $b['is_cukup']) {
+                    return strcmp($a['nama_bahan'], $b['nama_bahan']);
+                }
+                return $a['is_cukup'] ? 1 : -1;
+            });
 
             $wo->total_target = $totalTarget;
             $wo->total_selesai = $totalSelesai;
@@ -147,6 +221,10 @@ class CentralKitchenProductionController extends Controller
             $wo->produk_tanpa_resep = $produkTanpaResep;
             $wo->is_bahan_sufficient = $isBahanSufficient;
             $wo->defisit_bahan = $defisitBahan;
+            $wo->rekap_bahan = $rekapBahanList;
+            $wo->total_jenis_bahan = count($rekapBahanList);
+            $wo->total_bahan_kurang = $totalBahanKurang;
+            $wo->total_bahan_cukup = $totalBahanCukup;
             // Approval hanya bisa dilakukan jika seluruh item punya resep dan bahan cukup
             $wo->can_approve = !$hasMissingResep && $isBahanSufficient;
 
@@ -280,7 +358,7 @@ class CentralKitchenProductionController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
-        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjPerDivisi', 'customers', 'customerId', 'allProdukCk'));
+        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjPerDivisi', 'customers', 'customerId', 'allProdukCk', 'isSuperAdmin'));
     }
 
     /**

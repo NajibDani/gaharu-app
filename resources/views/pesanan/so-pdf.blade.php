@@ -2,85 +2,171 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Sales Order B2B - {{ $pesanan->kode_pesanan }}</title>
+    <title>PERMINTAAN COLD KITCHEN - {{ $pesanan->kode_pesanan }}</title>
     <style>
-        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 12px; color: #333; margin: 0; padding: 15px; }
-        .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-        .company-name { font-size: 20px; font-weight: bold; text-transform: uppercase; color: #6a4126; }
-        .doc-title { font-size: 16px; font-weight: bold; text-align: right; color: #6a4126; text-transform: uppercase; }
-        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-        .info-table td { vertical-align: top; padding: 4px 0; }
-        .item-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .item-table th { background-color: #6a4126; color: white; padding: 8px; text-align: left; font-size: 11px; text-transform: uppercase; }
-        .item-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
-        .text-end { text-align: right; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4; margin: 0; padding: 15px; }
+
+        /* HEADER COLOR BLOCK - BIRU (PRODUKSI / COLD KITCHEN) */
+        .header-block {
+            background-color: #1d4ed8;
+            color: #ffffff;
+            padding: 14px 18px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .header-table { width: 100%; border-collapse: collapse; }
+        .company-name { font-size: 17px; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; }
+        .sub-company { font-size: 10px; opacity: 0.9; margin-top: 2px; }
+        .doc-badge-title { font-size: 15px; font-weight: bold; text-align: right; text-transform: uppercase; letter-spacing: 0.5px; }
+        .doc-code { font-size: 12px; font-family: monospace; font-weight: bold; text-align: right; margin-top: 3px; }
+
+        /* METADATA INFO GRID */
+        .info-grid {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .info-grid td {
+            padding: 7px 10px;
+            font-size: 11px;
+            vertical-align: middle;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .info-label { font-weight: bold; color: #475569; width: 18%; text-transform: uppercase; font-size: 10px; }
+        .info-value { width: 32%; color: #0f172a; }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 9.5px;
+            font-weight: bold;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .badge-pending { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        .badge-proses { background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; }
+        .badge-selesai { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-batal { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+        /* ITEMS TABLE */
+        .table-items { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 15px; }
+        .table-items th {
+            background-color: #1e293b;
+            color: #ffffff;
+            text-align: left;
+            padding: 8px;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            border: 1px solid #1e293b;
+        }
+        .table-items td {
+            padding: 7px 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 10.5px;
+            vertical-align: middle;
+        }
+        .table-items tr:nth-child(even) { background-color: #f8fafc; }
         .text-center { text-align: center; }
+        .text-end { text-align: right; }
         .fw-bold { font-weight: bold; }
-        .total-box { margin-top: 15px; float: right; width: 45%; }
+
+        /* TOTAL SECTION */
+        .total-box { margin-top: 10px; float: right; width: 45%; }
         .total-table { width: 100%; border-collapse: collapse; }
-        .total-table td { padding: 6px; font-size: 12px; }
-        .signature-section { margin-top: 50px; width: 100%; clear: both; }
-        .signature-box { float: left; width: 30%; text-align: center; }
-        .signature-space { height: 60px; }
-        .badge { padding: 3px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
-        .bg-success { background-color: #38a169; color: white; }
-        .bg-warning { background-color: #dd6b20; color: white; }
-        .bg-info { background-color: #3182ce; color: white; }
+        .total-table td { padding: 5px 8px; font-size: 11px; }
+
+        /* SIGNATURES & FOOTER */
+        .signature-table { width: 100%; border-collapse: collapse; margin-top: 30px; clear: both; }
+        .signature-table td { width: 33.33%; text-align: center; vertical-align: top; font-size: 10.5px; }
+        .sign-space { height: 55px; }
+        .footer-note {
+            margin-top: 25px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 8px;
+            font-size: 9px;
+            color: #94a3b8;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
 
-    <table style="width:100%; margin-bottom: 15px;">
+    {{-- HEADER BLOCK - WARNA BIRU (PRODUKSI / COLD KITCHEN) --}}
+    <div class="header-block">
+        <table class="header-table">
+            <tr>
+                <td style="vertical-align: middle;">
+                    <div class="company-name">CV GAHARU AGUNG SEJAHTERA</div>
+                    <div class="sub-company">Cold Kitchen Production &amp; Sales Order Management</div>
+                </td>
+                <td style="vertical-align: middle; text-align: right;">
+                    <div class="doc-badge-title">PERMINTAAN COLD KITCHEN (SO)</div>
+                    <div class="doc-code">#{{ $pesanan->kode_pesanan }}</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {{-- STANDAR INFO GRID METADATA --}}
+    <table class="info-grid">
         <tr>
-            <td style="width: 50%;">
-                <div class="company-name">GAHARU APP B2B</div>
-                <div style="font-size: 11px; color: #666; margin-top: 4px;">
-                    Manajemen Penjualan & Distribusi B2B<br>
-                    Gudang Pengirim: {{ $pesanan->gudang->nama ?? 'Gudang Utama' }}
-                </div>
-            </td>
-            <td style="width: 50%; text-align: right;">
-                <div class="doc-title">SALES ORDER (SO)</div>
-                <div style="font-weight: bold; font-size: 13px; margin-top: 4px;">#{{ $pesanan->kode_pesanan }}</div>
-                <div style="color: #666; font-size: 11px;">Tanggal: {{ \Carbon\Carbon::parse($pesanan->tanggal)->format('d F Y') }}</div>
-            </td>
+            <td class="info-label">Judul Dokumen</td>
+            <td class="info-value"><strong>PERMINTAAN COLD KITCHEN (SALES ORDER)</strong></td>
+            <td class="info-label">Tanggal Order</td>
+            <td class="info-value"><strong>{{ \Carbon\Carbon::parse($pesanan->tanggal)->format('d F Y') }}</strong></td>
         </tr>
-    </table>
-
-    <div style="border-top: 2px solid #6a4126; margin-bottom: 15px;"></div>
-
-    <table class="info-table">
         <tr>
-            <td style="width: 55%;">
-                <strong style="color: #4a5568; font-size: 11px; text-transform: uppercase;">PELANGGAN / CUSTOMER B2B:</strong><br>
-                <span style="font-size: 14px; font-weight: bold;">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? 'Umum / Tanpa Nama' }}</span><br>
-                Telepon: {{ $pesanan->customer->telepon ?? '-' }}<br>
-                Alamat: {{ $pesanan->customer->alamat ?? '-' }}
+            <td class="info-label">Outlet Pemesan</td>
+            <td class="info-value"><strong style="color: #1d4ed8; font-size: 12px;">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? '-' }}</strong></td>
+            <td class="info-label">Gudang Sumber</td>
+            <td class="info-value"><strong>{{ $pesanan->gudang->nama ?? 'Gudang Cold Kitchen' }}</strong> (Penyedia)</td>
+        </tr>
+        <tr>
+            <td class="info-label">Status Dokumen</td>
+            <td class="info-value">
+                @php
+                    $st = strtolower($pesanan->status_pesanan ?? 'pending');
+                    $badgeClass = 'badge-pending';
+                    if(in_array($st, ['selesai', 'approved', 'disetujui'])) $badgeClass = 'badge-selesai';
+                    elseif(in_array($st, ['diproses', 'proses', 'dikirim', 'siap kirim'])) $badgeClass = 'badge-proses';
+                    elseif($st == 'batal' || $st == 'dibatalkan') $badgeClass = 'badge-batal';
+                @endphp
+                <span class="badge {{ $badgeClass }}">{{ strtoupper($pesanan->status_pesanan ?? 'PENDING') }}</span>
             </td>
-            <td style="width: 45%;">
-                <strong style="color: #4a5568; font-size: 11px; text-transform: uppercase;">INFORMASI ORDER:</strong><br>
-                Estimasi Pengiriman: <strong>{{ \Carbon\Carbon::parse($pesanan->estimasi_kirim)->format('d F Y') }}</strong><br>
-                Status Pesanan: <span class="badge bg-info">{{ strtoupper($pesanan->status_pesanan ?? 'DRAFT') }}</span><br>
-                Status Pembayaran: 
+            <td class="info-label">Estimasi Kirim</td>
+            <td class="info-value"><strong>{{ \Carbon\Carbon::parse($pesanan->estimasi_kirim)->format('d F Y') }}</strong></td>
+        </tr>
+        <tr>
+            <td class="info-label">Status Pembayaran</td>
+            <td class="info-value" colspan="3">
                 @if(($pesanan->status_pembayaran ?? '') == 'Lunas')
-                    <span class="badge bg-success">LUNAS</span>
+                    <span class="badge badge-selesai">LUNAS</span>
                 @elseif(($pesanan->status_pembayaran ?? '') == 'DP')
-                    <span class="badge bg-warning">DP / UANG MUKA</span>
+                    <span class="badge badge-pending">DP / UANG MUKA</span>
                 @else
-                    <span class="badge bg-warning">BELUM BAYAR</span>
+                    <span class="badge badge-batal">BELUM BAYAR</span>
+                @endif
+                @if($pesanan->customer && $pesanan->customer->telepon)
+                    <span style="color: #64748b; font-size: 10px; margin-left: 8px;">(Kontak Pemesan: {{ $pesanan->customer->telepon }})</span>
                 @endif
             </td>
         </tr>
     </table>
 
-    <table class="item-table">
+    {{-- TABEL ITEM PRODUK --}}
+    <table class="table-items">
         <thead>
             <tr>
-                <th style="width: 5%;">No</th>
-                <th>Nama Produk</th>
-                <th class="text-center" style="width: 15%;">Jumlah (Qty)</th>
-                <th class="text-end" style="width: 20%;">Harga Satuan</th>
-                <th class="text-end" style="width: 20%;">Subtotal</th>
+                <th style="width: 25px; text-align: center;">NO</th>
+                <th>NAMA PRODUK</th>
+                <th style="width: 120px; text-align: center;">JUMLAH (QTY)</th>
+                <th style="width: 140px; text-align: right;">HARGA SATUAN</th>
+                <th style="width: 150px; text-align: right;">SUBTOTAL</th>
             </tr>
         </thead>
         <tbody>
@@ -95,8 +181,13 @@
                 @endphp
                 <tr>
                     <td class="text-center">{{ $idx + 1 }}</td>
-                    <td><strong>{{ $detail->produk->nama ?? '-' }}</strong></td>
-                    <td class="text-center">{{ number_format($detail->qty, 0, ',', '.') }} {{ $detail->produk->satuan ?? 'Pcs' }}</td>
+                    <td>
+                        <strong style="color: #0f172a;">{{ $detail->produk->nama ?? '-' }}</strong>
+                        @if(isset($detail->produk->kode_barang))
+                            <div style="font-size: 9px; color: #64748b; font-family: monospace;">{{ $detail->produk->kode_barang }}</div>
+                        @endif
+                    </td>
+                    <td class="text-center fw-bold">{{ number_format($detail->qty, 0, ',', '.') }} {{ $detail->produk->satuan ?? 'Pcs' }}</td>
                     <td class="text-end">Rp {{ number_format($detail->harga, 0, ',', '.') }}</td>
                     <td class="text-end fw-bold">Rp {{ number_format($subtotal, 0, ',', '.') }}</td>
                 </tr>
@@ -104,44 +195,62 @@
         </tbody>
     </table>
 
+    {{-- TOTAL TAGIHAN --}}
     <div class="total-box">
         <table class="total-table">
             <tr>
-                <td class="fw-bold">Total Sales Order:</td>
-                <td class="text-end fw-bold" style="font-size: 14px; color: #6a4126;">
+                <td class="fw-bold">Total Nilai Order:</td>
+                <td class="text-end fw-bold" style="font-size: 13px; color: #1d4ed8;">
                     Rp {{ number_format($pesanan->total_pesanan ?? $totalSub, 0, ',', '.') }}
                 </td>
             </tr>
             @php 
-                $totalBayar = $pesanan->pembayaran->sum('jumlah_bayar'); 
+                $totalBayar = isset($pesanan->pembayaran) ? $pesanan->pembayaran->sum('jumlah_bayar') : 0; 
                 $sisaTagihan = max(0, ($pesanan->total_pesanan ?? $totalSub) - $totalBayar);
             @endphp
             @if($totalBayar > 0)
             <tr>
                 <td>Total Sudah Dibayar:</td>
-                <td class="text-end text-success fw-bold">Rp {{ number_format($totalBayar, 0, ',', '.') }}</td>
+                <td class="text-end fw-bold" style="color: #15803d;">Rp {{ number_format($totalBayar, 0, ',', '.') }}</td>
             </tr>
             <tr>
                 <td class="fw-bold">Sisa Pelunasan:</td>
-                <td class="text-end fw-bold text-danger">Rp {{ number_format($sisaTagihan, 0, ',', '.') }}</td>
+                <td class="text-end fw-bold" style="color: #b91c1c;">Rp {{ number_format($sisaTagihan, 0, ',', '.') }}</td>
             </tr>
             @endif
         </table>
     </div>
 
-    <div class="signature-section">
-        
-        <div class="signature-box" style="margin-left: 5%;">
-            Disetujui Oleh,<br>
-            <div class="signature-space"></div>
-            <strong>( Manajer Operasional )</strong>
-        </div>
-        <div class="signature-box" style="float: right;">
-            Pemesan / Customer,<br>
-            <div class="signature-space"></div>
-            <strong>({{ $pesanan->customer->nama ?? $pesanan->customer->name ?? 'Pelanggan' }})</strong>
-        </div>
-    </div>
+    {{-- TANDA TANGAN 3 PIHAK --}}
+    <table class="signature-table">
+        <tr>
+            <td>
+                Pemesan (Outlet / Customer)<br><br>
+                <div class="sign-space"></div>
+                <strong>( {{ $pesanan->customer->nama ?? $pesanan->customer->name ?? 'Pemesan' }} )</strong><br>
+                <span style="font-size: 9.5px; color: #64748b;">Unit Pemesan</span>
+            </td>
+            <td>
+                Penyedia (Cold Kitchen)<br><br>
+                <div class="sign-space"></div>
+                <strong>( Tim Produksi Cold Kitchen )</strong><br>
+                <span style="font-size: 9.5px; color: #64748b;">Gudang Cold Kitchen</span>
+            </td>
+            <td>
+                Management / Otorisasi<br><br>
+                <div class="sign-space"></div>
+                <strong>( Manajer Operasional )</strong><br>
+                <span style="font-size: 9.5px; color: #64748b;">CV Gaharu Agung Sejahtera</span>
+            </td>
+        </tr>
+    </table>
+
+    <table class="footer-note">
+        <tr>
+            <td>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</td>
+            <td style="text-align: right;">Dicetak pada: {{ date('d/m/Y H:i') }}</td>
+        </tr>
+    </table>
 
 </body>
 </html>

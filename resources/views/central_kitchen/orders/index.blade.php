@@ -467,42 +467,49 @@
                                                 </div>
                                                 <div class="modal-body p-3 p-md-4">
                                                     <div id="po-doc-container-{{ $p->id }}" class="p-3 p-md-4 bg-white rounded-3 border">
-                                                        <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3 flex-wrap gap-2">
-                                                            <div>
-                                                                <h4 class="fw-bold text-dark mb-1">PURCHASE ORDER CENTRAL KITCHEN</h4>
-                                                                <h6 class="fw-bold text-primary mb-1">CENTRAL KITCHEN CV GAHARU AGUNG SEJAHTERA</h6>
-                                                                <div class="text-muted small">
-                                                                    Pengadaan &amp; Distribusi Bahan Setengah Jadi<br>
-                                                                    <strong>Divisi CK:</strong> {{ $p->divisi->nama ?? 'Gudang Central Kitchen' }}
-                                                                </div>
-                                                            </div>
-                                                            <div class="text-end">
-                                                                <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER</span>
-                                                                <div class="font-monospace fw-bold text-dark fs-5">#{{ $p->kode_pesanan }}</div>
-                                                                <div class="text-muted small">Tanggal: <strong>{{ date('d M Y', strtotime($p->tanggal)) }}</strong></div>
-                                                            </div>
-                                                        </div>
+                                                         {{-- HEADER BLOCK - WARNA BIRU (PRODUKSI / CENTRAL KITCHEN) --}}
+                                                         <div class="p-3 rounded-3 mb-3 text-white" style="background-color: #1d4ed8;">
+                                                             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                                                 <div>
+                                                                     <div class="fw-bold fs-5 text-uppercase" style="letter-spacing: 0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
+                                                                     <div class="small opacity-75">Central Kitchen Production &amp; Internal Order Management</div>
+                                                                 </div>
+                                                                 <div class="text-end">
+                                                                     <div class="fw-bold fs-6 text-uppercase">PURCHASE ORDER CENTRAL KITCHEN</div>
+                                                                     <div class="font-monospace fw-bold fs-5">#{{ $p->kode_pesanan }}</div>
+                                                                 </div>
+                                                             </div>
+                                                         </div>
 
-                                                        <div class="row g-2 mb-3 p-3 bg-light rounded-3 border">
-                                                            <div class="col-6 col-md-3">
-                                                                <span class="text-muted small d-block">Outlet Pemesan:</span>
-                                                                <strong class="text-dark">{{ $p->customer->nama ?? '-' }}</strong>
-                                                            </div>
-                                                            <div class="col-6 col-md-3">
-                                                                <span class="text-muted small d-block">Tanggal Order:</span>
-                                                                <strong class="text-dark">{{ date('d M Y', strtotime($p->tanggal)) }}</strong>
-                                                            </div>
-                                                            <div class="col-6 col-md-3">
-                                                                <span class="text-muted small d-block">Estimasi Kirim:</span>
-                                                                <strong class="text-dark">{{ date('d M Y', strtotime($p->estimasi_kirim)) }}</strong>
-                                                            </div>
-                                                            <div class="col-6 col-md-3">
-                                                                <span class="text-muted small d-block">Status Pesanan:</span>
-                                                                <span class="badge-subtle {{ $statusClass }}">
-                                                                    {{ ucfirst($p->status_pesanan) }}
-                                                                </span>
-                                                            </div>
-                                                        </div>
+                                                         {{-- STANDAR INFO GRID METADATA --}}
+                                                         <div class="table-responsive mb-3">
+                                                             <table class="table table-bordered align-middle mb-0" style="font-size: 12px; background-color: #f8fafc;">
+                                                                 <tbody>
+                                                                     <tr>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Judul Dokumen</td>
+                                                                         <td class="fw-bold text-dark" style="width: 32%;">PURCHASE ORDER CENTRAL KITCHEN</td>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Tanggal Order</td>
+                                                                         <td class="fw-bold text-dark" style="width: 32%;">{{ \Carbon\Carbon::parse($p->tanggal)->format('d F Y') }}</td>
+                                                                     </tr>
+                                                                     <tr>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
+                                                                         <td><strong class="text-primary fs-6">{{ $p->customer->nama ?? '-' }}</strong></td>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
+                                                                         <td><strong>{{ $p->divisi->nama ?? 'Gudang Central Kitchen' }}</strong> <span class="text-muted small">(Penyedia)</span></td>
+                                                                     </tr>
+                                                                     <tr>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Status Dokumen</td>
+                                                                         <td>
+                                                                             <span class="badge-subtle {{ $statusClass }} text-uppercase">
+                                                                                 {{ $p->status_pesanan }}
+                                                                             </span>
+                                                                         </td>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Estimasi Kirim</td>
+                                                                         <td><strong>{{ \Carbon\Carbon::parse($p->estimasi_kirim)->format('d F Y') }}</strong></td>
+                                                                     </tr>
+                                                                 </tbody>
+                                                             </table>
+                                                         </div>
 
                                                         <h6 class="fw-bold text-dark mb-2 small text-uppercase">Daftar Bahan Setengah Jadi / Barang</h6>
                                                         <div class="table-responsive mb-3">

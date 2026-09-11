@@ -1,64 +1,69 @@
+@php
+    $tujuanNama = strtolower(($pengeluaran->gudang->nama ?? '') . ' ' . ($pengeluaran->divisi->nama ?? ''));
+    $isProduksiOrCK = str_contains($tujuanNama, 'central kitchen') || str_contains($tujuanNama, 'cold kitchen') || str_contains($tujuanNama, 'produksi');
+    $headerBgColor = $isProduksiOrCK ? '#1d4ed8' : '#d97706'; // Biru untuk Produksi/CK/Cold Kitchen, Kuning untuk Bahan Baku Operasional
+    $judulDokumen = $isWasted 
+        ? 'BERITA ACARA WASTED' 
+        : ($isProduksiOrCK ? 'SURAT PERMINTAAN & TRANSFER BAHAN (CK / PRODUKSI)' : 'SURAT PERMINTAAN & TRANSFER BAHAN BAKU');
+@endphp
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
     <meta charset="utf-8">
-    <title>{{ $isWasted ? 'Berita Acara Wasted' : 'Surat Permintaan & Transfer' }} - {{ $pengeluaran->kode_pengeluaran }}</title>
+    <title>{{ $judulDokumen }} - {{ $pengeluaran->kode_pengeluaran }}</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Helvetica', 'Arial', sans-serif;
             font-size: 11px;
-            color: #222;
+            color: #1e293b;
             line-height: 1.4;
             margin: 0;
-            padding: 10px;
+            padding: 15px;
         }
-        .header {
-            text-align: center;
-            border-bottom: 2px solid #7A4517;
-            padding-bottom: 8px;
+
+        /* HEADER COLOR BLOCK */
+        .header-block {
+            background-color: {{ $headerBgColor }};
+            color: #ffffff;
+            padding: 14px 18px;
+            border-radius: 6px;
             margin-bottom: 15px;
         }
-        .header h2 {
-            margin: 0;
-            color: #7A4517;
-            font-size: 17px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .header p {
-            margin: 3px 0 0;
-            font-size: 10px;
-            color: #555;
-        }
-        .badge-status {
-            display: inline-block;
-            padding: 3px 10px;
-            font-weight: bold;
-            font-size: 10px;
-            border-radius: 4px;
-            margin-top: 4px;
-        }
-        .badge-approved { background-color: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
-        .badge-draft { background-color: #fff3cd; color: #664d03; border: 1px solid #ffecb5; }
+        .header-table { width: 100%; border-collapse: collapse; }
+        .company-name { font-size: 17px; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; }
+        .sub-company { font-size: 10px; opacity: 0.95; margin-top: 2px; }
+        .doc-badge-title { font-size: 14px; font-weight: bold; text-align: right; text-transform: uppercase; letter-spacing: 0.5px; }
+        .doc-code { font-size: 12px; font-family: monospace; font-weight: bold; text-align: right; margin-top: 3px; }
 
-        .table-info {
+        /* METADATA INFO GRID */
+        .info-grid {
             width: 100%;
             border-collapse: collapse;
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
             margin-bottom: 15px;
         }
-        .table-info td {
-            padding: 4px 6px;
-            font-size: 10.5px;
-            vertical-align: top;
+        .info-grid td {
+            padding: 7px 10px;
+            font-size: 11px;
+            vertical-align: middle;
+            border-bottom: 1px solid #e2e8f0;
         }
-        .table-info .lbl {
+        .info-label { font-weight: bold; color: #475569; width: 18%; text-transform: uppercase; font-size: 10px; }
+        .info-value { width: 32%; color: #0f172a; }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 9.5px;
             font-weight: bold;
-            color: #555;
-            width: 16%;
+            border-radius: 4px;
+            text-transform: uppercase;
         }
-        .table-info .val {
-            width: 34%;
-        }
+        .badge-approved { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-draft { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 
         .table-items {
             width: 100%;
@@ -66,31 +71,31 @@
             margin-top: 5px;
         }
         .table-items th {
-            background-color: #7A4517;
+            background-color: #1e293b;
             color: #ffffff;
             font-size: 9.5px;
-            padding: 6px 5px;
+            padding: 7px 5px;
             text-align: left;
             text-transform: uppercase;
-            border: 1px solid #7A4517;
+            border: 1px solid #1e293b;
         }
         .table-items td {
             padding: 6px 5px;
             font-size: 10px;
-            border: 1px solid #ddd;
+            border: 1px solid #cbd5e1;
             vertical-align: middle;
         }
         .table-items tr:nth-child(even) {
-            background-color: #faf8f5;
+            background-color: #f8fafc;
         }
 
         .text-center { text-align: center; }
         .text-end { text-align: right; }
         .fw-bold { font-weight: bold; }
-        .text-success { color: #198754; font-weight: bold; }
-        .text-danger { color: #dc3545; font-weight: bold; }
+        .text-success { color: #15803d; font-weight: bold; }
+        .text-danger { color: #dc2626; font-weight: bold; }
         .text-warning { color: #b45309; font-weight: bold; }
-        .text-muted { color: #6c757d; }
+        .text-muted { color: #64748b; }
 
         .status-pill {
             font-size: 8.5px;
@@ -99,9 +104,9 @@
             font-weight: bold;
             display: inline-block;
         }
-        .status-ok { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
-        .status-shortage { background: #fff3e0; color: #e65100; border: 1px solid #ffe0b2; }
-        .status-empty { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+        .status-ok { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .status-shortage { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+        .status-empty { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 
         .footer-sign {
             margin-top: 25px;
@@ -115,85 +120,104 @@
             font-size: 10.5px;
         }
         .sign-space {
-            height: 60px;
+            height: 55px;
         }
         .keterangan-box {
-            background-color: #f8f9fa;
-            border: 1px solid #e9ecef;
+            background-color: #fffbeb;
+            border: 1px solid #fef3c7;
             border-radius: 4px;
             padding: 6px 10px;
             margin-bottom: 12px;
             font-size: 10px;
+            color: #92400e;
+        }
+        .footer-note {
+            margin-top: 20px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 6px;
+            font-size: 9px;
+            color: #94a3b8;
+            width: 100%;
         }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h2>CV GAHARU AGUNG SEJAHTERA</h2>
-        <p>{{ $isWasted ? 'Berita Acara Pengeluaran Bahan Wasted / Rusak / Busuk - Lokasi Operasional' : 'Surat Permintaan & Transfer Bahan Baku - Sistem Pengelolaan Stok & Distribusi Antar Gudang' }}</p>
+    {{-- HEADER BLOCK BERWARNA --}}
+    <div class="header-block">
+        <table class="header-table">
+            <tr>
+                <td style="vertical-align: middle;">
+                    <div class="company-name">CV GAHARU AGUNG SEJAHTERA</div>
+                    <div class="sub-company">
+                        {{ $isWasted ? 'Berita Acara Pengeluaran Bahan Wasted / Rusak / Busuk' : ($isProduksiOrCK ? 'Distribusi Permintaan Bahan ke Produksi / Kitchen' : 'Sistem Pengelolaan Stok & Distribusi Bahan Baku Antar Gudang') }}
+                    </div>
+                </td>
+                <td style="vertical-align: middle; text-align: right;">
+                    <div class="doc-badge-title">{{ $judulDokumen }}</div>
+                    <div class="doc-code">#{{ $pengeluaran->kode_pengeluaran }}</div>
+                </td>
+            </tr>
+        </table>
     </div>
 
-    <table class="table-info">
+    {{-- STANDAR INFO GRID METADATA --}}
+    <table class="info-grid">
         @if($isWasted)
             <tr>
-                <td class="lbl">Kode Dokumen</td>
-                <td class="val">: <strong>{{ $pengeluaran->kode_pengeluaran }}</strong></td>
-                <td class="lbl">Tanggal Laporan</td>
-                <td class="val">: {{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d F Y H:i') }}</td>
+                <td class="info-label">Judul Dokumen</td>
+                <td class="info-value"><strong>BERITA ACARA WASTED / RUSAK</strong></td>
+                <td class="info-label">Tanggal Laporan</td>
+                <td class="info-value"><strong>{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d F Y H:i') }}</strong></td>
             </tr>
             <tr>
-                <td class="lbl">Lokasi Wasted</td>
-                <td class="val">: 
-                    <strong style="color: #dc3545;">{{ $pengeluaran->gudang->nama ?? '-' }}</strong>
-                    @if($pengeluaran->divisi)
-                        (Divisi: {{ $pengeluaran->divisi->nama }})
-                    @endif
+                <td class="info-label">Outlet Pemesan</td>
+                <td class="info-value">
+                    <strong style="color: {{ $headerBgColor }};">{{ $pengeluaran->gudang->nama ?? '-' }}</strong>
+                    @if($pengeluaran->divisi) (Divisi: {{ $pengeluaran->divisi->nama }}) @endif
                 </td>
-                <td class="lbl">Jenis Pengeluaran</td>
-                <td class="val">: <strong style="color: #dc3545;">Wasted / Busuk / Rusak</strong></td>
+                <td class="info-label">Gudang Sumber</td>
+                <td class="info-value"><strong>{{ $pengeluaran->gudang->nama ?? '-' }}</strong> (Lokasi Wasted)</td>
             </tr>
             <tr>
-                <td class="lbl">Status Dokumen</td>
-                <td class="val">: 
+                <td class="info-label">Status Dokumen</td>
+                <td class="info-value">
                     @if($isApproved)
-                        <span class="badge-status badge-approved">APPROVED / DISETUJUI</span>
+                        <span class="badge badge-approved">APPROVED / DISETUJUI</span>
                     @else
-                        <span class="badge-status badge-draft">DRAFT / LAPORAN</span>
+                        <span class="badge badge-draft">DRAFT / LAPORAN</span>
                     @endif
                 </td>
-                <td class="lbl">Dicatat Oleh</td>
-                <td class="val">: {{ $pengeluaran->user->nama_karyawan ?? $pengeluaran->user->name ?? '-' }}</td>
+                <td class="info-label">Dicatat Oleh</td>
+                <td class="info-value"><strong>{{ $pengeluaran->user->nama_karyawan ?? $pengeluaran->user->name ?? '-' }}</strong></td>
             </tr>
         @else
             <tr>
-                <td class="lbl">Kode Dokumen</td>
-                <td class="val">: <strong>{{ $pengeluaran->kode_pengeluaran }}</strong></td>
-                <td class="lbl">Tanggal Pengajuan</td>
-                <td class="val">: {{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d F Y H:i') }}</td>
+                <td class="info-label">Judul Dokumen</td>
+                <td class="info-value"><strong>{{ $judulDokumen }}</strong></td>
+                <td class="info-label">Tanggal Pengajuan</td>
+                <td class="info-value"><strong>{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d F Y H:i') }}</strong></td>
             </tr>
             <tr>
-                <td class="lbl">Gudang Sumber</td>
-                <td class="val">: <strong>{{ $gudangUtama->nama ?? 'Gudang Utama' }}</strong> (Penyedia)</td>
-                <td class="lbl">Gudang &amp; Divisi Tujuan</td>
-                <td class="val">: 
-                    <strong>{{ $pengeluaran->gudang->nama ?? '-' }}</strong>
-                    @if($pengeluaran->divisi)
-                        (Divisi: {{ $pengeluaran->divisi->nama }})
-                    @endif
+                <td class="info-label">Outlet Pemesan</td>
+                <td class="info-value">
+                    <strong style="color: {{ $headerBgColor }}; font-size: 11.5px;">{{ $pengeluaran->gudang->nama ?? '-' }}</strong>
+                    @if($pengeluaran->divisi) (Divisi: {{ $pengeluaran->divisi->nama }}) @endif
                 </td>
+                <td class="info-label">Gudang Sumber</td>
+                <td class="info-value"><strong>{{ $gudangUtama->nama ?? 'Gudang Utama' }}</strong> (Penyedia)</td>
             </tr>
             <tr>
-                <td class="lbl">Status Dokumen</td>
-                <td class="val">: 
+                <td class="info-label">Status Dokumen</td>
+                <td class="info-value">
                     @if($isApproved)
-                        <span class="badge-status badge-approved">APPROVED / DISETUJUI</span>
+                        <span class="badge badge-approved">APPROVED / DISETUJUI</span>
                     @else
-                        <span class="badge-status badge-draft">DRAFT / PERMINTAAN</span>
+                        <span class="badge badge-draft">DRAFT / PERMINTAAN</span>
                     @endif
                 </td>
-                <td class="lbl">Dicatat Oleh</td>
-                <td class="val">: {{ $pengeluaran->user->nama_karyawan ?? $pengeluaran->user->name ?? '-' }}</td>
+                <td class="info-label">Dicatat Oleh</td>
+                <td class="info-value"><strong>{{ $pengeluaran->user->nama_karyawan ?? $pengeluaran->user->name ?? '-' }}</strong></td>
             </tr>
         @endif
     </table>
@@ -335,6 +359,11 @@
                 ( __________________________ )<br>
                 <small class="text-muted">CV Gaharu Agung Sejahtera</small>
             </td>
+        </tr>
+    <table class="footer-note">
+        <tr>
+            <td>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</td>
+            <td style="text-align: right;">Dicetak pada: {{ date('d/m/Y H:i') }}</td>
         </tr>
     </table>
 

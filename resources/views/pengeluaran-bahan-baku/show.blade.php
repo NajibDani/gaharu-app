@@ -23,6 +23,12 @@
     $grandTotal = 0;
     $isWasted = $isWasted ?? ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
     $lokasiNama = ($pengeluaran->gudang->nama ?? '-') . ($pengeluaran->divisi ? ' (' . $pengeluaran->divisi->nama . ')' : '');
+    $tujuanNama = strtolower(($pengeluaran->gudang->nama ?? '') . ' ' . ($pengeluaran->divisi->nama ?? ''));
+    $isProduksiOrCK = str_contains($tujuanNama, 'central kitchen') || str_contains($tujuanNama, 'cold kitchen') || str_contains($tujuanNama, 'produksi');
+    $headerBgColor = $isProduksiOrCK ? '#1d4ed8' : '#d97706';
+    $docTitleStandard = $isWasted 
+        ? 'BERITA ACARA WASTED' 
+        : ($isProduksiOrCK ? 'SURAT PERMINTAAN & TRANSFER BAHAN (CK / PRODUKSI)' : 'SURAT PERMINTAAN & TRANSFER BAHAN BAKU');
 @endphp
 
 <div class="page-header mb-4">
@@ -387,53 +393,69 @@ function downloadPageAsImage() {
     container.style.zIndex = '999999';
 
     container.innerHTML = `
-        <!-- HEADER KOP DOKUMEN -->
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #7A4517; padding-bottom:14px; margin-bottom:18px;">
+        <!-- HEADER BLOCK BERWARNA -->
+        <div style="background-color:{{ $headerBgColor }}; color:#ffffff; padding:14px 18px; border-radius:6px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <div>
-                <div style="font-size:20px; font-weight:800; color:#7A4517; letter-spacing:0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
-                <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${docSubtitle}</div>
+                <div style="font-size:16px; font-weight:bold; letter-spacing:0.5px; text-transform:uppercase;">CV GAHARU AGUNG SEJAHTERA</div>
+                <div style="font-size:10.5px; opacity:0.95; margin-top:2px;">${docSubtitle}</div>
             </div>
             <div style="text-align:right;">
-                <div style="font-size:14px; font-weight:800; color:#0f172a; text-transform:uppercase;">${docType}</div>
-                <div style="font-size:11px; color:#64748b; margin-top:3px;">No. Dokumen: <strong style="font-family:monospace; color:#7A4517; font-size:12px;">{{ $pengeluaran->kode_pengeluaran }}</strong></div>
+                <div style="font-size:14px; font-weight:bold; text-transform:uppercase;">{{ $docTitleStandard }}</div>
+                <div style="font-family:monospace; font-weight:bold; font-size:13px; margin-top:2px;">#{{ $pengeluaran->kode_pengeluaran }}</div>
             </div>
         </div>
 
-        <!-- INFO DETAIL GRID -->
-        <table style="width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:18px; font-size:11.5px;">
+        <!-- INFO DETAIL GRID METADATA -->
+        <table style="width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:15px; font-size:11px;">
             @if($isWasted)
                 <tr>
-                    <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
-                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Lokasi Wasted:</span> <strong style="color:#0f172a;">{{ $lokasiNama }}</strong></div>
-                        <div><span style="color:#64748b; display:inline-block; width:135px;">Jenis Pengeluaran:</span> <strong style="color:#dc2626;">Wasted / Busuk / Rusak</strong></div>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Judul Dokumen</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">BERITA ACARA WASTED / RUSAK</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Tanggal Laporan</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d F Y H:i') }}</td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Outlet Pemesan</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:{{ $headerBgColor }}; border-bottom:1px solid #e2e8f0;">{{ $lokasiNama }}</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Gudang Sumber</td>
+                    <td style="padding:6px 10px; color:#0f172a; border-bottom:1px solid #e2e8f0;"><strong>{{ $pengeluaran->gudang->nama ?? '-' }}</strong> (Lokasi Wasted)</td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Status Dokumen</td>
+                    <td style="padding:6px 10px; color:#0f172a;">
+                        @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
+                            <span style="display:inline-block; padding:2px 8px; font-weight:bold; font-size:9.5px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:3px;">APPROVED / DISETUJUI</span>
+                        @else
+                            <span style="display:inline-block; padding:2px 8px; font-weight:bold; font-size:9.5px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:3px;">DRAFT / LAPORAN</span>
+                        @endif
                     </td>
-                    <td style="padding:10px 14px; width:50%; vertical-align:top;">
-                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Laporan:</span> <strong style="color:#0f172a;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i') }}</strong></div>
-                        <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> 
-                            @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
-                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:4px;">APPROVED / DISETUJUI</span>
-                            @else
-                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:4px;">DRAFT / PENGAJUAN</span>
-                            @endif
-                        </div>
-                    </td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Dicatat Oleh</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a;">{{ $pengeluaran->user->nama_karyawan ?? $pengeluaran->user->name ?? '-' }}</td>
                 </tr>
             @else
                 <tr>
-                    <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
-                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Gudang Sumber:</span> <strong style="color:#0f172a;">{{ $gudangUtama->nama ?? 'Gudang Utama' }}</strong> <span style="font-size:10px; color:#64748b;">(Penyedia)</span></div>
-                        <div><span style="color:#64748b; display:inline-block; width:135px;">Gudang Tujuan:</span> <strong style="color:#0f172a;">{{ $pengeluaran->gudang->nama ?? '-' }} @if($pengeluaran->divisi) (Divisi: {{ $pengeluaran->divisi->nama }}) @endif</strong></div>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Judul Dokumen</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">{{ $docTitleStandard }}</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Tanggal Pengajuan</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d F Y H:i') }}</td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Outlet Pemesan</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:{{ $headerBgColor }}; border-bottom:1px solid #e2e8f0;">{{ $pengeluaran->gudang->nama ?? '-' }} @if($pengeluaran->divisi) (Divisi: {{ $pengeluaran->divisi->nama }}) @endif</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Gudang Sumber</td>
+                    <td style="padding:6px 10px; color:#0f172a; border-bottom:1px solid #e2e8f0;"><strong>{{ $gudangUtama->nama ?? 'Gudang Utama' }}</strong> (Penyedia)</td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Status Dokumen</td>
+                    <td style="padding:6px 10px; color:#0f172a;">
+                        @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
+                            <span style="display:inline-block; padding:2px 8px; font-weight:bold; font-size:9.5px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:3px;">APPROVED / DISETUJUI</span>
+                        @else
+                            <span style="display:inline-block; padding:2px 8px; font-weight:bold; font-size:9.5px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:3px;">DRAFT / PENGAJUAN</span>
+                        @endif
                     </td>
-                    <td style="padding:10px 14px; width:50%; vertical-align:top;">
-                        <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Pengajuan:</span> <strong style="color:#0f172a;">{{ \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i') }}</strong></div>
-                        <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> 
-                            @if(in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']))
-                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; border-radius:4px;">APPROVED / DISETUJUI</span>
-                            @else
-                                <span style="display:inline-block; padding:3px 12px; font-weight:bold; font-size:11px; background:#fef3c7; color:#b45309; border:1px solid #fde68a; border-radius:4px;">DRAFT / PENGAJUAN</span>
-                            @endif
-                        </div>
-                    </td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Dicatat Oleh</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a;">{{ $pengeluaran->user->nama_karyawan ?? $pengeluaran->user->name ?? '-' }}</td>
                 </tr>
             @endif
         </table>
@@ -447,7 +469,7 @@ function downloadPageAsImage() {
         <!-- TABEL BARANG -->
         <table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:10.5px;">
             <thead>
-                <tr style="background:#7A4517; color:#ffffff;">
+                <tr style="background:#1e293b; color:#ffffff;">
                     <th style="padding:8px 5px; text-align:center; width:30px; border:1px solid #7A4517; font-size:10px;">NO</th>
                     <th style="padding:8px 8px; text-align:left; border:1px solid #7A4517; font-size:10px;">NAMA BAHAN BAKU</th>
                     <th style="padding:8px 8px; text-align:right; width:105px; border:1px solid #7A4517; font-size:10px;">${colQtyTitle}</th>

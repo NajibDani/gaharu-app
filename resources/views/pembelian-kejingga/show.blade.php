@@ -29,62 +29,55 @@
 
         {{-- DOCUMENT CONTAINER (WILL BE RENDERED TO JPG) --}}
         <div id="po-document-container" class="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white" style="max-width: 1000px; margin: 0 auto;">
-            {{-- HEADER DOKUMEN --}}
-            <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
-                <div>
-                    <h3 class="fw-bold text-dark mb-1" style="color: #1e293b;">KEJINGGA</h3>
-                    <div class="text-muted small">
-                        Layanan Pengadaan &amp; Logistik Operasional Kejingga<br>
-                        <strong>Gudang:</strong> {{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}
+            {{-- HEADER BLOCK - WARNA KUNING / AMBER (BAHAN BAKU) --}}
+            <div class="p-3 rounded-3 mb-3 text-white" style="background-color: #d97706;">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <div class="fw-bold fs-5 text-uppercase" style="letter-spacing: 0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
+                        <div class="small opacity-95">Pengadaan &amp; Logistik Bahan Baku Operasional</div>
                     </div>
-                </div>
-                <div class="text-end">
-                    <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER (PO)</span>
-                    <div class="font-monospace fw-bold text-dark fs-5">#{{ $pembelian->kode_pembelian }}</div>
-                    <div class="text-muted small">Tanggal: <strong>{{ \Carbon\Carbon::parse($pembelian->tanggal)->format('d F Y') }}</strong></div>
+                    <div class="text-end">
+                        <div class="fw-bold fs-6 text-uppercase">PURCHASE ORDER BAHAN BAKU</div>
+                        <div class="font-monospace fw-bold fs-5">#{{ $pembelian->kode_pembelian }}</div>
+                    </div>
                 </div>
             </div>
 
-            {{-- INFORMASI SUPPLIER & PEMBAYARAN --}}
-            <div class="row mb-4">
-                <div class="col-6">
-                    <div class="p-3 bg-light rounded-3 border h-100">
-                        <small class="text-muted fw-bold text-uppercase d-block mb-1">Supplier / Pemasok:</small>
-                        @if($pembelian->supplier)
-                            <div class="fw-bold text-dark fs-6">{{ $pembelian->supplier->nama }}</div>
-                            <div class="text-muted small">No. Telp: {{ $pembelian->supplier->telepon ?? '-' }}</div>
-                            <div class="text-muted small">Alamat: {{ $pembelian->supplier->alamat ?? '-' }}</div>
-                        @else
-                            <div class="badge bg-secondary px-2 py-1 fs-6">Draft Permintaan (Belum Ada Supplier)</div>
-                            <div class="text-muted small mt-1">Dibuat oleh staff operasional, menunggu pengisian supplier oleh tim Purchasing.</div>
-                        @endif
-                    </div>
-                </div>
-                <div class="col-6">
-                    <div class="p-3 bg-light rounded-3 border h-100">
-                        <small class="text-muted fw-bold text-uppercase d-block mb-1">Status &amp; Pembayaran:</small>
-                        <div class="d-flex flex-column gap-1 small">
-                            <div>Metode Pembayaran: <strong class="text-uppercase">{{ $pembelian->metode_pembayaran ?: 'Belum Dicatat' }}</strong></div>
-                            <div>
-                                Status Pelunasan: 
-                                @if($pembelian->is_lunas)
-                                    <span class="badge bg-success">✓ LUNAS</span>
-                                @else
-                                    <span class="badge bg-danger">BELUM LUNAS</span>
-                                @endif
-                            </div>
-                            <div>
-                                Status Penerimaan Barang: 
+            {{-- STANDAR INFO GRID METADATA --}}
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered align-middle mb-0" style="font-size: 12px; background-color: #f8fafc;">
+                    <tbody>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Judul Dokumen</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">PURCHASE ORDER BAHAN BAKU</td>
+                            <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Tanggal Order</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">{{ \Carbon\Carbon::parse($pembelian->tanggal)->format('d F Y') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
+                            <td><strong class="fs-6" style="color: #d97706;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
+                            <td><strong>{{ $pembelian->supplier->nama ?? 'Draft (Belum Ada Supplier)' }}</strong> <span class="text-muted small">(Supplier / Pemasok)</span></td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Status Dokumen</td>
+                            <td>
                                 @if($pembelian->is_diterima)
-                                    <span class="badge bg-success">✓ DITERIMA DENGAN LENGKAP</span>
+                                    <span class="badge bg-success">✓ DITERIMA LENGKAP</span>
                                 @else
                                     <span class="badge bg-warning text-dark">PROSES PENERIMAAN</span>
                                 @endif
-                            </div>
-                            <div>Dibuat Oleh: <strong>{{ $pembelian->user->nama ?? ($pembelian->user->username ?? 'Staff Operasional') }}</strong></div>
-                        </div>
-                    </div>
-                </div>
+                                @if($pembelian->is_lunas)
+                                    <span class="badge bg-success ms-1">✓ LUNAS</span>
+                                @else
+                                    <span class="badge bg-danger ms-1">BELUM LUNAS</span>
+                                @endif
+                            </td>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Pembayaran</td>
+                            <td><strong>{{ strtoupper($pembelian->metode_pembayaran ?: 'COD') }}</strong> <span class="text-muted small">({{ $pembelian->user->nama ?? ($pembelian->user->username ?? 'Staff') }})</span></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
             {{-- TABEL BARANG --}}

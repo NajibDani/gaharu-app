@@ -5,6 +5,8 @@
         $isSent = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->where('status_pengiriman', 'Selesai')->exists() || ($pesanan->total_qty_terkirim ?? 0) > 0;
     @endphp
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
     <div class="container mt-4 mb-5">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
             <div>
@@ -12,6 +14,15 @@
                 <small class="text-muted">Informasi lengkap pesanan &amp; status produksi: <span class="fw-bold text-primary">#{{ $pesanan->kode_pesanan }}</span></small>
             </div>
             <div class="d-flex gap-2 flex-wrap align-items-center">
+                <button type="button" class="btn btn-success btn-sm shadow-sm fw-bold px-3" onclick="downloadSoAsJpg()">
+                    <i class="bi bi-file-image me-1"></i> Download JPG
+                </button>
+                <a href="{{ route('pesanan.cetak-pdf', $pesanan->id) }}" class="btn btn-danger btn-sm shadow-sm fw-bold px-3" target="_blank">
+                    <i class="bi bi-file-earmark-pdf me-1"></i> Cetak SO (PDF)
+                </a>
+                <a href="{{ route('pesanan.kwitansi', $pesanan->id) }}" class="btn btn-outline-primary btn-sm shadow-sm px-3" target="_blank">
+                    <i class="bi bi-printer me-1"></i> Cetak Kwitansi
+                </a>
                 @if(!$sudahWO)
                     <a href="{{ route('pesanan.edit', $pesanan->id) }}" class="btn btn-warning btn-sm shadow-sm text-dark fw-bold px-3">
                         <i class="bi bi-pencil-square me-1"></i> Edit
@@ -32,15 +43,131 @@
                         </button>
                     </form>
                 @endif
-                <a href="{{ route('pesanan.kwitansi', $pesanan->id) }}" class="btn btn-outline-primary btn-sm shadow-sm px-3" target="_blank">
-                    <i class="bi bi-printer me-1"></i> Cetak Kwitansi
-                </a>
-                <a href="{{ route('pesanan.cetak-pdf', $pesanan->id) }}" class="btn btn-outline-danger btn-sm shadow-sm px-3" target="_blank">
-                    <i class="bi bi-file-earmark-pdf me-1"></i> Cetak SO
-                </a>
                 <a href="{{ route('pesanan.index') }}" class="btn btn-secondary btn-sm shadow-sm px-3">
                     <i class="bi bi-arrow-left me-1"></i> Kembali
                 </a>
+            </div>
+        </div>
+
+        {{-- DOCUMENT CONTAINER (UNTUK TAMPILAN RESMI & DOWNLOAD JPG) --}}
+        <div id="so-document-container" class="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-white" style="max-width: 1000px; margin: 0 auto;">
+            {{-- HEADER BLOCK - WARNA BIRU (PRODUKSI / COLD KITCHEN) --}}
+            <div class="p-3 rounded-3 mb-3 text-white" style="background-color: #1d4ed8;">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <div class="fw-bold fs-5 text-uppercase" style="letter-spacing: 0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
+                        <div class="small opacity-75">Cold Kitchen Production &amp; Sales Order Management</div>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-bold fs-6 text-uppercase">PERMINTAAN COLD KITCHEN (SO)</div>
+                        <div class="font-monospace fw-bold fs-5">#{{ $pesanan->kode_pesanan }}</div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- STANDAR INFO GRID METADATA --}}
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered align-middle mb-0" style="font-size: 12px; background-color: #f8fafc;">
+                    <tbody>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Judul Dokumen</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">PERMINTAAN COLD KITCHEN (SO)</td>
+                            <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Tanggal Order</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">{{ \Carbon\Carbon::parse($pesanan->tanggal)->format('d F Y') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
+                            <td><strong class="text-primary fs-6">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? '-' }}</strong></td>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
+                            <td><strong>{{ $pesanan->gudang->nama ?? 'Gudang Cold Kitchen' }}</strong> <span class="text-muted small">(Penyedia)</span></td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Status Dokumen</td>
+                            <td>
+                                @php
+                                    $st = strtolower($pesanan->status_pesanan ?? 'pending');
+                                    $badgeBg = 'bg-warning text-dark';
+                                    if(in_array($st, ['selesai', 'approved', 'disetujui'])) $badgeBg = 'bg-success text-white';
+                                    elseif(in_array($st, ['diproses', 'proses', 'dikirim', 'siap kirim'])) $badgeBg = 'bg-info text-dark';
+                                    elseif($st == 'batal' || $st == 'dibatalkan') $badgeBg = 'bg-danger text-white';
+                                @endphp
+                                <span class="badge {{ $badgeBg }} px-2 py-1 text-uppercase">{{ $pesanan->status_pesanan ?? 'PENDING' }}</span>
+                            </td>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Estimasi Kirim</td>
+                            <td><strong>{{ \Carbon\Carbon::parse($pesanan->estimasi_kirim)->format('d F Y') }}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {{-- TABEL PRODUK --}}
+            <h6 class="fw-bold text-dark mb-2">Daftar Produk yang Diminta</h6>
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered align-middle mb-0" style="font-size: 13px;">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="text-center" style="width: 40px;">No</th>
+                            <th>Nama Produk</th>
+                            <th class="text-center" style="width: 140px;">Jumlah (Qty)</th>
+                            <th class="text-end" style="width: 160px;">Harga Satuan</th>
+                            <th class="text-end" style="width: 170px;">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @php $totalSubDokumen = 0; @endphp
+                        @foreach($pesanan->details as $idx => $detail)
+                            @php 
+                                $subtotal = $detail->subtotal ?? ($detail->qty * $detail->harga);
+                                $totalSubDokumen += $subtotal;
+                            @endphp
+                            <tr>
+                                <td class="text-center text-muted">{{ $idx + 1 }}</td>
+                                <td>
+                                    <div class="fw-bold text-dark">{{ $detail->produk->nama ?? 'Produk' }}</div>
+                                    @if(isset($detail->produk->kode_barang))
+                                        <div class="font-monospace text-muted small">{{ $detail->produk->kode_barang }}</div>
+                                    @endif
+                                </td>
+                                <td class="text-center fw-bold text-dark">{{ number_format($detail->qty, 0, ',', '.') }} {{ $detail->produk->satuan ?? 'Pcs' }}</td>
+                                <td class="text-end">Rp {{ number_format($detail->harga, 0, ',', '.') }}</td>
+                                <td class="text-end fw-bold">Rp {{ number_format($subtotal, 0, ',', '.') }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light">
+                            <td colspan="4" class="text-end fw-bold">Total Nilai Order:</td>
+                            <td class="text-end fw-bold text-primary fs-6">Rp {{ number_format($pesanan->total_pesanan ?? $totalSubDokumen, 0, ',', '.') }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            {{-- TANDA TANGAN 3 PIHAK --}}
+            <div class="row text-center mt-4 pt-3 border-top" style="font-size: 11px;">
+                <div class="col-4">
+                    <div class="text-muted">Pemesan (Outlet / Customer):</div>
+                    <div style="height: 40px;"></div>
+                    <div class="fw-bold text-dark">({{ $pesanan->customer->nama ?? $pesanan->customer->name ?? 'Pemesan' }})</div>
+                    <div class="text-muted small">Unit Pemesan</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-muted">Penyedia (Cold Kitchen):</div>
+                    <div style="height: 40px;"></div>
+                    <div class="fw-bold text-dark">( Tim Produksi Cold Kitchen )</div>
+                    <div class="text-muted small">Gudang Cold Kitchen</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-muted">Management / Otorisasi:</div>
+                    <div style="height: 40px;"></div>
+                    <div class="fw-bold text-dark">( Manajer Operasional )</div>
+                    <div class="text-muted small">CV Gaharu Agung Sejahtera</div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-2 border-top d-flex justify-content-between text-muted" style="font-size: 10px;">
+                <div>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</div>
+                <div>Diunduh pada: {{ date('d M Y H:i:s') }}</div>
             </div>
         </div>
 
@@ -207,4 +334,29 @@
             </div>
         </div>
     </div>
+
+    <script>
+        function downloadSoAsJpg() {
+            const el = document.getElementById('so-document-container');
+            if (!el) return;
+            const btn = event.currentTarget;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i> Memproses JPG...';
+            btn.disabled = true;
+
+            html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'Permintaan-ColdKitchen-{{ $pesanan->kode_pesanan }}.jpg';
+                link.href = canvas.toDataURL('image/jpeg', 0.95);
+                link.click();
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).catch(err => {
+                console.error(err);
+                alert('Gagal mendownload gambar: ' + err.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+    </script>
 </x-app-layout>

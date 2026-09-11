@@ -780,10 +780,16 @@ function downloadModalAsImage() {
     let now = new Date();
     let timestamp = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+    let destText = ((data.gudang_nama || '') + ' ' + (data.divisi_nama || '')).toLowerCase();
+    let isProduksiOrCK = destText.includes('central kitchen') || destText.includes('cold kitchen') || destText.includes('produksi');
+    let headerBgColor = isProduksiOrCK ? '#1d4ed8' : '#d97706';
+    let docTitle = data.is_wasted 
+        ? 'BERITA ACARA WASTED' 
+        : (isProduksiOrCK ? 'SURAT PERMINTAAN & TRANSFER BAHAN (CK / PRODUKSI)' : 'SURAT PERMINTAAN & TRANSFER BAHAN BAKU');
+
     let docSubtitle = data.is_wasted 
         ? 'Berita Acara Pengeluaran Bahan Wasted / Rusak / Busuk'
-        : 'Surat Permintaan &amp; Transfer Bahan Baku - Distribusi Antar Gudang';
-    let docType = data.is_wasted ? 'Bukti Pengeluaran Wasted' : 'Bukti Permintaan Bahan';
+        : (isProduksiOrCK ? 'Distribusi Permintaan Bahan ke Produksi / Kitchen' : 'Sistem Pengelolaan Stok & Distribusi Bahan Baku Antar Gudang');
     let colQtyTitle = data.is_wasted ? 'QTY WASTED' : 'QTY DIMINTA';
     let colStokTitle = data.is_wasted ? `STOK LOKASI` : 'STOK GDG UTAMA';
 
@@ -791,27 +797,43 @@ function downloadModalAsImage() {
     if (data.is_wasted) {
         gridInfoHtml = `
             <tr>
-                <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Lokasi Wasted:</span> <strong style="color:#0f172a;">${data.lokasi_nama}</strong></div>
-                    <div><span style="color:#64748b; display:inline-block; width:135px;">Jenis Pengeluaran:</span> <strong style="color:#dc2626;">Wasted / Busuk / Rusak</strong></div>
-                </td>
-                <td style="padding:10px 14px; width:50%; vertical-align:top;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Laporan:</span> <strong style="color:#0f172a;">${data.tanggal}</strong></div>
-                    <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> ${statusHtml}</div>
-                </td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Judul Dokumen</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">BERITA ACARA WASTED</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Tanggal Laporan</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">${data.tanggal}</td>
+            </tr>
+            <tr>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Outlet Pemesan</td>
+                <td style="padding:6px 10px; font-weight:bold; color:${headerBgColor}; border-bottom:1px solid #e2e8f0;">${data.lokasi_nama}</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Gudang Sumber</td>
+                <td style="padding:6px 10px; color:#0f172a; border-bottom:1px solid #e2e8f0;"><strong>${data.gudang_nama || '-'}</strong> (Lokasi Wasted)</td>
+            </tr>
+            <tr>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Status Dokumen</td>
+                <td style="padding:6px 10px; color:#0f172a;">${statusHtml}</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Dicatat Oleh</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#0f172a;">${data.user_nama || '-'}</td>
             </tr>
         `;
     } else {
         gridInfoHtml = `
             <tr>
-                <td style="padding:10px 14px; width:50%; vertical-align:top; border-right:1px solid #e2e8f0;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:135px;">Gudang Sumber:</span> <strong style="color:#0f172a;">${data.gudang_utama_nama}</strong> <span style="font-size:10px; color:#64748b;">(Penyedia)</span></div>
-                    <div><span style="color:#64748b; display:inline-block; width:135px;">Gudang Tujuan:</span> <strong style="color:#0f172a;">${data.gudang_nama}${divisiText}</strong></div>
-                </td>
-                <td style="padding:10px 14px; width:50%; vertical-align:top;">
-                    <div style="margin-bottom:6px;"><span style="color:#64748b; display:inline-block; width:125px;">Tanggal Pengajuan:</span> <strong style="color:#0f172a;">${data.tanggal}</strong></div>
-                    <div><span style="color:#64748b; display:inline-block; width:125px;">Status Dokumen:</span> ${statusHtml}</div>
-                </td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Judul Dokumen</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">${docTitle}</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Tanggal Pengajuan</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">${data.tanggal}</td>
+            </tr>
+            <tr>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Outlet Pemesan</td>
+                <td style="padding:6px 10px; font-weight:bold; color:${headerBgColor}; border-bottom:1px solid #e2e8f0;">${data.gudang_nama}${divisiText}</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Gudang Sumber</td>
+                <td style="padding:6px 10px; color:#0f172a; border-bottom:1px solid #e2e8f0;"><strong>${data.gudang_utama_nama}</strong> (Penyedia)</td>
+            </tr>
+            <tr>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Status Dokumen</td>
+                <td style="padding:6px 10px; color:#0f172a;">${statusHtml}</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Dicatat Oleh</td>
+                <td style="padding:6px 10px; font-weight:bold; color:#0f172a;">${data.user_nama || '-'}</td>
             </tr>
         `;
     }
@@ -829,20 +851,20 @@ function downloadModalAsImage() {
     container.style.zIndex = '999999';
 
     container.innerHTML = `
-        <!-- HEADER KOP DOKUMEN -->
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #7A4517; padding-bottom:14px; margin-bottom:18px;">
+        <!-- HEADER BLOCK BERWARNA -->
+        <div style="background-color:${headerBgColor}; color:#ffffff; padding:14px 18px; border-radius:6px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <div>
-                <div style="font-size:20px; font-weight:800; color:#7A4517; letter-spacing:0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
-                <div style="font-size:11.5px; color:#64748b; margin-top:2px;">${docSubtitle}</div>
+                <div style="font-size:16px; font-weight:bold; letter-spacing:0.5px; text-transform:uppercase;">CV GAHARU AGUNG SEJAHTERA</div>
+                <div style="font-size:10.5px; opacity:0.95; margin-top:2px;">${docSubtitle}</div>
             </div>
             <div style="text-align:right;">
-                <div style="font-size:14px; font-weight:800; color:#0f172a; text-transform:uppercase;">${docType}</div>
-                <div style="font-size:11px; color:#64748b; margin-top:3px;">No. Dokumen: <strong style="font-family:monospace; color:#7A4517; font-size:12px;">${data.kode_pengeluaran}</strong></div>
+                <div style="font-size:14px; font-weight:bold; text-transform:uppercase;">${docTitle}</div>
+                <div style="font-family:monospace; font-weight:bold; font-size:13px; margin-top:2px;">#${data.kode_pengeluaran}</div>
             </div>
         </div>
 
         <!-- INFO DETAIL GRID -->
-        <table style="width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:18px; font-size:11.5px;">
+        <table style="width:100%; border-collapse:collapse; background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:15px; font-size:11px;">
             ${gridInfoHtml}
         </table>
 
@@ -855,7 +877,7 @@ function downloadModalAsImage() {
         <!-- TABEL BARANG -->
         <table style="width:100%; border-collapse:collapse; margin-bottom:20px; font-size:10.5px;">
             <thead>
-                <tr style="background:#7A4517; color:#ffffff;">
+                <tr style="background:#1e293b; color:#ffffff;">
                     <th style="padding:8px 5px; text-align:center; width:30px; border:1px solid #7A4517; font-size:10px;">NO</th>
                     <th style="padding:8px 8px; text-align:left; border:1px solid #7A4517; font-size:10px;">NAMA BAHAN BAKU</th>
                     <th style="padding:8px 8px; text-align:right; width:105px; border:1px solid #7A4517; font-size:10px;">${colQtyTitle}</th>

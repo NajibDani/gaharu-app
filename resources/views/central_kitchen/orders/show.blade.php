@@ -55,48 +55,54 @@
         </div>
 
         {{-- DOCUMENT CONTAINER UNTUK CROP / DOWNLOAD JPG --}}
-        <div id="po-document-container" class="card card-custom p-4 mb-4 bg-white">
-            <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3 flex-wrap gap-2">
-                <div>
-                    <h4 class="fw-bold text-dark mb-1">PURCHASE ORDER CENTRAL KITCHEN</h4>
-                    <h6 class="fw-bold text-primary mb-1">CENTRAL KITCHEN CV GAHARU AGUNG SEJAHTERA</h6>
-                    <div class="text-muted small">
-                        Layanan Pengadaan &amp; Logistik Dapur Pusat CV Gaharu<br>
-                        <strong>Divisi CK:</strong> {{ $pesanan->divisi->nama ?? 'Gudang Central Kitchen' }}
+        <div id="po-document-container" class="card card-custom p-4 mb-4 bg-white border-0 shadow-sm rounded-4" style="max-width: 1000px; margin: 0 auto;">
+            {{-- HEADER BLOCK - WARNA BIRU (PRODUKSI / CENTRAL KITCHEN) --}}
+            <div class="p-3 rounded-3 mb-3 text-white" style="background-color: #1d4ed8;">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <div class="fw-bold fs-5 text-uppercase" style="letter-spacing: 0.5px;">CV GAHARU AGUNG SEJAHTERA</div>
+                        <div class="small opacity-75">Central Kitchen Production &amp; Internal Order Management</div>
                     </div>
-                </div>
-                <div class="text-end">
-                    <span class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">PURCHASE ORDER</span>
-                    <div class="font-monospace fw-bold text-dark fs-5">#{{ $pesanan->kode_pesanan }}</div>
-                    <div class="text-muted small">Tanggal: <strong>{{ date('d F Y', strtotime($pesanan->tanggal)) }}</strong></div>
+                    <div class="text-end">
+                        <div class="fw-bold fs-6 text-uppercase">PURCHASE ORDER CENTRAL KITCHEN</div>
+                        <div class="font-monospace fw-bold fs-5">#{{ $pesanan->kode_pesanan }}</div>
+                    </div>
                 </div>
             </div>
 
-            <div class="row g-3 mb-4 p-3 bg-light rounded-3 border">
-                <div class="col-md-4">
-                    <span class="text-muted small d-block">Outlet Pemesan</span>
-                    <span class="fw-bold text-dark fs-6">{{ $pesanan->customer->nama ?? '-' }}</span>
-                </div>
-                <div class="col-md-4">
-                    <span class="text-muted small d-block">Tanggal Order</span>
-                    <span class="fw-semibold text-dark">{{ date('d F Y', strtotime($pesanan->tanggal)) }}</span>
-                </div>
-                <div class="col-md-4">
-                    <span class="text-muted small d-block">Estimasi Kirim</span>
-                    <span class="fw-semibold text-dark">{{ date('d F Y', strtotime($pesanan->estimasi_kirim)) }}</span>
-                </div>
-                <div class="col-md-4">
-                    <span class="text-muted small d-block">Status Pesanan</span>
-                    <span class="badge bg-info text-dark">{{ ucfirst($pesanan->status_pesanan) }}</span>
-                </div>
-                <div class="col-md-4">
-                    <span class="text-muted small d-block">Penagihan / Harga</span>
-                    <span class="badge bg-success">HPP Internal (Rp 0 Penagihan)</span>
-                </div>
-                <div class="col-md-4">
-                    <span class="text-muted small d-block">Dibuat Oleh</span>
-                    <span class="fw-semibold text-dark">{{ $pesanan->creator->name ?? 'Sistem' }}</span>
-                </div>
+            {{-- STANDAR INFO GRID METADATA --}}
+            <div class="table-responsive mb-3">
+                <table class="table table-bordered align-middle mb-0" style="font-size: 12px; background-color: #f8fafc;">
+                    <tbody>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Judul Dokumen</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">PURCHASE ORDER CENTRAL KITCHEN</td>
+                            <td class="fw-bold text-secondary text-uppercase" style="width: 18%; font-size: 11px;">Tanggal Order</td>
+                            <td class="fw-bold text-dark" style="width: 32%;">{{ \Carbon\Carbon::parse($pesanan->tanggal)->format('d F Y') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
+                            <td><strong class="text-primary fs-6">{{ $pesanan->customer->nama ?? '-' }}</strong></td>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
+                            <td><strong>{{ $pesanan->divisi->nama ?? 'Gudang Central Kitchen' }}</strong> <span class="text-muted small">(Penyedia)</span></td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Status Dokumen</td>
+                            <td>
+                                @php
+                                    $st = strtolower($pesanan->status_pesanan);
+                                    $badgeBg = 'bg-warning text-dark';
+                                    if(in_array($st, ['selesai', 'approved', 'disetujui'])) $badgeBg = 'bg-success text-white';
+                                    elseif(in_array($st, ['diproses', 'proses', 'dikirim', 'siap kirim'])) $badgeBg = 'bg-info text-dark';
+                                    elseif($st == 'batal' || $st == 'dibatalkan') $badgeBg = 'bg-danger text-white';
+                                @endphp
+                                <span class="badge {{ $badgeBg }} px-2 py-1 text-uppercase">{{ $pesanan->status_pesanan }}</span>
+                            </td>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Estimasi Kirim</td>
+                            <td><strong>{{ \Carbon\Carbon::parse($pesanan->estimasi_kirim)->format('d F Y') }}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
 
             <h6 class="fw-bold text-dark mb-3">Detail Item Pesanan CK (Bahan Setengah Jadi)</h6>

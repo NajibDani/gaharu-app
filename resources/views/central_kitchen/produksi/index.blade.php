@@ -240,6 +240,9 @@
                                     <th class="text-nowrap">OUTLET PEMESAN</th>
                                     <th class="text-nowrap">TANGGAL WO</th>
                                     <th class="text-nowrap">TARGET &amp; REALISASI</th>
+                                    @if($isSuperAdmin)
+                                        <th class="text-center text-nowrap" style="min-width: 140px;">REKAP BAHAN CK</th>
+                                    @endif
                                     <th class="text-nowrap text-center">STATUS</th>
                                     <th class="text-center text-nowrap" style="width: 210px;">AKSI</th>
                                 </tr>
@@ -274,6 +277,31 @@
                                                 </div>
                                             </div>
                                         </td>
+                                        @if($isSuperAdmin)
+                                            <td class="text-center text-nowrap">
+                                                @if(!empty($wo->rekap_bahan) && count($wo->rekap_bahan) > 0)
+                                                    @if(($wo->total_bahan_kurang ?? 0) > 0)
+                                                        <button type="button" class="btn btn-xs btn-outline-danger py-1 px-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="border-radius: 6px; font-size: 0.76rem;" data-bs-toggle="modal" data-bs-target="#modalRekapBahan{{ $wo->id }}" title="Klik untuk lihat detail rekap bahan baku & ketersediaan gudang CK">
+                                                            <i class="bi bi-exclamation-triangle-fill text-danger"></i>
+                                                            <span>{{ $wo->total_jenis_bahan }} Bahan</span>
+                                                            <span class="badge bg-danger text-white ms-1">{{ $wo->total_bahan_kurang }} Kurang</span>
+                                                        </button>
+                                                    @else
+                                                        <button type="button" class="btn btn-xs btn-outline-success py-1 px-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="border-radius: 6px; font-size: 0.76rem;" data-bs-toggle="modal" data-bs-target="#modalRekapBahan{{ $wo->id }}" title="Klik untuk lihat detail rekap bahan baku & ketersediaan gudang CK">
+                                                            <i class="bi bi-check-circle-fill text-success"></i>
+                                                            <span>{{ $wo->total_jenis_bahan }} Bahan</span>
+                                                            <span class="badge bg-success text-white ms-1">Cukup</span>
+                                                        </button>
+                                                    @endif
+                                                @elseif($wo->has_missing_resep ?? false)
+                                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle py-1 px-2" style="font-size: 0.75rem;">
+                                                        <i class="bi bi-journal-x me-1"></i> Resep Belum Ada
+                                                    </span>
+                                                @else
+                                                    <span class="badge bg-light text-muted border py-1 px-2" style="font-size: 0.75rem;">-</span>
+                                                @endif
+                                            </td>
+                                        @endif
                                         <td class="text-center text-nowrap">
                                             @if($wo->is_all_completed || strtolower($wo->status_wo) == 'selesai')
                                                 <span class="badge bg-success"><i class="bi bi-check-all me-1"></i> Selesai</span>
@@ -351,6 +379,13 @@
                                                             @csrf
                                                         </form>
                                                     @endif
+                                                @endif
+
+                                                {{-- 3. TOMBOL REKAP BAHAN KHUSUS SUPERADMIN --}}
+                                                @if($isSuperAdmin && !empty($wo->rekap_bahan) && count($wo->rekap_bahan) > 0)
+                                                    <button type="button" class="btn btn-outline-info text-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" data-bs-toggle="modal" data-bs-target="#modalRekapBahan{{ $wo->id }}" title="Lihat Rekap Total Bahan Baku & Ketersediaan di Gudang CK">
+                                                        <i class="bi bi-card-checklist text-primary"></i> Rekap Bahan
+                                                    </button>
                                                 @endif
                                                 </div>
                                             </div>
@@ -549,6 +584,72 @@
                                                                     </table>
                                                                 </div>
 
+                                                                @if($isSuperAdmin && !empty($wo->rekap_bahan) && count($wo->rekap_bahan) > 0)
+                                                                    {{-- REKAPITULASI BAHAN BAKU & KETERSEDIAAN DI GUDANG CK (SUPERADMIN) --}}
+                                                                    <div class="card border border-primary-subtle rounded-3 mb-3 overflow-hidden shadow-sm">
+                                                                        <div class="card-header bg-primary-subtle py-2 px-3 d-flex justify-content-between align-items-center">
+                                                                            <h6 class="fw-bold text-primary mb-0 small text-uppercase d-flex align-items-center gap-2">
+                                                                                <i class="bi bi-boxes"></i> Rekap Total Bahan Baku &amp; Ketersediaan Gudang CK
+                                                                            </h6>
+                                                                            <div class="d-flex align-items-center gap-2">
+                                                                                <span class="badge bg-white text-dark border small fw-semibold">{{ $wo->total_jenis_bahan }} Jenis Bahan</span>
+                                                                                @if(($wo->total_bahan_kurang ?? 0) > 0)
+                                                                                    <span class="badge bg-danger text-white small fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>{{ $wo->total_bahan_kurang }} Kurang</span>
+                                                                                @else
+                                                                                    <span class="badge bg-success text-white small fw-bold"><i class="bi bi-check-circle-fill me-1"></i>Stok Cukup</span>
+                                                                                @endif
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="card-body p-0">
+                                                                            <div class="table-responsive">
+                                                                                <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
+                                                                                    <thead class="table-light text-secondary">
+                                                                                        <tr>
+                                                                                            <th width="40">No</th>
+                                                                                            <th class="text-start">Kode &amp; Nama Bahan Baku</th>
+                                                                                            <th width="130" class="text-end">Target WO</th>
+                                                                                            <th width="130" class="text-end">Sisa Butuh</th>
+                                                                                            <th width="130" class="text-end">Stok Gudang CK</th>
+                                                                                            <th width="160">Status Ketersediaan</th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody>
+                                                                                        @foreach($wo->rekap_bahan as $rbIdx => $rb)
+                                                                                            <tr class="{{ !$rb['is_cukup'] ? 'table-warning' : '' }}">
+                                                                                                <td class="text-muted">{{ $rbIdx + 1 }}</td>
+                                                                                                <td class="text-start">
+                                                                                                    <div class="fw-bold text-dark">{{ $rb['nama_bahan'] }}</div>
+                                                                                                    <div class="text-muted font-monospace" style="font-size: 11px;">{{ $rb['kode_barang'] }}</div>
+                                                                                                </td>
+                                                                                                <td class="text-end fw-semibold">
+                                                                                                    {{ (fmod($rb['total_butuh'], 1) == 0) ? number_format($rb['total_butuh'], 0, ',', '.') : number_format($rb['total_butuh'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                </td>
+                                                                                                <td class="text-end fw-bold {{ $rb['sisa_butuh'] > 0 ? 'text-primary' : 'text-muted' }}">
+                                                                                                    {{ (fmod($rb['sisa_butuh'], 1) == 0) ? number_format($rb['sisa_butuh'], 0, ',', '.') : number_format($rb['sisa_butuh'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                </td>
+                                                                                                <td class="text-end fw-bold {{ $rb['stok_ck'] > 0 ? 'text-success' : 'text-danger' }}">
+                                                                                                    {{ (fmod($rb['stok_ck'], 1) == 0) ? number_format($rb['stok_ck'], 0, ',', '.') : number_format($rb['stok_ck'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                </td>
+                                                                                                <td>
+                                                                                                    @if($rb['is_cukup'])
+                                                                                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                                                                                            <i class="bi bi-check-circle-fill me-1"></i> Cukup
+                                                                                                        </span>
+                                                                                                    @else
+                                                                                                        <span class="badge bg-danger text-white px-2 py-1 fw-bold">
+                                                                                                            Kurang {{ (fmod($rb['kurang'], 1) == 0) ? number_format($rb['kurang'], 0, ',', '.') : number_format($rb['kurang'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                        </span>
+                                                                                                    @endif
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        @endforeach
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
+
                                                                 <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
                                                                     <i class="bi bi-info-circle-fill me-2 fs-5"></i>
                                                                     <div>
@@ -589,7 +690,7 @@
                                                                     <i class="bi bi-check-circle-fill fs-4 me-2"></i>
                                                                     <div>Seluruh target Work Order ini telah <strong>100% Selesai</strong> diproduksi dan siap dikirim ke outlet pemesan.</div>
                                                                 </div>
-                                                                <div class="table-responsive">
+                                                                <div class="table-responsive mb-3">
                                                                     <table class="table table-bordered text-center align-middle mb-0">
                                                                         <thead class="bg-light font-weight-bold">
                                                                             <tr>
@@ -611,6 +712,55 @@
                                                                         </tbody>
                                                                     </table>
                                                                 </div>
+
+                                                                @if($isSuperAdmin && !empty($wo->rekap_bahan) && count($wo->rekap_bahan) > 0)
+                                                                    {{-- REKAPITULASI BAHAN BAKU & KETERSEDIAAN DI GUDANG CK (SUPERADMIN) --}}
+                                                                    <div class="card border border-primary-subtle rounded-3 mb-0 overflow-hidden shadow-sm">
+                                                                        <div class="card-header bg-primary-subtle py-2 px-3 d-flex justify-content-between align-items-center">
+                                                                            <h6 class="fw-bold text-primary mb-0 small text-uppercase d-flex align-items-center gap-2">
+                                                                                <i class="bi bi-boxes"></i> Rekap Total Bahan Baku &amp; Ketersediaan Gudang CK
+                                                                            </h6>
+                                                                            <span class="badge bg-white text-dark border small fw-semibold">{{ $wo->total_jenis_bahan }} Jenis Bahan</span>
+                                                                        </div>
+                                                                        <div class="card-body p-0">
+                                                                            <div class="table-responsive">
+                                                                                <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
+                                                                                    <thead class="table-light text-secondary">
+                                                                                        <tr>
+                                                                                            <th width="40">No</th>
+                                                                                            <th class="text-start">Kode &amp; Nama Bahan Baku</th>
+                                                                                            <th width="140" class="text-end">Total Kebutuhan</th>
+                                                                                            <th width="140" class="text-end">Stok Gudang CK</th>
+                                                                                            <th width="160">Status Ketersediaan</th>
+                                                                                        </tr>
+                                                                                    </thead>
+                                                                                    <tbody>
+                                                                                        @foreach($wo->rekap_bahan as $rbIdx => $rb)
+                                                                                            <tr>
+                                                                                                <td class="text-muted">{{ $rbIdx + 1 }}</td>
+                                                                                                <td class="text-start">
+                                                                                                    <div class="fw-bold text-dark">{{ $rb['nama_bahan'] }}</div>
+                                                                                                    <div class="text-muted font-monospace" style="font-size: 11px;">{{ $rb['kode_barang'] }}</div>
+                                                                                                </td>
+                                                                                                <td class="text-end fw-semibold">
+                                                                                                    {{ (fmod($rb['total_butuh'], 1) == 0) ? number_format($rb['total_butuh'], 0, ',', '.') : number_format($rb['total_butuh'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                </td>
+                                                                                                <td class="text-end fw-bold text-success">
+                                                                                                    {{ (fmod($rb['stok_ck'], 1) == 0) ? number_format($rb['stok_ck'], 0, ',', '.') : number_format($rb['stok_ck'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                </td>
+                                                                                                <td>
+                                                                                                    <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                                                                                        <i class="bi bi-check-circle-fill me-1"></i> Selesai Diproduksi
+                                                                                                    </span>
+                                                                                                </td>
+                                                                                            </tr>
+                                                                                        @endforeach
+                                                                                    </tbody>
+                                                                                </table>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
                                                             </div>
                                                             <div class="modal-footer bg-light py-2">
                                                                 <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Tutup</button>
@@ -619,6 +769,185 @@
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            @if($isSuperAdmin)
+                                                {{-- MODAL KHUSUS REKAP BAHAN BAKU WO (SUPERADMIN) --}}
+                                                <div class="modal fade text-start" id="modalRekapBahan{{ $wo->id }}" tabindex="-1" aria-hidden="true">
+                                                    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                                                        <div class="modal-content border-0 shadow-lg rounded-4">
+                                                            <div class="modal-header bg-dark text-white py-3">
+                                                                <div>
+                                                                    <h5 class="modal-title fw-bold mb-0">
+                                                                        <i class="bi bi-boxes me-2 text-warning"></i> Rekap Total Bahan Baku &amp; Ketersediaan Gudang CK
+                                                                    </h5>
+                                                                    <div class="small text-white-50 mt-1">
+                                                                        Work Order: <span class="fw-bold text-white">{{ $wo->kode_wo }}</span> &bull; 
+                                                                        Outlet Pemesan: <span class="badge bg-light text-dark border">{{ $wo->customer_nama }}</span> &bull; 
+                                                                        Tanggal WO: {{ date('d M Y H:i', strtotime($wo->tanggal_wo)) }}
+                                                                    </div>
+                                                                </div>
+                                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body p-4">
+                                                                {{-- KPI SUMMARY CARDS --}}
+                                                                <div class="row g-3 mb-4">
+                                                                    <div class="col-6 col-md-3">
+                                                                        <div class="p-3 bg-light rounded-3 border">
+                                                                            <span class="text-muted small d-block mb-1">Total Target WO</span>
+                                                                            <span class="fw-bold fs-5 text-dark">{{ number_format($wo->total_target, 0, ',', '.') }}</span>
+                                                                            <span class="small text-muted ms-1">unit</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-6 col-md-3">
+                                                                        <div class="p-3 bg-light rounded-3 border">
+                                                                            <span class="text-muted small d-block mb-1">Total Jenis Bahan</span>
+                                                                            <span class="fw-bold fs-5 text-primary">{{ $wo->total_jenis_bahan ?? count($wo->rekap_bahan ?? []) }}</span>
+                                                                            <span class="small text-muted ms-1">item bahan</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-6 col-md-3">
+                                                                        <div class="p-3 bg-success-subtle rounded-3 border border-success-subtle">
+                                                                            <span class="text-success small d-block mb-1 fw-semibold">Stok CK Mencukupi</span>
+                                                                            <span class="fw-bold fs-5 text-success">{{ $wo->total_bahan_cukup ?? 0 }}</span>
+                                                                            <span class="small text-success ms-1">item siap</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-6 col-md-3">
+                                                                        <div class="p-3 {{ ($wo->total_bahan_kurang ?? 0) > 0 ? 'bg-danger-subtle border-danger-subtle' : 'bg-light border' }} rounded-3 border">
+                                                                            <span class="{{ ($wo->total_bahan_kurang ?? 0) > 0 ? 'text-danger fw-semibold' : 'text-muted' }} small d-block mb-1">Stok CK Kurang</span>
+                                                                            <span class="fw-bold fs-5 {{ ($wo->total_bahan_kurang ?? 0) > 0 ? 'text-danger' : 'text-muted' }}">{{ $wo->total_bahan_kurang ?? 0 }}</span>
+                                                                            <span class="small {{ ($wo->total_bahan_kurang ?? 0) > 0 ? 'text-danger' : 'text-muted' }} ms-1">item defisit</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {{-- ALERT KETERANGAN STATUS --}}
+                                                                @if(($wo->total_bahan_kurang ?? 0) > 0)
+                                                                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small flex-wrap">
+                                                                        <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0 mt-0.5"></i>
+                                                                        <div class="flex-grow-1">
+                                                                            <div class="fw-bold text-dark mb-1">Perhatian: Sebagian Stok Bahan Baku di Gudang Central Kitchen Belum Mencukupi!</div>
+                                                                            <div>Terdapat <strong>{{ $wo->total_bahan_kurang }} jenis bahan</strong> yang stoknya kurang dari kebutuhan sisa produksi WO ini. Anda dapat melakukan permintaan bahan ke Gudang Utama.</div>
+                                                                        </div>
+                                                                        <form action="{{ route('ck-produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-inline ms-auto flex-shrink-0" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')">
+                                                                            @csrf
+                                                                            <button type="submit" class="btn btn-sm btn-warning text-dark fw-bold">
+                                                                                <i class="bi bi-box-arrow-right me-1"></i> Minta Bahan ke Gudang Utama
+                                                                            </button>
+                                                                        </form>
+                                                                    </div>
+                                                                @else
+                                                                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-check-circle-fill fs-5 text-success"></i>
+                                                                        <div><strong>Stok Bahan Baku Lengkap:</strong> Seluruh bahan baku di Gudang Central Kitchen siap dan mencukupi untuk memenuhi kebutuhan produksi Work Order ini.</div>
+                                                                    </div>
+                                                                @endif
+
+                                                                {{-- TABEL REKAP TOTAL BAHAN --}}
+                                                                <div class="table-responsive border rounded-3 mb-3">
+                                                                    <table class="table table-hover align-middle mb-0" style="font-size: 0.83rem;">
+                                                                        <thead class="table-light text-secondary">
+                                                                            <tr>
+                                                                                <th class="text-center" style="width: 45px;">NO</th>
+                                                                                <th style="min-width: 180px;">KODE &amp; NAMA BAHAN BAKU</th>
+                                                                                <th class="text-end" style="width: 140px;">TOTAL KEBUTUHAN<br><span class="fw-normal small text-muted">(Target WO)</span></th>
+                                                                                <th class="text-end" style="width: 140px;">SISA KEBUTUHAN<br><span class="fw-normal small text-muted">(Belum Selesai)</span></th>
+                                                                                <th class="text-end" style="width: 140px;">STOK GUDANG CK<br><span class="fw-normal small text-muted">(Tersedia Fisik)</span></th>
+                                                                                <th class="text-center" style="width: 160px;">STATUS KETERSEDIAAN</th>
+                                                                                <th class="text-center" style="width: 110px;">RINCIAN MENU</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            @forelse($wo->rekap_bahan ?? [] as $rbIdx => $rb)
+                                                                                <tr class="{{ !$rb['is_cukup'] ? 'table-warning' : '' }}">
+                                                                                    <td class="text-center text-muted fw-semibold">{{ $rbIdx + 1 }}</td>
+                                                                                    <td>
+                                                                                        <div class="fw-bold text-dark">{{ $rb['nama_bahan'] }}</div>
+                                                                                        <div class="text-muted font-monospace small">{{ $rb['kode_barang'] }}</div>
+                                                                                    </td>
+                                                                                    <td class="text-end fw-semibold text-dark">
+                                                                                        {{ (fmod($rb['total_butuh'], 1) == 0) ? number_format($rb['total_butuh'], 0, ',', '.') : number_format($rb['total_butuh'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                    </td>
+                                                                                    <td class="text-end fw-bold {{ $rb['sisa_butuh'] > 0 ? 'text-primary' : 'text-muted' }}">
+                                                                                        {{ (fmod($rb['sisa_butuh'], 1) == 0) ? number_format($rb['sisa_butuh'], 0, ',', '.') : number_format($rb['sisa_butuh'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                    </td>
+                                                                                    <td class="text-end fw-bold {{ $rb['stok_ck'] > 0 ? 'text-success' : 'text-danger' }}">
+                                                                                        {{ (fmod($rb['stok_ck'], 1) == 0) ? number_format($rb['stok_ck'], 0, ',', '.') : number_format($rb['stok_ck'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                    </td>
+                                                                                    <td class="text-center">
+                                                                                        @if($rb['is_cukup'])
+                                                                                            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                                                                                <i class="bi bi-check-circle-fill me-1"></i> Mencukupi
+                                                                                            </span>
+                                                                                            @if($rb['selisih'] > 0)
+                                                                                                <div class="small text-muted font-monospace mt-1" style="font-size: 11px;">
+                                                                                                    Surplus +{{ (fmod($rb['selisih'], 1) == 0) ? number_format($rb['selisih'], 0, ',', '.') : number_format($rb['selisih'], 2, ',', '.') }}
+                                                                                                </div>
+                                                                                            @endif
+                                                                                        @else
+                                                                                            <span class="badge bg-danger text-white px-2 py-1 fw-bold">
+                                                                                                <i class="bi bi-exclamation-triangle-fill me-1"></i> Kurang {{ (fmod($rb['kurang'], 1) == 0) ? number_format($rb['kurang'], 0, ',', '.') : number_format($rb['kurang'], 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                            </span>
+                                                                                            <div class="small text-danger font-monospace mt-1" style="font-size: 11px;">
+                                                                                                Stok saat ini {{ (fmod($rb['stok_ck'], 1) == 0) ? number_format($rb['stok_ck'], 0, ',', '.') : number_format($rb['stok_ck'], 2, ',', '.') }}
+                                                                                            </div>
+                                                                                        @endif
+                                                                                    </td>
+                                                                                    <td class="text-center">
+                                                                                        <button class="btn btn-xs btn-outline-secondary py-0 px-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBreakdown{{ $wo->id }}_{{ $rb['bahan_id'] }}" style="font-size: 11px; border-radius: 5px;">
+                                                                                            {{ count($rb['breakdown']) }} Menu <i class="bi bi-chevron-down ms-1"></i>
+                                                                                        </button>
+                                                                                    </td>
+                                                                                </tr>
+                                                                                <tr class="collapse bg-light" id="collapseBreakdown{{ $wo->id }}_{{ $rb['bahan_id'] }}">
+                                                                                    <td colspan="7" class="p-3">
+                                                                                        <div class="bg-white p-3 rounded-3 border shadow-sm">
+                                                                                            <div class="fw-bold text-dark small mb-2"><i class="bi bi-diagram-3 me-1 text-primary"></i> Rincian Penggunaan "{{ $rb['nama_bahan'] }}" pada Menu WO ini:</div>
+                                                                                            <div class="table-responsive">
+                                                                                                <table class="table table-sm table-bordered text-center align-middle mb-0" style="font-size: 12px;">
+                                                                                                    <thead class="table-light">
+                                                                                                        <tr>
+                                                                                                            <th class="text-start">Nama Produk</th>
+                                                                                                            <th width="110">Target Produk</th>
+                                                                                                            <th width="110">Sisa Produk</th>
+                                                                                                            <th width="140">Standar per Unit</th>
+                                                                                                            <th width="140">Kebutuhan Total</th>
+                                                                                                            <th width="140">Kebutuhan Sisa</th>
+                                                                                                        </tr>
+                                                                                                    </thead>
+                                                                                                    <tbody>
+                                                                                                        @foreach($rb['breakdown'] as $bd)
+                                                                                                            <tr>
+                                                                                                                <td class="text-start fw-semibold">{{ $bd['nama_produk'] }} <span class="text-muted small">({{ $bd['kode_produk'] }})</span></td>
+                                                                                                                <td>{{ number_format($bd['target_produk'], 0, ',', '.') }} {{ $bd['satuan_produk'] }}</td>
+                                                                                                                <td class="fw-bold text-danger">{{ number_format($bd['sisa_produk'], 0, ',', '.') }} {{ $bd['satuan_produk'] }}</td>
+                                                                                                                <td>{{ (fmod($bd['qty_per_unit'], 1) == 0) ? number_format($bd['qty_per_unit'], 0, ',', '.') : number_format($bd['qty_per_unit'], 4, ',', '.') }} {{ $rb['satuan'] }}</td>
+                                                                                                                <td class="fw-semibold text-dark">{{ (fmod($bd['subtotal_total'], 1) == 0) ? number_format($bd['subtotal_total'], 0, ',', '.') : number_format($bd['subtotal_total'], 2, ',', '.') }} {{ $rb['satuan'] }}</td>
+                                                                                                                <td class="fw-bold text-primary">{{ (fmod($bd['subtotal_sisa'], 1) == 0) ? number_format($bd['subtotal_sisa'], 0, ',', '.') : number_format($bd['subtotal_sisa'], 2, ',', '.') }} {{ $rb['satuan'] }}</td>
+                                                                                                            </tr>
+                                                                                                        @endforeach
+                                                                                                    </tbody>
+                                                                                                </table>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            @empty
+                                                                                <tr>
+                                                                                    <td colspan="7" class="text-center text-muted py-4">Tidak ada data resep bahan baku yang terdaftar untuk Work Order ini.</td>
+                                                                                </tr>
+                                                                            @endforelse
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                            <div class="modal-footer bg-light py-2">
+                                                                <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Tutup</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            @endif
 
                                             @if(auth()->user() && auth()->user()->canEditWoQty() && !($wo->is_terkirim ?? false))
                                                 {{-- MODAL EDIT QTY WORK ORDER (SUPERADMIN & GAHARU) --}}
@@ -760,7 +1089,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">Belum ada Work Order CK.</td>
+                                        <td colspan="{{ $isSuperAdmin ? 9 : 8 }}" class="text-center py-4 text-muted">Belum ada Work Order CK.</td>
                                     </tr>
                                 @endforelse
                             </tbody>

@@ -884,28 +884,52 @@
         });
 
         return `
-            <div style="border-bottom:2px solid #0f172a; padding-bottom:12px; margin-bottom:15px; display:flex; justify-content:space-between;">
+            <!-- HEADER BLOCK - WARNA KUNING / AMBER (BAHAN BAKU) -->
+            <div style="background-color:#d97706; color:#ffffff; padding:14px 18px; border-radius:6px; margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
                 <div>
-                    <h3 style="margin:0; font-weight:bold; color:#0f172a;">KEJINGGA</h3>
-                    <div style="font-size:12px; color:#475569; margin-top:4px;">Pengadaan & Logistik - Gudang KeJingga</div>
+                    <div style="font-size:16px; font-weight:bold; letter-spacing:0.5px; text-transform:uppercase;">CV GAHARU AGUNG SEJAHTERA</div>
+                    <div style="font-size:10.5px; opacity:0.95; margin-top:2px;">Pengadaan & Logistik Bahan Baku Operasional</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-size:18px; font-weight:bold; color:#d97706;">PURCHASE ORDER</div>
-                    <div style="font-family:monospace; font-weight:bold; font-size:14px;">#${item.kode}</div>
-                    <div style="font-size:12px; color:#475569;">Tanggal: ${item.tanggal}</div>
+                    <div style="font-size:14px; font-weight:bold; text-transform:uppercase;">PURCHASE ORDER BAHAN BAKU</div>
+                    <div style="font-family:monospace; font-weight:bold; font-size:13px; margin-top:2px;">#${item.kode}</div>
                 </div>
             </div>
 
-            <table style="width:100%; border-collapse:collapse; font-size:12px; margin-bottom:15px;">
+            <!-- STANDAR INFO GRID METADATA -->
+            <table style="width:100%; border-collapse:collapse; background-color:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:15px; font-size:11px;">
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Judul Dokumen</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">PURCHASE ORDER BAHAN BAKU</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; width:18%; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Tanggal Order</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a; width:32%; border-bottom:1px solid #e2e8f0;">${item.tanggal}</td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Outlet Pemesan</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#d97706; border-bottom:1px solid #e2e8f0;">Gudang KeJingga</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px; border-bottom:1px solid #e2e8f0;">Gudang Sumber</td>
+                    <td style="padding:6px 10px; color:#0f172a; border-bottom:1px solid #e2e8f0;"><strong>${item.details[0]?.supplier_nama || 'Supplier Bahan'}</strong> <span style="font-size:10px; color:#64748b;">(Pemasok)</span></td>
+                </tr>
+                <tr>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Status Dokumen</td>
+                    <td style="padding:6px 10px; color:#0f172a;">
+                        <span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; border-radius:3px; background-color:#dcfce7; color:#15803d; border:1px solid #bbf7d0;">PROSES / AKTIF</span>
+                    </td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#475569; text-transform:uppercase; font-size:10px;">Dibuat Oleh</td>
+                    <td style="padding:6px 10px; font-weight:bold; color:#0f172a;">${item.user_nama}</td>
+                </tr>
+            </table>
+
+            <table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:15px;">
                 <thead>
-                    <tr style="background:#0f172a; color:#ffffff;">
-                        <th style="padding:8px; border:1px solid #0f172a;" width="30">No</th>
-                        <th style="padding:8px; border:1px solid #0f172a;">Barang &amp; Supplier</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Stok Kejingga</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="110">Qty Order</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="100">Diterima</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Harga / Satuan</th>
-                        <th style="padding:8px; border:1px solid #0f172a;" width="120">Subtotal</th>
+                    <tr style="background:#1e293b; color:#ffffff;">
+                        <th style="padding:7px 6px; border:1px solid #1e293b;" width="30">No</th>
+                        <th style="padding:7px 8px; border:1px solid #1e293b;">Barang &amp; Supplier</th>
+                        <th style="padding:7px 8px; border:1px solid #1e293b;" width="110">Stok Kejingga</th>
+                        <th style="padding:7px 8px; border:1px solid #1e293b;" width="110">Qty Order</th>
+                        <th style="padding:7px 8px; border:1px solid #1e293b;" width="95">Diterima</th>
+                        <th style="padding:7px 8px; border:1px solid #1e293b;" width="110">Harga / Satuan</th>
+                        <th style="padding:7px 8px; border:1px solid #1e293b;" width="115">Subtotal</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -913,13 +937,13 @@
                 </tbody>
             </table>
 
-            <div style="text-align:right; font-size:14px; font-weight:bold; color:#0f172a; margin-bottom:20px;">
-                Total Purchase Order: <span style="color:#2563eb;">Rp ${item.total.toLocaleString('id-ID')}</span>
+            <div style="text-align:right; font-size:13px; font-weight:bold; color:#0f172a; margin-bottom:20px;">
+                Total Purchase Order: <span style="color:#d97706; font-size:15px;">Rp ${item.total.toLocaleString('id-ID')}</span>
             </div>
 
-            <div style="display:flex; justify-content:space-between; text-align:center; font-size:11px; margin-top:30px; border-top:1px solid #e2e8f0; padding-top:10px;">
-                <div>Dibuat Oleh<br><br><br><strong>( ${item.user_nama} )</strong></div>
-                <div>Disetujui<br><br><br><strong>( Tim Purchasing )</strong></div>
+            <div style="display:flex; justify-content:space-between; text-align:center; font-size:10.5px; margin-top:25px; border-top:1px solid #e2e8f0; padding-top:10px;">
+                <div>Dibuat Oleh (Operasional)<br><br><br><strong>( ${item.user_nama} )</strong></div>
+                <div>Supplier / Vendor<br><br><br><strong>( Pemasok Bahan )</strong></div>
                 <div>Gudang Penerima<br><br><br><strong>( Gudang Kejingga )</strong></div>
             </div>
         `;

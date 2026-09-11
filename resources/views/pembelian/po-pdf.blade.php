@@ -2,89 +2,166 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Purchase Order - {{ $pembelian->kode_pembelian }}</title>
+    <title>PURCHASE ORDER BAHAN BAKU - {{ $pembelian->kode_pembelian }}</title>
     <style>
-        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 12px; color: #333; margin: 0; padding: 15px; }
-        .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-        .company-name { font-size: 20px; font-weight: bold; text-transform: uppercase; color: #1a202c; }
-        .doc-title { font-size: 16px; font-weight: bold; text-align: right; color: #2b6cb0; text-transform: uppercase; }
-        .info-table { width: 100%; margin-bottom: 20px; border-collapse: collapse; }
-        .info-table td { vertical-align: top; padding: 4px 0; }
-        .item-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        .item-table th { background-color: #2b6cb0; color: white; padding: 8px; text-align: left; font-size: 11px; text-transform: uppercase; }
-        .item-table td { padding: 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
-        .text-end { text-align: right; }
+        body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; color: #1e293b; line-height: 1.4; margin: 0; padding: 15px; }
+
+        /* HEADER COLOR BLOCK - KUNING / AMBER (BAHAN BAKU) */
+        .header-block {
+            background-color: #d97706;
+            color: #ffffff;
+            padding: 14px 18px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .header-table { width: 100%; border-collapse: collapse; }
+        .company-name { font-size: 17px; font-weight: bold; letter-spacing: 0.5px; text-transform: uppercase; }
+        .sub-company { font-size: 10px; opacity: 0.95; margin-top: 2px; }
+        .doc-badge-title { font-size: 15px; font-weight: bold; text-align: right; text-transform: uppercase; letter-spacing: 0.5px; }
+        .doc-code { font-size: 12px; font-family: monospace; font-weight: bold; text-align: right; margin-top: 3px; }
+
+        /* METADATA INFO GRID */
+        .info-grid {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .info-grid td {
+            padding: 7px 10px;
+            font-size: 11px;
+            vertical-align: middle;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .info-label { font-weight: bold; color: #475569; width: 18%; text-transform: uppercase; font-size: 10px; }
+        .info-value { width: 32%; color: #0f172a; }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 9.5px;
+            font-weight: bold;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .badge-success { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-warning { background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+        .badge-danger { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+
+        /* ITEMS TABLE */
+        .table-items { width: 100%; border-collapse: collapse; margin-top: 8px; margin-bottom: 15px; }
+        .table-items th {
+            background-color: #1e293b;
+            color: #ffffff;
+            text-align: left;
+            padding: 8px;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            border: 1px solid #1e293b;
+        }
+        .table-items td {
+            padding: 7px 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 10.5px;
+            vertical-align: middle;
+        }
+        .table-items tr:nth-child(even) { background-color: #f8fafc; }
         .text-center { text-align: center; }
+        .text-end { text-align: right; }
         .fw-bold { font-weight: bold; }
-        .total-box { margin-top: 15px; float: right; width: 40%; }
+
+        /* TOTAL SECTION */
+        .total-box { margin-top: 10px; float: right; width: 45%; }
         .total-table { width: 100%; border-collapse: collapse; }
-        .total-table td { padding: 6px; font-size: 12px; }
-        .signature-section { margin-top: 50px; width: 100%; clear: both; }
-        .signature-box { float: left; width: 30%; text-align: center; }
-        .signature-space { height: 60px; }
-        .badge { padding: 3px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
-        .bg-success { background-color: #38a169; color: white; }
-        .bg-warning { background-color: #dd6b20; color: white; }
+        .total-table td { padding: 5px 8px; font-size: 11px; }
+
+        /* SIGNATURES & FOOTER */
+        .signature-table { width: 100%; border-collapse: collapse; margin-top: 30px; clear: both; }
+        .signature-table td { width: 33.33%; text-align: center; vertical-align: top; font-size: 10.5px; }
+        .sign-space { height: 55px; }
+        .footer-note {
+            margin-top: 25px;
+            border-top: 1px dashed #cbd5e1;
+            padding-top: 8px;
+            font-size: 9px;
+            color: #94a3b8;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
 
-    <table style="width:100%; margin-bottom: 15px;">
+    {{-- HEADER BLOCK - WARNA KUNING / AMBER (BAHAN BAKU) --}}
+    <div class="header-block">
+        <table class="header-table">
+            <tr>
+                <td style="vertical-align: middle;">
+                    <div class="company-name">CV GAHARU AGUNG SEJAHTERA</div>
+                    <div class="sub-company">Pengadaan &amp; Logistik Bahan Baku Operasional</div>
+                </td>
+                <td style="vertical-align: middle; text-align: right;">
+                    <div class="doc-badge-title">PURCHASE ORDER BAHAN BAKU</div>
+                    <div class="doc-code">#{{ $pembelian->kode_pembelian }}</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    {{-- STANDAR INFO GRID METADATA --}}
+    <table class="info-grid">
         <tr>
-            <td style="width: 50%;">
-                <div class="company-name">PT. GAHARU APP</div>
-                <div style="font-size: 11px; color: #666; margin-top: 4px;">
-                    Layanan Logistik & Pengadaan Bahan Baku<br>
-                    Gudang: {{ $pembelian->gudang->nama ?? 'Gudang Utama' }}
-                </div>
-            </td>
-            <td style="width: 50%; text-align: right;">
-                <div class="doc-title">PURCHASE ORDER (PO)</div>
-                <div style="font-weight: bold; font-size: 13px; margin-top: 4px;">#{{ $pembelian->kode_pembelian }}</div>
-                <div style="color: #666; font-size: 11px;">Tanggal: {{ \Carbon\Carbon::parse($pembelian->tanggal)->format('d F Y') }}</div>
-            </td>
+            <td class="info-label">Judul Dokumen</td>
+            <td class="info-value"><strong>PURCHASE ORDER BAHAN BAKU</strong></td>
+            <td class="info-label">Tanggal Order</td>
+            <td class="info-value"><strong>{{ \Carbon\Carbon::parse($pembelian->tanggal)->format('d F Y') }}</strong></td>
         </tr>
-    </table>
-
-    <div style="border-top: 2px solid #2b6cb0; margin-bottom: 15px;"></div>
-
-    <table class="info-table">
         <tr>
-            <td style="width: 55%;">
-                <strong style="color: #4a5568; font-size: 11px; text-transform: uppercase;">PEMBESAR / SUPPLIER:</strong><br>
-                <span style="font-size: 14px; font-weight: bold;">{{ $pembelian->supplier->nama ?? '-' }}</span><br>
-                Telepon: {{ $pembelian->supplier->telepon ?? '-' }}<br>
-                Alamat: {{ $pembelian->supplier->alamat ?? '-' }}
-            </td>
-            <td style="width: 45%;">
-                <strong style="color: #4a5568; font-size: 11px; text-transform: uppercase;">INFORMASI PEMBAYARAN:</strong><br>
-                Metode Pembayaran: <strong>{{ strtoupper($pembelian->metode_pembayaran ?? 'COD') }}</strong><br>
-                Status Pelunasan: 
-                @if($pembelian->is_lunas)
-                    <span class="badge bg-success">LUNAS</span>
-                @else
-                    <span class="badge bg-warning">BELUM LUNAS</span>
-                @endif
-                <br>
-                Status Penerimaan: 
+            <td class="info-label">Outlet Pemesan</td>
+            <td class="info-value"><strong style="color: #d97706; font-size: 12px;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
+            <td class="info-label">Gudang Sumber</td>
+            <td class="info-value"><strong>{{ $pembelian->supplier->nama ?? '-' }}</strong> <span style="font-size: 10px; color: #64748b;">(Supplier / Vendor)</span></td>
+        </tr>
+        <tr>
+            <td class="info-label">Status Dokumen</td>
+            <td class="info-value">
                 @if($pembelian->is_diterima)
-                    <span class="badge bg-success">BARANG DITERIMA</span>
+                    <span class="badge badge-success">BARANG DITERIMA</span>
                 @else
-                    <span class="badge bg-warning">PROSES PENERIMAAN</span>
+                    <span class="badge badge-warning">PROSES PENERIMAAN</span>
+                @endif
+                @if($pembelian->is_lunas)
+                    <span class="badge badge-success" style="margin-left: 4px;">LUNAS</span>
+                @else
+                    <span class="badge badge-danger" style="margin-left: 4px;">BELUM LUNAS</span>
                 @endif
             </td>
+            <td class="info-label">Pembayaran</td>
+            <td class="info-value"><strong>{{ strtoupper($pembelian->metode_pembayaran ?? 'COD') }}</strong></td>
         </tr>
+        @if($pembelian->supplier && ($pembelian->supplier->telepon || $pembelian->supplier->alamat))
+        <tr>
+            <td class="info-label">Kontak Supplier</td>
+            <td class="info-value" colspan="3">
+                Telp: {{ $pembelian->supplier->telepon ?? '-' }} | Alamat: {{ $pembelian->supplier->alamat ?? '-' }}
+            </td>
+        </tr>
+        @endif
     </table>
 
-    <table class="item-table">
+    {{-- TABEL ITEM BARANG --}}
+    <table class="table-items">
         <thead>
             <tr>
-                <th style="width: 5%;">No</th>
-                <th>Nama Barang / Bahan Baku</th>
-                <th class="text-center" style="width: 15%;">Qty Dipesan</th>
-                <th class="text-center" style="width: 15%;">Qty Diterima</th>
-                <th class="text-end" style="width: 20%;">Harga / Satuan</th>
-                <th class="text-end" style="width: 20%;">Subtotal</th>
+                <th style="width: 25px; text-align: center;">NO</th>
+                <th>NAMA BARANG / BAHAN BAKU</th>
+                <th style="width: 105px; text-align: center;">QTY DIPESAN</th>
+                <th style="width: 105px; text-align: center;">QTY DITERIMA</th>
+                <th style="width: 130px; text-align: right;">HARGA / SATUAN</th>
+                <th style="width: 135px; text-align: right;">SUBTOTAL</th>
             </tr>
         </thead>
         <tbody>
@@ -105,25 +182,25 @@
                 <tr>
                     <td class="text-center">{{ $idx + 1 }}</td>
                     <td>
-                        <strong>{{ $detail->barang->nama ?? '-' }}</strong>
-                        <div style="font-size: 9.5px; color: #718096; font-family: monospace;">{{ $detail->barang->kode_barang ?? '' }}</div>
+                        <strong style="color: #0f172a;">{{ $detail->barang->nama ?? '-' }}</strong>
+                        <div style="font-size: 9px; color: #64748b; font-family: monospace;">{{ $detail->barang->kode_barang ?? '' }}</div>
                     </td>
                     <td class="text-center">
                         <strong>{{ number_format($detail->qty, 2, ',', '.') }} {{ $unitDisplay }}</strong>
                         @if($hasKonv)
-                            <div style="font-size: 9px; color: #2b6cb0;">= {{ number_format($detail->qty * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
+                            <div style="font-size: 8.5px; color: #d97706;">= {{ number_format($detail->qty * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
                         @endif
                     </td>
                     <td class="text-center">
                         <strong>{{ number_format($qtyDiterima, 2, ',', '.') }} {{ $unitDisplay }}</strong>
                         @if($hasKonv)
-                            <div style="font-size: 9px; color: #2b6cb0;">= {{ number_format($qtyDiterima * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
+                            <div style="font-size: 8.5px; color: #d97706;">= {{ number_format($qtyDiterima * $konv, 2, ',', '.') }} {{ $sUtama }}</div>
                         @endif
                     </td>
                     <td class="text-end">
                         Rp {{ number_format($detail->harga_per_qty, 0, ',', '.') }} / {{ $unitDisplay }}
                         @if($hasKonv && $konv > 0)
-                            <div style="font-size: 9px; color: #718096;">(~Rp {{ number_format($detail->harga_per_qty / $konv, 2, ',', '.') }} / {{ $sUtama }})</div>
+                            <div style="font-size: 8.5px; color: #718096;">(~Rp {{ number_format($detail->harga_per_qty / $konv, 2, ',', '.') }} / {{ $sUtama }})</div>
                         @endif
                     </td>
                     <td class="text-end fw-bold">Rp {{ number_format($subtotal, 0, ',', '.') }}</td>
@@ -132,44 +209,58 @@
         </tbody>
     </table>
 
+    {{-- TOTAL PEMBELIAN --}}
     <div class="total-box">
         <table class="total-table">
             <tr>
                 <td class="fw-bold">Total Pembelian:</td>
-                <td class="text-end fw-bold" style="font-size: 14px; color: #2b6cb0;">
+                <td class="text-end fw-bold" style="font-size: 13px; color: #d97706;">
                     Rp {{ number_format($pembelian->total ?? $totalSub, 0, ',', '.') }}
                 </td>
             </tr>
             @if($pembelian->nominal_dp > 0)
             <tr>
                 <td>Uang Muka (DP):</td>
-                <td class="text-end">Rp {{ number_format($pembelian->nominal_dp, 0, ',', '.') }}</td>
+                <td class="text-end" style="color: #15803d; font-weight: bold;">Rp {{ number_format($pembelian->nominal_dp, 0, ',', '.') }}</td>
             </tr>
             <tr>
                 <td class="fw-bold">Sisa Tagihan:</td>
-                <td class="text-end fw-bold text-danger">Rp {{ number_format($pembelian->total - $pembelian->nominal_dp, 0, ',', '.') }}</td>
+                <td class="text-end fw-bold" style="color: #b91c1c;">Rp {{ number_format($pembelian->total - $pembelian->nominal_dp, 0, ',', '.') }}</td>
             </tr>
             @endif
         </table>
     </div>
 
-    <div class="signature-section">
-        <div class="signature-box">
-            Dibuat Oleh,<br>
-            <div class="signature-space"></div>
-            <strong>({{ $pembelian->user->name ?? 'Bagian Pembelian' }})</strong>
-        </div>
-        <div class="signature-box" style="margin-left: 5%;">
-            Disetujui Oleh,<br>
-            <div class="signature-space"></div>
-            <strong>( Supplier / Vendor )</strong>
-        </div>
-        <div class="signature-box" style="float: right;">
-            Diterima Oleh,<br>
-            <div class="signature-space"></div>
-            <strong>({{ $pembelian->penerimaDiterima->name ?? 'Gudang Penerima' }})</strong>
-        </div>
-    </div>
+    {{-- TANDA TANGAN 3 PIHAK --}}
+    <table class="signature-table">
+        <tr>
+            <td>
+                Pemohon (Operasional)<br><br>
+                <div class="sign-space"></div>
+                <strong>( {{ $pembelian->user->nama ?? $pembelian->user->name ?? 'Staff Operasional' }} )</strong><br>
+                <span style="font-size: 9.5px; color: #64748b;">{{ $pembelian->gudang->nama ?? 'Unit Pemohon' }}</span>
+            </td>
+            <td>
+                Supplier / Vendor<br><br>
+                <div class="sign-space"></div>
+                <strong>( {{ $pembelian->supplier->nama ?? 'Pemasok Bahan' }} )</strong><br>
+                <span style="font-size: 9.5px; color: #64748b;">Penyedia Bahan Baku</span>
+            </td>
+            <td>
+                Gudang &amp; Management<br><br>
+                <div class="sign-space"></div>
+                <strong>( {{ $pembelian->penerimaDiterima->nama ?? $pembelian->penerimaDiterima->name ?? 'Petugas Gudang' }} )</strong><br>
+                <span style="font-size: 9.5px; color: #64748b;">CV Gaharu Agung Sejahtera</span>
+            </td>
+        </tr>
+    </table>
+
+    <table class="footer-note">
+        <tr>
+            <td>Dokumen Resmi Sistem ERP - CV Gaharu Agung Sejahtera</td>
+            <td style="text-align: right;">Dicetak pada: {{ date('d/m/Y H:i') }}</td>
+        </tr>
+    </table>
 
 </body>
 </html>
