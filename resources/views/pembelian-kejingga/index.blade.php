@@ -13,11 +13,12 @@
             z-index: 99999 !important;
         }
 
-        /* Multi-modal z-index stacking so submodals (catat bayar, lunasi, upload, terima) open in front of modalDetail */
+        /* Multi-modal z-index stacking so submodals open in front of modalDetail */
         #modalPembayaranDetail, 
         #modalLunasiDetail, 
         #modalUploadBuktiDetail, 
-        #modalTerimaDetail {
+        #modalTerimaDetail,
+        #modalInputBarangTerpilih {
             z-index: 1080 !important;
         }
         .modal-backdrop.show:nth-of-type(2) {
@@ -214,14 +215,6 @@
                                         $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
                                     @endphp
                                     @if(!$item->isTerkunci())
-                                        {{-- Edit Pop-up Modal --}}
-                                        <button type="button"
-                                                class="btn btn-sm btn-warning text-dark rounded-2 px-2 py-1"
-                                                onclick="bukaModalEdit({{ $item->id }})"
-                                                title="Edit PO (Pop-up)">
-                                            <i class="bi bi-pencil-square"></i> Edit
-                                        </button>
-
                                         {{-- Hapus --}}
                                         <form action="{{ route('pembelian-kejingga.destroy', $item->id) }}"
                                               method="POST" class="d-inline"
@@ -530,13 +523,132 @@
                             <a href="#" id="btnCetakPdfModal" target="_blank" class="btn btn-danger btn-sm fw-semibold">
                                 <i class="bi bi-printer me-1"></i> Cetak PDF
                             </a>
-                            <button type="button" class="btn btn-warning btn-sm text-dark fw-semibold" id="btnEditFromDetailModal">
-                                <i class="bi bi-pencil-square me-1"></i> Edit PO
-                            </button>
                         </div>
-                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-warning btn-sm text-dark fw-bold px-3 shadow-sm" id="btnInputBarangTerpilihModal" onclick="bukaModalInputBarangTerpilih()" disabled>
+                                <i class="bi bi-pencil-square me-1"></i> Input / Edit Barang Terpilih (<span id="footer-count-terpilih">0</span>)
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Tutup</button>
+                        </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL INPUT HARGA, NOTA, SUPPLIER, TAX & UPLOAD BUKTI UNTUK BARANG TERPILIH -->
+    <div class="modal fade" id="modalInputBarangTerpilih" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow rounded-4">
+                <form id="formInputBarangTerpilih" method="POST" enctype="multipart/form-data">
+                    @csrf
+                    <div class="modal-header border-bottom pb-3" style="background-color: #fef3c7;">
+                        <h5 class="modal-title fw-bold text-dark">
+                            <i class="bi bi-pencil-square text-warning me-2"></i>Input / Edit Data Barang Terpilih
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-3 p-md-4">
+                        <div class="alert alert-info py-2 px-3 small mb-3">
+                            <i class="bi bi-info-circle me-1"></i> Anda sedang memperbarui data untuk <strong id="input-modal-count">0</strong> barang terpilih pada PO <strong id="input-modal-po-kode">#</strong>.
+                        </div>
+
+                        <!-- SUPPLIER & NOMOR NOTA -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-dark mb-1">Pilih Supplier / Pemasok <span class="text-danger">*</span></label>
+                                <select name="supplier_id" id="input_supplier_id" class="form-select" required>
+                                    <option value="">-- Pilih Supplier --</option>
+                                    @foreach($suppliers as $sup)
+                                        <option value="{{ $sup->id }}">{{ $sup->nama }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-dark mb-1">Nomor Nota / No. Faktur</label>
+                                <input type="text" name="nomor_nota" id="input_nomor_nota" class="form-control" placeholder="Contoh: INV-2026/09/001">
+                            </div>
+                        </div>
+
+                        <!-- DAFTAR BARANG TERPILIH & INPUT HARGA -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-dark mb-1">Daftar Barang &amp; Input Harga</label>
+                            <div class="table-responsive border rounded-3">
+                                <table class="table table-sm table-hover align-middle mb-0" id="table-input-barang-terpilih">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th width="35" class="text-center">No</th>
+                                            <th>Nama Barang</th>
+                                            <th width="120" class="text-center">Qty Dipesan</th>
+                                            <th width="190" class="text-end">Total Harga (Rp) <span class="text-danger">*</span></th>
+                                            <th width="140" class="text-end">Harga / Satuan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-input-barang-terpilih">
+                                        <!-- Rendered dynamically -->
+                                    </tbody>
+                                    <tfoot class="table-light fw-bold">
+                                        <tr>
+                                            <td colspan="3" class="text-end">Total Harga Barang Terpilih:</td>
+                                            <td class="text-end text-primary fs-6" id="total-harga-terpilih-display">Rp 0</td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- TAX / SERVICE / ONGKIR -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-dark mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-white text-muted">Rp</span>
+                                    <input type="text" name="tax_service" id="input_tax_service" class="form-control text-end fw-bold mask-number" placeholder="0" oninput="hitungGrandTotalInputModal()">
+                                </div>
+                                <small class="text-muted" style="font-size: 11px;">Biaya pajak/ongkir nota pembelian PO ini</small>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-dark mb-1">Total Keseluruhan (Termasuk Tax)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light text-muted">Rp</span>
+                                    <input type="text" id="input_grand_total_display" class="form-control text-end fw-bold bg-light text-success fs-6" readonly value="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- UPLOAD BUKTI & STATUS PEMBAYARAN -->
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-dark mb-1">Upload Bukti Nota / Faktur</label>
+                                <input type="file" name="bukti_pembayaran" id="input_bukti_pembayaran" class="form-control" accept="image/*,application/pdf">
+                                <small class="text-muted" style="font-size: 11px;">Format file: JPG, PNG, PDF (Maks. 5MB)</small>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-dark mb-1">Status Pembayaran</label>
+                                <div class="form-check form-switch mt-1">
+                                    <input class="form-check-input" type="checkbox" role="switch" name="is_lunas" id="input_is_lunas" value="1" checked onchange="toggleMetodeBayarInputModal()">
+                                    <label class="form-check-label fw-semibold text-dark small" for="input_is_lunas" id="label_is_lunas">
+                                        <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas (Selesai Bayar)</span>
+                                    </label>
+                                </div>
+                                <div class="mt-2" id="box_metode_bayar" style="display: none;">
+                                    <select name="metode_pembayaran" id="input_metode_pembayaran" class="form-select form-select-sm">
+                                        <option value="termin" selected>Termin / Hutang Supplier</option>
+                                        <option value="cod">COD / Bayar Saat Terima</option>
+                                        <option value="dp">Uang Muka (DP)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top bg-light rounded-bottom-4">
+                        <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" id="btnSimpanInputBarangTerpilih">
+                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Data Barang
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -1065,10 +1177,13 @@
         });
     }
 
+    let currentDetailPoId = null;
+
     // ==========================================
     // BUKA MODAL DETAIL (POP-UP RESPONSIVE)
     // ==========================================
     function bukaModalDetail(id) {
+        currentDetailPoId = id;
         const item = dataPembayaranMap[id];
         if (!item) return;
 
@@ -1078,119 +1193,58 @@
             let subtotal = d.harga;
             totalItemsCalculated += subtotal;
             let konvInfo = d.has_konversi ? `<div class="text-primary small" style="font-size:11px;">= ${(d.qty * d.konversi_pembelian).toLocaleString('id-ID')} ${d.satuan_utama}</div>` : '';
-            
-            // Per item Payment status UI
-            let bayarBadge = `<span class="badge bg-secondary">Belum Catat</span>`;
-            if (d.metode_pembayaran) {
-                if (d.is_lunas) {
-                    bayarBadge = `<span class="badge bg-success">✓ Lunas (${d.label_pembayaran})</span>`;
-                } else if (d.kekurangan > 0) {
-                    bayarBadge = `<span class="badge bg-warning text-dark">${d.label_pembayaran} (Sisa: Rp ${d.kekurangan.toLocaleString('id-ID')})</span>`;
-                } else {
-                    bayarBadge = `<span class="badge bg-info text-white">${d.label_pembayaran}</span>`;
-                }
+
+            // Clean badges for supplier, nota, and payment status
+            let supplierBadge = d.supplier_nama && d.supplier_nama !== 'Belum Ditentukan (Draft)'
+                ? `<span class="badge bg-light text-dark border me-1"><i class="bi bi-shop text-primary me-1"></i>${d.supplier_nama}</span>`
+                : `<span class="badge bg-light text-muted border me-1">Supplier: Belum Ditentukan</span>`;
+
+            let notaBadge = d.catatan_pembayaran 
+                ? `<span class="badge bg-light text-secondary border me-1"><i class="bi bi-receipt me-1"></i>Nota: ${d.catatan_pembayaran}</span>`
+                : '';
+
+            let statusBayarBadge = '';
+            if (d.is_lunas) {
+                statusBayarBadge = `<span class="badge bg-success-subtle text-success border border-success me-1"><i class="bi bi-check-circle-fill me-1"></i>Lunas</span>`;
+            } else if (d.metode_pembayaran) {
+                statusBayarBadge = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning me-1">${d.label_pembayaran}</span>`;
             }
 
-            let bayarActionBtn = '';
-            if (isSuperAdminUser) {
-                const needsHarga = d.harga <= 0;
-                const needsSupplier = !d.supplier_id;
-
-                if (needsHarga && needsSupplier) {
-                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2 fw-bold" style="font-size:10px;" onclick="bukaModalEditFromDetail(${item.id})" title="Klik untuk mengedit PO dan memasukkan harga & supplier"><i class="bi bi-pencil-square me-1"></i> Masukkan Harga & Supplier</button>`;
-                } else if (needsHarga) {
-                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2 fw-bold" style="font-size:10px;" onclick="bukaModalEditFromDetail(${item.id})" title="Klik untuk mengedit PO dan memasukkan harga"><i class="bi bi-tag-fill me-1"></i> Masukkan Harga</button>`;
-                } else if (needsSupplier) {
-                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2 fw-bold" style="font-size:10px;" onclick="bukaModalEditFromDetail(${item.id})" title="Klik untuk mengedit PO dan memilih supplier"><i class="bi bi-person-plus-fill me-1"></i> Pilih Supplier</button>`;
-                } else if (!d.metode_pembayaran) {
-                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-outline-primary mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalBayarDetail(${d.id}, '${addslashes(d.nama)}', ${d.harga}, true)">+ Catat Bayar</button>`;
-                } else if (!d.is_lunas && d.kekurangan > 0) {
-                    bayarActionBtn = `<button type="button" class="btn btn-xs btn-warning text-dark mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalLunasiDetail(${d.id}, '${addslashes(d.nama)}', ${d.kekurangan})">Lunasi</button>`;
-                }
-            }
-
-            // Checkbox untuk pelunasan massal per supplier
-            let checkboxHtml = '';
-            if (isSuperAdminUser && !d.is_lunas && d.harga > 0 && d.supplier_id) {
-                let nominalBayarItem = d.kekurangan > 0 ? d.kekurangan : d.harga;
-                checkboxHtml = `<input type="checkbox" class="form-check-input item-check-massal border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-supplier-id="${d.supplier_id}" data-supplier-nama="${addslashes(d.supplier_nama)}" data-nominal="${nominalBayarItem}" data-qty="${d.qty} ${d.satuan}" title="Centang untuk melunasi bersama">`;
-            } else {
-                checkboxHtml = `<span class="text-muted small">—</span>`;
-            }
-
-            // Nota / Bukti Pembayaran UI
-            let notaColumn = '';
+            let buktiBadge = '';
             if (d.bukti_pembayaran_url) {
-                notaColumn = `
-                    <a href="${d.bukti_pembayaran_url}" target="_blank" class="btn btn-xs btn-outline-success py-1 px-2 text-decoration-none" style="font-size:10px;" title="Lihat Nota / Bukti Bayar">
-                        <i class="bi bi-file-earmark-check-fill me-1"></i> Lihat Nota
-                    </a>
-                `;
-                if (isSuperAdminUser) {
-                    notaColumn += `<br><button type="button" class="btn btn-xs btn-link text-muted p-0 mt-1" style="font-size:9px;" onclick="bukaModalUploadBukti(${d.id}, '${addslashes(d.nama)}')">Ganti Nota</button>`;
-                }
-            } else {
-                if (isSuperAdminUser) {
-                    notaColumn = `
-                        <button type="button" class="btn btn-xs btn-outline-secondary py-1 px-2" style="font-size:10px;" onclick="bukaModalUploadBukti(${d.id}, '${addslashes(d.nama)}')">
-                            <i class="bi bi-upload me-1"></i> Upload Nota
-                        </button>
-                    `;
-                } else {
-                    notaColumn = `<span class="text-muted small" style="font-size:10px;">— Belum ada</span>`;
-                }
+                buktiBadge = `<a href="${d.bukti_pembayaran_url}" target="_blank" class="badge bg-info-subtle text-info-emphasis border text-decoration-none me-1" title="Lihat Bukti/Nota"><i class="bi bi-file-earmark-image me-1"></i>Lihat Bukti</a>`;
             }
 
-            // Per item Reception status UI
-            let terimaBadge = `<span class="badge bg-light text-muted border">Belum Diterima</span>`;
-            let tglTerimaInfo = d.tanggal_diterima ? `<div class="text-muted mt-1" style="font-size:10px;"><i class="bi bi-calendar-check text-success me-1"></i>Tgl: <strong>${d.tanggal_diterima}</strong></div>` : '';
-            if (d.is_diterima_item) {
-                terimaBadge = `<span class="badge bg-success">✓ Diterima (${d.qty_diterima}/${d.qty})</span>${tglTerimaInfo}`;
-            } else if (d.qty_diterima > 0) {
-                terimaBadge = `<span class="badge bg-info text-white">Parsial (${d.qty_diterima}/${d.qty})</span>${tglTerimaInfo}`;
-            }
+            let hargaHtml = d.harga > 0
+                ? `<div class="fw-bold text-dark fs-6">Rp ${d.harga.toLocaleString('id-ID')}</div>
+                   <div class="text-muted small">@ Rp ${Math.round(d.harga_per_qty).toLocaleString('id-ID')} / ${d.satuan}</div>`
+                : `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>Belum Diisi</span>`;
 
-            let terimaActionBtn = '';
-            if (isSuperAdminUser && !d.is_diterima_item) {
-                if (!d.metode_pembayaran) {
-                    terimaActionBtn = `<small class="text-muted d-block mt-1" style="font-size:9px;">(Catat bayar dulu)</small>`;
-                } else {
-                    terimaActionBtn = `<button type="button" class="btn btn-xs btn-info text-white mt-1 py-1 px-2" style="font-size:10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${d.qty_diterima}, '${d.satuan}')">Terima Stok</button>`;
-                }
-            }
+            let checkHtml = `<input type="checkbox" class="form-check-input item-check-pilih border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-qty="${d.qty}" data-satuan="${d.satuan}" data-harga="${d.harga}" data-supplier-id="${d.supplier_id || ''}" data-supplier-nama="${addslashes(d.supplier_nama || '')}" data-nota="${addslashes(d.catatan_pembayaran || '')}" onchange="updateItemSelection()">`;
 
             detailsHtml += `
                 <tr id="row-detail-${d.id}">
-                    <td class="text-center align-middle">${checkboxHtml}</td>
-                    <td class="text-center align-middle">${idx + 1}</td>
+                    <td class="text-center align-middle">${checkHtml}</td>
+                    <td class="text-center align-middle fw-semibold text-muted">${idx + 1}</td>
                     <td>
-                        <div class="fw-bold text-dark">${d.nama}</div>
-                        <div class="font-monospace text-muted small" style="font-size:11px;">${d.kode_barang}</div>
+                        <div class="fw-bold text-dark fs-6">${d.nama}</div>
+                        <div class="font-monospace text-muted small mb-1" style="font-size: 11px;">${d.kode_barang || '—'}</div>
+                        <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
+                            ${supplierBadge}
+                            ${notaBadge}
+                            ${statusBayarBadge}
+                            ${buktiBadge}
+                        </div>
                     </td>
-                    <td>
-                        <span class="badge bg-light text-dark border">${d.supplier_nama}</span>
+                    <td class="text-center align-middle bg-light">
+                        <span class="badge bg-white text-dark border px-2 py-1">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</span>
                     </td>
-                    <td class="text-center bg-light fw-semibold">${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</td>
-                    <td class="text-center fw-bold">
-                        ${d.qty.toLocaleString('id-ID')} ${d.satuan}
+                    <td class="text-center align-middle">
+                        <div class="fw-bold text-primary">${d.qty.toLocaleString('id-ID')} ${d.satuan}</div>
                         ${konvInfo}
                     </td>
-                    <td class="text-end">
-                        ${d.harga > 0 ? 'Rp ' + d.harga_per_qty.toLocaleString('id-ID') : '—'}
-                    </td>
-                    <td class="text-end fw-bold">
-                        ${d.harga > 0 ? 'Rp ' + subtotal.toLocaleString('id-ID') : '—'}
-                    </td>
-                    <td class="text-center align-middle">
-                        ${bayarBadge}
-                        ${bayarActionBtn}
-                    </td>
-                    <td class="text-center align-middle">
-                        ${notaColumn}
-                    </td>
-                    <td class="text-center align-middle">
-                        ${terimaBadge}
-                        ${terimaActionBtn}
+                    <td class="text-end align-middle">
+                        ${hargaHtml}
                     </td>
                 </tr>
             `;
@@ -1213,40 +1267,35 @@
                     </div>
                 </div>
 
-                <!-- TOOLBAR AKSI MASSAL PER SUPPLIER -->
-                <div id="toolbar-massal-supplier" class="alert alert-success border-success py-2 px-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2 shadow-sm rounded-3" style="display: none !important;">
+                <!-- TOOLBAR AKSI ITEM TERPILIH -->
+                <div id="selection-action-bar" class="alert alert-warning border-warning py-2 px-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2 shadow-sm rounded-3" style="display: none !important;">
                     <div class="d-flex align-items-center gap-2">
-                        <i class="bi bi-check2-all text-success fs-4"></i>
+                        <i class="bi bi-check2-circle text-warning-emphasis fs-4"></i>
                         <div>
-                            <span class="fw-bold text-dark" id="toolbar-massal-info">0 item terpilih</span>
-                            <div class="small text-muted" id="toolbar-massal-sub">Supplier: -</div>
+                            <span class="fw-bold text-dark" id="selection-count-text">0 barang dipilih</span>
+                            <div class="small text-muted">Klik tombol di kanan untuk menginput harga, supplier, dan nota bersama</div>
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-2" style="font-size: 11px;" onclick="batalPilihMassal()">
-                            Batal Pilih
-                        </button>
-                        <button type="button" class="btn btn-success btn-sm fw-bold py-1 px-3 shadow-sm" style="font-size: 12px;" onclick="bukaModalBayarMassal()">
-                            <i class="bi bi-receipt-cutoff me-1"></i> Lunasi Terpilih (1 Nota)
+                        <button type="button" class="btn btn-outline-secondary btn-sm py-1 px-2" onclick="clearItemSelection()">Batal</button>
+                        <button type="button" class="btn btn-warning btn-sm text-dark fw-bold py-1 px-3 shadow-sm" onclick="bukaModalInputBarangTerpilih()">
+                            <i class="bi bi-pencil-square me-1"></i> Input / Edit Barang Terpilih
                         </button>
                     </div>
                 </div>
 
-                <div class="table-responsive mb-3" style="overflow-x: auto;">
-                    <table class="table table-bordered align-middle mb-0" style="min-width: 1200px; font-size: 12px;">
+                <div class="table-responsive mb-3">
+                    <table class="table table-bordered table-hover align-middle mb-0" style="font-size: 13px;">
                         <thead class="table-dark">
                             <tr>
-                                <th width="35" class="text-center" title="Pilih Item">Pilih</th>
-                                <th width="35" class="text-center">No</th>
-                                <th style="min-width: 160px;">Nama Barang &amp; Kode</th>
-                                <th style="min-width: 140px;">Supplier</th>
-                                <th style="min-width: 100px;" class="text-center">Stok Kejingga</th>
-                                <th style="min-width: 110px;" class="text-center">Qty Dipesan</th>
-                                <th style="min-width: 110px;" class="text-end">Harga / Satuan</th>
-                                <th style="min-width: 120px;" class="text-end">Subtotal</th>
-                                <th style="min-width: 160px;" class="text-center">Pembayaran</th>
-                                <th style="min-width: 110px;" class="text-center">Nota / Bukti</th>
-                                <th style="min-width: 125px;" class="text-center">Penerimaan Stok</th>
+                                <th width="40" class="text-center">
+                                    <input type="checkbox" id="check-all-items" class="form-check-input" title="Pilih Semua Barang" onchange="toggleCheckAllItems(this)">
+                                </th>
+                                <th width="40" class="text-center">No</th>
+                                <th>Nama Barang</th>
+                                <th width="140" class="text-center">Stok Kejingga</th>
+                                <th width="140" class="text-center">Qty Dipesan</th>
+                                <th width="180" class="text-end">Harga</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1298,8 +1347,8 @@
 
         document.getElementById('contentDetail').innerHTML = html;
 
-        // Pasang event listener checkbox massal
-        initCheckboxMassalListeners();
+        // Reset selections & footer buttons
+        updateItemSelection();
 
         document.getElementById('btnDownloadJpgModal').onclick = function() {
             downloadJpgDirect(id);
@@ -1307,20 +1356,199 @@
 
         document.getElementById('btnCetakPdfModal').href = `/pembelian/${id}/cetak-pdf`;
 
-        const btnEditDetail = document.getElementById('btnEditFromDetailModal');
-        if (item.is_terkunci) {
-            btnEditDetail.style.display = 'none';
-        } else {
-            btnEditDetail.style.display = 'inline-block';
-            btnEditDetail.onclick = function() {
-                const modalDetailEl = document.getElementById('modalDetail');
-                const modalDetailInstance = bootstrap.Modal.getInstance(modalDetailEl);
-                if (modalDetailInstance) modalDetailInstance.hide();
-                setTimeout(() => bukaModalEdit(id), 300);
-            };
+        new bootstrap.Modal(document.getElementById('modalDetail')).show();
+    }
+
+    function toggleCheckAllItems(master) {
+        const checkboxes = document.querySelectorAll('.item-check-pilih');
+        checkboxes.forEach(cb => cb.checked = master.checked);
+        updateItemSelection();
+    }
+
+    function updateItemSelection() {
+        const checkboxes = document.querySelectorAll('.item-check-pilih');
+        const checked = document.querySelectorAll('.item-check-pilih:checked');
+        const count = checked.length;
+
+        const countText = document.getElementById('selection-count-text');
+        if (countText) countText.textContent = `${count} barang dipilih`;
+
+        const footerBadge = document.getElementById('footer-count-terpilih');
+        if (footerBadge) footerBadge.textContent = count;
+
+        const btnFooter = document.getElementById('btnInputBarangTerpilihModal');
+        if (btnFooter) btnFooter.disabled = (count === 0);
+
+        const actionBar = document.getElementById('selection-action-bar');
+        if (actionBar) {
+            if (count > 0) {
+                actionBar.style.setProperty('display', 'flex', 'important');
+            } else {
+                actionBar.style.setProperty('display', 'none', 'important');
+            }
         }
 
-        new bootstrap.Modal(document.getElementById('modalDetail')).show();
+        const master = document.getElementById('check-all-items');
+        if (master && checkboxes.length > 0) {
+            master.checked = (checkboxes.length === count);
+            master.indeterminate = (count > 0 && count < checkboxes.length);
+        }
+    }
+
+    function clearItemSelection() {
+        const checkboxes = document.querySelectorAll('.item-check-pilih');
+        checkboxes.forEach(cb => cb.checked = false);
+        const master = document.getElementById('check-all-items');
+        if (master) master.checked = false;
+        updateItemSelection();
+    }
+
+    function bukaModalInputBarangTerpilih() {
+        if (!currentDetailPoId) return;
+        const po = dataPembayaranMap[currentDetailPoId];
+        if (!po) return;
+
+        const checkedBoxes = Array.from(document.querySelectorAll('.item-check-pilih:checked'));
+        if (checkedBoxes.length === 0) {
+            alert('Pilih minimal 1 barang yang ingin diinput harganya.');
+            return;
+        }
+
+        const checkedIds = checkedBoxes.map(cb => parseInt(cb.getAttribute('data-id')));
+        const selectedDetails = po.details.filter(d => checkedIds.includes(d.id));
+
+        // Set Form Action
+        const form = document.getElementById('formInputBarangTerpilih');
+        form.action = `/pembelian-kejingga/${currentDetailPoId}/input-barang-terpilih`;
+
+        // Header info
+        document.getElementById('input-modal-count').textContent = selectedDetails.length;
+        document.getElementById('input-modal-po-kode').textContent = '#' + po.kode;
+
+        // Prefill Supplier: if all selected have same supplier_id, select it
+        const supplierIds = Array.from(new Set(selectedDetails.map(d => d.supplier_id).filter(Boolean)));
+        const supplierSelect = document.getElementById('input_supplier_id');
+        if (supplierIds.length === 1) {
+            supplierSelect.value = supplierIds[0];
+        } else {
+            supplierSelect.value = po.supplier_id || '';
+        }
+
+        // Prefill Nota
+        const notas = Array.from(new Set(selectedDetails.map(d => d.catatan_pembayaran).filter(Boolean)));
+        document.getElementById('input_nomor_nota').value = notas.length === 1 ? notas[0] : '';
+
+        // Prefill Tax
+        const taxInput = document.getElementById('input_tax_service');
+        if (taxInput) {
+            taxInput.value = po.tax_service > 0 ? formatNumberDisplay(po.tax_service) : '';
+        }
+
+        // Reset file input
+        const fileInput = document.getElementById('input_bukti_pembayaran');
+        if (fileInput) fileInput.value = '';
+
+        // Render tbody
+        let tbodyHtml = '';
+        selectedDetails.forEach((d, idx) => {
+            let hargaVal = d.harga > 0 ? formatNumberDisplay(d.harga) : '';
+            let unitPriceText = (d.harga > 0 && d.qty > 0) ? 'Rp ' + Math.round(d.harga / d.qty).toLocaleString('id-ID') : '—';
+
+            tbodyHtml += `
+                <tr id="input-item-row-${d.id}">
+                    <td class="text-center align-middle">${idx + 1}</td>
+                    <td class="align-middle">
+                        <input type="hidden" name="detail_ids[]" value="${d.id}">
+                        <div class="fw-bold text-dark">${d.nama}</div>
+                        <div class="text-muted small">${d.satuan}</div>
+                    </td>
+                    <td class="text-center align-middle">
+                        <input type="number" step="any" min="0.01" name="items[${d.id}][qty]" class="form-control form-control-sm text-center fw-bold input-row-qty" data-id="${d.id}" value="${d.qty}" oninput="recalcItemRow(${d.id})">
+                    </td>
+                    <td class="align-middle">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white">Rp</span>
+                            <input type="text" name="items[${d.id}][harga]" class="form-control text-end fw-bold mask-number input-row-harga" data-id="${d.id}" value="${hargaVal}" placeholder="0" oninput="recalcItemRow(${d.id})" required>
+                        </div>
+                    </td>
+                    <td class="text-end align-middle fw-semibold text-muted" id="unit-price-display-${d.id}">
+                        ${unitPriceText}
+                    </td>
+                </tr>
+            `;
+        });
+        document.getElementById('tbody-input-barang-terpilih').innerHTML = tbodyHtml;
+
+        // Pasang maskInput pada setiap input harga di modal
+        document.querySelectorAll('#tbody-input-barang-terpilih .mask-number').forEach(inp => {
+            maskInput(inp);
+        });
+        if (taxInput) maskInput(taxInput);
+
+        // Recalculate totals
+        hitungGrandTotalInputModal();
+
+        // Show modal
+        new bootstrap.Modal(document.getElementById('modalInputBarangTerpilih')).show();
+    }
+
+    function recalcItemRow(id) {
+        const row = document.getElementById(`input-item-row-${id}`);
+        if (!row) return;
+
+        const qtyInput = row.querySelector('.input-row-qty');
+        const hargaInput = row.querySelector('.input-row-harga');
+        const unitPriceEl = document.getElementById(`unit-price-display-${id}`);
+
+        const qty = parseFloat(qtyInput.value) || 0;
+        const harga = unformatNumber(hargaInput.value);
+
+        if (qty > 0 && harga > 0) {
+            const unitPrice = Math.round(harga / qty);
+            unitPriceEl.textContent = 'Rp ' + unitPrice.toLocaleString('id-ID');
+        } else {
+            unitPriceEl.textContent = '—';
+        }
+
+        hitungGrandTotalInputModal();
+    }
+
+    function hitungGrandTotalInputModal() {
+        let totalItems = 0;
+        document.querySelectorAll('.input-row-harga').forEach(inp => {
+            totalItems += unformatNumber(inp.value);
+        });
+
+        const taxInput = document.getElementById('input_tax_service');
+        let taxVal = 0;
+        if (taxInput && taxInput.value) {
+            taxVal = unformatNumber(taxInput.value);
+        }
+
+        const grandTotal = totalItems + taxVal;
+
+        const totalItemsEl = document.getElementById('total-harga-terpilih-display');
+        if (totalItemsEl) totalItemsEl.textContent = 'Rp ' + totalItems.toLocaleString('id-ID');
+
+        const grandTotalEl = document.getElementById('input_grand_total_display');
+        if (grandTotalEl) grandTotalEl.value = grandTotal.toLocaleString('id-ID');
+    }
+
+    function toggleMetodeBayarInputModal() {
+        const isLunasCb = document.getElementById('input_is_lunas');
+        const labelEl = document.getElementById('label_is_lunas');
+        const boxMetode = document.getElementById('box_metode_bayar');
+        const selectMetode = document.getElementById('input_metode_pembayaran');
+
+        if (isLunasCb.checked) {
+            labelEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas (Selesai Bayar)</span>';
+            boxMetode.style.display = 'none';
+            selectMetode.value = 'cod';
+        } else {
+            labelEl.innerHTML = '<span class="text-warning-emphasis"><i class="bi bi-clock-history me-1"></i> Belum Lunas (Hutang / Termin)</span>';
+            boxMetode.style.display = 'block';
+            selectMetode.value = 'termin';
+        }
     }
 
     // Helper addslashes for JS strings

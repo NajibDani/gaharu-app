@@ -14,4 +14,4 @@ cmds = [
 ]
 
 [start]
-cmd = "php -S 0.0.0.0:80 -t public"
+cmd = "php artisan migrate --force && php -S 0.0.0.0:80 -t public"

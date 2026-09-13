@@ -15,6 +15,7 @@ use App\Services\FifoService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PembelianKejinggaController extends Controller
 {
@@ -461,7 +462,7 @@ class PembelianKejinggaController extends Controller
 
                 $oldDet = $existingDetails->get($it['barang_id']);
 
-                PembelianDetail::create([
+                $detailData = [
                     'pembelian_id'       => $pembelian->id,
                     'barang_id'          => $it['barang_id'],
                     'supplier_id'        => $it['supplier_id'],
@@ -469,7 +470,6 @@ class PembelianKejinggaController extends Controller
                     'konversi_pembelian' => $konversi,
                     'qty'                => $it['qty'],
                     'qty_diterima'       => $oldDet ? $oldDet->qty_diterima : 0,
-                    'tanggal_diterima'   => $oldDet ? $oldDet->tanggal_diterima : null,
                     'harga'              => $it['harga'],
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => $oldDet ? $oldDet->batch_number : (date('Ymd') . '-PBKJG' . rand(100, 999)),
@@ -481,7 +481,13 @@ class PembelianKejinggaController extends Controller
                     'catatan_pembayaran'  => $oldDet ? $oldDet->catatan_pembayaran : null,
                     'is_lunas'            => $oldDet ? $oldDet->is_lunas : false,
                     'lunas_at'            => $oldDet ? $oldDet->lunas_at : null,
-                ]);
+                ];
+
+                if (Schema::hasColumn('pembelian_detail', 'tanggal_diterima')) {
+                    $detailData['tanggal_diterima'] = $oldDet ? $oldDet->tanggal_diterima : null;
+                }
+
+                PembelianDetail::create($detailData);
             }
 
             DB::commit();
@@ -732,6 +738,103 @@ class PembelianKejinggaController extends Controller
         return redirect()->route('pembelian-kejingga.index')->with('success', "Berhasil melunasi {$count} item barang dari {$supplierName} dalam 1 nota pembayaran.");
     }
 
+    public function inputBarangTerpilih(Request $request, $id)
+    {
+        $this->authorizeAccess();
+
+        $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
+
+        $request->validate([
+            'detail_ids'          => 'required|array|min:1',
+            'detail_ids.*'        => 'required|integer|exists:pembelian_detail,id',
+            'supplier_id'         => 'required|exists:master_supplier,id',
+            'items'               => 'required|array',
+            'items.*.harga'       => 'nullable',
+            'items.*.qty'         => 'nullable',
+            'tax_service'         => 'nullable',
+            'nomor_nota'          => 'nullable|string|max:100',
+            'metode_pembayaran'   => 'nullable|in:cod,termin,dp',
+            'is_lunas'            => 'nullable',
+            'bukti_pembayaran'    => 'nullable|file|mimes:jpg,jpeg,png,pdf,webp|max:5120',
+        ]);
+
+        $buktiPath = null;
+        if ($request->hasFile('bukti_pembayaran')) {
+            $buktiPath = $request->file('bukti_pembayaran')->store('bukti_pembayaran_kejingga', 'public');
+        }
+
+        $taxService = 0;
+        if ($request->filled('tax_service')) {
+            $taxService = (float) str_replace(['.', ','], ['', '.'], (string) $request->tax_service);
+        }
+
+        DB::transaction(function () use ($request, $pembelian, $buktiPath, $taxService) {
+            $isLunas = $request->has('is_lunas') && ($request->is_lunas == '1' || $request->is_lunas == 'true' || $request->is_lunas === true);
+            $metode = $request->metode_pembayaran ?: ($isLunas ? 'cod' : 'termin');
+            $nomorNota = $request->nomor_nota;
+
+            foreach ($request->detail_ids as $detailId) {
+                $detail = PembelianDetail::where('pembelian_id', $pembelian->id)->find($detailId);
+                if (!$detail) continue;
+
+                $itemInput = $request->items[$detailId] ?? [];
+
+                $qty = isset($itemInput['qty']) ? (float) str_replace(['.', ','], ['', '.'], (string) $itemInput['qty']) : (float) $detail->qty;
+                if ($qty <= 0) $qty = (float) $detail->qty;
+
+                $rawHarga = isset($itemInput['harga']) ? $itemInput['harga'] : $detail->harga;
+                $harga = (float) str_replace(['.', ','], ['', '.'], (string) $rawHarga);
+                $hargaPerQty = $qty > 0 ? ($harga / $qty) : 0;
+
+                $updateData = [
+                    'supplier_id'         => $request->supplier_id,
+                    'qty'                 => $qty,
+                    'harga'               => $harga,
+                    'harga_per_qty'       => $hargaPerQty,
+                    'metode_pembayaran'   => $metode,
+                ];
+
+                if (!empty($nomorNota)) {
+                    $updateData['catatan_pembayaran'] = $nomorNota;
+                }
+
+                if ($buktiPath) {
+                    $updateData['bukti_pembayaran'] = $buktiPath;
+                }
+
+                if ($isLunas) {
+                    $updateData['is_lunas'] = true;
+                    $updateData['lunas_at'] = now();
+                }
+
+                $detail->update($updateData);
+            }
+
+            if ($request->filled('tax_service')) {
+                $pembelian->tax_service = $taxService;
+            }
+
+            $totalDetails = $pembelian->details()->sum('harga');
+            $pembelian->total = $totalDetails + (float) ($pembelian->tax_service ?? 0);
+
+            if (empty($pembelian->supplier_id)) {
+                $pembelian->supplier_id = $request->supplier_id;
+            }
+
+            $unpaidCount = $pembelian->details()->where('is_lunas', false)->count();
+            if ($unpaidCount === 0 && $pembelian->details()->count() > 0) {
+                $pembelian->is_lunas = true;
+                $pembelian->lunas_at = now();
+            }
+
+            $pembelian->save();
+        });
+
+        $count = count($request->detail_ids);
+        return redirect()->route('pembelian-kejingga.index')
+            ->with('success', "Berhasil memperbarui data {$count} barang terpilih untuk PO {$pembelian->kode_pembelian}.");
+    }
+
     public function uploadBuktiDetail(Request $request, $detailId)
     {
         if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
@@ -796,10 +899,13 @@ class PembelianKejinggaController extends Controller
             ]);
 
             $accReceived = floatval($detail->qty_diterima ?? 0);
-            $detail->update([
-                'qty_diterima'     => $accReceived + $qtyBaruInput,
-                'tanggal_diterima' => $tglDiterima,
-            ]);
+            $detailUpdateData = [
+                'qty_diterima' => $accReceived + $qtyBaruInput,
+            ];
+            if (Schema::hasColumn('pembelian_detail', 'tanggal_diterima')) {
+                $detailUpdateData['tanggal_diterima'] = $tglDiterima;
+            }
+            $detail->update($detailUpdateData);
 
             $penerimaan->details()->create([
                 'pembelian_detail_id' => $detail->id,
