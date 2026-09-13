@@ -823,6 +823,8 @@ class PembelianKejinggaController extends Controller
             $metode = $request->metode_pembayaran ?: ($isLunas ? 'cod' : 'termin');
             $nomorNota = $request->nomor_nota;
 
+            $changedOldBarangIds = [];
+
             foreach ($request->detail_ids as $detailId) {
                 $detail = PembelianDetail::where('pembelian_id', $pembelian->id)->find($detailId);
                 if (!$detail) continue;
@@ -844,6 +846,17 @@ class PembelianKejinggaController extends Controller
                     'metode_pembayaran'   => $metode,
                 ];
 
+                // Penyesuaian fleksibel ganti barang jika barang diubah
+                if (!empty($itemInput['barang_id']) && (int) $itemInput['barang_id'] !== (int) $detail->barang_id) {
+                    $newBarang = MasterBarang::withoutGlobalScopes()->find($itemInput['barang_id']);
+                    if ($newBarang) {
+                        $changedOldBarangIds[] = (int) $detail->barang_id;
+                        $updateData['barang_id']          = $newBarang->id;
+                        $updateData['satuan_pembelian']   = $newBarang->satuan_pembelian ?: ($newBarang->satuan ?: 'pcs');
+                        $updateData['konversi_pembelian'] = $newBarang->konversi_pembelian > 0 ? (float) $newBarang->konversi_pembelian : 1.00;
+                    }
+                }
+
                 if (!empty($nomorNota)) {
                     $updateData['catatan_pembayaran'] = $nomorNota;
                 }
@@ -858,6 +871,12 @@ class PembelianKejinggaController extends Controller
                 }
 
                 $detail->update($updateData);
+            }
+
+            // Sinkronisasi HPP jika ada barang yang diganti
+            $fifoService = app(\App\Services\FifoService::class);
+            foreach ($changedOldBarangIds as $oldBId) {
+                $fifoService->syncBarangHpp($oldBId);
             }
 
             if ($request->filled('tax_service')) {
@@ -883,6 +902,44 @@ class PembelianKejinggaController extends Controller
         $count = count($request->detail_ids);
         return redirect()->route('pembelian-kejingga.index')
             ->with('success', "Berhasil memperbarui data {$count} barang terpilih untuk PO {$pembelian->kode_pembelian}.");
+    }
+
+    public function destroyDetail($detailId)
+    {
+        $this->authorizeAccess();
+
+        $detail = PembelianDetail::with('pembelian.details.barang')->findOrFail($detailId);
+        $pembelian = $detail->pembelian;
+
+        if ($pembelian->isTerkunci() && !(auth()->user() && auth()->user()->isSuperAdmin())) {
+            return back()->with('error', 'Item tidak dapat dihapus karena PO ' . $pembelian->kode_pembelian . ' sudah dikunci.');
+        }
+
+        if ((float) ($detail->qty_diterima ?? 0) > 0) {
+            return back()->with('error', 'Item ' . ($detail->barang->nama ?? '') . ' sudah pernah diterima fisiknya dan tidak dapat dihapus.');
+        }
+
+        if ($pembelian->details->count() <= 1) {
+            return back()->with('error', 'PO harus memiliki minimal 1 item barang. Jika ingin membatalkan seluruh PO, silakan gunakan tombol Hapus PO.');
+        }
+
+        $barangId = (int) $detail->barang_id;
+        $barangNama = $detail->barang->nama ?? 'Barang';
+
+        DB::transaction(function () use ($detail, $pembelian, $barangId) {
+            $detail->delete();
+
+            // Hitung ulang total PO
+            $totalDetails = $pembelian->details()->sum('harga');
+            $pembelian->total = $totalDetails + (float) ($pembelian->tax_service ?? 0);
+            $pembelian->save();
+
+            // Sinkronisasi HPP barang sesuai FIFO
+            app(\App\Services\FifoService::class)->syncBarangHpp($barangId);
+        });
+
+        return redirect()->route('pembelian-kejingga.index')
+            ->with('success', "Barang {$barangNama} berhasil dihapus dari PO {$pembelian->kode_pembelian}.");
     }
 
     public function uploadBuktiDetail(Request $request, $detailId)

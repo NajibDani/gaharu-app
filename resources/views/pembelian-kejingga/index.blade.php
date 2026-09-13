@@ -17,8 +17,7 @@
         #modalPembayaranDetail, 
         #modalLunasiDetail, 
         #modalUploadBuktiDetail, 
-        #modalTerimaDetail,
-        #modalInputBarangTerpilih {
+        #modalTerimaDetail {
             z-index: 1080 !important;
         }
         .modal-backdrop.show:nth-of-type(2) {
@@ -525,6 +524,9 @@
                             </a>
                         </div>
                         <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm fw-semibold px-3 shadow-sm" id="btnEditPoModal" onclick="bukaModalEditFromDetail(currentDetailPoId)" title="Tambah, ubah, atau hapus item barang & qty PO ini">
+                                <i class="bi bi-pencil-square me-1"></i> Ubah Items &amp; Qty
+                            </button>
                             <button type="button" class="btn btn-warning btn-sm text-dark fw-bold px-3 shadow-sm" id="btnInputBarangTerpilihModal" onclick="bukaModalInputBarangTerpilih()" disabled>
                                 <i class="bi bi-pencil-square me-1"></i> Input / Edit Barang Terpilih (<span id="footer-count-terpilih">0</span>)
                             </button>
@@ -536,120 +538,126 @@
         </div>
     </div>
 
+    <!-- FORM TERSEMBUNYI UNTUK HAPUS DETAIL ITEM BARANG -->
+    <form id="formHapusItemDetail" method="POST" style="display:none;">
+        @csrf
+        @method('DELETE')
+    </form>
+
     <!-- MODAL INPUT HARGA, NOTA, SUPPLIER, TAX & UPLOAD BUKTI UNTUK BARANG TERPILIH -->
     <div class="modal fade" id="modalInputBarangTerpilih" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow rounded-4">
-                <form id="formInputBarangTerpilih" method="POST" enctype="multipart/form-data">
-                    @csrf
-                    <div class="modal-header border-bottom pb-3" style="background-color: #fef3c7;">
-                        <h5 class="modal-title fw-bold text-dark">
-                            <i class="bi bi-pencil-square text-warning me-2"></i>Input / Edit Data Barang Terpilih
-                        </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable my-3" style="max-height: calc(100vh - 2rem);">
+            <form id="formInputBarangTerpilih" method="POST" enctype="multipart/form-data" class="modal-content border-0 shadow-lg rounded-4" style="max-height: 100%; display: flex; flex-direction: column;">
+                @csrf
+                <div class="modal-header border-bottom py-3 px-3 px-md-4 flex-shrink-0" style="background-color: #fef3c7;">
+                    <h5 class="modal-title fw-bold text-dark fs-6 mb-0">
+                        <i class="bi bi-pencil-square text-warning me-2"></i>Input / Edit Data Barang Terpilih
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-3 p-md-4" style="overflow-y: auto; flex: 1 1 auto; min-height: 0;">
+                    <div class="alert alert-info py-2 px-3 small mb-3">
+                        <i class="bi bi-info-circle me-1"></i> Anda sedang memperbarui data untuk <strong id="input-modal-count">0</strong> barang terpilih pada PO <strong id="input-modal-po-kode">#</strong>.
                     </div>
-                    <div class="modal-body p-3 p-md-4">
-                        <div class="alert alert-info py-2 px-3 small mb-3">
-                            <i class="bi bi-info-circle me-1"></i> Anda sedang memperbarui data untuk <strong id="input-modal-count">0</strong> barang terpilih pada PO <strong id="input-modal-po-kode">#</strong>.
-                        </div>
 
-                        <!-- SUPPLIER & NOMOR NOTA -->
-                        <div class="row g-3 mb-3">
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold small text-dark mb-1">Pilih Supplier / Pemasok <span class="text-danger">*</span></label>
-                                <select name="supplier_id" id="input_supplier_id" class="form-select" required>
-                                    <option value="">-- Pilih Supplier --</option>
-                                    @foreach($suppliers as $sup)
-                                        <option value="{{ $sup->id }}">{{ $sup->nama }}</option>
-                                    @endforeach
+                    <!-- SUPPLIER & NOMOR NOTA -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small text-dark mb-1">Pilih Supplier / Pemasok <span class="text-danger">*</span></label>
+                            <select name="supplier_id" id="input_supplier_id" class="form-select" required>
+                                <option value="">-- Pilih Supplier --</option>
+                                @foreach($suppliers as $sup)
+                                    <option value="{{ $sup->id }}">{{ $sup->nama }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small text-dark mb-1">Nomor Nota / No. Faktur</label>
+                            <input type="text" name="nomor_nota" id="input_nomor_nota" class="form-control" placeholder="Contoh: INV-2026/09/001">
+                        </div>
+                    </div>
+
+                    <!-- DAFTAR BARANG TERPILIH & INPUT HARGA -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-dark mb-1">Daftar Barang &amp; Input Harga</label>
+                        <div class="table-responsive border rounded-3">
+                            <table class="table table-sm table-hover align-middle mb-0" id="table-input-barang-terpilih">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th width="35" class="text-center">No</th>
+                                        <th>Nama Barang</th>
+                                        <th width="120" class="text-center">Qty Dipesan</th>
+                                        <th width="190" class="text-end">Total Harga (Rp) <span class="text-danger">*</span></th>
+                                        <th width="140" class="text-end">Harga / Satuan</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-input-barang-terpilih">
+                                    <!-- Rendered dynamically -->
+                                </tbody>
+                                <tfoot class="table-light fw-bold">
+                                    <tr>
+                                        <td colspan="3" class="text-end">Total Harga Barang Terpilih:</td>
+                                        <td class="text-end text-primary fs-6" id="total-harga-terpilih-display">Rp 0</td>
+                                        <td></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- TAX / SERVICE / ONGKIR -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small text-dark mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-white text-muted">Rp</span>
+                                <input type="text" name="tax_service" id="input_tax_service" class="form-control text-end fw-bold mask-number" placeholder="0" oninput="hitungGrandTotalInputModal()">
+                            </div>
+                            <small class="text-muted" style="font-size: 11px;">Biaya pajak/ongkir nota pembelian PO ini</small>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small text-dark mb-1">Total Keseluruhan (Termasuk Tax)</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-light text-muted">Rp</span>
+                                <input type="text" id="input_grand_total_display" class="form-control text-end fw-bold bg-light text-success fs-6" readonly value="0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- UPLOAD BUKTI & STATUS PEMBAYARAN -->
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small text-dark mb-1">Upload Bukti Nota / Faktur</label>
+                            <input type="file" name="bukti_pembayaran" id="input_bukti_pembayaran" class="form-control" accept="image/*,application/pdf">
+                            <small class="text-muted" style="font-size: 11px;">Format file: JPG, PNG, PDF (Maks. 5MB)</small>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label fw-bold small text-dark mb-1">Status Pembayaran</label>
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" role="switch" name="is_lunas" id="input_is_lunas" value="1" checked onchange="toggleMetodeBayarInputModal()">
+                                <label class="form-check-label fw-semibold text-dark small" for="input_is_lunas" id="label_is_lunas">
+                                    <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas (Selesai Bayar)</span>
+                                </label>
+                            </div>
+                            <div class="mt-2" id="box_metode_bayar" style="display: none;">
+                                <select name="metode_pembayaran" id="input_metode_pembayaran" class="form-select form-select-sm">
+                                    <option value="termin" selected>Termin / Hutang Supplier</option>
+                                    <option value="cod">COD / Bayar Saat Terima</option>
+                                    <option value="dp">Uang Muka (DP)</option>
                                 </select>
                             </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold small text-dark mb-1">Nomor Nota / No. Faktur</label>
-                                <input type="text" name="nomor_nota" id="input_nomor_nota" class="form-control" placeholder="Contoh: INV-2026/09/001">
-                            </div>
-                        </div>
-
-                        <!-- DAFTAR BARANG TERPILIH & INPUT HARGA -->
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-dark mb-1">Daftar Barang &amp; Input Harga</label>
-                            <div class="table-responsive border rounded-3">
-                                <table class="table table-sm table-hover align-middle mb-0" id="table-input-barang-terpilih">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th width="35" class="text-center">No</th>
-                                            <th>Nama Barang</th>
-                                            <th width="120" class="text-center">Qty Dipesan</th>
-                                            <th width="190" class="text-end">Total Harga (Rp) <span class="text-danger">*</span></th>
-                                            <th width="140" class="text-end">Harga / Satuan</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbody-input-barang-terpilih">
-                                        <!-- Rendered dynamically -->
-                                    </tbody>
-                                    <tfoot class="table-light fw-bold">
-                                        <tr>
-                                            <td colspan="3" class="text-end">Total Harga Barang Terpilih:</td>
-                                            <td class="text-end text-primary fs-6" id="total-harga-terpilih-display">Rp 0</td>
-                                            <td></td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- TAX / SERVICE / ONGKIR -->
-                        <div class="row g-3 mb-3">
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold small text-dark mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-white text-muted">Rp</span>
-                                    <input type="text" name="tax_service" id="input_tax_service" class="form-control text-end fw-bold mask-number" placeholder="0" oninput="hitungGrandTotalInputModal()">
-                                </div>
-                                <small class="text-muted" style="font-size: 11px;">Biaya pajak/ongkir nota pembelian PO ini</small>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold small text-dark mb-1">Total Keseluruhan (Termasuk Tax)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light text-muted">Rp</span>
-                                    <input type="text" id="input_grand_total_display" class="form-control text-end fw-bold bg-light text-success fs-6" readonly value="0">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- UPLOAD BUKTI & STATUS PEMBAYARAN -->
-                        <div class="row g-3">
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold small text-dark mb-1">Upload Bukti Nota / Faktur</label>
-                                <input type="file" name="bukti_pembayaran" id="input_bukti_pembayaran" class="form-control" accept="image/*,application/pdf">
-                                <small class="text-muted" style="font-size: 11px;">Format file: JPG, PNG, PDF (Maks. 5MB)</small>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold small text-dark mb-1">Status Pembayaran</label>
-                                <div class="form-check form-switch mt-1">
-                                    <input class="form-check-input" type="checkbox" role="switch" name="is_lunas" id="input_is_lunas" value="1" checked onchange="toggleMetodeBayarInputModal()">
-                                    <label class="form-check-label fw-semibold text-dark small" for="input_is_lunas" id="label_is_lunas">
-                                        <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas (Selesai Bayar)</span>
-                                    </label>
-                                </div>
-                                <div class="mt-2" id="box_metode_bayar" style="display: none;">
-                                    <select name="metode_pembayaran" id="input_metode_pembayaran" class="form-select form-select-sm">
-                                        <option value="termin" selected>Termin / Hutang Supplier</option>
-                                        <option value="cod">COD / Bayar Saat Terima</option>
-                                        <option value="dp">Uang Muka (DP)</option>
-                                    </select>
-                                </div>
-                            </div>
                         </div>
                     </div>
-                    <div class="modal-footer border-top bg-light rounded-bottom-4">
-                        <button type="button" class="btn btn-secondary btn-sm px-3" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" id="btnSimpanInputBarangTerpilih">
-                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Data Barang
-                        </button>
-                    </div>
-                </form>
-            </div>
+                </div>
+                <div class="modal-footer border-top bg-light rounded-bottom-4 py-2 px-3 px-md-4 d-flex justify-content-end gap-2 flex-shrink-0">
+                    <button type="button" class="btn btn-secondary btn-sm px-3 shadow-none" data-bs-dismiss="modal">
+                        <i class="bi bi-x me-1"></i> Batal
+                    </button>
+                    <button type="submit" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" id="btnSimpanInputBarangTerpilih">
+                        <i class="bi bi-check-circle-fill me-1"></i> Simpan Data Barang
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -1019,15 +1027,43 @@
         new bootstrap.Modal(document.getElementById('modalPembayaranDetail')).show();
     }
 
+    let returnToDetailFromEdit = false;
+    let isSubmittingEditPo = false;
+
     function bukaModalEditFromDetail(poId) {
+        if (!poId) return;
+        returnToDetailFromEdit = true;
+        isSubmittingEditPo = false;
+
         const detailModalEl = document.getElementById('modalDetail');
         const detailModalInst = bootstrap.Modal.getInstance(detailModalEl);
-        if (detailModalInst) {
-            detailModalInst.hide();
-        }
-        setTimeout(() => {
+
+        const doOpenEdit = () => {
             bukaModalEdit(poId);
-        }, 300);
+        };
+
+        if (detailModalInst && detailModalEl && detailModalEl.classList.contains('show')) {
+            detailModalEl.addEventListener('hidden.bs.modal', function onDetailHiddenForEdit() {
+                detailModalEl.removeEventListener('hidden.bs.modal', onDetailHiddenForEdit);
+                if (returnToDetailFromEdit) {
+                    doOpenEdit();
+                }
+            });
+            detailModalInst.hide();
+        } else {
+            doOpenEdit();
+        }
+    }
+
+    function hapusItemDetail(detailId, barangNama) {
+        if (!confirm(`Apakah Anda yakin ingin menghapus barang "${barangNama}" dari PO ini?`)) {
+            return;
+        }
+        const form = document.getElementById('formHapusItemDetail');
+        if (form) {
+            form.action = `/pembelian-kejingga/detail/${detailId}`;
+            form.submit();
+        }
     }
 
     function bukaModalUploadBukti(detailId, barangNama) {
@@ -1187,6 +1223,11 @@
         const item = dataPembayaranMap[id];
         if (!item) return;
 
+        const btnEditPo = document.getElementById('btnEditPoModal');
+        if (btnEditPo) {
+            btnEditPo.style.display = item.is_terkunci ? 'none' : 'inline-block';
+        }
+
         let detailsHtml = '';
         let totalItemsCalculated = 0;
         item.details.forEach((d, idx) => {
@@ -1220,6 +1261,22 @@
                    <div class="text-muted small">@ Rp ${Math.round(d.harga_per_qty).toLocaleString('id-ID')} / ${d.satuan}</div>`
                 : `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>Belum Diisi</span>`;
 
+            let aksiHtml = '';
+            if (!item.is_terkunci && !d.is_diterima_item) {
+                aksiHtml = `
+                    <div class="d-flex justify-content-center align-items-center gap-1">
+                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="bukaModalEditFromDetail(${item.id})" title="Edit / Ubah Barang & Qty">
+                            <i class="bi bi-pencil-square me-1"></i>Edit
+                        </button>
+                        <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="hapusItemDetail(${d.id}, '${addslashes(d.nama)}')" title="Hapus Barang dari PO">
+                            <i class="bi bi-trash me-1"></i>Hapus
+                        </button>
+                    </div>
+                `;
+            } else {
+                aksiHtml = `<span class="badge bg-light text-muted border" style="font-size: 11px;"><i class="bi bi-lock-fill me-1"></i>Terkunci</span>`;
+            }
+
             let checkHtml = `<input type="checkbox" class="form-check-input item-check-pilih border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-qty="${d.qty}" data-satuan="${d.satuan}" data-harga="${d.harga}" data-supplier-id="${d.supplier_id || ''}" data-supplier-nama="${addslashes(d.supplier_nama || '')}" data-nota="${addslashes(d.catatan_pembayaran || '')}" onchange="updateItemSelection()">`;
 
             detailsHtml += `
@@ -1245,6 +1302,9 @@
                     </td>
                     <td class="text-end align-middle">
                         ${hargaHtml}
+                    </td>
+                    <td class="text-center align-middle">
+                        ${aksiHtml}
                     </td>
                 </tr>
             `;
@@ -1295,7 +1355,8 @@
                                 <th>Nama Barang</th>
                                 <th width="140" class="text-center">Stok Kejingga</th>
                                 <th width="140" class="text-center">Qty Dipesan</th>
-                                <th width="180" class="text-end">Harga</th>
+                                <th width="160" class="text-end">Harga</th>
+                                <th width="130" class="text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1403,6 +1464,9 @@
         updateItemSelection();
     }
 
+    let returnToDetailFromInput = false;
+    let isSubmittingInputBarang = false;
+
     function bukaModalInputBarangTerpilih() {
         if (!currentDetailPoId) return;
         const po = dataPembayaranMap[currentDetailPoId];
@@ -1454,13 +1518,39 @@
             let hargaVal = d.harga > 0 ? formatNumberDisplay(d.harga) : '';
             let unitPriceText = (d.harga > 0 && d.qty > 0) ? 'Rp ' + Math.round(d.harga / d.qty).toLocaleString('id-ID') : '—';
 
+            let barangCellHtml = '';
+            if (d.harga <= 0 || !d.is_diterima_item) {
+                let optionsHtml = barangsList.map(b => {
+                    let isSel = (b.id == d.barang_id) ? 'selected' : '';
+                    return `<option value="${b.id}" ${isSel}>${b.nama} (${b.kode})</option>`;
+                }).join('');
+
+                barangCellHtml = `
+                    <input type="hidden" name="detail_ids[]" value="${d.id}">
+                    <div class="mb-1">
+                        <select name="items[${d.id}][barang_id]" class="form-select form-select-sm fw-semibold select-barang-input-modal" data-id="${d.id}" onchange="onBarangChangedInInputModal(${d.id}, this)">
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                    <div class="d-flex align-items-center gap-1 small text-muted">
+                        <span class="badge bg-light text-secondary border" id="satuan-label-input-${d.id}">Satuan: ${d.satuan}</span>
+                        <span class="badge bg-light text-muted border" id="stok-label-input-${d.id}">Stok: ${d.stok_kejingga.toLocaleString('id-ID')} ${d.satuan_utama}</span>
+                    </div>
+                `;
+            } else {
+                barangCellHtml = `
+                    <input type="hidden" name="detail_ids[]" value="${d.id}">
+                    <input type="hidden" name="items[${d.id}][barang_id]" value="${d.barang_id}">
+                    <div class="fw-bold text-dark">${d.nama}</div>
+                    <div class="text-muted small">${d.satuan}</div>
+                `;
+            }
+
             tbodyHtml += `
                 <tr id="input-item-row-${d.id}">
                     <td class="text-center align-middle">${idx + 1}</td>
                     <td class="align-middle">
-                        <input type="hidden" name="detail_ids[]" value="${d.id}">
-                        <div class="fw-bold text-dark">${d.nama}</div>
-                        <div class="text-muted small">${d.satuan}</div>
+                        ${barangCellHtml}
                     </td>
                     <td class="text-center align-middle">
                         <input type="number" step="any" min="0.01" name="items[${d.id}][qty]" class="form-control form-control-sm text-center fw-bold input-row-qty" data-id="${d.id}" value="${d.qty}" oninput="recalcItemRow(${d.id})">
@@ -1488,8 +1578,29 @@
         // Recalculate totals
         hitungGrandTotalInputModal();
 
-        // Show modal
-        new bootstrap.Modal(document.getElementById('modalInputBarangTerpilih')).show();
+        // Transisi modal: Tutup modalDetail terlebih dahulu agar tidak bertumpukan
+        returnToDetailFromInput = true;
+        isSubmittingInputBarang = false;
+
+        const detailModalEl = document.getElementById('modalDetail');
+        const detailModalInst = bootstrap.Modal.getInstance(detailModalEl);
+
+        const showInputModal = () => {
+            const inputModalEl = document.getElementById('modalInputBarangTerpilih');
+            bootstrap.Modal.getOrCreateInstance(inputModalEl).show();
+        };
+
+        if (detailModalInst && detailModalEl && detailModalEl.classList.contains('show')) {
+            detailModalEl.addEventListener('hidden.bs.modal', function onDetailHidden() {
+                detailModalEl.removeEventListener('hidden.bs.modal', onDetailHidden);
+                if (returnToDetailFromInput) {
+                    showInputModal();
+                }
+            });
+            detailModalInst.hide();
+        } else {
+            showInputModal();
+        }
     }
 
     function recalcItemRow(id) {
@@ -1549,6 +1660,69 @@
             boxMetode.style.display = 'block';
             selectMetode.value = 'termin';
         }
+    }
+
+    function onBarangChangedInInputModal(detailId, selectEl) {
+        const barangId = selectEl.value;
+        const b = barangsMap[barangId];
+        if (!b) return;
+
+        const satuanEl = document.getElementById(`satuan-label-input-${detailId}`);
+        if (satuanEl) {
+            const sat = b.satuan_pembelian || b.satuan_utama || 'Pcs';
+            satuanEl.textContent = 'Satuan: ' + sat;
+        }
+
+        const stokEl = document.getElementById(`stok-label-input-${detailId}`);
+        if (stokEl) {
+            stokEl.textContent = 'Stok: ' + b.stok_kejingga.toLocaleString('id-ID') + ' ' + b.satuan_utama;
+        }
+
+        recalcItemRow(detailId);
+    }
+
+    // Event listener: Saat modalInputBarangTerpilih ditutup tanpa submit (batal), kembalikan ke modalDetail
+    const modalInputEl = document.getElementById('modalInputBarangTerpilih');
+    if (modalInputEl) {
+        modalInputEl.addEventListener('hidden.bs.modal', function () {
+            if (returnToDetailFromInput && !isSubmittingInputBarang && currentDetailPoId) {
+                returnToDetailFromInput = false;
+                const detailModalEl = document.getElementById('modalDetail');
+                if (detailModalEl) {
+                    bootstrap.Modal.getOrCreateInstance(detailModalEl).show();
+                }
+            }
+        });
+    }
+
+    const formInputEl = document.getElementById('formInputBarangTerpilih');
+    if (formInputEl) {
+        formInputEl.addEventListener('submit', function () {
+            isSubmittingInputBarang = true;
+            returnToDetailFromInput = false;
+        });
+    }
+
+    // Event listener: Saat modalEdit ditutup tanpa submit (batal), kembalikan ke modalDetail
+    const modalEditEl = document.getElementById('modalEdit');
+    if (modalEditEl) {
+        modalEditEl.addEventListener('hidden.bs.modal', function () {
+            if (returnToDetailFromEdit && !isSubmittingEditPo && currentDetailPoId) {
+                returnToDetailFromEdit = false;
+                const detailModalEl = document.getElementById('modalDetail');
+                if (detailModalEl) {
+                    bootstrap.Modal.getOrCreateInstance(detailModalEl).show();
+                }
+            }
+        });
+    }
+
+    const formEditEl = document.getElementById('formEditModal');
+    if (formEditEl) {
+        formEditEl.addEventListener('submit', function () {
+            isSubmittingEditPo = true;
+            returnToDetailFromEdit = false;
+        });
     }
 
     // Helper addslashes for JS strings
