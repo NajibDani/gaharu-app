@@ -797,7 +797,8 @@ class PembelianKejinggaController extends Controller
         $request->validate([
             'detail_ids'          => 'required|array|min:1',
             'detail_ids.*'        => 'required|integer|exists:pembelian_detail,id',
-            'supplier_id'         => 'required|exists:master_supplier,id',
+            'supplier_id'         => 'required|exists:suppliers,id',
+            'tanggal_diterima'    => 'nullable|date',
             'items'               => 'required|array',
             'items.*.harga'       => 'nullable',
             'items.*.qty'         => 'nullable',
@@ -822,6 +823,7 @@ class PembelianKejinggaController extends Controller
             $isLunas = $request->has('is_lunas') && ($request->is_lunas == '1' || $request->is_lunas == 'true' || $request->is_lunas === true);
             $metode = $request->metode_pembayaran ?: ($isLunas ? 'cod' : 'termin');
             $nomorNota = $request->nomor_nota;
+            $tanggalDiterima = $request->filled('tanggal_diterima') ? $request->tanggal_diterima : null;
 
             $changedOldBarangIds = [];
 
@@ -845,6 +847,10 @@ class PembelianKejinggaController extends Controller
                     'harga_per_qty'       => $hargaPerQty,
                     'metode_pembayaran'   => $metode,
                 ];
+
+                if ($tanggalDiterima) {
+                    $updateData['tanggal_diterima'] = $tanggalDiterima;
+                }
 
                 // Penyesuaian fleksibel ganti barang jika barang diubah
                 if (!empty($itemInput['barang_id']) && (int) $itemInput['barang_id'] !== (int) $detail->barang_id) {

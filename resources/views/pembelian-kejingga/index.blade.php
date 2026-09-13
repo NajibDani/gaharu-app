@@ -546,114 +546,172 @@
 
     <!-- MODAL INPUT HARGA, NOTA, SUPPLIER, TAX & UPLOAD BUKTI UNTUK BARANG TERPILIH -->
     <div class="modal fade" id="modalInputBarangTerpilih" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable my-3" style="max-height: calc(100vh - 2rem);">
-            <form id="formInputBarangTerpilih" method="POST" enctype="multipart/form-data" class="modal-content border-0 shadow-lg rounded-4" style="max-height: 100%; display: flex; flex-direction: column;">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable my-3" style="max-height: calc(100vh - 2rem); max-width: 860px;">
+            <form id="formInputBarangTerpilih" method="POST" enctype="multipart/form-data" class="modal-content border-0 shadow-lg rounded-4" style="max-height: 100%; display: flex; flex-direction: column; background-color: #f8fafc;">
                 @csrf
-                <div class="modal-header border-bottom py-3 px-3 px-md-4 flex-shrink-0" style="background-color: #fef3c7;">
-                    <h5 class="modal-title fw-bold text-dark fs-6 mb-0">
-                        <i class="bi bi-pencil-square text-warning me-2"></i>Input / Edit Data Barang Terpilih
-                    </h5>
+                <!-- MODAL HEADER -->
+                <div class="modal-header border-bottom bg-white py-3 px-4 flex-shrink-0">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px; background-color: #eff6ff; color: #2563eb;">
+                            <i class="bi bi-receipt fs-5"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark fs-6 mb-0">Input Data Pembelian &amp; Nota</h5>
+                            <div class="text-muted small mt-1 d-flex align-items-center gap-2">
+                                <span class="badge bg-light text-dark border px-2 py-1"><i class="bi bi-file-earmark-text me-1"></i>PO <span id="input-modal-po-kode">#</span></span>
+                                <span>&bull;</span>
+                                <span>Memperbarui <strong class="text-primary" id="input-modal-count">0</strong> item terpilih</span>
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
+
+                <!-- MODAL BODY -->
                 <div class="modal-body p-3 p-md-4" style="overflow-y: auto; flex: 1 1 auto; min-height: 0;">
-                    <div class="alert alert-info py-2 px-3 small mb-3">
-                        <i class="bi bi-info-circle me-1"></i> Anda sedang memperbarui data untuk <strong id="input-modal-count">0</strong> barang terpilih pada PO <strong id="input-modal-po-kode">#</strong>.
-                    </div>
 
-                    <!-- SUPPLIER & NOMOR NOTA -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-bold small text-dark mb-1">Pilih Supplier / Pemasok <span class="text-danger">*</span></label>
-                            <select name="supplier_id" id="input_supplier_id" class="form-select" required>
-                                <option value="">-- Pilih Supplier --</option>
-                                @foreach($suppliers as $sup)
-                                    <option value="{{ $sup->id }}">{{ $sup->nama }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-bold small text-dark mb-1">Nomor Nota / No. Faktur</label>
-                            <input type="text" name="nomor_nota" id="input_nomor_nota" class="form-control" placeholder="Contoh: INV-2026/09/001">
-                        </div>
-                    </div>
-
-                    <!-- DAFTAR BARANG TERPILIH & INPUT HARGA -->
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small text-dark mb-1">Daftar Barang &amp; Input Harga</label>
-                        <div class="table-responsive border rounded-3">
-                            <table class="table table-sm table-hover align-middle mb-0" id="table-input-barang-terpilih">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th width="35" class="text-center">No</th>
-                                        <th>Nama Barang</th>
-                                        <th width="120" class="text-center">Qty Dipesan</th>
-                                        <th width="190" class="text-end">Total Harga (Rp) <span class="text-danger">*</span></th>
-                                        <th width="140" class="text-end">Harga / Satuan</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbody-input-barang-terpilih">
-                                    <!-- Rendered dynamically -->
-                                </tbody>
-                                <tfoot class="table-light fw-bold">
-                                    <tr>
-                                        <td colspan="3" class="text-end">Total Harga Barang Terpilih:</td>
-                                        <td class="text-end text-primary fs-6" id="total-harga-terpilih-display">Rp 0</td>
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- TAX / SERVICE / ONGKIR -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-bold small text-dark mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-white text-muted">Rp</span>
-                                <input type="text" name="tax_service" id="input_tax_service" class="form-control text-end fw-bold mask-number" placeholder="0" oninput="hitungGrandTotalInputModal()">
+                    <!-- CARD 1: INFORMASI SUPPLIER & NOTA -->
+                    <div class="card border-0 shadow-sm rounded-3 mb-3 bg-white">
+                        <div class="card-body p-3">
+                            <div class="d-flex align-items-center gap-2 mb-2 pb-2 border-bottom">
+                                <i class="bi bi-building text-secondary"></i>
+                                <span class="fw-bold small text-dark text-uppercase" style="letter-spacing: 0.5px; font-size: 11px;">Informasi Faktur &amp; Pemasok</span>
                             </div>
-                            <small class="text-muted" style="font-size: 11px;">Biaya pajak/ongkir nota pembelian PO ini</small>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-bold small text-dark mb-1">Total Keseluruhan (Termasuk Tax)</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-light text-muted">Rp</span>
-                                <input type="text" id="input_grand_total_display" class="form-control text-end fw-bold bg-light text-success fs-6" readonly value="0">
+                            <div class="row g-2 pt-1">
+                                <div class="col-12 col-md-5">
+                                    <label class="form-label fw-semibold text-secondary small mb-1">Supplier / Toko <span class="text-danger">*</span></label>
+                                    <select name="supplier_id" id="input_supplier_id" class="form-select form-select-sm" required>
+                                        <option value="">-- Pilih Supplier --</option>
+                                        @foreach($suppliers as $sup)
+                                            <option value="{{ $sup->id }}">{{ $sup->nama }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label fw-semibold text-secondary small mb-1">Nomor Faktur / Nota</label>
+                                    <input type="text" name="nomor_nota" id="input_nomor_nota" class="form-control form-control-sm" placeholder="Contoh: INV-2026/09/001">
+                                </div>
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label fw-semibold text-secondary small mb-1">Tanggal Diterima</label>
+                                    <input type="date" name="tanggal_diterima" id="input_tanggal_diterima" class="form-control form-control-sm" value="{{ date('Y-m-d') }}">
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- UPLOAD BUKTI & STATUS PEMBAYARAN -->
+                    <!-- CARD 2: DAFTAR BARANG & INPUT HARGA -->
+                    <div class="card border-0 shadow-sm rounded-3 mb-3 bg-white">
+                        <div class="card-body p-3">
+                            <div class="d-flex align-items-center justify-content-between mb-2 pb-2 border-bottom">
+                                <div class="d-flex align-items-center gap-2">
+                                    <i class="bi bi-box-seam text-secondary"></i>
+                                    <span class="fw-bold small text-dark text-uppercase" style="letter-spacing: 0.5px; font-size: 11px;">Daftar Barang &amp; Harga Total</span>
+                                </div>
+                                <span class="text-muted small" style="font-size: 11px;"><i class="bi bi-info-circle me-1"></i>Input total harga real pada nota</span>
+                            </div>
+                            <div class="table-responsive border rounded-2">
+                                <table class="table table-sm table-hover align-middle mb-0" id="table-input-barang-terpilih">
+                                    <thead class="bg-light text-secondary border-bottom">
+                                        <tr>
+                                            <th width="35" class="text-center small py-2">No</th>
+                                            <th class="small py-2" style="min-width: 220px;">Nama Barang</th>
+                                            <th width="115" class="text-center small py-2">Qty Dipesan</th>
+                                            <th width="190" class="text-end small py-2">Total Harga (Rp) <span class="text-danger">*</span></th>
+                                            <th width="135" class="text-end small py-2">Harga/Satuan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbody-input-barang-terpilih" class="bg-white">
+                                        <!-- Rendered dynamically -->
+                                    </tbody>
+                                    <tfoot class="bg-light border-top">
+                                        <tr>
+                                            <td colspan="3" class="text-end small fw-semibold text-secondary py-2">Subtotal Barang:</td>
+                                            <td class="text-end fw-bold text-dark py-2" id="total-harga-terpilih-display">Rp 0</td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 3 & 4: DOKUMEN & RINGKASAN PEMBAYARAN -->
                     <div class="row g-3">
+                        <!-- KOLOM KIRI: BUKTI NOTA & STATUS BAYAR -->
                         <div class="col-12 col-md-6">
-                            <label class="form-label fw-bold small text-dark mb-1">Upload Bukti Nota / Faktur</label>
-                            <input type="file" name="bukti_pembayaran" id="input_bukti_pembayaran" class="form-control" accept="image/*,application/pdf">
-                            <small class="text-muted" style="font-size: 11px;">Format file: JPG, PNG, PDF (Maks. 5MB)</small>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <label class="form-label fw-bold small text-dark mb-1">Status Pembayaran</label>
-                            <div class="form-check form-switch mt-1">
-                                <input class="form-check-input" type="checkbox" role="switch" name="is_lunas" id="input_is_lunas" value="1" checked onchange="toggleMetodeBayarInputModal()">
-                                <label class="form-check-label fw-semibold text-dark small" for="input_is_lunas" id="label_is_lunas">
-                                    <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas (Selesai Bayar)</span>
-                                </label>
+                            <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                                <div class="card-body p-3">
+                                    <div class="d-flex align-items-center gap-2 mb-2 pb-2 border-bottom">
+                                        <i class="bi bi-paperclip text-secondary"></i>
+                                        <span class="fw-bold small text-dark text-uppercase" style="letter-spacing: 0.5px; font-size: 11px;">Bukti &amp; Pembayaran</span>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold text-secondary small mb-1">Foto / File Nota Fisik</label>
+                                        <input type="file" name="bukti_pembayaran" id="input_bukti_pembayaran" class="form-control form-control-sm" accept="image/*,application/pdf">
+                                        <div class="text-muted mt-1" style="font-size: 11px;">Mendukung JPG, PNG, PDF (Maks. 5MB)</div>
+                                    </div>
+                                    <div>
+                                        <label class="form-label fw-semibold text-secondary small mb-1">Status Pembayaran</label>
+                                        <div class="p-2 border rounded-2 bg-light">
+                                            <div class="form-check form-switch m-0">
+                                                <input class="form-check-input" type="checkbox" role="switch" name="is_lunas" id="input_is_lunas" value="1" checked onchange="toggleMetodeBayarInputModal()">
+                                                <label class="form-check-label fw-semibold text-dark small" for="input_is_lunas" id="label_is_lunas">
+                                                    <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="mt-2" id="box_metode_bayar" style="display: none;">
+                                            <select name="metode_pembayaran" id="input_metode_pembayaran" class="form-select form-select-sm">
+                                                <option value="termin" selected>Termin / Hutang Supplier</option>
+                                                <option value="cod">COD / Bayar Saat Terima</option>
+                                                <option value="dp">Uang Muka (DP)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="mt-2" id="box_metode_bayar" style="display: none;">
-                                <select name="metode_pembayaran" id="input_metode_pembayaran" class="form-select form-select-sm">
-                                    <option value="termin" selected>Termin / Hutang Supplier</option>
-                                    <option value="cod">COD / Bayar Saat Terima</option>
-                                    <option value="dp">Uang Muka (DP)</option>
-                                </select>
+                        </div>
+
+                        <!-- KOLOM KANAN: RINGKASAN BIAYA & GRAND TOTAL -->
+                        <div class="col-12 col-md-6">
+                            <div class="card border-0 shadow-sm rounded-3 bg-white h-100">
+                                <div class="card-body p-3 d-flex flex-column justify-content-between">
+                                    <div>
+                                        <div class="d-flex align-items-center gap-2 mb-2 pb-2 border-bottom">
+                                            <i class="bi bi-calculator text-secondary"></i>
+                                            <span class="fw-bold small text-dark text-uppercase" style="letter-spacing: 0.5px; font-size: 11px;">Ringkasan Biaya</span>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label fw-semibold text-secondary small mb-1">Biaya Tambahan (Tax / Ongkir)</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text bg-white text-muted">Rp</span>
+                                                <input type="text" name="tax_service" id="input_tax_service" class="form-control text-end fw-semibold mask-number" placeholder="0" oninput="hitungGrandTotalInputModal()">
+                                            </div>
+                                            <div class="text-muted mt-1" style="font-size: 11px;">Pajak, ongkos kirim, atau biaya lain jika ada</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- HIGHLIGHT GRAND TOTAL -->
+                                    <div class="p-3 rounded-3 mt-2" style="background-color: #f1f5f9; border: 1px dashed #cbd5e1;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span class="text-secondary small fw-semibold">Grand Total:</span>
+                                            <span class="fs-5 fw-bold text-dark" id="input_grand_total_text">Rp 0</span>
+                                        </div>
+                                        <input type="hidden" id="input_grand_total_display" value="0">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
                 </div>
-                <div class="modal-footer border-top bg-light rounded-bottom-4 py-2 px-3 px-md-4 d-flex justify-content-end gap-2 flex-shrink-0">
-                    <button type="button" class="btn btn-secondary btn-sm px-3 shadow-none" data-bs-dismiss="modal">
-                        <i class="bi bi-x me-1"></i> Batal
+
+                <!-- MODAL FOOTER -->
+                <div class="modal-footer border-top bg-white rounded-bottom-4 py-2 px-4 d-flex justify-content-end gap-2 flex-shrink-0">
+                    <button type="button" class="btn btn-light btn-sm px-3 text-secondary border shadow-none" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg me-1"></i> Batal
                     </button>
-                    <button type="submit" class="btn btn-success btn-sm fw-bold px-4 shadow-sm" id="btnSimpanInputBarangTerpilih">
+                    <button type="submit" class="btn btn-primary btn-sm fw-semibold px-4 shadow-sm" id="btnSimpanInputBarangTerpilih">
                         <i class="bi bi-check-circle-fill me-1"></i> Simpan Data Barang
                     </button>
                 </div>
@@ -1244,6 +1302,10 @@
                 ? `<span class="badge bg-light text-secondary border me-1"><i class="bi bi-receipt me-1"></i>Nota: ${d.catatan_pembayaran}</span>`
                 : '';
 
+            let tglDiterimaBadge = d.tanggal_diterima
+                ? `<span class="badge bg-light text-success border me-1" title="Tanggal Diterima"><i class="bi bi-calendar-check text-success me-1"></i>Diterima: ${d.tanggal_diterima}</span>`
+                : '';
+
             let statusBayarBadge = '';
             if (d.is_lunas) {
                 statusBayarBadge = `<span class="badge bg-success-subtle text-success border border-success me-1"><i class="bi bi-check-circle-fill me-1"></i>Lunas</span>`;
@@ -1289,6 +1351,7 @@
                         <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
                             ${supplierBadge}
                             ${notaBadge}
+                            ${tglDiterimaBadge}
                             ${statusBayarBadge}
                             ${buktiBadge}
                         </div>
@@ -1502,6 +1565,13 @@
         const notas = Array.from(new Set(selectedDetails.map(d => d.catatan_pembayaran).filter(Boolean)));
         document.getElementById('input_nomor_nota').value = notas.length === 1 ? notas[0] : '';
 
+        // Prefill Tanggal Diterima
+        const tglDiterimas = Array.from(new Set(selectedDetails.map(d => d.tanggal_diterima_raw).filter(Boolean)));
+        const tglInput = document.getElementById('input_tanggal_diterima');
+        if (tglInput) {
+            tglInput.value = tglDiterimas.length === 1 ? tglDiterimas[0] : new Date().toISOString().split('T')[0];
+        }
+
         // Prefill Tax
         const taxInput = document.getElementById('input_tax_service');
         if (taxInput) {
@@ -1641,6 +1711,9 @@
         const totalItemsEl = document.getElementById('total-harga-terpilih-display');
         if (totalItemsEl) totalItemsEl.textContent = 'Rp ' + totalItems.toLocaleString('id-ID');
 
+        const grandTotalTextEl = document.getElementById('input_grand_total_text');
+        if (grandTotalTextEl) grandTotalTextEl.textContent = 'Rp ' + grandTotal.toLocaleString('id-ID');
+
         const grandTotalEl = document.getElementById('input_grand_total_display');
         if (grandTotalEl) grandTotalEl.value = grandTotal.toLocaleString('id-ID');
     }
@@ -1652,11 +1725,11 @@
         const selectMetode = document.getElementById('input_metode_pembayaran');
 
         if (isLunasCb.checked) {
-            labelEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas (Selesai Bayar)</span>';
+            labelEl.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i> Langsung Lunas</span>';
             boxMetode.style.display = 'none';
             selectMetode.value = 'cod';
         } else {
-            labelEl.innerHTML = '<span class="text-warning-emphasis"><i class="bi bi-clock-history me-1"></i> Belum Lunas (Hutang / Termin)</span>';
+            labelEl.innerHTML = '<span class="text-warning-emphasis"><i class="bi bi-clock-history me-1"></i> Belum Lunas (Termin)</span>';
             boxMetode.style.display = 'block';
             selectMetode.value = 'termin';
         }
