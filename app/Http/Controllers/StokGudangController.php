@@ -291,7 +291,7 @@ class StokGudangController extends Controller
             $qty = floatval($row->qty);
             $totalHarga = floatval($row->total_harga);
 
-            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian'])) {
+            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian', 'pembelian_batal'])) {
                 $qty = $this->calculateStockQtyForPembelian($row, $barangId, $konversiBarang);
             }
 
@@ -345,7 +345,7 @@ class StokGudangController extends Controller
 
             $keteranganExtra = '';
 
-            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian'])) {
+            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian', 'pembelian_batal'])) {
                 $pDetailInfo = $this->getPembelianDetailInfo($row, $barangId);
                 $konversiRow = $pDetailInfo['konversi'] ?: $konversiBarang;
                 $satBeliRow = $pDetailInfo['satuan_pembelian'] ?: $satuanBeliDefault;
@@ -356,6 +356,14 @@ class StokGudangController extends Controller
                     $keteranganExtra = " ({$qtyBeliInput} {$satBeliRow} @ 1 {$satBeliRow} = " . (float)$konversiRow . " {$satuanStok})";
                 } elseif ($konversiRow > 1 && $qtyBeliInput > 0) {
                     $keteranganExtra = " (setara {$qtyBeliInput} {$satBeliRow})";
+                } elseif ($konversiBarang > 1 && $rawQty > 0 && $totalHarga > 0) {
+                    // Fallback jika relasi detail sudah terhapus (misal pembelian batal / dihapus)
+                    $unitPrice = $totalHarga / $rawQty;
+                    $refPrice = $barang ? (float)($barang->hpp_referensi ?: 0) : 0;
+                    if ($refPrice > 0 && $unitPrice > ($refPrice * ($konversiBarang * 0.4))) {
+                        $qty = $rawQty * $konversiBarang;
+                        $keteranganExtra = " ({$rawQty} {$satuanBeliDefault} @ 1 {$satuanBeliDefault} = " . (float)$konversiBarang . " {$satuanStok})";
+                    }
                 }
             }
 
@@ -480,6 +488,16 @@ class StokGudangController extends Controller
             return $rawQty * $konversi;
         }
 
+        // Fallback jika pembelian_detail sudah terhapus (misal pembelian dibatalkan / dihapus)
+        if ($konversi > 1 && $rawQty > 0 && floatval($row->total_harga) > 0) {
+            $unitPrice = floatval($row->total_harga) / $rawQty;
+            $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+            $refPrice = $barang ? (float)($barang->hpp_referensi ?: 0) : 0;
+            if ($refPrice > 0 && $unitPrice > ($refPrice * ($konversi * 0.4))) {
+                return $rawQty * $konversi;
+            }
+        }
+
         return $rawQty;
     }
 
@@ -497,6 +515,14 @@ class StokGudangController extends Controller
                     return "Pembelian: {$p->kode_pembelian} [Supplier: {$supplierName}]";
                 }
                 return "Pembelian (ID: {$id})";
+
+            case 'pembelian_batal':
+                $p = \App\Models\Pembelian::with('supplier')->find($id);
+                if ($p) {
+                    $supplierName = $p->supplier->nama ?? '-';
+                    return "Pembelian Batal: {$p->kode_pembelian} [Supplier: {$supplierName}]";
+                }
+                return "Pembelian Batal (ID: {$id})";
 
             case 'penerimaan_pembelian':
                 $rcv = \App\Models\PenerimaanPembelian::with('pembelian.supplier')->find($id);

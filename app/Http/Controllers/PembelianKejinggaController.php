@@ -509,8 +509,8 @@ class PembelianKejinggaController extends Controller
 
         $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
 
-        if ($pembelian->isReceived()) {
-            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah diterima fisiknya dan tidak dapat dihapus.');
+        if ($pembelian->isReceived() && !$isSuperAdmin) {
+            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah diterima fisiknya dan hanya dapat dihapus / di-rollback oleh Super Admin.');
         }
 
         if ($pembelian->isTerkunci() && !$isSuperAdmin) {
@@ -518,11 +518,61 @@ class PembelianKejinggaController extends Controller
         }
 
         DB::transaction(function() use ($pembelian) {
-            PembelianDetail::where('pembelian_id', $pembelian->id)->delete();
+            $pembelian->load(['details.barang']);
+            $penerimaanList = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelian->id)->get();
+            $batchList = \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)->get();
+
+            $affectedBarangIds = $pembelian->details->pluck('barang_id')
+                ->merge($batchList->pluck('barang_id'))
+                ->filter()
+                ->unique()
+                ->map(fn($id) => (int)$id)
+                ->toArray();
+
+            // Kembalikan stok gudang jika pernah diterima
+            foreach ($batchList as $batch) {
+                if ($batch->qty_masuk > 0) {
+                    $stokGudang = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
+                        ->where('gudang_id', $batch->gudang_id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($stokGudang) {
+                        $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
+                    }
+
+                    \App\Models\TransaksiStok::create([
+                        'tanggal'        => now(),
+                        'tipe'           => 'keluar',
+                        'source_type'    => 'pembelian_batal',
+                        'source_id'      => $pembelian->id,
+                        'gudang_asal_id' => $batch->gudang_id,
+                        'barang_id'      => $batch->barang_id,
+                        'qty'            => (float) $batch->qty_masuk,
+                        'total_harga'    => (float) ($batch->qty_masuk * $batch->harga_per_qty),
+                        'created_by'     => auth()->id() ?? 1,
+                    ]);
+                }
+            }
+
+            \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)->delete();
+
+            foreach ($penerimaanList as $penerimaan) {
+                $penerimaan->details()->delete();
+                $penerimaan->delete();
+            }
+
+            \App\Models\PembelianDetail::where('pembelian_id', $pembelian->id)->delete();
             $pembelian->delete();
+
+            // SINKRONISASI HPP BARANG SESUAI FIFO SETELAH PEMBELIAN DIHAPUS
+            $fifoService = app(\App\Services\FifoService::class);
+            foreach ($affectedBarangIds as $barangId) {
+                $fifoService->syncBarangHpp($barangId);
+            }
         });
 
-        return redirect()->route('pembelian-kejingga.index')->with('success', 'Purchase Order Kejingga berhasil dihapus.');
+        return redirect()->route('pembelian-kejingga.index')->with('success', 'Purchase Order Kejingga berhasil dihapus dan HPP barang telah disesuaikan kembali sesuai FIFO.');
     }
 
     // ==========================================
@@ -944,6 +994,9 @@ class PembelianKejinggaController extends Controller
                 'source_id'       => $pembelian->id,
                 'user_id'         => auth()->id(),
             ]);
+
+            // Sinkronisasi HPP barang sesuai FIFO
+            app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
 
             // Check if all items in PO are fully received
             $allFullyReceived = true;

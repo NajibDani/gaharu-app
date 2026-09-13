@@ -460,6 +460,9 @@ class PembelianController extends Controller
                     'source_id'       => $pembelian->id,
                     'user_id'         => auth()->id(),
                 ]);
+
+                // Sinkronisasi HPP barang sesuai FIFO
+                app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
             }
 
             // Check if all items are fully received
@@ -742,6 +745,9 @@ class PembelianController extends Controller
 
                     // Hapus detail pembelian
                     $oldDet->delete();
+
+                    // Sinkronisasi HPP FIFO untuk barang yang dihapus dari detail
+                    app(\App\Services\FifoService::class)->syncBarangHpp((int) $oldBarangId);
                 }
             }
 
@@ -773,6 +779,10 @@ class PembelianController extends Controller
                 $hargaInput = (float) $item['harga'];
                 $hargaPerQty = $qtyInput > 0 ? $hargaInput / $qtyInput : 0;
 
+                $barang = \App\Models\MasterBarang::withoutGlobalScopes()->find($barangId);
+                $konversi = (float) ($barang->konversi_pembelian ?? 1.0);
+                if ($konversi <= 0) $konversi = 1.0;
+
                 $oldDet = $existingDetails->get($barangId);
 
                 if ($oldDet) {
@@ -795,11 +805,13 @@ class PembelianController extends Controller
                     // Update stok_gudang_batch & stok_gudang jika batch sudah dibuat
                     $batch = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->first();
                     if ($batch) {
+                        $diffQtyKonv = $diffQty * $konversi;
                         if ($diffQty != 0) {
-                            $batch->qty_masuk = max(0, (float)$batch->qty_masuk + $diffQty);
-                            $batch->sisa_qty  = max(0, (float)$batch->sisa_qty + $diffQty);
+                            $batch->qty_masuk = max(0, (float)$batch->qty_masuk + $diffQtyKonv);
+                            $batch->qty_sisa  = max(0, (float)$batch->qty_sisa + $diffQtyKonv);
+                            $batch->is_habis  = ($batch->qty_sisa <= 0);
                         }
-                        $batch->harga_satuan = $hargaPerQty;
+                        $batch->harga_per_qty = $hargaPerQty / $konversi;
                         $batch->save();
 
                         if ($diffQty != 0) {
@@ -810,10 +822,10 @@ class PembelianController extends Controller
                                 ->first();
 
                             if ($stokGudang) {
-                                if ($diffQty > 0) {
-                                    $stokGudang->increment('jumlah', $diffQty);
+                                if ($diffQtyKonv > 0) {
+                                    $stokGudang->increment('jumlah', $diffQtyKonv);
                                 } else {
-                                    $stokGudang->decrement('jumlah', abs($diffQty));
+                                    $stokGudang->decrement('jumlah', abs($diffQtyKonv));
                                 }
                             }
                         }
@@ -822,6 +834,8 @@ class PembelianController extends Controller
                     // Item baru ditambahkan
                     $detail = $pembelian->details()->create([
                         'barang_id'          => $barangId,
+                        'satuan_pembelian'   => $barang->satuan_pembelian ?? $barang->satuan,
+                        'konversi_pembelian' => $konversi,
                         'qty'                => $qtyInput,
                         'qty_diterima'       => $pembelian->is_diterima ? $qtyInput : 0,
                         'harga'              => $hargaInput,
@@ -836,26 +850,37 @@ class PembelianController extends Controller
                     $detail->update(['batch_number' => $batchNo]);
 
                     if ($pembelian->is_diterima) {
+                        $qtyMasukStok = $qtyInput * $konversi;
+                        $hargaPerQtyStok = $hargaPerQty / $konversi;
+
                         \App\Models\StokGudangBatch::create([
                             'gudang_id'           => $pembelian->gudang_id,
                             'divisi_id'           => null,
+                            'supplier_id'         => $pembelian->supplier_id,
                             'barang_id'           => $barangId,
                             'pembelian_id'        => $pembelian->id,
                             'pembelian_detail_id' => $detail->id,
                             'batch_number'        => $batchNo,
-                            'harga_satuan'        => $hargaPerQty,
-                            'qty_masuk'           => $qtyInput,
-                            'sisa_qty'            => $qtyInput,
-                            'tanggal_masuk'       => $pembelian->tanggal,
+                            'harga_per_qty'       => $hargaPerQtyStok,
+                            'qty_masuk'           => $qtyMasukStok,
+                            'qty_keluar'          => 0,
+                            'qty_sisa'            => $qtyMasukStok,
+                            'is_habis'            => false,
                         ]);
 
                         $stokGudang = \App\Models\StokGudang::firstOrCreate(
                             ['gudang_id' => $pembelian->gudang_id, 'barang_id' => $barangId, 'divisi_id' => null],
                             ['jumlah' => 0]
                         );
-                        $stokGudang->increment('jumlah', $qtyInput);
+                        $stokGudang->increment('jumlah', $qtyMasukStok);
                     }
                 }
+            }
+
+            // Sinkronisasi HPP FIFO untuk semua barang dalam pembelian
+            $fifoService = app(\App\Services\FifoService::class);
+            foreach ($submittedBarangIds as $bId) {
+                $fifoService->syncBarangHpp((int) $bId);
             }
         });
 
@@ -889,10 +914,18 @@ class PembelianController extends Controller
         DB::transaction(function () use ($pembelian, $isSuperAdmin) {
             $pembelian->load(['details.barang', 'gudang']);
 
-            // 1. Rollback Stok Gudang & Stok Batch jika barang sudah pernah diterima
             $penerimaanList = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelian->id)->get();
             $batchList = \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)->get();
 
+            // Simpan daftar barang_id yang terpengaruh untuk sinkronisasi HPP FIFO setelah rollback
+            $affectedBarangIds = $pembelian->details->pluck('barang_id')
+                ->merge($batchList->pluck('barang_id'))
+                ->filter()
+                ->unique()
+                ->map(fn($id) => (int)$id)
+                ->toArray();
+
+            // 1. Rollback Stok Gudang & Stok Batch jika barang sudah pernah diterima
             // Kembalikan stok gudang berdasarkan batch penerimaan
             foreach ($batchList as $batch) {
                 if ($batch->qty_masuk > 0) {
@@ -953,6 +986,12 @@ class PembelianController extends Controller
             // 4. Hapus Detail & Header Pembelian
             $pembelian->details()->delete();
             $pembelian->delete();
+
+            // 5. SINKRONISASI HPP BARANG SESUAI FIFO SETELAH PEMBELIAN DIHAPUS
+            $fifoService = app(\App\Services\FifoService::class);
+            foreach ($affectedBarangIds as $barangId) {
+                $fifoService->syncBarangHpp($barangId);
+            }
         });
 
         return redirect()

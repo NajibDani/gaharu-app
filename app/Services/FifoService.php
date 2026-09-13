@@ -7,6 +7,7 @@ use App\Models\PembelianDetail;
 use App\Models\StokGudang;
 use App\Models\StokGudangBatch;
 use App\Models\ResepBahanBaku;
+use App\Models\MasterBarang;
 use Illuminate\Support\Facades\DB;
 
 class FifoService
@@ -370,5 +371,146 @@ class FifoService
             'harga_satuan' => $hargaSatuan,
             'total_harga'  => $totalHpp
         ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SINKRONISASI HPP BARANG SESUAI FIFO
+    |--------------------------------------------------------------------------
+    |
+    | Menghitung HPP aktif untuk barang berdasarkan aturan FIFO:
+    | 1. Batch aktif tertua yang masih memiliki sisa stok (qty_sisa > 0, is_habis = false).
+    | 2. Jika seluruh batch habis, ambil dari batch historis terakhir (harga beli terbaru).
+    | 3. Jika tidak ada batch, ambil dari detail pembelian terakhir yang valid.
+    | 4. Jika tidak ada pembelian, ambil dari persediaan awal.
+    | 5. Fallback ke hpp_referensi yang tersimpan saat ini.
+    |
+    | Hasil kalkulasi langsung disimpan ke master_barang.hpp_referensi.
+    |
+    */
+    public function syncBarangHpp(int $barangId): float
+    {
+        $newHpp = $this->getFifoHpp($barangId);
+
+        MasterBarang::withoutGlobalScopes()
+            ->where('id', $barangId)
+            ->update(['hpp_referensi' => $newHpp]);
+
+        return $newHpp;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | GET ESTIMASI HARGA FIFO AKTIF (TANPA UPDATE DB)
+    |--------------------------------------------------------------------------
+    */
+    public function getFifoHpp(int $barangId, ?int $gudangId = null): float
+    {
+        // 1. Batch aktif tertua yang masih memiliki sisa stok
+        $activeBatchQuery = StokGudangBatch::where('barang_id', $barangId)
+            ->where('qty_sisa', '>', 0)
+            ->where('is_habis', false);
+
+        if ($gudangId) {
+            $activeBatchQuery->where('gudang_id', $gudangId);
+        }
+
+        $activeBatch = $activeBatchQuery->orderBy('id', 'asc')->first();
+
+        if ($activeBatch && (float)$activeBatch->harga_per_qty > 0) {
+            return (float) $activeBatch->harga_per_qty;
+        }
+
+        // 2. Jika tidak ada batch aktif pada gudang tersebut, cari di gudang mana saja
+        if ($gudangId) {
+            $anyActiveBatch = StokGudangBatch::where('barang_id', $barangId)
+                ->where('qty_sisa', '>', 0)
+                ->where('is_habis', false)
+                ->orderBy('id', 'asc')
+                ->first();
+
+            if ($anyActiveBatch && (float)$anyActiveBatch->harga_per_qty > 0) {
+                return (float) $anyActiveBatch->harga_per_qty;
+            }
+        }
+
+        // 3. Jika seluruh stok habis, ambil batch historis terakhir yang valid
+        $latestBatchQuery = StokGudangBatch::where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0);
+
+        if ($gudangId) {
+            $latestBatchQuery->where('gudang_id', $gudangId);
+        }
+
+        $latestBatch = $latestBatchQuery->orderBy('id', 'desc')->first();
+
+        if ($latestBatch && (float)$latestBatch->harga_per_qty > 0) {
+            return (float) $latestBatch->harga_per_qty;
+        }
+
+        if ($gudangId) {
+            $anyLatestBatch = StokGudangBatch::where('barang_id', $barangId)
+                ->where('harga_per_qty', '>', 0)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if ($anyLatestBatch && (float)$anyLatestBatch->harga_per_qty > 0) {
+                return (float) $anyLatestBatch->harga_per_qty;
+            }
+        }
+
+        // 4. Fallback ke pembelian terakhir yang masih tersimpan di database
+        $latestPembelian = DB::table('pembelian_detail')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if ($latestPembelian && (float)$latestPembelian->harga_per_qty > 0) {
+            $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
+            if ($konversi <= 0) $konversi = 1;
+            return (float) $latestPembelian->harga_per_qty / $konversi;
+        }
+
+        // 5. Fallback ke persediaan awal
+        $sa = DB::table('persediaan_awal_detail')
+            ->where('barang_id', $barangId)
+            ->where('harga_stok', '>', 0)
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if ($sa && (float)$sa->harga_stok > 0) {
+            return (float) $sa->harga_stok;
+        }
+
+        // 6. Fallback ke master_barang hpp_referensi saat ini
+        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        return (float) ($barang->hpp_referensi ?? 0);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | SINKRONISASI HPP UNTUK SEMUA BARANG
+    |--------------------------------------------------------------------------
+    */
+    public function syncAllBarangHpp(): array
+    {
+        $barangs = MasterBarang::withoutGlobalScopes()->get();
+        $synced = [];
+
+        foreach ($barangs as $b) {
+            $oldHpp = (float) $b->hpp_referensi;
+            $newHpp = $this->syncBarangHpp($b->id);
+            if (abs($oldHpp - $newHpp) > 0.001) {
+                $synced[$b->id] = [
+                    'kode'    => $b->kode_barang,
+                    'nama'    => $b->nama,
+                    'old_hpp' => $oldHpp,
+                    'new_hpp' => $newHpp,
+                ];
+            }
+        }
+
+        return $synced;
     }
 }
