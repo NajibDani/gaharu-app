@@ -15,6 +15,7 @@ use App\Services\FifoService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PembelianController extends Controller
 {
@@ -41,12 +42,15 @@ class PembelianController extends Controller
         $query = Pembelian::with(['supplier', 'gudang', 'user', 'details.barang']);
 
         if ($search) {
-            $query->where(function($q) use ($search) {
-                $q->where('kode_pembelian', 'like', '%' . $search . '%')
-                  ->orWhere('keterangan', 'like', '%' . $search . '%')
-                  ->orWhereHas('supplier', function($sq) use ($search) {
-                      $sq->where('nama', 'like', '%' . $search . '%');
-                  });
+            $hasKeterangan = Schema::hasColumn('pembelian', 'keterangan');
+            $query->where(function($q) use ($search, $hasKeterangan) {
+                $q->where('kode_pembelian', 'like', '%' . $search . '%');
+                if ($hasKeterangan) {
+                    $q->orWhere('keterangan', 'like', '%' . $search . '%');
+                }
+                $q->orWhereHas('supplier', function($sq) use ($search) {
+                    $sq->where('nama', 'like', '%' . $search . '%');
+                });
             });
         }
 
