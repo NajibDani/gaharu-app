@@ -225,4 +225,105 @@ public function resepBahanBakuAlternatif()
             ->whereColumn('resep_bahanbaku.satuan', '!=', 'master_barang.satuan')
             ->update(['resep_bahanbaku.satuan' => \Illuminate\Support\Facades\DB::raw('master_barang.satuan')]);
     }
+
+    /**
+     * Auto-heal batch pembelian, detail pembelian, dan stok jika terdapat barang dengan konversi pembelian
+     * yang batch-nya belum terkonversi ke satuan dasar. Dijalankan via aplikasi tanpa memerlukan file migrasi baru.
+     */
+    public static function autoHealUnconvertedPembelianBatches($targetBarangId = null): void
+    {
+        $query = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where('konversi_pembelian', '>', 1);
+
+        if ($targetBarangId) {
+            $query->where('id', $targetBarangId);
+        }
+
+        $barangsWithKonversi = $query->get();
+
+        foreach ($barangsWithKonversi as $b) {
+            $konversi = (float) $b->konversi_pembelian;
+            if ($konversi <= 1) {
+                continue;
+            }
+
+            $unconvertedBatches = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->join('pembelian_detail', 'stok_gudang_batch.pembelian_detail_id', '=', 'pembelian_detail.id')
+                ->where('stok_gudang_batch.barang_id', $b->id)
+                ->where('stok_gudang_batch.pembelian_detail_id', '>', 0)
+                ->whereRaw('stok_gudang_batch.qty_masuk <= pembelian_detail.qty * 1.01')
+                ->select(
+                    'stok_gudang_batch.id as batch_id',
+                    'stok_gudang_batch.qty_masuk',
+                    'stok_gudang_batch.qty_keluar',
+                    'stok_gudang_batch.qty_sisa',
+                    'stok_gudang_batch.harga_per_qty',
+                    'stok_gudang_batch.gudang_id',
+                    'stok_gudang_batch.divisi_id',
+                    'pembelian_detail.id as p_detail_id',
+                    'pembelian_detail.pembelian_id',
+                    'pembelian_detail.qty as p_qty',
+                    'pembelian_detail.harga as p_harga'
+                )
+                ->get();
+
+            foreach ($unconvertedBatches as $ub) {
+                $pQty = (float) $ub->p_qty;
+                if ($pQty <= 0) {
+                    continue;
+                }
+
+                $newMasuk = round($pQty * $konversi, 2);
+                $diff = $newMasuk - (float) $ub->qty_masuk;
+
+                if ($diff > 0) {
+                    $newSisa = max(0, $newMasuk - (float) $ub->qty_keluar);
+                    $newHargaPerQty = round((float) $ub->harga_per_qty / $konversi, 4);
+
+                    \Illuminate\Support\Facades\DB::table('stok_gudang_batch')->where('id', $ub->batch_id)->update([
+                        'qty_masuk'     => $newMasuk,
+                        'qty_sisa'      => $newSisa,
+                        'harga_per_qty' => $newHargaPerQty,
+                        'is_habis'      => ($newSisa <= 0),
+                        'updated_at'    => now(),
+                    ]);
+
+                    \Illuminate\Support\Facades\DB::table('pembelian_detail')->where('id', $ub->p_detail_id)->update([
+                        'satuan_pembelian'   => $b->satuan_pembelian,
+                        'konversi_pembelian' => $konversi,
+                    ]);
+
+                    \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                        ->where('barang_id', $b->id)
+                        ->where('source_id', $ub->pembelian_id)
+                        ->whereIn('source_type', ['pembelian', 'penerimaan_pembelian'])
+                        ->where('qty', '<=', $pQty * 1.01)
+                        ->update([
+                            'qty' => $newMasuk,
+                        ]);
+
+                    $sg = \Illuminate\Support\Facades\DB::table('stok_gudang')
+                        ->where('barang_id', $b->id)
+                        ->where('gudang_id', $ub->gudang_id)
+                        ->when($ub->divisi_id, fn($q) => $q->where('divisi_id', $ub->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                        ->first();
+
+                    if ($sg) {
+                        \Illuminate\Support\Facades\DB::table('stok_gudang')->where('id', $sg->id)->increment('jumlah', $diff);
+                    }
+                }
+            }
+
+            \Illuminate\Support\Facades\DB::table('pembelian_detail')
+                ->where('barang_id', $b->id)
+                ->where(function ($q) {
+                    $q->whereNull('konversi_pembelian')
+                      ->orWhere('konversi_pembelian', '<=', 1);
+                })
+                ->update([
+                    'satuan_pembelian'   => $b->satuan_pembelian,
+                    'konversi_pembelian' => $konversi,
+                ]);
+        }
+    }
 }

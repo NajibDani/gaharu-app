@@ -132,6 +132,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // Transaksi POS (Akses Operasional - Semua Role)
     Route::post('penjualan-pos/import-moka', [PenjualanPosController::class, 'importMokaExcel'])->name('penjualan_pos.import-moka');
     Route::post('penjualan-pos/{id}/approve', [PenjualanPosController::class, 'approve'])->name('penjualan_pos.approve');
+    Route::post('penjualan-pos/{id}/refresh-resep', [PenjualanPosController::class, 'refreshResep'])->name('penjualan_pos.refresh-resep');
     Route::get('/penjualan_pos/get-harga/{produk_id}', [PenjualanPosController::class, 'getHargaAktif'])->name('penjualan_pos.get-harga');
     Route::get('/penjualan_pos/{id}/cetak-pdf', [PenjualanPosController::class, 'cetakNotaPdf'])->name('penjualan_pos.cetak-pdf');
     Route::resource('penjualan_pos', PenjualanPosController::class);

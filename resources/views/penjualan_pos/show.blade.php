@@ -21,11 +21,18 @@
 
             {{-- TOMBOL EDIT DAN APPROVE HANYA MUNCUL JIKA STATUS MASIH DRAFT ATAU SUPER ADMIN --}}
             @if(($penjualan->status ?? 'Draft') === 'Draft')
+                <form action="{{ route('penjualan_pos.refresh-resep', $penjualan->id) }}" method="POST" class="d-inline">
+                    @csrf
+                    <button type="submit" class="btn btn-outline-primary px-3 fw-medium me-2" title="Perbarui status resep produk & estimasi HPP terbaru">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Refresh Resep
+                    </button>
+                </form>
+
                 <a href="{{ route('penjualan_pos.edit', $penjualan->id) }}" class="btn btn-warning px-4 text-dark fw-medium me-2">
                     Edit Transaksi
                 </a>
 
-                <form action="{{ route('penjualan_pos.approve', $penjualan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin menyetujui transaksi ini? Stok Bahan Baku akan dipotong permanen berdasarkan FIFO.')">
+                <form action="{{ route('penjualan_pos.approve', $penjualan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin menyetujui transaksi ini? Stok Bahan Baku akan dipotong permanen berdasarkan FIFO. Item yang belum memiliki resep akan otomatis dipisahkan ke transaksi Draft baru.')">
                     @csrf
                     <button type="submit" class="btn btn-success px-4 fw-medium">
                         <i class="bi bi-check-circle me-1"></i> Approve
@@ -152,11 +159,28 @@
     </div>
 
     @if($unconfiguredRecipeCount > 0)
-        <div class="alert alert-warning d-flex align-items-center mb-4 shadow-sm border border-warning" role="alert">
-            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2 fs-5 text-warning"></i>
-            <div>
-                <strong>Perhatian:</strong> Terdapat <strong>{{ $unconfiguredRecipeCount }}</strong> produk terjual yang <strong>Belum Memiliki Resep</strong>. HPP produk tersebut dihitung menggunakan harga beli terbaru di gudang / harga referensi.
+        <div class="alert alert-warning d-flex align-items-center justify-content-between mb-4 shadow-sm border border-warning" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2 fs-5 text-warning"></i>
+                <div>
+                    <strong>Perhatian:</strong> Terdapat <strong>{{ $unconfiguredRecipeCount }}</strong> produk terjual yang <strong>Belum Memiliki Resep</strong>.
+                    @if($isDraft)
+                        Saat di-Approve, item yang belum memiliki resep akan otomatis tertinggal (dipisahkan ke transaksi Draft baru) sampai resepnya selesai dibuat.
+                    @else
+                        HPP produk tersebut dihitung menggunakan harga beli terbaru di gudang / harga referensi.
+                    @endif
+                </div>
             </div>
+            @if($isDraft)
+                <div class="ms-3 flex-shrink-0">
+                    <form action="{{ route('penjualan_pos.refresh-resep', $penjualan->id) }}" method="POST" class="d-inline">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-outline-dark fw-semibold" title="Perbarui status resep produk">
+                            <i class="bi bi-arrow-clockwise me-1"></i> Refresh Resep
+                        </button>
+                    </form>
+                </div>
+            @endif
         </div>
     @endif
 
@@ -227,6 +251,11 @@
                                         <span class="badge bg-warning text-dark border border-warning" style="font-size: 0.72rem;">
                                             <i class="bi bi-journal-x me-1"></i>Belum Memiliki Resep
                                         </span>
+                                        @if($isDraft)
+                                            <a href="{{ route('resep.index', ['search' => $d->produk->nama ?? '']) }}" target="_blank" class="btn btn-sm btn-outline-warning py-0 px-2 fw-medium text-dark d-inline-flex align-items-center gap-1" style="font-size: 0.70rem; border-radius: 4px;" title="Buka menu resep untuk membuat formulasi produk ini">
+                                                <i class="bi bi-plus-circle"></i> Buat Resep
+                                            </a>
+                                        @endif
                                     @endif
                                 </div>
                             </td>
@@ -409,7 +438,7 @@
                     </div>
 
                     <div class="d-flex justify-content-end">
-                        <a href="{{ route('resep.index') }}" target="_blank" class="btn btn-warning text-dark fw-semibold btn-sm">
+                        <a href="{{ route('resep.index') }}" id="mBtnKelolaResepNoState" target="_blank" class="btn btn-warning text-dark fw-semibold btn-sm">
                             <i class="bi bi-plus-circle me-1"></i> Kelola Formulasi Resep di Menu Resep
                         </a>
                     </div>
@@ -601,6 +630,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('mNoResepHargaTerbaru').textContent = 'Rp ' + Number(rincian ? (rincian.harga_terbaru || 0) : 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
                 document.getElementById('mNoResepHppRef').textContent = 'Rp ' + Number(rincian ? (rincian.hpp_referensi || 0) : 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
                 document.getElementById('mNoResepHppFinal').textContent = 'Rp ' + Number(data.hpp_satuan).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+
+                const btnKelola = document.getElementById('mBtnKelolaResepNoState');
+                if (btnKelola) {
+                    btnKelola.href = "{{ route('resep.index') }}?search=" + encodeURIComponent(data.nama_produk || '');
+                }
             }
 
             modalRincianHpp.show();

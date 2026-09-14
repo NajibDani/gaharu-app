@@ -18,8 +18,9 @@ class StokGudangController extends Controller
         $divisiId    = $request->divisi_id;
         $barangId    = $request->barang_id;
         $jenisBarang = $request->jenis_barang ?? $request->jenis_utama;
-
-        // Auto filter warehouse based on role dihilangkan agar semua user bisa lihat dan filter semua gudang
+        
+        // Auto-heal batch pembelian yang belum terkonversi otomatis tanpa perlu migrasi database
+        MasterBarang::autoHealUnconvertedPembelianBatches();
 
         /*
         |--------------------------------------------------------------------------
@@ -271,6 +272,9 @@ class StokGudangController extends Controller
         $konversiBarang = $barang ? (float)($barang->konversi_pembelian ?: 1.0) : 1.0;
         if ($konversiBarang <= 0) $konversiBarang = 1.0;
 
+        // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
+        MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
+
         $saQty = 0;
         $saNilai = 0;
 
@@ -347,7 +351,7 @@ class StokGudangController extends Controller
 
             if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian', 'pembelian_batal'])) {
                 $pDetailInfo = $this->getPembelianDetailInfo($row, $barangId);
-                $konversiRow = $pDetailInfo['konversi'] ?: $konversiBarang;
+                $konversiRow = (isset($pDetailInfo['konversi']) && $pDetailInfo['konversi'] > 1) ? $pDetailInfo['konversi'] : $konversiBarang;
                 $satBeliRow = $pDetailInfo['satuan_pembelian'] ?: $satuanBeliDefault;
                 $qtyBeliInput = $pDetailInfo['qty_input'];
 
@@ -462,17 +466,23 @@ class StokGudangController extends Controller
             }
         }
 
+        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        $masterKonv = $barang ? (float)($barang->konversi_pembelian ?? 1) : 1.0;
+        $masterSatBeli = $barang ? $barang->satuan_pembelian : null;
+
         if ($pDetail) {
+            $detailKonv = (float) ($pDetail->konversi_pembelian ?? 1);
+            $finalKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
             return [
-                'konversi'          => (float) ($pDetail->konversi_pembelian ?? 1),
-                'satuan_pembelian' => $pDetail->satuan_pembelian,
+                'konversi'          => $finalKonv,
+                'satuan_pembelian' => $pDetail->satuan_pembelian ?: $masterSatBeli,
                 'qty_input'         => (float) ($pDetail->qty ?? 0),
             ];
         }
 
         return [
-            'konversi'          => 1.0,
-            'satuan_pembelian' => null,
+            'konversi'          => $masterKonv > 1 ? $masterKonv : 1.0,
+            'satuan_pembelian' => $masterSatBeli,
             'qty_input'         => 0.0,
         ];
     }
@@ -481,7 +491,7 @@ class StokGudangController extends Controller
     {
         $rawQty = (float) $row->qty;
         $info = $this->getPembelianDetailInfo($row, $barangId);
-        $konversi = $info['konversi'] ?: $konversiDefault;
+        $konversi = ($info['konversi'] > 1) ? $info['konversi'] : $konversiDefault;
         $qtyInput = $info['qty_input'];
 
         if ($konversi > 1 && $qtyInput > 0 && abs($rawQty - $qtyInput) < 0.01) {

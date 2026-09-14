@@ -38,6 +38,9 @@ class PembelianController extends Controller
 
     public function index(Request $request)
     {
+        // Auto-heal batch pembelian yang belum terkonversi otomatis tanpa perlu migrasi database
+        MasterBarang::autoHealUnconvertedPembelianBatches();
+
         $search = $request->query('search');
         $query = Pembelian::with(['supplier', 'gudang', 'user', 'details.barang']);
 
@@ -92,7 +95,9 @@ class PembelianController extends Controller
                 'details'             => $item->details->map(function ($d) {
                     $bItem = $d->barang;
                     $sPembelian = $d->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
-                    $konv = floatval($d->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                    $dKonv = floatval($d->konversi_pembelian ?? 1);
+                    $mKonv = floatval($bItem->konversi_pembelian ?? 1);
+                    $konv = $dKonv > 1 ? $dKonv : ($mKonv > 1 ? $mKonv : 1.0);
                     $sUtama = $bItem->satuan ?? 'Pcs';
                     $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
 
@@ -431,6 +436,13 @@ class PembelianController extends Controller
                 $konversi = $detailKonv > 1 ? $detailKonv : ($barangKonv > 1 ? $barangKonv : 1.0);
                 if ($konversi <= 0) {
                     $konversi = 1.0;
+                }
+
+                if ($detailKonv <= 1 && $konversi > 1) {
+                    $detail->update([
+                        'konversi_pembelian' => $konversi,
+                        'satuan_pembelian'   => $detail->satuan_pembelian ?: ($detail->barang->satuan_pembelian ?? null),
+                    ]);
                 }
 
                 $qtyMasukStok = $qtyBaruInput * $konversi;
@@ -796,10 +808,12 @@ class PembelianController extends Controller
                     }
 
                     $oldDet->update([
-                        'qty'           => $qtyInput,
-                        'qty_diterima'  => $newQtyDiterima,
-                        'harga'         => $hargaInput,
-                        'harga_per_qty' => $hargaPerQty,
+                        'satuan_pembelian'   => $oldDet->satuan_pembelian ?: ($barang->satuan_pembelian ?? null),
+                        'konversi_pembelian' => $konversi,
+                        'qty'                => $qtyInput,
+                        'qty_diterima'       => $newQtyDiterima,
+                        'harga'              => $hargaInput,
+                        'harga_per_qty'      => $hargaPerQty,
                     ]);
 
                     // Update stok_gudang_batch & stok_gudang jika batch sudah dibuat

@@ -580,27 +580,109 @@ class PenjualanPosController extends Controller
 
     /**
      * 4. PROSES APPROVAL: HPP DIHITUNG & STOK BARU TERPOTONG
+     * Jika terdapat item yang belum memiliki resep, item yang berresep tetap disetujui (approved)
+     * sedangkan item tanpa resep dipisahkan ke transaksi Draft baru (-PENDING) sampai resepnya dibuat.
      */
-    public function approve($id)
+    public function approve($id, $isInternal = false)
     {
+        // Pastikan relasi resep ID pada MasterBarang tersinkronisasi
+        MasterBarang::syncAllResepIds();
+        MasterBarang::syncAllResepSatuan();
+
         DB::beginTransaction();
 
         try {
-            $penjualan = PenjualanPos::with('details')->findOrFail($id);
+            $penjualan = PenjualanPos::with(['details.produk'])->findOrFail($id);
 
             if (\App\Models\Journal::isPeriodClosed($penjualan->tanggal)) {
-                return redirect()->route('penjualan_pos.index')->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($penjualan->tanggal)) . ' sudah ditutup buku. Tidak dapat memproses transaksi pada periode yang sudah ditutup.');
+                $msgClosed = 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($penjualan->tanggal)) . ' sudah ditutup buku. Tidak dapat memproses transaksi pada periode yang sudah ditutup.';
+                if ($isInternal) {
+                    DB::rollBack();
+                    return ['status' => 'error', 'message' => $msgClosed];
+                }
+                return redirect()->route('penjualan_pos.index')->with('error', $msgClosed);
             }
 
             if ($penjualan->status !== 'Draft') {
-                return redirect()->route('penjualan_pos.index')->with('error', 'Transaksi ini sudah pernah diproses sebelumnya.');
+                $msgNotDraft = 'Transaksi ini sudah pernah diproses sebelumnya.';
+                if ($isInternal) {
+                    DB::rollBack();
+                    return ['status' => 'error', 'message' => $msgNotDraft];
+                }
+                return redirect()->route('penjualan_pos.index')->with('error', $msgNotDraft);
+            }
+
+            // Klasifikasikan item yang berresep vs belum berresep
+            $itemsWithRecipe = collect();
+            $itemsWithoutRecipe = collect();
+
+            foreach ($penjualan->details as $detail) {
+                $barang = $detail->produk;
+                $hasRecipe = $barang ? $barang->hasResep() : false;
+                if ($hasRecipe) {
+                    $itemsWithRecipe->push($detail);
+                } else {
+                    $itemsWithoutRecipe->push($detail);
+                }
+            }
+
+            // Jika SEMUA item belum memiliki resep
+            if ($itemsWithRecipe->isEmpty()) {
+                DB::rollBack();
+                $msgNoRecipe = 'Transaksi tidak dapat disetujui karena seluruh item di dalamnya belum memiliki resep. Silakan lengkapi formulasi resep terlebih dahulu.';
+                if ($isInternal) {
+                    return [
+                        'status'         => 'all_no_recipe',
+                        'message'        => $msgNoRecipe,
+                        'penjualan_id'   => $penjualan->id,
+                        'kode_transaksi' => $penjualan->kode_transaksi
+                    ];
+                }
+                return redirect()->route('penjualan_pos.show', $penjualan->id)->with('error', $msgNoRecipe);
             }
 
             $kodePos = $penjualan->kode_transaksi;
             $tanggalTrans = $penjualan->tanggal;
             $gudangId = $penjualan->gudang_id;
 
-            // -- A. Hitung total kebutuhan bahan baku
+            // Jika ada item yang belum memiliki resep, pisahkan ke transaksi Draft baru (tertinggal)
+            $pendingPenjualan = null;
+            $pendingCode = null;
+
+            if ($itemsWithoutRecipe->isNotEmpty()) {
+                $basePendingCode = $kodePos . '-PENDING';
+                $pendingCode = $basePendingCode;
+                $cnt = 1;
+                while (PenjualanPos::where('kode_transaksi', $pendingCode)->exists()) {
+                    $pendingCode = $basePendingCode . '-' . $cnt;
+                    $cnt++;
+                }
+
+                $totalPending = $itemsWithoutRecipe->sum(function($item) {
+                    return floatval($item->subtotal);
+                });
+
+                $pendingPenjualan = PenjualanPos::create([
+                    'kode_transaksi' => $pendingCode,
+                    'tanggal'        => $penjualan->tanggal,
+                    'gudang_id'      => $penjualan->gudang_id,
+                    'total'          => $totalPending,
+                    'status'         => 'Draft',
+                    'created_by'     => $penjualan->created_by ?? (auth()->id() ?? 1),
+                ]);
+
+                foreach ($itemsWithoutRecipe as $detailNoRecipe) {
+                    $detailNoRecipe->update(['penjualan_id' => $pendingPenjualan->id]);
+                }
+
+                // Perbarui total transaksi asal menjadi hanya total dari item yang berresep
+                $totalApproved = $itemsWithRecipe->sum(function($item) {
+                    return floatval($item->subtotal);
+                });
+                $penjualan->update(['total' => $totalApproved]);
+            }
+
+            // -- A. Hitung total kebutuhan bahan baku (hanya untuk item yang berresep)
             $totalKebutuhanBahan = [];
 
             // Helper function to resolve ingredients recursively
@@ -688,7 +770,7 @@ class PenjualanPosController extends Controller
                 }
             };
 
-            foreach ($penjualan->details as $detail) {
+            foreach ($itemsWithRecipe as $detail) {
                 $qtyTerjual = floatval($detail->qty);
                 $produkId = $detail->produk_id;
 
@@ -715,7 +797,7 @@ class PenjualanPosController extends Controller
                 }
             }
 
-            // -- B. Potong Stok & Hitung FIFO (Logika yang sama seperti Central Kitchen: jika stok kurang, gunakan harga terbaru gudang)
+            // -- B. Potong Stok & Hitung FIFO
             $fifoService = app(\App\Services\FifoService::class);
 
             $pengeluaranId = DB::table('pengeluaran_bahan_baku')->insertGetId([
@@ -788,7 +870,7 @@ class PenjualanPosController extends Controller
                 $mapHppBahanAvg[$bahanId] = $avgHppSatuan;
             }
 
-            // -- C. Update HPP ke Detail Transaksi
+            // -- C. Update HPP ke Detail Transaksi (hanya untuk item yang berresep)
             $getHppForBarang = function($barangId) use (&$getHppForBarang, &$mapHppBahanAvg, $fifoService, $gudangId) {
                 if (isset($mapHppBahanAvg[$barangId])) {
                     return $mapHppBahanAvg[$barangId];
@@ -831,7 +913,7 @@ class PenjualanPosController extends Controller
                 return $hppRef;
             };
 
-            foreach ($penjualan->details as $detail) {
+            foreach ($itemsWithRecipe as $detail) {
                 $qtyTerjual = floatval($detail->qty);
                 $produkId = $detail->produk_id;
     
@@ -860,7 +942,6 @@ class PenjualanPosController extends Controller
                     $totalBtklBop = $totalHppBahan * 0.30;
                     $hppSatuanProduk = $totalHppBahan + $totalBtklBop; // BBB + 30% (BTKL & BOP)
                 } else {
-                    // Menu belum memiliki resep: ambil harga terbaru di gudang transaksi POS, fallback ke referensi
                     $hppTerbaru = $fifoService->getHargaTerakhirBahan($produkId, $gudangId);
                     $hppSatuanProduk = $hppTerbaru > 0 ? $hppTerbaru : ($barangJadi ? floatval($barangJadi->hpp_referensi) : 0);
                 }
@@ -876,13 +957,71 @@ class PenjualanPosController extends Controller
             \App\Http\Controllers\JurnalController::autoPostPenjualanPos($penjualan->id);
             
             DB::commit();
-            return redirect()->route('penjualan_pos.index')->with('success', 'Transaksi berhasil di-Approve! Stok terpotong dan jurnal telah terposting secara otomatis.');
+
+            $msgSuccess = 'Transaksi berhasil di-Approve! Stok terpotong dan jurnal telah terposting secara otomatis.';
+            if ($pendingPenjualan) {
+                $msgSuccess = "Transaksi {$kodePos} berhasil di-Approve untuk " . $itemsWithRecipe->count() . " item yang berresep! Sebanyak " . $itemsWithoutRecipe->count() . " item yang belum memiliki resep otomatis dipisahkan ke transaksi Draft baru ({$pendingCode}) sampai resepnya dibuat.";
+            }
+
+            if ($isInternal) {
+                return [
+                    'status'         => 'success',
+                    'has_pending'    => !is_null($pendingPenjualan),
+                    'pending_code'   => $pendingCode,
+                    'pending_id'     => $pendingPenjualan ? $pendingPenjualan->id : null,
+                    'approved_count' => $itemsWithRecipe->count(),
+                    'pending_count'  => $itemsWithoutRecipe->count(),
+                    'message'        => $msgSuccess,
+                ];
+            }
+
+            return redirect()->route('penjualan_pos.index')->with('success', $msgSuccess);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error Approve POS: ' . $e->getMessage());
+            if ($isInternal) {
+                return ['status' => 'error', 'message' => $e->getMessage()];
+            }
             return back()->with('error', 'Gagal approve transaksi: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Refresh Resep & Status Komponen HPP untuk Transaksi Draft
+     */
+    public function refreshResep($id)
+    {
+        $penjualan = PenjualanPos::with('details.produk')->findOrFail($id);
+
+        if ($penjualan->status !== 'Draft') {
+            return redirect()->route('penjualan_pos.show', $id)
+                ->with('info', 'Transaksi ini telah berstatus Approved/VOID, data resep tidak dapat diubah.');
+        }
+
+        // Sinkronkan seluruh resep ID pada Master Barang
+        MasterBarang::syncAllResepIds();
+        MasterBarang::syncAllResepSatuan();
+
+        $totalItems = $penjualan->details->count();
+        $withRecipeCount = 0;
+        $withoutRecipeCount = 0;
+
+        foreach ($penjualan->details as $detail) {
+            $barang = MasterBarang::find($detail->produk_id);
+            if ($barang && $barang->hasResep()) {
+                $withRecipeCount++;
+            } else {
+                $withoutRecipeCount++;
+            }
+        }
+
+        $msg = "Halaman rincian berhasil diperbarui! Dari {$totalItems} item produk, {$withRecipeCount} item telah memiliki resep lengkap.";
+        if ($withoutRecipeCount > 0) {
+            $msg .= " Masih terdapat {$withoutRecipeCount} item yang belum memiliki resep (item ini akan otomatis tertinggal sebagai Draft saat di-Approve).";
+        }
+
+        return redirect()->route('penjualan_pos.show', $id)->with('success', $msg);
     }
 
     /**
@@ -1264,7 +1403,13 @@ class PenjualanPosController extends Controller
                     }
 
                     DB::commit();
-                    $this->approve($penjualan->id);
+                    $approveRes = $this->approve($penjualan->id, true);
+
+                    if (is_array($approveRes) && $approveRes['status'] === 'all_no_recipe') {
+                        return redirect()->route('penjualan_pos.index')->with('warning', "Import Ringkasan Moka POS untuk Outlet [{$gudangNama}] berhasil diunggah sebagai Draft (Kode: {$receiptCode})! Transaksi belum di-Approve karena semua item belum memiliki formulasi resep. Silakan buat resep produk terkait, lalu lakukan Approve.");
+                    } elseif (is_array($approveRes) && !empty($approveRes['has_pending'])) {
+                        return redirect()->route('penjualan_pos.index')->with('success', "Import Ringkasan Moka POS untuk Outlet [{$gudangNama}] berhasil! Transaksi (Kode: {$receiptCode}) untuk item berresep telah di-Approve dan stok FIFO terpotong. Sisa item yang belum berresep otomatis dipisahkan ke transaksi Draft baru ({$approveRes['pending_code']}).");
+                    }
 
                     return redirect()->route('penjualan_pos.index')->with('success', "Import Ringkasan Moka POS untuk Outlet [{$gudangNama}] berhasil! Transaksi (Kode: {$receiptCode}) tanggal " . date('d/m/Y', strtotime($selectedDate)) . " berhasil dibuat, persediaan FIFO di [{$gudangNama}] terpotong, dan jurnal akuntansi telah diposting.");
                 } catch (\Exception $e) {
@@ -1376,7 +1521,7 @@ class PenjualanPosController extends Controller
                         }
 
                         DB::commit();
-                        $this->approve($penjualan->id);
+                        $this->approve($penjualan->id, true);
                         $successCount++;
                     } catch (\Exception $e) {
                         DB::rollBack();
