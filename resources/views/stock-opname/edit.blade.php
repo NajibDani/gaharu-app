@@ -33,6 +33,7 @@
 
         <input type="hidden" id="gudang_id" name="gudang_id" value="{{ $gudang->id }}">
         <input type="hidden" id="divisi_id" name="divisi_id" value="{{ $divisiId ?? '' }}">
+        <input type="hidden" id="items_json" name="items_json" value="">
 
         <div class="row mb-4">
             <div class="col-md-3">
@@ -291,11 +292,107 @@ function loadBarang() {
         currentPage = 1;
         renderPagination();
         hitungGrandTotal();
+
+        checkLocalStorageCache();
     })
     .catch(function(error) {
         console.error(error);
         alert('Gagal memuat data barang');
     });
+}
+
+const storageKey = 'so_cache_edit_{{ $opname->id }}';
+
+function saveCache() {
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(userValues));
+    } catch(e) {}
+}
+
+function clearCache() {
+    try {
+        localStorage.removeItem(storageKey);
+    } catch(e) {}
+}
+
+function checkLocalStorageCache() {
+    try {
+        let cached = localStorage.getItem(storageKey);
+        if (!cached) return;
+
+        let parsed = JSON.parse(cached);
+        let hasDifference = false;
+
+        Object.keys(parsed).forEach(bId => {
+            if (userValues[bId] && parsed[bId].stok_fisik !== undefined) {
+                if (parseFloat(parsed[bId].stok_fisik) !== parseFloat(userValues[bId].stok_fisik)) {
+                    hasDifference = true;
+                }
+            }
+        });
+
+        if (hasDifference) {
+            let banner = document.getElementById('restoreBanner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'restoreBanner';
+                banner.className = 'alert alert-info alert-dismissible fade show d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 shadow-sm';
+                banner.innerHTML = `
+                    <div>
+                        <i class="bi bi-clock-history text-primary me-2 fs-5 align-middle"></i>
+                        <strong>Ditemukan data input sementara di browser Anda dari sesi sebelumnya.</strong>
+                        <span class="d-block small text-muted">Apakah Anda ingin memulihkan angka perhitungan fisik yang belum sempat tersimpan?</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-primary fw-semibold" onclick="restoreFromCache()">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Pulihkan Input Saya
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="discardCache()">
+                            Abaikan & Hapus Cache
+                        </button>
+                    </div>
+                `;
+                let form = document.getElementById('formOpname');
+                if (form) {
+                    form.insertBefore(banner, form.firstChild);
+                }
+            }
+        }
+    } catch(e) {
+        console.error(e);
+    }
+}
+
+function restoreFromCache() {
+    try {
+        let cached = localStorage.getItem(storageKey);
+        if (!cached) return;
+
+        let parsed = JSON.parse(cached);
+        Object.keys(parsed).forEach(bId => {
+            if (userValues[bId] && parsed[bId].stok_fisik !== undefined) {
+                userValues[bId].stok_fisik = parseFloat(parsed[bId].stok_fisik);
+                userValues[bId].selisih = userValues[bId].stok_fisik - userValues[bId].stok_sistem;
+                userValues[bId].nilai = parseFloat(parsed[bId].nilai || 0);
+            }
+        });
+
+        renderPagination();
+        hitungGrandTotal();
+
+        let banner = document.getElementById('restoreBanner');
+        if (banner) banner.remove();
+
+        alert('Data input perhitungan fisik berhasil dipulihkan ke tabel!');
+    } catch(e) {
+        console.error(e);
+    }
+}
+
+function discardCache() {
+    clearCache();
+    let banner = document.getElementById('restoreBanner');
+    if (banner) banner.remove();
 }
 
 function applyFilters() {
@@ -511,29 +608,47 @@ function renderPagination() {
 }
 
 function renderHiddenInputsContainer() {
-    let container = document.getElementById('hiddenSubmitContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'hiddenSubmitContainer';
-        container.style.display = 'none';
-        document.getElementById('formOpname').appendChild(container);
-    }
-
-    let html = '';
-    rawItems.forEach(item => {
-        let uv = userValues[item.id] || { stok_fisik: parseFloat(item.stok || 0), stok_sistem: parseFloat(item.stok || 0) };
-        let stokSistem = uv.stok_sistem !== undefined ? uv.stok_sistem : parseFloat(item.stok || 0);
-        html += `
-            <input type="hidden" name="barang_id[]" value="${item.id}">
-            <input type="hidden" name="stok_sistem[]" value="${stokSistem}">
-            <input type="hidden" name="stok_fisik[]" id="hidden_fisik_${item.id}" value="${uv.stok_fisik}">
-        `;
-    });
-    container.innerHTML = html;
+    // Digantikan dengan items_json pada submit event untuk menghindari batasan PHP max_input_vars (1000 variabel)
 }
 
 document.addEventListener('DOMContentLoaded', function(){
     loadBarang();
+
+    const formOpname = document.getElementById('formOpname');
+    if (formOpname) {
+        formOpname.addEventListener('submit', function(e) {
+            if (rawItems.length === 0) {
+                e.preventDefault();
+                alert('Data barang belum selesai dimuat atau kosong.');
+                return;
+            }
+
+            let submitBtn = this.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Menyimpan Perubahan...';
+            }
+
+            let itemsData = rawItems.map(item => {
+                let uv = userValues[item.id] || { 
+                    stok_fisik: parseFloat(item.stok || 0), 
+                    stok_sistem: parseFloat(item.stok || 0) 
+                };
+                let stokSistem = uv.stok_sistem !== undefined ? uv.stok_sistem : parseFloat(item.stok || 0);
+                let stokFisik = parseFloat(uv.stok_fisik);
+                if (isNaN(stokFisik)) stokFisik = 0;
+
+                return {
+                    barang_id: item.id,
+                    stok_sistem: stokSistem,
+                    stok_fisik: stokFisik
+                };
+            });
+
+            document.getElementById('items_json').value = JSON.stringify(itemsData);
+            clearCache();
+        });
+    }
 });
 
 document.addEventListener('input', function(e){
@@ -556,6 +671,8 @@ document.addEventListener('input', function(e){
     userValues[barangId].stok_fisik = stokFisik;
     userValues[barangId].stok_sistem = stokSistem;
     userValues[barangId].selisih = selisih;
+
+    saveCache();
 
     let konvFisikEl = document.getElementById(`konv_fisik_${barangId}`);
     if (konvFisikEl && satuanBeli && konversi > 1) {

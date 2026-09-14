@@ -211,9 +211,6 @@ class StockOpnameController extends Controller
             'gudang_id'   => 'required',
             'divisi_id'   => 'nullable|exists:gudang_divisi,id',
             'tanggal'     => 'nullable|date',
-            'barang_id'   => 'required|array',
-            'stok_sistem' => 'required|array',
-            'stok_fisik'  => 'required|array',
         ]);
 
         $gudang = MasterGudang::with('divisi')->find($request->gudang_id);
@@ -225,6 +222,27 @@ class StockOpnameController extends Controller
 
         if (\App\Models\Journal::isPeriodClosed($tanggal)) {
             return back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku. Tidak dapat membuat Stock Opname pada periode yang sudah ditutup.'])->withInput();
+        }
+
+        // Ambil data item baik dari items_json (bebas batasan PHP max_input_vars) atau array fallback
+        $items = [];
+        if ($request->filled('items_json')) {
+            $decoded = json_decode($request->items_json, true);
+            if (is_array($decoded)) {
+                $items = $decoded;
+            }
+        } elseif ($request->has('barang_id') && is_array($request->barang_id)) {
+            foreach ($request->barang_id as $index => $barangId) {
+                $items[] = [
+                    'barang_id'   => $barangId,
+                    'stok_sistem' => $request->stok_sistem[$index] ?? 0,
+                    'stok_fisik'  => $request->stok_fisik[$index] ?? 0,
+                ];
+            }
+        }
+
+        if (empty($items)) {
+            return back()->with('error', 'Tidak ada data barang yang disimpan. Silakan periksa kembali daftar barang opname.')->withInput();
         }
 
         DB::beginTransaction();
@@ -240,9 +258,10 @@ class StockOpnameController extends Controller
                 'created_by'  => Auth::id(),
             ]);
 
-            foreach ($request->barang_id as $index => $barangId) {
-                $stokSistem   = (float) $request->stok_sistem[$index];
-                $stokFisik    = (float) $request->stok_fisik[$index];
+            foreach ($items as $item) {
+                $barangId     = $item['barang_id'];
+                $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
+                $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
                 $selisih      = $stokFisik - $stokSistem;
                 $nilaiSelisih = $this->hitungNilaiFIFO(
                     $request->gudang_id,
@@ -742,19 +761,37 @@ class StockOpnameController extends Controller
                 ->with('error', 'Stock Opname yang sudah diapprove tidak dapat diubah.');
         }
 
-        // Jika form berasal dari edit lengkap (ada array barang_id)
-        if ($request->has('barang_id')) {
+        // Jika form berasal dari edit lengkap (via items_json atau array barang_id)
+        if ($request->filled('items_json') || $request->has('barang_id')) {
             $request->validate([
-                'tanggal'     => 'required|date',
-                'barang_id'   => 'required|array',
-                'stok_sistem' => 'required|array',
-                'stok_fisik'  => 'required|array',
+                'tanggal' => 'required|date',
             ]);
 
             $tanggal = date('Y-m-d', strtotime($request->tanggal));
 
             if (\App\Models\Journal::isPeriodClosed($tanggal)) {
                 return back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku.'])->withInput();
+            }
+
+            // Ambil data item baik dari items_json (bebas batasan PHP max_input_vars) atau array fallback
+            $items = [];
+            if ($request->filled('items_json')) {
+                $decoded = json_decode($request->items_json, true);
+                if (is_array($decoded)) {
+                    $items = $decoded;
+                }
+            } elseif ($request->has('barang_id') && is_array($request->barang_id)) {
+                foreach ($request->barang_id as $index => $barangId) {
+                    $items[] = [
+                        'barang_id'   => $barangId,
+                        'stok_sistem' => $request->stok_sistem[$index] ?? 0,
+                        'stok_fisik'  => $request->stok_fisik[$index] ?? 0,
+                    ];
+                }
+            }
+
+            if (empty($items)) {
+                return back()->with('error', 'Tidak ada data barang yang disimpan. Silakan periksa kembali formulir opname.')->withInput();
             }
 
             DB::beginTransaction();
@@ -768,9 +805,10 @@ class StockOpnameController extends Controller
                 // Hapus detail lama dan perbarui dengan detail terbaru
                 StockOpnameDetail::where('stock_opname_id', $opname->id)->delete();
 
-                foreach ($request->barang_id as $index => $barangId) {
-                    $stokSistem   = (float) $request->stok_sistem[$index];
-                    $stokFisik    = (float) $request->stok_fisik[$index];
+                foreach ($items as $item) {
+                    $barangId     = $item['barang_id'];
+                    $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
+                    $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
                     $selisih      = $stokFisik - $stokSistem;
                     $nilaiSelisih = $this->hitungNilaiFIFO(
                         $opname->gudang_id,

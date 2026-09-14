@@ -51,6 +51,12 @@
         name="divisi_id"
         value="{{ $divisiId ?? '' }}">
 
+    <input
+        type="hidden"
+        id="items_json"
+        name="items_json"
+        value="">
+
 <div class="row mb-4">
 
     <div class="col-md-3">
@@ -628,31 +634,47 @@ function renderPagination() {
     renderHiddenInputsContainer();
 }
 
-// Container tersembunyi agar form selalu submit SEMUA barang (semua halaman) ke backend Laravel
+// Container tersembunyi digantikan dengan items_json pada submit event untuk menghindari batasan PHP max_input_vars (1000 variabel)
 function renderHiddenInputsContainer() {
-    let container = document.getElementById('hiddenSubmitContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'hiddenSubmitContainer';
-        container.style.display = 'none';
-        document.getElementById('formOpname').appendChild(container);
-    }
-
-    let html = '';
-    rawItems.forEach(item => {
-        let uv = userValues[item.id] || { stok_fisik: parseFloat(item.stok || 0) };
-        let stokSistem = parseFloat(item.stok || 0);
-        html += `
-            <input type="hidden" name="barang_id[]" value="${item.id}">
-            <input type="hidden" name="stok_sistem[]" value="${stokSistem}">
-            <input type="hidden" name="stok_fisik[]" id="hidden_fisik_${item.id}" value="${uv.stok_fisik}">
-        `;
-    });
-    container.innerHTML = html;
+    // Tidak lagi membuat ribuan elemen hidden input ke DOM
 }
 
 document.addEventListener('DOMContentLoaded', function(){
     loadBarang();
+
+    const formOpname = document.getElementById('formOpname');
+    if (formOpname) {
+        formOpname.addEventListener('submit', function(e) {
+            if (rawItems.length === 0) {
+                e.preventDefault();
+                alert('Data barang belum selesai dimuat atau kosong.');
+                return;
+            }
+
+            let submitBtn = this.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Menyimpan Draft...';
+            }
+
+            let itemsData = rawItems.map(item => {
+                let uv = userValues[item.id] || { 
+                    stok_fisik: parseFloat(item.stok || 0) 
+                };
+                let stokSistem = parseFloat(item.stok || 0);
+                let stokFisik = parseFloat(uv.stok_fisik);
+                if (isNaN(stokFisik)) stokFisik = 0;
+
+                return {
+                    barang_id: item.id,
+                    stok_sistem: stokSistem,
+                    stok_fisik: stokFisik
+                };
+            });
+
+            document.getElementById('items_json').value = JSON.stringify(itemsData);
+        });
+    }
 });
 
 document.addEventListener('input', function(e){
