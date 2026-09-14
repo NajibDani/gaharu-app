@@ -257,8 +257,9 @@ class PenjualanPosController extends Controller
                         $sumberHarga = 'HPP Referensi';
                     }
 
+                    // Qty bahan resep POS adalah takaran kebutuhan per 1 unit porsi menu terjual
                     $subtotal = $qtyBahan * $hargaBahan;
-                    $biayaPerUnit = ($qtyBahan / $outputQty) * $hargaBahan;
+                    $biayaPerUnit = $subtotal;
                     $totalBiayaBahan += $biayaPerUnit;
 
                     $rincianBahan[] = [
@@ -281,19 +282,26 @@ class PenjualanPosController extends Controller
             $hargaTerbaruProduk = $d->produk ? $fifoService->getHargaTerakhirBahan($d->produk->id, $gudangId) : 0;
             $hppRefProduk = $d->produk ? floatval($d->produk->hpp_referensi ?? 0) : 0;
 
+            // Perhitungkan persentase BOP & BTKL (total 30% dari Biaya Bahan Baku)
+            $totalBtklBop = $totalBiayaBahan * 0.30;
+            $totalHppProduk = $totalBiayaBahan + $totalBtklBop;
+
             $d->rincian_hpp = [
-                'has_resep'         => $hasResep,
-                'resep_id'          => $resep ? $resep->id : null,
-                'output_qty'        => $outputQty,
-                'satuan_output'     => $satuanOutput,
-                'bahan'             => $rincianBahan,
-                'total_biaya_bahan' => $totalBiayaBahan,
-                'harga_terbaru'     => $hargaTerbaruProduk,
-                'hpp_referensi'     => $hppRefProduk,
+                'has_resep'           => $hasResep,
+                'resep_id'            => $resep ? $resep->id : null,
+                'output_qty'          => $outputQty,
+                'satuan_output'       => $satuanOutput,
+                'bahan'               => $rincianBahan,
+                'total_biaya_bahan'   => $totalBiayaBahan,
+                'persentase_btkl_bop' => 30,
+                'total_btkl_bop'      => $totalBtklBop,
+                'total_hpp'           => $totalHppProduk,
+                'harga_terbaru'       => $hargaTerbaruProduk,
+                'hpp_referensi'       => $hppRefProduk,
             ];
 
             if (($d->hpp_satuan === null || floatval($d->hpp_satuan) <= 0) && $d->produk) {
-                $d->estimated_hpp = $totalBiayaBahan > 0 ? $totalBiayaBahan : ($hargaTerbaruProduk > 0 ? $hargaTerbaruProduk : $hppRefProduk);
+                $d->estimated_hpp = $totalHppProduk > 0 ? $totalHppProduk : ($hargaTerbaruProduk > 0 ? $hargaTerbaruProduk : $hppRefProduk);
             } else {
                 $d->estimated_hpp = floatval($d->hpp_satuan);
             }
@@ -698,12 +706,9 @@ class PenjualanPosController extends Controller
                 if ($resepUtama) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
                     if ($resepBahan->count() > 0) {
-                        $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
-                        $multiplier = $qtyTerjual / $outputQty;
-
                         foreach ($resepBahan as $bahan) {
                             $kebutuhanPerPcs = floatval($bahan->qty_bahan);
-                            $butuh = $kebutuhanPerPcs * $multiplier;
+                            $butuh = $kebutuhanPerPcs * $qtyTerjual;
                             $resolveBahan($bahan->bahan_id, $butuh);
                         }
                     }
@@ -847,13 +852,13 @@ class PenjualanPosController extends Controller
                 $resepBahan = $resepUtama ? DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get() : collect();
 
                 if ($resepUtama && $resepBahan->count() > 0) {
-                    $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                         $hppBahanIni = $getHppForBarang($bahan->bahan_id);
-                        $totalHppBahan += (($kebutuhanPerPcs * $hppBahanIni) / $outputQty);
+                        $totalHppBahan += ($kebutuhanPerPcs * $hppBahanIni);
                     }
-                    $hppSatuanProduk = $totalHppBahan; // BBB
+                    $totalBtklBop = $totalHppBahan * 0.30;
+                    $hppSatuanProduk = $totalHppBahan + $totalBtklBop; // BBB + 30% (BTKL & BOP)
                 } else {
                     // Menu belum memiliki resep: ambil harga terbaru di gudang transaksi POS, fallback ke referensi
                     $hppTerbaru = $fifoService->getHargaTerakhirBahan($produkId, $gudangId);

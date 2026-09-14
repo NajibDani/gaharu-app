@@ -343,10 +343,20 @@
                             <tbody id="mTbodyBahan">
                                 <!-- Dynamic rows -->
                             </tbody>
-                            <tfoot class="table-light fw-bold">
+                            <tfoot class="table-light">
                                 <tr>
-                                    <td colspan="4" class="text-end ps-3">Total Biaya Bahan Baku (HPP / Unit):</td>
-                                    <td class="text-end text-success" id="mTotalBiayaBahan">Rp 0</td>
+                                    <td colspan="4" class="text-end ps-3 fw-semibold text-muted">Biaya Bahan Baku (BBB):</td>
+                                    <td class="text-end fw-bold text-dark" id="mTotalBiayaBahan">Rp 0</td>
+                                    <td class="pe-3"></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="text-end ps-3 fw-semibold text-muted">Biaya Tenaga Kerja & Overhead (BTKL & BOP 30%):</td>
+                                    <td class="text-end fw-bold text-primary" id="mTotalBtklBop">Rp 0</td>
+                                    <td class="pe-3"></td>
+                                </tr>
+                                <tr class="table-warning table-opacity-25 border-top border-2">
+                                    <td colspan="4" class="text-end ps-3 fw-bold text-dark fs-6">Total HPP / Unit (BBB + BTKL/BOP):</td>
+                                    <td class="text-end fw-bold text-success fs-6" id="mGrandTotalHppUnit">Rp 0</td>
                                     <td class="pe-3"></td>
                                 </tr>
                             </tfoot>
@@ -519,7 +529,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 stateHasResep.classList.remove('d-none');
                 stateNoResep.classList.add('d-none');
 
-                document.getElementById('mInfoOutputResep').textContent = 'Output: ' + Number(rincian.output_qty).toLocaleString('id-ID') + ' ' + (rincian.satuan_output || 'Porsi');
+                document.getElementById('mInfoOutputResep').textContent = 'Kebutuhan Resep per 1 ' + (rincian.satuan_output || 'Porsi');
 
                 const tbody = document.getElementById('mTbodyBahan');
                 tbody.innerHTML = '';
@@ -562,10 +572,20 @@ document.addEventListener('DOMContentLoaded', function () {
                     tbody.appendChild(tr);
                 });
 
-                document.getElementById('mTotalBiayaBahan').textContent = 'Rp ' + Number(rincian.total_biaya_bahan).toLocaleString('id-ID', { maximumFractionDigits: 2 });
-                const totalHppDetail = data.qty_terjual * data.hpp_satuan;
+                const totalBbb = Number(rincian.total_biaya_bahan || 0);
+                const totalBtklBop = Number(rincian.total_btkl_bop || (totalBbb * 0.3));
+                const totalHppPerUnit = Number(rincian.total_hpp || (totalBbb + totalBtklBop));
+
+                document.getElementById('mTotalBiayaBahan').textContent = 'Rp ' + totalBbb.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+                document.getElementById('mTotalBtklBop').textContent = 'Rp ' + totalBtklBop.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+                document.getElementById('mGrandTotalHppUnit').textContent = 'Rp ' + totalHppPerUnit.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+
+                const hppPerUnitFinal = data.hpp_satuan > 0 ? data.hpp_satuan : totalHppPerUnit;
+                document.getElementById('mInfoHppUnit').textContent = 'Rp ' + Number(hppPerUnitFinal).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+
+                const totalHppDetail = data.qty_terjual * hppPerUnitFinal;
                 document.getElementById('mTotalHppDetail').textContent = 'Rp ' + Number(totalHppDetail).toLocaleString('id-ID', { maximumFractionDigits: 2 });
-                document.getElementById('mFormulaDetail').textContent = `(${Number(data.qty_terjual).toLocaleString('id-ID')} x Rp ${Number(data.hpp_satuan).toLocaleString('id-ID')})`;
+                document.getElementById('mFormulaDetail').textContent = `(${Number(data.qty_terjual).toLocaleString('id-ID')} x Rp ${Number(hppPerUnitFinal).toLocaleString('id-ID', { maximumFractionDigits: 2 })})`;
 
                 const linkResep = document.getElementById('mBtnLinkResep');
                 if (rincian.resep_id) {
