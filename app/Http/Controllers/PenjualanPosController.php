@@ -188,7 +188,7 @@ class PenjualanPosController extends Controller
     public function show($id) 
     {
         $penjualan = PenjualanPos::with([
-            'details.produk.resepBtklBop.bahanbaku',
+            'details.produk.resepBtklBop.bahanbaku.bahan',
             'creator',
             'pembayaran',
             'gudang'
@@ -201,48 +201,85 @@ class PenjualanPosController extends Controller
             $hasResep = $d->produk ? $d->produk->hasResep() : false;
             $d->has_resep = $hasResep;
 
+            // Ambil resep produk
+            $resep = null;
+            if ($d->produk) {
+                $resep = $d->produk->resepBtklBop;
+                if (!$resep && $d->produk->resep_id) {
+                    $resep = \App\Models\ResepBtklBop::with('bahanbaku.bahan')->find($d->produk->resep_id);
+                }
+            }
+
+            $rincianBahan = [];
+            $totalBiayaBahan = 0;
+            $outputQty = 1.0;
+            $satuanOutput = 'Porsi';
+
+            if ($resep && $resep->bahanbaku && $resep->bahanbaku->count() > 0) {
+                $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                $satuanOutput = $resep->satuan_output ?: ($d->produk->satuan ?? 'Porsi');
+
+                foreach ($resep->bahanbaku as $item) {
+                    $qtyBahan = floatval($item->qty_bahan);
+                    $hargaBahan = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangId);
+                    $sumberHarga = 'Stok / Pembelian Gudang';
+                    if ($hargaBahan <= 0) {
+                        $hargaBahan = (float) ($item->bahan->hpp_referensi ?? 0);
+                        $sumberHarga = 'HPP Referensi';
+                    }
+
+                    $subtotal = $qtyBahan * $hargaBahan;
+                    $biayaPerUnit = ($qtyBahan / $outputQty) * $hargaBahan;
+                    $totalBiayaBahan += $biayaPerUnit;
+
+                    $rincianBahan[] = [
+                        'bahan_id'       => $item->bahan_id,
+                        'nama_bahan'     => $item->bahan->nama ?? 'Bahan',
+                        'kode_bahan'     => $item->bahan->kode_barang ?? '-',
+                        'is_bsj'         => (bool) ($item->bahan->is_bahan_setengah_jadi ?? false),
+                        'qty_resep'      => $qtyBahan,
+                        'satuan'         => $item->satuan ?: ($item->bahan->satuan ?? '-'),
+                        'harga_satuan'   => $hargaBahan,
+                        'subtotal'       => $subtotal,
+                        'biaya_per_unit' => $biayaPerUnit,
+                        'sumber_harga'   => $sumberHarga,
+                    ];
+                }
+            }
+
+            $hargaTerbaruProduk = $d->produk ? $fifoService->getHargaTerakhirBahan($d->produk->id, $gudangId) : 0;
+            $hppRefProduk = $d->produk ? floatval($d->produk->hpp_referensi ?? 0) : 0;
+
+            $d->rincian_hpp = [
+                'has_resep'         => $hasResep,
+                'resep_id'          => $resep ? $resep->id : null,
+                'output_qty'        => $outputQty,
+                'satuan_output'     => $satuanOutput,
+                'bahan'             => $rincianBahan,
+                'total_biaya_bahan' => $totalBiayaBahan,
+                'harga_terbaru'     => $hargaTerbaruProduk,
+                'hpp_referensi'     => $hppRefProduk,
+            ];
+
             if (($d->hpp_satuan === null || floatval($d->hpp_satuan) <= 0) && $d->produk) {
-                $d->estimated_hpp = $this->calculateEstimatedHppProduk($d->produk, $gudangId, $fifoService);
+                $d->estimated_hpp = $totalBiayaBahan > 0 ? $totalBiayaBahan : ($hargaTerbaruProduk > 0 ? $hargaTerbaruProduk : $hppRefProduk);
             } else {
                 $d->estimated_hpp = floatval($d->hpp_satuan);
             }
         }
 
-        return view('penjualan_pos.show', compact('penjualan'));
-    }
+        $rincianHppPayload = $penjualan->details->mapWithKeys(function($d) use ($penjualan) {
+            return [$d->id => [
+                'nama_produk' => $d->produk->nama ?? 'Item',
+                'kode_produk' => $d->produk->kode_barang ?? '-',
+                'qty_terjual' => floatval($d->qty),
+                'hpp_satuan'  => floatval(($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0 ? $d->hpp_satuan : ($d->estimated_hpp ?? 0)),
+                'rincian'     => $d->rincian_hpp ?? null,
+            ]];
+        });
+        $rincianHppJson = json_encode($rincianHppPayload);
 
-    /**
-     * Hitung estimasi HPP per unit produk (termasuk fallback ke harga gudang terbaru)
-     */
-    private function calculateEstimatedHppProduk($produk, $gudangId, $fifoService)
-    {
-        $resep = null;
-        if ($produk->resepBtklBop) {
-            $resep = $produk->resepBtklBop;
-        } elseif ($produk->resep_id) {
-            $resep = \App\Models\ResepBtklBop::with('bahanbaku')->find($produk->resep_id);
-        }
-
-        if ($resep && $resep->bahanbaku && $resep->bahanbaku->count() > 0) {
-            $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
-            $totalHpp = 0;
-            foreach ($resep->bahanbaku as $item) {
-                $qtyBahan = floatval($item->qty_bahan);
-                $hargaBahan = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangId);
-                if ($hargaBahan <= 0) {
-                    $hargaBahan = (float) (DB::table('master_barang')->where('id', $item->bahan_id)->value('hpp_referensi') ?? 0);
-                }
-                $totalHpp += ($qtyBahan * $hargaBahan);
-            }
-            return $outputQty > 0 ? ($totalHpp / $outputQty) : 0;
-        }
-
-        $hargaTerbaru = $fifoService->getHargaTerakhirBahan($produk->id, $gudangId);
-        if ($hargaTerbaru > 0) {
-            return $hargaTerbaru;
-        }
-
-        return floatval($produk->hpp_referensi ?? 0);
+        return view('penjualan_pos.show', compact('penjualan', 'rincianHppJson'));
     }
 
 

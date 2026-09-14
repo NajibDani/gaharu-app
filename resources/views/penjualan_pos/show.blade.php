@@ -234,7 +234,7 @@
                             <td class="text-end" data-value="{{ floatval($d->harga) }}">Rp {{ number_format($d->harga, 0, ',', '.') }}</td>
                             <td class="text-end text-muted" data-value="{{ floatval($unitHpp) }}">
                                 @if(($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0)
-                                    <div>Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}</div>
+                                    <div class="fw-semibold text-dark">Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}</div>
                                     @if(!$itemHasResep)
                                         <div class="mt-1">
                                             <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 0.68rem;">
@@ -244,7 +244,7 @@
                                     @endif
                                 @elseif($isDraft)
                                     @if($unitHpp > 0)
-                                        <div>
+                                        <div class="fw-semibold text-dark">
                                             Rp {{ number_format($unitHpp, 0, ',', '.') }}
                                             <span class="badge bg-secondary-subtle text-secondary small" style="font-size: 0.65rem;">Estimasi</span>
                                         </div>
@@ -261,6 +261,16 @@
                                 @else
                                     <span class="text-muted small"><em>(Draft)</em></span>
                                 @endif
+
+                                <div class="mt-1">
+                                    <button type="button" 
+                                            class="btn btn-sm btn-outline-primary py-0 px-2 btn-cek-hpp d-inline-flex align-items-center gap-1"
+                                            style="font-size: 0.72rem; border-radius: 4px;"
+                                            data-detail-id="{{ $d->id }}"
+                                            title="Lihat Rincian Resep & Harga Bahan">
+                                        <i class="bi bi-receipt"></i> Cek Resep & Bahan
+                                    </button>
+                                </div>
                             </td>
                             <td class="text-end fw-medium pe-4" data-value="{{ floatval($d->subtotal) }}">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
                         </tr>
@@ -272,6 +282,135 @@
         </div>
     </div>
 
+</div>
+
+<!-- MODAL DETAIL RESEP & HARGA BAHAN HPP -->
+<div class="modal fade" id="modalRincianHpp" tabindex="-1" aria-labelledby="modalRincianHppLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 12px;">
+            <div class="modal-header bg-dark text-white border-0 px-4 py-3" style="border-radius: 12px 12px 0 0;">
+                <div>
+                    <h5 class="modal-title fw-bold mb-0" id="modalRincianHppLabel">
+                        <i class="bi bi-journal-text me-2 text-warning"></i>Rincian Resep & Komponen HPP
+                    </h5>
+                    <small class="text-white-50" id="modalSubTitle">Item Produk</small>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4 bg-light">
+                <!-- INFO HEADER BOX -->
+                <div class="card border-0 shadow-sm mb-3 rounded-3">
+                    <div class="card-body p-3">
+                        <div class="row g-3 align-items-center">
+                            <div class="col-md-6 border-end">
+                                <span class="text-muted text-uppercase d-block" style="font-size: 11px; letter-spacing: 0.5px;">Informasi Produk</span>
+                                <h6 class="fw-bold text-dark mb-1" id="mInfoNamaProduk">-</h6>
+                                <span class="text-muted small d-block">Kode: <span id="mInfoKodeProduk" class="fw-semibold">-</span> | Gudang: <span class="fw-semibold">{{ $penjualan->gudang->nama }}</span></span>
+                            </div>
+                            <div class="col-md-3 col-6 text-center border-end">
+                                <span class="text-muted text-uppercase d-block" style="font-size: 11px; letter-spacing: 0.5px;">Qty Terjual</span>
+                                <h5 class="fw-bold text-primary mb-0" id="mInfoQtyTerjual">0</h5>
+                            </div>
+                            <div class="col-md-3 col-6 text-center">
+                                <span class="text-muted text-uppercase d-block" style="font-size: 11px; letter-spacing: 0.5px;">HPP / Unit</span>
+                                <h5 class="fw-bold text-success mb-0" id="mInfoHppUnit">Rp 0</h5>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STATE: HAS RECIPE -->
+                <div id="mStateHasResep" class="d-none">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold text-secondary text-uppercase mb-0 small" style="font-size: 11px; letter-spacing: 0.5px;">
+                            <i class="bi bi-list-check me-1"></i>Daftar Bahan Baku & Harga Satuan di Gudang
+                        </h6>
+                        <span class="badge bg-light text-muted border" id="mInfoOutputResep">Output: 1 Porsi</span>
+                    </div>
+
+                    <div class="table-responsive bg-white rounded-3 shadow-sm border border-light mb-3">
+                        <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+                            <thead class="table-dark small text-uppercase" style="font-size: 11px;">
+                                <tr>
+                                    <th class="ps-3" width="40">No</th>
+                                    <th>Nama Bahan Baku</th>
+                                    <th class="text-center" width="130">Kebutuhan Resep</th>
+                                    <th class="text-end" width="150">Harga Bahan di Gudang</th>
+                                    <th class="text-end" width="130">Biaya Bahan / Unit</th>
+                                    <th class="text-center pe-3" width="150">Sumber Harga</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mTbodyBahan">
+                                <!-- Dynamic rows -->
+                            </tbody>
+                            <tfoot class="table-light fw-bold">
+                                <tr>
+                                    <td colspan="4" class="text-end ps-3">Total Biaya Bahan Baku (HPP / Unit):</td>
+                                    <td class="text-end text-success" id="mTotalBiayaBahan">Rp 0</td>
+                                    <td class="pe-3"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <div class="p-3 bg-primary bg-opacity-10 rounded-3 border-start border-primary border-4 d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="d-block text-muted small text-uppercase" style="font-size: 10px;">Total HPP Transaksi untuk Item Ini</span>
+                            <strong class="text-primary fs-6" id="mTotalHppDetail">Rp 0</strong>
+                            <span class="text-muted small ms-1" id="mFormulaDetail">(Qty Terjual x HPP/Unit)</span>
+                        </div>
+                        <a href="#" id="mBtnLinkResep" target="_blank" class="btn btn-sm btn-outline-primary fw-medium">
+                            <i class="bi bi-box-arrow-up-right me-1"></i> Buka Manajemen Resep
+                        </a>
+                    </div>
+                </div>
+
+                <!-- STATE: NO RECIPE -->
+                <div id="mStateNoResep" class="d-none">
+                    <div class="alert alert-warning border border-warning shadow-sm mb-3">
+                        <div class="d-flex">
+                            <i class="bi bi-exclamation-triangle-fill fs-4 me-3 text-warning"></i>
+                            <div>
+                                <h6 class="fw-bold mb-1">Menu Ini Belum Memiliki Formulasi Resep</h6>
+                                <p class="mb-0 small text-muted">
+                                    Item ini terjual tanpa daftar bahan baku (resep) yang terdaftar di sistem. Perhitungan HPP menggunakan harga acuan barang berikut:
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card border-0 shadow-sm rounded-3 mb-3">
+                        <div class="card-body p-3">
+                            <table class="table table-sm table-borderless mb-0" style="font-size: 13px;">
+                                <tr>
+                                    <td width="230" class="text-muted">Harga Beli Terbaru di Gudang:</td>
+                                    <td class="fw-bold" id="mNoResepHargaTerbaru">Rp 0</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">HPP Referensi Master Barang:</td>
+                                    <td class="fw-bold" id="mNoResepHppRef">Rp 0</td>
+                                </tr>
+                                <tr class="border-top">
+                                    <td class="text-dark fw-semibold pt-2">Nilai HPP / Unit yang Diterapkan:</td>
+                                    <td class="text-success fw-bold fs-6 pt-2" id="mNoResepHppFinal">Rp 0</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end">
+                        <a href="{{ route('resep.index') }}" target="_blank" class="btn btn-warning text-dark fw-semibold btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i> Kelola Formulasi Resep di Menu Resep
+                        </a>
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer border-0 px-4 py-3 bg-light">
+                <button type="button" class="btn btn-secondary fw-semibold px-4" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <style>
@@ -345,6 +484,89 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // Re-append sorted rows to tbody
             rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+
+    // ==========================================
+    // MODAL RINCIAN HPP & RESEP
+    // ==========================================
+    const rincianHppData = {!! $rincianHppJson !!};
+
+    const modalEl = document.getElementById('modalRincianHpp');
+    const modalRincianHpp = modalEl ? new bootstrap.Modal(modalEl) : null;
+
+    document.querySelectorAll('.btn-cek-hpp').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (!modalRincianHpp) return;
+
+            const detailId = this.getAttribute('data-detail-id');
+            const data = rincianHppData[detailId];
+            if (!data) return;
+
+            // Set Header Box Info
+            document.getElementById('modalSubTitle').textContent = data.nama_produk + ' (Kode: ' + data.kode_produk + ')';
+            document.getElementById('mInfoNamaProduk').textContent = data.nama_produk;
+            document.getElementById('mInfoKodeProduk').textContent = data.kode_produk;
+            document.getElementById('mInfoQtyTerjual').textContent = Number(data.qty_terjual).toLocaleString('id-ID');
+            document.getElementById('mInfoHppUnit').textContent = 'Rp ' + Number(data.hpp_satuan).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+
+            const rincian = data.rincian;
+            const stateHasResep = document.getElementById('mStateHasResep');
+            const stateNoResep = document.getElementById('mStateNoResep');
+
+            if (rincian && rincian.has_resep && rincian.bahan && rincian.bahan.length > 0) {
+                stateHasResep.classList.remove('d-none');
+                stateNoResep.classList.add('d-none');
+
+                document.getElementById('mInfoOutputResep').textContent = 'Output: ' + Number(rincian.output_qty).toLocaleString('id-ID') + ' ' + (rincian.satuan_output || 'Porsi');
+
+                const tbody = document.getElementById('mTbodyBahan');
+                tbody.innerHTML = '';
+
+                rincian.bahan.forEach((b, idx) => {
+                    const tr = document.createElement('tr');
+                    const bsjBadge = b.is_bsj ? '<span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 10px;">Bahan Setengah Jadi</span>' : '';
+                    const sumberBadge = b.sumber_harga === 'HPP Referensi'
+                        ? '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 10px;">HPP Referensi</span>'
+                        : '<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 10px;">Stok / Beli Gudang</span>';
+
+                    tr.innerHTML = `
+                        <td class="ps-3 text-muted">${idx + 1}</td>
+                        <td>
+                            <div class="fw-semibold text-dark">${b.nama_bahan}</div>
+                            <small class="text-muted">${b.kode_bahan} ${bsjBadge}</small>
+                        </td>
+                        <td class="text-center fw-medium">${Number(b.qty_resep).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${b.satuan}</td>
+                        <td class="text-end">Rp ${Number(b.harga_satuan).toLocaleString('id-ID', { maximumFractionDigits: 2 })} <small class="text-muted">/${b.satuan}</small></td>
+                        <td class="text-end fw-semibold text-dark">Rp ${Number(b.biaya_per_unit).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</td>
+                        <td class="text-center pe-3">${sumberBadge}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                document.getElementById('mTotalBiayaBahan').textContent = 'Rp ' + Number(rincian.total_biaya_bahan).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+                const totalHppDetail = data.qty_terjual * data.hpp_satuan;
+                document.getElementById('mTotalHppDetail').textContent = 'Rp ' + Number(totalHppDetail).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+                document.getElementById('mFormulaDetail').textContent = `(${Number(data.qty_terjual).toLocaleString('id-ID')} x Rp ${Number(data.hpp_satuan).toLocaleString('id-ID')})`;
+
+                const linkResep = document.getElementById('mBtnLinkResep');
+                if (rincian.resep_id) {
+                    linkResep.href = '/resep-bahan/' + rincian.resep_id;
+                    linkResep.classList.remove('d-none');
+                } else {
+                    linkResep.classList.add('d-none');
+                }
+            } else {
+                stateHasResep.classList.add('d-none');
+                stateNoResep.classList.remove('d-none');
+
+                document.getElementById('mNoResepHargaTerbaru').textContent = 'Rp ' + Number(rincian ? (rincian.harga_terbaru || 0) : 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+                document.getElementById('mNoResepHppRef').textContent = 'Rp ' + Number(rincian ? (rincian.hpp_referensi || 0) : 0).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+                document.getElementById('mNoResepHppFinal').textContent = 'Rp ' + Number(data.hpp_satuan).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+            }
+
+            modalRincianHpp.show();
         });
     });
 });
