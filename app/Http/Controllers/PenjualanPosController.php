@@ -188,7 +188,7 @@ class PenjualanPosController extends Controller
     public function show($id) 
     {
         $penjualan = PenjualanPos::with([
-            'details.produk.resepBtklBop.bahanbaku.bahan',
+            'details.produk.resepBtklBop.bahanbaku.bahan.resepBtklBop.bahanbaku.bahan',
             'creator',
             'pembayaran',
             'gudang'
@@ -222,8 +222,37 @@ class PenjualanPosController extends Controller
                 foreach ($resep->bahanbaku as $item) {
                     $qtyBahan = floatval($item->qty_bahan);
                     $hargaBahan = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangId);
+                    $isBsj = (bool) ($item->bahan->is_bahan_setengah_jadi ?? false);
+                    $subResep = null;
+                    $komposisiResep = '';
+
+                    if ($item->bahan) {
+                        $subResep = $item->bahan->resepBtklBop;
+                        if (!$subResep && $item->bahan->resep_id) {
+                            $subResep = \App\Models\ResepBtklBop::with('bahanbaku.bahan')->find($item->bahan->resep_id);
+                        }
+                    }
+
+                    // Cek ketersediaan batch fisik di gudang atau riwayat pembelian supplier
+                    $hasBatchOrBeli = DB::table('stok_gudang_batch')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists()
+                        || DB::table('pembelian_detail')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists();
+
                     $sumberHarga = 'Stok / Pembelian Gudang';
-                    if ($hargaBahan <= 0) {
+                    if ($subResep && !$hasBatchOrBeli) {
+                        $sumberHarga = 'Resep BSJ';
+                        if ($subResep->bahanbaku && $subResep->bahanbaku->count() > 0) {
+                            $komposisiArr = [];
+                            foreach ($subResep->bahanbaku as $sb) {
+                                $namaSub = $sb->bahan->nama ?? 'Bahan';
+                                $qtySub = floatval($sb->qty_bahan);
+                                $satuanSub = $sb->satuan ?: ($sb->bahan->satuan ?? '');
+                                $komposisiArr[] = "{$qtySub} {$satuanSub} {$namaSub}";
+                            }
+                            $outSub = floatval($subResep->output_qty) > 0 ? floatval($subResep->output_qty) : 1;
+                            $outSat = $subResep->satuan_output ?: ($item->bahan->satuan ?? '');
+                            $komposisiResep = implode(' + ', $komposisiArr) . " (Output: {$outSub} {$outSat})";
+                        }
+                    } elseif ($hargaBahan <= 0) {
                         $hargaBahan = (float) ($item->bahan->hpp_referensi ?? 0);
                         $sumberHarga = 'HPP Referensi';
                     }
@@ -233,16 +262,18 @@ class PenjualanPosController extends Controller
                     $totalBiayaBahan += $biayaPerUnit;
 
                     $rincianBahan[] = [
-                        'bahan_id'       => $item->bahan_id,
-                        'nama_bahan'     => $item->bahan->nama ?? 'Bahan',
-                        'kode_bahan'     => $item->bahan->kode_barang ?? '-',
-                        'is_bsj'         => (bool) ($item->bahan->is_bahan_setengah_jadi ?? false),
-                        'qty_resep'      => $qtyBahan,
-                        'satuan'         => $item->satuan ?: ($item->bahan->satuan ?? '-'),
-                        'harga_satuan'   => $hargaBahan,
-                        'subtotal'       => $subtotal,
-                        'biaya_per_unit' => $biayaPerUnit,
-                        'sumber_harga'   => $sumberHarga,
+                        'bahan_id'        => $item->bahan_id,
+                        'nama_bahan'      => $item->bahan->nama ?? 'Bahan',
+                        'kode_bahan'      => $item->bahan->kode_barang ?? '-',
+                        'is_bsj'          => $isBsj || !empty($subResep),
+                        'komposisi_resep' => $komposisiResep,
+                        'sub_resep_id'    => $subResep ? $subResep->id : null,
+                        'qty_resep'       => $qtyBahan,
+                        'satuan'          => $item->satuan ?: ($item->bahan->satuan ?? '-'),
+                        'harga_satuan'    => $hargaBahan,
+                        'subtotal'        => $subtotal,
+                        'biaya_per_unit'  => $biayaPerUnit,
+                        'sumber_harga'    => $sumberHarga,
                     ];
                 }
             }

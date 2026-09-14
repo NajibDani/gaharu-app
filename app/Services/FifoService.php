@@ -299,15 +299,21 @@ class FifoService
     }
 
     /**
-     * Ambil harga terakhir dari bahan baku yang bersangkutan.
-     * Prioritas:
+     * Ambil harga terakhir bahan dengan prioritas:
      * 1. Harga per qty batch terakhir di gudang spesifik
      * 2. Harga per qty batch terakhir secara global (semua gudang)
      * 3. Harga per qty detail pembelian terakhir (pembelian_detail)
-     * 4. HPP referensi master barang
+     * 4. Formulasi resep jika barang merupakan Bahan Setengah Jadi / memiliki resep
+     * 5. HPP referensi master barang
      */
-    public function getHargaTerakhirBahan(int $barangId, ?int $gudangId = null): float
+    public function getHargaTerakhirBahan(int $barangId, ?int $gudangId = null, array $visited = []): float
     {
+        // Cegah rekursi tak hingga (circular reference)
+        if (in_array($barangId, $visited)) {
+            return 0.0;
+        }
+        $visited[] = $barangId;
+
         // 1. Cek batch terakhir di gudang spesifik yang memiliki harga > 0
         if ($gudangId) {
             $latestGudangBatch = DB::table('stok_gudang_batch')
@@ -338,19 +344,44 @@ class FifoService
             ->where('barang_id', $barangId)
             ->where('harga_per_qty', '>', 0)
             ->latest('id')
-            ->value('harga_per_qty');
+            ->first();
 
-        if ($latestPembelian && floatval($latestPembelian) > 0) {
-            return (float) $latestPembelian;
+        if ($latestPembelian && floatval($latestPembelian->harga_per_qty) > 0) {
+            $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
+            if ($konversi <= 0) $konversi = 1;
+            return (float) ($latestPembelian->harga_per_qty / $konversi);
         }
 
-        // 4. Fallback ke HPP referensi master barang
-        $hppRef = DB::table('master_barang')
-            ->where('id', $barangId)
-            ->value('hpp_referensi');
+        // 4. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
+        $barang = DB::table('master_barang')->where('id', $barangId)->first();
+        if ($barang) {
+            $resep = null;
+            if (!empty($barang->resep_id)) {
+                $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+            }
+            if (!$resep) {
+                $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
+            }
 
-        if ($hppRef && floatval($hppRef) > 0) {
-            return (float) $hppRef;
+            if ($resep) {
+                $subBahanList = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+                if ($subBahanList->count() > 0) {
+                    $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                    $totalBiayaResep = 0.0;
+                    foreach ($subBahanList as $subBahan) {
+                        $subHarga = $this->getHargaTerakhirBahan($subBahan->bahan_id, $gudangId, $visited);
+                        $totalBiayaResep += (floatval($subBahan->qty_bahan) * $subHarga);
+                    }
+                    if ($totalBiayaResep > 0) {
+                        return (float) ($totalBiayaResep / $outputQty);
+                    }
+                }
+            }
+
+            // 5. Fallback ke HPP referensi master barang
+            if ($barang->hpp_referensi && floatval($barang->hpp_referensi) > 0) {
+                return (float) $barang->hpp_referensi;
+            }
         }
 
         return 0.0;
@@ -526,8 +557,33 @@ class FifoService
             return (float) $sa->harga_stok;
         }
 
-        // 6. Fallback ke master_barang hpp_referensi saat ini
+        // 6. Fallback ke formulasi resep jika barang memiliki resep (Bahan Setengah Jadi)
         $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        if ($barang) {
+            $resep = null;
+            if (!empty($barang->resep_id)) {
+                $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+            }
+            if (!$resep) {
+                $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
+            }
+
+            if ($resep) {
+                $subBahanList = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+                if ($subBahanList->count() > 0) {
+                    $outQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                    $totalBiaya = 0.0;
+                    foreach ($subBahanList as $sb) {
+                        $totalBiaya += (floatval($sb->qty_bahan) * $this->getHargaTerakhirBahan($sb->bahan_id, $gudangId));
+                    }
+                    if ($totalBiaya > 0) {
+                        return (float) ($totalBiaya / $outQty);
+                    }
+                }
+            }
+        }
+
+        // 7. Fallback ke master_barang hpp_referensi saat ini
         return (float) ($barang->hpp_referensi ?? 0);
     }
 

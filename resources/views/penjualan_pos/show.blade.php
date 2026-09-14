@@ -526,21 +526,38 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 rincian.bahan.forEach((b, idx) => {
                     const tr = document.createElement('tr');
-                    const bsjBadge = b.is_bsj ? '<span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 10px;">Bahan Setengah Jadi</span>' : '';
-                    const sumberBadge = b.sumber_harga === 'HPP Referensi'
-                        ? '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 10px;">HPP Referensi</span>'
-                        : '<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 10px;">Stok / Beli Gudang</span>';
+                    
+                    let bsjBadge = '';
+                    if (b.is_bsj) {
+                        bsjBadge = '<span class="badge border ms-1" style="font-size: 10px; background-color: #f3e8ff; color: #7e22ce; border-color: #d8b4fe !important;"><i class="bi bi-layers me-1"></i>Bahan Setengah Jadi</span>';
+                    }
+
+                    let sumberBadge = '';
+                    if (b.sumber_harga === 'Resep BSJ') {
+                        sumberBadge = '<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;"><i class="bi bi-diagram-3 me-1"></i>Resep BSJ</span>';
+                    } else if (b.sumber_harga === 'HPP Referensi') {
+                        sumberBadge = '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 10px;"><i class="bi bi-bookmark me-1"></i>HPP Referensi</span>';
+                    } else {
+                        sumberBadge = '<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 10px;"><i class="bi bi-check-circle me-1"></i>Stok / Beli Gudang</span>';
+                    }
+
+                    const komposisiInfo = b.komposisi_resep 
+                        ? `<div class="text-muted small mt-1 py-1 px-2 rounded-2 bg-light border border-light-subtle" style="font-size: 11px;">
+                            <i class="bi bi-arrow-return-right text-info me-1"></i><span class="text-secondary fw-semibold">Komposisi:</span> ${b.komposisi_resep}
+                           </div>` 
+                        : '';
 
                     tr.innerHTML = `
-                        <td class="ps-3 text-muted">${idx + 1}</td>
-                        <td>
-                            <div class="fw-semibold text-dark">${b.nama_bahan}</div>
-                            <small class="text-muted">${b.kode_bahan} ${bsjBadge}</small>
+                        <td class="ps-3 text-muted align-top pt-3">${idx + 1}</td>
+                        <td class="align-top pt-3">
+                            <div class="fw-semibold text-dark">${b.nama_bahan} ${bsjBadge}</div>
+                            <small class="text-muted d-block">${b.kode_bahan}</small>
+                            ${komposisiInfo}
                         </td>
-                        <td class="text-center fw-medium">${Number(b.qty_resep).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${b.satuan}</td>
-                        <td class="text-end">Rp ${Number(b.harga_satuan).toLocaleString('id-ID', { maximumFractionDigits: 2 })} <small class="text-muted">/${b.satuan}</small></td>
-                        <td class="text-end fw-semibold text-dark">Rp ${Number(b.biaya_per_unit).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</td>
-                        <td class="text-center pe-3">${sumberBadge}</td>
+                        <td class="text-center fw-medium align-top pt-3">${Number(b.qty_resep).toLocaleString('id-ID', { maximumFractionDigits: 2 })} ${b.satuan}</td>
+                        <td class="text-end align-top pt-3">Rp ${Number(b.harga_satuan).toLocaleString('id-ID', { maximumFractionDigits: 2 })} <small class="text-muted">/${b.satuan}</small></td>
+                        <td class="text-end fw-semibold text-dark align-top pt-3">Rp ${Number(b.biaya_per_unit).toLocaleString('id-ID', { maximumFractionDigits: 2 })}</td>
+                        <td class="text-center pe-3 align-top pt-3">${sumberBadge}</td>
                     `;
                     tbody.appendChild(tr);
                 });
