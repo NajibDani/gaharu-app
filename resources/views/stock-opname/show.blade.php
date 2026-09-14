@@ -314,13 +314,27 @@
 
     @if($stockOpname->status == 'draft')
 
-    <div class="mt-4">
+    <div class="mt-4 d-flex gap-2 align-items-center">
+
+        <form action="{{ route('stock-opname.refresh-stok', $stockOpname->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin memperbarui dan menyinkronkan stok sistem dengan kondisi data gudang terkini?')">
+            @csrf
+            <button type="submit" class="btn btn-outline-primary fw-semibold">
+                <i class="bi bi-arrow-clockwise me-1"></i>
+                Refresh / Sinkronkan Stok
+            </button>
+        </form>
+
+        <a href="{{ route('stock-opname.edit', $stockOpname->id) }}"
+           class="btn btn-warning text-dark fw-bold">
+            <i class="bi bi-pencil-square me-1"></i>
+            Edit Stock Opname
+        </a>
 
         <a href="{{ route('stock-opname.approve',$stockOpname->id) }}"
            class="btn btn-success"
            onclick="return confirm('Approve stock opname ini?')">
 
-            <i class="bi bi-check-circle"></i>
+            <i class="bi bi-check-circle me-1"></i>
             Approve Stock Opname
 
         </a>

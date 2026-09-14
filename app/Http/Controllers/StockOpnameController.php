@@ -308,6 +308,12 @@ class StockOpnameController extends Controller
             'details.barang',
         ])->findOrFail($id);
 
+        $detailsSorted = $opname->details->sortBy(function ($d) {
+            $stok = (float) $d->stok_sistem;
+            $order = $stok > 0 ? 0 : ($stok < 0 ? 1 : 2);
+            return sprintf('%d_%s', $order, strtolower($d->barang->nama ?? ''));
+        })->values();
+
         return response()->json([
             'id'          => $opname->id,
             'kode_opname' => $opname->kode_opname,
@@ -317,7 +323,7 @@ class StockOpnameController extends Controller
             'user'        => $opname->user->nama_karyawan ?? $opname->user->name ?? '-',
             'status'      => $opname->status,
             'keterangan'  => $opname->keterangan ?? '-',
-            'details'     => $opname->details->map(function ($d) {
+            'details'     => $detailsSorted->map(function ($d) {
                 $konversi = (float) ($d->barang->konversi_pembelian ?? 1);
                 $hasKonversi = !empty($d->barang->satuan_pembelian) && $konversi > 1;
 
@@ -338,6 +344,167 @@ class StockOpnameController extends Controller
                 ];
             }),
         ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | REFRESH / SINKRONKAN STOK SISTEM (DRAFT ONLY)
+    |--------------------------------------------------------------------------
+    */
+
+    public function refreshStok(Request $request, string $id)
+    {
+        $opname = StockOpname::with('details')->findOrFail($id);
+
+        if ($opname->status !== 'draft') {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Stock Opname yang sudah diapprove tidak dapat diperbarui.'
+                ], 422);
+            }
+            return back()->with('error', 'Stock Opname yang sudah diapprove tidak dapat diperbarui.');
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $gudangId = $opname->gudang_id;
+            $divisiId = $opname->divisi_id;
+
+            // Ambil semua barang aktif beserta stok sistem terkini di gudang/divisi ini
+            $barangList = DB::table('master_barang')
+                ->leftJoin('stok_gudang', function ($join) use ($gudangId, $divisiId) {
+                    $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
+                         ->where('stok_gudang.gudang_id', '=', $gudangId);
+                    if ($divisiId) {
+                        $join->where('stok_gudang.divisi_id', '=', $divisiId);
+                    } else {
+                        $join->whereNull('stok_gudang.divisi_id');
+                    }
+                })
+                ->where('master_barang.is_active', true)
+                ->where(function ($q) {
+                    $q->where('master_barang.is_bahan_baku', 1)
+                      ->orWhere('master_barang.is_bahan_setengah_jadi', 1)
+                      ->orWhere('master_barang.is_barang_jadi', 1)
+                      ->orWhere('master_barang.is_operational', 1);
+                })
+                ->where(function($q) use ($gudangId, $divisiId) {
+                    $q->where('master_barang.is_bahan_baku', 0)
+                      ->orWhereNotExists(function($notExistsQuery) use ($gudangId, $divisiId) {
+                          $notExistsQuery->select(DB::raw(1))
+                              ->from('barang_minimum_stock')
+                              ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                              ->where('barang_minimum_stock.gudang_id', $gudangId)
+                              ->where('barang_minimum_stock.is_active', false);
+                          if ($divisiId) {
+                              $notExistsQuery->where('barang_minimum_stock.divisi_id', $divisiId);
+                          } else {
+                              $notExistsQuery->whereNull('barang_minimum_stock.divisi_id');
+                          }
+                      });
+                })
+                ->select(
+                    'master_barang.id',
+                    DB::raw('COALESCE(stok_gudang.jumlah, 0) as stok')
+                )
+                ->get();
+
+            $existingDetails = $opname->details->keyBy('barang_id');
+            $updatedCount = 0;
+            $addedCount = 0;
+
+            foreach ($barangList as $item) {
+                $stokSistemBaru = (float) $item->stok;
+
+                if ($existingDetails->has($item->id)) {
+                    $detail = $existingDetails->get($item->id);
+                    $stokFisik = (float) $detail->stok_fisik;
+                    $selisihBaru = $stokFisik - $stokSistemBaru;
+                    $nilaiSelisihBaru = $this->hitungNilaiFIFO(
+                        $gudangId,
+                        $item->id,
+                        abs($selisihBaru),
+                        $divisiId
+                    );
+
+                    $detail->update([
+                        'stok_sistem'   => $stokSistemBaru,
+                        'selisih'       => $selisihBaru,
+                        'nilai_selisih' => $nilaiSelisihBaru,
+                    ]);
+                    $updatedCount++;
+                } else {
+                    // Barang baru di gudang yang belum tercatat pada draft opname
+                    StockOpnameDetail::create([
+                        'stock_opname_id' => $opname->id,
+                        'barang_id'       => $item->id,
+                        'stok_sistem'     => $stokSistemBaru,
+                        'stok_fisik'      => $stokSistemBaru,
+                        'selisih'         => 0,
+                        'nilai_selisih'   => 0,
+                    ]);
+                    $addedCount++;
+                }
+            }
+
+            // Untuk barang yang ada di detail tetapi tidak ada di query master aktif (misal barang non-aktif):
+            $processedBarangIds = $barangList->pluck('id')->all();
+            foreach ($existingDetails as $barangId => $detail) {
+                if (!in_array($barangId, $processedBarangIds)) {
+                    $stokAktual = (float) (DB::table('stok_gudang')
+                        ->where('barang_id', $barangId)
+                        ->where('gudang_id', $gudangId)
+                        ->when($divisiId, function($q) use ($divisiId) {
+                            return $q->where('divisi_id', $divisiId);
+                        }, function($q) {
+                            return $q->whereNull('divisi_id');
+                        })
+                        ->value('jumlah') ?? 0);
+
+                    $selisihBaru = (float) $detail->stok_fisik - $stokAktual;
+                    $nilaiSelisihBaru = $this->hitungNilaiFIFO(
+                        $gudangId,
+                        $barangId,
+                        abs($selisihBaru),
+                        $divisiId
+                    );
+
+                    $detail->update([
+                        'stok_sistem'   => $stokAktual,
+                        'selisih'       => $selisihBaru,
+                        'nilai_selisih' => $nilaiSelisihBaru,
+                    ]);
+                    $updatedCount++;
+                }
+            }
+
+            DB::commit();
+
+            $msg = "Stok sistem berhasil diperbarui. ($updatedCount barang disinkronkan" . ($addedCount > 0 ? ", $addedCount barang baru ditambahkan" : "") . ")";
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success'       => true,
+                    'message'       => $msg,
+                    'updated_count' => $updatedCount,
+                    'added_count'   => $addedCount,
+                ]);
+            }
+
+            return back()->with('success', $msg);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal memperbarui stok: ' . $e->getMessage(),
+                ], 500);
+            }
+            return back()->with('error', 'Gagal memperbarui stok: ' . $e->getMessage());
+        }
     }
 
     /*
@@ -527,16 +694,114 @@ class StockOpnameController extends Controller
             ->with('success', 'Stock Opname berhasil dihapus.');
     }
 
-    public function edit(string $id) {}
+    public function edit(string $id)
+    {
+        $opname = StockOpname::with([
+            'gudang.divisi',
+            'divisi',
+            'details.barang'
+        ])->findOrFail($id);
+
+        if ($opname->status !== 'draft') {
+            return redirect()
+                ->route('stock-opname.show', $opname->id)
+                ->with('error', 'Stock Opname yang sudah diapprove tidak dapat diedit.');
+        }
+
+        $gudang = $opname->gudang;
+        $divisi = $opname->divisi;
+        $divisiId = $opname->divisi_id;
+        $kategoris = \App\Models\Kategori::orderBy('nama')->get();
+
+        $existingDetails = $opname->details->mapWithKeys(function ($d) {
+            return [$d->barang_id => [
+                'stok_sistem' => (float) $d->stok_sistem,
+                'stok_fisik'  => (float) $d->stok_fisik,
+                'selisih'     => (float) $d->selisih,
+                'nilai'       => (float) $d->nilai_selisih,
+            ]];
+        });
+
+        return view('stock-opname.edit', compact(
+            'opname',
+            'gudang',
+            'divisi',
+            'divisiId',
+            'kategoris',
+            'existingDetails'
+        ));
+    }
 
     public function update(Request $request, string $id)
     {
         $opname = StockOpname::findOrFail($id);
 
         if ($opname->status !== 'draft') {
-            return back()->with('error', 'Stock Opname yang sudah diapprove tidak dapat diubah.');
+            return redirect()
+                ->route('stock-opname.show', $opname->id)
+                ->with('error', 'Stock Opname yang sudah diapprove tidak dapat diubah.');
         }
 
+        // Jika form berasal dari edit lengkap (ada array barang_id)
+        if ($request->has('barang_id')) {
+            $request->validate([
+                'tanggal'     => 'required|date',
+                'barang_id'   => 'required|array',
+                'stok_sistem' => 'required|array',
+                'stok_fisik'  => 'required|array',
+            ]);
+
+            $tanggal = date('Y-m-d', strtotime($request->tanggal));
+
+            if (\App\Models\Journal::isPeriodClosed($tanggal)) {
+                return back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku.'])->withInput();
+            }
+
+            DB::beginTransaction();
+
+            try {
+                $opname->update([
+                    'tanggal'    => $tanggal,
+                    'keterangan' => $request->keterangan,
+                ]);
+
+                // Hapus detail lama dan perbarui dengan detail terbaru
+                StockOpnameDetail::where('stock_opname_id', $opname->id)->delete();
+
+                foreach ($request->barang_id as $index => $barangId) {
+                    $stokSistem   = (float) $request->stok_sistem[$index];
+                    $stokFisik    = (float) $request->stok_fisik[$index];
+                    $selisih      = $stokFisik - $stokSistem;
+                    $nilaiSelisih = $this->hitungNilaiFIFO(
+                        $opname->gudang_id,
+                        $barangId,
+                        abs($selisih),
+                        $opname->divisi_id
+                    );
+
+                    StockOpnameDetail::create([
+                        'stock_opname_id' => $opname->id,
+                        'barang_id'       => $barangId,
+                        'stok_sistem'     => $stokSistem,
+                        'stok_fisik'      => $stokFisik,
+                        'selisih'         => $selisih,
+                        'nilai_selisih'   => $nilaiSelisih,
+                    ]);
+                }
+
+                DB::commit();
+
+                return redirect()
+                    ->route('stock-opname.show', $opname->id)
+                    ->with('success', 'Perubahan Stock Opname (' . $opname->kode_opname . ') berhasil disimpan.');
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return back()->with('error', 'Gagal menyimpan perubahan Stock Opname: ' . $e->getMessage())->withInput();
+            }
+        }
+
+        // Quick update tanggal dari halaman show
         $request->validate([
             'tanggal' => 'required|date',
         ]);

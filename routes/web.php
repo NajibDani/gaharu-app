@@ -350,6 +350,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::post('/stock-opname/hitung-fifo', [StockOpnameController::class, 'hitungFIFORealtime'])->name('stock-opname.hitung-fifo');
     Route::post('stock-opname/load-barang', [StockOpnameController::class, 'loadBarang'])->name('stock-opname.load-barang');
     Route::resource('stock-opname', StockOpnameController::class);
+    Route::post('stock-opname/{id}/refresh-stok', [StockOpnameController::class, 'refreshStok'])->name('stock-opname.refresh-stok');
     Route::get('stock-opname/{id}/approve', [StockOpnameController::class, 'approve'])->name('stock-opname.approve');
     Route::get('stock-opname/{id}/detail-json', [StockOpnameController::class, 'detailJson'])->name('stock-opname.detail-json');
 

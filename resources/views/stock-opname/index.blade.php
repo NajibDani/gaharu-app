@@ -174,12 +174,21 @@
                                     @endif
                                 </td>
                                 <td>
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-primary"
-                                        onclick="showDetailOpname({{ $row->id }})">
-                                        <i class="bi bi-eye me-1"></i> Detail
-                                    </button>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-primary"
+                                            onclick="showDetailOpname({{ $row->id }})">
+                                            <i class="bi bi-eye me-1"></i> Detail
+                                        </button>
+                                        @if($row->status === 'draft')
+                                            <a href="{{ route('stock-opname.edit', $row->id) }}"
+                                               class="btn btn-sm btn-outline-warning text-dark fw-medium"
+                                               title="Edit Stock Opname">
+                                                <i class="bi bi-pencil me-1"></i> Edit
+                                            </a>
+                                        @endif
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -399,6 +408,13 @@ function renderDetailOpname(data) {
 
     if (data.status === 'draft') {
         approveButton = `
+            <button type="button" class="btn btn-outline-primary fw-semibold me-2" onclick="refreshStokOpname(${data.id})" id="btnRefreshStok_${data.id}">
+                <i class="bi bi-arrow-clockwise me-1"></i> Refresh / Sinkronkan Stok
+            </button>
+            <a href="/stock-opname/${data.id}/edit" class="btn btn-warning text-dark fw-bold me-2">
+                <i class="bi bi-pencil me-1"></i>
+                Edit Stock Opname
+            </a>
             <a href="/stock-opname/${data.id}/approve" class="btn btn-success" onclick="return confirm('Approve stock opname ini? Selisih negatif akan otomatis membuat pengeluaran bahan baku.')">
                 <i class="bi bi-check-circle me-1"></i>
                 Approve Stock Opname
@@ -407,6 +423,7 @@ function renderDetailOpname(data) {
     }
 
     body.innerHTML = `
+        <div id="opnameAlertContainer"></div>
         <div class="row mb-4">
             <div class="col-md-3">
                 <small class="text-muted">Kode Opname</small>
@@ -425,7 +442,14 @@ function renderDetailOpname(data) {
             </div>
             <div class="col-md-3">
                 <small class="text-muted">Status</small>
-                <div class="mt-1">${statusBadge}</div>
+                <div class="mt-1 d-flex align-items-center gap-2">
+                    ${statusBadge}
+                    ${data.status === 'draft' ? `
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill" onclick="refreshStokOpname(${data.id})" title="Refresh stok sistem dengan data gudang terkini" style="font-size: 0.75rem;">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    ` : ''}
+                </div>
             </div>
         </div>
 
@@ -462,6 +486,65 @@ function renderDetailOpname(data) {
             ${approveButton}
         </div>
     `;
+}
+
+function refreshStokOpname(id) {
+    if (!confirm('Apakah Anda yakin ingin memperbarui dan menyinkronkan stok sistem dengan kondisi data gudang terkini?')) {
+        return;
+    }
+
+    let btn = document.getElementById(`btnRefreshStok_${id}`);
+    let originalHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Memperbarui...`;
+    }
+
+    let csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '{{ csrf_token() }}';
+
+    fetch(`/stock-opname/${id}/refresh-stok`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': csrfToken,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(res => {
+        if (res.success) {
+            // Re-fetch detail dan re-render modal
+            fetch(`/stock-opname/${id}/detail-json`)
+                .then(response => response.json())
+                .then(data => {
+                    renderDetailOpname(data);
+
+                    let alertContainer = document.getElementById('opnameAlertContainer');
+                    if (alertContainer) {
+                        alertContainer.innerHTML = `
+                            <div class="alert alert-success alert-dismissible fade show mb-3" role="alert">
+                                <i class="bi bi-check-circle-fill me-2"></i> ${res.message}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        `;
+                    }
+                });
+        } else {
+            alert(res.message || 'Gagal memperbarui stok.');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
+            }
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Terjadi kesalahan koneksi saat memperbarui stok.');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    });
 }
 </script>
 
