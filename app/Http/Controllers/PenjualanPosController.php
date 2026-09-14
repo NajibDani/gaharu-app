@@ -187,9 +187,64 @@ class PenjualanPosController extends Controller
 
     public function show($id) 
     {
-        $penjualan = PenjualanPos::with(['details.produk', 'creator', 'pembayaran'])->findOrFail($id);
+        $penjualan = PenjualanPos::with([
+            'details.produk.resepBtklBop.bahanbaku',
+            'creator',
+            'pembayaran',
+            'gudang'
+        ])->findOrFail($id);
+
+        $fifoService = app(\App\Services\FifoService::class);
+        $gudangId = $penjualan->gudang_id;
+
+        foreach ($penjualan->details as $d) {
+            $hasResep = $d->produk ? $d->produk->hasResep() : false;
+            $d->has_resep = $hasResep;
+
+            if (($d->hpp_satuan === null || floatval($d->hpp_satuan) <= 0) && $d->produk) {
+                $d->estimated_hpp = $this->calculateEstimatedHppProduk($d->produk, $gudangId, $fifoService);
+            } else {
+                $d->estimated_hpp = floatval($d->hpp_satuan);
+            }
+        }
+
         return view('penjualan_pos.show', compact('penjualan'));
     }
+
+    /**
+     * Hitung estimasi HPP per unit produk (termasuk fallback ke harga gudang terbaru)
+     */
+    private function calculateEstimatedHppProduk($produk, $gudangId, $fifoService)
+    {
+        $resep = null;
+        if ($produk->resepBtklBop) {
+            $resep = $produk->resepBtklBop;
+        } elseif ($produk->resep_id) {
+            $resep = \App\Models\ResepBtklBop::with('bahanbaku')->find($produk->resep_id);
+        }
+
+        if ($resep && $resep->bahanbaku && $resep->bahanbaku->count() > 0) {
+            $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+            $totalHpp = 0;
+            foreach ($resep->bahanbaku as $item) {
+                $qtyBahan = floatval($item->qty_bahan);
+                $hargaBahan = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangId);
+                if ($hargaBahan <= 0) {
+                    $hargaBahan = (float) (DB::table('master_barang')->where('id', $item->bahan_id)->value('hpp_referensi') ?? 0);
+                }
+                $totalHpp += ($qtyBahan * $hargaBahan);
+            }
+            return $outputQty > 0 ? ($totalHpp / $outputQty) : 0;
+        }
+
+        $hargaTerbaru = $fifoService->getHargaTerakhirBahan($produk->id, $gudangId);
+        if ($hargaTerbaru > 0) {
+            return $hargaTerbaru;
+        }
+
+        return floatval($produk->hpp_referensi ?? 0);
+    }
+
 
 
 
@@ -298,6 +353,9 @@ class PenjualanPosController extends Controller
                 foreach ($penjualan->details as $oldDetail) {
                     $barangJadi = DB::table('master_barang')->where('id', $oldDetail->produk_id)->first();
                     $resepUtama = ($barangJadi && $barangJadi->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first() : null;
+                    if (!$resepUtama && $barangJadi) {
+                        $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                    }
 
                     if ($resepUtama) {
                         $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
@@ -481,8 +539,16 @@ class PenjualanPosController extends Controller
                     ->where('qty_sisa', '>', 0)
                     ->sum('qty_sisa');
 
+                $resep = null;
+                if ($barang->resep_id) {
+                    $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+                }
+                if (!$resep) {
+                    $resep = DB::table('resep_btkl_bop')->where('produk_id', $barang->id)->first();
+                }
+
                 // If we have enough stock, or if it is NOT a semi-finished good (bahan baku biasa), or if it doesn't have a recipe:
-                if ($stokTersedia >= $qtyNeeded || !$barang->is_bahan_setengah_jadi || !$barang->resep_id) {
+                if ($stokTersedia >= $qtyNeeded || !$barang->is_bahan_setengah_jadi || !$resep) {
                     if (isset($totalKebutuhanBahan[$barangId])) {
                         $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyNeeded;
                     } else {
@@ -512,18 +578,28 @@ class PenjualanPosController extends Controller
                 }
 
                 // Explode the remaining qty using its recipe
-                $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
                 if ($resep) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
-                    $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
-                    $multiplier = $qtyRemaining / $outputQty;
+                    if ($resepBahan->count() > 0) {
+                        $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                        $multiplier = $qtyRemaining / $outputQty;
 
-                    foreach ($resepBahan as $subBahan) {
-                        $subQtyNeeded = floatval($subBahan->qty_bahan) * $multiplier;
-                        $resolveBahan($subBahan->bahan_id, $subQtyNeeded);
+                        foreach ($resepBahan as $subBahan) {
+                            $subQtyNeeded = floatval($subBahan->qty_bahan) * $multiplier;
+                            $resolveBahan($subBahan->bahan_id, $subQtyNeeded);
+                        }
+                    } else {
+                        if (isset($totalKebutuhanBahan[$barangId])) {
+                            $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyRemaining;
+                        } else {
+                            $totalKebutuhanBahan[$barangId] = [
+                                'nama'   => $barang->nama,
+                                'satuan' => $barang->satuan,
+                                'jumlah' => $qtyRemaining
+                            ];
+                        }
                     }
                 } else {
-                    // No recipe, fallback to requiring the remaining amount of this item
                     if (isset($totalKebutuhanBahan[$barangId])) {
                         $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyRemaining;
                     } else {
@@ -541,42 +617,34 @@ class PenjualanPosController extends Controller
                 $produkId = $detail->produk_id;
 
                 $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
-                $resepUtama = ($barangJadi && $barangJadi->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first() : null;
+                $resepUtama = null;
+                if ($barangJadi) {
+                    if ($barangJadi->resep_id) {
+                        $resepUtama = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
+                    }
+                    if (!$resepUtama) {
+                        $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                    }
+                }
                 
                 if ($resepUtama) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
-                    $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
-                    $multiplier = $qtyTerjual / $outputQty;
+                    if ($resepBahan->count() > 0) {
+                        $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
+                        $multiplier = $qtyTerjual / $outputQty;
 
-                    foreach ($resepBahan as $bahan) {
-                        $kebutuhanPerPcs = floatval($bahan->qty_bahan);
-                        $butuh = $kebutuhanPerPcs * $multiplier;
-                        $resolveBahan($bahan->bahan_id, $butuh);
+                        foreach ($resepBahan as $bahan) {
+                            $kebutuhanPerPcs = floatval($bahan->qty_bahan);
+                            $butuh = $kebutuhanPerPcs * $multiplier;
+                            $resolveBahan($bahan->bahan_id, $butuh);
+                        }
                     }
                 }
             }
 
-            // -- B. Validasi Stok
-            $pesanErrorStok = [];
-            foreach ($totalKebutuhanBahan as $bahanId => $dataBahan) {
-                $stokTersedia = DB::table('stok_gudang_batch')
-                    ->where('gudang_id', $gudangId)
-                    ->where('barang_id', $bahanId)
-                    ->where('qty_sisa', '>', 0)
-                    ->sum('qty_sisa');
+            // -- B. Potong Stok & Hitung FIFO (Logika yang sama seperti Central Kitchen: jika stok kurang, gunakan harga terbaru gudang)
+            $fifoService = app(\App\Services\FifoService::class);
 
-                if ($stokTersedia < $dataBahan['jumlah']) {
-                    $pesanErrorStok[] = "• {$dataBahan['nama']} (Butuh: {$dataBahan['jumlah']}, Sisa: {$stokTersedia})";
-                }
-            }
-
-            if (!empty($pesanErrorStok)) {
-                DB::rollBack();
-                $errorList = implode(", ", $pesanErrorStok);
-                return back()->with('error', "Gagal Approve! Stok bahan baku tidak mencukupi: " . $errorList);
-            }
-
-            // -- C. Potong Stok & Hitung FIFO
             $pengeluaranId = DB::table('pengeluaran_bahan_baku')->insertGetId([
                 'kode_pengeluaran' => 'OUT-' . $kodePos,
                 'tanggal'          => $tanggalTrans,
@@ -608,50 +676,34 @@ class PenjualanPosController extends Controller
                     'updated_at'     => now()
                 ]);
 
-                // Global Stok Pengurang
+                // Global Stok Pengurang (bisa negatif jika stok fisik belum opname)
                 $stokGudang = StokGudang::firstOrCreate(
                     ['gudang_id' => $gudangId, 'barang_id' => $bahanId],
                     ['jumlah' => 0]
                 );
                 $stokGudang->decrement('jumlah', $totalDipotong);
 
-                // Potong Batch (FIFO)
-                $stokBatches = DB::table('stok_gudang_batch')
-                    ->where('gudang_id', $gudangId)
-                    ->where('barang_id', $bahanId)
-                    ->where('qty_sisa', '>', 0)
-                    ->orderBy('id', 'asc')
-                    ->get();
+                // Potong Batch (FIFO) dengan fallback harga terbaru di gudang POS jika stok tidak cukup (allowNegative = true)
+                $fifoLayers = $fifoService->consumeFIFO($bahanId, $totalDipotong, $gudangId, true);
 
-                $sisaKebutuhan = $totalDipotong;
-                foreach ($stokBatches as $batch) {
-                    if ($sisaKebutuhan <= 0) break;
+                foreach ($fifoLayers as $layer) {
+                    $diambil = floatval($layer['qty_keluar']);
+                    $hargaPerQty = floatval($layer['harga_per_qty']);
+                    $nilaiHppDiambil = $diambil * $hargaPerQty;
+                    $totalHppBahanGrup += $nilaiHppDiambil;
 
-                    $diambil = min($sisaKebutuhan, $batch->qty_sisa);
-                    $nilaiHppDiambil = $diambil * $batch->harga_per_qty;
-                    $totalHppBahanGrup += $nilaiHppDiambil; 
-
-                    DB::table('stok_gudang_batch')->where('id', $batch->id)->update([
-                        'qty_sisa'   => DB::raw("qty_sisa - {$diambil}"),
-                        'qty_keluar' => DB::raw("qty_keluar + {$diambil}")
-                    ]);
-                    
                     DB::table('pengeluaran_bahan_baku_fifo')->insert([
                         'pengeluaran_id' => $pengeluaranId,
                         'detail_id'      => $pengeluaranDetailId,
-                        'batch_id'       => $batch->id,
-                        'batch_number'   => $batch->no_batch ?? $batch->batch_number ?? '-',
+                        'batch_id'       => $layer['batch_id'] ?? 0,
+                        'batch_number'   => $layer['batch_number'] ?? 'OVERRIDE-HARGA-TERAKHIR',
                         'qty_keluar'     => $diambil,
-                        'harga_per_qty'  => $batch->harga_per_qty,
+                        'harga_per_qty'  => $hargaPerQty,
                         'total_harga'    => $nilaiHppDiambil,
                         'created_at'     => now(),
                         'updated_at'     => now()
                     ]);
-
-                    $sisaKebutuhan -= $diambil;
                 }
-
-                DB::table('stok_gudang_batch')->where('qty_sisa', '<=', 0)->update(['is_habis' => 1]);
 
                 $avgHppSatuan = $totalDipotong > 0 ? ($totalHppBahanGrup / $totalDipotong) : 0;
                 DB::table('pengeluaran_bahan_baku_detail')->where('id', $pengeluaranDetailId)->update([
@@ -663,8 +715,8 @@ class PenjualanPosController extends Controller
                 $mapHppBahanAvg[$bahanId] = $avgHppSatuan;
             }
 
-            // -- D. Update HPP ke Detail Transaksi
-            $getHppForBarang = function($barangId) use (&$getHppForBarang, &$mapHppBahanAvg) {
+            // -- C. Update HPP ke Detail Transaksi
+            $getHppForBarang = function($barangId) use (&$getHppForBarang, &$mapHppBahanAvg, $fifoService, $gudangId) {
                 if (isset($mapHppBahanAvg[$barangId])) {
                     return $mapHppBahanAvg[$barangId];
                 }
@@ -672,10 +724,17 @@ class PenjualanPosController extends Controller
                 $barang = DB::table('master_barang')->where('id', $barangId)->first();
                 if (!$barang) return 0;
 
+                $resep = null;
                 if ($barang->resep_id) {
                     $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
-                    if ($resep) {
-                        $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+                }
+                if (!$resep) {
+                    $resep = DB::table('resep_btkl_bop')->where('produk_id', $barang->id)->first();
+                }
+
+                if ($resep) {
+                    $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+                    if ($resepBahan->count() > 0) {
                         $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
                         $totalHpp = 0;
                         foreach ($resepBahan as $subBahan) {
@@ -687,7 +746,16 @@ class PenjualanPosController extends Controller
                     }
                 }
 
-                return (float) ($barang->hpp_referensi ?: 0);
+                // Ambil harga terbaru di gudang tempat transaksi POS terjadi
+                $hargaTerbaru = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
+                if ($hargaTerbaru > 0) {
+                    $mapHppBahanAvg[$barangId] = $hargaTerbaru;
+                    return $hargaTerbaru;
+                }
+
+                $hppRef = (float) ($barang->hpp_referensi ?: 0);
+                $mapHppBahanAvg[$barangId] = $hppRef;
+                return $hppRef;
             };
 
             foreach ($penjualan->details as $detail) {
@@ -698,19 +766,30 @@ class PenjualanPosController extends Controller
                 $totalHppBahan   = 0;
 
                 $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
-                $resepUtama = ($barangJadi && $barangJadi->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first() : null;
+                $resepUtama = null;
+                if ($barangJadi) {
+                    if ($barangJadi->resep_id) {
+                        $resepUtama = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
+                    }
+                    if (!$resepUtama) {
+                        $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                    }
+                }
 
-                if ($resepUtama) {
-                    $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
+                $resepBahan = $resepUtama ? DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get() : collect();
+
+                if ($resepUtama && $resepBahan->count() > 0) {
                     $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1;
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                         $hppBahanIni = $getHppForBarang($bahan->bahan_id);
                         $totalHppBahan += (($kebutuhanPerPcs * $hppBahanIni) / $outputQty);
                     }
-                    $hppSatuanProduk = $totalHppBahan; // Hanya biaya bahan baku (BBB), tanpa markup BTKL & BOP
+                    $hppSatuanProduk = $totalHppBahan; // BBB
                 } else {
-                    $hppSatuanProduk = $barangJadi ? $barangJadi->hpp_referensi : 0;
+                    // Menu belum memiliki resep: ambil harga terbaru di gudang transaksi POS, fallback ke referensi
+                    $hppTerbaru = $fifoService->getHargaTerakhirBahan($produkId, $gudangId);
+                    $hppSatuanProduk = $hppTerbaru > 0 ? $hppTerbaru : ($barangJadi ? floatval($barangJadi->hpp_referensi) : 0);
                 }
 
                 $detail->update([
@@ -752,6 +831,9 @@ class PenjualanPosController extends Controller
                 foreach ($penjualan->details as $detail) {
                     $barangJadi = DB::table('master_barang')->where('id', $detail->produk_id)->first();
                     $resepUtama = ($barangJadi && $barangJadi->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first() : null;
+                    if (!$resepUtama && $barangJadi) {
+                        $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                    }
 
                     if ($resepUtama) {
                         $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();

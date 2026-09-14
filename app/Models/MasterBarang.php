@@ -142,6 +142,28 @@ public function firstFifoLayer()
             'id'         // Local key on resep_btkl_bop
         );
     }
+
+    public function hasResep(): bool
+    {
+        if ($this->relationLoaded('resepBtklBop') && $this->resepBtklBop) {
+            if ($this->resepBtklBop->relationLoaded('bahanbaku')) {
+                return $this->resepBtklBop->bahanbaku->count() > 0;
+            }
+            return $this->resepBtklBop->bahanbaku()->exists();
+        }
+        
+        $resepBop = $this->resepBtklBop()->with('bahanbaku')->first();
+        if ($resepBop && $resepBop->bahanbaku->count() > 0) {
+            return true;
+        }
+
+        $rawResepId = $this->attributes['resep_id'] ?? null;
+        if (!empty($rawResepId)) {
+            return ResepBahanBaku::where('resep_id', $rawResepId)->exists();
+        }
+
+        return false;
+    }
 public function stockOpnameDetails()
 {
     return $this->hasMany(

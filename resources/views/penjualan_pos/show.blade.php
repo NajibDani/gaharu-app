@@ -63,8 +63,18 @@
     @endif
 
     @php
-        $totalHpp = $penjualan->details ? $penjualan->details->sum(fn($d) => $d->hpp_satuan * $d->qty) : 0;
+        $isDraft = ($penjualan->status ?? 'Draft') === 'Draft';
+        $totalHpp = $penjualan->details ? $penjualan->details->sum(function($d) use ($isDraft) {
+            $hpp = ($isDraft && ($d->hpp_satuan === null || $d->hpp_satuan <= 0))
+                ? ($d->estimated_hpp ?? 0)
+                : floatval($d->hpp_satuan);
+            return $hpp * $d->qty;
+        }) : 0;
         $labaKotor = $penjualan->total - $totalHpp;
+
+        $unconfiguredRecipeCount = $penjualan->details ? $penjualan->details->filter(function($d) {
+            return !($d->has_resep ?? ($d->produk ? $d->produk->hasResep() : false));
+        })->count() : 0;
     @endphp
 
     <div class="row mb-4 align-items-stretch">
@@ -122,11 +132,15 @@
                         </div>
 
                         <div class="col-6 border-end">
-                            <span class="text-muted" style="font-size: 0.85rem;">Total HPP</span>
+                            <span class="text-muted" style="font-size: 0.85rem;">
+                                Total HPP @if($isDraft)<span class="badge bg-secondary-subtle text-secondary small">Estimasi</span>@endif
+                            </span>
                             <h5 class="fw-medium text-secondary mt-1 mb-0">Rp {{ number_format($totalHpp, 0, ',', '.') }}</h5>
                         </div>
                         <div class="col-6">
-                            <span class="text-muted" style="font-size: 0.85rem;">Laba Kotor</span>
+                            <span class="text-muted" style="font-size: 0.85rem;">
+                                Laba Kotor @if($isDraft)<span class="badge bg-secondary-subtle text-secondary small">Estimasi</span>@endif
+                            </span>
                             <h5 class="text-success fw-bold mt-1 mb-0">Rp {{ number_format($labaKotor, 0, ',', '.') }}</h5>
                         </div>
                     </div>
@@ -137,40 +151,118 @@
 
     </div>
 
+    @if($unconfiguredRecipeCount > 0)
+        <div class="alert alert-warning d-flex align-items-center mb-4 shadow-sm border border-warning" role="alert">
+            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2 fs-5 text-warning"></i>
+            <div>
+                <strong>Perhatian:</strong> Terdapat <strong>{{ $unconfiguredRecipeCount }}</strong> produk terjual yang <strong>Belum Memiliki Resep</strong>. HPP produk tersebut dihitung menggunakan harga beli terbaru di gudang / harga referensi.
+            </div>
+        </div>
+    @endif
+
     <div class="card shadow-sm border-0">
-        <div class="card-header bg-white py-3 border-bottom">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
             <h6 class="mb-0 fw-bold">Rincian Produk Terjual</h6>
+            <span class="text-muted small"><i class="bi bi-info-circle me-1"></i>Klik header kolom untuk mengurutkan (naik/turun)</span>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover align-middle text-nowrap mb-0">
+                <table class="table table-hover align-middle text-nowrap mb-0" id="table-rincian-produk">
 
                     <thead class="table-dark">
                         <tr>
-                            <th class="ps-4" width="50">No</th>
-                            <th>Nama Item</th>
-                            <th class="text-center" width="80">Qty</th>
-                            <th class="text-end">Harga Jual</th>
-                            <th class="text-end">HPP / Unit</th>
-                            <th class="text-end pe-4">Total Harga Jual</th>
+                            <th class="ps-4 sortable-th" style="cursor: pointer; user-select: none;" data-col="0" width="70" title="Klik untuk mengurutkan No">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <span>No</span>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
+                            <th class="sortable-th" style="cursor: pointer; user-select: none;" data-col="1" title="Klik untuk mengurutkan Nama Item">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <span>Nama Item</span>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
+                            <th class="text-center sortable-th" style="cursor: pointer; user-select: none;" data-col="2" width="100" title="Klik untuk mengurutkan Qty">
+                                <div class="d-flex align-items-center justify-content-center">
+                                    <span>Qty</span>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
+                            <th class="text-end sortable-th" style="cursor: pointer; user-select: none;" data-col="3" title="Klik untuk mengurutkan Harga Jual">
+                                <div class="d-flex align-items-center justify-content-end">
+                                    <span>Harga Jual</span>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
+                            <th class="text-end sortable-th" style="cursor: pointer; user-select: none;" data-col="4" title="Klik untuk mengurutkan HPP / Unit">
+                                <div class="d-flex align-items-center justify-content-end">
+                                    <span>HPP / Unit</span>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
+                            <th class="text-end pe-4 sortable-th" style="cursor: pointer; user-select: none;" data-col="5" title="Klik untuk mengurutkan Total Harga Jual">
+                                <div class="d-flex align-items-center justify-content-end">
+                                    <span>Total Harga Jual</span>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
                         </tr>
                     </thead>
 
                     <tbody>
                         @foreach($penjualan->details as $key => $d)
+                        @php
+                            $itemHasResep = $d->has_resep ?? ($d->produk ? $d->produk->hasResep() : false);
+                            $unitHpp = ($penjualan->status === 'Draft' && ($d->hpp_satuan === null || $d->hpp_satuan <= 0))
+                                ? ($d->estimated_hpp ?? 0)
+                                : floatval($d->hpp_satuan);
+                        @endphp
                         <tr>
-                            <td class="ps-4 text-muted">{{ $key + 1 }}</td>
-                            <td class="fw-medium">{{ $d->produk->nama ?? 'Item' }}</td>
-                            <td class="text-center bg-light">{{ $d->qty }}</td>
-                            <td class="text-end">Rp {{ number_format($d->harga, 0, ',', '.') }}</td>
-                            <td class="text-end text-muted">
+                            <td class="ps-4 text-muted" data-value="{{ $key + 1 }}">{{ $key + 1 }}</td>
+                            <td class="fw-medium" data-value="{{ strtolower($d->produk->nama ?? 'Item') }}">
+                                <div class="d-flex align-items-center flex-wrap gap-2">
+                                    <span>{{ $d->produk->nama ?? 'Item' }}</span>
+                                    @if(!$itemHasResep)
+                                        <span class="badge bg-warning text-dark border border-warning" style="font-size: 0.72rem;">
+                                            <i class="bi bi-journal-x me-1"></i>Belum Memiliki Resep
+                                        </span>
+                                    @endif
+                                </div>
+                            </td>
+                            <td class="text-center bg-light fw-semibold" data-value="{{ floatval($d->qty) }}">{{ $d->qty }}</td>
+                            <td class="text-end" data-value="{{ floatval($d->harga) }}">Rp {{ number_format($d->harga, 0, ',', '.') }}</td>
+                            <td class="text-end text-muted" data-value="{{ floatval($unitHpp) }}">
                                 @if(($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0)
-                                    Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}
+                                    <div>Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}</div>
+                                    @if(!$itemHasResep)
+                                        <div class="mt-1">
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 0.68rem;">
+                                                Belum Memiliki Resep
+                                            </span>
+                                        </div>
+                                    @endif
+                                @elseif($isDraft)
+                                    @if($unitHpp > 0)
+                                        <div>
+                                            Rp {{ number_format($unitHpp, 0, ',', '.') }}
+                                            <span class="badge bg-secondary-subtle text-secondary small" style="font-size: 0.65rem;">Estimasi</span>
+                                        </div>
+                                    @endif
+                                    @if(!$itemHasResep)
+                                        <div class="mt-1">
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 0.68rem;">
+                                                Belum Memiliki Resep
+                                            </span>
+                                        </div>
+                                    @elseif($unitHpp <= 0)
+                                        <span class="text-muted small"><em>(Draft)</em></span>
+                                    @endif
                                 @else
                                     <span class="text-muted small"><em>(Draft)</em></span>
                                 @endif
                             </td>
-                            <td class="text-end fw-medium pe-4">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
+                            <td class="text-end fw-medium pe-4" data-value="{{ floatval($d->subtotal) }}">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
                         </tr>
                         @endforeach
                     </tbody>
@@ -178,8 +270,84 @@
                 </table>
             </div>
         </div>
-
+    </div>
 
 </div>
+
+<style>
+    .sortable-th:hover {
+        background-color: #343a40 !important;
+    }
+    .sortable-th .sort-icon {
+        transition: transform 0.15s ease-in-out;
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const table = document.getElementById('table-rincian-produk');
+    if (!table) return;
+
+    const tbody = table.querySelector('tbody');
+    const headers = table.querySelectorAll('th.sortable-th');
+
+    let currentSortCol = null;
+    let currentSortAsc = true;
+
+    headers.forEach(th => {
+        th.addEventListener('click', function () {
+            const colIndex = parseInt(this.getAttribute('data-col'));
+
+            if (currentSortCol === colIndex) {
+                currentSortAsc = !currentSortAsc;
+            } else {
+                currentSortCol = colIndex;
+                currentSortAsc = true;
+            }
+
+            // Reset all icons
+            headers.forEach(h => {
+                const icon = h.querySelector('.sort-icon');
+                if (icon) {
+                    icon.className = 'bi bi-arrow-down-up text-white-50 ms-1 sort-icon';
+                }
+            });
+
+            // Update active icon
+            const activeIcon = this.querySelector('.sort-icon');
+            if (activeIcon) {
+                activeIcon.className = currentSortAsc 
+                    ? 'bi bi-sort-up text-warning ms-1 sort-icon' 
+                    : 'bi bi-sort-down text-warning ms-1 sort-icon';
+            }
+
+            // Sort rows
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((rowA, rowB) => {
+                const cellA = rowA.children[colIndex];
+                const cellB = rowB.children[colIndex];
+
+                let valA = cellA.hasAttribute('data-value') ? cellA.getAttribute('data-value') : cellA.textContent.trim();
+                let valB = cellB.hasAttribute('data-value') ? cellB.getAttribute('data-value') : cellB.textContent.trim();
+
+                const numA = parseFloat(valA);
+                const numB = parseFloat(valB);
+
+                let cmp = 0;
+                if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
+                    cmp = numA - numB;
+                } else {
+                    cmp = valA.localeCompare(valB, 'id', { numeric: true, sensitivity: 'base' });
+                }
+
+                return currentSortAsc ? cmp : -cmp;
+            });
+
+            // Re-append sorted rows to tbody
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    });
+});
+</script>
 
 </x-app-layout>
