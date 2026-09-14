@@ -160,6 +160,16 @@ public function resepBtklBop()
     return $this->hasOne(ResepBtklBop::class, 'produk_id');
 }
 
+public function resepBahanBakuUtama()
+{
+    return $this->hasMany(ResepBahanBaku::class, 'bahan_id');
+}
+
+public function resepBahanBakuAlternatif()
+{
+    return $this->hasMany(ResepBahanBakuAlternatif::class, 'bahan_id');
+}
+
     /**
      * Auto-heal & sinkronkan kolom resep_id di tabel master_barang dengan resep_btkl_bop
      */

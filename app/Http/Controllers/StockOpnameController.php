@@ -162,6 +162,11 @@ class StockOpnameController extends Controller
                 'master_barang.is_operational',
                 DB::raw('COALESCE(stok_gudang.jumlah, 0) as stok')
             )
+            ->orderByRaw('CASE 
+                WHEN COALESCE(stok_gudang.jumlah, 0) > 0 THEN 0 
+                WHEN COALESCE(stok_gudang.jumlah, 0) < 0 THEN 1 
+                ELSE 2 
+            END ASC')
             ->orderBy('master_barang.nama', 'asc')
             ->get();
 

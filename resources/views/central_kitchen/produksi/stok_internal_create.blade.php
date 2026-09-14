@@ -116,6 +116,23 @@
                 </div>
             </div>
 
+            @php
+                $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+            @endphp
+            @if($isSuperAdmin)
+                <div class="card card-form p-3 mb-4 bg-warning-subtle border-warning">
+                    <div class="form-check">
+                        <input class="form-check-input ms-0 me-2" type="checkbox" name="override_stok" value="1" id="overrideStokInternal">
+                        <label class="form-check-label fw-bold text-dark small" for="overrideStokInternal">
+                            <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi jika Stok Bahan di Sistem Kurang (Khusus Super Admin)
+                        </label>
+                        <div class="text-muted mt-1" style="font-size: 11px;">
+                            Jika stok bahan baku di sistem tidak mencukupi (belum selesai stock opname), centang opsi ini agar produksi tetap berjalan dan HPP dihitung otomatis berdasarkan <strong>harga terakhir bahan baku</strong>.
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <div class="d-flex justify-content-end gap-2">
                 <a href="{{ route("ck-produksi.index") }}" class="btn btn-light rounded-3 px-4">Batal</a>
                 <button type="submit" class="btn btn-custom-orange shadow-sm px-4">

@@ -6,7 +6,14 @@
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <h3 class="fw-bold text-dark m-0">Daftar Resep Produk</h3>
-        <div class="d-flex gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-warning text-dark border-warning rounded-3 px-3 shadow-sm fw-semibold position-relative" data-bs-toggle="modal" data-bs-target="#modalTanpaResep">
+                <i class="fas fa-exclamation-circle text-warning me-1"></i>Belum Ada Resep
+                @php
+                    $totalTanpaResep = ($bsjTanpaResep ? $bsjTanpaResep->count() : 0) + ($posTanpaResep ? $posTanpaResep->count() : 0);
+                @endphp
+                <span class="badge bg-warning text-dark ms-1 rounded-pill">{{ $totalTanpaResep }}</span>
+            </button>
             <button type="button" class="btn btn-outline-secondary rounded-3 px-3 shadow-sm fw-semibold" data-bs-toggle="modal" data-bs-target="#modalImportResep">
                 <i class="fas fa-file-upload me-2"></i>Import Excel
             </button>
@@ -69,10 +76,48 @@
         <div class="card-header bg-white py-3 border-0">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0 fw-bold text-dark">Data Resep</h5>
-                <form action="{{ route('resep.index') }}" method="GET" class="d-flex gap-2">
-                    <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari nama/kode..." value="{{ request('search') }}" style="width: 220px; border-radius: 6px;">
+                <form action="{{ route('resep.index') }}" method="GET" class="d-flex align-items-center gap-2 flex-wrap" id="formFilterResep">
+                    <select name="kategori_id" class="form-select form-select-sm" style="width: 155px; border-radius: 6px;" onchange="this.form.submit()">
+                        <option value="">-- Semua Kategori --</option>
+                        @foreach($kategori as $k)
+                            <option value="{{ $k->id }}" {{ request('kategori_id') == $k->id ? 'selected' : '' }}>{{ $k->nama }}</option>
+                        @endforeach
+                    </select>
+
+                    <select name="jenis" class="form-select form-select-sm" style="width: 155px; border-radius: 6px;" onchange="this.form.submit()">
+                        <option value="">-- Semua Jenis --</option>
+                        <option value="bsj" {{ request('jenis') == 'bsj' ? 'selected' : '' }}>Bahan Setengah Jadi</option>
+                        <option value="pos" {{ request('jenis') == 'pos' ? 'selected' : '' }}>Barang Jadi / POS</option>
+                    </select>
+
+                    <div class="filter-choices-wrapper" style="width: 210px;">
+                        <select name="search" id="filter_search_produk" class="form-select form-select-sm search-select-filter" onchange="this.form.submit()">
+                            <option value="">-- Cari Produk --</option>
+                            @if(isset($listProdukResep))
+                                @foreach($listProdukResep as $pr)
+                                    <option value="{{ $pr->nama }}" {{ request('search') == $pr->nama ? 'selected' : '' }}>
+                                        {{ $pr->nama }}
+                                    </option>
+                                @endforeach
+                            @endif
+                        </select>
+                    </div>
+
+                    <div class="filter-choices-wrapper" style="width: 220px;">
+                        <select name="search_bahan" id="filter_search_bahan" class="form-select form-select-sm search-select-filter" onchange="this.form.submit()">
+                            <option value="">-- Cari Bahan Baku --</option>
+                            @if(isset($listBahanResep))
+                                @foreach($listBahanResep as $br)
+                                    <option value="{{ $br->nama }}" {{ request('search_bahan') == $br->nama ? 'selected' : '' }}>
+                                        {{ $br->nama }}
+                                    </option>
+                                @endforeach
+                            @endif
+                        </select>
+                    </div>
+
                     <button type="submit" class="btn btn-sm text-white" style="background-color: #d88656; border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
-                    @if(request('search'))
+                    @if(request('search') || request('search_bahan') || request('kategori_id') || request('jenis'))
                         <a href="{{ route('resep.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px; padding: 5px 15px;">Reset</a>
                     @endif
                 </form>
@@ -92,30 +137,56 @@
                         @forelse($data as $r)
                         <tr>
                             <td class="text-start ps-4 fw-semibold text-dark">
-                                {{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}
-                                @if($r->produk)
-                                    @if($r->produk->is_bahan_setengah_jadi)
-                                        <span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 11px;">
-                                            <i class="bi bi-gear me-1"></i>Bahan Setengah Jadi
-                                        </span>
-                                    @elseif($r->produk->is_barang_jadi)
-                                        @if($r->produk->tipe_penjualan === 'POS Kejingga')
-                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" style="font-size: 11px;">
-                                                <i class="bi bi-shop me-1"></i>POS Kejingga
+                                <div>
+                                    {{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}
+                                    @if($r->produk)
+                                        @if($r->produk->is_bahan_setengah_jadi)
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 11px;">
+                                                <i class="bi bi-gear me-1"></i>Bahan Setengah Jadi
                                             </span>
-                                        @elseif($r->produk->tipe_penjualan === 'POS Gaharu')
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 11px;">
-                                                <i class="bi bi-shop me-1"></i>POS Gaharu
-                                            </span>
-                                        @elseif($r->produk->tipe_penjualan === 'B2B')
-                                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 11px;">
-                                                <i class="bi bi-building me-1"></i>B2B
-                                            </span>
-                                        @else
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 11px;">
-                                                Barang Jadi
-                                            </span>
+                                        @elseif($r->produk->is_barang_jadi)
+                                            @if($r->produk->tipe_penjualan === 'POS Kejingga')
+                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" style="font-size: 11px;">
+                                                    <i class="bi bi-shop me-1"></i>POS Kejingga
+                                                </span>
+                                            @elseif($r->produk->tipe_penjualan === 'POS Gaharu')
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 11px;">
+                                                    <i class="bi bi-shop me-1"></i>POS Gaharu
+                                                </span>
+                                            @elseif($r->produk->tipe_penjualan === 'B2B')
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 11px;">
+                                                    <i class="bi bi-building me-1"></i>B2B
+                                                </span>
+                                            @else
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size: 11px;">
+                                                    Barang Jadi
+                                                </span>
+                                            @endif
                                         @endif
+                                    @endif
+                                </div>
+                                @if(request('search_bahan'))
+                                    @php
+                                        $sbLower = strtolower(request('search_bahan'));
+                                        $matchedBahans = [];
+                                        foreach ($r->bahanbaku as $bb) {
+                                            if ($bb->bahan && (str_contains(strtolower($bb->bahan->nama), $sbLower) || str_contains(strtolower($bb->bahan->kode_barang), $sbLower))) {
+                                                $matchedBahans[] = $bb->bahan->nama . ' (' . (float)$bb->qty_bahan . ' ' . $bb->satuan . ')';
+                                            }
+                                            if ($bb->alternatif) {
+                                                foreach ($bb->alternatif as $alt) {
+                                                    if ($alt->bahan && (str_contains(strtolower($alt->bahan->nama), $sbLower) || str_contains(strtolower($alt->bahan->kode_barang), $sbLower))) {
+                                                        $matchedBahans[] = '[Alt] ' . $alt->bahan->nama;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    @endphp
+                                    @if(!empty($matchedBahans))
+                                        <div class="mt-1 small text-muted font-monospace" style="font-size: 11.5px;">
+                                            <span class="text-warning-emphasis fw-semibold"><i class="fas fa-check-circle me-1"></i>Menggunakan:</span>
+                                            <span class="badge bg-warning-subtle text-dark border border-warning-subtle">{{ implode(', ', array_unique($matchedBahans)) }}</span>
+                                        </div>
                                     @endif
                                 @endif
                             </td>
@@ -155,9 +226,9 @@
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="5" class="text-center text-muted py-5 fs-6">
+                            <td colspan="3" class="text-center text-muted py-5 fs-6">
                                 <i class="fas fa-folder-open d-block mb-2 fs-3 opacity-50"></i>
-                                Belum ada data resep yang tersimpan.
+                                Belum ada data resep yang sesuai dengan filter atau tersimpan.
                             </td>
                         </tr>
                         @endforelse
@@ -324,6 +395,161 @@
     </div>
 </form>
 
+{{-- ================= MODAL BARANG TANPA RESEP ================= --}}
+<div class="modal fade" id="modalTanpaResep" tabindex="-1" aria-labelledby="modalTanpaResepLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header bg-white border-bottom py-3 px-4">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 42px; height: 42px; background-color: #fef3c7; color: #d97706;">
+                        <i class="fas fa-clipboard-list fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-dark fs-6 mb-0" id="modalTanpaResepLabel">Produk Belum Memiliki Resep</h5>
+                        <small class="text-muted">Daftar Bahan Setengah Jadi (BSJ) dan Barang Jadi (POS) yang siap dikonfigurasi resepnya</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body p-4 bg-light">
+                {{-- Quick Filter / Nav Tabs --}}
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <ul class="nav nav-pills gap-2" id="tanpaResepTab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active rounded-pill px-3 py-1 fw-semibold small shadow-sm" id="tab-bsj-btn" data-bs-toggle="pill" data-bs-target="#tab-bsj-content" type="button" role="tab">
+                                <i class="bi bi-gear-fill me-1"></i>Bahan Setengah Jadi
+                                <span class="badge bg-white text-dark ms-1 rounded-pill">{{ $bsjTanpaResep ? $bsjTanpaResep->count() : 0 }}</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link rounded-pill px-3 py-1 fw-semibold small shadow-sm" id="tab-pos-btn" data-bs-toggle="pill" data-bs-target="#tab-pos-content" type="button" role="tab">
+                                <i class="bi bi-shop me-1"></i>Barang Jadi / POS
+                                <span class="badge bg-white text-dark ms-1 rounded-pill">{{ $posTanpaResep ? $posTanpaResep->count() : 0 }}</span>
+                            </button>
+                        </li>
+                    </ul>
+
+                    {{-- Search bar in modal --}}
+                    <div style="width: 250px;">
+                        <input type="text" id="search-modal-tanpa-resep" class="form-control form-control-sm rounded-pill" placeholder="Cari di daftar ini...">
+                    </div>
+                </div>
+
+                {{-- Tab Contents --}}
+                <div class="tab-content" id="tanpaResepTabContent">
+                    {{-- TAB BSJ --}}
+                    <div class="tab-pane fade show active" id="tab-bsj-content" role="tabpanel">
+                        <div class="card border-0 shadow-sm rounded-3">
+                            <div class="table-responsive" style="max-height: 420px;">
+                                <table class="table table-hover align-middle mb-0" id="table-tanpa-resep-bsj">
+                                    <thead class="table-light text-secondary text-uppercase fs-7 text-center sticky-top">
+                                        <tr>
+                                            <th width="50">No</th>
+                                            <th width="120">Kode</th>
+                                            <th class="text-start">Nama Bahan Setengah Jadi</th>
+                                            <th width="120">Satuan</th>
+                                            <th width="150">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-center">
+                                        @forelse($bsjTanpaResep as $idx => $b)
+                                        <tr class="item-tanpa-resep-row" data-search="{{ strtolower($b->kode_barang . ' ' . $b->nama) }}">
+                                            <td class="text-muted small">{{ $idx + 1 }}</td>
+                                            <td><span class="badge bg-light text-dark border font-monospace">{{ $b->kode_barang }}</span></td>
+                                            <td class="text-start fw-semibold text-dark">{{ $b->nama }}</td>
+                                            <td><span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1">{{ $b->satuan }}</span></td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 py-1 fw-semibold btn-buat-resep-langsung" data-id="{{ $b->id }}">
+                                                    <i class="fas fa-plus me-1"></i>Buat Resep
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        @empty
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted py-4">
+                                                <i class="fas fa-check-circle text-success fs-4 d-block mb-2"></i>
+                                                Semua Bahan Setengah Jadi sudah memiliki resep!
+                                            </td>
+                                        </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- TAB POS / BARANG JADI --}}
+                    <div class="tab-pane fade" id="tab-pos-content" role="tabpanel">
+                        <div class="card border-0 shadow-sm rounded-3">
+                            <div class="table-responsive" style="max-height: 420px;">
+                                <table class="table table-hover align-middle mb-0" id="table-tanpa-resep-pos">
+                                    <thead class="table-light text-secondary text-uppercase fs-7 text-center sticky-top">
+                                        <tr>
+                                            <th width="50">No</th>
+                                            <th width="120">Kode</th>
+                                            <th class="text-start">Nama Produk / Barang Jadi</th>
+                                            <th>Kategori / Tipe</th>
+                                            <th width="120">Satuan</th>
+                                            <th width="150">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-center">
+                                        @forelse($posTanpaResep as $idx => $p)
+                                        <tr class="item-tanpa-resep-row" data-search="{{ strtolower($p->kode_barang . ' ' . $p->nama . ' ' . ($p->kategori->nama ?? '') . ' ' . $p->tipe_penjualan) }}">
+                                            <td class="text-muted small">{{ $idx + 1 }}</td>
+                                            <td><span class="badge bg-light text-dark border font-monospace">{{ $p->kode_barang }}</span></td>
+                                            <td class="text-start fw-semibold text-dark">{{ $p->nama }}</td>
+                                            <td>
+                                                @if($p->tipe_penjualan === 'POS Kejingga')
+                                                    <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">
+                                                        <i class="bi bi-shop me-1"></i>POS Kejingga
+                                                    </span>
+                                                @elseif($p->tipe_penjualan === 'POS Gaharu')
+                                                    <span class="badge bg-success-subtle text-success border border-success-subtle">
+                                                        <i class="bi bi-shop me-1"></i>POS Gaharu
+                                                    </span>
+                                                @elseif($p->tipe_penjualan === 'B2B')
+                                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                                        <i class="bi bi-building me-1"></i>B2B
+                                                    </span>
+                                                @else
+                                                    <span class="badge bg-light text-secondary border">
+                                                        {{ $p->kategori->nama ?? 'Makanan & Minuman' }}
+                                                    </span>
+                                                @endif
+                                            </td>
+                                            <td><span class="badge bg-light text-dark border px-2 py-1">{{ $p->satuan }}</span></td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 py-1 fw-semibold btn-buat-resep-langsung" data-id="{{ $p->id }}">
+                                                    <i class="fas fa-plus me-1"></i>Buat Resep
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted py-4">
+                                                <i class="fas fa-check-circle text-success fs-4 d-block mb-2"></i>
+                                                Semua Barang Jadi / POS sudah memiliki resep!
+                                            </td>
+                                        </tr>
+                                        @endforelse
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="modal-footer bg-white border-top py-2 px-4 d-flex justify-content-end">
+                <button type="button" class="btn btn-secondary btn-sm px-3 rounded-3" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- ================= MODAL IMPORT EXCEL RESEP ================= --}}
 <div class="modal fade" id="modalImportResep" tabindex="-1" aria-labelledby="modalImportResepLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -396,6 +622,19 @@
         border-radius: 6px;
         min-height: 38px;
         font-size: 14px;
+    }
+    .filter-choices-wrapper .choices[data-type*="select-one"] .choices__inner {
+        min-height: 31px !important;
+        padding: 2px 8px !important;
+        font-size: 12.5px !important;
+        border-radius: 6px !important;
+    }
+    .filter-choices-wrapper .choices__list--single {
+        padding: 0 !important;
+    }
+    .filter-choices-wrapper .choices__input {
+        font-size: 12.5px !important;
+        padding: 4px 8px !important;
     }
     #table-bahan thead {
         position: relative;
@@ -549,6 +788,31 @@ document.addEventListener("DOMContentLoaded", function () {
         itemSelectText: '',
         shouldSort: false,
     });
+
+    // Inisialisasi Choices.js untuk filter dropdown search produk & search bahan
+    const filterProdukEl = document.getElementById('filter_search_produk');
+    if (filterProdukEl) {
+        new Choices(filterProdukEl, {
+            searchEnabled: true,
+            itemSelectText: '',
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: '-- Cari Produk --',
+            allowHTML: false,
+        });
+    }
+
+    const filterBahanEl = document.getElementById('filter_search_bahan');
+    if (filterBahanEl) {
+        new Choices(filterBahanEl, {
+            searchEnabled: true,
+            itemSelectText: '',
+            shouldSort: false,
+            placeholder: true,
+            placeholderValue: '-- Cari Bahan Baku --',
+            allowHTML: false,
+        });
+    }
 
     // Helper: update all hidden inputs inside a row based on selected items
     function updateHiddenInputs(row, rowIndex) {
@@ -765,8 +1029,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // ============ MODAL TAMBAH ============
-    document.getElementById('btn-tambah-resep').addEventListener('click', function() {
+    // ============ MODAL TAMBAH HELPER ============
+    function openModalTambahDenganProduk(preselectedProdukId = null) {
         modalTitle.innerText = "Tambah Resep Baru";
         btnSubmit.innerText = "Simpan Resep";
         btnSubmit.className = "btn btn-primary px-4 shadow-sm";
@@ -792,8 +1056,65 @@ document.addEventListener("DOMContentLoaded", function () {
         setupRowEvents(barisAwal);
         updateAllRowIndexes();
 
+        if (preselectedProdukId) {
+            produkChoices.setChoiceByValue(String(preselectedProdukId));
+            const selectedOpt = selectProduk.querySelector(`option[value="${preselectedProdukId}"]`);
+            if (selectedOpt) {
+                inputSatuanOutput.value = selectedOpt.dataset.satuan || '';
+                const konvInfoBox = document.getElementById('resep-konversi-info');
+                const konvInfoText = document.getElementById('resep-konversi-text');
+                if (selectedOpt.dataset.satuanKonversi && parseFloat(selectedOpt.dataset.konversi || 1) > 1) {
+                    konvInfoText.textContent = `Konversi: 1 ${selectedOpt.dataset.satuanKonversi} = ${Number(selectedOpt.dataset.konversi).toLocaleString('id-ID')} ${selectedOpt.dataset.satuan}. Anda dapat menyusun resep per 1 ${selectedOpt.dataset.satuanKonversi} (Output: ${Number(selectedOpt.dataset.konversi).toLocaleString('id-ID')} ${selectedOpt.dataset.satuan}) atau per batch.`;
+                    konvInfoBox.classList.remove('d-none');
+                } else if (konvInfoBox) {
+                    konvInfoBox.classList.add('d-none');
+                }
+            }
+        }
+
         bsModalInstance.show();
+    }
+
+    // ============ MODAL TAMBAH ============
+    document.getElementById('btn-tambah-resep').addEventListener('click', function() {
+        openModalTambahDenganProduk();
     });
+
+    // ============ EVENT BUAT RESEP LANGSUNG DARI MODAL TANPA RESEP ============
+    const modalTanpaResepEl = document.getElementById('modalTanpaResep');
+    document.querySelectorAll('.btn-buat-resep-langsung').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const barangId = this.dataset.id;
+            if (modalTanpaResepEl) {
+                const modalTanpaResepInst = bootstrap.Modal.getInstance(modalTanpaResepEl);
+                if (modalTanpaResepInst) {
+                    modalTanpaResepEl.addEventListener('hidden.bs.modal', function onTanpaResepHidden() {
+                        modalTanpaResepEl.removeEventListener('hidden.bs.modal', onTanpaResepHidden);
+                        openModalTambahDenganProduk(barangId);
+                    });
+                    modalTanpaResepInst.hide();
+                    return;
+                }
+            }
+            openModalTambahDenganProduk(barangId);
+        });
+    });
+
+    // ============ SEARCH FILTER DI MODAL TANPA RESEP ============
+    const searchModalTanpaResep = document.getElementById('search-modal-tanpa-resep');
+    if (searchModalTanpaResep) {
+        searchModalTanpaResep.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            document.querySelectorAll('.item-tanpa-resep-row').forEach(row => {
+                const searchData = row.getAttribute('data-search') || '';
+                if (searchData.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        });
+    }
 
     // ============ MODAL EDIT ============
     document.querySelectorAll('.btn-edit-resep').forEach(tombol => {

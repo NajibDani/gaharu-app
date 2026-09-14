@@ -6,6 +6,7 @@ use App\Imports\ResepImporter;
 use App\Models\ResepBahanBaku;
 use App\Models\ResepBtklBop;
 use App\Models\MasterBarang;
+use App\Models\Kategori;
 use Illuminate\Http\Request;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -18,9 +19,30 @@ class ResepBtklBopController extends Controller
         MasterBarang::syncAllResepIds();
         MasterBarang::syncAllResepSatuan();
 
-        $search = $request->query('search');
+        $search      = $request->query('search');
+        $searchBahan = $request->query('search_bahan');
+        $kategoriId  = $request->query('kategori_id');
+        $jenis       = $request->query('jenis');
 
-        $query = ResepBtklBop::whereHas('produk')->with(['produk', 'bahanbaku.bahan', 'bahanbaku.alternatif.bahan']);
+        $query = ResepBtklBop::whereHas('produk')->with(['produk.kategori', 'bahanbaku.bahan', 'bahanbaku.alternatif.bahan']);
+
+        if (!empty($kategoriId)) {
+            $query->whereHas('produk', function($qp) use ($kategoriId) {
+                $qp->where('kategori_id', $kategoriId);
+            });
+        }
+
+        if (!empty($jenis)) {
+            if ($jenis === 'bsj') {
+                $query->whereHas('produk', function($qp) {
+                    $qp->where('is_bahan_setengah_jadi', 1);
+                });
+            } elseif ($jenis === 'pos' || $jenis === 'barang_jadi') {
+                $query->whereHas('produk', function($qp) {
+                    $qp->where('is_barang_jadi', 1);
+                });
+            }
+        }
 
         if (!empty($search)) {
             $query->where(function($q) use ($search) {
@@ -31,16 +53,76 @@ class ResepBtklBopController extends Controller
             });
         }
 
+        if (!empty($searchBahan)) {
+            $query->where(function($q) use ($searchBahan) {
+                // Cari di bahan baku utama
+                $q->whereHas('bahanbaku.bahan', function($qb) use ($searchBahan) {
+                    $qb->where('nama', 'like', "%{$searchBahan}%")
+                       ->orWhere('kode_barang', 'like', "%{$searchBahan}%");
+                })
+                // Atau di bahan alternatif
+                ->orWhereHas('bahanbaku.alternatif.bahan', function($qa) use ($searchBahan) {
+                    $qa->where('nama', 'like', "%{$searchBahan}%")
+                       ->orWhere('kode_barang', 'like', "%{$searchBahan}%");
+                });
+            });
+        }
+
         // Paginasi 10 data per halaman
         $data = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
+
+        $kategori = Kategori::orderBy('nama')->get();
 
         $produk = MasterBarang::where(function($q) {
             $q->where('is_barang_jadi', '1')->orWhere('is_bahan_setengah_jadi', '1');
         })->where('is_active', true)->orderBy('nama')->get();
         
-        $bahan  = MasterBarang::where('is_active', true)->orderBy('nama')->get();
+        $bahan = MasterBarang::where('is_active', true)->orderBy('nama')->get();
 
-        return view('resep.index', compact('data', 'produk', 'bahan', 'search'));
+        // Barang yang belum memiliki resep
+        $bsjTanpaResep = MasterBarang::with('kategori')
+            ->where('is_bahan_setengah_jadi', 1)
+            ->where('is_active', true)
+            ->whereDoesntHave('resepBtklBop')
+            ->orderBy('nama')
+            ->get();
+
+        $posTanpaResep = MasterBarang::with('kategori')
+            ->where('is_barang_jadi', 1)
+            ->where('is_active', true)
+            ->whereDoesntHave('resepBtklBop')
+            ->orderBy('nama')
+            ->get();
+
+        // List Produk yang memiliki resep (untuk dropdown filter produk)
+        $listProdukResep = MasterBarang::whereHas('resepBtklBop')
+            ->orderBy('nama')
+            ->get(['id', 'nama', 'kode_barang']);
+
+        // List Bahan Baku / BSJ yang digunakan di dalam resep (untuk dropdown filter bahan)
+        $usedBahanIds = \App\Models\ResepBahanBaku::pluck('bahan_id')
+            ->merge(\App\Models\ResepBahanBakuAlternatif::pluck('bahan_id'))
+            ->unique()
+            ->filter();
+
+        $listBahanResep = MasterBarang::whereIn('id', $usedBahanIds)
+            ->orderBy('nama')
+            ->get(['id', 'nama', 'kode_barang']);
+
+        return view('resep.index', compact(
+            'data',
+            'produk',
+            'bahan',
+            'search',
+            'searchBahan',
+            'kategori',
+            'kategoriId',
+            'jenis',
+            'bsjTanpaResep',
+            'posTanpaResep',
+            'listProdukResep',
+            'listBahanResep'
+        ));
     }
 
     public function show($id)

@@ -166,7 +166,7 @@
                     </select>
 
                     {{-- Filter Jenis Barang --}}
-                    <select id="filterJenisInput" class="form-select form-select-sm bg-white text-dark" style="width: 170px; border-radius: 6px;" onchange="applyFilters()">
+                    <select id="filterJenisInput" class="form-select form-select-sm bg-white text-dark" style="width: 155px; border-radius: 6px;" onchange="applyFilters()">
                         <option value="">-- Semua Jenis --</option>
                         <option value="bahan_baku">Bahan Baku</option>
                         <option value="bahan_setengah_jadi">Bahan Setengah Jadi</option>
@@ -174,12 +174,20 @@
                         <option value="operational">Operational</option>
                     </select>
 
+                    {{-- Filter Status Stok --}}
+                    <select id="filterStokInput" class="form-select form-select-sm bg-white text-dark" style="width: 165px; border-radius: 6px;" onchange="applyFilters()">
+                        <option value="">-- Semua Stok --</option>
+                        <option value="ada_stok">Ada Stok Saja (> 0)</option>
+                        <option value="tanpa_stok">Stok Kosong (0)</option>
+                        <option value="minus">Stok Minus (< 0)</option>
+                    </select>
+
                     {{-- Search Keyword --}}
                     <input type="text" 
                            id="searchBarangInput" 
                            class="form-control form-control-sm bg-white text-dark" 
                            placeholder="Cari kode / nama..." 
-                           style="width: 180px; border-radius: 6px;"
+                           style="width: 170px; border-radius: 6px;"
                            oninput="applyFilters()">
                 </div>
 
@@ -402,6 +410,7 @@ function applyFilters() {
     let kw = (document.getElementById('searchBarangInput')?.value || '').toLowerCase().trim();
     let kategoriId = document.getElementById('filterKategoriInput')?.value || '';
     let jenis = document.getElementById('filterJenisInput')?.value || '';
+    let stokStatus = document.getElementById('filterStokInput')?.value || '';
 
     filteredItems = rawItems.filter(item => {
         // Filter keyword
@@ -424,6 +433,14 @@ function applyFilters() {
             if (jenis === 'bahan_setengah_jadi' && !item.is_bahan_setengah_jadi) return false;
             if (jenis === 'barang_jadi' && !item.is_barang_jadi) return false;
             if (jenis === 'operational' && !item.is_operational) return false;
+        }
+
+        // Filter status stok
+        if (stokStatus) {
+            let stok = parseFloat(item.stok || 0);
+            if (stokStatus === 'ada_stok' && stok <= 0) return false;
+            if (stokStatus === 'tanpa_stok' && stok !== 0) return false;
+            if (stokStatus === 'minus' && stok >= 0) return false;
         }
 
         return true;
@@ -486,8 +503,9 @@ function renderPagination() {
             ${hasKonversi ? `<small class="text-primary d-block font-monospace" style="font-size:0.72rem;">1 ${item.satuan_pembelian} = ${konversi.toLocaleString('id-ID')} ${item.satuan}</small>` : ''}
         `;
 
+        let stokColor = stokSistem > 0 ? 'text-success fw-bold' : (stokSistem < 0 ? 'text-danger fw-bold' : 'text-muted');
         let stokSistemHtml = `
-            <div>${stokSistem.toLocaleString('id-ID')} <span class="text-muted small">${item.satuan || 'pcs'}</span></div>
+            <div class="${stokColor}">${stokSistem.toLocaleString('id-ID')} <span class="small">${item.satuan || 'pcs'}</span></div>
             ${hasKonversi ? `<div class="small text-primary mt-1" style="font-size:0.75rem;"><i class="bi bi-arrow-repeat me-1"></i>${(stokSistem / konversi).toLocaleString('id-ID', {minimumFractionDigits:2, maximumFractionDigits:2})} ${item.satuan_pembelian}</div>` : ''}
         `;
 
@@ -508,12 +526,21 @@ function renderPagination() {
             badgeJenis = '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-1" style="font-size:10px;">Operasional</span>';
         }
 
+        let badgeStok = '';
+        if (stokSistem > 0) {
+            badgeStok = '<span class="badge bg-success text-white ms-1" style="font-size:9.5px; padding: 2px 5px;"><i class="bi bi-check-circle-fill me-0.5"></i>Ada Stok</span>';
+        } else if (stokSistem < 0) {
+            badgeStok = '<span class="badge bg-danger text-white ms-1" style="font-size:9.5px; padding: 2px 5px;"><i class="bi bi-exclamation-circle-fill me-0.5"></i>Stok Minus</span>';
+        }
+
         let kategoriHtml = item.kategori_nama 
-            ? `<div class="text-muted small" style="font-size:11px;"><i class="bi bi-tag me-1"></i>${item.kategori_nama} ${badgeJenis}</div>` 
-            : badgeJenis;
+            ? `<div class="text-muted small" style="font-size:11px;"><i class="bi bi-tag me-1"></i>${item.kategori_nama} ${badgeJenis} ${badgeStok}</div>` 
+            : `${badgeJenis} ${badgeStok}`;
+
+        let rowHighlight = stokSistem > 0 ? 'style="background-color: #f8fafc;"' : (stokSistem < 0 ? 'style="background-color: #fff7ed;"' : '');
 
         tbody.innerHTML += `
-            <tr data-barang-id="${item.id}">
+            <tr data-barang-id="${item.id}" ${rowHighlight}>
                 <td class="fw-semibold text-muted font-monospace small">
                     ${item.kode_barang}
                 </td>

@@ -858,6 +858,13 @@ class CentralKitchenProductionController extends Controller
 
             // Validasi formulasi resep & ketersediaan bahan baku di Gudang CK sebelum eksekusi (Khusus Approve)
             $fifoService = app(\App\Services\FifoService::class);
+            $isOverrideStok = $request->boolean('override_stok') || $request->input('override_stok') == '1';
+            $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+
+            if ($isOverrideStok && !$isSuperAdmin) {
+                throw new \Exception('Akses ditolak: Persetujuan produksi dengan override stok kurang hanya dapat dilakukan oleh Super Admin.');
+            }
+
             foreach ($request->produk_id as $key => $produkId) {
                 $rawQty = floatval($request->qty_hasil[$key] ?? 0);
                 if ($rawQty <= 0) continue;
@@ -879,16 +886,19 @@ class CentralKitchenProductionController extends Controller
                     throw new \Exception("Approval belum dapat dilakukan: Menu '{$produk->nama}' belum memiliki formulasi resep. Silakan isi resep terlebih dahulu di menu Resep.");
                 }
 
-                $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
-                $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
-                foreach ($resepItems as $item) {
-                    $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
-                    
-                    $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangCkId);
-                    if (!$avail['sufficient']) {
-                        $namaBahan = $avail['nama'];
-                        $stokBahan = $avail['stok'];
-                        throw new \Exception("Approval belum dapat dilakukan: Stok bahan baku {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan lakukan permintaan bahan terlebih dahulu.");
+                // Cek ketersediaan bahan jika BUKAN override persetujuan oleh Super Admin
+                if (!$isOverrideStok) {
+                    $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                    $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
+                    foreach ($resepItems as $item) {
+                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        
+                        $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangCkId);
+                        if (!$avail['sufficient']) {
+                            $namaBahan = $avail['nama'];
+                            $stokBahan = $avail['stok'];
+                            throw new \Exception("Approval belum dapat dilakukan: Stok bahan baku {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan lakukan permintaan bahan atau gunakan persetujuan override stok (Super Admin).");
+                        }
                     }
                 }
             }
@@ -941,7 +951,7 @@ class CentralKitchenProductionController extends Controller
                         $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangCkId);
                         $resolvedBahanId = $resolved['bahan_id'];
 
-                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangCkId);
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangCkId, $isOverrideStok);
 
                         $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
@@ -952,6 +962,12 @@ class CentralKitchenProductionController extends Controller
                         $stokBahanGlobal = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resolvedBahanId)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
+                        } else {
+                            StokGudang::create([
+                                'gudang_id' => $gudangCkId,
+                                'barang_id' => $resolvedBahanId,
+                                'jumlah'    => -$qtyButuh,
+                            ]);
                         }
 
                         // Catat transaksi keluar bahan baku untuk Buku Pembantu Persediaan
@@ -1501,11 +1517,18 @@ class CentralKitchenProductionController extends Controller
     /**
      * Approve Produksi Central Kitchen (Hitung FIFO HPP & Masukkan ke Stok Gudang CK)
      */
-    public function approveProduksi($id)
+    public function approveProduksi(Request $request, $id)
     {
         $produksi = Produksi::with('details')->findOrFail($id);
         if ($produksi->status_produksi !== 'Draft') {
             return redirect()->back()->with('error', 'Produksi ini sudah disetujui sebelumnya.');
+        }
+
+        $isOverrideStok = $request->boolean('override_stok') || $request->input('override_stok') == '1';
+        $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+
+        if ($isOverrideStok && !$isSuperAdmin) {
+            return redirect()->back()->with('error', 'Akses ditolak: Persetujuan produksi dengan override stok kurang hanya dapat dilakukan oleh Super Admin.');
         }
 
         DB::beginTransaction();
@@ -1529,16 +1552,18 @@ class CentralKitchenProductionController extends Controller
                     throw new \Exception("Approval belum dapat dilakukan: Menu '{$produk->nama}' belum memiliki formulasi resep. Silakan isi resep terlebih dahulu di menu Resep.");
                 }
 
-                $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
-                $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
-                foreach ($resepItems as $item) {
-                    $qtyButuh = floatval($item->qty_bahan) * floatval($detail->qty);
-                    
-                    $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangBahanId);
-                    if (!$avail['sufficient']) {
-                        $namaBahan = $avail['nama'];
-                        $stokBahan = $avail['stok'];
-                        throw new \Exception("Approval belum dapat dilakukan: Stok {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan lakukan permintaan bahan terlebih dahulu.");
+                if (!$isOverrideStok) {
+                    $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                    $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
+                    foreach ($resepItems as $item) {
+                        $qtyButuh = floatval($item->qty_bahan) * floatval($detail->qty);
+                        
+                        $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangBahanId);
+                        if (!$avail['sufficient']) {
+                            $namaBahan = $avail['nama'];
+                            $stokBahan = $avail['stok'];
+                            throw new \Exception("Approval belum dapat dilakukan: Stok {$namaBahan} di Gudang Central Kitchen belum mencukupi (Tersedia: {$stokBahan}, Dibutuhkan: {$qtyButuh}). Silakan lakukan permintaan bahan atau gunakan persetujuan override stok (Super Admin).");
+                        }
                     }
                 }
             }
@@ -1558,7 +1583,7 @@ class CentralKitchenProductionController extends Controller
                         $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
                         $resolvedBahanId = $resolved['bahan_id'];
 
-                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangBahanId);
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $qtyButuh, $gudangBahanId, $isOverrideStok);
 
                         $hppBahan = 0;
                         foreach ($fifoResult as $layer) {
@@ -1569,6 +1594,12 @@ class CentralKitchenProductionController extends Controller
                         $stokBahanGlobal = StokGudang::where('gudang_id', $gudangBahanId)->where('barang_id', $resolvedBahanId)->first();
                         if ($stokBahanGlobal) {
                             $stokBahanGlobal->decrement('jumlah', $qtyButuh);
+                        } else {
+                            StokGudang::create([
+                                'gudang_id' => $gudangBahanId,
+                                'barang_id' => $resolvedBahanId,
+                                'jumlah'    => -$qtyButuh,
+                            ]);
                         }
 
                         // Catat transaksi keluar bahan baku untuk Buku Pembantu Persediaan
@@ -1786,21 +1817,30 @@ class CentralKitchenProductionController extends Controller
             }
             if (!$hasValid) throw new \Exception('Harap isi minimal 1 produk dengan qty lebih dari 0.');
 
-            // Cek kecukupan bahan
+            $isOverrideStok = $request->boolean('override_stok') || $request->input('override_stok') == '1';
+            $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+
+            if ($isOverrideStok && !$isSuperAdmin) {
+                throw new \Exception('Akses ditolak: Persetujuan produksi dengan override stok kurang hanya dapat dilakukan oleh Super Admin.');
+            }
+
+            // Cek kecukupan bahan jika BUKAN override persetujuan
             $fifoService = app(\App\Services\FifoService::class);
-            foreach ($request->produk_id as $k => $produkId) {
-                $qty = floatval($request->qty_hasil[$k] ?? 0);
-                if ($qty <= 0) continue;
-                $produk = MasterBarang::find($produkId);
-                $resepId = $produk ? ($produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null)) : null;
-                if ($resepId) {
-                    foreach (ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() as $r) {
-                        $butuh = floatval($r->qty_bahan) * $qty;
-                        $avail = $fifoService->checkBahanAvailability($r, $butuh, $gudangCkId);
-                        if (!$avail['sufficient']) {
-                            $namaBahan = $avail['nama'];
-                            $stok = $avail['stok'];
-                            throw new \Exception("Stok {$namaBahan} tidak mencukupi (Tersedia: {$stok}, Butuh: {$butuh}).");
+            if (!$isOverrideStok) {
+                foreach ($request->produk_id as $k => $produkId) {
+                    $qty = floatval($request->qty_hasil[$k] ?? 0);
+                    if ($qty <= 0) continue;
+                    $produk = MasterBarang::find($produkId);
+                    $resepId = $produk ? ($produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null)) : null;
+                    if ($resepId) {
+                        foreach (ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() as $r) {
+                            $butuh = floatval($r->qty_bahan) * $qty;
+                            $avail = $fifoService->checkBahanAvailability($r, $butuh, $gudangCkId);
+                            if (!$avail['sufficient']) {
+                                $namaBahan = $avail['nama'];
+                                $stok = $avail['stok'];
+                                throw new \Exception("Stok {$namaBahan} tidak mencukupi (Tersedia: {$stok}, Butuh: {$butuh}). Silakan lakukan permintaan bahan atau gunakan opsi persetujuan override stok (Super Admin).");
+                            }
                         }
                     }
                 }
@@ -1839,7 +1879,7 @@ class CentralKitchenProductionController extends Controller
                         $resolved = $fifoService->resolveAlternativeBahan($r, $butuh, $gudangCkId);
                         $resolvedBahanId = $resolved['bahan_id'];
 
-                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $butuh, $gudangCkId);
+                        $fifoResult = $fifoService->consumeFIFO($resolvedBahanId, $butuh, $gudangCkId, $isOverrideStok);
                         $hppBahan  = 0;
                         foreach ($fifoResult as $layer) {
                             $hppBahan += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
@@ -1848,7 +1888,15 @@ class CentralKitchenProductionController extends Controller
 
                         // Kurangi stok bahan
                         $stokBahan = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resolvedBahanId)->first();
-                        if ($stokBahan) $stokBahan->decrement('jumlah', $butuh);
+                        if ($stokBahan) {
+                            $stokBahan->decrement('jumlah', $butuh);
+                        } else {
+                            StokGudang::create([
+                                'gudang_id' => $gudangCkId,
+                                'barang_id' => $resolvedBahanId,
+                                'jumlah'    => -$butuh,
+                            ]);
+                        }
 
                         // Catat TransaksiStok keluar bahan
                         TransaksiStok::create([
@@ -1940,6 +1988,69 @@ class CentralKitchenProductionController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal Simpan Produksi Internal: ' . $e->getMessage())->withInput();
+        }
+    }
+
+    /**
+     * Hapus Work Order Central Kitchen yang belum terkirim (Khusus Superadmin)
+     */
+    public function destroyWo($id)
+    {
+        $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+        if (!$isSuperAdmin) {
+            abort(403, 'Akses ditolak: Hanya Super Admin yang berwenang menghapus Work Order.');
+        }
+
+        $wo = WorkOrder::with('details')->findOrFail($id);
+
+        // Validasi status pengiriman
+        $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique()->toArray();
+        $isTerkirim = Pengiriman::whereIn('pesanan_id', $pesananIds)
+            ->where('status_pengiriman', 'Selesai')
+            ->exists();
+
+        if ($isTerkirim) {
+            return redirect()->back()->with('error', "Gagal: Work Order {$wo->kode_wo} tidak dapat dihapus karena sudah berstatus selesai dikirim ke outlet.");
+        }
+
+        DB::beginTransaction();
+        try {
+            // 1. Bersihkan pengiriman yang belum selesai (draft / proses) terkait pesanan WO ini jika ada
+            $pengirimans = Pengiriman::whereIn('pesanan_id', $pesananIds)->where('status_pengiriman', '!=', 'Selesai')->get();
+            foreach ($pengirimans as $pengiriman) {
+                DB::table('pengiriman_detail')->where('pengiriman_id', $pengiriman->id)->delete();
+                $pengiriman->delete();
+            }
+
+            // 2. Bersihkan alokasi produksi pesanan
+            DB::table('alokasi_produksi_pesanan')->whereIn('pesanan_id', $pesananIds)->delete();
+
+            // 3. Bersihkan draft produksi jika ada
+            $draftProduksi = Produksi::whereIn('pesanan_id', $pesananIds)->where('status_produksi', 'Draft')->get();
+            foreach ($draftProduksi as $dp) {
+                DB::table('produksi_detail')->where('produksi_id', $dp->id)->delete();
+                $dp->delete();
+            }
+
+            // 4. Hapus detail WO dan record WO itu sendiri
+            DB::table('work_order_detail')->where('work_order_id', $wo->id)->delete();
+            $woKode = $wo->kode_wo;
+            $wo->delete();
+
+            // 5. Kembalikan status Pesanan CK terkait ke 'pending' jika sudah tidak memiliki WO aktif lain
+            foreach ($pesananIds as $pId) {
+                $sisaWoDetail = DB::table('work_order_detail')->where('pesanan_id', $pId)->exists();
+                if (!$sisaWoDetail) {
+                    Pesanan::where('id', $pId)->update(['status_pesanan' => 'pending']);
+                }
+            }
+
+            DB::commit();
+            return redirect()->route('ck-produksi.index', ['tab' => 'wo'])
+                ->with('success', "Work Order {$woKode} berhasil dihapus. Status pesanan dikembalikan ke antrean Order Masuk (Pending).");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', "Gagal menghapus Work Order: " . $e->getMessage());
         }
     }
 }

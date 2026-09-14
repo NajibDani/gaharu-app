@@ -26,6 +26,14 @@
             .table-custom-body td { padding: 8px 6px; font-size: 0.78rem; }
             .action-box { min-width: 160px; }
         }
+
+        /* Reset white-space agar modal di dalam table cell tidak mewarisi text-nowrap */
+        .modal, .modal-dialog, .modal-content, .modal-header, .modal-body, .modal-footer, .modal-body * {
+            white-space: normal;
+        }
+        .modal-body .table th, .modal-body .badge, .modal-body .text-nowrap {
+            white-space: nowrap !important;
+        }
     </style>
 
     <div class="container-fluid px-2 px-md-4 py-3 mb-5">
@@ -567,10 +575,10 @@
                                                                     </table>
                                                                 </div>
 
-                                                                <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
-                                                                    <i class="bi bi-info-circle-fill me-2 fs-5"></i>
-                                                                    <div>
-                                                                        Staff produksi dapat menginput kuantitas rill selesai (bisa lebih kecil atau lebih besar dari target). Menekan tombol <strong>Simpan & Approve HPP</strong> akan menghitung HPP FIFO otomatis, memotong bahan baku, menambah stok jadi, memperbarui total pesanan, dan menyelesaikan Work Order.
+                                                                <div class="alert alert-info py-2.5 px-3 small mb-0 d-flex align-items-start gap-2 rounded-3 border border-info-subtle shadow-none w-100" style="background-color: #f0f9ff; white-space: normal !important;">
+                                                                    <i class="bi bi-info-circle-fill text-info fs-5 flex-shrink-0 mt-0.5"></i>
+                                                                    <div class="flex-grow-1" style="min-width: 0; line-height: 1.5; color: #0c5460; white-space: normal !important;">
+                                                                        <strong>Catatan Input Produksi:</strong> Staff produksi dapat menginput kuantitas riil selesai (bisa lebih kecil atau lebih besar dari target). Menekan tombol <strong>Simpan &amp; Approve HPP</strong> akan menghitung HPP FIFO otomatis, memotong bahan baku, menambah stok jadi, memperbarui total pesanan, dan menyelesaikan Work Order.
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -977,10 +985,10 @@
                             </table>
                         </div>
 
-                        <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
-                            <i class="bi bi-info-circle-fill me-2 fs-5"></i>
-                            <div>
-                                Menekan <strong>Simpan Batch & Approve HPP</strong> akan memotong stok bahan baku resep secara agregat (FIFO), mengalokasikan hasil produksi secara berurutan ke masing-masing WO/Pesanan terpilih, dan memperbarui status WO secara otomatis.
+                        <div class="alert alert-info py-2.5 px-3 small mb-0 d-flex align-items-start gap-2 rounded-3 border border-info-subtle shadow-none w-100" style="background-color: #f0f9ff; white-space: normal !important;">
+                            <i class="bi bi-info-circle-fill text-info fs-5 flex-shrink-0 mt-0.5"></i>
+                            <div class="flex-grow-1" style="min-width: 0; line-height: 1.5; color: #0c5460; white-space: normal !important;">
+                                <strong>Catatan Approval Batch:</strong> Menekan <strong>Simpan Batch &amp; Approve HPP</strong> akan memotong stok bahan baku resep secara agregat (FIFO), mengalokasikan hasil produksi secara berurutan ke masing-masing WO/Pesanan terpilih, dan memperbarui status WO secara otomatis.
                             </div>
                         </div>
                     </div>

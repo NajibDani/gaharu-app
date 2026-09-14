@@ -24,6 +24,14 @@
             .table-custom-body td { padding: 8px 6px; font-size: 0.78rem; }
             .action-box { min-width: 160px; }
         }
+
+        /* Reset white-space agar modal di dalam table cell tidak mewarisi text-nowrap */
+        .modal, .modal-dialog, .modal-content, .modal-header, .modal-body, .modal-footer, .modal-body * {
+            white-space: normal;
+        }
+        .modal-body .table th, .modal-body .badge, .modal-body .text-nowrap {
+            white-space: nowrap !important;
+        }
     </style>
 
     <div class="container-fluid px-2 px-md-4 py-3">
@@ -385,13 +393,24 @@
                                                         <i class="bi bi-card-checklist text-primary"></i> Rekap Bahan
                                                     </button>
                                                 @endif
+
+                                                {{-- 4. TOMBOL HAPUS WO KHUSUS SUPERADMIN (HANYA JIKA BELUM TERKIRIM) --}}
+                                                @if($isSuperAdmin && ($wo->is_belum_terkirim ?? true))
+                                                    <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Work Order {{ $wo->kode_wo }}? Status pesanan akan dikembalikan ke antrean Order Masuk (Pending). Tindakan ini tidak dapat dibatalkan.');">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus Work Order yang belum terkirim (Khusus Superadmin)">
+                                                            <i class="bi bi-trash"></i> Hapus WO
+                                                        </button>
+                                                    </form>
+                                                @endif
                                                 </div>
                                             </div>
 
                                             {{-- MODAL DETAIL & INPUT PRODUKSI WO --}}
-                                            <div class="modal fade text-start" id="modalWo{{ $wo->id }}" tabindex="-1" aria-hidden="true">
+                                            <div class="modal fade text-start" id="modalWo{{ $wo->id }}" tabindex="-1" aria-hidden="true" style="white-space: normal !important;">
                                                 <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down">
-                                                    <div class="modal-content border-0 shadow-lg rounded-4">
+                                                    <div class="modal-content border-0 shadow-lg rounded-4" style="white-space: normal !important;">
                                                         <div class="modal-header {{ ($wo->can_approve ?? false) ? 'bg-success' : 'bg-dark' }} text-white">
                                                             <h5 class="modal-title fw-bold">
                                                                 <i class="bi bi-gear-wide-connected me-2"></i> Detail Work Order & Input Hasil Produksi: {{ $wo->kode_wo }}
@@ -429,19 +448,37 @@
                                                                     <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
                                                                         <i class="bi bi-exclamation-triangle-fill fs-5 text-warning mt-1 flex-shrink-0"></i>
                                                                         <div class="flex-grow-1">
-                                                                            <strong class="d-block mb-1">Approval Dikunci - Bahan Baku di Central Kitchen Kurang:</strong>
+                                                                            <strong class="d-block mb-1">Perhatian - Bahan Baku di Central Kitchen Kurang:</strong>
                                                                             <span>Stok bahan baku di Gudang Central Kitchen belum mencukupi untuk memenuhi kebutuhan produksi WO ini:</span>
                                                                             <ul class="mb-2 mt-1 ps-3">
                                                                                 @foreach($wo->defisit_bahan as $def)
                                                                                     <li>{{ $def['nama'] }}: Tersedia <strong>{{ number_format($def['stok'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ number_format($def['butuh'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ number_format($def['kurang'], 0, ',', '.') }} {{ $def['satuan'] }}</span>)</li>
                                                                                 @endforeach
                                                                             </ul>
-                                                                            <form action="{{ route('ck-produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')">
-                                                                                @csrf
-                                                                                <button type="submit" class="btn btn-sm btn-warning text-dark fw-bold">
-                                                                                    <i class="bi bi-box-arrow-right me-1"></i> Lakukan Permintaan Bahan Sekarang
-                                                                                </button>
-                                                                            </form>
+                                                                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                                                                                <form action="{{ route('ck-produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')">
+                                                                                    @csrf
+                                                                                    <button type="submit" class="btn btn-sm btn-outline-warning text-dark fw-bold">
+                                                                                        <i class="bi bi-box-arrow-right me-1"></i> Minta Bahan ke Gudang Utama
+                                                                                    </button>
+                                                                                </form>
+                                                                            </div>
+
+                                                                            @if($isSuperAdmin)
+                                                                                <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
+                                                                                    <input class="form-check-input check-override-stok" type="checkbox" name="override_stok" value="1" id="overrideStokWo{{ $wo->id }}" data-wo-id="{{ $wo->id }}" data-has-missing-resep="{{ ($wo->has_missing_resep ?? false) ? '1' : '0' }}">
+                                                                                    <label class="form-check-label fw-bold text-dark small" for="overrideStokWo{{ $wo->id }}">
+                                                                                        <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
+                                                                                    </label>
+                                                                                    <div class="text-muted mt-0" style="font-size: 11px;">
+                                                                                        Centang opsi ini jika fisik bahan ada di dapur namun belum selesai di-stock opname pada sistem. HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.
+                                                                                    </div>
+                                                                                </div>
+                                                                            @else
+                                                                                <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                                                                                    <i class="bi bi-info-circle me-1"></i> Jika stok fisik ada namun belum selesai stock opname, hubungi <strong>Super Admin</strong> untuk menyetujui produksi dengan override stok.
+                                                                                </div>
+                                                                            @endif
                                                                         </div>
                                                                     </div>
                                                                 @endif
@@ -648,35 +685,37 @@
                                                                     </div>
                                                                 @endif
 
-                                                                <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
-                                                                    <i class="bi bi-info-circle-fill me-2 fs-5"></i>
-                                                                    <div>
-                                                                        Staff produksi dapat menginput Qty realisasi selesai sesuai total produksi rill (bisa lebih kecil atau lebih besar dari target WO). Sistem akan otomatis menghitung HPP FIFO dan memperbarui total Qty pesanan berdasarkan input selesai ini.
+                                                                <div class="alert alert-info py-2.5 px-3 small mb-0 d-flex align-items-start gap-2 rounded-3 border border-info-subtle shadow-none w-100" style="background-color: #f0f9ff; white-space: normal !important;">
+                                                                    <i class="bi bi-info-circle-fill text-info fs-5 flex-shrink-0 mt-0.5"></i>
+                                                                    <div class="flex-grow-1" style="min-width: 0; line-height: 1.5; color: #0c5460; white-space: normal !important;">
+                                                                        <strong>Catatan Input Produksi:</strong> Staff produksi dapat menginput Qty realisasi selesai sesuai total produksi riil (bisa lebih kecil atau lebih besar dari target WO). Sistem akan otomatis menghitung HPP FIFO dan memperbarui total Qty pesanan berdasarkan input selesai ini.
                                                                     </div>
                                                                 </div>
                                                             </div>
                                                             <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    @if(!($wo->can_approve ?? false))
-                                                                        <span class="text-danger small fw-semibold">
-                                                                            <i class="bi bi-lock-fill me-1"></i> Tombol approval dinonaktifkan:
-                                                                            @if(($wo->has_missing_resep ?? false) && !($wo->is_bahan_sufficient ?? true))
-                                                                                Harap isi resep & minta bahan terlebih dahulu.
-                                                                            @elseif($wo->has_missing_resep ?? false)
-                                                                                Harap isi resep menu terlebih dahulu.
+                                                                    <span id="lockNoticeWo{{ $wo->id }}" class="text-danger small fw-semibold" style="{{ ($wo->can_approve ?? false) ? 'display: none;' : '' }}">
+                                                                        <i class="bi bi-lock-fill me-1"></i> Tombol approval dinonaktifkan:
+                                                                        @if(($wo->has_missing_resep ?? false) && !($wo->is_bahan_sufficient ?? true))
+                                                                            Harap isi resep menu &amp; lakukan permintaan bahan.
+                                                                        @elseif($wo->has_missing_resep ?? false)
+                                                                            Harap isi resep menu terlebih dahulu.
+                                                                        @else
+                                                                            @if($isSuperAdmin)
+                                                                                Centang opsi persetujuan override stok di atas atau lakukan permintaan bahan.
                                                                             @else
-                                                                                Harap lakukan permintaan bahan terlebih dahulu.
+                                                                                Harap lakukan permintaan bahan atau minta persetujuan Super Admin.
                                                                             @endif
-                                                                        </span>
-                                                                    @endif
+                                                                        @endif
+                                                                    </span>
                                                                 </div>
                                                                 <div class="d-flex gap-2">
                                                                     <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
                                                                     <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas Work Order ini?')">
                                                                         <i class="bi bi-save me-1"></i> Simpan Draft
                                                                     </button>
-                                                                    <button type="submit" name="action" value="approve" class="btn btn-success px-4 fw-bold" @if(!($wo->can_approve ?? false)) disabled title="Approval dinonaktifkan: Lengkapi resep dan minta bahan terlebih dahulu" @endif onclick="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
-                                                                        <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
+                                                                    <button type="submit" name="action" value="approve" id="btnApproveWo{{ $wo->id }}" class="btn btn-success px-4 fw-bold" @if(!($wo->can_approve ?? false)) disabled title="Approval dinonaktifkan" @endif onclick="return confirm('Simpan hasil produksi &amp; Approve HPP otomatis?')">
+                                                                        <i class="bi bi-check-circle-fill me-1"></i> Simpan &amp; Approve HPP
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -1209,14 +1248,27 @@
 
                                                             @if(strtolower($prod->status_produksi) == 'draft' && isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient && !empty($prod->defisit_bahan))
                                                                 <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                                                                    <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
-                                                                    <div>
-                                                                        <strong>Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
-                                                                        <ul class="mb-0 ps-3">
+                                                                    <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1 flex-shrink-0"></i>
+                                                                    <div class="flex-grow-1">
+                                                                        <strong class="d-block mb-1">Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
+                                                                        <ul class="mb-2 ps-3">
                                                                             @foreach($prod->defisit_bahan as $def)
                                                                                 <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
                                                                             @endforeach
                                                                         </ul>
+                                                                        @if($isSuperAdmin)
+                                                                            <div class="form-check pt-2 border-top border-warning-subtle">
+                                                                                <input class="form-check-input check-override-draft" type="checkbox" name="override_stok" value="1" id="overrideDraft{{ $prod->id }}" data-prod-id="{{ $prod->id }}" data-has-missing-resep="{{ ($prod->has_missing_resep ?? false) ? '1' : '0' }}" form="formApproveProd{{ $prod->id }}">
+                                                                                <label class="form-check-label fw-bold text-dark small" for="overrideDraft{{ $prod->id }}">
+                                                                                    <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
+                                                                                </label>
+                                                                                <div class="text-muted" style="font-size: 11px;">HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.</div>
+                                                                            </div>
+                                                                        @else
+                                                                            <div class="pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                                                                                <i class="bi bi-info-circle me-1"></i> Hubungi <strong>Super Admin</strong> untuk menyetujui produksi jika stok fisik ada namun belum opname di sistem.
+                                                                            </div>
+                                                                        @endif
                                                                     </div>
                                                                 </div>
                                                             @endif
@@ -1284,10 +1336,10 @@
                                                         </div>
                                                         <div class="modal-footer bg-light py-2">
                                                             @if(strtolower($prod->status_produksi) == 'draft')
-                                                                <form action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" onsubmit="return confirm('Approve Produksi CK sekarang?')">
+                                                                <form id="formApproveProd{{ $prod->id }}" action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" onsubmit="return confirm('Approve Produksi CK sekarang?')">
                                                                     @csrf
-                                                                    <button type="submit" class="btn btn-success btn-sm px-3" {{ (!($prod->can_approve ?? false)) ? 'disabled' : '' }}>
-                                                                        <i class="bi bi-check-circle me-1"></i> Approve & Hitung HPP
+                                                                    <button type="submit" id="btnApproveDraft{{ $prod->id }}" class="btn btn-success btn-sm px-3" {{ (!($prod->can_approve ?? false)) ? 'disabled' : '' }}>
+                                                                        <i class="bi bi-check-circle me-1"></i> Approve &amp; Hitung HPP
                                                                     </button>
                                                                 </form>
                                                             @endif
@@ -1427,10 +1479,10 @@
                             </table>
                         </div>
 
-                        <div class="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center">
-                            <i class="bi bi-info-circle-fill me-2 fs-5"></i>
-                            <div>
-                                Menekan <strong>Simpan Batch & Approve HPP</strong> akan memotong stok bahan baku resep CK secara agregat (FIFO), mengalokasikan hasil produksi secara berurutan ke masing-masing WO terpilih, dan memperbarui status WO/Pesanan outlet secara otomatis.
+                        <div class="alert alert-info py-2.5 px-3 small mb-0 d-flex align-items-start gap-2 rounded-3 border border-info-subtle shadow-none w-100" style="background-color: #f0f9ff; white-space: normal !important;">
+                            <i class="bi bi-info-circle-fill text-info fs-5 flex-shrink-0 mt-0.5"></i>
+                            <div class="flex-grow-1" style="min-width: 0; line-height: 1.5; color: #0c5460; white-space: normal !important;">
+                                <strong>Catatan Approval Batch:</strong> Menekan <strong>Simpan Batch &amp; Approve HPP</strong> akan memotong stok bahan baku resep CK secara agregat (FIFO), mengalokasikan hasil produksi secara berurutan ke masing-masing WO terpilih, dan memperbarui status WO/Pesanan outlet secara otomatis.
                             </div>
                         </div>
                     </div>
@@ -1581,18 +1633,40 @@
             }
 
             // Render Alert Defisit
+            const isSuperAdminGlobal = {{ $isSuperAdmin ? 'true' : 'false' }};
             if (hasDefisit) {
                 let listHtml = '<ul class="mb-0 ps-3">';
                 Object.values(defisitBahanMap).forEach(def => {
                     listHtml += `<li>${def.nama}: Tersedia <strong>${def.stok.toLocaleString('id-ID')} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh.toLocaleString('id-ID')} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang.toLocaleString('id-ID')} ${def.satuan}</span>)</li>`;
                 });
                 listHtml += '</ul>';
+
+                let overrideSection = '';
+                if (isSuperAdminGlobal) {
+                    overrideSection = `
+                        <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
+                            <input class="form-check-input" type="checkbox" name="override_stok" value="1" id="batchOverrideStok">
+                            <label class="form-check-label fw-bold text-dark small" for="batchOverrideStok">
+                                <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
+                            </label>
+                            <div class="text-muted" style="font-size: 11px;">Centang opsi ini jika fisik bahan ada di dapur namun belum selesai di-stock opname. HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.</div>
+                        </div>
+                    `;
+                } else {
+                    overrideSection = `
+                        <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                            <i class="bi bi-info-circle me-1"></i> Jika stok fisik ada namun belum selesai stock opname, hubungi <strong>Super Admin</strong> untuk menyetujui produksi batch ini.
+                        </div>
+                    `;
+                }
+
                 alertsHtml += `
                     <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
-                        <div>
-                            <strong class="d-block mb-1">Approval Batch Dikunci - Bahan Baku di Central Kitchen Kurang:</strong>
+                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1 flex-shrink-0"></i>
+                        <div class="flex-grow-1">
+                            <strong class="d-block mb-1">Perhatian - Bahan Baku di Central Kitchen Kurang:</strong>
                             ${listHtml}
+                            ${overrideSection}
                         </div>
                     </div>
                 `;
@@ -1609,29 +1683,45 @@
 
             alertDiv.innerHTML = alertsHtml;
 
-            // Submit button lock
-            const submitBtn = document.getElementById('btnSubmitBatchCk');
-            const footerNotice = document.getElementById('batchCkFooterNotice');
-            const canApproveBatch = (!hasMissingResep && !hasDefisit);
+            // Submit button lock logic helper
+            function updateBatchSubmitButton() {
+                const submitBtn = document.getElementById('btnSubmitBatchCk');
+                const footerNotice = document.getElementById('batchCkFooterNotice');
+                const overrideCheckbox = document.getElementById('batchOverrideStok');
+                const isOverridden = overrideCheckbox ? overrideCheckbox.checked : false;
 
-            if (submitBtn) {
-                submitBtn.disabled = !canApproveBatch;
+                const canApproveBatch = (!hasMissingResep && (!hasDefisit || isOverridden));
+
+                if (submitBtn) {
+                    submitBtn.disabled = !canApproveBatch;
+                }
+
+                if (footerNotice) {
+                    if (!canApproveBatch) {
+                        let msg = 'Harap lengkapi ';
+                        if (hasMissingResep && hasDefisit) {
+                            msg += 'resep menu dan lakukan permintaan bahan / persetujuan override terlebih dahulu.';
+                        } else if (hasMissingResep) {
+                            msg += 'resep menu terlebih dahulu.';
+                        } else {
+                            if (isSuperAdminGlobal) {
+                                msg += 'persetujuan override stok (centang opsi di atas) atau lakukan permintaan bahan.';
+                            } else {
+                                msg += 'permintaan bahan baku atau hubungi Super Admin untuk persetujuan override.';
+                            }
+                        }
+                        footerNotice.innerHTML = `<span class="text-danger small fw-semibold"><i class="bi bi-lock-fill me-1"></i> ${msg}</span>`;
+                    } else {
+                        footerNotice.innerHTML = '';
+                    }
+                }
             }
 
-            if (footerNotice) {
-                if (!canApproveBatch) {
-                    let msg = 'Harap lengkapi ';
-                    if (hasMissingResep && hasDefisit) {
-                        msg += 'resep menu dan lakukan permintaan bahan terlebih dahulu.';
-                    } else if (hasMissingResep) {
-                        msg += 'resep menu terlebih dahulu.';
-                    } else {
-                        msg += 'permintaan bahan baku terlebih dahulu.';
-                    }
-                    footerNotice.innerHTML = `<span class="text-danger small fw-semibold"><i class="bi bi-lock-fill me-1"></i> ${msg}</span>`;
-                } else {
-                    footerNotice.innerHTML = '';
-                }
+            updateBatchSubmitButton();
+
+            const batchOverrideCb = document.getElementById('batchOverrideStok');
+            if (batchOverrideCb) {
+                batchOverrideCb.addEventListener('change', updateBatchSubmitButton);
             }
 
             // Render consolidated products table
@@ -2016,6 +2106,45 @@
                     tabInstance.show();
                 }
             }
+
+            // Listener untuk override persetujuan stok kurang (Single WO modal & Draft modal)
+            document.addEventListener('change', function(e) {
+                if (e.target.classList.contains('check-override-stok')) {
+                    const woId = e.target.getAttribute('data-wo-id');
+                    const hasMissingResep = e.target.getAttribute('data-has-missing-resep') === '1';
+                    const btn = document.getElementById('btnApproveWo' + woId);
+                    const lockNotice = document.getElementById('lockNoticeWo' + woId);
+
+                    if (e.target.checked) {
+                        if (!hasMissingResep && btn) {
+                            btn.disabled = false;
+                            btn.removeAttribute('title');
+                            if (lockNotice) lockNotice.style.display = 'none';
+                        }
+                    } else {
+                        if (btn) {
+                            btn.disabled = true;
+                            if (lockNotice) lockNotice.style.display = 'inline';
+                        }
+                    }
+                }
+
+                if (e.target.classList.contains('check-override-draft')) {
+                    const prodId = e.target.getAttribute('data-prod-id');
+                    const hasMissingResep = e.target.getAttribute('data-has-missing-resep') === '1';
+                    const btn = document.getElementById('btnApproveDraft' + prodId);
+
+                    if (e.target.checked) {
+                        if (!hasMissingResep && btn) {
+                            btn.disabled = false;
+                        }
+                    } else {
+                        if (btn) {
+                            btn.disabled = true;
+                        }
+                    }
+                }
+            });
         });
     </script>
 </x-app-layout>

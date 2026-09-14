@@ -279,24 +279,9 @@ class FifoService
         */
 
         if ($sisaPermintaan > 0 && $allowNegative) {
-            $fallbackQuery = DB::table('stok_gudang_batch')
-                ->where('gudang_id', $gudangId)
-                ->where('barang_id', $barangId);
+            $hargaFallback = $this->getHargaTerakhirBahan($barangId, $gudangId);
 
-            if ($divisiId) {
-                $fallbackQuery->where('divisi_id', $divisiId);
-            }
-
-            $hargaFallback = $fallbackQuery->avg('harga_per_qty');
-
-            if (!$hargaFallback) {
-                $hargaFallback = DB::table('stok_gudang_batch')
-                    ->where('gudang_id', $gudangId)
-                    ->where('barang_id', $barangId)
-                    ->avg('harga_per_qty');
-            }
-
-            if (!$hargaFallback) {
+            if (!$hargaFallback || $hargaFallback <= 0) {
                 $hargaFallback = DB::table('master_barang')
                     ->where('id', $barangId)
                     ->value('hpp_referensi') ?? 0;
@@ -304,13 +289,71 @@ class FifoService
 
             $result[] = [
                 'batch_id'      => null,
-                'batch_number'  => 'FALLBACK-OPNAME',
+                'batch_number'  => 'OVERRIDE-HARGA-TERAKHIR',
                 'qty_keluar'    => $sisaPermintaan,
                 'harga_per_qty' => (float) $hargaFallback,
             ];
         }
 
         return $result;
+    }
+
+    /**
+     * Ambil harga terakhir dari bahan baku yang bersangkutan.
+     * Prioritas:
+     * 1. Harga per qty batch terakhir di gudang spesifik
+     * 2. Harga per qty batch terakhir secara global (semua gudang)
+     * 3. Harga per qty detail pembelian terakhir (pembelian_detail)
+     * 4. HPP referensi master barang
+     */
+    public function getHargaTerakhirBahan(int $barangId, ?int $gudangId = null): float
+    {
+        // 1. Cek batch terakhir di gudang spesifik yang memiliki harga > 0
+        if ($gudangId) {
+            $latestGudangBatch = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangId)
+                ->where('barang_id', $barangId)
+                ->where('harga_per_qty', '>', 0)
+                ->latest('id')
+                ->value('harga_per_qty');
+
+            if ($latestGudangBatch && floatval($latestGudangBatch) > 0) {
+                return (float) $latestGudangBatch;
+            }
+        }
+
+        // 2. Cek batch terakhir secara global yang memiliki harga > 0
+        $latestBatchGlobal = DB::table('stok_gudang_batch')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->latest('id')
+            ->value('harga_per_qty');
+
+        if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
+            return (float) $latestBatchGlobal;
+        }
+
+        // 3. Cek detail pembelian terakhir pada tabel pembelian_detail
+        $latestPembelian = DB::table('pembelian_detail')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->latest('id')
+            ->value('harga_per_qty');
+
+        if ($latestPembelian && floatval($latestPembelian) > 0) {
+            return (float) $latestPembelian;
+        }
+
+        // 4. Fallback ke HPP referensi master barang
+        $hppRef = DB::table('master_barang')
+            ->where('id', $barangId)
+            ->value('hpp_referensi');
+
+        if ($hppRef && floatval($hppRef) > 0) {
+            return (float) $hppRef;
+        }
+
+        return 0.0;
     }
 
     public function getEstimatedHargaFIFO(int $barangId, float $qtyKeluar, int $gudangId, ?int $divisiId = null): array
