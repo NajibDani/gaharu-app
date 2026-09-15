@@ -545,13 +545,20 @@ class StokGudangController extends Controller
             case 'pengeluaran_bahan_baku':
                 $out = \App\Models\PengeluaranBahanBaku::with(['gudang', 'divisi'])->find($id);
                 if ($out) {
+                    $kode = $out->kode_pengeluaran ?? $out->no_pengeluaran ?? "ID: {$id}";
+                    if (str_starts_with($kode, 'PBK-SO-')) {
+                        return "Stock Opname (Kurang): {$kode}";
+                    }
+                    if (str_starts_with($kode, 'PBK-WST-')) {
+                        return "Material Wasted: {$kode}";
+                    }
                     $gudangTujuan = $out->gudang->nama ?? '';
                     $divisiTujuan = $out->divisi->nama ?? '';
                     $tujuanInfo = [];
                     if ($gudangTujuan) $tujuanInfo[] = "Gudang: {$gudangTujuan}";
                     if ($divisiTujuan) $tujuanInfo[] = "Divisi: {$divisiTujuan}";
                     $tujuanStr = !empty($tujuanInfo) ? ' [' . implode(' - ', $tujuanInfo) . ']' : '';
-                    return "Material Output: {$out->no_pengeluaran}{$tujuanStr}";
+                    return "Material Output: {$kode}{$tujuanStr}";
                 }
                 return "Material Output (ID: {$id})";
 
@@ -572,7 +579,8 @@ class StokGudangController extends Controller
             case 'stock_opname':
                 $opname = \App\Models\StockOpname::find($id);
                 if ($opname) {
-                    return "Stock Opname: {$opname->no_opname}";
+                    $kode = $opname->kode_opname ?? $opname->no_opname ?? "ID: {$id}";
+                    return "Stock Opname: {$kode}";
                 }
                 return "Stock Opname (ID: {$id})";
 

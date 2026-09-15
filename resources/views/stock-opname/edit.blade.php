@@ -265,16 +265,20 @@ function loadBarang() {
             let currentStok = parseFloat(item.stok || 0);
 
             if (saved) {
-                let fis = parseFloat(saved.stok_fisik);
-                let sist = (saved.stok_sistem !== undefined && saved.stok_sistem !== null)
+                let savedFis = parseFloat(saved.stok_fisik);
+                let savedSist = (saved.stok_sistem !== undefined && saved.stok_sistem !== null)
                     ? parseFloat(saved.stok_sistem)
                     : currentStok;
+                let wasBalanced = Math.abs(savedFis - savedSist) < 0.0001;
+
+                let fis = wasBalanced ? currentStok : savedFis;
+                let sist = wasBalanced ? currentStok : savedSist;
                 let sel = fis - sist;
                 userValues[item.id] = {
                     stok_fisik: fis,
                     stok_sistem: sist,
                     selisih: sel,
-                    nilai: parseFloat(saved.nilai) || 0,
+                    nilai: wasBalanced ? 0 : (parseFloat(saved.nilai) || 0),
                     harga_fifo: parseFloat(item.harga_fifo || 0)
                 };
             } else {

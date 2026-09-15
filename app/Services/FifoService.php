@@ -549,12 +549,12 @@ class FifoService
         // 5. Fallback ke persediaan awal
         $sa = DB::table('persediaan_awal_detail')
             ->where('barang_id', $barangId)
-            ->where('harga_stok', '>', 0)
+            ->where('harga_satuan', '>', 0)
             ->orderBy('id', 'desc')
             ->first();
 
-        if ($sa && (float)$sa->harga_stok > 0) {
-            return (float) $sa->harga_stok;
+        if ($sa && (float)$sa->harga_satuan > 0) {
+            return (float) $sa->harga_satuan;
         }
 
         // 6. Fallback ke formulasi resep jika barang memiliki resep (Bahan Setengah Jadi)

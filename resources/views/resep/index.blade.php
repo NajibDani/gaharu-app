@@ -196,10 +196,17 @@
                                 </span>
                             </td>
                             <td>
-                                <div class="d-flex justify-content-center gap-1">
-                                    <a href="{{ route('resep.show', $r->id) }}" class="btn btn-info btn-sm text-white rounded-2 px-2">
+                                    <button type="button" 
+                                            class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
+                                            data-id="{{ $r->id }}"
+                                            data-produk-nama="{{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}"
+                                            data-produk-kode="{{ $r->produk->kode_barang ?? '-' }}"
+                                            data-tipe-badge="{{ $r->produk ? ($r->produk->is_bahan_setengah_jadi ? 'BSJ' : ($r->produk->tipe_penjualan ?: 'Barang Jadi')) : '' }}"
+                                            data-output-qty="{{ (int) $r->output_qty }}"
+                                            data-satuan-output="{{ $r->produk->satuan ?? $r->satuan_output }}"
+                                            data-bahanbaku="{{ json_encode($r->bahanbaku) }}">
                                         Lihat
-                                    </a>
+                                    </button>
                                     
                                     <button type="button" 
                                             class="btn btn-warning btn-sm btn-edit-resep rounded-2 px-2"
@@ -545,6 +552,84 @@
 
             <div class="modal-footer bg-white border-top py-2 px-4 d-flex justify-content-end">
                 <button type="button" class="btn btn-secondary btn-sm px-3 rounded-3" data-bs-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+{{-- ================= MODAL LIHAT DETAIL RESEP ================= --}}
+<div class="modal fade" id="modalDetailResep" tabindex="-1" aria-labelledby="modalDetailResepTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg" style="border-radius: 14px; overflow: hidden;">
+            <div class="modal-header bg-light py-3 px-4 border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width: 36px; height: 36px; background-color: #0ea5e9;">
+                        <i class="fas fa-receipt fs-6"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-dark fs-6 mb-0" id="modalDetailResepTitle">Detail Resep Produk</h5>
+                        <small class="text-muted" id="modalDetailResepSubtitle">Informasi komposisi dan takaran bahan baku</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close shadow-none" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+
+            <div class="modal-body p-4 bg-white">
+                {{-- HEADER INFO PRODUK --}}
+                <div class="p-3 rounded-3 mb-3 border bg-light">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div>
+                            <span class="text-secondary small fw-semibold text-uppercase" style="font-size: 11px; letter-spacing: 0.5px;">Nama Produk</span>
+                            <h4 class="fw-bold text-dark mb-1" id="detail-produk-nama">-</h4>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <span class="badge bg-white text-dark border font-monospace" id="detail-produk-kode">-</span>
+                                <span id="detail-produk-badge"></span>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="text-secondary small fw-semibold text-uppercase" style="font-size: 11px; letter-spacing: 0.5px;">Output per Batch</span>
+                            <div class="fs-4 fw-bold text-primary" id="detail-output-qty">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- ATURAN KONVERSI / INFO BIAYA --}}
+                <div class="alert alert-light border py-2 px-3 rounded-3 mb-3 d-flex align-items-center gap-2" style="font-size: 12.5px;">
+                    <i class="fas fa-info-circle text-primary fs-5"></i>
+                    <div>
+                        <strong>Biaya Konversi (BTKL & BOP):</strong> Otomatis dihitung sebesar <strong>30%</strong> dari total nilai penggunaan bahan baku menggunakan harga FIFO riil.
+                    </div>
+                </div>
+
+                {{-- TABEL KOMPOSISI BAHAN --}}
+                <div class="card border rounded-3 overflow-hidden shadow-none mb-0">
+                    <div class="card-header bg-white py-2 px-3 border-bottom d-flex align-items-center justify-content-between">
+                        <span class="fw-bold text-dark small text-uppercase" style="letter-spacing: 0.5px;">
+                            <i class="fas fa-flask text-primary me-2"></i>Komposisi Bahan Baku &amp; Takaran
+                        </span>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill" id="detail-total-bahan-badge">0 Bahan</span>
+                    </div>
+                    <div class="table-responsive" style="max-height: 350px;">
+                        <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+                            <thead class="table-light text-secondary text-uppercase fs-7">
+                                <tr>
+                                    <th width="40" class="text-center py-2">No</th>
+                                    <th class="py-2">Bahan Baku &amp; Alternatif</th>
+                                    <th width="140" class="text-center py-2">Qty / Batch</th>
+                                    <th width="110" class="text-center py-2">Satuan</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-detail-resep">
+                                <!-- Dynamic items -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer bg-light py-2 px-4 border-top d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-warning btn-sm text-dark fw-semibold px-3 rounded-3" id="btn-edit-dari-detail">
+                    <i class="fas fa-pencil-alt me-1"></i>Edit Resep Ini
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm px-4 rounded-3" data-bs-dismiss="modal">Tutup</button>
             </div>
         </div>
     </div>
@@ -1209,6 +1294,124 @@ document.addEventListener("DOMContentLoaded", function () {
             bsModalInstance.show();
         });
     });
+
+    // ============ MODAL LIHAT DETAIL RESEP ============
+    const modalDetailEl = document.getElementById('modalDetailResep');
+    const bsModalDetail = modalDetailEl ? new bootstrap.Modal(modalDetailEl) : null;
+    let activeResepIdForEdit = null;
+
+    document.querySelectorAll('.btn-lihat-resep').forEach(btn => {
+        btn.addEventListener('click', function() {
+            activeResepIdForEdit = this.dataset.id;
+            const produkNama = this.dataset.produkNama || '-';
+            const produkKode = this.dataset.produkKode || '-';
+            const tipeBadge = this.dataset.tipeBadge || '';
+            const outputQty = this.dataset.outputQty || '0';
+            const satuanOutput = this.dataset.satuanOutput || '-';
+
+            document.getElementById('detail-produk-nama').innerText = produkNama;
+            document.getElementById('detail-produk-kode').innerText = produkKode;
+            document.getElementById('detail-output-qty').innerText = `${outputQty} ${satuanOutput}`;
+
+            // Tipe badge
+            const badgeContainer = document.getElementById('detail-produk-badge');
+            if (tipeBadge === 'BSJ') {
+                badgeContainer.innerHTML = `<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 11px;"><i class="bi bi-gear me-1"></i>Bahan Setengah Jadi</span>`;
+            } else if (tipeBadge === 'POS Kejingga') {
+                badgeContainer.innerHTML = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Kejingga</span>`;
+            } else if (tipeBadge === 'POS Gaharu') {
+                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Gaharu</span>`;
+            } else if (tipeBadge === 'B2B') {
+                badgeContainer.innerHTML = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 11px;"><i class="bi bi-building me-1"></i>B2B</span>`;
+            } else if (tipeBadge) {
+                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;">${tipeBadge}</span>`;
+            } else {
+                badgeContainer.innerHTML = '';
+            }
+
+            // Render daftar bahan baku
+            const tbodyDetail = document.getElementById('tbody-detail-resep');
+            tbodyDetail.innerHTML = '';
+
+            let bahanList = [];
+            try {
+                bahanList = JSON.parse(this.dataset.bahanbaku || '[]');
+            } catch (e) {
+                bahanList = [];
+            }
+
+            document.getElementById('detail-total-bahan-badge').innerText = `${bahanList.length} Bahan`;
+
+            if (bahanList.length === 0) {
+                tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar.</td></tr>`;
+            } else {
+                bahanList.forEach((b, idx) => {
+                    const primaryName = b.bahan ? b.bahan.nama : 'Bahan Tidak Diketahui';
+                    const primaryKode = b.bahan ? b.bahan.kode_barang : '';
+                    const satuan = b.satuan || (b.bahan ? b.bahan.satuan : '-');
+                    const qty = parseFloat(b.qty_bahan) || 0;
+
+                    let altHtml = '';
+                    if (b.alternatif && b.alternatif.length > 0) {
+                        b.alternatif.forEach(alt => {
+                            const altName = alt.bahan ? alt.bahan.nama : 'Bahan Alternatif';
+                            const prio = alt.prioritas || 2;
+                            altHtml += `
+                                <div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size: 11.5px;">
+                                    <span class="badge bg-secondary rounded-pill" style="font-size: 9px; padding: 2px 6px;">${prio}</span>
+                                    <span>${altName}</span>
+                                    <span class="text-warning-emphasis fst-italic" style="font-size: 11px;">(substitusi)</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    const rowHtml = `
+                        <tr>
+                            <td class="text-center text-muted fw-semibold">${idx + 1}</td>
+                            <td>
+                                <div class="fw-semibold text-dark d-flex align-items-center gap-1">
+                                    <span class="badge bg-primary rounded-pill" style="font-size: 10px; padding: 3px 7px;">1</span>
+                                    <span>${primaryName}</span>
+                                    ${primaryKode ? `<span class="font-monospace text-muted small ms-1" style="font-size: 11px;">(${primaryKode})</span>` : ''}
+                                </div>
+                                ${altHtml}
+                            </td>
+                            <td class="text-center fw-bold text-dark fs-6">${qty.toLocaleString('id-ID')}</td>
+                            <td class="text-center">
+                                <span class="badge bg-light text-secondary border px-2 py-1">${satuan}</span>
+                            </td>
+                        </tr>
+                    `;
+                    tbodyDetail.insertAdjacentHTML('beforeend', rowHtml);
+                });
+            }
+
+            if (bsModalDetail) {
+                bsModalDetail.show();
+            }
+        });
+    });
+
+    // Tombol Edit langsung dari dalam Modal Detail
+    const btnEditDariDetail = document.getElementById('btn-edit-dari-detail');
+    if (btnEditDariDetail) {
+        btnEditDariDetail.addEventListener('click', function() {
+            if (!activeResepIdForEdit) return;
+            const targetBtnEdit = document.querySelector(`.btn-edit-resep[data-id="${activeResepIdForEdit}"]`);
+            if (targetBtnEdit) {
+                if (modalDetailEl) {
+                    modalDetailEl.addEventListener('hidden.bs.modal', function onDetailHidden() {
+                        modalDetailEl.removeEventListener('hidden.bs.modal', onDetailHidden);
+                        targetBtnEdit.click();
+                    });
+                    bsModalDetail.hide();
+                } else {
+                    targetBtnEdit.click();
+                }
+            }
+        });
+    }
 
     formResep.addEventListener('submit', function(e) {
         // Validation check
