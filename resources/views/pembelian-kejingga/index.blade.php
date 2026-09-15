@@ -524,8 +524,8 @@
                             </a>
                         </div>
                         <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-outline-primary btn-sm fw-semibold px-3 shadow-sm" id="btnEditPoModal" onclick="bukaModalEditFromDetail(currentDetailPoId)" title="Tambah, ubah, atau hapus item barang & qty PO ini">
-                                <i class="bi bi-pencil-square me-1"></i> Ubah Items &amp; Qty
+                            <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold px-3 shadow-sm" id="btnEditPoModal" onclick="bukaModalEditFromDetail(currentDetailPoId)" title="Kelola / Tambah / Hapus baris barang pada draft PO ini">
+                                <i class="bi bi-sliders me-1"></i> Kelola Baris PO (Draft)
                             </button>
                             <button type="button" class="btn btn-warning btn-sm text-dark fw-bold px-3 shadow-sm" id="btnInputBarangTerpilihModal" onclick="bukaModalInputBarangTerpilih()" disabled>
                                 <i class="bi bi-pencil-square me-1"></i> Input / Edit Barang Terpilih (<span id="footer-count-terpilih">0</span>)
@@ -556,11 +556,11 @@
                             <i class="bi bi-receipt fs-5"></i>
                         </div>
                         <div>
-                            <h5 class="modal-title fw-bold text-dark fs-6 mb-0">Input Data Pembelian &amp; Nota</h5>
+                            <h5 class="modal-title fw-bold text-dark fs-6 mb-0" id="input-modal-title">Input / Edit Data Pembelian &amp; Nota</h5>
                             <div class="text-muted small mt-1 d-flex align-items-center gap-2">
                                 <span class="badge bg-light text-dark border px-2 py-1"><i class="bi bi-file-earmark-text me-1"></i>PO <span id="input-modal-po-kode">#</span></span>
                                 <span>&bull;</span>
-                                <span>Memperbarui <strong class="text-primary" id="input-modal-count">0</strong> item terpilih</span>
+                                <span id="input-modal-subtitle">Memperbarui <strong class="text-primary" id="input-modal-count">0</strong> item terpilih</span>
                             </div>
                         </div>
                     </div>
@@ -1302,6 +1302,10 @@
                 ? `<span class="badge bg-light text-secondary border me-1"><i class="bi bi-receipt me-1"></i>Nota: ${d.catatan_pembayaran}</span>`
                 : '';
 
+            let taxBadge = d.tax_service > 0
+                ? `<span class="badge bg-light text-secondary border me-1" title="Tax / Ongkir item ini"><i class="bi bi-receipt-cutoff text-secondary me-1"></i>Tax: Rp ${d.tax_service.toLocaleString('id-ID')}</span>`
+                : '';
+
             let tglDiterimaBadge = d.tanggal_diterima
                 ? `<span class="badge bg-light text-success border me-1" title="Tanggal Diterima"><i class="bi bi-calendar-check text-success me-1"></i>Diterima: ${d.tanggal_diterima}</span>`
                 : '';
@@ -1320,14 +1324,15 @@
 
             let hargaHtml = d.harga > 0
                 ? `<div class="fw-bold text-dark fs-6">Rp ${d.harga.toLocaleString('id-ID')}</div>
-                   <div class="text-muted small">@ Rp ${Math.round(d.harga_per_qty).toLocaleString('id-ID')} / ${d.satuan}</div>`
+                   <div class="text-muted small">@ Rp ${Math.round(d.harga_per_qty).toLocaleString('id-ID')} / ${d.satuan}</div>
+                   ${d.tax_service > 0 ? `<div class="text-secondary small fw-semibold" style="font-size: 11px;">+ Tax/Ongkir: Rp ${d.tax_service.toLocaleString('id-ID')}</div>` : ''}`
                 : `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>Belum Diisi</span>`;
 
             let aksiHtml = '';
             if (!item.is_terkunci && !d.is_diterima_item) {
                 aksiHtml = `
                     <div class="d-flex justify-content-center align-items-center gap-1">
-                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="bukaModalEditFromDetail(${item.id})" title="Edit / Ubah Barang & Qty">
+                        <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="bukaModalEditBarangSingle(${d.id})" title="Edit / Input Barang Ini">
                             <i class="bi bi-pencil-square me-1"></i>Edit
                         </button>
                         <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="hapusItemDetail(${d.id}, '${addslashes(d.nama)}')" title="Hapus Barang dari PO">
@@ -1339,7 +1344,7 @@
                 aksiHtml = `<span class="badge bg-light text-muted border" style="font-size: 11px;"><i class="bi bi-lock-fill me-1"></i>Terkunci</span>`;
             }
 
-            let checkHtml = `<input type="checkbox" class="form-check-input item-check-pilih border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-qty="${d.qty}" data-satuan="${d.satuan}" data-harga="${d.harga}" data-supplier-id="${d.supplier_id || ''}" data-supplier-nama="${addslashes(d.supplier_nama || '')}" data-nota="${addslashes(d.catatan_pembayaran || '')}" onchange="updateItemSelection()">`;
+            let checkHtml = `<input type="checkbox" class="form-check-input item-check-pilih border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-qty="${d.qty}" data-satuan="${d.satuan}" data-harga="${d.harga}" data-tax="${d.tax_service || 0}" data-supplier-id="${d.supplier_id || ''}" data-supplier-nama="${addslashes(d.supplier_nama || '')}" data-nota="${addslashes(d.catatan_pembayaran || '')}" onchange="updateItemSelection()">`;
 
             detailsHtml += `
                 <tr id="row-detail-${d.id}">
@@ -1351,6 +1356,7 @@
                         <div class="d-flex flex-wrap align-items-center gap-1 mt-1">
                             ${supplierBadge}
                             ${notaBadge}
+                            ${taxBadge}
                             ${tglDiterimaBadge}
                             ${statusBayarBadge}
                             ${buktiBadge}
@@ -1530,6 +1536,15 @@
     let returnToDetailFromInput = false;
     let isSubmittingInputBarang = false;
 
+    // Buka modal input / edit hanya untuk 1 baris barang yang dipilih
+    function bukaModalEditBarangSingle(detailId) {
+        document.querySelectorAll('.item-check-pilih').forEach(cb => {
+            cb.checked = (parseInt(cb.getAttribute('data-id')) === detailId);
+        });
+        updateItemSelection();
+        bukaModalInputBarangTerpilih();
+    }
+
     function bukaModalInputBarangTerpilih() {
         if (!currentDetailPoId) return;
         const po = dataPembayaranMap[currentDetailPoId];
@@ -1549,8 +1564,20 @@
         form.action = `/pembelian-kejingga/${currentDetailPoId}/input-barang-terpilih`;
 
         // Header info
-        document.getElementById('input-modal-count').textContent = selectedDetails.length;
+        const inputModalTitle = document.getElementById('input-modal-title');
+        const inputModalSubtitle = document.getElementById('input-modal-subtitle');
+        const inputModalCount = document.getElementById('input-modal-count');
+
+        if (inputModalCount) inputModalCount.textContent = selectedDetails.length;
         document.getElementById('input-modal-po-kode').textContent = '#' + po.kode;
+
+        if (selectedDetails.length === 1) {
+            if (inputModalTitle) inputModalTitle.innerHTML = '<i class="bi bi-pencil-square text-primary me-2"></i>Edit Data Pembelian &amp; Nota';
+            if (inputModalSubtitle) inputModalSubtitle.innerHTML = `Memperbarui barang: <strong class="text-primary">${selectedDetails[0].nama}</strong>`;
+        } else {
+            if (inputModalTitle) inputModalTitle.innerHTML = '<i class="bi bi-receipt text-primary me-2"></i>Input / Edit Data Pembelian &amp; Nota';
+            if (inputModalSubtitle) inputModalSubtitle.innerHTML = `Memperbarui <strong class="text-primary">${selectedDetails.length}</strong> item terpilih`;
+        }
 
         // Prefill Supplier: if all selected have same supplier_id, select it
         const supplierIds = Array.from(new Set(selectedDetails.map(d => d.supplier_id).filter(Boolean)));
@@ -1572,10 +1599,23 @@
             tglInput.value = tglDiterimas.length === 1 ? tglDiterimas[0] : new Date().toISOString().split('T')[0];
         }
 
-        // Prefill Tax
+        // Prefill Tax: HANYA jumlah tax_service dari barang-barang yang dipilih (tidak mengambil tax PO keseluruhan)
         const taxInput = document.getElementById('input_tax_service');
         if (taxInput) {
-            taxInput.value = po.tax_service > 0 ? formatNumberDisplay(po.tax_service) : '';
+            const selectedTax = selectedDetails.reduce((sum, d) => sum + (parseFloat(d.tax_service) || 0), 0);
+            taxInput.value = selectedTax > 0 ? formatNumberDisplay(selectedTax) : '';
+        }
+
+        // Prefill Status & Metode Pembayaran
+        const isLunasCb = document.getElementById('input_is_lunas');
+        const allLunas = selectedDetails.length > 0 && selectedDetails.every(d => d.is_lunas);
+        if (isLunasCb) {
+            isLunasCb.checked = allLunas;
+            toggleMetodeBayarInputModal();
+        }
+        const metodes = Array.from(new Set(selectedDetails.map(d => d.metode_pembayaran).filter(Boolean)));
+        if (metodes.length === 1 && document.getElementById('input_metode_pembayaran')) {
+            document.getElementById('input_metode_pembayaran').value = metodes[0];
         }
 
         // Reset file input

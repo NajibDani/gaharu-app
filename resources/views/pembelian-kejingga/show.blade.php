@@ -76,10 +76,10 @@
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Pembayaran</td>
                             <td><strong>{{ strtoupper($pembelian->metode_pembayaran ?: 'COD') }}</strong> <span class="text-muted small">({{ $pembelian->user->nama ?? ($pembelian->user->username ?? 'Staff') }})</span></td>
                         </tr>
-                        @if($pembelian->keterangan)
+                        @if(!empty($keteranganNote))
                         <tr>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Keterangan</td>
-                            <td colspan="3">{{ $pembelian->keterangan }}</td>
+                            <td colspan="3">{{ $keteranganNote }}</td>
                         </tr>
                         @endif
                     </tbody>
@@ -154,7 +154,13 @@
                                 </td>
                                 <td class="text-end fw-bold">
                                     @if($detail->harga > 0)
+                                        @php $thisItemTax = (float)($itemTaxes[$detail->id] ?? 0); @endphp
                                         Rp {{ number_format($subtotal, 0, ',', '.') }}
+                                        @if($thisItemTax > 0)
+                                            <div class="text-secondary small fw-normal" style="font-size: 11px;">
+                                                + Tax: Rp {{ number_format($thisItemTax, 0, ',', '.') }}
+                                            </div>
+                                        @endif
                                     @else
                                         <span class="text-muted">—</span>
                                     @endif

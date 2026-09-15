@@ -70,6 +70,36 @@ class PembelianKejinggaController extends Controller
         }
     }
 
+    private function getItemTaxes(Pembelian $pembelian): array
+    {
+        $taxMeta = [];
+        if (!empty($pembelian->keterangan)) {
+            $decoded = json_decode($pembelian->keterangan, true);
+            if (is_array($decoded) && isset($decoded['item_taxes']) && is_array($decoded['item_taxes'])) {
+                $taxMeta = $decoded['item_taxes'];
+            }
+        }
+        return $taxMeta;
+    }
+
+    private function setItemTaxes(Pembelian $pembelian, array $itemTaxes, ?string $note = null): void
+    {
+        $meta = [];
+        if (!empty($pembelian->keterangan)) {
+            $decoded = json_decode($pembelian->keterangan, true);
+            if (is_array($decoded)) {
+                $meta = $decoded;
+            } elseif (!empty($pembelian->keterangan) && !str_starts_with(trim($pembelian->keterangan), '{')) {
+                $meta['note'] = $pembelian->keterangan;
+            }
+        }
+        if ($note !== null) {
+            $meta['note'] = $note;
+        }
+        $meta['item_taxes'] = $itemTaxes;
+        $pembelian->keterangan = json_encode($meta);
+    }
+
     public function index(Request $request)
     {
         $this->authorizeAccess();
@@ -120,25 +150,37 @@ class PembelianKejinggaController extends Controller
                 'is_diterima'         => (bool) $item->is_diterima,
                 'is_terkunci'         => (bool) $item->isTerkunci(),
                 'user_nama'           => $item->user->nama ?? ($item->user->username ?? 'Staff Operasional'),
-                'details'             => $item->details->map(function ($d) use ($stokKejinggaMap) {
-                    $bItem = $d->barang;
-                    $sPembelian = $d->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
-                    $konv = floatval($d->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
-                    $sUtama = $bItem->satuan ?? 'Pcs';
-                    $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
-                    $stokTerkini = (float) ($stokKejinggaMap[$d->barang_id] ?? 0);
+                'details'             => (function() use ($item, $stokKejinggaMap) {
+                    $itemTaxes = $this->getItemTaxes($item);
+                    return $item->details->map(function ($d, $idx) use ($stokKejinggaMap, $item, $itemTaxes) {
+                        $bItem = $d->barang;
+                        $sPembelian = $d->satuan_pembelian ?: ($bItem->satuan_pembelian ?? '');
+                        $konv = floatval($d->konversi_pembelian ?: ($bItem->konversi_pembelian ?? 1));
+                        $sUtama = $bItem->satuan ?? 'Pcs';
+                        $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
+                        $stokTerkini = (float) ($stokKejinggaMap[$d->barang_id] ?? 0);
 
-                    $qtyDetail = (float) $d->qty;
-                    $qtyDiterimaDetail = (float) ($d->qty_diterima ?? 0);
-                    $hargaDetail = (float) $d->harga;
+                        $qtyDetail = (float) $d->qty;
+                        $qtyDiterimaDetail = (float) ($d->qty_diterima ?? 0);
+                        $hargaDetail = (float) $d->harga;
+
+                        if (isset($itemTaxes[$d->id])) {
+                            $taxDetail = (float) $itemTaxes[$d->id];
+                        } elseif (empty($itemTaxes) && (float)($item->tax_service ?? 0) > 0 && $idx === 0) {
+                            $taxDetail = (float) $item->tax_service;
+                        } else {
+                            $taxDetail = 0;
+                        }
+
+                        $totalItemWithTax = $hargaDetail + $taxDetail;
 
                     // Kekurangan per detail item
                     $kekuranganDetail = 0;
                     if ($d->metode_pembayaran === 'dp') {
                         $nominalDp = (float) ($d->nominal_dp ?? 0);
-                        $kekuranganDetail = max(0, $hargaDetail - $nominalDp);
+                        $kekuranganDetail = max(0, $totalItemWithTax - $nominalDp);
                     } elseif ($d->metode_pembayaran === 'termin') {
-                        $kekuranganDetail = $d->is_lunas ? 0 : $hargaDetail;
+                        $kekuranganDetail = $d->is_lunas ? 0 : $totalItemWithTax;
                     }
 
                     $labelMetodeDetail = match($d->metode_pembayaran) {
@@ -170,6 +212,8 @@ class PembelianKejinggaController extends Controller
                         'tanggal_diterima_raw'=> $d->tanggal_diterima ? \Carbon\Carbon::parse($d->tanggal_diterima)->format('Y-m-d') : null,
                         'harga'              => $hargaDetail,
                         'harga_per_qty'      => (float) $d->harga_per_qty,
+                        'tax_service'        => $taxDetail,
+                        'total_dengan_tax'   => $totalItemWithTax,
                         'metode_pembayaran'   => $d->metode_pembayaran,
                         'label_pembayaran'   => $labelMetodeDetail,
                         'persen_dp'           => $d->persen_dp,
@@ -180,9 +224,10 @@ class PembelianKejinggaController extends Controller
                         'bukti_pembayaran'     => $d->bukti_pembayaran,
                         'bukti_pembayaran_url' => $d->bukti_pembayaran ? asset('storage/' . $d->bukti_pembayaran) : null,
                     ];
-                }),
-            ]];
-        });
+                });
+            })(),
+        ]];
+    });
 
         $suppliers = Supplier::orderBy('nama')->get();
         $barangs   = MasterBarang::where('is_active', true)->orderBy('nama')->get();
@@ -299,13 +344,35 @@ class PembelianKejinggaController extends Controller
                 'created_by'        => auth()->id() ?? 1,
             ]);
 
+            $parsedCount = count($parsedItems);
+            $runningStoreTax = 0;
+            $storeIdx = 0;
+
+            $itemTaxes = [];
             foreach ($parsedItems as $it) {
+                $storeIdx++;
                 $barang = MasterBarang::withoutGlobalScopes()->find($it['barang_id']);
                 $hargaPerQty = $it['qty'] > 0 ? $it['harga'] / $it['qty'] : 0;
                 $satuan = $it['satuan_pembelian'] ?: ($barang->satuan_pembelian ?: ($barang->satuan ?: 'pcs'));
                 $konversi = $it['konversi_pembelian'] > 0 ? $it['konversi_pembelian'] : ($barang->konversi_pembelian ?? 1.00);
 
-                PembelianDetail::create([
+                $itemTax = 0;
+                if ($taxService > 0) {
+                    if ($parsedCount === 1) {
+                        $itemTax = $taxService;
+                    } elseif ($storeIdx === $parsedCount) {
+                        $itemTax = max(0, round($taxService - $runningStoreTax, 2));
+                    } else {
+                        if ($totalItems > 0) {
+                            $itemTax = round($taxService * ($it['harga'] / $totalItems), 2);
+                        } else {
+                            $itemTax = round($taxService / $parsedCount, 2);
+                        }
+                        $runningStoreTax += $itemTax;
+                    }
+                }
+
+                $detail = PembelianDetail::create([
                     'pembelian_id'       => $pembelian->id,
                     'barang_id'          => $it['barang_id'],
                     'supplier_id'        => $it['supplier_id'],
@@ -317,6 +384,15 @@ class PembelianKejinggaController extends Controller
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => date('Ymd') . '-PBKJG' . rand(100, 999),
                 ]);
+
+                if ($itemTax > 0) {
+                    $itemTaxes[$detail->id] = $itemTax;
+                }
+            }
+
+            if (!empty($itemTaxes)) {
+                $this->setItemTaxes($pembelian, $itemTaxes);
+                $pembelian->save();
             }
 
             DB::commit();
@@ -342,7 +418,19 @@ class PembelianKejinggaController extends Controller
             ->select('barang_id', DB::raw('SUM(jumlah) as total_stok'))
             ->pluck('total_stok', 'barang_id');
 
-        return view('pembelian-kejingga.show', compact('pembelian', 'stokKejinggaMap'));
+        $itemTaxes = $this->getItemTaxes($pembelian);
+        
+        $keteranganNote = null;
+        if (!empty($pembelian->keterangan)) {
+            $decoded = json_decode($pembelian->keterangan, true);
+            if (is_array($decoded)) {
+                $keteranganNote = $decoded['note'] ?? null;
+            } elseif (!str_starts_with(trim($pembelian->keterangan), '{')) {
+                $keteranganNote = $pembelian->keterangan;
+            }
+        }
+
+        return view('pembelian-kejingga.show', compact('pembelian', 'stokKejinggaMap', 'itemTaxes', 'keteranganNote'));
     }
 
     public function edit($id)
@@ -449,18 +537,43 @@ class PembelianKejinggaController extends Controller
                 'tax_service' => $taxService,
             ]);
 
-            // Save existing payment & reception status before re-creating
+            // Save existing payment & reception status and old item taxes before re-creating
             $existingDetails = PembelianDetail::where('pembelian_id', $pembelian->id)->get()->keyBy('barang_id');
+            $oldItemTaxes = $this->getItemTaxes($pembelian);
 
             PembelianDetail::where('pembelian_id', $pembelian->id)->delete();
 
+            $parsedCount = count($parsedItems);
+            $runningUpdateTax = 0;
+            $updateIdx = 0;
+            $newItemTaxes = [];
+
             foreach ($parsedItems as $it) {
+                $updateIdx++;
                 $barang = MasterBarang::withoutGlobalScopes()->find($it['barang_id']);
                 $hargaPerQty = $it['qty'] > 0 ? $it['harga'] / $it['qty'] : 0;
                 $satuan = $it['satuan_pembelian'] ?: ($barang->satuan_pembelian ?: ($barang->satuan ?: 'pcs'));
                 $konversi = $it['konversi_pembelian'] > 0 ? $it['konversi_pembelian'] : ($barang->konversi_pembelian ?? 1.00);
 
                 $oldDet = $existingDetails->get($it['barang_id']);
+
+                $itemTax = 0;
+                if ($taxService > 0) {
+                    if ($parsedCount === 1) {
+                        $itemTax = $taxService;
+                    } elseif ($updateIdx === $parsedCount) {
+                        $itemTax = max(0, round($taxService - $runningUpdateTax, 2));
+                    } else {
+                        if ($totalItems > 0) {
+                            $itemTax = round($taxService * ($it['harga'] / $totalItems), 2);
+                        } else {
+                            $itemTax = round($taxService / $parsedCount, 2);
+                        }
+                        $runningUpdateTax += $itemTax;
+                    }
+                } elseif ($oldDet && isset($oldItemTaxes[$oldDet->id])) {
+                    $itemTax = (float) $oldItemTaxes[$oldDet->id];
+                }
 
                 $detailData = [
                     'pembelian_id'       => $pembelian->id,
@@ -487,8 +600,15 @@ class PembelianKejinggaController extends Controller
                     $detailData['tanggal_diterima'] = $oldDet ? $oldDet->tanggal_diterima : null;
                 }
 
-                PembelianDetail::create($detailData);
+                $newDetail = PembelianDetail::create($detailData);
+
+                if ($itemTax > 0) {
+                    $newItemTaxes[$newDetail->id] = $itemTax;
+                }
             }
+
+            $this->setItemTaxes($pembelian, $newItemTaxes);
+            $pembelian->save();
 
             DB::commit();
 
@@ -817,6 +937,7 @@ class PembelianKejinggaController extends Controller
         $taxService = 0;
         if ($request->filled('tax_service')) {
             $taxService = (float) str_replace(['.', ','], ['', '.'], (string) $request->tax_service);
+            if ($taxService < 0) $taxService = 0;
         }
 
         DB::transaction(function () use ($request, $pembelian, $buktiPath, $taxService) {
@@ -827,9 +948,30 @@ class PembelianKejinggaController extends Controller
 
             $changedOldBarangIds = [];
 
-            foreach ($request->detail_ids as $detailId) {
+            // Hitung total harga item terpilih untuk alokasi tax_service secara proporsional
+            $selectedDetailIds = (array) $request->detail_ids;
+            $totalSelectedCount = count($selectedDetailIds);
+            $totalSelectedHarga = 0;
+            foreach ($selectedDetailIds as $dId) {
+                $rawH = $request->items[$dId]['harga'] ?? null;
+                $hVal = (float) str_replace(['.', ','], ['', '.'], (string) $rawH);
+                $totalSelectedHarga += max(0, $hVal);
+            }
+
+            $runningTaxAllocated = 0;
+            $itemIdx = 0;
+
+            // Kelola item_taxes metadata pada pembelian.keterangan
+            $itemTaxes = $this->getItemTaxes($pembelian);
+            // Hapus tax lama untuk detail yang sedang diupdate
+            foreach ($selectedDetailIds as $dId) {
+                unset($itemTaxes[$dId]);
+            }
+
+            foreach ($selectedDetailIds as $detailId) {
                 $detail = PembelianDetail::where('pembelian_id', $pembelian->id)->find($detailId);
                 if (!$detail) continue;
+                $itemIdx++;
 
                 $itemInput = $request->items[$detailId] ?? [];
 
@@ -839,6 +981,28 @@ class PembelianKejinggaController extends Controller
                 $rawHarga = isset($itemInput['harga']) ? $itemInput['harga'] : $detail->harga;
                 $harga = (float) str_replace(['.', ','], ['', '.'], (string) $rawHarga);
                 $hargaPerQty = $qty > 0 ? ($harga / $qty) : 0;
+
+                // Alokasi tax_service spesifik hanya untuk item terpilih
+                $itemTax = 0;
+                if ($taxService > 0) {
+                    if ($totalSelectedCount === 1) {
+                        $itemTax = $taxService;
+                    } elseif ($itemIdx === $totalSelectedCount) {
+                        // Item terakhir menyerap sisa selisih pembulatan
+                        $itemTax = max(0, round($taxService - $runningTaxAllocated, 2));
+                    } else {
+                        if ($totalSelectedHarga > 0) {
+                            $itemTax = round($taxService * ($harga / $totalSelectedHarga), 2);
+                        } else {
+                            $itemTax = round($taxService / $totalSelectedCount, 2);
+                        }
+                        $runningTaxAllocated += $itemTax;
+                    }
+                }
+
+                if ($itemTax > 0) {
+                    $itemTaxes[$detail->id] = $itemTax;
+                }
 
                 $updateData = [
                     'supplier_id'         => $request->supplier_id,
@@ -874,6 +1038,9 @@ class PembelianKejinggaController extends Controller
                 if ($isLunas) {
                     $updateData['is_lunas'] = true;
                     $updateData['lunas_at'] = now();
+                } else {
+                    $updateData['is_lunas'] = false;
+                    $updateData['lunas_at'] = null;
                 }
 
                 $detail->update($updateData);
@@ -885,12 +1052,15 @@ class PembelianKejinggaController extends Controller
                 $fifoService->syncBarangHpp($oldBId);
             }
 
-            if ($request->filled('tax_service')) {
-                $pembelian->tax_service = $taxService;
-            }
+            // Simpan mapping item_taxes ke metadata pembelian
+            $this->setItemTaxes($pembelian, $itemTaxes);
 
-            $totalDetails = $pembelian->details()->sum('harga');
-            $pembelian->total = $totalDetails + (float) ($pembelian->tax_service ?? 0);
+            // Hitung akumulasi total tax_service dari seluruh item
+            $pembelian->tax_service = (float) array_sum($itemTaxes);
+
+            // Total PO = total harga seluruh detail + total tax_service seluruh detail
+            $totalDetails = (float) $pembelian->details()->sum('harga');
+            $pembelian->total = $totalDetails + $pembelian->tax_service;
 
             if (empty($pembelian->supplier_id)) {
                 $pembelian->supplier_id = $request->supplier_id;
@@ -900,6 +1070,9 @@ class PembelianKejinggaController extends Controller
             if ($unpaidCount === 0 && $pembelian->details()->count() > 0) {
                 $pembelian->is_lunas = true;
                 $pembelian->lunas_at = now();
+            } else {
+                $pembelian->is_lunas = false;
+                $pembelian->lunas_at = null;
             }
 
             $pembelian->save();
@@ -933,11 +1106,18 @@ class PembelianKejinggaController extends Controller
         $barangNama = $detail->barang->nama ?? 'Barang';
 
         DB::transaction(function () use ($detail, $pembelian, $barangId) {
+            $deletedDetailId = $detail->id;
             $detail->delete();
 
-            // Hitung ulang total PO
-            $totalDetails = $pembelian->details()->sum('harga');
-            $pembelian->total = $totalDetails + (float) ($pembelian->tax_service ?? 0);
+            // Bersihkan tax detail dari metadata
+            $itemTaxes = $this->getItemTaxes($pembelian);
+            unset($itemTaxes[$deletedDetailId]);
+            $this->setItemTaxes($pembelian, $itemTaxes);
+
+            // Hitung ulang total PO dan tax_service
+            $totalDetails = (float) $pembelian->details()->sum('harga');
+            $pembelian->tax_service = (float) array_sum($itemTaxes);
+            $pembelian->total = $totalDetails + $pembelian->tax_service;
             $pembelian->save();
 
             // Sinkronisasi HPP barang sesuai FIFO
