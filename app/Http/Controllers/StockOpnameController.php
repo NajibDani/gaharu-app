@@ -194,10 +194,11 @@ class StockOpnameController extends Controller
 
     public function hitungFIFORealtime(Request $request)
     {
-        $nilai = $this->hitungNilaiFIFO(
+        $selisih = (float) ($request->selisih ?? 0);
+        $nilai = $this->hitungNilaiOpname(
             $request->gudang_id,
             $request->barang_id,
-            abs($request->selisih),
+            $selisih,
             $request->divisi_id
         );
 
@@ -268,10 +269,10 @@ class StockOpnameController extends Controller
                 $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
                 $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
                 $selisih      = $stokFisik - $stokSistem;
-                $nilaiSelisih = $this->hitungNilaiFIFO(
+                $nilaiSelisih = $this->hitungNilaiOpname(
                     $request->gudang_id,
                     $barangId,
-                    abs($selisih),
+                    $selisih,
                     $request->divisi_id
                 );
 
@@ -458,10 +459,10 @@ class StockOpnameController extends Controller
                         $nilaiSelisihBaru = 0;
                     } else {
                         $selisihBaru = $stokFisik - $stokSistemBaru;
-                        $nilaiSelisihBaru = $this->hitungNilaiFIFO(
+                        $nilaiSelisihBaru = $this->hitungNilaiOpname(
                             $gudangId,
                             $item->id,
-                            abs($selisihBaru),
+                            $selisihBaru,
                             $divisiId
                         );
                     }
@@ -509,10 +510,10 @@ class StockOpnameController extends Controller
                     } else {
                         $stokFisikBaru = (float) $detail->stok_fisik;
                         $selisihBaru = $stokFisikBaru - $stokAktual;
-                        $nilaiSelisihBaru = $this->hitungNilaiFIFO(
+                        $nilaiSelisihBaru = $this->hitungNilaiOpname(
                             $gudangId,
                             $barangId,
-                            abs($selisihBaru),
+                            $selisihBaru,
                             $divisiId
                         );
                     }
@@ -631,6 +632,14 @@ class StockOpnameController extends Controller
             if (abs((float)$detail->selisih) > 0.0001) {
                 $qty = abs((float)$detail->selisih);
                 $nilai = abs((float)$detail->nilai_selisih);
+                if ($nilai <= 0) {
+                    $nilai = $this->hitungNilaiOpname(
+                        $opname->gudang_id,
+                        $detail->barang_id,
+                        (float)$detail->selisih,
+                        $opname->divisi_id
+                    );
+                }
                 $hargaSatuan = $qty > 0 ? ($nilai / $qty) : 0;
 
                 PengeluaranBahanBakuDetail::create([
@@ -794,10 +803,10 @@ class StockOpnameController extends Controller
                     $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
                     $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
                     $selisih      = $stokFisik - $stokSistem;
-                    $nilaiSelisih = $this->hitungNilaiFIFO(
+                    $nilaiSelisih = $this->hitungNilaiOpname(
                         $opname->gudang_id,
                         $barangId,
-                        abs($selisih),
+                        $selisih,
                         $opname->divisi_id
                     );
 
@@ -994,12 +1003,6 @@ class StockOpnameController extends Controller
 
         foreach ($opname->details as $detail) {
 
-            $hargaUnit = $this->getHargaFIFO(
-                $opname->gudang_id,
-                $detail->barang_id,
-                $opname->divisi_id
-            );
-
             if ($detail->selisih < 0) {
                 $qtyKurang = abs((float) $detail->selisih);
 
@@ -1026,8 +1029,9 @@ class StockOpnameController extends Controller
                     ];
                 }
 
-                // Fallback jika belum ada batch masuk sebelumnya
-                if ($hppTotalKurang <= 0 && $hargaUnit > 0) {
+                // Fallback jika belum ada batch masuk sebelumnya: pakai harga terakhir barang
+                if ($hppTotalKurang <= 0) {
+                    $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                     $hppTotalKurang = round($qtyKurang * $hargaUnit, 2);
                 } else {
                     $hppTotalKurang = round($hppTotalKurang, 2);
@@ -1090,6 +1094,7 @@ class StockOpnameController extends Controller
                 ];
 
             } elseif ($detail->selisih > 0) {
+                $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                 $defaultSupplierId  = DB::table('suppliers')->value('id') ?? 1;
                 $defaultPembelianId = DB::table('pembelian')->value('id') ?? 1;
                 $defaultPemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
@@ -1368,5 +1373,53 @@ class StockOpnameController extends Controller
         }
 
         return (float) $nilai;
+    }
+
+    public function getHargaTerakhirBarang($barangId): float
+    {
+        $hargaBatch = DB::table('stok_gudang_batch')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->orderBy('id', 'desc')
+            ->value('harga_per_qty');
+
+        if ($hargaBatch && (float)$hargaBatch > 0) {
+            return (float) $hargaBatch;
+        }
+
+        $hargaBeli = DB::table('pembelian_detail')
+            ->where('barang_id', $barangId)
+            ->where('harga_satuan', '>', 0)
+            ->orderBy('id', 'desc')
+            ->value('harga_satuan');
+
+        if ($hargaBeli && (float)$hargaBeli > 0) {
+            return (float) $hargaBeli;
+        }
+
+        $hppRef = DB::table('master_barang')
+            ->where('id', $barangId)
+            ->value('hpp_referensi');
+
+        return (float) ($hppRef ?? 0);
+    }
+
+    public function hitungNilaiOpname($gudangId, $barangId, $selisih, $divisiId = null): float
+    {
+        if (abs($selisih) < 0.0001) {
+            return 0.0;
+        }
+
+        if ($selisih < 0) {
+            $nilaiFifo = $this->hitungNilaiFIFO($gudangId, $barangId, abs($selisih), $divisiId);
+            if ($nilaiFifo > 0) {
+                return round($nilaiFifo, 2);
+            }
+            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
+            return round(abs($selisih) * $hargaTerakhir, 2);
+        } else {
+            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
+            return round($selisih * $hargaTerakhir, 2);
+        }
     }
 }

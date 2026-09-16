@@ -530,8 +530,8 @@ function renderDetailPengeluaran(data) {
         `;
     }
 
-    let colQtyLabel = data.is_wasted ? 'Jumlah Wasted' : 'Jumlah Diminta';
-    let colStokLabel = data.is_wasted ? `Stok Lokasi (${data.divisi_nama || data.gudang_nama})` : 'Stok Gudang Utama';
+    let colQtyLabel = data.is_wasted ? 'Jumlah Wasted' : (data.is_opname ? 'Selisih Penyesuaian (SO)' : 'Jumlah Diminta');
+    let colStokLabel = (data.is_wasted || data.is_opname) ? `Stok Lokasi (${data.divisi_nama ? data.gudang_nama + ' - ' + data.divisi_nama : data.gudang_nama})` : 'Stok Gudang Utama';
 
     const formatCurrency = (val) => {
         const num = Number(val || 0);
@@ -665,6 +665,42 @@ function renderDetailPengeluaran(data) {
                     <div class="p-3 bg-light rounded-3 h-100 border">
                         <div class="text-muted small">Jenis Pengeluaran</div>
                         <div class="mt-1"><span class="badge bg-danger text-white px-2 py-1"><i class="bi bi-trash3 me-1"></i>Wasted / Rusak / Busuk</span></div>
+                        <small class="text-muted">Tanggal: ${data.tanggal}</small>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border d-flex flex-column justify-content-between">
+                        <div class="text-muted small">Status Dokumen</div>
+                        <div>${statusBadge}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (data.is_opname) {
+        infoCardsHtml = `
+            <div class="row g-3 mb-3">
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <div class="text-muted small">Kode Dokumen</div>
+                        <div class="fw-bold fs-6 text-dark mt-1">${data.kode_pengeluaran}</div>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-muted small">Gudang / Lokasi SO</div>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill shadow-none" onclick="refreshCurrentModalStok(this)" title="Refresh ketersediaan stok lokasi SO" style="font-size:0.75rem;">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                            </button>
+                        </div>
+                        <div class="fw-bold fs-6 text-primary mt-1">${data.gudang_nama} ${divisiBadge}</div>
+                        <small class="text-muted">Lokasi Opname Fisik</small>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-md-3">
+                    <div class="p-3 bg-light rounded-3 h-100 border">
+                        <div class="text-muted small">Tujuan Dokumen</div>
+                        <div class="mt-1"><span class="badge bg-info text-dark px-2 py-1"><i class="bi bi-sliders me-1"></i>Penyesuaian Stock Opname (Fisik)</span></div>
                         <small class="text-muted">Tanggal: ${data.tanggal}</small>
                     </div>
                 </div>

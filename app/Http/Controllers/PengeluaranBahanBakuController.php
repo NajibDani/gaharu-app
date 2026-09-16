@@ -585,14 +585,27 @@ class PengeluaranBahanBakuController extends Controller
 
         $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $gudangUtamaId, &$grandTotal, &$totalKurang) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
-            if (!$isApproved) {
-                $est = $this->fifoService->getEstimatedHargaFIFO(
-                    $detail->barang_id,
-                    $detail->qty,
-                    ($isWasted || $isOpname) ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
-                    ($isWasted || $isOpname) ? $pengeluaran->divisi_id : null
-                );
-                $hppTotal = (float) ($est['total_harga'] ?? 0);
+            if (!$isApproved || $hppTotal <= 0) {
+                if ($isOpname) {
+                    $hppTotal = $this->hitungNilaiOpname(
+                        $pengeluaran->gudang_id,
+                        $detail->barang_id,
+                        $detail->qty,
+                        $pengeluaran->divisi_id
+                    );
+                } else {
+                    $est = $this->fifoService->getEstimatedHargaFIFO(
+                        $detail->barang_id,
+                        $detail->qty,
+                        ($isWasted) ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                        ($isWasted) ? $pengeluaran->divisi_id : null
+                    );
+                    $hppTotal = (float) ($est['total_harga'] ?? 0);
+                }
+            }
+            if ($hppTotal <= 0) {
+                $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                $hppTotal = round($detail->qty * $hargaUnit, 2);
             }
             $grandTotal += $hppTotal;
             $hargaSatuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
@@ -677,6 +690,7 @@ class PengeluaranBahanBakuController extends Controller
             'divisi_nama'         => $pengeluaran->divisi->nama ?? null,
             'lokasi_nama'         => $lokasiNama,
             'is_wasted'           => $isWasted,
+            'is_opname'           => $isOpname,
             'jenis_pengeluaran'   => $pengeluaran->jenis_pengeluaran ?? ($isWasted ? 'wasted' : 'transfer'),
             'status'              => $pengeluaran->status,
             'is_approved'         => $isApproved,
@@ -1300,7 +1314,7 @@ class PengeluaranBahanBakuController extends Controller
                 $totalShortageDebit = 0;
 
                 foreach ($opname->details as $detail) {
-                    $hargaUnit = $this->getHargaFIFOForOpname($opname->gudang_id, $detail->barang_id, $opname->divisi_id);
+                    $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
 
                     if ($detail->selisih < 0) {
                         $qtyKurang = abs((float) $detail->selisih);
@@ -1332,7 +1346,8 @@ class PengeluaranBahanBakuController extends Controller
                             }
                         }
 
-                        if ($hppTotalKurang <= 0 && $hargaUnit > 0) {
+                        if ($hppTotalKurang <= 0) {
+                            $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                             $hppTotalKurang = round($qtyKurang * $hargaUnit, 2);
                         } else {
                             $hppTotalKurang = round($hppTotalKurang, 2);
@@ -1603,26 +1618,58 @@ class PengeluaranBahanBakuController extends Controller
         ]);
     }
 
+    public function getHargaTerakhirBarang($barangId): float
+    {
+        $hargaBatch = DB::table('stok_gudang_batch')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->orderBy('id', 'desc')
+            ->value('harga_per_qty');
+
+        if ($hargaBatch && (float)$hargaBatch > 0) {
+            return (float) $hargaBatch;
+        }
+
+        $hargaBeli = DB::table('pembelian_detail')
+            ->where('barang_id', $barangId)
+            ->where('harga_satuan', '>', 0)
+            ->orderBy('id', 'desc')
+            ->value('harga_satuan');
+
+        if ($hargaBeli && (float)$hargaBeli > 0) {
+            return (float) $hargaBeli;
+        }
+
+        $hppRef = DB::table('master_barang')
+            ->where('id', $barangId)
+            ->value('hpp_referensi');
+
+        return (float) ($hppRef ?? 0);
+    }
+
+    public function hitungNilaiOpname($gudangId, $barangId, $selisih, $divisiId = null): float
+    {
+        if (abs($selisih) < 0.0001) {
+            return 0.0;
+        }
+
+        if ($selisih < 0) {
+            $est = $this->fifoService->getEstimatedHargaFIFO($barangId, abs($selisih), $gudangId, $divisiId);
+            $nilaiFifo = (float)($est['total_harga'] ?? 0);
+            if ($nilaiFifo > 0) {
+                return round($nilaiFifo, 2);
+            }
+            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
+            return round(abs($selisih) * $hargaTerakhir, 2);
+        } else {
+            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
+            return round($selisih * $hargaTerakhir, 2);
+        }
+    }
+
     private function getHargaFIFOForOpname($gudangId, $barangId, $divisiId = null): float
     {
-        $q = DB::table('stok_gudang_batch')
-            ->where('gudang_id', $gudangId)
-            ->where('barang_id', $barangId)
-            ->where('qty_sisa', '>', 0);
-
-        if ($divisiId) {
-            $q->where('divisi_id', $divisiId);
-        }
-
-        $harga = $q->orderBy('id', 'asc')->value('harga_per_qty');
-
-        if (!$harga) {
-            $harga = DB::table('master_barang')
-                ->where('id', $barangId)
-                ->value('hpp_referensi') ?? 0;
-        }
-
-        return (float) $harga;
+        return $this->getHargaTerakhirBarang($barangId);
     }
 
     /*

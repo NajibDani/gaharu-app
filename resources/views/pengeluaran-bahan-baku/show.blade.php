@@ -22,24 +22,27 @@
 @php
     $grandTotal = 0;
     $isWasted = $isWasted ?? ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+    $isOpname = $isOpname ?? ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
     $lokasiNama = ($pengeluaran->gudang->nama ?? '-') . ($pengeluaran->divisi ? ' (' . $pengeluaran->divisi->nama . ')' : '');
     $tujuanNama = strtolower(($pengeluaran->gudang->nama ?? '') . ' ' . ($pengeluaran->divisi->nama ?? ''));
     $isProduksiOrCK = str_contains($tujuanNama, 'central kitchen') || str_contains($tujuanNama, 'cold kitchen') || str_contains($tujuanNama, 'produksi');
-    $headerBgColor = $isProduksiOrCK ? '#1d4ed8' : '#d97706';
+    $headerBgColor = $isOpname ? '#0891b2' : ($isProduksiOrCK ? '#1d4ed8' : '#d97706');
     $docTitleStandard = $isWasted 
         ? 'BERITA ACARA WASTED' 
-        : ($isProduksiOrCK ? 'SURAT PERMINTAAN & TRANSFER BAHAN (CK / PRODUKSI)' : 'SURAT PERMINTAAN & TRANSFER BAHAN BAKU');
+        : ($isOpname ? 'BERITA ACARA PENYESUAIAN STOCK OPNAME' : ($isProduksiOrCK ? 'SURAT PERMINTAAN & TRANSFER BAHAN (CK / PRODUKSI)' : 'SURAT PERMINTAAN & TRANSFER BAHAN BAKU'));
 @endphp
 
 <div class="page-header mb-4">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
         <div>
             <h1 class="page-header-title">
-                {{ $isWasted ? 'Detail Pengeluaran Bahan Wasted / Rusak' : 'Detail Permintaan / Transfer Bahan Baku' }}
+                {{ $isWasted ? 'Detail Pengeluaran Bahan Wasted / Rusak' : ($isOpname ? 'Detail Persetujuan Stock Opname (Penyesuaian Stok)' : 'Detail Permintaan / Transfer Bahan Baku') }}
             </h1>
             <p class="text-muted mb-0">
                 @if($isWasted)
                     Informasi ketersediaan stok di lokasi {{ $lokasiNama }}, kuantitas wasted, kekurangan, dan kalkulasi HPP.
+                @elseif($isOpname)
+                    Informasi ketersediaan stok di lokasi {{ $lokasiNama }}, selisih penyesuaian SO, dan kalkulasi HPP.
                 @else
                     Informasi ketersediaan stok di Gudang Utama, jumlah diminta, kekurangan, dan kalkulasi FIFO.
                 @endif
@@ -71,7 +74,7 @@
     <div class="row g-3 mb-4">
         <div class="col-md-3">
             <div class="card p-3 h-100 shadow-sm border">
-                <small class="text-muted">Kode Pengeluaran / Dokumen</small>
+                <small class="text-muted">Kode Dokumen</small>
                 <h5 class="fw-bold mb-0 text-dark font-monospace mt-1">
                     {{ $pengeluaran->kode_pengeluaran }}
                 </h5>
@@ -96,6 +99,35 @@
                         <span class="badge bg-danger text-white px-2 py-1"><i class="bi bi-trash3 me-1"></i>Wasted / Rusak / Busuk</span>
                     </div>
                     <small class="text-muted">Pencatatan Kerusakan</small>
+                </div>
+            </div>
+        @elseif($isOpname)
+            <div class="col-md-3">
+                <div class="card p-3 h-100 shadow-sm border">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">Gudang / Lokasi SO</small>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill shadow-none" onclick="window.location.reload()" title="Refresh stok lokasi SO" style="font-size:0.75rem;">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
+                    <h6 class="fw-bold mb-0 text-primary mt-1">
+                        <i class="bi bi-building me-1"></i>{{ $pengeluaran->gudang->nama ?? '-' }}
+                        @if($pengeluaran->divisi)
+                            <span class="badge bg-light text-primary border border-primary-subtle d-inline-block mt-1">
+                                <i class="bi bi-diagram-3 me-1"></i>{{ $pengeluaran->divisi->nama }}
+                            </span>
+                        @endif
+                    </h6>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card p-3 h-100 shadow-sm border">
+                    <small class="text-muted">Tujuan Dokumen</small>
+                    <div class="mt-1">
+                        <span class="badge bg-info text-dark px-2 py-1"><i class="bi bi-sliders me-1"></i>Penyesuaian Stock Opname (Fisik)</span>
+                    </div>
+                    <small class="text-muted">Sinkronisasi Stok Fisik</small>
                 </div>
             </div>
         @else
@@ -156,7 +188,7 @@
     <div class="card shadow-sm border">
         <div class="card-header text-white fw-bold d-flex justify-content-between align-items-center py-3" style="background:#7A4517;">
             <div>
-                <i class="bi bi-box-seam me-2"></i>{{ $isWasted ? 'Rincian Bahan Wasted & Ketersediaan Stok Lokasi' : 'Rincian Bahan Baku & Ketersediaan Stok Gudang Utama' }}
+                <i class="bi bi-box-seam me-2"></i>{{ $isWasted ? 'Rincian Bahan Wasted & Ketersediaan Stok Lokasi' : ($isOpname ? 'Rincian Penyesuaian Stock Opname & Stok Lokasi' : 'Rincian Bahan Baku & Ketersediaan Stok Gudang Utama') }}
             </div>
             <span class="badge bg-light text-dark">{{ $pengeluaran->details->count() }} Item</span>
         </div>
@@ -168,9 +200,9 @@
                         <tr>
                             <th width="45" class="text-center">No</th>
                             <th>Kode & Nama Bahan</th>
-                            <th width="140" class="text-end">{{ $isWasted ? 'Jumlah Wasted' : 'Jumlah Diminta' }}</th>
+                            <th width="160" class="text-end">{{ $isWasted ? 'Jumlah Wasted' : ($isOpname ? 'Selisih Penyesuaian (SO)' : 'Jumlah Diminta') }}</th>
                             <th width="170" class="text-end">
-                                <span>{{ $isWasted ? ('Stok di ' . ($pengeluaran->divisi ? $pengeluaran->divisi->nama : $pengeluaran->gudang->nama)) : 'Stok Gudang Utama' }}</span>
+                                <span>{{ $isWasted ? ('Stok di ' . ($pengeluaran->divisi ? $pengeluaran->divisi->nama : $pengeluaran->gudang->nama)) : ($isOpname ? ('Stok Lokasi (' . ($pengeluaran->divisi ? $pengeluaran->divisi->nama : $pengeluaran->gudang->nama) . ')') : 'Stok Gudang Utama') }}</span>
                                 <button type="button" class="btn btn-link btn-sm p-0 text-primary ms-1" onclick="window.location.reload()" title="Refresh stok terkini"><i class="bi bi-arrow-clockwise"></i></button>
                             </th>
                             <th width="140" class="text-end">Kekurangan</th>
