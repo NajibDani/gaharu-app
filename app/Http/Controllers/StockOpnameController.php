@@ -1389,9 +1389,17 @@ class StockOpnameController extends Controller
 
         $hargaBeli = DB::table('pembelian_detail')
             ->where('barang_id', $barangId)
-            ->where('harga_satuan', '>', 0)
+            ->where('harga_per_qty', '>', 0)
             ->orderBy('id', 'desc')
-            ->value('harga_satuan');
+            ->value('harga_per_qty');
+
+        if (!$hargaBeli) {
+            $hargaBeli = DB::table('pembelian_detail')
+                ->where('barang_id', $barangId)
+                ->where('harga', '>', 0)
+                ->orderBy('id', 'desc')
+                ->value('harga');
+        }
 
         if ($hargaBeli && (float)$hargaBeli > 0) {
             return (float) $hargaBeli;

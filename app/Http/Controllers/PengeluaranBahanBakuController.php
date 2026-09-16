@@ -525,6 +525,13 @@ class PengeluaranBahanBakuController extends Controller
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
+        if ($pengeluaran->gudang_id) {
+            StokGudang::reconcileStockSummary(null, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+        }
+        if ($gudangUtamaId) {
+            StokGudang::reconcileStockSummary(null, $gudangUtamaId);
+        }
+
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
         foreach ($pengeluaran->details as $detail) {
@@ -577,6 +584,14 @@ class PengeluaranBahanBakuController extends Controller
 
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
+
+        // Rekonsiliasi ringkasan stok gudang agar 100% selaras dengan batch aktif & transaksi stok
+        if ($pengeluaran->gudang_id) {
+            StokGudang::reconcileStockSummary(null, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+        }
+        if ($gudangUtamaId) {
+            StokGudang::reconcileStockSummary(null, $gudangUtamaId);
+        }
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
@@ -1632,9 +1647,17 @@ class PengeluaranBahanBakuController extends Controller
 
         $hargaBeli = DB::table('pembelian_detail')
             ->where('barang_id', $barangId)
-            ->where('harga_satuan', '>', 0)
+            ->where('harga_per_qty', '>', 0)
             ->orderBy('id', 'desc')
-            ->value('harga_satuan');
+            ->value('harga_per_qty');
+
+        if (!$hargaBeli) {
+            $hargaBeli = DB::table('pembelian_detail')
+                ->where('barang_id', $barangId)
+                ->where('harga', '>', 0)
+                ->orderBy('id', 'desc')
+                ->value('harga');
+        }
 
         if ($hargaBeli && (float)$hargaBeli > 0) {
             return (float) $hargaBeli;

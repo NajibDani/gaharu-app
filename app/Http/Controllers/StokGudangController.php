@@ -287,6 +287,9 @@ class StokGudangController extends Controller
         // Auto-heal mutasi stok opname prematur yang PBK-nya masih berstatus Draft
         $this->autoHealPrematureDraftSoMutations($barangId);
 
+        // Rekonsiliasi ringkasan stok gudang agar 100% selaras dengan batch aktif & transaksi stok
+        \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);
+
         $saQty = 0;
         $saNilai = 0;
 
