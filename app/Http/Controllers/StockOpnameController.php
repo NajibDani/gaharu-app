@@ -897,7 +897,7 @@ class StockOpnameController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    private function revertApprovalEffects(StockOpname $opname): void
+    public function revertApprovalEffects(StockOpname $opname): void
     {
         // 1. Revert Shortage (Pengeluaran Bahan Baku & FIFO consumption)
         $pengeluaranList = PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
@@ -919,25 +919,7 @@ class StockOpnameController extends Controller
                     }
                 }
             }
-
-            $details = $pengeluaran->details;
-            foreach ($details as $det) {
-                $stokQuery = \App\Models\StokGudang::where('barang_id', $det->barang_id)
-                    ->where('gudang_id', $opname->gudang_id);
-                if ($opname->divisi_id) {
-                    $stokQuery->where('divisi_id', $opname->divisi_id);
-                } else {
-                    $stokQuery->whereNull('divisi_id');
-                }
-                $stokGudang = $stokQuery->lockForUpdate()->first();
-                if ($stokGudang) {
-                    $stokGudang->increment('jumlah', (float) $det->qty);
-                }
-            }
-
             \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->delete();
-            $pengeluaran->details()->delete();
-            $pengeluaran->delete();
         }
 
         // 2. Revert Surplus (Batch SO-SURPLUS-... & stock increment)
@@ -947,17 +929,6 @@ class StockOpnameController extends Controller
             ->get();
 
         foreach ($surplusBatches as $batch) {
-            $stokQuery = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
-                ->where('gudang_id', $opname->gudang_id);
-            if ($opname->divisi_id) {
-                $stokQuery->where('divisi_id', $opname->divisi_id);
-            } else {
-                $stokQuery->whereNull('divisi_id');
-            }
-            $stokGudang = $stokQuery->lockForUpdate()->first();
-            if ($stokGudang) {
-                $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
-            }
             $batch->delete();
         }
 
@@ -983,8 +954,10 @@ class StockOpnameController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    private function executeApprovalEffects(StockOpname $opname): void
+    public function executeApprovalEffects(StockOpname $opname, ?PengeluaranBahanBaku $pbkParam = null): void
     {
+        $this->revertApprovalEffects($opname);
+
         $fifoService = app(\App\Services\FifoService::class);
         $itemSelisihNegatif = [];
         $surplusDebits = [];
@@ -1001,10 +974,43 @@ class StockOpnameController extends Controller
         $tanggalBase = \Carbon\Carbon::parse($opname->tanggal)->format('Y-m-d');
         $tanggalTx = $tanggalBase . ' ' . now()->format('H:i:s');
 
-        foreach ($opname->details as $detail) {
+        $pbk = $pbkParam ?: PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
+            ->orWhere('keterangan', 'like', '%' . $opname->kode_opname . '%')
+            ->first();
 
-            if ($detail->selisih < 0) {
-                $qtyKurang = abs((float) $detail->selisih);
+        foreach ($opname->details as $detail) {
+            // Hitung stok sistem aktual di lokasi (gudang & divisi) sebelum tanggal SO
+            $queryIn = DB::table('transaksi_stok')
+                ->where('barang_id', $detail->barang_id)
+                ->where('tanggal', '<=', $opname->tanggal . ' 23:59:59');
+            $queryOut = DB::table('transaksi_stok')
+                ->where('barang_id', $detail->barang_id)
+                ->where('tanggal', '<=', $opname->tanggal . ' 23:59:59');
+
+            if ($opname->gudang_id && $opname->divisi_id) {
+                $queryIn->where('gudang_tujuan_id', $opname->gudang_id)->where('divisi_tujuan_id', $opname->divisi_id);
+                $queryOut->where('gudang_asal_id', $opname->gudang_id)->where('divisi_asal_id', $opname->divisi_id);
+            } elseif ($opname->gudang_id) {
+                $queryIn->where('gudang_tujuan_id', $opname->gudang_id);
+                $queryOut->where('gudang_asal_id', $opname->gudang_id);
+            } elseif ($opname->divisi_id) {
+                $queryIn->where('divisi_tujuan_id', $opname->divisi_id);
+                $queryOut->where('divisi_asal_id', $opname->divisi_id);
+            }
+
+            $stokSistemAktual = max(0, (float)($queryIn->sum('qty') - $queryOut->sum('qty')));
+            $stokFisik = (float)$detail->stok_fisik;
+            $selisih = $stokFisik - $stokSistemAktual;
+
+            $detail->update([
+                'stok_sistem' => $stokSistemAktual,
+                'selisih'     => $selisih,
+            ]);
+
+            $pbkDet = $pbk ? $pbk->details->firstWhere('barang_id', $detail->barang_id) : null;
+
+            if ($selisih < 0) {
+                $qtyKurang = abs((float) $selisih);
 
                 // 1. Eksekusi pemotongan FIFO di gudang & divisi lokasi opname
                 $fifoResult = $fifoService->consumeFIFO(
@@ -1027,6 +1033,18 @@ class StockOpnameController extends Controller
                         'harga_per_qty' => $fifo['harga_per_qty'],
                         'total_harga'   => $layerTotal,
                     ];
+
+                    if ($pbk && $pbkDet && !empty($fifo['batch_id'])) {
+                        \App\Models\PengeluaranBahanBakuFifo::create([
+                            'pengeluaran_id' => $pbk->id,
+                            'detail_id'      => $pbkDet->id,
+                            'batch_id'       => $fifo['batch_id'],
+                            'batch_number'   => $fifo['batch_number'],
+                            'qty_keluar'     => $fifo['qty_keluar'],
+                            'harga_per_qty'  => $fifo['harga_per_qty'],
+                            'total_harga'    => $layerTotal,
+                        ]);
+                    }
                 }
 
                 // Fallback jika belum ada batch masuk sebelumnya: pakai harga terakhir barang
@@ -1037,27 +1055,7 @@ class StockOpnameController extends Controller
                     $hppTotalKurang = round($hppTotalKurang, 2);
                 }
 
-                // 2. Kurangi stok summary di stok_gudang
-                $stokQuery = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
-                    ->where('gudang_id', $opname->gudang_id);
-                if ($opname->divisi_id) {
-                    $stokQuery->where('divisi_id', $opname->divisi_id);
-                } else {
-                    $stokQuery->whereNull('divisi_id');
-                }
-                $stokGudang = $stokQuery->lockForUpdate()->first();
-                if ($stokGudang) {
-                    $stokGudang->decrement('jumlah', $qtyKurang);
-                } else {
-                    \App\Models\StokGudang::create([
-                        'barang_id' => $detail->barang_id,
-                        'gudang_id' => $opname->gudang_id,
-                        'divisi_id' => $opname->divisi_id,
-                        'jumlah'    => -$qtyKurang,
-                    ]);
-                }
-
-                // 3. Catat mutasi keluar di transaksi_stok (terbaca di Buku Pembantu Persediaan)
+                // 2. Catat mutasi keluar di transaksi_stok (terbaca di Buku Pembantu Persediaan)
                 \App\Models\TransaksiStok::create([
                     'tanggal'        => $tanggalTx,
                     'tipe'           => 'keluar',
@@ -1071,7 +1069,7 @@ class StockOpnameController extends Controller
                     'created_by'     => Auth::id() ?? 1,
                 ]);
 
-                // 4. Akumulasi untuk Jurnal Penyesuaian Shortage
+                // 3. Akumulasi untuk Jurnal Penyesuaian Shortage
                 if ($hppTotalKurang > 0) {
                     $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
                     $coaCode = $isOperational ? '1501' : ($detail->barang && $detail->barang->is_bahan_setengah_jadi ? '1302' : ($detail->barang && $detail->barang->is_barang_jadi ? '1303' : '1301'));
@@ -1093,7 +1091,7 @@ class StockOpnameController extends Controller
                     'fifo_records' => $fifoRecords,
                 ];
 
-            } elseif ($detail->selisih > 0) {
+            } elseif ($selisih > 0) {
                 $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                 $defaultSupplierId  = DB::table('suppliers')->value('id') ?? 1;
                 $defaultPembelianId = DB::table('pembelian')->value('id') ?? 1;
@@ -1108,27 +1106,29 @@ class StockOpnameController extends Controller
                     'pembelian_id'        => $defaultPembelianId,
                     'pembelian_detail_id' => $defaultPemDetailId,
                     'batch_number'        => 'SO-SURPLUS-' . $opname->kode_opname,
-                    'qty_masuk'           => $detail->selisih,
+                    'qty_masuk'           => $selisih,
                     'qty_keluar'          => 0,
-                    'qty_sisa'            => $detail->selisih,
+                    'qty_sisa'            => $selisih,
                     'harga_per_qty'       => $hargaUnit,
                     'is_habis'            => false,
                 ]);
 
-                // 2. Tambah stok gudang menggunakan StockService
-                app(\App\Services\StockService::class)->stockIn([
-                    'barang_id'        => $detail->barang_id,
-                    'gudang_tujuan_id' => $opname->gudang_id,
-                    'divisi_tujuan_id' => $opname->divisi_id,
-                    'qty'              => $detail->selisih,
-                    'total_harga'      => $detail->selisih * $hargaUnit,
+                // 2. Catat mutasi masuk di transaksi_stok
+                \App\Models\TransaksiStok::create([
+                    'tanggal'          => $tanggalTx,
+                    'tipe'             => 'masuk',
                     'source_type'      => 'stock_opname',
                     'source_id'        => $opname->id,
-                    'user_id'          => Auth::id() ?? 1,
+                    'gudang_tujuan_id' => $opname->gudang_id,
+                    'divisi_tujuan_id' => $opname->divisi_id,
+                    'barang_id'        => $detail->barang_id,
+                    'qty'              => $selisih,
+                    'total_harga'      => round($selisih * $hargaUnit, 2),
+                    'created_by'       => Auth::id() ?? 1,
                 ]);
 
                 // 3. Akumulasi untuk Jurnal Penyesuaian (Surplus)
-                $totalHargaSO = round($detail->selisih * $hargaUnit, 2);
+                $totalHargaSO = round($selisih * $hargaUnit, 2);
                 if ($totalHargaSO > 0) {
                     $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
                     $coaCode = $isOperational ? '1501' : ($detail->barang && $detail->barang->is_bahan_setengah_jadi ? '1302' : ($detail->barang && $detail->barang->is_barang_jadi ? '1303' : '1301'));
@@ -1201,8 +1201,8 @@ class StockOpnameController extends Controller
             }
         }
 
-        // ── Buat Pengeluaran Bahan Baku otomatis berstatus approved jika ada selisih negatif (audit trail) ──
-        if (!empty($itemSelisihNegatif)) {
+        // ── Update Pengeluaran Bahan Baku otomatis jika ada PBK ──
+        if (!empty($itemSelisihNegatif) && !$pbk) {
             $kode = 'PBK-SO-' . $opname->kode_opname;
 
             $pengeluaran = PengeluaranBahanBaku::where('kode_pengeluaran', $kode)->first();
@@ -1255,6 +1255,8 @@ class StockOpnameController extends Controller
                 }
             }
         }
+
+        \App\Models\StokGudang::reconcileStockSummary(null, $opname->gudang_id, $opname->divisi_id);
     }
 
     /*
