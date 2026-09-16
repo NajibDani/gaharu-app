@@ -573,6 +573,7 @@ class PengeluaranBahanBakuController extends Controller
         ])->findOrFail($id);
 
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+        $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
 
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
@@ -582,14 +583,14 @@ class PengeluaranBahanBakuController extends Controller
         $grandTotal = 0;
         $totalKurang = 0;
 
-        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $gudangUtamaId, &$grandTotal, &$totalKurang) {
+        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $gudangUtamaId, &$grandTotal, &$totalKurang) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
             if (!$isApproved) {
                 $est = $this->fifoService->getEstimatedHargaFIFO(
                     $detail->barang_id,
                     $detail->qty,
-                    $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
-                    $isWasted ? $pengeluaran->divisi_id : null
+                    ($isWasted || $isOpname) ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                    ($isWasted || $isOpname) ? $pengeluaran->divisi_id : null
                 );
                 $hppTotal = (float) ($est['total_harga'] ?? 0);
             }
@@ -598,7 +599,7 @@ class PengeluaranBahanBakuController extends Controller
 
             $qtyDiminta = (float) $detail->qty;
 
-            if ($isWasted) {
+            if ($isWasted || $isOpname) {
                 $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
                 if ($pengeluaran->divisi_id) {
                     $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
@@ -608,15 +609,21 @@ class PengeluaranBahanBakuController extends Controller
                 $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
             }
 
-            $kekurangan = max(0, $qtyDiminta - $stokTersedia);
-
-            if ($kekurangan > 0) {
-                $totalKurang++;
+            if ($isOpname) {
+                $kekurangan = 0;
+            } else {
+                $kekurangan = max(0, $qtyDiminta - $stokTersedia);
+                if ($kekurangan > 0) {
+                    $totalKurang++;
+                }
             }
 
             $satuan = $detail->barang->satuan ?? ($detail->satuan ?? 'pcs');
 
-            if ($stokTersedia > $qtyDiminta) {
+            if ($isOpname) {
+                $statusStok = 'Penyesuaian Stock Opname (Fisik)';
+                $statusColor = 'info';
+            } elseif ($stokTersedia > $qtyDiminta) {
                 $statusStok = 'Tersedia Penuh';
                 $statusColor = 'success';
             } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
