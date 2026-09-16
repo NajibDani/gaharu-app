@@ -16,7 +16,7 @@
                         <!-- Gudang -->
                         <div class="col-12 col-md-3">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Gudang</label>
-                            <select name="gudang_id" class="form-select border-2" style="border-radius: 8px;">
+                            <select name="gudang_id" id="gudangSelect" class="form-select border-2" style="border-radius: 8px;">
                                 <option value="">-- Semua Gudang --</option>
                                 @foreach($gudangs as $g)
                                     <option value="{{ $g->id }}" {{ $gudangId == $g->id ? 'selected' : '' }}>
@@ -26,20 +26,33 @@
                             </select>
                         </div>
 
-                        <!-- Dari Tanggal -->
+                        <!-- Divisi -->
                         <div class="col-12 col-md-3">
+                            <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Divisi / Depo</label>
+                            <select name="divisi_id" id="divisiSelect" class="form-select border-2" style="border-radius: 8px;">
+                                <option value="">-- Semua Divisi --</option>
+                                @foreach($divisis as $d)
+                                    <option value="{{ $d->id }}" data-gudang-id="{{ $d->gudang_id }}" {{ $divisiId == $d->id ? 'selected' : '' }}>
+                                        {{ $d->nama }} {{ $d->gudang ? '('.$d->gudang->nama.')' : '' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        <!-- Dari Tanggal -->
+                        <div class="col-12 col-md-2">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Dari Tanggal</label>
                             <input type="date" name="start_date" class="form-control border-2" style="border-radius: 8px;" value="{{ $startDate }}" required>
                         </div>
 
                         <!-- Sampai Tanggal -->
-                        <div class="col-12 col-md-3">
+                        <div class="col-12 col-md-2">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Sampai Tanggal</label>
                             <input type="date" name="end_date" class="form-control border-2" style="border-radius: 8px;" value="{{ $endDate }}" required>
                         </div>
 
                         <!-- Search -->
-                        <div class="col-12 col-md-3">
+                        <div class="col-12 col-md-2">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Cari Barang</label>
                             <div class="input-group">
                                 <input type="text" name="search" class="form-control border-2" style="border-radius: 8px 0 0 8px;" placeholder="Kode / Nama..." value="{{ $search }}">
@@ -283,17 +296,32 @@
                     // Ambil nilai filter saat ini
                     const form = document.getElementById('formFilter');
                     const gudangSelect = form.querySelector('[name="gudang_id"]');
+                    const divisiSelect = form.querySelector('[name="divisi_id"]');
                     const startDateInput = form.querySelector('[name="start_date"]');
                     const endDateInput = form.querySelector('[name="end_date"]');
 
-                    const gudangId = gudangSelect.value;
+                    const gudangId = gudangSelect ? gudangSelect.value : '';
+                    const divisiId = divisiSelect ? divisiSelect.value : '';
                     const start_date = startDateInput.value;
                     const end_date = endDateInput.value;
 
                     // Update Teks Info Header Modal
                     modalTitle.textContent = nama;
                     modalSubtitle.textContent = 'Kode Barang: ' + kode;
-                    infoGudang.textContent = gudangSelect.options[gudangSelect.selectedIndex].text;
+                    
+                    let lokasiText = 'Semua Gudang';
+                    if (gudangSelect && gudangSelect.value) {
+                        lokasiText = gudangSelect.options[gudangSelect.selectedIndex].text;
+                    }
+                    if (divisiSelect && divisiSelect.value) {
+                        const divText = divisiSelect.options[divisiSelect.selectedIndex].text;
+                        if (gudangSelect && gudangSelect.value) {
+                            lokasiText += ' - ' + divText;
+                        } else {
+                            lokasiText = divText;
+                        }
+                    }
+                    infoGudang.textContent = lokasiText;
                     
                     const formatTgl = (tgl) => {
                         const parts = tgl.split('-');
@@ -317,7 +345,7 @@
                     modal.show();
 
                     // Kirim Request Ajax
-                    const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${barangId}&gudang_id=${gudangId}&start_date=${start_date}&end_date=${end_date}`;
+                    const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${barangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}`;
 
                     fetch(url)
                         .then(response => {

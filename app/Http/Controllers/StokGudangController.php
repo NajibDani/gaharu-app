@@ -208,10 +208,11 @@ class StokGudangController extends Controller
         $roleName = $user->role->nama ?? '';
 
         $gudangId = $request->gudang_id;
-        $search = $request->search;
+        $divisiId = $request->divisi_id;
+        $search   = $request->search;
 
         $startDate = $request->start_date ?: date('Y-m-01');
-        $endDate = $request->end_date ?: date('Y-m-d');
+        $endDate   = $request->end_date ?: date('Y-m-d');
 
         $query = MasterBarang::query()->with('kategori');
 
@@ -225,17 +226,18 @@ class StokGudangController extends Controller
         $items = $query->orderBy('nama')->paginate(20)->withQueryString();
 
         foreach ($items as $item) {
-            $item->stok_akhir = $this->calculateStockAtDate($item->id, $gudangId, $endDate);
+            $item->stok_akhir = $this->calculateStockAtDate($item->id, $gudangId, $divisiId, $endDate);
         }
 
         $gudangs = MasterGudang::orderBy('nama')->get();
+        $divisis = \App\Models\GudangDivisi::with('gudang')->orderBy('nama')->get();
 
         return view('stok-gudang.buku-pembantu', compact(
-            'items', 'gudangs', 'gudangId', 'startDate', 'endDate', 'search'
+            'items', 'gudangs', 'divisis', 'gudangId', 'divisiId', 'startDate', 'endDate', 'search'
         ));
     }
 
-    private function calculateStockAtDate($barangId, $gudangId, $date)
+    private function calculateStockAtDate($barangId, $gudangId, $divisiId, $date)
     {
         $queryIn = DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
@@ -245,26 +247,33 @@ class StokGudangController extends Controller
             ->where('barang_id', $barangId)
             ->where('tanggal', '<=', $date . ' 23:59:59');
 
-        if ($gudangId) {
+        if ($gudangId && $divisiId) {
+            $queryIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+            $queryOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+        } elseif ($gudangId) {
             $queryIn->where('gudang_tujuan_id', $gudangId);
             $queryOut->where('gudang_asal_id', $gudangId);
-
-            $in = $queryIn->sum('qty');
-            $out = $queryOut->sum('qty');
+        } elseif ($divisiId) {
+            $queryIn->where('divisi_tujuan_id', $divisiId);
+            $queryOut->where('divisi_asal_id', $divisiId);
         } else {
-            $in = $queryIn->where('tipe', 'masuk')->sum('qty');
-            $out = $queryOut->where('tipe', 'keluar')->sum('qty');
+            $queryIn->where('tipe', 'masuk');
+            $queryOut->where('tipe', 'keluar');
         }
+
+        $in  = $queryIn->sum('qty');
+        $out = $queryOut->sum('qty');
 
         return max(0, floatval($in) - floatval($out));
     }
 
     public function bukuPembantuMutasi(Request $request)
     {
-        $barangId = $request->barang_id;
-        $gudangId = $request->gudang_id;
+        $barangId  = $request->barang_id;
+        $gudangId  = $request->gudang_id;
+        $divisiId  = $request->divisi_id;
         $startDate = $request->start_date ?: date('Y-m-01');
-        $endDate = $request->end_date ?: date('Y-m-d');
+        $endDate   = $request->end_date ?: date('Y-m-d');
 
         $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
         $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
@@ -285,10 +294,23 @@ class StokGudangController extends Controller
             ->where('barang_id', $barangId)
             ->where('tanggal', '<', $startDate . ' 00:00:00');
 
-        if ($gudangId) {
+        if ($gudangId && $divisiId) {
+            $rawBefore->where(function ($q) use ($gudangId, $divisiId) {
+                $q->where(function($sub) use ($gudangId, $divisiId) {
+                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+                })->orWhere(function($sub) use ($gudangId, $divisiId) {
+                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                });
+            });
+        } elseif ($gudangId) {
             $rawBefore->where(function ($q) use ($gudangId) {
                 $q->where('gudang_asal_id', $gudangId)
                   ->orWhere('gudang_tujuan_id', $gudangId);
+            });
+        } elseif ($divisiId) {
+            $rawBefore->where(function ($q) use ($divisiId) {
+                $q->where('divisi_asal_id', $divisiId)
+                  ->orWhere('divisi_tujuan_id', $divisiId);
             });
         }
 
@@ -305,10 +327,22 @@ class StokGudangController extends Controller
             $isMasuk = false;
             $isKeluar = false;
 
-            if ($gudangId) {
-                if ($row->gudang_tujuan_id == $gudangId) {
+            if ($gudangId || $divisiId) {
+                $matchTujuan = true;
+                $matchAsal   = true;
+
+                if ($gudangId) {
+                    $matchTujuan = $matchTujuan && ($row->gudang_tujuan_id == $gudangId);
+                    $matchAsal   = $matchAsal   && ($row->gudang_asal_id   == $gudangId);
+                }
+                if ($divisiId) {
+                    $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
+                    $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
+                }
+
+                if ($matchTujuan) {
                     $isMasuk = true;
-                } elseif ($row->gudang_asal_id == $gudangId) {
+                } elseif ($matchAsal) {
                     $isKeluar = true;
                 }
             } else {
@@ -332,10 +366,23 @@ class StokGudangController extends Controller
             ->where('barang_id', $barangId)
             ->whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
 
-        if ($gudangId) {
+        if ($gudangId && $divisiId) {
+            $rawPeriod->where(function ($q) use ($gudangId, $divisiId) {
+                $q->where(function($sub) use ($gudangId, $divisiId) {
+                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+                })->orWhere(function($sub) use ($gudangId, $divisiId) {
+                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                });
+            });
+        } elseif ($gudangId) {
             $rawPeriod->where(function ($q) use ($gudangId) {
                 $q->where('gudang_asal_id', $gudangId)
                   ->orWhere('gudang_tujuan_id', $gudangId);
+            });
+        } elseif ($divisiId) {
+            $rawPeriod->where(function ($q) use ($divisiId) {
+                $q->where('divisi_asal_id', $divisiId)
+                  ->orWhere('divisi_tujuan_id', $divisiId);
             });
         }
 
@@ -379,10 +426,22 @@ class StokGudangController extends Controller
             $isMasuk = false;
             $isKeluar = false;
 
-            if ($gudangId) {
-                if ($row->gudang_tujuan_id == $gudangId) {
+            if ($gudangId || $divisiId) {
+                $matchTujuan = true;
+                $matchAsal   = true;
+
+                if ($gudangId) {
+                    $matchTujuan = $matchTujuan && ($row->gudang_tujuan_id == $gudangId);
+                    $matchAsal   = $matchAsal   && ($row->gudang_asal_id   == $gudangId);
+                }
+                if ($divisiId) {
+                    $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
+                    $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
+                }
+
+                if ($matchTujuan) {
                     $isMasuk = true;
-                } elseif ($row->gudang_asal_id == $gudangId) {
+                } elseif ($matchAsal) {
                     $isKeluar = true;
                 }
             } else {
