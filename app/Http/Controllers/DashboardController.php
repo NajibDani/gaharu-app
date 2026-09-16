@@ -52,9 +52,9 @@ class DashboardController extends Controller
         | NILAI INVENTORY FIFO (Role-Based Filter)
         |--------------------------------------------------------------------------
         */
-        $gGaharuId = MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
-        $gKejinggaId = MasterGudang::where('nama', 'like', '%KeJingga%')->first()?->id ?? 5;
-        $gUtamaId = MasterGudang::getGudangUtamaId();
+        $gGaharuId = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
+        $gKejinggaId = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->first()?->id ?? 5;
+        $gUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
 
         $inventoryQuery = StokGudangBatch::query();
         if ($roleName === 'Kepala Outlet Gaharu') {
