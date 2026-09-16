@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Pesanan;
 use App\Models\Supplier;
 use App\Models\MasterBarang;
+use App\Models\MasterGudang;
 use App\Models\WorkOrder;
 use App\Models\Pembelian;
 use App\Models\StokGudang;
