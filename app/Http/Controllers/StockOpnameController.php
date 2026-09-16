@@ -972,20 +972,20 @@ class StockOpnameController extends Controller
             ?? 44;
 
         $tanggalBase = \Carbon\Carbon::parse($opname->tanggal)->format('Y-m-d');
-        $tanggalTx = $tanggalBase . ' ' . now()->format('H:i:s');
+        $tanggalTx = $tanggalBase . ' 10:29:00';
 
         $pbk = $pbkParam ?: PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
             ->orWhere('keterangan', 'like', '%' . $opname->kode_opname . '%')
             ->first();
 
         foreach ($opname->details as $detail) {
-            // Hitung stok sistem aktual di lokasi (gudang & divisi) sebelum tanggal SO
+            // Hitung stok sistem aktual di lokasi (gudang & divisi) sebelum waktu SO (10:29:00)
             $queryIn = DB::table('transaksi_stok')
                 ->where('barang_id', $detail->barang_id)
-                ->where('tanggal', '<=', $opname->tanggal . ' 23:59:59');
+                ->where('tanggal', '<', $tanggalTx);
             $queryOut = DB::table('transaksi_stok')
                 ->where('barang_id', $detail->barang_id)
-                ->where('tanggal', '<=', $opname->tanggal . ' 23:59:59');
+                ->where('tanggal', '<', $tanggalTx);
 
             if ($opname->gudang_id && $opname->divisi_id) {
                 $queryIn->where('gudang_tujuan_id', $opname->gudang_id)->where('divisi_tujuan_id', $opname->divisi_id);
@@ -1000,7 +1000,16 @@ class StockOpnameController extends Controller
 
             $stokSistemAktual = max(0, (float)($queryIn->sum('qty') - $queryOut->sum('qty')));
             $stokFisik = (float)$detail->stok_fisik;
-            $selisih = $stokFisik - $stokSistemAktual;
+
+            if ($stokFisik < $stokSistemAktual) {
+                $qtyKurang = max(0, min($stokSistemAktual, $stokSistemAktual - $stokFisik));
+                $selisih = -$qtyKurang;
+                $qtySurplus = 0;
+            } else {
+                $qtySurplus = $stokFisik - $stokSistemAktual;
+                $selisih = $qtySurplus;
+                $qtyKurang = 0;
+            }
 
             $detail->update([
                 'stok_sistem' => $stokSistemAktual,
@@ -1009,7 +1018,7 @@ class StockOpnameController extends Controller
 
             $pbkDet = $pbk ? $pbk->details->firstWhere('barang_id', $detail->barang_id) : null;
 
-            if ($selisih < 0) {
+            if ($selisih < 0 && $qtyKurang > 0) {
                 $qtyKurang = abs((float) $selisih);
 
                 // 1. Eksekusi pemotongan FIFO di gudang & divisi lokasi opname
@@ -1091,7 +1100,7 @@ class StockOpnameController extends Controller
                     'fifo_records' => $fifoRecords,
                 ];
 
-            } elseif ($selisih > 0) {
+            } elseif ($selisih > 0 && $qtySurplus > 0) {
                 $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                 $defaultSupplierId  = DB::table('suppliers')->value('id') ?? 1;
                 $defaultPembelianId = DB::table('pembelian')->value('id') ?? 1;
