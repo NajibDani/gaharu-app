@@ -275,6 +275,9 @@ class StokGudangController extends Controller
         // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
         MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
 
+        // Auto-heal mutasi stok opname prematur yang PBK-nya masih berstatus Draft
+        $this->autoHealPrematureDraftSoMutations($barangId);
+
         $saQty = 0;
         $saNilai = 0;
 
@@ -593,6 +596,76 @@ class StokGudangController extends Controller
 
             default:
                 return ucfirst(str_replace('_', ' ', $type)) . " (ID: {$id})";
+        }
+    }
+
+    private function autoHealPrematureDraftSoMutations($barangId = null)
+    {
+        $draftPbks = \App\Models\PengeluaranBahanBaku::where('status', 'draft')
+            ->where(function($q) {
+                $q->where('jenis_pengeluaran', 'stock_opname')
+                  ->orWhere('kode_pengeluaran', 'like', 'PBK-SO-%')
+                  ->orWhere('keterangan', 'like', '%Stock Opname%');
+            })
+            ->get();
+
+        if ($draftPbks->isEmpty()) {
+            return;
+        }
+
+        foreach ($draftPbks as $pbk) {
+            $kodeOpname = null;
+            if (preg_match('/SO-\d+/', $pbk->kode_pengeluaran, $matches)) {
+                $kodeOpname = $matches[0];
+            } elseif (preg_match('/SO-\d+/', $pbk->keterangan ?? '', $matches)) {
+                $kodeOpname = $matches[0];
+            }
+
+            $opname = null;
+            if ($kodeOpname) {
+                $opname = \App\Models\StockOpname::where('kode_opname', $kodeOpname)->first();
+            }
+
+            if ($opname) {
+                $txQuery = \App\Models\TransaksiStok::where('source_type', 'stock_opname')
+                    ->where('source_id', $opname->id);
+                if ($barangId) {
+                    $txQuery->where('barang_id', $barangId);
+                }
+                $txs = $txQuery->get();
+
+                foreach ($txs as $tx) {
+                    $qty = (float) $tx->qty;
+                    if ($tx->tipe === 'keluar') {
+                        $stok = \App\Models\StokGudang::where('barang_id', $tx->barang_id)
+                            ->where('gudang_id', $tx->gudang_asal_id)
+                            ->when($tx->divisi_asal_id, fn($q) => $q->where('divisi_id', $tx->divisi_asal_id), fn($q) => $q->whereNull('divisi_id'))
+                            ->first();
+                        if ($stok) {
+                            $stok->increment('jumlah', $qty);
+                        }
+                    } elseif ($tx->tipe === 'masuk') {
+                        $stok = \App\Models\StokGudang::where('barang_id', $tx->barang_id)
+                            ->where('gudang_id', $tx->gudang_tujuan_id)
+                            ->when($tx->divisi_tujuan_id, fn($q) => $q->where('divisi_id', $tx->divisi_tujuan_id), fn($q) => $q->whereNull('divisi_id'))
+                            ->first();
+                        if ($stok) {
+                            $stok->decrement('jumlah', $qty);
+                        }
+                    }
+                    $tx->delete();
+                }
+
+                \App\Models\StokGudangBatch::where('batch_number', 'SO-SURPLUS-' . $opname->kode_opname)->delete();
+
+                $jps = DB::table('jurnal_penyesuaian')->where('source_type', 'stock_opname')->where('source_id', $opname->id)->get();
+                foreach ($jps as $jp) {
+                    DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_penyesuaian')->delete();
+                    DB::table('jurnal_penyesuaian')->where('id', $jp->id)->delete();
+                }
+
+                $opname->update(['status' => 'draft']);
+            }
         }
     }
 }

@@ -571,20 +571,81 @@ class StockOpnameController extends Controller
         DB::beginTransaction();
 
         try {
-            $this->executeApprovalEffects($opname);
+            $pbk = $this->createOrUpdateDraftPbk($opname);
             $opname->update(['status' => 'approved']);
 
             DB::commit();
 
             return back()->with(
                 'success',
-                'Stock Opname (' . $opname->kode_opname . ') berhasil disetujui. Stok gudang, mutasi FIFO, dan jurnal penyesuaian telah disinkronkan secara langsung.'
+                'Stock Opname (' . $opname->kode_opname . ') berhasil disetujui. Dokumen pengajuan persetujuan stok (' . $pbk->kode_pengeluaran . ') telah dibuat di menu Permintaan / Transfer Bahan dengan status Draft. Stok gudang akan terpotong/bertambah secara otomatis setelah dokumen tersebut disetujui di menu tersebut.'
             );
 
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal approve: ' . $e->getMessage());
         }
+    }
+
+    public function createOrUpdateDraftPbk(StockOpname $opname): PengeluaranBahanBaku
+    {
+        $cleanKode = $opname->kode_opname;
+        if (str_starts_with($cleanKode, 'SO-')) {
+            $kodePbk = 'PBK-' . $cleanKode;
+        } else {
+            $kodePbk = 'PBK-SO-' . $cleanKode;
+        }
+
+        $tanggalTx = \Carbon\Carbon::parse($opname->tanggal)->format('Y-m-d H:i:s');
+
+        $pbk = PengeluaranBahanBaku::where('kode_pengeluaran', $kodePbk)
+            ->orWhere('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
+            ->orWhere('kode_pengeluaran', 'PBK-SO-SO-' . substr($cleanKode, 3))
+            ->orWhere('keterangan', 'like', '%' . $opname->kode_opname . '%')
+            ->first();
+
+        if (!$pbk) {
+            $pbk = PengeluaranBahanBaku::create([
+                'kode_pengeluaran'  => $kodePbk,
+                'tanggal'           => $tanggalTx,
+                'gudang_id'         => $opname->gudang_id,
+                'divisi_id'         => $opname->divisi_id,
+                'jenis_pengeluaran' => 'stock_opname',
+                'status'            => 'draft',
+                'keterangan'        => 'Stock Opname: ' . $opname->kode_opname,
+                'created_by'        => Auth::id() ?? 1,
+            ]);
+        } else {
+            $pbk->update([
+                'kode_pengeluaran'  => $kodePbk,
+                'gudang_id'         => $opname->gudang_id,
+                'divisi_id'         => $opname->divisi_id,
+                'jenis_pengeluaran' => 'stock_opname',
+                'status'            => 'draft',
+                'keterangan'        => 'Stock Opname: ' . $opname->kode_opname,
+            ]);
+            $pbk->details()->delete();
+        }
+
+        foreach ($opname->details as $detail) {
+            if (abs((float)$detail->selisih) > 0.0001) {
+                $qty = abs((float)$detail->selisih);
+                $nilai = abs((float)$detail->nilai_selisih);
+                $hargaSatuan = $qty > 0 ? ($nilai / $qty) : 0;
+
+                PengeluaranBahanBakuDetail::create([
+                    'pengeluaran_id' => $pbk->id,
+                    'barang_id'      => $detail->barang_id,
+                    'qty'            => $qty,
+                    'satuan'         => $detail->barang->satuan ?? 'pcs',
+                    'harga_satuan'   => $hargaSatuan,
+                    'total_harga'    => $nilai,
+                    'hpp_total'      => $nilai,
+                ]);
+            }
+        }
+
+        return $pbk;
     }
 
     /*
