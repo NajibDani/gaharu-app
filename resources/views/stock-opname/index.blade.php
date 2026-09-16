@@ -34,10 +34,10 @@
         <div class="card-body p-3">
             <form action="{{ route('stock-opname.index') }}" method="GET" class="row g-2 align-items-center">
                 <div class="col-12 col-md-3">
-                    <label class="form-label text-muted small fw-semibold mb-1">Cari Opname / Ket</label>
+                    <label class="form-label text-muted small fw-semibold mb-1">Cari Opname / Barang / Ket</label>
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                        <input type="text" name="search" class="form-control form-control-sm border-start-0" placeholder="Kode opname / keterangan..." value="{{ request('search') }}">
+                        <input type="text" name="search" class="form-control form-control-sm border-start-0" placeholder="Kode / nama barang / ket..." value="{{ request('search') }}">
                     </div>
                 </div>
                 <div class="col-12 col-md-3">
@@ -181,10 +181,10 @@
                                             onclick="showDetailOpname({{ $row->id }})">
                                             <i class="bi bi-eye me-1"></i> Detail
                                         </button>
-                                        @if($row->status === 'draft')
+                                        @if($row->status === 'draft' || ($row->status === 'approved' && $isSuperAdmin))
                                             <a href="{{ route('stock-opname.edit', $row->id) }}"
                                                class="btn btn-sm btn-outline-warning text-dark fw-medium"
-                                               title="Edit Stock Opname">
+                                               title="{{ $row->status === 'approved' ? 'Edit Approved Opname (Super Admin)' : 'Edit Stock Opname' }}">
                                                 <i class="bi bi-pencil me-1"></i> Edit
                                             </a>
                                         @endif
@@ -379,9 +379,12 @@ function renderDetailOpname(data) {
 
         grandTotal += detail.nilai_selisih;
 
+        let safeNama = (detail.nama_barang || '').replace(/"/g, '&quot;');
+        let safeKode = (detail.kode_barang || '').replace(/"/g, '&quot;');
+
         rows += `
-            <tr>
-                <td>${index + 1}</td>
+            <tr class="opname-detail-item-row" data-name="${safeNama.toLowerCase()}" data-code="${safeKode.toLowerCase()}">
+                <td class="opname-row-index">${index + 1}</td>
                 <td>
                     <div class="fw-bold">${detail.nama_barang}</div>
                     <small class="text-muted font-monospace">${detail.kode_barang}</small>
@@ -420,6 +423,13 @@ function renderDetailOpname(data) {
                 Approve Stock Opname
             </a>
         `;
+    } else if (data.status === 'approved' && data.is_superadmin) {
+        approveButton = `
+            <a href="/stock-opname/${data.id}/edit" class="btn btn-warning text-dark fw-bold me-2">
+                <i class="bi bi-pencil-square me-1"></i>
+                Edit Stock Opname (Super Admin)
+            </a>
+        `;
     }
 
     body.innerHTML = `
@@ -455,7 +465,23 @@ function renderDetailOpname(data) {
 
         <div class="mb-3">
             <small class="text-muted">Keterangan</small>
-            <p class="mb-0">${data.keterangan}</p>
+            <p class="mb-0">${data.keterangan || '-'}</p>
+        </div>
+
+        {{-- SEARCH BAR DALAM MODAL DETAIL --}}
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div style="min-width: 280px; max-width: 380px;">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" id="opnameModalSearchInput" class="form-control border-start-0" placeholder="Cari nama barang atau kode barang..." oninput="filterOpnameDetailModal(this.value)">
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('opnameModalSearchInput').value=''; filterOpnameDetailModal('');" title="Reset">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="text-muted small">
+                Menampilkan <span id="opnameVisibleCount" class="fw-bold text-dark">${data.details.length}</span> dari <span class="fw-bold text-dark">${data.details.length}</span> barang
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -470,8 +496,14 @@ function renderDetailOpname(data) {
                         <th class="text-white">Nilai Selisih</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="opnameDetailTableBody">
                     ${rows}
+                    <tr id="opnameEmptySearchRow" style="display:none;">
+                        <td colspan="6" class="text-center py-4 text-muted">
+                            <i class="bi bi-search fs-4 d-block mb-1 text-muted"></i>
+                            Tidak ada barang yang cocok dengan pencarian.
+                        </td>
+                    </tr>
                 </tbody>
                 <tfoot>
                     <tr>
@@ -486,6 +518,33 @@ function renderDetailOpname(data) {
             ${approveButton}
         </div>
     `;
+}
+
+function filterOpnameDetailModal(query) {
+    let q = (query || '').toLowerCase().trim();
+    let rows = document.querySelectorAll('.opname-detail-item-row');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        let name = row.getAttribute('data-name') || '';
+        let code = row.getAttribute('data-code') || '';
+        if (!q || name.includes(q) || code.includes(q)) {
+            row.style.display = '';
+            visibleCount++;
+            let indexCell = row.querySelector('.opname-row-index');
+            if (indexCell) indexCell.innerText = visibleCount;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    let countEl = document.getElementById('opnameVisibleCount');
+    if (countEl) countEl.innerText = visibleCount;
+
+    let emptyRow = document.getElementById('opnameEmptySearchRow');
+    if (emptyRow) {
+        emptyRow.style.display = visibleCount === 0 ? '' : 'none';
+    }
 }
 
 function refreshStokOpname(id) {

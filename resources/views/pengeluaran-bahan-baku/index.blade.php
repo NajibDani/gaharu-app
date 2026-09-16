@@ -376,6 +376,9 @@
                     <h5 class="modal-title fw-bold mb-0">Detail Permintaan / Transfer Bahan Baku</h5>
                 </div>
                 <div class="d-flex align-items-center gap-2 ms-auto me-2" id="modalTopActions" style="display:none !important;">
+                    <button type="button" class="btn btn-sm btn-light text-success fw-semibold px-3 shadow-sm" onclick="refreshCurrentModalStok(this)" id="modalBtnRefreshStok" title="Perbarui dan cek kembali ketersediaan stok terkini di gudang utama">
+                        <i class="bi bi-arrow-clockwise me-1"></i> Refresh Stok
+                    </button>
                     <a href="#" id="modalBtnPdf" target="_blank" class="btn btn-sm btn-light text-danger fw-semibold px-3 shadow-sm">
                         <i class="bi bi-file-earmark-pdf me-1"></i> Save PDF
                     </a>
@@ -398,11 +401,65 @@
     </div>
 </div>
 
+<style>
+@keyframes spinClockwise {
+    100% { transform: rotate(360deg); }
+}
+.spin-clockwise {
+    display: inline-block;
+    animation: spinClockwise 0.8s linear infinite;
+}
+</style>
+
 {{-- HTML2CANVAS LIBRARY UNTUK SAVE IMAGE --}}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script>
 let currentDetailData = null;
+
+function refreshCurrentModalStok(triggerEl) {
+    if (!currentDetailData || !currentDetailData.id) return;
+    
+    let btn = document.getElementById('modalBtnRefreshStok') || triggerEl;
+    let icon = btn ? btn.querySelector('i') : null;
+    if (icon) {
+        icon.classList.add('spin-clockwise');
+    }
+    if (btn) btn.disabled = true;
+
+    fetch(`/pengeluaran-bahan-baku/${currentDetailData.id}/detail-json`)
+        .then(response => response.json())
+        .then(data => {
+            currentDetailData = data;
+            renderDetailPengeluaran(data);
+
+            let alertEl = document.createElement('div');
+            alertEl.className = 'alert alert-success alert-dismissible fade show py-2 px-3 mb-3 rounded-3 shadow-sm border-0 bg-success-subtle text-success-emphasis';
+            alertEl.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between">
+                    <div>
+                        <i class="bi bi-check-circle-fill me-2 fs-6 text-success"></i>
+                        <span class="small fw-semibold">Stok terkini di <strong>${data.is_wasted ? data.lokasi_nama : data.gudang_utama_nama}</strong> berhasil diperbarui!</span>
+                    </div>
+                    <button type="button" class="btn-close py-2" data-bs-dismiss="alert" style="font-size: 0.75rem;"></button>
+                </div>
+            `;
+            let printArea = document.getElementById('printableDetailArea');
+            if (printArea) {
+                printArea.insertBefore(alertEl, printArea.firstChild);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('Gagal merefresh stok: ' + err.message);
+        })
+        .finally(() => {
+            if (btn) {
+                btn.disabled = false;
+                if (icon) icon.classList.remove('spin-clockwise');
+            }
+        });
+}
 
 function showDetailPengeluaran(id) {
     let modalEl = document.getElementById('detailPengeluaranModal');
@@ -630,7 +687,12 @@ function renderDetailPengeluaran(data) {
                 </div>
                 <div class="col-sm-6 col-md-3">
                     <div class="p-3 bg-light rounded-3 h-100 border">
-                        <div class="text-muted small">Gudang Sumber</div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="text-muted small">Gudang Sumber</div>
+                            <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill shadow-none" onclick="refreshCurrentModalStok(this)" title="Refresh ketersediaan stok gudang utama" style="font-size:0.75rem;">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                            </button>
+                        </div>
                         <div class="fw-bold fs-6 text-dark mt-1">${data.gudang_utama_nama}</div>
                         <small class="text-muted">Gudang Penyedia</small>
                     </div>
@@ -675,7 +737,10 @@ function renderDetailPengeluaran(data) {
                             <th width="35">#</th>
                             <th class="text-start">Barang</th>
                             <th width="110" class="text-end">${colQtyLabel}</th>
-                            <th width="140" class="text-end">${colStokLabel}</th>
+                            <th width="150" class="text-end">
+                                <span>${colStokLabel}</span>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-primary ms-1" onclick="refreshCurrentModalStok(this)" title="Refresh stok gudang utama"><i class="bi bi-arrow-clockwise"></i></button>
+                            </th>
                             <th width="110" class="text-end">Kekurangan</th>
                             <th width="130">Ketersediaan</th>
                             <th width="110" class="text-end">Harga Satuan</th>

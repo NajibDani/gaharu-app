@@ -35,6 +35,16 @@
         <input type="hidden" id="divisi_id" name="divisi_id" value="{{ $divisiId ?? '' }}">
         <input type="hidden" id="items_json" name="items_json" value="">
 
+        @if($opname->status === 'approved')
+            <div class="alert alert-warning border-warning d-flex align-items-center gap-3 mb-4 shadow-sm rounded-4">
+                <i class="bi bi-shield-exclamation fs-3 text-warning"></i>
+                <div>
+                    <strong class="d-block text-dark">Mode Edit Super Admin: Dokumen Stock Opname Sudah Approved</strong>
+                    <span class="small text-muted">Menyimpan perubahan akan secara otomatis membatalkan alokasi stok lama dan menyinkronkan kembali mutasi persediaan, FIFO, transaksi stok, serta jurnal penyesuaian baru.</span>
+                </div>
+            </div>
+        @endif
+
         <div class="row mb-4">
             <div class="col-md-3">
                 <div class="card border-0 shadow-sm rounded-4 h-100">
@@ -73,9 +83,15 @@
                 <div class="card border-0 shadow-sm rounded-4 h-100">
                     <div class="card-body">
                         <small class="text-muted">Status</small>
-                        <h5 class="fw-bold text-warning mb-0">
-                            Draft (Dalam Edit)
-                        </h5>
+                        @if($opname->status === 'approved')
+                            <h5 class="fw-bold text-danger mb-0" style="font-size: 0.95rem;">
+                                <i class="bi bi-shield-check me-1"></i> Approved (Edit Superadmin)
+                            </h5>
+                        @else
+                            <h5 class="fw-bold text-warning mb-0">
+                                Draft (Dalam Edit)
+                            </h5>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -211,7 +227,7 @@
                             Batal
                         </a>
                         <button type="submit" class="btn btn-warning text-dark fw-bold px-5">
-                            <i class="bi bi-save me-1"></i> Simpan Perubahan Stock Opname
+                            <i class="bi bi-save me-1"></i> {{ $opname->status === 'approved' ? 'Simpan & Terapkan Perubahan (Approved)' : 'Simpan Perubahan Stock Opname' }}
                         </button>
                     </div>
                 </div>

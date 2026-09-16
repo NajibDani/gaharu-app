@@ -91,7 +91,7 @@
                         Tanggal Opname
                     </small>
 
-                    @if($stockOpname->status === 'draft')
+                    @if($stockOpname->status === 'draft' || ($stockOpname->status === 'approved' && $isSuperAdmin))
                         <form action="{{ route('stock-opname.update', $stockOpname->id) }}" method="POST" class="d-flex align-items-center gap-1">
                             @csrf
                             @method('PUT')
@@ -169,24 +169,31 @@
 
     <div class="card border-0 shadow-sm rounded-4">
 
-        <div class="card-header text-white fw-bold"
+        <div class="card-header text-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2"
              style="background:#7A4517;">
-
-            Detail Stock Opname
-
+            <div class="d-flex align-items-center gap-2">
+                <span><i class="bi bi-boxes me-1"></i> Detail Stock Opname</span>
+                <span class="badge bg-white text-dark" id="showOpnameItemCount">{{ $stockOpname->details->count() }} Item</span>
+            </div>
+            <div style="min-width: 260px; max-width: 360px;" class="w-100 w-md-auto">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" id="showOpnameSearchInput" class="form-control border-0 shadow-none" placeholder="Cari nama atau kode barang..." onkeyup="filterShowOpname(this.value)">
+                </div>
+            </div>
         </div>
 
         <div class="card-body p-0">
 
             <div class="table-responsive">
 
-                <table class="table align-middle mb-0">
+                <table class="table align-middle mb-0" id="showOpnameTable">
 
                     <thead>
 
                     <tr style="background:#7A4517;color:white">
 
-                        <th>No</th>
+                        <th style="width: 50px;">No</th>
                         <th>Barang</th>
                         <th>Stok Sistem</th>
                         <th>Stok Fisik</th>
@@ -197,7 +204,7 @@
 
                     </thead>
 
-                    <tbody>
+                    <tbody id="showOpnameTableBody">
 
                     @php
                         $grandTotal = 0;
@@ -213,9 +220,11 @@
                             $satuanBeli = $detail->barang->satuan_pembelian ?? '';
                         @endphp
 
-                        <tr>
+                        <tr class="opname-show-row"
+                            data-name="{{ strtolower($detail->barang->nama ?? '') }}"
+                            data-code="{{ strtolower($detail->barang->kode_barang ?? '') }}">
 
-                            <td class="text-muted">
+                            <td class="text-muted row-index">
                                 {{ $loop->iteration }}
                             </td>
 
@@ -279,6 +288,12 @@
 
                     @endforeach
 
+                        <tr id="showOpnameNoResults" style="display: none;">
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                <i class="bi bi-search me-1"></i> Tidak ada barang yang cocok dengan pencarian.
+                            </td>
+                        </tr>
+
                     </tbody>
 
                     <tfoot>
@@ -341,8 +356,56 @@
 
     </div>
 
+    @elseif($stockOpname->status == 'approved' && $isSuperAdmin)
+
+    <div class="mt-4 d-flex gap-2 align-items-center">
+
+        <a href="{{ route('stock-opname.edit', $stockOpname->id) }}"
+           class="btn btn-warning text-dark fw-bold">
+            <i class="bi bi-pencil-square me-1"></i>
+            Edit Stock Opname (Super Admin)
+        </a>
+
+    </div>
+
     @endif
 
 </div>
+
+<script>
+function filterShowOpname(query) {
+    const q = (query || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('.opname-show-row');
+    const noResults = document.getElementById('showOpnameNoResults');
+    const countBadge = document.getElementById('showOpnameItemCount');
+    let visibleCount = 0;
+
+    rows.forEach(row => {
+        const name = row.getAttribute('data-name') || '';
+        const code = row.getAttribute('data-code') || '';
+
+        if (!q || name.includes(q) || code.includes(q)) {
+            row.style.display = '';
+            visibleCount++;
+            const idxCol = row.querySelector('.row-index');
+            if (idxCol) idxCol.textContent = visibleCount;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    if (noResults) {
+        noResults.style.display = visibleCount === 0 ? '' : 'none';
+    }
+
+    if (countBadge) {
+        if (q) {
+            countBadge.textContent = visibleCount + ' dari {{ $stockOpname->details->count() }} Item';
+        } else {
+            countBadge.textContent = '{{ $stockOpname->details->count() }} Item';
+        }
+    }
+}
+</script>
 
 </x-app-layout>

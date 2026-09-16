@@ -47,6 +47,9 @@
         </div>
 
         <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-outline-success btn-sm fw-semibold shadow-sm" onclick="window.location.reload()" title="Perbarui dan cek kembali ketersediaan stok terkini di gudang utama">
+                <i class="bi bi-arrow-clockwise me-1"></i> Refresh Stok
+            </button>
             <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="btn btn-outline-secondary btn-sm">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
@@ -98,7 +101,12 @@
         @else
             <div class="col-md-3">
                 <div class="card p-3 h-100 shadow-sm border">
-                    <small class="text-muted">Gudang Sumber (Penyedia)</small>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">Gudang Sumber (Penyedia)</small>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill shadow-none" onclick="window.location.reload()" title="Refresh stok gudang utama" style="font-size:0.75rem;">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                        </button>
+                    </div>
                     <h6 class="fw-bold mb-0 text-primary mt-1">
                         <i class="bi bi-building me-1"></i>{{ $gudangUtama->nama ?? 'Gudang Utama' }}
                     </h6>
@@ -161,7 +169,10 @@
                             <th width="45" class="text-center">No</th>
                             <th>Kode & Nama Bahan</th>
                             <th width="140" class="text-end">{{ $isWasted ? 'Jumlah Wasted' : 'Jumlah Diminta' }}</th>
-                            <th width="160" class="text-end">{{ $isWasted ? ('Stok di ' . ($pengeluaran->divisi ? $pengeluaran->divisi->nama : $pengeluaran->gudang->nama)) : 'Stok Gudang Utama' }}</th>
+                            <th width="170" class="text-end">
+                                <span>{{ $isWasted ? ('Stok di ' . ($pengeluaran->divisi ? $pengeluaran->divisi->nama : $pengeluaran->gudang->nama)) : 'Stok Gudang Utama' }}</span>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-primary ms-1" onclick="window.location.reload()" title="Refresh stok terkini"><i class="bi bi-arrow-clockwise"></i></button>
+                            </th>
                             <th width="140" class="text-end">Kekurangan</th>
                             <th width="140" class="text-center">Ketersediaan</th>
                             <th width="140" class="text-end">Harga Satuan</th>

@@ -32,7 +32,11 @@ class StockOpnameController extends Controller
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('kode_opname', 'like', '%' . $search . '%')
-                  ->orWhere('keterangan', 'like', '%' . $search . '%');
+                  ->orWhere('keterangan', 'like', '%' . $search . '%')
+                  ->orWhereHas('details.barang', function($bq) use ($search) {
+                      $bq->where('nama', 'like', '%' . $search . '%')
+                         ->orWhere('kode_barang', 'like', '%' . $search . '%');
+                  });
             });
         }
 
@@ -67,8 +71,9 @@ class StockOpnameController extends Controller
 
         $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         $kategoris = \App\Models\Kategori::orderBy('nama')->get();
+        $isSuperAdmin = $this->isSuperAdminUser();
 
-        return view('stock-opname.index', compact('stockOpname', 'gudangs', 'kategoris', 'totalDraft', 'totalApproved'));
+        return view('stock-opname.index', compact('stockOpname', 'gudangs', 'kategoris', 'totalDraft', 'totalApproved', 'isSuperAdmin'));
     }
 
     /*
@@ -308,8 +313,9 @@ class StockOpnameController extends Controller
         ])->findOrFail($id);
 
         $pengeluaranOtomatis = $stockOpname->pengeluaranOtomatis();
+        $isSuperAdmin = $this->isSuperAdminUser();
 
-        return view('stock-opname.show', compact('stockOpname', 'pengeluaranOtomatis'));
+        return view('stock-opname.show', compact('stockOpname', 'pengeluaranOtomatis', 'isSuperAdmin'));
     }
 
     /*
@@ -327,6 +333,8 @@ class StockOpnameController extends Controller
             'details.barang',
         ])->findOrFail($id);
 
+        $isSuperAdmin = $this->isSuperAdminUser();
+
         $detailsSorted = $opname->details->sortBy(function ($d) {
             $stok = (float) $d->stok_sistem;
             $order = $stok > 0 ? 0 : ($stok < 0 ? 1 : 2);
@@ -334,15 +342,16 @@ class StockOpnameController extends Controller
         })->values();
 
         return response()->json([
-            'id'          => $opname->id,
-            'kode_opname' => $opname->kode_opname,
-            'tanggal'     => \Carbon\Carbon::parse($opname->tanggal)->format('d M Y'),
-            'gudang'      => $opname->gudang->nama ?? '-',
-            'divisi'      => $opname->divisi->nama ?? '-',
-            'user'        => $opname->user->nama_karyawan ?? $opname->user->name ?? '-',
-            'status'      => $opname->status,
-            'keterangan'  => $opname->keterangan ?? '-',
-            'details'     => $detailsSorted->map(function ($d) {
+            'id'            => $opname->id,
+            'kode_opname'   => $opname->kode_opname,
+            'tanggal'       => \Carbon\Carbon::parse($opname->tanggal)->format('d M Y'),
+            'gudang'        => $opname->gudang->nama ?? '-',
+            'divisi'        => $opname->divisi->nama ?? '-',
+            'user'          => $opname->user->nama_karyawan ?? $opname->user->name ?? '-',
+            'status'        => $opname->status,
+            'keterangan'    => $opname->keterangan ?? '-',
+            'is_superadmin' => $isSuperAdmin,
+            'details'       => $detailsSorted->map(function ($d) {
                 $konversi = (float) ($d->barang->konversi_pembelian ?? 1);
                 $hasKonversi = !empty($d->barang->satuan_pembelian) && $konversi > 1;
 
@@ -562,282 +571,7 @@ class StockOpnameController extends Controller
         DB::beginTransaction();
 
         try {
-            $fifoService = app(\App\Services\FifoService::class);
-            $itemSelisihNegatif = [];
-            $surplusDebits = [];
-            $totalSurplusKredit = 0;
-            $shortageKredits = [];
-            $totalShortageDebit = 0;
-
-            $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '4201')->value('id') ?? 32;
-            $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
-                ?? DB::table('chart_of_accounts')->where('kode', '5104')->value('id') 
-                ?? DB::table('chart_of_accounts')->where('kode', '5103')->value('id') 
-                ?? 44;
-
-            $tanggalBase = \Carbon\Carbon::parse($opname->tanggal)->format('Y-m-d');
-            $tanggalTx = $tanggalBase . ' ' . now()->format('H:i:s');
-
-            foreach ($opname->details as $detail) {
-
-                $hargaUnit = $this->getHargaFIFO(
-                    $opname->gudang_id,
-                    $detail->barang_id,
-                    $opname->divisi_id
-                );
-
-                if ($detail->selisih < 0) {
-                    $qtyKurang = abs((float) $detail->selisih);
-
-                    // 1. Eksekusi pemotongan FIFO di gudang & divisi lokasi opname
-                    $fifoResult = $fifoService->consumeFIFO(
-                        barangId:      $detail->barang_id,
-                        qtyKeluar:     $qtyKurang,
-                        gudangId:      $opname->gudang_id,
-                        allowNegative: true,
-                        divisiId:      $opname->divisi_id,
-                    );
-
-                    $hppTotalKurang = 0;
-                    $fifoRecords = [];
-                    foreach ($fifoResult as $fifo) {
-                        $layerTotal = $fifo['qty_keluar'] * $fifo['harga_per_qty'];
-                        $hppTotalKurang += $layerTotal;
-                        $fifoRecords[] = [
-                            'batch_id'      => $fifo['batch_id'],
-                            'batch_number'  => $fifo['batch_number'],
-                            'qty_keluar'    => $fifo['qty_keluar'],
-                            'harga_per_qty' => $fifo['harga_per_qty'],
-                            'total_harga'   => $layerTotal,
-                        ];
-                    }
-
-                    // Fallback jika belum ada batch masuk sebelumnya
-                    if ($hppTotalKurang <= 0 && $hargaUnit > 0) {
-                        $hppTotalKurang = round($qtyKurang * $hargaUnit, 2);
-                    } else {
-                        $hppTotalKurang = round($hppTotalKurang, 2);
-                    }
-
-                    // 2. Kurangi stok summary di stok_gudang
-                    $stokQuery = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
-                        ->where('gudang_id', $opname->gudang_id);
-                    if ($opname->divisi_id) {
-                        $stokQuery->where('divisi_id', $opname->divisi_id);
-                    } else {
-                        $stokQuery->whereNull('divisi_id');
-                    }
-                    $stokGudang = $stokQuery->lockForUpdate()->first();
-                    if ($stokGudang) {
-                        $stokGudang->decrement('jumlah', $qtyKurang);
-                    } else {
-                        \App\Models\StokGudang::create([
-                            'barang_id' => $detail->barang_id,
-                            'gudang_id' => $opname->gudang_id,
-                            'divisi_id' => $opname->divisi_id,
-                            'jumlah'    => -$qtyKurang,
-                        ]);
-                    }
-
-                    // 3. Catat mutasi keluar di transaksi_stok (terbaca di Buku Pembantu Persediaan)
-                    \App\Models\TransaksiStok::create([
-                        'tanggal'        => $tanggalTx,
-                        'tipe'           => 'keluar',
-                        'source_type'    => 'stock_opname',
-                        'source_id'      => $opname->id,
-                        'gudang_asal_id' => $opname->gudang_id,
-                        'divisi_asal_id' => $opname->divisi_id,
-                        'barang_id'      => $detail->barang_id,
-                        'qty'            => $qtyKurang,
-                        'total_harga'    => $hppTotalKurang,
-                        'created_by'     => Auth::id() ?? 1,
-                    ]);
-
-                    // 4. Akumulasi untuk Jurnal Penyesuaian Shortage
-                    if ($hppTotalKurang > 0) {
-                        $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
-                        $coaCode = $isOperational ? '1501' : ($detail->barang && $detail->barang->is_bahan_setengah_jadi ? '1302' : ($detail->barang && $detail->barang->is_barang_jadi ? '1303' : '1301'));
-                        $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
-
-                        if (!isset($shortageKredits[$idPersediaan])) {
-                            $shortageKredits[$idPersediaan] = 0;
-                        }
-                        $shortageKredits[$idPersediaan] += $hppTotalKurang;
-                        $totalShortageDebit += $hppTotalKurang;
-                    }
-
-                    $itemSelisihNegatif[] = [
-                        'barang_id'    => $detail->barang_id,
-                        'qty'          => $qtyKurang,
-                        'satuan'       => $detail->barang->satuan ?? 'pcs',
-                        'hpp_total'    => $hppTotalKurang,
-                        'harga_satuan' => $qtyKurang > 0 ? ($hppTotalKurang / $qtyKurang) : 0,
-                        'fifo_records' => $fifoRecords,
-                    ];
-
-                } elseif ($detail->selisih > 0) {
-                    $defaultSupplierId  = DB::table('suppliers')->value('id') ?? 1;
-                    $defaultPembelianId = DB::table('pembelian')->value('id') ?? 1;
-                    $defaultPemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
-
-                    // 1. Buat batch FIFO baru untuk surplus
-                    \App\Models\StokGudangBatch::create([
-                        'gudang_id'           => $opname->gudang_id,
-                        'divisi_id'           => $opname->divisi_id,
-                        'supplier_id'         => $defaultSupplierId,
-                        'barang_id'           => $detail->barang_id,
-                        'pembelian_id'        => $defaultPembelianId,
-                        'pembelian_detail_id' => $defaultPemDetailId,
-                        'batch_number'        => 'SO-SURPLUS-' . $opname->kode_opname,
-                        'qty_masuk'           => $detail->selisih,
-                        'qty_keluar'          => 0,
-                        'qty_sisa'            => $detail->selisih,
-                        'harga_per_qty'       => $hargaUnit,
-                        'is_habis'            => false,
-                    ]);
-
-                    // 2. Tambah stok gudang menggunakan StockService
-                    app(\App\Services\StockService::class)->stockIn([
-                        'barang_id'        => $detail->barang_id,
-                        'gudang_tujuan_id' => $opname->gudang_id,
-                        'divisi_tujuan_id' => $opname->divisi_id,
-                        'qty'              => $detail->selisih,
-                        'total_harga'      => $detail->selisih * $hargaUnit,
-                        'source_type'      => 'stock_opname',
-                        'source_id'        => $opname->id,
-                        'user_id'          => Auth::id() ?? 1,
-                    ]);
-
-                    // 3. Akumulasi untuk Jurnal Penyesuaian (Surplus)
-                    $totalHargaSO = round($detail->selisih * $hargaUnit, 2);
-                    if ($totalHargaSO > 0) {
-                        $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
-                        $coaCode = $isOperational ? '1501' : ($detail->barang && $detail->barang->is_bahan_setengah_jadi ? '1302' : ($detail->barang && $detail->barang->is_barang_jadi ? '1303' : '1301'));
-                        $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
-                        
-                        if (!isset($surplusDebits[$idPersediaan])) {
-                            $surplusDebits[$idPersediaan] = 0;
-                        }
-                        $surplusDebits[$idPersediaan] += $totalHargaSO;
-                        $totalSurplusKredit += $totalHargaSO;
-                    }
-                }
-            }
-
-            // ── Buat Jurnal Penyesuaian Surplus jika ada ──
-            if ($totalSurplusKredit > 0) {
-                $jpSurplus = \App\Models\JurnalPenyesuaian::create([
-                    'tanggal'     => $opname->tanggal,
-                    'deskripsi'   => "[AJP] Penyesuaian Lebih (Surplus) Stock Opname: " . $opname->kode_opname,
-                    'no_ref'      => 'AJP-SO-SURPLUS-' . $opname->kode_opname . '-' . rand(100, 999),
-                    'source_type' => 'stock_opname',
-                    'source_id'   => $opname->id,
-                    'created_by'  => Auth::id() ?? 1,
-                    'status'      => 'approved',
-                ]);
-
-                foreach ($surplusDebits as $accId => $debitAmount) {
-                    $jpSurplus->details()->create([
-                        'account_id'   => $accId,
-                        'debit'        => round($debitAmount, 2),
-                        'kredit'       => 0,
-                        'journal_type' => \App\Models\JurnalPenyesuaian::class,
-                    ]);
-                }
-
-                $jpSurplus->details()->create([
-                    'account_id'   => $idPendapatanLain,
-                    'debit'        => 0,
-                    'kredit'       => round($totalSurplusKredit, 2),
-                    'journal_type' => \App\Models\JurnalPenyesuaian::class,
-                ]);
-            }
-
-            // ── Buat Jurnal Penyesuaian Shortage jika ada ──
-            if ($totalShortageDebit > 0) {
-                $jpShortage = \App\Models\JurnalPenyesuaian::create([
-                    'tanggal'     => $opname->tanggal,
-                    'deskripsi'   => "[AJP] Penyesuaian Kurang (Shortage) Stock Opname: " . $opname->kode_opname,
-                    'no_ref'      => 'AJP-SO-SHORTAGE-' . $opname->kode_opname . '-' . rand(100, 999),
-                    'source_type' => 'stock_opname',
-                    'source_id'   => $opname->id,
-                    'created_by'  => Auth::id() ?? 1,
-                    'status'      => 'approved',
-                ]);
-
-                $jpShortage->details()->create([
-                    'account_id'   => $idBebanSelisih,
-                    'debit'        => round($totalShortageDebit, 2),
-                    'kredit'       => 0,
-                    'journal_type' => \App\Models\JurnalPenyesuaian::class,
-                ]);
-
-                foreach ($shortageKredits as $accId => $kreditAmount) {
-                    $jpShortage->details()->create([
-                        'account_id'   => $accId,
-                        'debit'        => 0,
-                        'kredit'       => round($kreditAmount, 2),
-                        'journal_type' => \App\Models\JurnalPenyesuaian::class,
-                    ]);
-                }
-            }
-
-            // ── Buat Pengeluaran Bahan Baku otomatis berstatus approved jika ada selisih negatif (audit trail) ──
-            if (!empty($itemSelisihNegatif)) {
-                $kode = 'PBK-SO-' . $opname->kode_opname;
-
-                $pengeluaran = PengeluaranBahanBaku::where('kode_pengeluaran', $kode)->first();
-                if (!$pengeluaran) {
-                    $pengeluaran = PengeluaranBahanBaku::create([
-                        'kode_pengeluaran'  => $kode,
-                        'tanggal'           => $tanggalTx,
-                        'gudang_id'         => $opname->gudang_id,
-                        'divisi_id'         => $opname->divisi_id,
-                        'jenis_pengeluaran' => 'stock_opname',
-                        'status'            => 'approved',
-                        'keterangan'        => 'Auto dari Stock Opname: ' . $opname->kode_opname,
-                        'created_by'        => Auth::id() ?? 1,
-                        'approved_by'       => Auth::id() ?? 1,
-                        'approved_at'       => now(),
-                    ]);
-                } else {
-                    $pengeluaran->update([
-                        'status'            => 'approved',
-                        'jenis_pengeluaran' => 'stock_opname',
-                        'approved_by'       => Auth::id() ?? 1,
-                        'approved_at'       => now(),
-                    ]);
-                    $pengeluaran->details()->delete();
-                }
-
-                foreach ($itemSelisihNegatif as $item) {
-                    $pbkDetail = PengeluaranBahanBakuDetail::create([
-                        'pengeluaran_id' => $pengeluaran->id,
-                        'barang_id'      => $item['barang_id'],
-                        'qty'            => $item['qty'],
-                        'satuan'         => $item['satuan'],
-                        'harga_satuan'   => $item['harga_satuan'],
-                        'total_harga'    => $item['hpp_total'],
-                        'hpp_total'      => $item['hpp_total'],
-                    ]);
-
-                    foreach ($item['fifo_records'] as $fr) {
-                        if (!empty($fr['batch_id'])) {
-                            \App\Models\PengeluaranBahanBakuFifo::create([
-                                'pengeluaran_id' => $pengeluaran->id,
-                                'detail_id'      => $pbkDetail->id,
-                                'batch_id'       => $fr['batch_id'],
-                                'batch_number'   => $fr['batch_number'],
-                                'qty_keluar'     => $fr['qty_keluar'],
-                                'harga_per_qty'  => $fr['harga_per_qty'],
-                                'total_harga'    => $fr['total_harga'],
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            // ── Update status opname ──
+            $this->executeApprovalEffects($opname);
             $opname->update(['status' => 'approved']);
 
             DB::commit();
@@ -862,20 +596,33 @@ class StockOpnameController extends Controller
     public function destroy(string $id)
     {
         $opname = StockOpname::findOrFail($id);
+        $isSuperAdmin = $this->isSuperAdminUser();
 
-        if ($opname->status === 'approved') {
+        if ($opname->status === 'approved' && !$isSuperAdmin) {
             return back()->with(
                 'error',
-                'Stock Opname yang sudah approved tidak dapat dihapus.'
+                'Stock Opname yang sudah approved hanya dapat dihapus oleh Super Admin.'
             );
         }
 
-        $opname->details()->delete();
-        $opname->delete();
+        DB::beginTransaction();
+        try {
+            if ($opname->status === 'approved') {
+                $this->revertApprovalEffects($opname);
+            }
 
-        return redirect()
-            ->route('stock-opname.index')
-            ->with('success', 'Stock Opname berhasil dihapus.');
+            $opname->details()->delete();
+            $opname->delete();
+
+            DB::commit();
+
+            return redirect()
+                ->route('stock-opname.index')
+                ->with('success', 'Stock Opname berhasil dihapus.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal menghapus Stock Opname: ' . $e->getMessage());
+        }
     }
 
     public function edit(string $id)
@@ -886,10 +633,12 @@ class StockOpnameController extends Controller
             'details.barang'
         ])->findOrFail($id);
 
-        if ($opname->status !== 'draft') {
+        $isSuperAdmin = $this->isSuperAdminUser();
+
+        if ($opname->status !== 'draft' && !$isSuperAdmin) {
             return redirect()
                 ->route('stock-opname.show', $opname->id)
-                ->with('error', 'Stock Opname yang sudah diapprove tidak dapat diedit.');
+                ->with('error', 'Stock Opname yang sudah diapprove hanya dapat diedit oleh Super Admin.');
         }
 
         $gudang = $opname->gudang;
@@ -912,19 +661,23 @@ class StockOpnameController extends Controller
             'divisi',
             'divisiId',
             'kategoris',
-            'existingDetails'
+            'existingDetails',
+            'isSuperAdmin'
         ));
     }
 
     public function update(Request $request, string $id)
     {
-        $opname = StockOpname::findOrFail($id);
+        $opname = StockOpname::with(['details.barang', 'gudang', 'divisi'])->findOrFail($id);
+        $isSuperAdmin = $this->isSuperAdminUser();
 
-        if ($opname->status !== 'draft') {
+        if ($opname->status !== 'draft' && !$isSuperAdmin) {
             return redirect()
                 ->route('stock-opname.show', $opname->id)
-                ->with('error', 'Stock Opname yang sudah diapprove tidak dapat diubah.');
+                ->with('error', 'Stock Opname yang sudah diapprove hanya dapat diubah oleh Super Admin.');
         }
+
+        $wasApproved = ($opname->status === 'approved');
 
         // Jika form berasal dari edit lengkap (via items_json atau array barang_id)
         if ($request->filled('items_json') || $request->has('barang_id')) {
@@ -962,6 +715,11 @@ class StockOpnameController extends Controller
             DB::beginTransaction();
 
             try {
+                // Jika sebelumnya sudah approved, kembalikan (revert) semua mutasi, FIFO, dan jurnal lama
+                if ($wasApproved) {
+                    $this->revertApprovalEffects($opname);
+                }
+
                 $opname->update([
                     'tanggal'    => $tanggal,
                     'keterangan' => $request->keterangan,
@@ -992,11 +750,22 @@ class StockOpnameController extends Controller
                     ]);
                 }
 
+                // Jika sebelumnya sudah approved, terapkan ulang efek mutasi, FIFO, dan jurnal baru
+                if ($wasApproved) {
+                    $opname->load(['details.barang', 'gudang', 'divisi']);
+                    $this->executeApprovalEffects($opname);
+                    $opname->update(['status' => 'approved']);
+                }
+
                 DB::commit();
+
+                $msg = $wasApproved
+                    ? 'Perubahan Stock Opname (' . $opname->kode_opname . ') berhasil disimpan dan disinkronkan kembali ke stok gudang, FIFO, & jurnal.'
+                    : 'Perubahan Stock Opname (' . $opname->kode_opname . ') berhasil disimpan.';
 
                 return redirect()
                     ->route('stock-opname.show', $opname->id)
-                    ->with('success', 'Perubahan Stock Opname (' . $opname->kode_opname . ') berhasil disimpan.');
+                    ->with('success', $msg);
 
             } catch (\Exception $e) {
                 DB::rollBack();
@@ -1015,12 +784,411 @@ class StockOpnameController extends Controller
             return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($tanggal)) . ' sudah ditutup buku.');
         }
 
-        $opname->update([
-            'tanggal'    => $tanggal,
-            'keterangan' => $request->keterangan ?? $opname->keterangan,
-        ]);
+        DB::beginTransaction();
+        try {
+            if ($wasApproved) {
+                $this->revertApprovalEffects($opname);
+            }
 
-        return back()->with('success', 'Tanggal Stock Opname berhasil diperbarui.');
+            $opname->update([
+                'tanggal'    => $tanggal,
+                'keterangan' => $request->keterangan ?? $opname->keterangan,
+            ]);
+
+            if ($wasApproved) {
+                $opname->load(['details.barang', 'gudang', 'divisi']);
+                $this->executeApprovalEffects($opname);
+                $opname->update(['status' => 'approved']);
+            }
+
+            DB::commit();
+            return back()->with('success', 'Tanggal Stock Opname berhasil diperbarui.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Gagal memperbarui tanggal Stock Opname: ' . $e->getMessage());
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | HELPER: CEK SUPERADMIN
+    |--------------------------------------------------------------------------
+    */
+
+    private function isSuperAdminUser(): bool
+    {
+        $user = Auth::user();
+        return $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | HELPER: REVERT APPROVAL EFFECTS (MUTASI STOK, FIFO, JURNAL, PBK)
+    |--------------------------------------------------------------------------
+    */
+
+    private function revertApprovalEffects(StockOpname $opname): void
+    {
+        // 1. Revert Shortage (Pengeluaran Bahan Baku & FIFO consumption)
+        $pengeluaranList = PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
+            ->orWhere(function($q) use ($opname) {
+                $q->where('jenis_pengeluaran', 'stock_opname')
+                  ->where('keterangan', 'like', '%' . $opname->kode_opname . '%');
+            })
+            ->get();
+
+        foreach ($pengeluaranList as $pengeluaran) {
+            $fifoRecords = \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->get();
+            foreach ($fifoRecords as $fifo) {
+                if (!empty($fifo->batch_id)) {
+                    $batch = \App\Models\StokGudangBatch::find($fifo->batch_id);
+                    if ($batch) {
+                        $batch->increment('qty_sisa', (float) $fifo->qty_keluar);
+                        $batch->decrement('qty_keluar', (float) $fifo->qty_keluar);
+                        $batch->update(['is_habis' => false]);
+                    }
+                }
+            }
+
+            $details = $pengeluaran->details;
+            foreach ($details as $det) {
+                $stokQuery = \App\Models\StokGudang::where('barang_id', $det->barang_id)
+                    ->where('gudang_id', $opname->gudang_id);
+                if ($opname->divisi_id) {
+                    $stokQuery->where('divisi_id', $opname->divisi_id);
+                } else {
+                    $stokQuery->whereNull('divisi_id');
+                }
+                $stokGudang = $stokQuery->lockForUpdate()->first();
+                if ($stokGudang) {
+                    $stokGudang->increment('jumlah', (float) $det->qty);
+                }
+            }
+
+            \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->delete();
+            $pengeluaran->details()->delete();
+            $pengeluaran->delete();
+        }
+
+        // 2. Revert Surplus (Batch SO-SURPLUS-... & stock increment)
+        $surplusBatches = \App\Models\StokGudangBatch::where('batch_number', 'SO-SURPLUS-' . $opname->kode_opname)
+            ->where('gudang_id', $opname->gudang_id)
+            ->when($opname->divisi_id, fn($q) => $q->where('divisi_id', $opname->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+            ->get();
+
+        foreach ($surplusBatches as $batch) {
+            $stokQuery = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
+                ->where('gudang_id', $opname->gudang_id);
+            if ($opname->divisi_id) {
+                $stokQuery->where('divisi_id', $opname->divisi_id);
+            } else {
+                $stokQuery->whereNull('divisi_id');
+            }
+            $stokGudang = $stokQuery->lockForUpdate()->first();
+            if ($stokGudang) {
+                $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
+            }
+            $batch->delete();
+        }
+
+        // 3. Revert TransaksiStok
+        \App\Models\TransaksiStok::where('source_type', 'stock_opname')
+            ->where('source_id', $opname->id)
+            ->delete();
+
+        // 4. Revert Jurnal Penyesuaian
+        $jurnals = \App\Models\JurnalPenyesuaian::where('source_type', 'stock_opname')
+            ->where('source_id', $opname->id)
+            ->get();
+
+        foreach ($jurnals as $jurnal) {
+            $jurnal->details()->delete();
+            $jurnal->delete();
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | HELPER: EXECUTE APPROVAL EFFECTS (MUTASI STOK, FIFO, JURNAL, PBK)
+    |--------------------------------------------------------------------------
+    */
+
+    private function executeApprovalEffects(StockOpname $opname): void
+    {
+        $fifoService = app(\App\Services\FifoService::class);
+        $itemSelisihNegatif = [];
+        $surplusDebits = [];
+        $totalSurplusKredit = 0;
+        $shortageKredits = [];
+        $totalShortageDebit = 0;
+
+        $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '4201')->value('id') ?? 32;
+        $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
+            ?? DB::table('chart_of_accounts')->where('kode', '5104')->value('id') 
+            ?? DB::table('chart_of_accounts')->where('kode', '5103')->value('id') 
+            ?? 44;
+
+        $tanggalBase = \Carbon\Carbon::parse($opname->tanggal)->format('Y-m-d');
+        $tanggalTx = $tanggalBase . ' ' . now()->format('H:i:s');
+
+        foreach ($opname->details as $detail) {
+
+            $hargaUnit = $this->getHargaFIFO(
+                $opname->gudang_id,
+                $detail->barang_id,
+                $opname->divisi_id
+            );
+
+            if ($detail->selisih < 0) {
+                $qtyKurang = abs((float) $detail->selisih);
+
+                // 1. Eksekusi pemotongan FIFO di gudang & divisi lokasi opname
+                $fifoResult = $fifoService->consumeFIFO(
+                    barangId:      $detail->barang_id,
+                    qtyKeluar:     $qtyKurang,
+                    gudangId:      $opname->gudang_id,
+                    allowNegative: true,
+                    divisiId:      $opname->divisi_id,
+                );
+
+                $hppTotalKurang = 0;
+                $fifoRecords = [];
+                foreach ($fifoResult as $fifo) {
+                    $layerTotal = $fifo['qty_keluar'] * $fifo['harga_per_qty'];
+                    $hppTotalKurang += $layerTotal;
+                    $fifoRecords[] = [
+                        'batch_id'      => $fifo['batch_id'],
+                        'batch_number'  => $fifo['batch_number'],
+                        'qty_keluar'    => $fifo['qty_keluar'],
+                        'harga_per_qty' => $fifo['harga_per_qty'],
+                        'total_harga'   => $layerTotal,
+                    ];
+                }
+
+                // Fallback jika belum ada batch masuk sebelumnya
+                if ($hppTotalKurang <= 0 && $hargaUnit > 0) {
+                    $hppTotalKurang = round($qtyKurang * $hargaUnit, 2);
+                } else {
+                    $hppTotalKurang = round($hppTotalKurang, 2);
+                }
+
+                // 2. Kurangi stok summary di stok_gudang
+                $stokQuery = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
+                    ->where('gudang_id', $opname->gudang_id);
+                if ($opname->divisi_id) {
+                    $stokQuery->where('divisi_id', $opname->divisi_id);
+                } else {
+                    $stokQuery->whereNull('divisi_id');
+                }
+                $stokGudang = $stokQuery->lockForUpdate()->first();
+                if ($stokGudang) {
+                    $stokGudang->decrement('jumlah', $qtyKurang);
+                } else {
+                    \App\Models\StokGudang::create([
+                        'barang_id' => $detail->barang_id,
+                        'gudang_id' => $opname->gudang_id,
+                        'divisi_id' => $opname->divisi_id,
+                        'jumlah'    => -$qtyKurang,
+                    ]);
+                }
+
+                // 3. Catat mutasi keluar di transaksi_stok (terbaca di Buku Pembantu Persediaan)
+                \App\Models\TransaksiStok::create([
+                    'tanggal'        => $tanggalTx,
+                    'tipe'           => 'keluar',
+                    'source_type'    => 'stock_opname',
+                    'source_id'      => $opname->id,
+                    'gudang_asal_id' => $opname->gudang_id,
+                    'divisi_asal_id' => $opname->divisi_id,
+                    'barang_id'      => $detail->barang_id,
+                    'qty'            => $qtyKurang,
+                    'total_harga'    => $hppTotalKurang,
+                    'created_by'     => Auth::id() ?? 1,
+                ]);
+
+                // 4. Akumulasi untuk Jurnal Penyesuaian Shortage
+                if ($hppTotalKurang > 0) {
+                    $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
+                    $coaCode = $isOperational ? '1501' : ($detail->barang && $detail->barang->is_bahan_setengah_jadi ? '1302' : ($detail->barang && $detail->barang->is_barang_jadi ? '1303' : '1301'));
+                    $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
+
+                    if (!isset($shortageKredits[$idPersediaan])) {
+                        $shortageKredits[$idPersediaan] = 0;
+                    }
+                    $shortageKredits[$idPersediaan] += $hppTotalKurang;
+                    $totalShortageDebit += $hppTotalKurang;
+                }
+
+                $itemSelisihNegatif[] = [
+                    'barang_id'    => $detail->barang_id,
+                    'qty'          => $qtyKurang,
+                    'satuan'       => $detail->barang->satuan ?? 'pcs',
+                    'hpp_total'    => $hppTotalKurang,
+                    'harga_satuan' => $qtyKurang > 0 ? ($hppTotalKurang / $qtyKurang) : 0,
+                    'fifo_records' => $fifoRecords,
+                ];
+
+            } elseif ($detail->selisih > 0) {
+                $defaultSupplierId  = DB::table('suppliers')->value('id') ?? 1;
+                $defaultPembelianId = DB::table('pembelian')->value('id') ?? 1;
+                $defaultPemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
+
+                // 1. Buat batch FIFO baru untuk surplus
+                \App\Models\StokGudangBatch::create([
+                    'gudang_id'           => $opname->gudang_id,
+                    'divisi_id'           => $opname->divisi_id,
+                    'supplier_id'         => $defaultSupplierId,
+                    'barang_id'           => $detail->barang_id,
+                    'pembelian_id'        => $defaultPembelianId,
+                    'pembelian_detail_id' => $defaultPemDetailId,
+                    'batch_number'        => 'SO-SURPLUS-' . $opname->kode_opname,
+                    'qty_masuk'           => $detail->selisih,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $detail->selisih,
+                    'harga_per_qty'       => $hargaUnit,
+                    'is_habis'            => false,
+                ]);
+
+                // 2. Tambah stok gudang menggunakan StockService
+                app(\App\Services\StockService::class)->stockIn([
+                    'barang_id'        => $detail->barang_id,
+                    'gudang_tujuan_id' => $opname->gudang_id,
+                    'divisi_tujuan_id' => $opname->divisi_id,
+                    'qty'              => $detail->selisih,
+                    'total_harga'      => $detail->selisih * $hargaUnit,
+                    'source_type'      => 'stock_opname',
+                    'source_id'        => $opname->id,
+                    'user_id'          => Auth::id() ?? 1,
+                ]);
+
+                // 3. Akumulasi untuk Jurnal Penyesuaian (Surplus)
+                $totalHargaSO = round($detail->selisih * $hargaUnit, 2);
+                if ($totalHargaSO > 0) {
+                    $isOperational = $detail->barang && ($detail->barang->is_operational || (!$detail->barang->is_bahan_baku && !$detail->barang->is_bahan_setengah_jadi));
+                    $coaCode = $isOperational ? '1501' : ($detail->barang && $detail->barang->is_bahan_setengah_jadi ? '1302' : ($detail->barang && $detail->barang->is_barang_jadi ? '1303' : '1301'));
+                    $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
+                    
+                    if (!isset($surplusDebits[$idPersediaan])) {
+                        $surplusDebits[$idPersediaan] = 0;
+                    }
+                    $surplusDebits[$idPersediaan] += $totalHargaSO;
+                    $totalSurplusKredit += $totalHargaSO;
+                }
+            }
+        }
+
+        // ── Buat Jurnal Penyesuaian Surplus jika ada ──
+        if ($totalSurplusKredit > 0) {
+            $jpSurplus = \App\Models\JurnalPenyesuaian::create([
+                'tanggal'     => $opname->tanggal,
+                'deskripsi'   => "[AJP] Penyesuaian Lebih (Surplus) Stock Opname: " . $opname->kode_opname,
+                'no_ref'      => 'AJP-SO-SURPLUS-' . $opname->kode_opname . '-' . rand(100, 999),
+                'source_type' => 'stock_opname',
+                'source_id'   => $opname->id,
+                'created_by'  => Auth::id() ?? 1,
+                'status'      => 'approved',
+            ]);
+
+            foreach ($surplusDebits as $accId => $debitAmount) {
+                $jpSurplus->details()->create([
+                    'account_id'   => $accId,
+                    'debit'        => round($debitAmount, 2),
+                    'kredit'       => 0,
+                    'journal_type' => \App\Models\JurnalPenyesuaian::class,
+                ]);
+            }
+
+            $jpSurplus->details()->create([
+                'account_id'   => $idPendapatanLain,
+                'debit'        => 0,
+                'kredit'       => round($totalSurplusKredit, 2),
+                'journal_type' => \App\Models\JurnalPenyesuaian::class,
+            ]);
+        }
+
+        // ── Buat Jurnal Penyesuaian Shortage jika ada ──
+        if ($totalShortageDebit > 0) {
+            $jpShortage = \App\Models\JurnalPenyesuaian::create([
+                'tanggal'     => $opname->tanggal,
+                'deskripsi'   => "[AJP] Penyesuaian Kurang (Shortage) Stock Opname: " . $opname->kode_opname,
+                'no_ref'      => 'AJP-SO-SHORTAGE-' . $opname->kode_opname . '-' . rand(100, 999),
+                'source_type' => 'stock_opname',
+                'source_id'   => $opname->id,
+                'created_by'  => Auth::id() ?? 1,
+                'status'      => 'approved',
+            ]);
+
+            $jpShortage->details()->create([
+                'account_id'   => $idBebanSelisih,
+                'debit'        => round($totalShortageDebit, 2),
+                'kredit'       => 0,
+                'journal_type' => \App\Models\JurnalPenyesuaian::class,
+            ]);
+
+            foreach ($shortageKredits as $accId => $kreditAmount) {
+                $jpShortage->details()->create([
+                    'account_id'   => $accId,
+                    'debit'        => 0,
+                    'kredit'       => round($kreditAmount, 2),
+                    'journal_type' => \App\Models\JurnalPenyesuaian::class,
+                ]);
+            }
+        }
+
+        // ── Buat Pengeluaran Bahan Baku otomatis berstatus approved jika ada selisih negatif (audit trail) ──
+        if (!empty($itemSelisihNegatif)) {
+            $kode = 'PBK-SO-' . $opname->kode_opname;
+
+            $pengeluaran = PengeluaranBahanBaku::where('kode_pengeluaran', $kode)->first();
+            if (!$pengeluaran) {
+                $pengeluaran = PengeluaranBahanBaku::create([
+                    'kode_pengeluaran'  => $kode,
+                    'tanggal'           => $tanggalTx,
+                    'gudang_id'         => $opname->gudang_id,
+                    'divisi_id'         => $opname->divisi_id,
+                    'jenis_pengeluaran' => 'stock_opname',
+                    'status'            => 'approved',
+                    'keterangan'        => 'Auto dari Stock Opname: ' . $opname->kode_opname,
+                    'created_by'        => Auth::id() ?? 1,
+                    'approved_by'       => Auth::id() ?? 1,
+                    'approved_at'       => now(),
+                ]);
+            } else {
+                $pengeluaran->update([
+                    'status'            => 'approved',
+                    'jenis_pengeluaran' => 'stock_opname',
+                    'approved_by'       => Auth::id() ?? 1,
+                    'approved_at'       => now(),
+                ]);
+                $pengeluaran->details()->delete();
+            }
+
+            foreach ($itemSelisihNegatif as $item) {
+                $pbkDetail = PengeluaranBahanBakuDetail::create([
+                    'pengeluaran_id' => $pengeluaran->id,
+                    'barang_id'      => $item['barang_id'],
+                    'qty'            => $item['qty'],
+                    'satuan'         => $item['satuan'],
+                    'harga_satuan'   => $item['harga_satuan'],
+                    'total_harga'    => $item['hpp_total'],
+                    'hpp_total'      => $item['hpp_total'],
+                ]);
+
+                foreach ($item['fifo_records'] as $fr) {
+                    if (!empty($fr['batch_id'])) {
+                        \App\Models\PengeluaranBahanBakuFifo::create([
+                            'pengeluaran_id' => $pengeluaran->id,
+                            'detail_id'      => $pbkDetail->id,
+                            'batch_id'       => $fr['batch_id'],
+                            'batch_number'   => $fr['batch_number'],
+                            'qty_keluar'     => $fr['qty_keluar'],
+                            'harga_per_qty'  => $fr['harga_per_qty'],
+                            'total_harga'    => $fr['total_harga'],
+                        ]);
+                    }
+                }
+            }
+        }
     }
 
     /*
