@@ -25,6 +25,19 @@ class MasterGudang extends Model
         return strtolower($this->kategori) === 'operasional';
     }
 
+    public static function getGudangUtama(): ?self
+    {
+        return static::where('kategori', 'Utama')
+            ->orWhere('nama', 'like', '%Gudang Utama%')
+            ->orWhere('nama', 'like', '%Utama%')
+            ->first();
+    }
+
+    public static function getGudangUtamaId(): int
+    {
+        return static::getGudangUtama()?->id ?? 2;
+    }
+
     public function permintaanBahanBaku()
     {
         return $this->hasMany(

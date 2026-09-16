@@ -194,6 +194,13 @@ class FifoService
     |
     */
 
+    protected static array $hargaTerakhirCache = [];
+
+    public static function clearHargaCache(): void
+    {
+        self::$hargaTerakhirCache = [];
+    }
+
     public function consumeFIFO(
         int $barangId,
         float $qtyKeluar,
@@ -204,7 +211,7 @@ class FifoService
 
         /*
         |--------------------------------------------------------------------------
-        | AMBIL BATCH FIFO
+        | AMBIL BATCH FIFO (DENGAN PESSIMISTIC LOCK)
         |--------------------------------------------------------------------------
         */
 
@@ -217,7 +224,7 @@ class FifoService
             $query->where('divisi_id', $divisiId);
         }
 
-        $batches = $query->orderBy('id')->get();
+        $batches = $query->orderBy('id')->lockForUpdate()->get();
 
         /*
         |--------------------------------------------------------------------------
@@ -312,6 +319,12 @@ class FifoService
         if (in_array($barangId, $visited)) {
             return 0.0;
         }
+
+        $cacheKey = "{$barangId}_{$gudangId}";
+        if (empty($visited) && isset(self::$hargaTerakhirCache[$cacheKey])) {
+            return self::$hargaTerakhirCache[$cacheKey];
+        }
+
         $visited[] = $barangId;
 
         // 1. Cek batch terakhir di gudang spesifik yang memiliki harga > 0
@@ -324,7 +337,11 @@ class FifoService
                 ->value('harga_per_qty');
 
             if ($latestGudangBatch && floatval($latestGudangBatch) > 0) {
-                return (float) $latestGudangBatch;
+                $res = (float) $latestGudangBatch;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
             }
         }
 
@@ -336,7 +353,11 @@ class FifoService
             ->value('harga_per_qty');
 
         if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
-            return (float) $latestBatchGlobal;
+            $res = (float) $latestBatchGlobal;
+            if (count($visited) === 1) {
+                self::$hargaTerakhirCache[$cacheKey] = $res;
+            }
+            return $res;
         }
 
         // 3. Cek detail pembelian terakhir pada tabel pembelian_detail
@@ -349,7 +370,11 @@ class FifoService
         if ($latestPembelian && floatval($latestPembelian->harga_per_qty) > 0) {
             $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
             if ($konversi <= 0) $konversi = 1;
-            return (float) ($latestPembelian->harga_per_qty / $konversi);
+            $res = (float) ($latestPembelian->harga_per_qty / $konversi);
+            if (count($visited) === 1) {
+                self::$hargaTerakhirCache[$cacheKey] = $res;
+            }
+            return $res;
         }
 
         // 4. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
@@ -373,17 +398,28 @@ class FifoService
                         $totalBiayaResep += (floatval($subBahan->qty_bahan) * $subHarga);
                     }
                     if ($totalBiayaResep > 0) {
-                        return (float) ($totalBiayaResep / $outputQty);
+                        $res = (float) ($totalBiayaResep / $outputQty);
+                        if (count($visited) === 1) {
+                            self::$hargaTerakhirCache[$cacheKey] = $res;
+                        }
+                        return $res;
                     }
                 }
             }
 
             // 5. Fallback ke HPP referensi master barang
             if ($barang->hpp_referensi && floatval($barang->hpp_referensi) > 0) {
-                return (float) $barang->hpp_referensi;
+                $res = (float) $barang->hpp_referensi;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
             }
         }
 
+        if (count($visited) === 1) {
+            self::$hargaTerakhirCache[$cacheKey] = 0.0;
+        }
         return 0.0;
     }
 

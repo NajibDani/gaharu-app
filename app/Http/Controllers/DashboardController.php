@@ -51,13 +51,17 @@ class DashboardController extends Controller
         | NILAI INVENTORY FIFO (Role-Based Filter)
         |--------------------------------------------------------------------------
         */
+        $gGaharuId = MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
+        $gKejinggaId = MasterGudang::where('nama', 'like', '%KeJingga%')->first()?->id ?? 5;
+        $gUtamaId = MasterGudang::getGudangUtamaId();
+
         $inventoryQuery = StokGudangBatch::query();
         if ($roleName === 'Kepala Outlet Gaharu') {
-            $inventoryQuery->where('gudang_id', 2);
+            $inventoryQuery->where('gudang_id', $gGaharuId);
         } elseif ($roleName === 'Kepala Outlet Kejingga') {
-            $inventoryQuery->where('gudang_id', 4);
+            $inventoryQuery->where('gudang_id', $gKejinggaId);
         } elseif ($roleName === 'Kepala Gudang') {
-            $inventoryQuery->where('gudang_id', 1);
+            $inventoryQuery->where('gudang_id', $gUtamaId);
         }
         
         $inventoryValue = $inventoryQuery->select(
@@ -72,9 +76,9 @@ class DashboardController extends Controller
         $pembelianQuery = Pembelian::whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
 
         if ($roleName === 'Kepala Outlet Gaharu') {
-            $pembelianQuery->where('gudang_id', 2);
+            $pembelianQuery->where('gudang_id', $gGaharuId);
         } elseif ($roleName === 'Kepala Gudang') {
-            $pembelianQuery->where('gudang_id', 1);
+            $pembelianQuery->where('gudang_id', $gUtamaId);
         } elseif ($roleName === 'Kepala Outlet Kejingga') {
             $pembelianQuery->whereRaw('1 = 0'); // No purchase access
         }
@@ -92,11 +96,11 @@ class DashboardController extends Controller
             ->where('stok_gudang.jumlah', '<=', 10);
 
         if ($roleName === 'Kepala Outlet Gaharu') {
-            $barangHampirHabisQuery->where('stok_gudang.gudang_id', 2);
+            $barangHampirHabisQuery->where('stok_gudang.gudang_id', $gGaharuId);
         } elseif ($roleName === 'Kepala Outlet Kejingga') {
-            $barangHampirHabisQuery->where('stok_gudang.gudang_id', 4);
+            $barangHampirHabisQuery->where('stok_gudang.gudang_id', $gKejinggaId);
         } elseif ($roleName === 'Kepala Gudang') {
-            $barangHampirHabisQuery->where('stok_gudang.gudang_id', 1);
+            $barangHampirHabisQuery->where('stok_gudang.gudang_id', $gUtamaId);
         }
 
         $barangHampirHabis = $barangHampirHabisQuery
@@ -119,9 +123,9 @@ class DashboardController extends Controller
         if ($hasPurchaseAccess) {
             $chartPembelianQuery = Pembelian::whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
             if ($roleName === 'Kepala Outlet Gaharu') {
-                $chartPembelianQuery->where('gudang_id', 2);
+                $chartPembelianQuery->where('gudang_id', $gGaharuId);
             } elseif ($roleName === 'Kepala Gudang') {
-                $chartPembelianQuery->where('gudang_id', 1);
+                $chartPembelianQuery->where('gudang_id', $gUtamaId);
             }
             $chartData = $chartPembelianQuery
                 ->selectRaw('DATE(tanggal) as date_label, SUM(total) as daily_total')
@@ -149,9 +153,9 @@ class DashboardController extends Controller
                 ->whereIn('status', ['SUKSES', 'Approved', 'Completed']);
 
             if ($roleName === 'Kepala Outlet Gaharu') {
-                $chartPosQuery->where('gudang_id', 2);
+                $chartPosQuery->where('gudang_id', $gGaharuId);
             } elseif ($roleName === 'Kepala Outlet Kejingga') {
-                $chartPosQuery->where('gudang_id', 4);
+                $chartPosQuery->where('gudang_id', $gKejinggaId);
             }
 
             $chartPosData = $chartPosQuery

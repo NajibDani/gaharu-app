@@ -41,14 +41,19 @@ class PenjualanPosController extends Controller
         $queryGudang = MasterGudang::query();
 
         if ($user->gudang_id) {
-            if ($user->gudang_id == 2) {
-                $queryProduk->where('tipe_penjualan', 'POS Gaharu');
-            } elseif ($user->gudang_id == 4) {
+            $userGudang = MasterGudang::find($user->gudang_id);
+            if ($userGudang && str_contains(strtolower($userGudang->nama), 'kejingga')) {
                 $queryProduk->where('tipe_penjualan', 'POS Kejingga');
             } else {
                 $queryProduk->where('tipe_penjualan', 'POS Gaharu');
             }
             $queryGudang->where('id', $user->gudang_id);
+        } else {
+            $queryGudang->where(function ($q) {
+                $q->where('kategori', 'Operasional')
+                  ->orWhere('nama', 'like', '%Gaharu%')
+                  ->orWhere('nama', 'like', '%KeJingga%');
+            });
         }
 
         $produk = $queryProduk->get();
@@ -82,8 +87,9 @@ class PenjualanPosController extends Controller
         }
 
         $user = auth()->user();
-        if (in_array($request->gudang_id, [1, 2])) {
-            return back()->with('error', 'Gudang Utama dan Central Kitchen hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.')->withInput();
+        $gudangPilihan = MasterGudang::find($request->gudang_id);
+        if ($gudangPilihan && !$gudangPilihan->isOperasional() && (str_contains(strtolower($gudangPilihan->nama), 'utama') || str_contains(strtolower($gudangPilihan->nama), 'central kitchen') || str_contains(strtolower($gudangPilihan->nama), 'cold kitchen'))) {
+            return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.')->withInput();
         }
 
         if ($user->gudang_id && $request->gudang_id != $user->gudang_id) {
@@ -121,7 +127,7 @@ class PenjualanPosController extends Controller
         DB::beginTransaction();
     
         try {
-            $kodePos = 'POS-' . time();
+            $kodePos = 'POS-' . date('YmdHis') . '-' . strtoupper(\Illuminate\Support\Str::random(4));
             $tanggalTrans = date('Y-m-d H:i:s', strtotime($request->tanggal));
 
             $penjualan = PenjualanPos::create([
@@ -345,14 +351,19 @@ class PenjualanPosController extends Controller
         $queryGudang = MasterGudang::query();
 
         if ($user->gudang_id && !$isSuperAdmin) {
-            if ($user->gudang_id == 2) {
-                $queryProduk->where('tipe_penjualan', 'POS Gaharu');
-            } elseif ($user->gudang_id == 4) {
+            $userGudang = MasterGudang::find($user->gudang_id);
+            if ($userGudang && str_contains(strtolower($userGudang->nama), 'kejingga')) {
                 $queryProduk->where('tipe_penjualan', 'POS Kejingga');
             } else {
                 $queryProduk->where('tipe_penjualan', 'POS Gaharu');
             }
             $queryGudang->where('id', $user->gudang_id);
+        } else {
+            $queryGudang->where(function ($q) {
+                $q->where('kategori', 'Operasional')
+                  ->orWhere('nama', 'like', '%Gaharu%')
+                  ->orWhere('nama', 'like', '%KeJingga%');
+            });
         }
 
         $produk = $queryProduk->get();
@@ -865,6 +876,19 @@ class PenjualanPosController extends Controller
                     'harga_satuan' => $avgHppSatuan,
                     'total_harga'  => $totalHppBahanGrup,
                     'hpp_total'    => $totalHppBahanGrup
+                ]);
+
+                // Catat mutasi pengeluaran ke TransaksiStok agar Buku Pembantu Persediaan selalu sinkron 100%
+                \App\Models\TransaksiStok::create([
+                    'tanggal'        => $tanggalTrans,
+                    'tipe'           => 'keluar',
+                    'source_type'    => 'penjualan_pos',
+                    'source_id'      => $penjualan->id,
+                    'gudang_asal_id' => $gudangId,
+                    'barang_id'      => $bahanId,
+                    'qty'            => $totalDipotong,
+                    'total_harga'    => $totalHppBahanGrup,
+                    'created_by'     => auth()->id() ?? 1,
                 ]);
 
                 $mapHppBahanAvg[$bahanId] = $avgHppSatuan;

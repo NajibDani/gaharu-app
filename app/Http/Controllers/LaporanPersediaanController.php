@@ -91,20 +91,19 @@ class LaporanPersediaanController extends Controller
         $roleName = $user->role->nama ?? '';
 
         // Auto filter warehouse based on role
-        if ($roleName === 'Kepala Outlet Kejingga') {
-            $request->merge(['gudang_id' => 4]);
-        } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $request->merge(['gudang_id' => 2]);
-        } elseif ($roleName === 'Kepala Gudang') {
-            $request->merge(['gudang_id' => 1]);
-        }
+        $gGaharuId = MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
+        $gKejinggaId = MasterGudang::where('nama', 'like', '%KeJingga%')->first()?->id ?? 5;
+        $gUtamaId = MasterGudang::getGudangUtamaId();
 
         if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
+            $request->merge(['gudang_id' => $gKejinggaId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gKejinggaId)->get();
         } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
+            $request->merge(['gudang_id' => $gGaharuId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gGaharuId)->get();
         } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
+            $request->merge(['gudang_id' => $gUtamaId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gUtamaId)->get();
         } else {
             $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         }

@@ -107,51 +107,76 @@ class PengeluaranBahanBakuController extends Controller
 
         $divisiList = \App\Models\GudangDivisi::with('gudang')->orderBy('nama', 'asc')->get();
 
-        // Hitung ringkasan saran restock per outlet/gudang cabang (selain Gudang Utama ID 1)
+        // Hitung ringkasan saran restock per outlet/gudang cabang (selain Gudang Utama ID 1) secara batch
         $outletGudangs = MasterGudang::where('id', '!=', 1)->get();
         $outletSuggestionsSummary = [];
 
-        foreach ($outletGudangs as $g) {
-            $gudangNama = strtolower($g->nama);
-            $minStockField = null;
-            if (str_contains($gudangNama, 'gaharu')) {
-                $minStockField = 'minimum_stock_gaharu';
-            } elseif (str_contains($gudangNama, 'kejingga')) {
-                $minStockField = 'minimum_stock_kejingga';
-            } elseif (str_contains($gudangNama, 'central kitchen')) {
-                $minStockField = 'minimum_stock_ck';
-            }
-
+        if ($outletGudangs->isNotEmpty()) {
             $items = MasterBarang::where('is_active', true)
                 ->where('is_bahan_baku', 1)
                 ->where('is_bahan_setengah_jadi', 0)
+                ->with(['minimumStocks'])
                 ->get();
 
-            $criticalCount = 0;
-            foreach ($items as $it) {
-                $minStock = 0;
-                if ($minStockField && !empty($it->{$minStockField})) {
-                    $minStock = (float) $it->{$minStockField};
-                } elseif (!empty($it->minimum_stock)) {
-                    $minStock = (float) $it->minimum_stock;
-                }
+            $allGudangIds = $outletGudangs->pluck('id')->toArray();
+            $allStockRows = StokGudang::whereIn('gudang_id', $allGudangIds)
+                ->whereNull('divisi_id')
+                ->select('gudang_id', 'barang_id', 'jumlah')
+                ->get();
 
-                if ($minStock > 0) {
-                    $currentStock = (float) (StokGudang::where('gudang_id', $g->id)
-                        ->where('barang_id', $it->id)
-                        ->value('jumlah') ?? 0);
-                    if ($currentStock < $minStock) {
-                        $criticalCount++;
-                    }
-                }
+            $stokMap = [];
+            foreach ($allStockRows as $sr) {
+                $stokMap[$sr->gudang_id . '_' . $sr->barang_id] = (float) $sr->jumlah;
             }
 
-            if ($criticalCount > 0) {
-                $outletSuggestionsSummary[] = [
-                    'gudang_id'   => $g->id,
-                    'gudang_nama' => $g->nama,
-                    'count'       => $criticalCount,
-                ];
+            foreach ($outletGudangs as $g) {
+                $gudangNama = strtolower($g->nama);
+                $minStockField = null;
+                if (str_contains($gudangNama, 'gaharu')) {
+                    $minStockField = 'minimum_stock_gaharu';
+                } elseif (str_contains($gudangNama, 'kejingga')) {
+                    $minStockField = 'minimum_stock_kejingga';
+                } elseif (str_contains($gudangNama, 'central kitchen')) {
+                    $minStockField = 'minimum_stock_ck';
+                }
+
+                $criticalCount = 0;
+                foreach ($items as $it) {
+                    $minStock = 0;
+                    if ($it->minimumStocks && $it->minimumStocks->count() > 0) {
+                        $specific = $it->minimumStocks->firstWhere('gudang_id', $g->id);
+                        if ($specific) {
+                            if (!$specific->is_active) {
+                                continue;
+                            }
+                            if ($specific->minimum_stock !== null) {
+                                $minStock = (float)$specific->minimum_stock;
+                            }
+                        }
+                    }
+
+                    if ($minStock <= 0 && $minStockField && !empty($it->{$minStockField})) {
+                        $minStock = (float) $it->{$minStockField};
+                    } elseif ($minStock <= 0 && !empty($it->minimum_stock)) {
+                        $minStock = (float) $it->minimum_stock;
+                    }
+
+                    if ($minStock > 0) {
+                        $key = $g->id . '_' . $it->id;
+                        $currentStock = $stokMap[$key] ?? 0.0;
+                        if ($currentStock < $minStock) {
+                            $criticalCount++;
+                        }
+                    }
+                }
+
+                if ($criticalCount > 0) {
+                    $outletSuggestionsSummary[] = [
+                        'gudang_id'   => $g->id,
+                        'gudang_nama' => $g->nama,
+                        'count'       => $criticalCount,
+                    ];
+                }
             }
         }
 
@@ -225,6 +250,17 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
+        $itemIds = $items->pluck('id')->toArray();
+        $allStockRows = StokGudang::whereIn('gudang_id', array_unique([$gudang->id, 1]))
+            ->whereIn('barang_id', $itemIds)
+            ->get();
+
+        $stokMap = [];
+        foreach ($allStockRows as $sr) {
+            $divKey = $sr->divisi_id ?? '0';
+            $stokMap[$sr->gudang_id . '_' . $sr->barang_id . '_' . $divKey] = (float) $sr->jumlah;
+        }
+
         $suggestions = [];
         foreach ($items as $it) {
             $minStock = 0;
@@ -278,13 +314,8 @@ class PengeluaranBahanBakuController extends Controller
                 continue;
             }
 
-            $stokQuery = StokGudang::where('gudang_id', $gudang->id)
-                ->where('barang_id', $it->id);
-            if ($divisiId) {
-                $stokQuery->where('divisi_id', $divisiId);
-            }
-
-            $currentStock = (float) ($stokQuery->value('jumlah') ?? 0);
+            $currentKey = $gudang->id . '_' . $it->id . '_' . ($divisiId ?: '0');
+            $currentStock = $stokMap[$currentKey] ?? 0.0;
 
             if ($currentStock < $minStock) {
                 $deficit = $minStock - $currentStock;
@@ -295,10 +326,8 @@ class PengeluaranBahanBakuController extends Controller
                 $hasKonversi = ($it->satuan_pembelian && $konversi > 1 && $it->satuan_pembelian !== $it->satuan);
                 $suggestedQtyInput = $hasKonversi ? (float) ceil($suggestedQty / $konversi) : $suggestedQty;
 
-                // Stok yang tersedia di Gudang Utama (Gudang ID 1)
-                $stokUtama = (float) (StokGudang::where('gudang_id', 1)
-                    ->where('barang_id', $it->id)
-                    ->value('jumlah') ?? 0);
+                // Stok yang tersedia di Gudang Utama (Gudang ID 1, divisi 0/null)
+                $stokUtama = $stokMap['1_' . $it->id . '_0'] ?? 0.0;
 
                 $suggestions[] = [
                     'barang_id'            => $it->id,
@@ -336,12 +365,9 @@ class PengeluaranBahanBakuController extends Controller
         }
 
         if ($jenis === 'wasted') {
-            $gudangSourceId = $selectedGudangId ?: 2;
+            $gudangSourceId = $selectedGudangId ?: MasterGudang::getGudangUtamaId();
         } else {
-            $gudangUtama = MasterGudang::where('nama', 'like', '%Gudang Utama%')
-                ->orWhere('nama', 'like', '%Utama%')
-                ->first();
-            $gudangSourceId = $gudangUtama ? $gudangUtama->id : 2;
+            $gudangSourceId = MasterGudang::getGudangUtamaId();
         }
 
         $queryBarang = MasterBarang::query()
@@ -496,8 +522,8 @@ class PengeluaranBahanBakuController extends Controller
 
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
 
-        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
-        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+        $gudangUtama = MasterGudang::getGudangUtama();
+        $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
@@ -506,7 +532,7 @@ class PengeluaranBahanBakuController extends Controller
                 $est = $this->fifoService->getEstimatedHargaFIFO(
                     $detail->barang_id,
                     $detail->qty,
-                    $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                    $isWasted ? ($pengeluaran->gudang_id ?? MasterGudang::getGudangUtamaId()) : $gudangUtamaId,
                     $isWasted ? $pengeluaran->divisi_id : null
                 );
                 $detail->hpp_total = $est['total_harga'];
@@ -548,8 +574,8 @@ class PengeluaranBahanBakuController extends Controller
 
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
 
-        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
-        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+        $gudangUtama = MasterGudang::getGudangUtama();
+        $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
@@ -1374,8 +1400,7 @@ class PengeluaranBahanBakuController extends Controller
                 if ($isFromOpname || $isWasted) {
                     $this->executeApproveWastedOrOpname($data);
                 } else {
-                    $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
-                    $gudangAsalId = $gudangUtama ? $gudangUtama->id : 2;
+                    $gudangAsalId = MasterGudang::getGudangUtamaId();
 
                     foreach ($data->details as $detail) {
                         $stokTersedia = (float) (StokGudang::where('barang_id', $detail->barang_id)

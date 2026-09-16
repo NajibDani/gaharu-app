@@ -58,8 +58,7 @@ class PengeluaranBahanBakuService
             |
             */
 
-            $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
-            $gudangAsalId = $gudangUtama ? $gudangUtama->id : 2;
+            $gudangAsalId = MasterGudang::getGudangUtamaId();
 
             /*
             |--------------------------------------------------------------------------

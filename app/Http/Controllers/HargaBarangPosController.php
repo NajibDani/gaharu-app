@@ -20,16 +20,18 @@ class HargaBarangPosController extends Controller
         if ($tipePenjualan) {
             $queryBarang->where('tipe_penjualan', $tipePenjualan);
         } elseif ($user && $user->gudang_id && !$user->isSuperAdmin()) {
-            if ($user->gudang_id == 2 || $user->gudang_id == 3) {
-                $queryBarang->where('tipe_penjualan', 'POS Gaharu');
-            } elseif ($user->gudang_id == 5 || $user->gudang_id == 4) {
+            $uGudang = \App\Models\MasterGudang::find($user->gudang_id);
+            if ($uGudang && str_contains(strtolower($uGudang->nama), 'kejingga')) {
                 $queryBarang->where('tipe_penjualan', 'POS Kejingga');
+            } else {
+                $queryBarang->where('tipe_penjualan', 'POS Gaharu');
             }
         }
         $listBarang = $queryBarang->with(['hargaPosAktif'])->get();
 
+        $defaultGudangId = $user->gudang_id ?? \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
         foreach ($listBarang as $barang) {
-            $barang->dynamic_hpp = $this->calculateHppBarangJadi($barang->id, $user->gudang_id ?? 3);
+            $barang->dynamic_hpp = $this->calculateHppBarangJadi($barang->id, $defaultGudangId);
         }
     
         return view('harga.index', compact('listBarang', 'tipePenjualan'));
@@ -41,14 +43,10 @@ class HargaBarangPosController extends Controller
         $user = auth()->user();
         $barangTerpilih = \App\Models\MasterBarang::findOrFail($id);
 
-        if ($user && $user->gudang_id) {
-            $allowedType = null;
-            if ($user->gudang_id == 2) {
-                $allowedType = 'POS Gaharu';
-            } elseif ($user->gudang_id == 4) {
-                $allowedType = 'POS Kejingga';
-            }
-            if ($allowedType && $barangTerpilih->tipe_penjualan !== $allowedType) {
+        if ($user && $user->gudang_id && !$user->isSuperAdmin()) {
+            $uGudang = \App\Models\MasterGudang::find($user->gudang_id);
+            $allowedType = ($uGudang && str_contains(strtolower($uGudang->nama), 'kejingga')) ? 'POS Kejingga' : 'POS Gaharu';
+            if ($barangTerpilih->tipe_penjualan && $barangTerpilih->tipe_penjualan !== $allowedType) {
                 abort(403, 'Anda tidak memiliki akses ke produk ini.');
             }
         }
@@ -57,7 +55,8 @@ class HargaBarangPosController extends Controller
             ->orderBy('tgl_mulai', 'desc')
             ->get();
     
-        $barangTerpilih->dynamic_hpp = $this->calculateHppBarangJadi($id, $user->gudang_id ?? 3);
+        $defaultGudangId = $user->gudang_id ?? \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
+        $barangTerpilih->dynamic_hpp = $this->calculateHppBarangJadi($id, $defaultGudangId);
     
         return view('harga.show', compact('barangTerpilih', 'riwayatHarga'));
     }

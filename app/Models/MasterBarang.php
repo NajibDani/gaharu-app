@@ -232,6 +232,15 @@ public function resepBahanBakuAlternatif()
      */
     public static function autoHealUnconvertedPembelianBatches($targetBarangId = null): void
     {
+        // Cegah eksekusi global berulang yang membebani database pada setiap HTTP request
+        if (!$targetBarangId) {
+            $cacheKey = 'auto_heal_batches_last_run';
+            if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
+                return;
+            }
+            \Illuminate\Support\Facades\Cache::put($cacheKey, true, now()->addMinutes(30));
+        }
+
         $query = \Illuminate\Support\Facades\DB::table('master_barang')
             ->where('konversi_pembelian', '>', 1);
 
