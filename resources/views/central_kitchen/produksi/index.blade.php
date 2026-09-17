@@ -456,12 +456,9 @@
                                                                                 @endforeach
                                                                             </ul>
                                                                             <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                                                                                <form action="{{ route('ck-produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')">
-                                                                                    @csrf
-                                                                                    <button type="submit" class="btn btn-sm btn-outline-warning text-dark fw-bold">
-                                                                                        <i class="bi bi-box-arrow-right me-1"></i> Minta Bahan ke Gudang Utama
-                                                                                    </button>
-                                                                                </form>
+                                                                                <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold" onclick="if(confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')) document.getElementById('formMintaBahanCk{{ $wo->id }}').submit();">
+                                                                                    <i class="bi bi-box-arrow-right me-1"></i> Minta Bahan ke Gudang Utama
+                                                                                </button>
                                                                             </div>
 
                                                                             @if($isSuperAdmin)
