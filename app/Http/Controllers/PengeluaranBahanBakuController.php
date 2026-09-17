@@ -543,6 +543,7 @@ class PengeluaranBahanBakuController extends Controller
         ])->findOrFail($id);
 
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+        $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
 
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
@@ -556,18 +557,66 @@ class PengeluaranBahanBakuController extends Controller
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
-        foreach ($pengeluaran->details as $detail) {
-            if (!$isApproved) {
-                $est = $this->fifoService->getEstimatedHargaFIFO(
-                    $detail->barang_id,
-                    $detail->qty,
-                    $isWasted ? ($pengeluaran->gudang_id ?? MasterGudang::getGudangUtamaId()) : $gudangUtamaId,
-                    $isWasted ? $pengeluaran->divisi_id : null
-                );
-                $detail->hpp_total = $est['total_harga'];
+        $soDetailsMap = [];
+        if ($isOpname) {
+            $kodeOpname = null;
+            if (preg_match('/SO-\d+/', $pengeluaran->kode_pengeluaran, $matches)) {
+                $kodeOpname = $matches[0];
+            } elseif (preg_match('/SO-\d+/', $pengeluaran->keterangan ?? '', $matches)) {
+                $kodeOpname = $matches[0];
             }
+            if ($kodeOpname) {
+                $so = \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first();
+                if ($so) {
+                    foreach ($so->details as $sod) {
+                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
+                    }
+                }
+            }
+        }
 
-            if ($isWasted) {
+        $grandTotal = 0;
+
+        foreach ($pengeluaran->details as $detail) {
+            $hppTotal = (float) ($detail->hpp_total ?? 0);
+            if (!$isApproved || $hppTotal <= 0) {
+                if ($isOpname) {
+                    $hppTotal = $this->hitungNilaiOpname(
+                        $pengeluaran->gudang_id,
+                        $detail->barang_id,
+                        $detail->qty,
+                        $pengeluaran->divisi_id
+                    );
+                } else {
+                    $est = $this->fifoService->getEstimatedHargaFIFO(
+                        $detail->barang_id,
+                        $detail->qty,
+                        $isWasted ? ($pengeluaran->gudang_id ?? MasterGudang::getGudangUtamaId()) : $gudangUtamaId,
+                        $isWasted ? $pengeluaran->divisi_id : null
+                    );
+                    $hppTotal = (float) ($est['total_harga'] ?? 0);
+                }
+            }
+            if ($hppTotal <= 0) {
+                $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                $hppTotal = round($detail->qty * $hargaUnit, 2);
+            }
+            $detail->hpp_total = $hppTotal;
+
+            $selisihType = 'shortage';
+            if ($isOpname) {
+                $rawSelisih = $soDetailsMap[$detail->barang_id] ?? null;
+                if ($rawSelisih !== null && $rawSelisih > 0) {
+                    $selisihType = 'surplus';
+                }
+            }
+            $detail->selisih_type = $selisihType;
+
+            $signedHpp = ($selisihType === 'surplus') ? -$hppTotal : +$hppTotal;
+            $detail->signed_hpp = $signedHpp;
+            $grandTotal += $signedHpp;
+
+            if ($isWasted || $isOpname) {
                 $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
                 if ($pengeluaran->divisi_id) {
                     $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
@@ -586,7 +635,7 @@ class PengeluaranBahanBakuController extends Controller
 
         return view(
             'pengeluaran-bahan-baku.show',
-            compact('pengeluaran', 'gudangUtama', 'isApproved', 'isWasted', 'isSuperAdmin')
+            compact('pengeluaran', 'gudangUtama', 'isApproved', 'isWasted', 'isOpname', 'isSuperAdmin', 'grandTotal')
         );
     }
 
@@ -617,10 +666,30 @@ class PengeluaranBahanBakuController extends Controller
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
+        $soDetailsMap = [];
+        if ($isOpname) {
+            $kodeOpname = null;
+            if (preg_match('/SO-\d+/', $pengeluaran->kode_pengeluaran, $matches)) {
+                $kodeOpname = $matches[0];
+            } elseif (preg_match('/SO-\d+/', $pengeluaran->keterangan ?? '', $matches)) {
+                $kodeOpname = $matches[0];
+            }
+            if ($kodeOpname) {
+                $so = \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first();
+                if ($so) {
+                    foreach ($so->details as $sod) {
+                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
+                    }
+                }
+            }
+        }
+
         $grandTotal = 0;
         $totalKurang = 0;
+        $totalShortageHpp = 0;
+        $totalSurplusHpp = 0;
 
-        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $gudangUtamaId, &$grandTotal, &$totalKurang) {
+        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $gudangUtamaId, &$grandTotal, &$totalKurang, &$totalShortageHpp, &$totalSurplusHpp, $soDetailsMap) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
             if (!$isApproved || $hppTotal <= 0) {
                 if ($isOpname) {
@@ -644,7 +713,23 @@ class PengeluaranBahanBakuController extends Controller
                 $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                 $hppTotal = round($detail->qty * $hargaUnit, 2);
             }
-            $grandTotal += $hppTotal;
+
+            $selisihType = 'shortage';
+            if ($isOpname) {
+                $rawSelisih = $soDetailsMap[$detail->barang_id] ?? null;
+                if ($rawSelisih !== null && $rawSelisih > 0) {
+                    $selisihType = 'surplus';
+                    $totalSurplusHpp += $hppTotal;
+                } else {
+                    $totalShortageHpp += $hppTotal;
+                }
+            } else {
+                $totalShortageHpp += $hppTotal;
+            }
+
+            $signedHpp = ($selisihType === 'surplus') ? -$hppTotal : +$hppTotal;
+            $grandTotal += $signedHpp;
+
             $hargaSatuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
 
             $qtyDiminta = (float) $detail->qty;
@@ -671,8 +756,8 @@ class PengeluaranBahanBakuController extends Controller
             $satuan = $detail->barang->satuan ?? ($detail->satuan ?? 'pcs');
 
             if ($isOpname) {
-                $statusStok = 'Penyesuaian Stock Opname (Fisik)';
-                $statusColor = 'info';
+                $statusStok = $selisihType === 'surplus' ? 'Selisih Lebih (+)' : 'Selisih Kurang (-)';
+                $statusColor = $selisihType === 'surplus' ? 'success' : 'danger';
             } elseif ($stokTersedia > $qtyDiminta) {
                 $statusStok = 'Tersedia Penuh';
                 $statusColor = 'success';
@@ -694,6 +779,7 @@ class PengeluaranBahanBakuController extends Controller
 
             return [
                 'id'                 => $detail->id,
+                'barang_id'          => $detail->barang_id,
                 'nama_barang'        => $detail->barang->nama ?? '-',
                 'kode_barang'        => $detail->barang->kode_barang ?? '-',
                 'satuan'             => $satuan,
@@ -701,6 +787,8 @@ class PengeluaranBahanBakuController extends Controller
                 'konversi_pembelian' => $konversi,
                 'has_konversi'       => $hasKonv,
                 'qty'                => $qtyDiminta,
+                'selisih_type'       => $selisihType,
+                'signed_hpp'         => $signedHpp,
                 'stok_tersedia'      => $stokTersedia,
                 'stok_gudang_utama'  => $stokTersedia, // backward compatibility
                 'kekurangan'         => $kekurangan,
@@ -735,6 +823,8 @@ class PengeluaranBahanBakuController extends Controller
             'keterangan'          => $pengeluaran->keterangan ?? '-',
             'is_wo'               => $isWO,
             'grand_total'         => $grandTotal,
+            'total_shortage_hpp'  => $totalShortageHpp,
+            'total_surplus_hpp'   => $totalSurplusHpp,
             'total_item'          => count($details),
             'total_item_kurang'   => $totalKurang,
             'can_approve'         => auth()->user() && auth()->user()->canApprovePengeluaran(),
@@ -759,29 +849,70 @@ class PengeluaranBahanBakuController extends Controller
         ])->findOrFail($id);
 
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+        $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
 
         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
         $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
+
+        $soDetailsMap = [];
+        if ($isOpname) {
+            $kodeOpname = null;
+            if (preg_match('/SO-\d+/', $pengeluaran->kode_pengeluaran, $matches)) {
+                $kodeOpname = $matches[0];
+            } elseif (preg_match('/SO-\d+/', $pengeluaran->keterangan ?? '', $matches)) {
+                $kodeOpname = $matches[0];
+            }
+            if ($kodeOpname) {
+                $so = \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first();
+                if ($so) {
+                    foreach ($so->details as $sod) {
+                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
+                    }
+                }
+            }
+        }
+
         $grandTotal = 0;
 
         foreach ($pengeluaran->details as $detail) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
             if (!$isApproved) {
-                $est = $this->fifoService->getEstimatedHargaFIFO(
-                    $detail->barang_id,
-                    $detail->qty,
-                    $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
-                    $isWasted ? $pengeluaran->divisi_id : null
-                );
-                $hppTotal = (float) ($est['total_harga'] ?? 0);
+                if ($isOpname) {
+                    $hppTotal = $this->hitungNilaiOpname(
+                        $pengeluaran->gudang_id,
+                        $detail->barang_id,
+                        $detail->qty,
+                        $pengeluaran->divisi_id
+                    );
+                } else {
+                    $est = $this->fifoService->getEstimatedHargaFIFO(
+                        $detail->barang_id,
+                        $detail->qty,
+                        $isWasted ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                        $isWasted ? $pengeluaran->divisi_id : null
+                    );
+                    $hppTotal = (float) ($est['total_harga'] ?? 0);
+                }
             }
-            $grandTotal += $hppTotal;
+
+            $selisihType = 'shortage';
+            if ($isOpname) {
+                $rawSelisih = $soDetailsMap[$detail->barang_id] ?? null;
+                if ($rawSelisih !== null && $rawSelisih > 0) {
+                    $selisihType = 'surplus';
+                }
+            }
+            $detail->selisih_type = $selisihType;
+
+            $signedHpp = ($selisihType === 'surplus') ? -$hppTotal : +$hppTotal;
+            $detail->signed_hpp = $signedHpp;
+            $grandTotal += $signedHpp;
             $detail->calculated_hpp = $hppTotal;
             $detail->harga_satuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
 
-            if ($isWasted) {
+            if ($isWasted || $isOpname) {
                 $stokGudangQuery = StokGudang::where('barang_id', $detail->barang_id)->where('gudang_id', $pengeluaran->gudang_id);
                 if ($pengeluaran->divisi_id) {
                     $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
@@ -797,7 +928,7 @@ class PengeluaranBahanBakuController extends Controller
         }
 
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
-        $pdf->loadView('pengeluaran-bahan-baku.pdf', compact('pengeluaran', 'gudangUtama', 'grandTotal', 'isApproved', 'isWasted'));
+        $pdf->loadView('pengeluaran-bahan-baku.pdf', compact('pengeluaran', 'gudangUtama', 'grandTotal', 'isApproved', 'isWasted', 'isOpname'));
 
         $filename = ($isWasted ? 'Berita-Acara-Wasted-' : 'Transfer-Bahan-') . $pengeluaran->kode_pengeluaran . '.pdf';
         return $pdf->stream($filename);

@@ -260,6 +260,9 @@
 
                     $totalDiminta += $qtyDiminta;
                     $totalKekurangan += $kurang;
+
+                    $isOpname   = $isOpname ?? false;
+                    $isSurplus  = ($detail->selisih_type ?? 'shortage') === 'surplus';
                 @endphp
                 <tr>
                     <td class="text-center text-muted">{{ $index + 1 }}</td>
@@ -271,7 +274,14 @@
                         @endif
                     </td>
                     <td class="text-end fw-bold">
-                        {{ number_format($qtyDiminta, 2, ',', '.') }} <span class="text-muted" style="font-size: 8.5px;">{{ $satuan }}</span>
+                        @if($isOpname)
+                            <span class="{{ $isSurplus ? 'text-success' : 'text-danger' }}">
+                                {{ $isSurplus ? '+' : '-' }}{{ number_format($qtyDiminta, 2, ',', '.') }}
+                            </span>
+                        @else
+                            {{ number_format($qtyDiminta, 2, ',', '.') }}
+                        @endif
+                        <span class="text-muted" style="font-size: 8.5px;">{{ $satuan }}</span>
                         @if($hasKonv)
                             <div style="font-size: 8px; color: #2b6cb0; font-weight: normal;">= {{ number_format($qtyDiminta / $konversi, 2, ',', '.') }} {{ $satuanBeli }}</div>
                         @endif
@@ -283,7 +293,9 @@
                         @endif
                     </td>
                     <td class="text-end {{ $kurang > 0 ? 'text-danger' : 'text-success' }}">
-                        @if($kurang > 0)
+                        @if($isOpname)
+                            -
+                        @elseif($kurang > 0)
                             -{{ number_format($kurang, 2, ',', '.') }} <span style="font-size: 8.5px;">{{ $satuan }}</span>
                             @if($hasKonv)
                                 <div style="font-size: 8px; color: #e53e3e; font-weight: normal;">-{{ number_format($kurang / $konversi, 2, ',', '.') }} {{ $satuanBeli }}</div>
@@ -293,7 +305,13 @@
                         @endif
                     </td>
                     <td class="text-center">
-                        @if($stokTersedia > $qtyDiminta)
+                        @if($isOpname)
+                            @if($isSurplus)
+                                <span class="status-pill status-ok">Selisih Lebih (+)</span>
+                            @else
+                                <span class="status-pill status-empty">Selisih Kurang (-)</span>
+                            @endif
+                        @elseif($stokTersedia > $qtyDiminta)
                             <span class="status-pill status-ok">Tersedia Penuh</span>
                         @elseif($stokTersedia == $qtyDiminta && $stokTersedia > 0)
                             <span class="status-pill status-shortage">Stok Terakhir (Segera Beli)</span>
@@ -312,8 +330,12 @@
                     <td class="text-end text-muted">
                         {{ number_format($hargaSat, $decSat, ',', '.') }}
                     </td>
-                    <td class="text-end fw-bold">
-                        Rp {{ number_format($hppVal, $decHpp, ',', '.') }}
+                    <td class="text-end fw-bold {{ $isOpname && $isSurplus ? 'text-success' : '' }}">
+                        @if($isOpname && $isSurplus)
+                            -Rp {{ number_format($hppVal, $decHpp, ',', '.') }}
+                        @else
+                            Rp {{ number_format($hppVal, $decHpp, ',', '.') }}
+                        @endif
                     </td>
                 </tr>
             @empty
@@ -328,12 +350,20 @@
                 <td class="text-end">{{ number_format($totalDiminta, 2, ',', '.') }}</td>
                 <td></td>
                 <td class="text-end {{ $totalKekurangan > 0 ? 'text-danger' : 'text-success' }}">
-                    {{ $totalKekurangan > 0 ? '-' . number_format($totalKekurangan, 2, ',', '.') : '0,00' }}
+                    @if($isOpname)
+                        -
+                    @else
+                        {{ $totalKekurangan > 0 ? '-' . number_format($totalKekurangan, 2, ',', '.') : '0,00' }}
+                    @endif
                 </td>
                 <td></td>
-                <td class="text-end">Total HPP:</td>
+                <td class="text-end">Total HPP {{ $isOpname ? 'Net' : '' }}:</td>
                 <td class="text-end" style="color: #7A4517; font-size: 11px;">
-                    Rp {{ number_format($grandTotal, 0, ',', '.') }}
+                    @if($grandTotal < 0)
+                        <span style="color: #15803d;">-Rp {{ number_format(abs($grandTotal), 0, ',', '.') }}</span>
+                    @else
+                        Rp {{ number_format($grandTotal, 0, ',', '.') }}
+                    @endif
                 </td>
             </tr>
         </tfoot>

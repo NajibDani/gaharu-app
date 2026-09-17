@@ -262,7 +262,30 @@ class LaporanPersediaanController extends Controller
         $data = $query->get();
 
         $totalTransaksi = $data->count();
-        $totalNilaiHpp  = $data->sum(fn($d) => $d->details->sum('hpp_total'));
+        $totalNilaiHpp  = $data->sum(function($d) {
+            $isOpname = ($d->jenis_pengeluaran === 'stock_opname' || str_starts_with($d->kode_pengeluaran, 'PBK-SO-'));
+            if ($isOpname) {
+                $kodeOpname = null;
+                if (preg_match('/SO-\d+/', $d->kode_pengeluaran, $m)) $kodeOpname = $m[0];
+                elseif (preg_match('/SO-\d+/', $d->keterangan ?? '', $m)) $kodeOpname = $m[0];
+                $so = $kodeOpname ? \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first() : null;
+                if ($so) {
+                    $map = [];
+                    foreach ($so->details as $sod) $map[$sod->barang_id] = (float)$sod->selisih;
+                    $net = 0;
+                    foreach ($d->details as $det) {
+                        $hpp = (float)($det->hpp_total ?? 0);
+                        if (($map[$det->barang_id] ?? 0) > 0) {
+                            $net -= $hpp;
+                        } else {
+                            $net += $hpp;
+                        }
+                    }
+                    return $net;
+                }
+            }
+            return $d->details->sum('hpp_total');
+        });
         $totalQty       = $data->sum(fn($d) => $d->details->sum('qty'));
         $totalApproved  = $data->whereIn('status', ['approved', 'disetujui'])->count();
 

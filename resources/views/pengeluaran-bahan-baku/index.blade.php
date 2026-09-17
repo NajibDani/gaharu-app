@@ -548,10 +548,15 @@ function renderDetailPengeluaran(data) {
         let konv = Number(d.konversi_pembelian || 1);
         let sBeli = d.satuan_pembelian;
 
-        let kurangBadge = d.kekurangan > 0
-            ? `<span class="text-danger fw-bold">-${d.kekurangan.toLocaleString('id-ID')} <small class="text-muted fw-normal">${d.satuan}</small></span>` +
-              (hasKonv ? `<div class="text-danger small" style="font-size:10.5px;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
-            : `<span class="text-success fw-semibold"><i class="bi bi-check2"></i> 0</span>`;
+        let isSurplus = d.selisih_type === 'surplus';
+        let signedHppVal = d.signed_hpp !== undefined ? d.signed_hpp : (isSurplus ? -d.total_harga : d.total_harga);
+
+        let kurangBadge = data.is_opname
+            ? `<span class="text-muted small">-</span>`
+            : (d.kekurangan > 0
+                ? `<span class="text-danger fw-bold">-${d.kekurangan.toLocaleString('id-ID')} <small class="text-muted fw-normal">${d.satuan}</small></span>` +
+                  (hasKonv ? `<div class="text-danger small" style="font-size:10.5px;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
+                : `<span class="text-success fw-semibold"><i class="bi bi-check2"></i> 0</span>`);
 
         let statusPill = `<span class="badge bg-${d.status_color}-subtle text-${d.status_color} border border-${d.status_color}-subtle px-2 py-1">${d.status_stok}</span>`;
 
@@ -574,7 +579,7 @@ function renderDetailPengeluaran(data) {
                     ${hasKonv ? `<div class="text-muted" style="font-size:10.5px;">1 ${sBeli} = ${konv.toLocaleString('id-ID')} ${d.satuan}</div>` : ''}
                 </td>
                 <td class="text-end fw-bold text-dark">
-                    ${d.qty.toLocaleString('id-ID')} <span class="text-muted fw-normal small">${d.satuan}</span>
+                    ${data.is_opname ? `<span class="${isSurplus ? 'text-success' : 'text-danger'}">${isSurplus ? '+' : '-'}${d.qty.toLocaleString('id-ID')}</span>` : d.qty.toLocaleString('id-ID')} <span class="text-muted fw-normal small">${d.satuan}</span>
                     ${hasKonv ? `<div class="text-primary fw-normal small" style="font-size:11px;">= ${(d.qty / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : ''}
                 </td>
                 <td class="text-end">
@@ -593,8 +598,8 @@ function renderDetailPengeluaran(data) {
                 <td class="text-end text-muted small">
                     ${formatCurrency(d.harga_satuan)}
                 </td>
-                <td class="text-end fw-bold text-dark">
-                    ${formatCurrency(d.total_harga)}
+                <td class="text-end fw-bold ${data.is_opname && isSurplus ? 'text-success' : 'text-dark'}">
+                    ${data.is_opname && isSurplus ? '-Rp ' + formatCurrency(d.total_harga).replace('Rp ', '') : formatCurrency(d.total_harga)}
                 </td>
                 ${deleteItemBtn}
             </tr>
@@ -750,6 +755,9 @@ function renderDetailPengeluaran(data) {
         `;
     }
 
+    let colQtyLabel = data.is_wasted ? 'Qty Wasted' : (data.is_opname ? 'Selisih SO' : 'Qty Diminta');
+    let colStokLabel = data.is_wasted ? 'Stok Lokasi' : (data.is_opname ? 'Stok Lokasi' : 'Stok Gd. Utama');
+
     body.innerHTML = `
         <div id="printableDetailArea" class="p-2">
             ${alertShortage}
@@ -777,7 +785,7 @@ function renderDetailPengeluaran(data) {
                                 <span>${colStokLabel}</span>
                                 <button type="button" class="btn btn-link btn-sm p-0 text-primary ms-1" onclick="refreshCurrentModalStok(this)" title="Refresh stok gudang utama"><i class="bi bi-arrow-clockwise"></i></button>
                             </th>
-                            <th width="110" class="text-end">Kekurangan</th>
+                            <th width="110" class="text-end">${data.is_opname ? 'Tipe' : 'Kekurangan'}</th>
                             <th width="130">Ketersediaan</th>
                             <th width="110" class="text-end">Harga Satuan</th>
                             <th width="130" class="text-end">Total HPP</th>
@@ -789,8 +797,10 @@ function renderDetailPengeluaran(data) {
                     </tbody>
                     <tfoot class="table-light border-top">
                         <tr>
-                            <th colspan="7" class="text-end fw-bold">Total Nilai HPP ${!data.is_approved ? '<span class="text-muted fw-normal small">(Estimasi)</span>' : ''}:</th>
-                            <th class="text-end fw-bold fs-6" style="color:#7A4517;">${formatCurrency(data.grand_total)}</th>
+                            <th colspan="7" class="text-end fw-bold">Total Nilai HPP ${data.is_opname ? 'Net' : ''} ${!data.is_approved ? '<span class="text-muted fw-normal small">(Estimasi)</span>' : ''}:</th>
+                            <th class="text-end fw-bold fs-6" style="color:#7A4517;">
+                                ${data.grand_total < 0 ? `<span class="text-success">-Rp ${formatCurrency(Math.abs(data.grand_total)).replace('Rp ', '')}</span>` : formatCurrency(data.grand_total)}
+                            </th>
                             ${canModifyItems ? '<th></th>' : ''}
                         </tr>
                     </tfoot>
@@ -830,18 +840,26 @@ function downloadModalAsImage() {
         totalDiminta += d.qty;
         totalKurang += d.kekurangan;
 
-        let kurangText = d.kekurangan > 0
-            ? `<span style="font-weight:700; color:#dc2626;">-${d.kekurangan.toLocaleString('id-ID')}</span> <span style="font-size:9px; color:#64748b;">${d.satuan}</span>` +
-              (hasKonv ? `<div style="font-size:8.5px; color:#dc2626;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
-            : '<span style="font-weight:600; color:#16a34a;">0</span>';
+        let isSurplus = d.selisih_type === 'surplus';
 
-        let availPill = d.stok_tersedia > d.qty
-            ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Tersedia Penuh</span>'
-            : (d.stok_tersedia == d.qty && d.stok_tersedia > 0
-                ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fffbeb; color:#b45309; border:1px solid #fde68a; border-radius:3px;">Stok Terakhir (Segera Beli)</span>'
-                : (d.stok_tersedia > 0
-                    ? `<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Kurang ${d.kekurangan.toLocaleString('id-ID')} ${d.satuan}</span>`
-                    : '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Habis (0)</span>'));
+        let kurangText = data.is_opname
+            ? '<span style="color:#64748b;">-</span>'
+            : (d.kekurangan > 0
+                ? `<span style="font-weight:700; color:#dc2626;">-${d.kekurangan.toLocaleString('id-ID')}</span> <span style="font-size:9px; color:#64748b;">${d.satuan}</span>` +
+                  (hasKonv ? `<div style="font-size:8.5px; color:#dc2626;">-${(d.kekurangan / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : '')
+                : '<span style="font-weight:600; color:#16a34a;">0</span>');
+
+        let availPill = data.is_opname
+            ? (isSurplus
+                ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Selisih Lebih (+)</span>'
+                : '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Selisih Kurang (-)</span>')
+            : (d.stok_tersedia > d.qty
+                ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:3px;">Tersedia Penuh</span>'
+                : (d.stok_tersedia == d.qty && d.stok_tersedia > 0
+                    ? '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fffbeb; color:#b45309; border:1px solid #fde68a; border-radius:3px;">Stok Terakhir (Segera Beli)</span>'
+                    : (d.stok_tersedia > 0
+                        ? `<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Kurang ${d.kekurangan.toLocaleString('id-ID')} ${d.satuan}</span>`
+                        : '<span style="display:inline-block; padding:2px 6px; font-size:9.5px; font-weight:bold; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px;">Habis (0)</span>')));
 
         let bgRow = idx % 2 === 1 ? '#f8fafc' : '#ffffff';
 
@@ -854,7 +872,7 @@ function downloadModalAsImage() {
                     ${hasKonv ? `<div style="font-size:8.5px; color:#64748b;">1 ${sBeli} = ${konv.toLocaleString('id-ID')} ${d.satuan}</div>` : ''}
                 </td>
                 <td style="padding:8px 8px; text-align:right; font-weight:700; color:#0f172a; border:1px solid #e2e8f0; font-size:11px;">
-                    ${d.qty.toLocaleString('id-ID')} <span style="font-size:9px; color:#64748b; font-weight:normal;">${d.satuan}</span>
+                    ${data.is_opname ? `<span style="color:${isSurplus ? '#16a34a' : '#dc2626'};">${isSurplus ? '+' : '-'}${d.qty.toLocaleString('id-ID')}</span>` : d.qty.toLocaleString('id-ID')} <span style="font-size:9px; color:#64748b; font-weight:normal;">${d.satuan}</span>
                     ${hasKonv ? `<div style="font-size:8.5px; color:#0284c7; font-weight:normal;">= ${(d.qty / konv).toLocaleString('id-ID', {maximumFractionDigits: 2})} ${sBeli}</div>` : ''}
                 </td>
                 <td style="padding:8px 8px; text-align:right; border:1px solid #e2e8f0; font-size:11px;">
@@ -871,8 +889,8 @@ function downloadModalAsImage() {
                 <td style="padding:8px 8px; text-align:right; color:#64748b; border:1px solid #e2e8f0; font-size:10.5px;">
                     ${formatCurrency(d.harga_satuan)}
                 </td>
-                <td style="padding:8px 8px; text-align:right; font-weight:700; color:#0f172a; border:1px solid #e2e8f0; font-size:11px;">
-                    ${formatCurrency(d.total_harga)}
+                <td style="padding:8px 8px; text-align:right; font-weight:700; color:${data.is_opname && isSurplus ? '#16a34a' : '#0f172a'}; border:1px solid #e2e8f0; font-size:11px;">
+                    ${data.is_opname && isSurplus ? '-Rp ' + formatCurrency(d.total_harga).replace('Rp ', '') : formatCurrency(d.total_harga)}
                 </td>
             </tr>
         `;

@@ -231,11 +231,19 @@
                                 $hasKonv    = ($satuanBeli && $konversi > 1 && $satuanBeli !== $satuan);
 
                                 $hargaFIFO = $detail->qty > 0 ? $detail->hpp_total / $detail->qty : 0;
-                                $grandTotal += $detail->hpp_total;
                                 $totalDiminta += $qtyDiminta;
                                 $totalKurang += $kurang;
 
-                                if ($stokTersedia > $qtyDiminta) {
+                                $isSurplus = ($detail->selisih_type ?? 'shortage') === 'surplus';
+                                $signedHpp = $detail->signed_hpp ?? ($isSurplus ? -$detail->hpp_total : $detail->hpp_total);
+
+                                if ($isOpname) {
+                                    if ($isSurplus) {
+                                        $statusPill = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-plus-circle me-1"></i>Selisih Lebih (+)</span>';
+                                    } else {
+                                        $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i class="bi bi-dash-circle me-1"></i>Selisih Kurang (-)</span>';
+                                    }
+                                } elseif ($stokTersedia > $qtyDiminta) {
                                     $statusPill = '<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Tersedia Penuh</span>';
                                 } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
                                     $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"><i class="bi bi-exclamation-circle me-1"></i>Stok Terakhir di Gudang (Segera Pembelian)</span>';
@@ -255,7 +263,14 @@
                                     @endif
                                 </td>
                                 <td class="text-end fw-bold text-dark">
-                                    {{ number_format($qtyDiminta, 2, ',', '.') }} <span class="text-muted fw-normal small">{{ $satuan }}</span>
+                                    @if($isOpname)
+                                        <span class="{{ $isSurplus ? 'text-success' : 'text-danger' }}">
+                                            {{ $isSurplus ? '+' : '-' }}{{ number_format($qtyDiminta, 2, ',', '.') }}
+                                        </span>
+                                    @else
+                                        {{ number_format($qtyDiminta, 2, ',', '.') }}
+                                    @endif
+                                    <span class="text-muted fw-normal small">{{ $satuan }}</span>
                                     @if($hasKonv)
                                         <div class="text-primary fw-normal small" style="font-size: 11px;">
                                              = {{ number_format($qtyDiminta / $konversi, 2, ',', '.') }} {{ $satuanBeli }}
@@ -274,7 +289,9 @@
                                     @endif
                                 </td>
                                 <td class="text-end">
-                                    @if($kurang > 0)
+                                    @if($isOpname)
+                                        <span class="text-muted small">-</span>
+                                    @elseif($kurang > 0)
                                         <span class="text-danger fw-bold">-{{ number_format($kurang, 2, ',', '.') }} <small class="fw-normal">{{ $satuan }}</small></span>
                                         @if($hasKonv)
                                             <div class="text-danger small" style="font-size: 11px;">
@@ -298,8 +315,12 @@
                                         <small class="text-muted d-block" style="font-size: 9px;">(Estimasi)</small>
                                     @endif
                                 </td>
-                                <td class="text-end fw-bold text-dark">
-                                    Rp {{ number_format($detail->hpp_total, $decHppShow, ',', '.') }}
+                                <td class="text-end fw-bold {{ $isOpname && $isSurplus ? 'text-success' : 'text-dark' }}">
+                                    @if($isOpname && $isSurplus)
+                                        -Rp {{ number_format($detail->hpp_total, $decHppShow, ',', '.') }}
+                                    @else
+                                        Rp {{ number_format($detail->hpp_total, $decHppShow, ',', '.') }}
+                                    @endif
                                 </td>
                                 @if($isSuperAdmin || $pengeluaran->status === 'draft')
                                     <td class="text-center">
@@ -325,15 +346,23 @@
                     </tbody>
                     <tfoot class="table-light border-top fw-bold">
                         <tr>
-                            <td colspan="2" class="text-end">Total {{ $isWasted ? 'Wasted' : 'Diminta' }}:</td>
+                            <td colspan="2" class="text-end">Total {{ $isWasted ? 'Wasted' : ($isOpname ? 'Selisih SO' : 'Diminta') }}:</td>
                             <td class="text-end text-dark">{{ number_format($totalDiminta, 2, ',', '.') }}</td>
                             <td></td>
                             <td class="text-end {{ $totalKurang > 0 ? 'text-danger' : 'text-success' }}">
-                                {{ $totalKurang > 0 ? '-' . number_format($totalKurang, 2, ',', '.') : '0,00' }}
+                                @if($isOpname)
+                                    <span class="text-muted small">-</span>
+                                @else
+                                    {{ $totalKurang > 0 ? '-' . number_format($totalKurang, 2, ',', '.') : '0,00' }}
+                                @endif
                             </td>
-                            <td colspan="2" class="text-end">Total Nilai HPP @if($pengeluaran->status !== 'approved' && $pengeluaran->status !== 'disetujui') (Estimasi) @endif:</td>
+                            <td colspan="2" class="text-end">Total Nilai HPP {{ $isOpname ? 'Net' : '' }} @if($pengeluaran->status !== 'approved' && $pengeluaran->status !== 'disetujui') (Estimasi) @endif:</td>
                             <td class="text-end fs-6" style="color:#7A4517;">
-                                Rp {{ number_format($grandTotal, 2, ',', '.') }}
+                                @if($grandTotal < 0)
+                                    <span class="text-success">-Rp {{ number_format(abs($grandTotal), 2, ',', '.') }}</span>
+                                @else
+                                    Rp {{ number_format($grandTotal, 2, ',', '.') }}
+                                @endif
                             </td>
                             @if($isSuperAdmin || $pengeluaran->status === 'draft')
                                 <td></td>
