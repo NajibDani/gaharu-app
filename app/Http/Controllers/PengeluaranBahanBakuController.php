@@ -548,11 +548,13 @@ class PengeluaranBahanBakuController extends Controller
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
-        if ($pengeluaran->gudang_id) {
-            StokGudang::reconcileStockSummary(null, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
-        }
-        if ($gudangUtamaId) {
-            StokGudang::reconcileStockSummary(null, $gudangUtamaId);
+        foreach ($pengeluaran->details as $dItem) {
+            if ($pengeluaran->gudang_id) {
+                StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+            }
+            if ($gudangUtamaId) {
+                StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+            }
         }
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
@@ -656,12 +658,14 @@ class PengeluaranBahanBakuController extends Controller
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
-        // Rekonsiliasi ringkasan stok gudang agar 100% selaras dengan batch aktif & transaksi stok
-        if ($pengeluaran->gudang_id) {
-            StokGudang::reconcileStockSummary(null, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
-        }
-        if ($gudangUtamaId) {
-            StokGudang::reconcileStockSummary(null, $gudangUtamaId);
+        // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
+        foreach ($pengeluaran->details as $dItem) {
+            if ($pengeluaran->gudang_id) {
+                StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+            }
+            if ($gudangUtamaId) {
+                StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+            }
         }
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);

@@ -6,18 +6,17 @@ $kernel->bootstrap();
 
 auth()->loginUsingId(1);
 
-$pbks = App\Models\PengeluaranBahanBaku::latest()->take(5)->get();
+$pbks = App\Models\PengeluaranBahanBaku::latest()->take(10)->get();
 
 foreach ($pbks as $pbk) {
-    echo "Testing PBK ID {$pbk->id} ({$pbk->kode_pengeluaran}):\n";
+    $start = microtime(true);
     try {
         $ctrl = app(App\Http\Controllers\PengeluaranBahanBakuController::class);
         $res = $ctrl->detailJson($pbk->id);
-        echo "  Status: " . $res->status() . "\n";
-        $data = json_decode($res->getContent(), true);
-        echo "  Details count: " . count($data['details'] ?? []) . "\n";
+        $duration = round((microtime(true) - $start) * 1000, 2);
+        echo "PBK ID {$pbk->id} ({$pbk->kode_pengeluaran}): {$duration} ms | Status: {$res->status()}\n";
     } catch (\Throwable $e) {
-        echo "  ERROR: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine() . "\n";
-        echo $e->getTraceAsString() . "\n";
+        $duration = round((microtime(true) - $start) * 1000, 2);
+        echo "PBK ID {$pbk->id} ({$pbk->kode_pengeluaran}): {$duration} ms | ERROR: {$e->getMessage()}\n";
     }
 }
