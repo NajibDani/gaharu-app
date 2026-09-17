@@ -75,8 +75,8 @@ class StokGudang extends Model
             } else {
                 $batchQuery->whereNull('divisi_id');
             }
-            $hasBatches = $batchQuery->exists();
-            $batchSum = (float) ($batchQuery->where('qty_sisa', '>', 0)->sum('qty_sisa') ?? 0);
+            $hasActiveBatches = (clone $batchQuery)->where('qty_sisa', '>', 0)->exists();
+            $batchSum = (float) ((clone $batchQuery)->where('qty_sisa', '>', 0)->sum('qty_sisa') ?? 0);
 
             $txIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')->where('barang_id', $bId)->where('gudang_tujuan_id', $gId);
             $txOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')->where('barang_id', $bId)->where('gudang_asal_id', $gId);
@@ -89,7 +89,7 @@ class StokGudang extends Model
             }
             $txNet = (float) ($txIn->sum('qty') - $txOut->sum('qty'));
 
-            $targetJumlah = $hasBatches ? $batchSum : max(0, $txNet);
+            $targetJumlah = $hasActiveBatches ? max($batchSum, max(0, $txNet)) : max(0, $txNet);
 
             $sgQuery = \Illuminate\Support\Facades\DB::table('stok_gudang')->where('gudang_id', $gId)->where('barang_id', $bId);
             if ($dId) {
