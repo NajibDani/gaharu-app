@@ -11,6 +11,12 @@ use App\Models\StockOpnameDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
 
 class StockOpnameController extends Controller
 {
@@ -1464,6 +1470,289 @@ class StockOpnameController extends Controller
         } else {
             $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
             return round($selisih * $hargaTerakhir, 2);
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | EXPORT & IMPORT EXCEL
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Download Excel template atau list barang aktif gudang dengan stok sistem
+     */
+    public function downloadTemplate(Request $request)
+    {
+        $gudangId = $request->query('gudang_id');
+        $divisiId = $request->query('divisi_id');
+        $tanggal  = $request->query('tanggal', date('Y-m-d'));
+
+        if (!$gudangId) {
+            return redirect()->back()->with('error', 'Silakan pilih gudang terlebih dahulu.');
+        }
+
+        $gudang = MasterGudang::find($gudangId);
+        $divisi = $divisiId ? GudangDivisi::find($divisiId) : null;
+        $namaGudang = $gudang ? $gudang->nama : 'Gudang';
+
+        // Load items using same query as loadBarang logic
+        $query = \App\Models\MasterBarang::with('kategori')->where('is_active', true);
+
+        // Filter bahan baku dinonaktifkan di outlet & divisi
+        $query->where(function ($q) use ($gudangId, $divisiId) {
+            $q->where('is_bahan_baku', false)
+              ->orWhere(function ($subQ) use ($gudangId, $divisiId) {
+                  $subQ->where('is_bahan_baku', true)
+                       ->whereNotExists(function ($notExistsQuery) use ($gudangId, $divisiId) {
+                           $notExistsQuery->select(DB::raw(1))
+                               ->from('barang_minimum_stock')
+                               ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                               ->where('barang_minimum_stock.gudang_id', $gudangId)
+                               ->where('barang_minimum_stock.is_active', false);
+                           if ($divisiId) {
+                               $notExistsQuery->where('barang_minimum_stock.divisi_id', $divisiId);
+                           } else {
+                               $notExistsQuery->whereNull('barang_minimum_stock.divisi_id');
+                           }
+                       });
+              });
+        });
+
+        $barangs = $query->orderBy('kode_barang', 'asc')->get();
+
+        $stokGudangObj = new \App\Http\Controllers\StokGudangController();
+        $items = [];
+
+        foreach ($barangs as $b) {
+            $stokSistem = $stokGudangObj->hitungStokByTanggal($gudangId, $b->id, $tanggal, $divisiId);
+            $hargaFifo = $this->getHargaTerakhirBarang($b->id);
+
+            $items[] = [
+                'kode_barang' => $b->kode_barang,
+                'nama'        => $b->nama,
+                'kategori'    => $b->kategori->nama ?? '-',
+                'satuan'      => $b->satuan_stok ?? $b->satuan ?? 'PCS',
+                'stok_sistem' => (float) $stokSistem,
+                'stok_fisik'  => (float) $stokSistem,
+                'harga_fifo'  => (float) $hargaFifo,
+            ];
+        }
+
+        $title = "Template Stock Opname - " . $namaGudang . ($divisi ? " ({$divisi->nama})" : "");
+        $slugGudang = \Illuminate\Support\Str::slug($namaGudang, '_');
+        return $this->generateExcelSpreadsheet($items, $title, "Template_Stock_Opname_{$slugGudang}_{$tanggal}.xlsx");
+    }
+
+    /**
+     * Export Excel dari dokumen Stock Opname yang sudah tersimpan (Draft / Approved)
+     */
+    public function exportExcel($id)
+    {
+        $opname = StockOpname::with(['gudang', 'divisi', 'details.barang.kategori'])->findOrFail($id);
+        $namaGudang = $opname->gudang ? $opname->gudang->nama : 'Gudang';
+
+        $items = [];
+        foreach ($opname->details as $d) {
+            $b = $d->barang;
+            $items[] = [
+                'kode_barang' => $b ? $b->kode_barang : '-',
+                'nama'        => $b ? $b->nama : '-',
+                'kategori'    => ($b && $b->kategori) ? $b->kategori->nama : '-',
+                'satuan'      => $b ? ($b->satuan_stok ?? $b->satuan ?? 'PCS') : 'PCS',
+                'stok_sistem' => (float) $d->stok_sistem,
+                'stok_fisik'  => (float) $d->stok_fisik,
+                'harga_fifo'  => (float) ($d->selisih != 0 ? abs($d->nilai_selisih / $d->selisih) : $this->getHargaTerakhirBarang($d->barang_id)),
+            ];
+        }
+
+        $title = "Stock Opname " . $opname->kode_opname . " - " . $namaGudang;
+        $tanggalStr = date('Y-m-d', strtotime($opname->tanggal));
+        return $this->generateExcelSpreadsheet($items, $title, "Stock_Opname_{$opname->kode_opname}_{$tanggalStr}.xlsx");
+    }
+
+    /**
+     * Shared helper to construct and download Excel file
+     */
+    private function generateExcelSpreadsheet(array $items, string $title, string $fileName)
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Stock Opname');
+
+        // Header Title
+        $sheet->setCellValue('A1', $title);
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+
+        $headers = [
+            'No',
+            'Kode Barang',
+            'Nama Barang',
+            'Kategori',
+            'Satuan',
+            'Stok Sistem',
+            'Stok Fisik',
+            'Selisih',
+            'Harga FIFO / HPP',
+            'Nilai Selisih'
+        ];
+
+        $startRow = 3;
+        $sheet->fromArray($headers, null, "A{$startRow}");
+
+        // Format header row
+        $headerRange = "A{$startRow}:J{$startRow}";
+        $sheet->getStyle($headerRange)->getFont()->setBold(true)->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle($headerRange)->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('7A4517'); // Theme color
+
+        // Highlight Stok Fisik header column (G)
+        $sheet->getStyle("G{$startRow}")->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()->setRGB('2E7D32'); // Dark green
+
+        $row = $startRow + 1;
+        $no = 1;
+
+        foreach ($items as $item) {
+            $sheet->setCellValue("A{$row}", $no);
+            $sheet->setCellValue("B{$row}", $item['kode_barang']);
+            $sheet->setCellValue("C{$row}", $item['nama']);
+            $sheet->setCellValue("D{$row}", $item['kategori']);
+            $sheet->setCellValue("E{$row}", $item['satuan']);
+            $sheet->setCellValue("F{$row}", $item['stok_sistem']);
+            $sheet->setCellValue("G{$row}", $item['stok_fisik']);
+            $sheet->setCellValue("H{$row}", "=G{$row}-F{$row}");
+            $sheet->setCellValue("I{$row}", $item['harga_fifo']);
+            $sheet->setCellValue("J{$row}", "=H{$row}*I{$row}");
+
+            // Colorize column G (Stok Fisik) input cell
+            $sheet->getStyle("G{$row}")->getFill()
+                ->setFillType(Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('E8F5E9'); // Light green
+
+            $no++;
+            $row++;
+        }
+
+        $lastRow = $row - 1;
+        if ($lastRow >= $startRow + 1) {
+            // Number formatting
+            $sheet->getStyle("F" . ($startRow + 1) . ":H{$lastRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+            $sheet->getStyle("I" . ($startRow + 1) . ":J{$lastRow}")->getNumberFormat()->setFormatCode('Rp #,##0.00');
+            
+            // Borders
+            $borderStyle = [
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => 'D0D0D0'],
+                    ],
+                ],
+            ];
+            $sheet->getStyle("A{$startRow}:J{$lastRow}")->applyFromArray($borderStyle);
+        }
+
+        // Auto-fit columns
+        foreach (range('A', 'J') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $writer = new Xlsx($spreadsheet);
+
+        if (ob_get_length()) ob_clean();
+
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment;filename="' . $fileName . '"');
+        header('Cache-Control: max-age=0');
+
+        $writer->save('php://output');
+        exit;
+    }
+
+    /**
+     * Import Excel file to update stok_fisik in form
+     */
+    public function importExcel(Request $request)
+    {
+        $request->validate([
+            'file_excel' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        try {
+            $file = $request->file('file_excel');
+            $spreadsheet = IOFactory::load($file->getRealPath());
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, true);
+
+            $importedItems = [];
+            // Auto-detect header row (could be row 1 or row 3)
+            $headerRowIndex = 1;
+            $kodeColLetter = 'B';
+            $stokFisikColLetter = 'G';
+
+            foreach ($rows as $rowIndex => $row) {
+                // Check if row contains 'Kode Barang' or 'Kode'
+                foreach ($row as $colLetter => $val) {
+                    if (is_string($val) && (strcasecmp(trim($val), 'Kode Barang') === 0 || strcasecmp(trim($val), 'Kode') === 0)) {
+                        $headerRowIndex = $rowIndex;
+                        $kodeColLetter = $colLetter;
+                        break;
+                    }
+                }
+                if ($headerRowIndex === $rowIndex) {
+                    foreach ($row as $colLetter => $val) {
+                        if (is_string($val) && strcasecmp(trim($val), 'Stok Fisik') === 0) {
+                            $stokFisikColLetter = $colLetter;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            for ($r = $headerRowIndex + 1; $r <= count($rows); $r++) {
+                $row = $rows[$r] ?? null;
+                if (!$row) continue;
+
+                $kodeBarang = trim((string)($row[$kodeColLetter] ?? ''));
+                $stokFisikVal = $row[$stokFisikColLetter] ?? null;
+
+                if (!empty($kodeBarang)) {
+                    $cleanStokFisik = 0;
+                    if ($stokFisikVal !== null && $stokFisikVal !== '') {
+                        if (is_numeric($stokFisikVal)) {
+                            $cleanStokFisik = (float) $stokFisikVal;
+                        } else if (is_string($stokFisikVal)) {
+                            $valStr = trim($stokFisikVal);
+                            if (strpos($valStr, '.') !== false && strpos($valStr, ',') !== false) {
+                                $valStr = str_replace('.', '', $valStr);
+                                $valStr = str_replace(',', '.', $valStr);
+                            } else if (strpos($valStr, ',') !== false) {
+                                $valStr = str_replace(',', '.', $valStr);
+                            }
+                            $cleanStokFisik = (float) $valStr;
+                        }
+                    }
+
+                    $importedItems[] = [
+                        'kode_barang' => $kodeBarang,
+                        'stok_fisik'  => $cleanStokFisik,
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Berhasil membaca ' . count($importedItems) . ' item dari file Excel.',
+                'data'    => $importedItems,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membaca file Excel: ' . $e->getMessage(),
+            ], 422);
         }
     }
 }

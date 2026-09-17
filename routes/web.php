@@ -348,8 +348,11 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::get('/stok-gudang-batch', [StokGudangBatchController::class, 'index'])->name('stok-gudang-batch.index');
 
     // Stock Opname
+    Route::get('stock-opname/download-template', [StockOpnameController::class, 'downloadTemplate'])->name('stock-opname.download-template');
+    Route::post('stock-opname/import-excel', [StockOpnameController::class, 'importExcel'])->name('stock-opname.import-excel');
     Route::post('/stock-opname/hitung-fifo', [StockOpnameController::class, 'hitungFIFORealtime'])->name('stock-opname.hitung-fifo');
     Route::post('stock-opname/load-barang', [StockOpnameController::class, 'loadBarang'])->name('stock-opname.load-barang');
+    Route::get('stock-opname/{id}/export-excel', [StockOpnameController::class, 'exportExcel'])->name('stock-opname.export-excel');
     Route::resource('stock-opname', StockOpnameController::class);
     Route::post('stock-opname/{id}/refresh-stok', [StockOpnameController::class, 'refreshStok'])->name('stock-opname.refresh-stok');
     Route::get('stock-opname/{id}/approve', [StockOpnameController::class, 'approve'])->name('stock-opname.approve');

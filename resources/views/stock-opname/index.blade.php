@@ -181,6 +181,11 @@
                                             onclick="showDetailOpname({{ $row->id }})">
                                             <i class="bi bi-eye me-1"></i> Detail
                                         </button>
+                                        <a href="{{ route('stock-opname.export-excel', $row->id) }}"
+                                           class="btn btn-sm btn-outline-success fw-medium"
+                                           title="Download Excel Document">
+                                            <i class="bi bi-file-earmark-excel me-1"></i> Excel
+                                        </a>
                                         @if($row->status === 'draft' || ($row->status === 'approved' && $isSuperAdmin))
                                             <a href="{{ route('stock-opname.edit', $row->id) }}"
                                                class="btn btn-sm btn-outline-warning text-dark fw-medium"

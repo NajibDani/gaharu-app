@@ -23,6 +23,9 @@
         </div>
 
         <div class="d-flex align-items-center gap-2">
+            <a href="{{ route('stock-opname.export-excel', $stockOpname->id) }}" class="btn btn-success text-white fw-bold">
+                <i class="bi bi-file-earmark-excel me-1"></i> Download Excel
+            </a>
             @if($stockOpname->status === 'draft' || ($stockOpname->status === 'approved' && $isSuperAdmin))
                 <form action="{{ route('stock-opname.destroy', $stockOpname->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Stock Opname {{ $stockOpname->kode_opname }}? Seluruh efek penyesuaian stok, FIFO, dan jurnal terkait akan di-rollback kembali ke kondisi semula.');">
                     @csrf

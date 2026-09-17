@@ -22,14 +22,18 @@
 
         </div>
 
-        <a href="{{ route('stock-opname.index') }}"
-           class="btn btn-secondary">
-
-            <i class="bi bi-arrow-left"></i>
-            Kembali
-
-        </a>
-
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-success text-white fw-bold" onclick="downloadExcelTemplate()">
+                <i class="bi bi-file-earmark-excel me-1"></i> Download Template Excel
+            </button>
+            <button type="button" class="btn btn-outline-success fw-bold" onclick="triggerImportExcel()">
+                <i class="bi bi-file-earmark-arrow-up me-1"></i> Import Excel Hasil Opname
+            </button>
+            <input type="file" id="fileExcelInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleExcelImport(this)">
+            <a href="{{ route('stock-opname.index') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Kembali
+            </a>
+        </div>
     </div>
 
 <form
@@ -786,6 +790,142 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+function downloadExcelTemplate() {
+    let gudangId = document.getElementById('gudang_id').value;
+    let divisiId = document.getElementById('divisi_id').value;
+    let tanggal  = document.getElementById('tanggal') ? document.getElementById('tanggal').value : '';
+
+    if (!gudangId) {
+        alert('Pilih gudang terlebih dahulu');
+        return;
+    }
+
+    let url = "{{ route('stock-opname.download-template') }}?gudang_id=" + gudangId + "&divisi_id=" + (divisiId || '') + "&tanggal=" + tanggal;
+    window.location.href = url;
+}
+
+function triggerImportExcel() {
+    let input = document.getElementById('fileExcelInput');
+    if (input) input.click();
+}
+
+function handleExcelImport(input) {
+    if (!input.files || !input.files[0]) return;
+
+    let file = input.files[0];
+    let formData = new FormData();
+    formData.append('file_excel', file);
+    formData.append('_token', '{{ csrf_token() }}');
+
+    let btnImport = document.querySelector("button[onclick='triggerImportExcel()']");
+    let originalText = btnImport ? btnImport.innerHTML : '';
+    if (btnImport) {
+        btnImport.disabled = true;
+        btnImport.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status"></span> Mengimpor...`;
+    }
+
+    fetch("{{ route('stock-opname.import-excel') }}", {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (btnImport) {
+            btnImport.disabled = false;
+            btnImport.innerHTML = originalText;
+        }
+        input.value = '';
+
+        if (!data.success) {
+            alert(data.message || 'Gagal mengimpor file Excel.');
+            return;
+        }
+
+        let importedList = data.data || [];
+        let matchCount = 0;
+
+        let kodeToIdMap = {};
+        rawItems.forEach(item => {
+            if (item.kode_barang) {
+                kodeToIdMap[String(item.kode_barang).trim().toLowerCase()] = item.id;
+            }
+        });
+
+        let gudangId = document.getElementById('gudang_id').value;
+        let divisiId = document.getElementById('divisi_id').value;
+        let fifoPromises = [];
+
+        importedList.forEach(imp => {
+            let key = String(imp.kode_barang).trim().toLowerCase();
+            if (kodeToIdMap[key] !== undefined) {
+                let barangId = kodeToIdMap[key];
+                let stokFisik = parseFloat(imp.stok_fisik);
+                if (isNaN(stokFisik)) stokFisik = 0;
+
+                let itemObj = rawItems.find(i => i.id == barangId);
+                let stokSistem = itemObj ? parseFloat(itemObj.stok || 0) : 0;
+                let selisih = stokFisik - stokSistem;
+
+                if (!userValues[barangId]) {
+                    userValues[barangId] = {
+                        stok_fisik: stokFisik,
+                        selisih: selisih,
+                        nilai: 0,
+                        harga_fifo: itemObj ? parseFloat(itemObj.harga_fifo || 0) : 0
+                    };
+                } else {
+                    userValues[barangId].stok_fisik = stokFisik;
+                    userValues[barangId].selisih = selisih;
+                }
+
+                if (Math.abs(selisih) > 0.0001) {
+                    let p = fetch("{{ route('stock-opname.hitung-fifo') }}", {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            gudang_id: gudangId,
+                            divisi_id: divisiId || null,
+                            barang_id: barangId,
+                            selisih: Math.abs(selisih)
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(resData => {
+                        userValues[barangId].nilai = parseFloat(resData.nilai || 0);
+                    });
+                    fifoPromises.push(p);
+                } else {
+                    userValues[barangId].nilai = 0;
+                }
+
+                matchCount++;
+            }
+        });
+
+        Promise.all(fifoPromises).then(() => {
+            renderTable();
+            hitungGrandTotal();
+            alert('Berhasil mengimpor data! ' + matchCount + ' item dari file Excel berhasil dicocokkan & diperbarui.');
+        }).catch(err => {
+            console.error(err);
+            renderTable();
+            hitungGrandTotal();
+            alert('Berhasil mengimpor ' + matchCount + ' item, namun terjadi kesalahan dalam perhitungan nilai FIFO.');
+        });
+    })
+    .catch(err => {
+        if (btnImport) {
+            btnImport.disabled = false;
+            btnImport.innerHTML = originalText;
+        }
+        input.value = '';
+        console.error(err);
+        alert('Terjadi kesalahan saat memproses file Excel.');
+    });
+}
 </script>
 
 </x-app-layout>
