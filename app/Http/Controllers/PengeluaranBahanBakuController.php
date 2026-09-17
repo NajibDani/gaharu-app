@@ -397,6 +397,8 @@ class PengeluaranBahanBakuController extends Controller
             ->get();
 
         $gudang = MasterGudang::with('divisi')->orderBy('nama')->get();
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
 
         return view(
             'pengeluaran-bahan-baku.create',
@@ -404,7 +406,8 @@ class PengeluaranBahanBakuController extends Controller
                 'barang',
                 'gudang',
                 'selectedGudangId',
-                'jenis'
+                'jenis',
+                'isSuperAdmin'
             )
         );
     }
@@ -416,6 +419,9 @@ class PengeluaranBahanBakuController extends Controller
     public function store(Request $request)
     {
         $request->validate([
+            'tanggal'
+                => 'nullable|date',
+
             'gudang_id'
                 => 'required|exists:master_gudang,id',
 
@@ -441,6 +447,22 @@ class PengeluaranBahanBakuController extends Controller
                 => 'nullable|string',
         ]);
 
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        $tanggal = now();
+        if ($request->filled('tanggal')) {
+            $tanggalInput = date('Y-m-d', strtotime($request->tanggal));
+            if ($tanggalInput < date('Y-m-d')) {
+                if (!$isSuperAdmin) {
+                    return back()->withErrors(['tanggal' => 'Hanya Super Admin yang diizinkan menginput PBK pada tanggal sebelum hari ini.'])->withInput();
+                }
+                $tanggal = $tanggalInput . ' ' . date('H:i:s');
+            } else {
+                $tanggal = $tanggalInput . ' ' . date('H:i:s');
+            }
+        }
+
         $selectedGudang = MasterGudang::with('divisi')->find($request->gudang_id);
         if ($selectedGudang && strtolower($selectedGudang->kategori) === 'operasional' && $selectedGudang->divisi->count() > 0 && empty($request->divisi_id)) {
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $selectedGudang->nama . '.'])->withInput();
@@ -455,7 +477,7 @@ class PengeluaranBahanBakuController extends Controller
                 => $prefix . time(),
 
             'tanggal'
-                => now(),
+                => $tanggal,
 
             'gudang_id'
                 => $request->gudang_id,
@@ -844,6 +866,8 @@ class PengeluaranBahanBakuController extends Controller
         */
 
         $gudang = MasterGudang::with('divisi')->orderBy('nama')->get();
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
 
         return view(
             'pengeluaran-bahan-baku.edit',
@@ -852,7 +876,8 @@ class PengeluaranBahanBakuController extends Controller
                 'barang',
                 'gudang',
                 'jenis',
-                'isApproved'
+                'isApproved',
+                'isSuperAdmin'
             )
         );
     }
@@ -865,6 +890,8 @@ class PengeluaranBahanBakuController extends Controller
         string $id
     ) {
         $request->validate([
+            'tanggal'
+                => 'nullable|date',
             'gudang_id'
                 => 'required|exists:master_gudang,id',
             'divisi_id'
@@ -881,6 +908,16 @@ class PengeluaranBahanBakuController extends Controller
                 => 'nullable|string',
         ]);
 
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        if ($request->filled('tanggal')) {
+            $tanggalInput = date('Y-m-d', strtotime($request->tanggal));
+            if ($tanggalInput < date('Y-m-d') && !$isSuperAdmin) {
+                return back()->withErrors(['tanggal' => 'Hanya Super Admin yang diizinkan mengubah tanggal PBK ke sebelum hari ini.'])->withInput();
+            }
+        }
+
         $selectedGudang = MasterGudang::with('divisi')->find($request->gudang_id);
         if ($selectedGudang && strtolower($selectedGudang->kategori) === 'operasional' && $selectedGudang->divisi->count() > 0 && empty($request->divisi_id)) {
             return back()->withErrors(['divisi_id' => 'Silakan pilih divisi untuk gudang operasional ' . $selectedGudang->nama . '.'])->withInput();
@@ -892,7 +929,8 @@ class PengeluaranBahanBakuController extends Controller
             DB::transaction(function () use (
                 $request,
                 $id,
-                &$isApprovedGlobal
+                &$isApprovedGlobal,
+                $isSuperAdmin
             ) {
                 $data = PengeluaranBahanBaku::with('details')->findOrFail($id);
 
@@ -903,8 +941,6 @@ class PengeluaranBahanBakuController extends Controller
                 */
                 $isApproved = in_array(strtolower($data->status), ['approved', 'disetujui']);
                 $isApprovedGlobal = $isApproved;
-                $user = auth()->user();
-                $isSuperAdmin = $user && $user->isSuperAdmin();
 
                 if ($isApproved && !$isSuperAdmin) {
                     throw new \Exception(
@@ -934,11 +970,16 @@ class PengeluaranBahanBakuController extends Controller
                 | UPDATE HEADER
                 |----------------------------------------------------------------------
                 */
-                $data->update([
+                $updateHeaderData = [
                     'gudang_id'  => $request->gudang_id,
                     'divisi_id'  => $request->divisi_id,
                     'keterangan' => $request->keterangan,
-                ]);
+                ];
+                if ($request->filled('tanggal')) {
+                    $tTime = date('H:i:s', strtotime($data->tanggal ?? now()));
+                    $updateHeaderData['tanggal'] = date('Y-m-d', strtotime($request->tanggal)) . ' ' . $tTime;
+                }
+                $data->update($updateHeaderData);
 
                 /*
                 |----------------------------------------------------------------------

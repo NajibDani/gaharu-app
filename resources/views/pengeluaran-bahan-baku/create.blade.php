@@ -132,7 +132,27 @@
             </div>
             <div class="p-4">
                 <div class="row g-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold small text-dark mb-1">
+                            Tanggal Permintaan / PBK <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" name="tanggal" class="form-control @error('tanggal') is-invalid @enderror" style="border-radius:8px;"
+                               value="{{ old('tanggal', date('Y-m-d')) }}"
+                               {{ !($isSuperAdmin ?? false) ? 'readonly max=' . date('Y-m-d') : '' }} required>
+                        @error('tanggal')
+                            <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
+                        <small class="text-muted d-block mt-1" style="font-size:0.75rem;">
+                            @if($isSuperAdmin ?? false)
+                                <span class="badge bg-warning text-dark me-1"><i class="bi bi-shield-lock me-1"></i>Super Admin</span>
+                                Anda dapat memilih tanggal sebelum hari ini (backdate).
+                            @else
+                                Tanggal dokumen pengeluaran bahan baku (hari ini).
+                            @endif
+                        </small>
+                    </div>
+
+                    <div class="col-md-4">
                         <label class="form-label fw-bold small text-dark mb-1">
                             {{ ($jenis ?? '') === 'wasted' ? 'Gudang Asal (Lokasi Bahan Wasted)' : 'Gudang Tujuan' }} <span class="text-danger">*</span>
                         </label>
@@ -161,7 +181,7 @@
                         </small>
                     </div>
 
-                    <div class="col-md-6" id="divisi-wrapper" style="display: none;">
+                    <div class="col-md-4" id="divisi-wrapper" style="display: none;">
                         <label class="form-label fw-bold small text-dark mb-1">
                             <i class="bi bi-diagram-3-fill text-primary me-1"></i> Divisi Tujuan <span class="text-danger">*</span>
                         </label>

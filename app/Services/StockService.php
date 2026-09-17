@@ -238,7 +238,7 @@ class StockService
         string $tipe
     ) {
         return TransaksiStok::create([
-            'tanggal'          => now(),
+            'tanggal'          => $data['tanggal'] ?? now(),
             'tipe'             => $tipe,
             'source_type'      => $data['source_type'] ?? null,
             'source_id'        => $data['source_id'] ?? null,

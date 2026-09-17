@@ -108,6 +108,7 @@ class PengeluaranBahanBakuService
                         'qty_sisa'            => $layer['qty_keluar'],
                         'harga_per_qty'       => $layer['harga_per_qty'], // Harga modal ikut terbawa otomatis!
                         'is_habis'            => false,
+                        'created_at'          => $pengeluaran->tanggal ?? now(),
                     ]);
 
                     if (!empty($layer['batch_id'])) {
@@ -145,6 +146,7 @@ class PengeluaranBahanBakuService
                     'source_type'     => 'pengeluaran_bahan_baku',
                     'source_id'       => $pengeluaran->id,
                     'user_id'         => $userId,
+                    'tanggal'         => $pengeluaran->tanggal ?? now(),
                 ]);
 
                 /*
@@ -162,6 +164,7 @@ class PengeluaranBahanBakuService
                     'source_type'      => 'pengeluaran_bahan_baku',
                     'source_id'        => $pengeluaran->id,
                     'user_id'         => $userId,
+                    'tanggal'          => $pengeluaran->tanggal ?? now(),
                 ]);
             }
 
