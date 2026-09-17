@@ -175,6 +175,23 @@ class StockOpnameController extends Controller
             ->orderBy('master_barang.nama', 'asc')
             ->get();
 
+        $tanggal = $request->tanggal;
+        if ($tanggal && $tanggal !== date('Y-m-d')) {
+            $cutoff = $tanggal . ' 23:59:59';
+            foreach ($barang as $item) {
+                $qIn = DB::table('transaksi_stok')->where('barang_id', $item->id)->where('tanggal', '<=', $cutoff);
+                $qOut = DB::table('transaksi_stok')->where('barang_id', $item->id)->where('tanggal', '<=', $cutoff);
+                if ($gudangId && $divisiId) {
+                    $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                    $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+                } elseif ($gudangId) {
+                    $qIn->where('gudang_tujuan_id', $gudangId);
+                    $qOut->where('gudang_asal_id', $gudangId);
+                }
+                $item->stok = max(0, (float)($qIn->sum('qty') - $qOut->sum('qty')));
+            }
+        }
+
         foreach ($barang as $item) {
             $item->harga_fifo = $this->getHargaFIFO(
                 $gudangId,
@@ -684,11 +701,13 @@ class StockOpnameController extends Controller
             $opname->details()->delete();
             $opname->delete();
 
+            \App\Models\StokGudang::reconcileStockSummary(null, $opname->gudang_id, $opname->divisi_id);
+
             DB::commit();
 
             return redirect()
                 ->route('stock-opname.index')
-                ->with('success', 'Stock Opname berhasil dihapus.');
+                ->with('success', 'Stock Opname ' . $opname->kode_opname . ' berhasil dihapus dan stok telah di-rollback ke kondisi semula.');
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal menghapus Stock Opname: ' . $e->getMessage());
@@ -920,10 +939,13 @@ class StockOpnameController extends Controller
                 }
             }
             \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->delete();
+            $pengeluaran->details()->delete();
+            $pengeluaran->delete();
         }
 
         // 2. Revert Surplus (Batch SO-SURPLUS-... & stock increment)
-        $surplusBatches = \App\Models\StokGudangBatch::where('batch_number', 'SO-SURPLUS-' . $opname->kode_opname)
+        $surplusBatches = \App\Models\StokGudangBatch::where('batch_number', 'like', '%SO-SURPLUS%' . $opname->kode_opname . '%')
+            ->orWhere('batch_number', 'like', '%' . $opname->kode_opname . '%')
             ->where('gudang_id', $opname->gudang_id)
             ->when($opname->divisi_id, fn($q) => $q->where('divisi_id', $opname->divisi_id), fn($q) => $q->whereNull('divisi_id'))
             ->get();
@@ -946,6 +968,9 @@ class StockOpnameController extends Controller
             $jurnal->details()->delete();
             $jurnal->delete();
         }
+
+        // 5. Rekonsiliasi ringkasan stok gudang
+        \App\Models\StokGudang::reconcileStockSummary(null, $opname->gudang_id, $opname->divisi_id);
     }
 
     /*

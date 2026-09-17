@@ -22,13 +22,21 @@
 
         </div>
 
-        <a href="{{ route('stock-opname.index') }}"
-           class="btn btn-secondary">
-
-            <i class="bi bi-arrow-left"></i>
-            Kembali
-
-        </a>
+        <div class="d-flex align-items-center gap-2">
+            @if($stockOpname->status === 'draft' || ($stockOpname->status === 'approved' && $isSuperAdmin))
+                <form action="{{ route('stock-opname.destroy', $stockOpname->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Stock Opname {{ $stockOpname->kode_opname }}? Seluruh efek penyesuaian stok, FIFO, dan jurnal terkait akan di-rollback kembali ke kondisi semula.');">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-danger text-white fw-bold">
+                        <i class="bi bi-trash me-1"></i> Hapus & Rollback Stock
+                    </button>
+                </form>
+            @endif
+            <a href="{{ route('stock-opname.index') }}"
+               class="btn btn-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Kembali
+            </a>
+        </div>
 
     </div>
 

@@ -382,7 +382,8 @@ function loadBarang()
             },
             body:JSON.stringify({
                 gudang_id: gudangId,
-                divisi_id: divisiId || null
+                divisi_id: divisiId || null,
+                tanggal: document.getElementById('tanggal') ? document.getElementById('tanggal').value : null
             })
         }
     )
@@ -775,6 +776,15 @@ function hitungGrandTotal()
         grandTotalEl.innerHTML = 'Rp ' + total.toLocaleString('id-ID');
     }
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const tanggalEl = document.getElementById('tanggal');
+    if (tanggalEl) {
+        tanggalEl.addEventListener('change', function() {
+            loadBarang();
+        });
+    }
+});
 
 </script>
 

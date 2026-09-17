@@ -187,6 +187,13 @@
                                                title="{{ $row->status === 'approved' ? 'Edit Approved Opname (Super Admin)' : 'Edit Stock Opname' }}">
                                                 <i class="bi bi-pencil me-1"></i> Edit
                                             </a>
+                                            <form action="{{ route('stock-opname.destroy', $row->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Stock Opname {{ $row->kode_opname }}? Seluruh efek penyesuaian stok, FIFO, dan jurnal terkait akan di-rollback kembali ke kondisi semula.');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="btn btn-sm btn-outline-danger fw-medium" title="Hapus & Rollback Stock Opname">
+                                                    <i class="bi bi-trash me-1"></i> Hapus
+                                                </button>
+                                            </form>
                                         @endif
                                     </div>
                                 </td>
@@ -408,6 +415,7 @@ function renderDetailOpname(data) {
     });
 
     let approveButton = '';
+    let csrfToken = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
 
     if (data.status === 'draft') {
         approveButton = `
@@ -418,10 +426,17 @@ function renderDetailOpname(data) {
                 <i class="bi bi-pencil me-1"></i>
                 Edit Stock Opname
             </a>
-            <a href="/stock-opname/${data.id}/approve" class="btn btn-success" onclick="return confirm('Approve stock opname ini? Selisih negatif akan otomatis membuat pengeluaran bahan baku.')">
+            <a href="/stock-opname/${data.id}/approve" class="btn btn-success me-2" onclick="return confirm('Approve stock opname ini? Selisih negatif akan otomatis membuat pengeluaran bahan baku.')">
                 <i class="bi bi-check-circle me-1"></i>
                 Approve Stock Opname
             </a>
+            <form action="/stock-opname/${data.id}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Stock Opname ${data.kode_opname}? Data penyesuaian stok akan dibatalkan.')">
+                <input type="hidden" name="_token" value="${csrfToken}">
+                <input type="hidden" name="_method" value="DELETE">
+                <button type="submit" class="btn btn-outline-danger fw-bold">
+                    <i class="bi bi-trash me-1"></i> Hapus
+                </button>
+            </form>
         `;
     } else if (data.status === 'approved' && data.is_superadmin) {
         approveButton = `
@@ -429,6 +444,13 @@ function renderDetailOpname(data) {
                 <i class="bi bi-pencil-square me-1"></i>
                 Edit Stock Opname (Super Admin)
             </a>
+            <form action="/stock-opname/${data.id}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Stock Opname ${data.kode_opname}? Seluruh efek penyesuaian stok, FIFO, dan jurnal terkait akan di-rollback kembali ke kondisi sebelum opname.')">
+                <input type="hidden" name="_token" value="${csrfToken}">
+                <input type="hidden" name="_method" value="DELETE">
+                <button type="submit" class="btn btn-danger text-white fw-bold">
+                    <i class="bi bi-trash me-1"></i> Hapus & Rollback Stock
+                </button>
+            </form>
         `;
     }
 
