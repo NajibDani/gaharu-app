@@ -350,6 +350,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // Stock Opname
     Route::get('stock-opname/download-template', [StockOpnameController::class, 'downloadTemplate'])->name('stock-opname.download-template');
     Route::post('stock-opname/import-excel', [StockOpnameController::class, 'importExcel'])->name('stock-opname.import-excel');
+    Route::post('stock-opname/import-store', [StockOpnameController::class, 'importStore'])->name('stock-opname.import-store');
     Route::post('/stock-opname/hitung-fifo', [StockOpnameController::class, 'hitungFIFORealtime'])->name('stock-opname.hitung-fifo');
     Route::post('stock-opname/load-barang', [StockOpnameController::class, 'loadBarang'])->name('stock-opname.load-barang');
     Route::get('stock-opname/{id}/export-excel', [StockOpnameController::class, 'exportExcel'])->name('stock-opname.export-excel');

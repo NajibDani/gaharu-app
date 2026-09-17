@@ -17,7 +17,14 @@
             </p>
         </div>
 
-        <div>
+        <div class="d-flex align-items-center gap-2">
+            <button
+                class="btn btn-success text-white px-3 min-hitbox d-inline-flex align-items-center justify-content-center fw-bold"
+                data-bs-toggle="modal"
+                data-bs-target="#importOpnameModal">
+                <i class="bi bi-file-earmark-arrow-up me-2"></i>
+                Import Excel SO
+            </button>
             <button
                 class="btn text-white px-4 min-hitbox d-inline-flex align-items-center justify-content-center"
                 style="background-color: #DE8958; border: none;"
@@ -269,6 +276,77 @@
     </div>
 </div>
 
+{{-- MODAL IMPORT EXCEL STOCK OPNAME --}}
+<div class="modal fade" id="importOpnameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content border-0 shadow rounded-4">
+            <div class="modal-header text-white" style="background-color: #2E7D32;">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Import Stock Opname dari Excel
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ route('stock-opname.import-store') }}" method="POST" enctype="multipart/form-data">
+                @csrf
+                <div class="modal-body p-4">
+                    <div class="alert alert-success border-0 bg-success-subtle text-success-emphasis small rounded-3 mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        Sistem hanya akan membaca data <strong>Kode Barang</strong> dan <strong>Stok Fisik</strong> dari file Excel. Data Stok Sistem, Selisih, dan HPP/FIFO dihitung otomatis.
+                    </div>
+
+                    {{-- Pilih Gudang --}}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Pilih Gudang <span class="text-danger">*</span></label>
+                        <select name="gudang_id" id="import_select_gudang" class="form-select" required>
+                            <option value="">-- Pilih Gudang --</option>
+                            @foreach($gudangs as $gudang)
+                                <option value="{{ $gudang->id }}" data-kategori="{{ strtolower($gudang->kategori) }}">
+                                    {{ $gudang->nama }} ({{ $gudang->kategori }})
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    {{-- Pilih Divisi (Jika gudang operasional) --}}
+                    <div class="mb-3" id="import_divisi_wrapper" style="display: none;">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-diagram-3-fill text-primary me-1"></i> Pilih Divisi Operasional <span class="text-danger">*</span>
+                        </label>
+                        <select name="divisi_id" id="import_select_divisi" class="form-select">
+                            <option value="">-- Pilih Divisi --</option>
+                        </select>
+                    </div>
+
+                    {{-- Tanggal Opname --}}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Tanggal Opname <span class="text-danger">*</span></label>
+                        <input type="date" name="tanggal" class="form-control" value="{{ date('Y-m-d') }}" required>
+                    </div>
+
+                    {{-- Keterangan --}}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Keterangan / Catatan</label>
+                        <textarea name="keterangan" class="form-control" rows="2" placeholder="Contoh: Stock Opname dari Excel..."></textarea>
+                    </div>
+
+                    {{-- File Excel --}}
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">File Excel (.xlsx / .xls / .csv) <span class="text-danger">*</span></label>
+                        <input type="file" name="file_excel" class="form-control" accept=".xlsx,.xls,.csv" required>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light border-0">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-success text-white px-4 fw-bold">
+                        <i class="bi bi-upload me-1"></i> Import & Simpan Draft SO
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {{-- MODAL DETAIL & APPROVE --}}
 <div class="modal fade" id="detailOpnameModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-fullscreen-sm-down modal-dialog-centered">
@@ -323,6 +401,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 .catch(() => {
                     modalDivisiWrapper.style.display = 'none';
                     modalSelectDivisi.required = false;
+                });
+        });
+    }
+
+    const importSelectGudang = document.getElementById('import_select_gudang');
+    const importDivisiWrapper = document.getElementById('import_divisi_wrapper');
+    const importSelectDivisi = document.getElementById('import_select_divisi');
+
+    if (importSelectGudang) {
+        importSelectGudang.addEventListener('change', function() {
+            const gudangId = this.value;
+            if (!gudangId) {
+                importDivisiWrapper.style.display = 'none';
+                importSelectDivisi.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                importSelectDivisi.required = false;
+                return;
+            }
+
+            fetch('/gudangs/' + gudangId + '/divisi')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.is_operasional && data.divisi && data.divisi.length > 0) {
+                        importDivisiWrapper.style.display = 'block';
+                        importSelectDivisi.required = true;
+                        let opts = '<option value="">-- Pilih Divisi --</option>';
+                        data.divisi.forEach(d => {
+                            opts += `<option value="${d.id}">${d.nama}</option>`;
+                        });
+                        importSelectDivisi.innerHTML = opts;
+                    } else {
+                        importDivisiWrapper.style.display = 'none';
+                        importSelectDivisi.innerHTML = '<option value="">-- Pilih Divisi --</option>';
+                        importSelectDivisi.required = false;
+                    }
+                })
+                .catch(() => {
+                    importDivisiWrapper.style.display = 'none';
+                    importSelectDivisi.required = false;
                 });
         });
     }

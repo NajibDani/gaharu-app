@@ -1521,11 +1521,10 @@ class StockOpnameController extends Controller
 
         $barangs = $query->orderBy('kode_barang', 'asc')->get();
 
-        $stokGudangObj = new \App\Http\Controllers\StokGudangController();
         $items = [];
 
         foreach ($barangs as $b) {
-            $stokSistem = $stokGudangObj->hitungStokByTanggal($gudangId, $b->id, $tanggal, $divisiId);
+            $stokSistem = $this->hitungStokSistemByTanggal($gudangId, $b->id, $tanggal, $divisiId);
             $hargaFifo = $this->getHargaTerakhirBarang($b->id);
 
             $items[] = [
@@ -1753,6 +1752,202 @@ class StockOpnameController extends Controller
                 'success' => false,
                 'message' => 'Gagal membaca file Excel: ' . $e->getMessage(),
             ], 422);
+        }
+    }
+
+    /**
+     * Membuat dokumen Stock Opname (Draft) baru secara langsung dari file Excel yang diunggah
+     */
+    public function importStore(Request $request)
+    {
+        $request->validate([
+            'gudang_id'  => 'required|exists:master_gudang,id',
+            'divisi_id'  => 'nullable|exists:gudang_divisi,id',
+            'tanggal'    => 'required|date',
+            'keterangan' => 'nullable|string',
+            'file_excel' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        ]);
+
+        $gudangId = $request->gudang_id;
+        $divisiId = $request->divisi_id;
+        $tanggal  = $request->tanggal;
+        $keterangan = $request->keterangan ?? 'Import Stock Opname dari Excel';
+
+        // 1. Parse Excel file & extract ONLY kode_barang and stok_fisik
+        try {
+            $file = $request->file('file_excel');
+            $spreadsheet = IOFactory::load($file->getRealPath());
+            $sheet = $spreadsheet->getActiveSheet();
+            $rows = $sheet->toArray(null, true, true, true);
+
+            $excelStokFisikMap = [];
+            $headerRowIndex = 1;
+            $kodeColLetter = 'B';
+            $stokFisikColLetter = 'G';
+
+            foreach ($rows as $rowIndex => $row) {
+                foreach ($row as $colLetter => $val) {
+                    if (is_string($val) && (strcasecmp(trim($val), 'Kode Barang') === 0 || strcasecmp(trim($val), 'Kode') === 0)) {
+                        $headerRowIndex = $rowIndex;
+                        $kodeColLetter = $colLetter;
+                        break;
+                    }
+                }
+                if ($headerRowIndex === $rowIndex) {
+                    foreach ($row as $colLetter => $val) {
+                        if (is_string($val) && strcasecmp(trim($val), 'Stok Fisik') === 0) {
+                            $stokFisikColLetter = $colLetter;
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            for ($r = $headerRowIndex + 1; $r <= count($rows); $r++) {
+                $row = $rows[$r] ?? null;
+                if (!$row) continue;
+
+                $kodeBarang = trim((string)($row[$kodeColLetter] ?? ''));
+                $stokFisikVal = $row[$stokFisikColLetter] ?? null;
+
+                if (!empty($kodeBarang)) {
+                    $cleanStokFisik = 0;
+                    if ($stokFisikVal !== null && $stokFisikVal !== '') {
+                        if (is_numeric($stokFisikVal)) {
+                            $cleanStokFisik = (float) $stokFisikVal;
+                        } else if (is_string($stokFisikVal)) {
+                            $valStr = trim($stokFisikVal);
+                            if (strpos($valStr, '.') !== false && strpos($valStr, ',') !== false) {
+                                $valStr = str_replace('.', '', $valStr);
+                                $valStr = str_replace(',', '.', $valStr);
+                            } else if (strpos($valStr, ',') !== false) {
+                                $valStr = str_replace(',', '.', $valStr);
+                            }
+                            $cleanStokFisik = (float) $valStr;
+                        }
+                    }
+                    $excelStokFisikMap[strtolower($kodeBarang)] = $cleanStokFisik;
+                }
+            }
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal membaca file Excel: ' . $e->getMessage());
+        }
+
+        if (empty($excelStokFisikMap)) {
+            return redirect()->back()->with('error', 'File Excel tidak berisi data Kode Barang atau Stok Fisik yang valid.');
+        }
+
+        // 2. Load active items for that gudang/divisi
+        $query = \App\Models\MasterBarang::with('kategori')->where('is_active', true);
+
+        // Filter bahan baku dinonaktifkan di outlet & divisi
+        $query->where(function ($q) use ($gudangId, $divisiId) {
+            $q->where('is_bahan_baku', false)
+              ->orWhere(function ($subQ) use ($gudangId, $divisiId) {
+                  $subQ->where('is_bahan_baku', true)
+                       ->whereNotExists(function ($notExistsQuery) use ($gudangId, $divisiId) {
+                           $notExistsQuery->select(DB::raw(1))
+                               ->from('barang_minimum_stock')
+                               ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                               ->where('barang_minimum_stock.gudang_id', $gudangId)
+                               ->where('barang_minimum_stock.is_active', false);
+                           if ($divisiId) {
+                               $notExistsQuery->where('barang_minimum_stock.divisi_id', $divisiId);
+                           } else {
+                               $notExistsQuery->whereNull('barang_minimum_stock.divisi_id');
+                           }
+                       });
+              });
+        });
+
+        $barangs = $query->get();
+
+        DB::beginTransaction();
+        try {
+            // Generate Kode Opname
+            $prefix = 'SO-' . date('Ymd', strtotime($tanggal)) . '-';
+            $lastOpname = StockOpname::where('kode_opname', 'like', $prefix . '%')->orderBy('id', 'desc')->first();
+            if ($lastOpname) {
+                $lastNumber = (int) substr($lastOpname->kode_opname, -4);
+                $newNumber = str_pad($lastNumber + 1, 4, '0', STR_PAD_LEFT);
+            } else {
+                $newNumber = '0001';
+            }
+            $kodeOpname = $prefix . $newNumber;
+
+            $opname = StockOpname::create([
+                'kode_opname' => $kodeOpname,
+                'tanggal'     => $tanggal,
+                'gudang_id'   => $gudangId,
+                'divisi_id'   => $divisiId,
+                'status'      => 'draft',
+                'keterangan'  => $keterangan,
+                'created_by'  => Auth::id(),
+            ]);
+
+            $totalDetailCount = 0;
+
+            foreach ($barangs as $b) {
+                $key = strtolower(trim($b->kode_barang));
+                $stokSistem = $this->hitungStokSistemByTanggal($gudangId, $b->id, $tanggal, $divisiId);
+                
+                if (isset($excelStokFisikMap[$key])) {
+                    $stokFisik = $excelStokFisikMap[$key];
+                } else {
+                    $stokFisik = (float) $stokSistem;
+                }
+
+                $selisih = $stokFisik - (float)$stokSistem;
+                $nilaiSelisih = $this->hitungNilaiOpname($gudangId, $b->id, $selisih, $divisiId);
+
+                StockOpnameDetail::create([
+                    'stock_opname_id' => $opname->id,
+                    'barang_id'       => $b->id,
+                    'stok_sistem'     => $stokSistem,
+                    'stok_fisik'      => $stokFisik,
+                    'selisih'         => $selisih,
+                    'nilai_selisih'   => $nilaiSelisih,
+                ]);
+
+                $totalDetailCount++;
+            }
+
+            DB::commit();
+
+            return redirect()->route('stock-opname.show', $opname->id)
+                ->with('success', "Berhasil membuat Stock Opname {$opname->kode_opname} dengan {$totalDetailCount} detail barang dari file Excel.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menyimpan dokumen Stock Opname: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hitung stok sistem per tanggal cutoff
+     */
+    private function hitungStokSistemByTanggal($gudangId, $barangId, $tanggal = null, $divisiId = null): float
+    {
+        if ($tanggal && date('Y-m-d', strtotime($tanggal)) !== date('Y-m-d')) {
+            $cutoff = date('Y-m-d', strtotime($tanggal)) . ' 23:59:59';
+            $qIn = DB::table('transaksi_stok')->where('barang_id', $barangId)->where('tanggal', '<=', $cutoff);
+            $qOut = DB::table('transaksi_stok')->where('barang_id', $barangId)->where('tanggal', '<=', $cutoff);
+            if ($gudangId && $divisiId) {
+                $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+            } elseif ($gudangId) {
+                $qIn->where('gudang_tujuan_id', $gudangId);
+                $qOut->where('gudang_asal_id', $gudangId);
+            }
+            return max(0, (float)($qIn->sum('qty') - $qOut->sum('qty')));
+        } else {
+            $q = DB::table('stok_gudang')->where('gudang_id', $gudangId)->where('barang_id', $barangId);
+            if ($divisiId) {
+                $q->where('divisi_id', $divisiId);
+            } else {
+                $q->whereNull('divisi_id');
+            }
+            return (float) ($q->value('jumlah') ?? 0);
         }
     }
 }
