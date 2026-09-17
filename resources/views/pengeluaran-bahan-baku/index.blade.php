@@ -286,8 +286,10 @@
                                 <div class="d-flex align-items-center gap-1">
                                     <button type="button" 
                                             class="btn btn-sm btn-outline-primary"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#detailPengeluaranModal"
                                             onclick="showDetailPengeluaran({{ $item->id }})"
-                                            title="Lihat Detail">
+                                            title="Lihat Detail Pengeluaran">
                                         <i class="bi bi-eye me-1"></i> Detail
                                     </button>
 
@@ -462,37 +464,56 @@ function refreshCurrentModalStok(triggerEl) {
 }
 
 function showDetailPengeluaran(id) {
-    let modalEl = document.getElementById('detailPengeluaranModal');
-    let modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     let body = document.getElementById('detailPengeluaranBody');
     let topActions = document.getElementById('modalTopActions');
 
-    topActions.style.setProperty('display', 'none', 'important');
-    body.innerHTML = `
-        <div class="text-center text-muted py-5">
-            <div class="spinner-border text-primary" role="status"></div>
-            <p class="mt-3 mb-0">Memuat detail pengeluaran & ketersediaan stok...</p>
-        </div>
-    `;
+    if (topActions) topActions.style.setProperty('display', 'none', 'important');
+    if (body) {
+        body.innerHTML = `
+            <div class="text-center text-muted py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-3 mb-0">Memuat detail pengeluaran & ketersediaan stok...</p>
+            </div>
+        `;
+    }
 
-    modal.show();
+    try {
+        let modalEl = document.getElementById('detailPengeluaranModal');
+        if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            let modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+            modal.show();
+        }
+    } catch (e) {
+        console.warn('Bootstrap modal instance handle notice:', e);
+    }
 
     fetch(`/pengeluaran-bahan-baku/${id}/detail-json`)
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+        })
         .then(data => {
             currentDetailData = data;
             renderDetailPengeluaran(data);
-            topActions.style.removeProperty('display');
-            document.getElementById('modalBtnPdf').href = data.pdf_url;
+            if (topActions) topActions.style.removeProperty('display');
+            let pdfBtn = document.getElementById('modalBtnPdf');
+            if (pdfBtn && data.pdf_url) pdfBtn.href = data.pdf_url;
         })
         .catch(err => {
             console.error(err);
-            body.innerHTML = `
-                <div class="text-center text-danger py-4">
-                    <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
-                    Gagal memuat data pengeluaran bahan baku.
-                </div>
-            `;
+            if (body) {
+                body.innerHTML = `
+                    <div class="text-center text-danger py-4">
+                        <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
+                        Gagal memuat detail pengeluaran.
+                        <div class="mt-3">
+                            <a href="/pengeluaran-bahan-baku/${id}" target="_blank" class="btn btn-sm btn-primary">
+                                <i class="bi bi-box-arrow-up-right me-1"></i> Buka Halaman Detail Dokumen
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }
         });
 }
 
@@ -529,9 +550,6 @@ function renderDetailPengeluaran(data) {
             </div>
         `;
     }
-
-    let colQtyLabel = data.is_wasted ? 'Jumlah Wasted' : (data.is_opname ? 'Selisih Penyesuaian (SO)' : 'Jumlah Diminta');
-    let colStokLabel = (data.is_wasted || data.is_opname) ? `Stok Lokasi (${data.divisi_nama ? data.gudang_nama + ' - ' + data.divisi_nama : data.gudang_nama})` : 'Stok Gudang Utama';
 
     const formatCurrency = (val) => {
         const num = Number(val || 0);
@@ -1019,6 +1037,9 @@ function downloadModalAsImage() {
                     <td colspan="2" style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11px;">TOTAL NILAI HPP:</td>
                     <td style="padding:9px 8px; text-align:right; border:1px solid #cbd5e1; font-size:11.5px; color:#7A4517; font-weight:800;">Rp ${data.grand_total.toLocaleString('id-ID')}</td>
                 </tr>
+            </tfoot>
+        </table>
+
         <!-- TANDA TANGAN 3 PIHAK -->
         <table style="width:100%; border-collapse:collapse; margin-top:25px;">
             <tr>
