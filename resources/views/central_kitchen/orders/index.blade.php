@@ -310,7 +310,7 @@
                                             <ul class="dropdown-menu dropdown-menu-end dropdown-menu-actions">
                                                 @if(!$p->wo_status)
                                                     <li>
-                                                        <a class="dropdown-item text-dark" href="{{ route('ck-orders.edit', array_merge(['order' => $p->id], request()->query())) }}">
+                                                        <a class="dropdown-item text-dark" href="{{ route('ck-orders.edit', $p->id) }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}">
                                                             <i class="bi bi-pencil-square text-warning"></i> Edit Pesanan
                                                         </a>
                                                     </li>
@@ -588,7 +588,7 @@
                                                             <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
                                                         </a>
                                                         @if(!$p->wo_status)
-                                                            <a href="{{ route('ck-orders.edit', array_merge(['order' => $p->id], request()->query())) }}" class="btn btn-warning btn-sm px-3 fw-bold text-dark">
+                                                            <a href="{{ route('ck-orders.edit', $p->id) }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}" class="btn btn-warning btn-sm px-3 fw-bold text-dark">
                                                                 <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
                                                             </a>
                                                         @endif
