@@ -330,21 +330,7 @@
 // =========================================================
 // Data barang untuk TomSelect (Searchable)
 // =========================================================
-const barangData = [
-    @foreach($barang as $b)
-    {
-        value: "{{ $b->id }}",
-        text: "{{ addslashes($b->kode_barang . ' - ' . $b->nama . ' (' . $b->satuan . ')' . ($b->satuan_pembelian && $b->konversi_pembelian > 1 ? ' [' . $b->satuan_pembelian . ']' : '') . ' - Stok Utama: ' . $b->stok . ($b->stok <= 0 ? ' [HABIS]' : '')) }}",
-        nama: "{{ addslashes($b->nama) }}",
-        kode: "{{ $b->kode_barang }}",
-        satuan: "{{ $b->satuan }}",
-        satuan_pembelian: "{{ $b->satuan_pembelian ?: $b->satuan }}",
-        konversi_pembelian: {{ (float)($b->konversi_pembelian ?: 1) }},
-        stok: {{ (float)$b->stok }},
-        habis: {{ $b->stok <= 0 ? 'true' : 'false' }}
-    },
-    @endforeach
-];
+const barangData = @json($barangData ?? []);
 
 function initTomSelect(selectEl) {
     if (!selectEl || selectEl.tomselect) return selectEl.tomselect;

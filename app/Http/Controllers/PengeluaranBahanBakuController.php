@@ -385,8 +385,10 @@ class PengeluaranBahanBakuController extends Controller
             ->where('master_barang.is_active', true);
 
         if ($jenis !== 'wasted') {
-            $queryBarang->where('master_barang.is_bahan_baku', 1)
-                        ->where('master_barang.is_bahan_setengah_jadi', 0);
+            $queryBarang->where(function ($q) {
+                $q->where('master_barang.is_bahan_baku', 1)
+                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
+            });
         }
 
         $barang = $queryBarang->select([
@@ -396,6 +398,27 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
+        $barangData = $barang->map(function ($b) {
+            $satuan = $b->satuan ?: 'Pcs';
+            $satuanBeli = $b->satuan_pembelian ?: $satuan;
+            $konversi = (float) ($b->konversi_pembelian ?: 1);
+            $stok = (float) ($b->stok ?: 0);
+            $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
+            $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
+
+            return [
+                'value'              => (string) $b->id,
+                'text'               => "{$b->kode_barang} - {$b->nama} ({$satuan}){$labelKonversi} - Stok Utama: {$stok}{$labelHabis}",
+                'nama'               => $b->nama,
+                'kode'               => $b->kode_barang,
+                'satuan'             => $satuan,
+                'satuan_pembelian'   => $satuanBeli,
+                'konversi_pembelian' => $konversi,
+                'stok'               => $stok,
+                'habis'              => $stok <= 0,
+            ];
+        });
+
         $gudang = MasterGudang::with('divisi')->orderBy('nama')->get();
         $user = auth()->user();
         $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
@@ -404,6 +427,7 @@ class PengeluaranBahanBakuController extends Controller
             'pengeluaran-bahan-baku.create',
             compact(
                 'barang',
+                'barangData',
                 'gudang',
                 'selectedGudangId',
                 'jenis',
@@ -983,8 +1007,15 @@ class PengeluaranBahanBakuController extends Controller
             ->where('master_barang.is_active', true);
 
         if ($jenis !== 'wasted') {
-            $queryBarang->where('master_barang.is_bahan_baku', 1)
-                        ->where('master_barang.is_bahan_setengah_jadi', 0);
+            $existingBarangIds = $pengeluaran->details->pluck('barang_id')->filter()->toArray();
+            $queryBarang->where(function ($q) use ($existingBarangIds) {
+                $q->where('master_barang.is_bahan_baku', 1)
+                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
+
+                if (!empty($existingBarangIds)) {
+                    $q->orWhereIn('master_barang.id', $existingBarangIds);
+                }
+            });
         }
 
         $barang = $queryBarang->select([
@@ -994,13 +1025,39 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
+        $barangData = $barang->map(function ($b) {
+            $satuan = $b->satuan ?: 'Pcs';
+            $satuanBeli = $b->satuan_pembelian ?: $satuan;
+            $konversi = (float) ($b->konversi_pembelian ?: 1);
+            $stok = (float) ($b->stok ?: 0);
+            $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
+            $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
+
+            return [
+                'value'              => (string) $b->id,
+                'text'               => "{$b->kode_barang} - {$b->nama} ({$satuan}){$labelKonversi} - Stok Utama: {$stok}{$labelHabis}",
+                'nama'               => $b->nama,
+                'kode'               => $b->kode_barang,
+                'satuan'             => $satuan,
+                'satuan_pembelian'   => $satuanBeli,
+                'konversi_pembelian' => $konversi,
+                'stok'               => $stok,
+                'habis'              => $stok <= 0,
+            ];
+        });
+
         /*
         |--------------------------------------------------------------------------
-        | MASTER GUDANG
+        | MASTER GUDANG & DIVISI
         |--------------------------------------------------------------------------
         */
 
         $gudang = MasterGudang::with('divisi')->orderBy('nama')->get();
+        $gudangDivisiList = collect();
+        if ($pengeluaran->gudang_id) {
+            $gudangDivisiList = \App\Models\GudangDivisi::where('gudang_id', $pengeluaran->gudang_id)->orderBy('nama')->get();
+        }
+
         $user = auth()->user();
         $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
 
@@ -1009,7 +1066,9 @@ class PengeluaranBahanBakuController extends Controller
             compact(
                 'pengeluaran',
                 'barang',
+                'barangData',
                 'gudang',
+                'gudangDivisiList',
                 'jenis',
                 'isApproved',
                 'isSuperAdmin'
@@ -1043,12 +1102,14 @@ class PengeluaranBahanBakuController extends Controller
                 => 'nullable|string',
         ]);
 
+        $data = PengeluaranBahanBaku::with('details')->findOrFail($id);
         $user = auth()->user();
         $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
 
         if ($request->filled('tanggal')) {
             $tanggalInput = date('Y-m-d', strtotime($request->tanggal));
-            if ($tanggalInput < date('Y-m-d') && !$isSuperAdmin) {
+            $existingTanggal = date('Y-m-d', strtotime($data->tanggal));
+            if ($tanggalInput < date('Y-m-d') && $tanggalInput !== $existingTanggal && !$isSuperAdmin) {
                 return back()->withErrors(['tanggal' => 'Hanya Super Admin yang diizinkan mengubah tanggal PBK ke sebelum hari ini.'])->withInput();
             }
         }

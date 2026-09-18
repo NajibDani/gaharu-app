@@ -105,12 +105,22 @@
                     </small>
                 </div>
 
-                <div class="col-md-4" id="divisi-wrapper" style="display: none;">
+                @php
+                    $hasDivisi = !empty($gudangDivisiList) && $gudangDivisiList->count() > 0;
+                @endphp
+                <div class="col-md-4" id="divisi-wrapper" style="{{ $hasDivisi ? '' : 'display: none;' }}">
                     <label class="form-label fw-bold">
                         <i class="bi bi-diagram-3-fill text-primary me-1"></i> Divisi Tujuan <span class="text-danger">*</span>
                     </label>
-                    <select name="divisi_id" id="select-divisi" class="form-select @error('divisi_id') is-invalid @enderror">
+                    <select name="divisi_id" id="select-divisi" class="form-select @error('divisi_id') is-invalid @enderror" {{ $hasDivisi ? 'required' : '' }}>
                         <option value="">-- Pilih Divisi --</option>
+                        @if($hasDivisi)
+                            @foreach($gudangDivisiList as $div)
+                                <option value="{{ $div->id }}" {{ old('divisi_id', $pengeluaran->divisi_id) == $div->id ? 'selected' : '' }}>
+                                    {{ $div->nama }}
+                                </option>
+                            @endforeach
+                        @endif
                     </select>
                     @error('divisi_id')
                         <div class="invalid-feedback">{{ $message }}</div>
@@ -206,7 +216,7 @@
                                         <span class="stok-satuan text-muted fw-semibold small" style="min-width:35px;">{{ $sUtama }}</span>
                                     </div>
                                     <small class="text-muted stok-info d-block mt-1" style="font-size:0.75rem;">
-                                        Tersedia di Gudang Utama: {{ $bItem->stok ?? 0 }} {{ $sUtama }}
+                                        Tersedia di Gudang Utama: {{ $bItem ? ($bItem->stok ?? 0) : 0 }} {{ $sUtama }}
                                     </small>
                                     <small class="text-danger stok-warning d-block mt-1" style="display:none; font-size:0.75rem;"></small>
                                 </td>
@@ -287,21 +297,7 @@
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 
 <script>
-const barangData = [
-    @foreach($barang as $b)
-    {
-        value: "{{ $b->id }}",
-        text: "{{ addslashes($b->kode_barang . ' - ' . $b->nama . ' (' . $b->satuan . ')' . ($b->satuan_pembelian && $b->konversi_pembelian > 1 ? ' [' . $b->satuan_pembelian . ']' : '') . ' - Stok Utama: ' . $b->stok . ($b->stok <= 0 ? ' [HABIS]' : '')) }}",
-        nama: "{{ addslashes($b->nama) }}",
-        kode: "{{ $b->kode_barang }}",
-        satuan: "{{ $b->satuan }}",
-        satuan_pembelian: "{{ $b->satuan_pembelian ?: $b->satuan }}",
-        konversi_pembelian: {{ (float)($b->konversi_pembelian ?: 1) }},
-        stok: {{ (float)$b->stok }},
-        habis: {{ $b->stok <= 0 ? 'true' : 'false' }}
-    },
-    @endforeach
-];
+const barangData = @json($barangData ?? []);
 
 function initTomSelect(selectEl) {
     if (!selectEl || selectEl.tomselect) return selectEl.tomselect;
