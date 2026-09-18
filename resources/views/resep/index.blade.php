@@ -195,7 +195,8 @@
                                     {{ (int) $r->output_qty }} {{ $r->produk->satuan ?? $r->satuan_output }}
                                 </span>
                             </td>
-                            <td>
+                            <td class="text-center">
+                                <div class="d-flex align-items-center justify-content-center gap-1">
                                     <button type="button" 
                                             class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
                                             data-id="{{ $r->id }}"
@@ -555,6 +556,7 @@
             </div>
         </div>
     </div>
+</div>
 {{-- ================= MODAL LIHAT DETAIL RESEP ================= --}}
 <div class="modal fade" id="modalDetailResep" tabindex="-1" aria-labelledby="modalDetailResepTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -1297,24 +1299,33 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // ============ MODAL LIHAT DETAIL RESEP ============
     const modalDetailEl = document.getElementById('modalDetailResep');
-    const bsModalDetail = modalDetailEl ? new bootstrap.Modal(modalDetailEl) : null;
     let activeResepIdForEdit = null;
 
-    document.querySelectorAll('.btn-lihat-resep').forEach(btn => {
-        btn.addEventListener('click', function() {
-            activeResepIdForEdit = this.dataset.id;
-            const produkNama = this.dataset.produkNama || '-';
-            const produkKode = this.dataset.produkKode || '-';
-            const tipeBadge = this.dataset.tipeBadge || '';
-            const outputQty = this.dataset.outputQty || '0';
-            const satuanOutput = this.dataset.satuanOutput || '-';
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-lihat-resep');
+        if (!btn) return;
 
-            document.getElementById('detail-produk-nama').innerText = produkNama;
-            document.getElementById('detail-produk-kode').innerText = produkKode;
-            document.getElementById('detail-output-qty').innerText = `${outputQty} ${satuanOutput}`;
+        e.preventDefault();
+        e.stopPropagation();
 
-            // Tipe badge
-            const badgeContainer = document.getElementById('detail-produk-badge');
+        activeResepIdForEdit = btn.getAttribute('data-id') || btn.dataset.id;
+        const produkNama = btn.getAttribute('data-produk-nama') || btn.dataset.produkNama || '-';
+        const produkKode = btn.getAttribute('data-produk-kode') || btn.dataset.produkKode || '-';
+        const tipeBadge = btn.getAttribute('data-tipe-badge') || btn.dataset.tipeBadge || '';
+        const outputQty = btn.getAttribute('data-output-qty') || btn.dataset.outputQty || '0';
+        const satuanOutput = btn.getAttribute('data-satuan-output') || btn.dataset.satuanOutput || '-';
+
+        const elemNama = document.getElementById('detail-produk-nama');
+        const elemKode = document.getElementById('detail-produk-kode');
+        const elemOutput = document.getElementById('detail-output-qty');
+
+        if (elemNama) elemNama.innerText = produkNama;
+        if (elemKode) elemKode.innerText = produkKode;
+        if (elemOutput) elemOutput.innerText = `${outputQty} ${satuanOutput}`;
+
+        // Tipe badge
+        const badgeContainer = document.getElementById('detail-produk-badge');
+        if (badgeContainer) {
             if (tipeBadge === 'BSJ') {
                 badgeContainer.innerHTML = `<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 11px;"><i class="bi bi-gear me-1"></i>Bahan Setengah Jadi</span>`;
             } else if (tipeBadge === 'POS Kejingga') {
@@ -1328,19 +1339,24 @@ document.addEventListener("DOMContentLoaded", function () {
             } else {
                 badgeContainer.innerHTML = '';
             }
+        }
 
-            // Render daftar bahan baku
-            const tbodyDetail = document.getElementById('tbody-detail-resep');
+        // Render daftar bahan baku
+        const tbodyDetail = document.getElementById('tbody-detail-resep');
+        if (tbodyDetail) {
             tbodyDetail.innerHTML = '';
 
             let bahanList = [];
             try {
-                bahanList = JSON.parse(this.dataset.bahanbaku || '[]');
-            } catch (e) {
+                const rawBahan = btn.getAttribute('data-bahanbaku') || btn.dataset.bahanbaku || '[]';
+                bahanList = typeof rawBahan === 'string' ? JSON.parse(rawBahan) : (rawBahan || []);
+            } catch (err) {
+                console.error('Failed to parse data-bahanbaku:', err);
                 bahanList = [];
             }
 
-            document.getElementById('detail-total-bahan-badge').innerText = `${bahanList.length} Bahan`;
+            const elemTotalBadge = document.getElementById('detail-total-bahan-badge');
+            if (elemTotalBadge) elemTotalBadge.innerText = `${bahanList.length} Bahan`;
 
             if (bahanList.length === 0) {
                 tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar.</td></tr>`;
@@ -1386,11 +1402,12 @@ document.addEventListener("DOMContentLoaded", function () {
                     tbodyDetail.insertAdjacentHTML('beforeend', rowHtml);
                 });
             }
+        }
 
-            if (bsModalDetail) {
-                bsModalDetail.show();
-            }
-        });
+        if (modalDetailEl && typeof bootstrap !== 'undefined') {
+            const modalDetailInst = bootstrap.Modal.getOrCreateInstance(modalDetailEl);
+            modalDetailInst.show();
+        }
     });
 
     // Tombol Edit langsung dari dalam Modal Detail
@@ -1400,12 +1417,17 @@ document.addEventListener("DOMContentLoaded", function () {
             if (!activeResepIdForEdit) return;
             const targetBtnEdit = document.querySelector(`.btn-edit-resep[data-id="${activeResepIdForEdit}"]`);
             if (targetBtnEdit) {
-                if (modalDetailEl) {
+                if (modalDetailEl && typeof bootstrap !== 'undefined') {
+                    const inst = bootstrap.Modal.getInstance(modalDetailEl);
                     modalDetailEl.addEventListener('hidden.bs.modal', function onDetailHidden() {
                         modalDetailEl.removeEventListener('hidden.bs.modal', onDetailHidden);
                         targetBtnEdit.click();
                     });
-                    bsModalDetail.hide();
+                    if (inst) {
+                        inst.hide();
+                    } else {
+                        targetBtnEdit.click();
+                    }
                 } else {
                     targetBtnEdit.click();
                 }

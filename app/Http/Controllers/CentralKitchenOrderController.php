@@ -490,7 +490,15 @@ class CentralKitchenOrderController extends Controller
             }
 
             DB::commit();
-            return redirect()->route('ck-orders.index')->with('success', 'Central Kitchen Order #' . $pesanan->kode_pesanan . ' berhasil diperbarui!');
+            $redirectParams = [];
+            if ($request->filled('page') && intval($request->input('page')) > 1) {
+                $redirectParams['page'] = $request->input('page');
+            }
+            if ($request->filled('search')) {
+                $redirectParams['search'] = $request->input('search');
+            }
+
+            return redirect()->route('ck-orders.index', $redirectParams)->with('success', 'Central Kitchen Order #' . $pesanan->kode_pesanan . ' berhasil diperbarui!');
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal memperbarui pesanan: ' . $e->getMessage())->withInput();

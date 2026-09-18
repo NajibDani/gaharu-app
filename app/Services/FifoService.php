@@ -222,6 +222,8 @@ class FifoService
 
         if ($divisiId) {
             $query->where('divisi_id', $divisiId);
+        } else {
+            $query->whereNull('divisi_id');
         }
 
         $batches = $query->orderBy('id')->lockForUpdate()->get();
@@ -432,6 +434,8 @@ class FifoService
 
         if ($divisiId) {
             $query->where('divisi_id', $divisiId);
+        } else {
+            $query->whereNull('divisi_id');
         }
 
         $batches = $query->orderBy('id')->get();

@@ -263,7 +263,12 @@ class CentralKitchenProductionController extends Controller
         });
 
         // Riwayat Produksi CK dengan detail produk & pesanan
-        $queryProduksi = Produksi::with(['details.produk', 'pesanan.customer', 'divisi'])
+        $queryProduksi = Produksi::with([
+            'details.produk.resepBtklBop.bahanbaku.bahan',
+            'details.produk.resepBtklBop.bahanbaku.alternatif.bahan',
+            'pesanan.customer',
+            'divisi'
+        ])
             ->where(function($q) use ($customerId) {
                 $q->whereHas('pesanan', function($pq) use ($customerId) {
                     $pq->where('tipe_pesanan', 'central_kitchen');
@@ -1507,7 +1512,20 @@ class CentralKitchenProductionController extends Controller
             }
 
             DB::commit();
-            return redirect()->back()->with('success', "Detail Work Order {$wo->kode_wo} berhasil diperbarui oleh Superadmin!");
+            $redirectParams = [
+                'tab' => $request->input('tab', 'wo'),
+            ];
+            if ($request->filled('wo_page') && intval($request->input('wo_page')) > 1) {
+                $redirectParams['wo_page'] = $request->input('wo_page');
+            }
+            if ($request->filled('search')) {
+                $redirectParams['search'] = $request->input('search');
+            }
+            if ($request->filled('customer_id')) {
+                $redirectParams['customer_id'] = $request->input('customer_id');
+            }
+
+            return redirect()->route('ck-produksi.index', $redirectParams)->with('success', "Detail Work Order {$wo->kode_wo} berhasil diperbarui oleh Superadmin!");
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal memperbarui WO: ' . $e->getMessage());

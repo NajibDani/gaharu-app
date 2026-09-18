@@ -80,9 +80,11 @@ class PengeluaranBahanBakuService
 
                 // Kurangi batch FIFO tertua di Gudang Asal
                 $fifoResult = $this->fifoService->consumeFIFO(
-                    $detail->barang_id,
-                    $detail->qty,
-                    $gudangAsalId
+                    barangId:      $detail->barang_id,
+                    qtyKeluar:     $detail->qty,
+                    gudangId:      $gudangAsalId,
+                    allowNegative: true,
+                    divisiId:      null
                 );
 
                 $hppTotal = 0;

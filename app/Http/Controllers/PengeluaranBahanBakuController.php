@@ -616,18 +616,10 @@ class PengeluaranBahanBakuController extends Controller
 
         $soDetailsMap = [];
         if ($isOpname) {
-            $kodeOpname = null;
-            if (preg_match('/SO-\d+/', $pengeluaran->kode_pengeluaran, $matches)) {
-                $kodeOpname = $matches[0];
-            } elseif (preg_match('/SO-\d+/', $pengeluaran->keterangan ?? '', $matches)) {
-                $kodeOpname = $matches[0];
-            }
-            if ($kodeOpname) {
-                $so = \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first();
-                if ($so) {
-                    foreach ($so->details as $sod) {
-                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
-                    }
+            $so = $pengeluaran->findAssociatedStockOpname();
+            if ($so) {
+                foreach ($so->details as $sod) {
+                    $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
                 }
             }
         }
@@ -677,10 +669,12 @@ class PengeluaranBahanBakuController extends Controller
                 $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
                 if ($pengeluaran->divisi_id) {
                     $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
+                } else {
+                    $stokGudangQuery->whereNull('divisi_id');
                 }
                 $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
             } else {
-                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
+                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->whereNull('divisi_id')->sum('jumlah') ?? 0);
             }
 
             $detail->stok_tersedia = $stokTersedia;
@@ -727,18 +721,10 @@ class PengeluaranBahanBakuController extends Controller
 
         $soDetailsMap = [];
         if ($isOpname) {
-            $kodeOpname = null;
-            if (preg_match('/SO-\d+/', $pengeluaran->kode_pengeluaran, $matches)) {
-                $kodeOpname = $matches[0];
-            } elseif (preg_match('/SO-\d+/', $pengeluaran->keterangan ?? '', $matches)) {
-                $kodeOpname = $matches[0];
-            }
-            if ($kodeOpname) {
-                $so = \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first();
-                if ($so) {
-                    foreach ($so->details as $sod) {
-                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
-                    }
+            $so = $pengeluaran->findAssociatedStockOpname();
+            if ($so) {
+                foreach ($so->details as $sod) {
+                    $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
                 }
             }
         }
@@ -797,10 +783,12 @@ class PengeluaranBahanBakuController extends Controller
                 $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
                 if ($pengeluaran->divisi_id) {
                     $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
+                } else {
+                    $stokGudangQuery->whereNull('divisi_id');
                 }
                 $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
             } else {
-                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
+                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->whereNull('divisi_id')->sum('jumlah') ?? 0);
             }
 
             if ($isOpname) {
@@ -917,18 +905,10 @@ class PengeluaranBahanBakuController extends Controller
 
         $soDetailsMap = [];
         if ($isOpname) {
-            $kodeOpname = null;
-            if (preg_match('/SO-\d+/', $pengeluaran->kode_pengeluaran, $matches)) {
-                $kodeOpname = $matches[0];
-            } elseif (preg_match('/SO-\d+/', $pengeluaran->keterangan ?? '', $matches)) {
-                $kodeOpname = $matches[0];
-            }
-            if ($kodeOpname) {
-                $so = \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first();
-                if ($so) {
-                    foreach ($so->details as $sod) {
-                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
-                    }
+            $so = $pengeluaran->findAssociatedStockOpname();
+            if ($so) {
+                foreach ($so->details as $sod) {
+                    $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
                 }
             }
         }
@@ -975,10 +955,12 @@ class PengeluaranBahanBakuController extends Controller
                 $stokGudangQuery = StokGudang::where('barang_id', $detail->barang_id)->where('gudang_id', $pengeluaran->gudang_id);
                 if ($pengeluaran->divisi_id) {
                     $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
+                } else {
+                    $stokGudangQuery->whereNull('divisi_id');
                 }
                 $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
             } else {
-                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->sum('jumlah') ?? 0);
+                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->whereNull('divisi_id')->sum('jumlah') ?? 0);
             }
 
             $detail->stok_tersedia = $stokTersedia;
@@ -1580,17 +1562,7 @@ class PengeluaranBahanBakuController extends Controller
         $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '4201')->value('id') ?? 32;
 
         if ($isOpname) {
-            $kodeOpname = null;
-            if (preg_match('/SO-\d+/', $data->kode_pengeluaran, $matches)) {
-                $kodeOpname = $matches[0];
-            } elseif (preg_match('/SO-\d+/', $data->keterangan ?? '', $matches)) {
-                $kodeOpname = $matches[0];
-            }
-
-            $opname = null;
-            if ($kodeOpname) {
-                $opname = \App\Models\StockOpname::with('details.barang')->where('kode_opname', $kodeOpname)->first();
-            }
+            $opname = $data->findAssociatedStockOpname();
 
             if ($opname) {
                 $opname->update(['status' => 'approved']);
@@ -1805,6 +1777,7 @@ class PengeluaranBahanBakuController extends Controller
                     foreach ($data->details as $detail) {
                         $stokTersedia = (float) (StokGudang::where('barang_id', $detail->barang_id)
                             ->where('gudang_id', $gudangAsalId)
+                            ->whereNull('divisi_id')
                             ->sum('jumlah') ?? 0);
 
                         if ($stokTersedia < $detail->qty) {

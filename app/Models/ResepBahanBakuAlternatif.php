@@ -12,7 +12,7 @@ class ResepBahanBakuAlternatif extends Model
 
     public function bahan()
     {
-        return $this->belongsTo(MasterBarang::class, 'bahan_id', 'id');
+        return $this->belongsTo(MasterBarang::class, 'bahan_id', 'id')->withoutGlobalScopes();
     }
 
     public function resepBahanBaku()

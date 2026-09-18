@@ -222,6 +222,11 @@
                             </tbody>
                         </table>
                     </div>
+                    @if($pesananCkPending->hasPages())
+                        <div class="card-footer bg-white border-top py-3 d-flex justify-content-end">
+                            {{ $pesananCkPending->appends(array_merge(request()->query(), ['tab' => 'pending']))->links() }}
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -996,6 +1001,10 @@
                                                             </div>
                                                             <form action="{{ route('ck-produksi.edit-qty-wo', $wo->id) }}" method="POST" onsubmit="return confirm('Simpan perubahan kuantitas Work Order ini?')">
                                                                 @csrf
+                                                                <input type="hidden" name="tab" value="wo">
+                                                                <input type="hidden" name="wo_page" value="{{ request('wo_page', 1) }}">
+                                                                <input type="hidden" name="search" value="{{ request('search', '') }}">
+                                                                <input type="hidden" name="customer_id" value="{{ request('customer_id', '') }}">
                                                                 <div class="modal-body p-4">
                                                                     <div class="alert alert-warning border-warning d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
                                                                         <i class="bi bi-shield-lock-fill fs-5 text-warning flex-shrink-0"></i>
@@ -1129,6 +1138,11 @@
                             </tbody>
                         </table>
                     </div>
+                    @if($woList->hasPages())
+                        <div class="card-footer bg-white border-top py-3 d-flex justify-content-end">
+                            {{ $woList->appends(array_merge(request()->query(), ['tab' => 'wo']))->links() }}
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -1305,10 +1319,90 @@
                                                                         @foreach($prod->details as $idx => $d)
                                                                             @php
                                                                                 $hppUnit = $d->qty > 0 ? ($d->hpp_total / $d->qty) : 0;
+                                                                                $resep = $d->produk ? ($d->produk->resepBtklBop ?? \App\Models\ResepBtklBop::with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->where('produk_id', $d->produk_id)->first()) : \App\Models\ResepBtklBop::with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->where('produk_id', $d->produk_id)->first();
+                                                                                $hasResep = $resep && $resep->bahanbaku && $resep->bahanbaku->count() > 0;
+                                                                                $outputQtyResep = $resep ? floatval($resep->output_qty) : 0;
+                                                                                $batchCount = $outputQtyResep > 0 ? ($d->qty / $outputQtyResep) : 0;
+
+                                                                                // Ambil data harga dari transaksi_stok (FIFO yang sudah dikonsumsi saat produksi ini)
+                                                                                // Key: barang_id => ['qty'=>..., 'total_harga'=>..., 'harga_per_unit'=>...]
+                                                                                $transaksiHarga = \DB::table('transaksi_stok')
+                                                                                    ->where('source_type', 'produksi_ck')
+                                                                                    ->where('source_id', $prod->id)
+                                                                                    ->where('tipe', 'keluar')
+                                                                                    ->get()
+                                                                                    ->keyBy('barang_id')
+                                                                                    ->map(function($t) {
+                                                                                        $qty = floatval($t->qty);
+                                                                                        $totalH = floatval($t->total_harga);
+                                                                                        return [
+                                                                                            'qty'          => $qty,
+                                                                                            'total_harga'  => $totalH,
+                                                                                            'harga_per_unit'=> $qty > 0 ? ($totalH / $qty) : 0,
+                                                                                            'sumber'       => 'fifo',
+                                                                                        ];
+                                                                                    })->toArray();
+
+                                                                                // Build JSON data for modal popup
+                                                                                $resepJson = [];
+                                                                                if ($hasResep) {
+                                                                                    $resepJson = [
+                                                                                        'produk'       => $d->produk->nama ?? ('Produk #' . $d->produk_id),
+                                                                                        'output_qty'   => $outputQtyResep,
+                                                                                        'satuan_output'=> $resep->satuan_output ?? ($d->produk->satuan ?? 'GR'),
+                                                                                        'batch_count'  => round($batchCount, 4),
+                                                                                        'bahanbaku'    => $resep->bahanbaku->map(function($b) use ($batchCount, $transaksiHarga, $prod) {
+                                                                                            $qtyPerBatch = floatval($b->qty_bahan);
+                                                                                            $totalQty    = round($qtyPerBatch * $batchCount, 4);
+                                                                                            $bahanId     = $b->bahan_id;
+
+                                                                                            // Harga dari transaksi_stok FIFO aktual
+                                                                                            if (isset($transaksiHarga[$bahanId])) {
+                                                                                                $hData = $transaksiHarga[$bahanId];
+                                                                                                $hargaPerUnit  = $hData['harga_per_unit'];
+                                                                                                $totalHargaBahan = $hargaPerUnit * $totalQty;  // harga per unit × qty yg dipakai produk ini
+                                                                                                $sumberHarga   = 'FIFO Aktual';
+                                                                                            } else {
+                                                                                                // Bahan tidak ada di transaksi (stok 0, pakai harga terakhir dari fifo_layers)
+                                                                                                $lastLayer = \DB::table('fifo_layers')
+                                                                                                    ->where('barang_id', $bahanId)
+                                                                                                    ->orderByDesc('id')
+                                                                                                    ->value('harga_per_unit');
+                                                                                                $hargaPerUnit  = floatval($lastLayer ?? 0);
+                                                                                                $totalHargaBahan = $hargaPerUnit * $totalQty;
+                                                                                                $sumberHarga   = $lastLayer ? 'Harga Terakhir' : '-';
+                                                                                            }
+
+                                                                                            return [
+                                                                                                'nama'          => $b->bahan->nama ?? ('Bahan ID ' . $bahanId),
+                                                                                                'kode'          => $b->bahan->kode_barang ?? null,
+                                                                                                'qty_per_batch' => $qtyPerBatch,
+                                                                                                'total_qty'     => $totalQty,
+                                                                                                'satuan'        => $b->satuan ?? ($b->bahan->satuan ?? 'GR'),
+                                                                                                'harga_per_unit'=> round($hargaPerUnit, 4),
+                                                                                                'total_harga'   => round($totalHargaBahan, 2),
+                                                                                                'sumber_harga'  => $sumberHarga,
+                                                                                                'alternatif'    => $b->alternatif ? $b->alternatif->map(function($alt) {
+                                                                                                    return ['prioritas' => $alt->prioritas, 'nama' => $alt->bahan->nama ?? '-'];
+                                                                                                })->values()->toArray() : [],
+                                                                                            ];
+                                                                                        })->values()->toArray(),
+                                                                                    ];
+                                                                                }
                                                                             @endphp
                                                                             <tr>
                                                                                 <td>{{ $idx + 1 }}</td>
-                                                                                <td class="text-start fw-bold">{{ $d->produk->nama ?? 'N/A' }}</td>
+                                                                                <td class="text-start fw-bold">
+                                                                                    {{ $d->produk->nama ?? ('Produk #' . $d->produk_id) }}
+                                                                                    @if($hasResep)
+                                                                                        <button type="button"
+                                                                                            class="btn btn-sm btn-outline-info rounded-pill py-0 px-2 ms-2 shadow-none btn-show-resep-modal"
+                                                                                            style="font-size: 11px;"
+                                                                                            data-resep="{{ json_encode($resepJson) }}">
+                                                                                            <i class="bi bi-journal-text me-1"></i> Rincian Resep &amp; Bahan
+                                                                                        </button>
+                                                                                    @endif
+                                                                                </td>
                                                                                 <td class="fw-bold text-dark">{{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? 'pcs' }}</td>
                                                                                 <td class="text-end fw-bold text-danger">Rp {{ number_format($d->hpp_total, 2, ',', '.') }}</td>
                                                                                 <td class="text-end fw-bold text-info">Rp {{ number_format($hppUnit, 2, ',', '.') }}</td>
@@ -1354,6 +1448,42 @@
                                 @endforelse
                             </tbody>
                         </table>
+                    </div>
+                    @if($riwayatProduksi->hasPages())
+                        <div class="card-footer bg-white border-top py-3 d-flex justify-content-end">
+                            {{ $riwayatProduksi->appends(array_merge(request()->query(), ['tab' => 'prod']))->links() }}
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            {{-- MODAL: Rincian Resep & Bahan (reusable, fullscreen, diisi via JS) --}}
+            <div class="modal fade" id="modalRincianResep" tabindex="-1" aria-labelledby="modalRincianResepLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header bg-info bg-opacity-10 border-bottom py-3">
+                            <div class="flex-grow-1">
+                                <h5 class="modal-title fw-bold text-info mb-0" id="modalRincianResepLabel">
+                                    <i class="bi bi-gear-wide-connected me-2"></i>
+                                    Formulasi Resep: <span id="resepModalNamaProduk">-</span>
+                                </h5>
+                                <small class="text-muted" id="resepModalSubtitle"></small>
+                            </div>
+                            <button type="button" class="btn-close ms-3" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-4" style="overflow-y: auto;">
+                            <div id="resepModalBody">
+                                <p class="text-muted text-center py-3">Memuat data resep...</p>
+                            </div>
+                        </div>
+                        <div class="modal-footer py-2 bg-light justify-content-between">
+                            <div id="resepModalFooterInfo" class="text-muted small fst-italic">
+                                * HPP Total mencakup nilai bahan baku FIFO + <strong>30% Biaya Konversi (BTKL &amp; BOP)</strong>.
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm px-4" data-bs-dismiss="modal">
+                                <i class="bi bi-x-lg me-1"></i> Tutup
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2141,6 +2271,93 @@
                         }
                     }
                 }
+            });
+
+            // Listener untuk Rincian Resep & Bahan — tampilkan modal popup
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('.btn-show-resep-modal');
+                if (!btn) return;
+                e.preventDefault();
+                e.stopPropagation();
+
+                let resepData;
+                try {
+                    resepData = JSON.parse(btn.getAttribute('data-resep') || '{}');
+                } catch(err) {
+                    alert('Gagal memuat data resep.');
+                    return;
+                }
+
+                const fmtNum = (v, dec) => parseFloat(v || 0).toLocaleString('id-ID', {minimumFractionDigits: dec, maximumFractionDigits: dec});
+                const fmtRp  = (v) => 'Rp ' + fmtNum(v, 2);
+
+                // Isi header modal
+                document.getElementById('resepModalNamaProduk').textContent = resepData.produk || '-';
+                document.getElementById('resepModalSubtitle').textContent =
+                    'Standard Output: ' + fmtNum(resepData.output_qty, 0) + ' ' + (resepData.satuan_output || 'GR') +
+                    '   ·   Total Produksi: ' + fmtNum(resepData.batch_count, 2) + ' Batch';
+
+                // Bangun tabel bahan baku
+                const bahanbaku = resepData.bahanbaku || [];
+                let rows = '';
+                let grandTotalHarga = 0;
+
+                bahanbaku.forEach(function(b, idx) {
+                    const altHtml = (b.alternatif || []).map(function(alt) {
+                        return '<div class="ms-3 text-muted" style="font-size:10.5px;"><i class="bi bi-arrow-return-right me-1"></i> Substitusi (Prio ' + alt.prioritas + '): ' + alt.nama + '</div>';
+                    }).join('');
+                    const kodeHtml = b.kode ? '<span class="text-muted small font-monospace ms-1">(' + b.kode + ')</span>' : '';
+
+                    const isFifo   = (b.sumber_harga === 'FIFO Aktual');
+                    const isLast   = (b.sumber_harga === 'Harga Terakhir');
+                    const badgeCls = isFifo ? 'bg-success-subtle text-success border border-success-subtle'
+                                   : (isLast ? 'bg-warning-subtle text-warning border border-warning-subtle'
+                                   : 'bg-secondary-subtle text-secondary');
+                    const badgeLabel = b.sumber_harga || '-';
+                    const sumberBadge = '<span class="badge ' + badgeCls + ' ms-1" style="font-size:9px;">' + badgeLabel + '</span>';
+
+                    const totalHarga = parseFloat(b.total_harga || 0);
+                    grandTotalHarga += totalHarga;
+
+                    rows += '<tr>' +
+                        '<td class="text-center align-middle">' + (idx + 1) + '</td>' +
+                        '<td class="align-middle"><span class="fw-semibold text-dark">' + b.nama + '</span>' + kodeHtml + sumberBadge + altHtml + '</td>' +
+                        '<td class="text-center align-middle">' + fmtNum(b.qty_per_batch, 2) + ' ' + b.satuan + '</td>' +
+                        '<td class="text-center align-middle fw-semibold text-primary">' + fmtNum(b.total_qty, 2) + ' ' + b.satuan + '</td>' +
+                        '<td class="text-end align-middle text-muted">' + fmtRp(b.harga_per_unit) + '/' + b.satuan + '</td>' +
+                        '<td class="text-end align-middle fw-semibold text-danger">' + fmtRp(totalHarga) + '</td>' +
+                    '</tr>';
+                });
+
+                // Baris total
+                const totalRow = bahanbaku.length > 0
+                    ? '<tr class="table-light fw-bold">' +
+                        '<td colspan="5" class="text-end">Total Biaya Bahan Baku (BBB):</td>' +
+                        '<td class="text-end text-danger">' + fmtRp(grandTotalHarga) + '</td>' +
+                      '</tr>'
+                    : '';
+
+                const bodyHtml = bahanbaku.length === 0
+                    ? '<p class="text-muted text-center py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>Tidak ada bahan baku dalam resep ini.</p>'
+                    : '<table class="table table-sm table-hover table-bordered bg-white mb-0" style="font-size:13px;">' +
+                        '<thead class="table-dark text-uppercase" style="font-size:11px;">' +
+                          '<tr>' +
+                            '<th style="width:4%;" class="text-center">No</th>' +
+                            '<th>Bahan Baku / Alternatif</th>' +
+                            '<th class="text-center" style="width:14%;">Takaran / Batch</th>' +
+                            '<th class="text-center" style="width:14%;">Total Pemakaian</th>' +
+                            '<th class="text-end" style="width:16%;">Harga / Unit</th>' +
+                            '<th class="text-end" style="width:16%;">Total Harga Bahan</th>' +
+                          '</tr>' +
+                        '</thead>' +
+                        '<tbody>' + rows + totalRow + '</tbody>' +
+                      '</table>';
+
+                document.getElementById('resepModalBody').innerHTML = bodyHtml;
+
+                // Tampilkan modal
+                const modalEl = document.getElementById('modalRincianResep');
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
             });
         });
     </script>

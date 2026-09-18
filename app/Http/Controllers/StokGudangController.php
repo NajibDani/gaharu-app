@@ -251,8 +251,8 @@ class StokGudangController extends Controller
             $queryIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
             $queryOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
         } elseif ($gudangId) {
-            $queryIn->where('gudang_tujuan_id', $gudangId);
-            $queryOut->where('gudang_asal_id', $gudangId);
+            $queryIn->where('gudang_tujuan_id', $gudangId)->whereNull('divisi_tujuan_id');
+            $queryOut->where('gudang_asal_id', $gudangId)->whereNull('divisi_asal_id');
         } elseif ($divisiId) {
             $queryIn->where('divisi_tujuan_id', $divisiId);
             $queryOut->where('divisi_asal_id', $divisiId);
@@ -341,11 +341,14 @@ class StokGudangController extends Controller
                 if ($divisiId) {
                     $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
+                } elseif ($gudangId) {
+                    $matchTujuan = $matchTujuan && is_null($row->divisi_tujuan_id);
+                    $matchAsal   = $matchAsal   && is_null($row->divisi_asal_id);
                 }
 
-                if ($matchTujuan) {
+                if ($matchTujuan && !$matchAsal) {
                     $isMasuk = true;
-                } elseif ($matchAsal) {
+                } elseif ($matchAsal && !$matchTujuan) {
                     $isKeluar = true;
                 }
             } else {
@@ -440,11 +443,14 @@ class StokGudangController extends Controller
                 if ($divisiId) {
                     $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
+                } elseif ($gudangId) {
+                    $matchTujuan = $matchTujuan && is_null($row->divisi_tujuan_id);
+                    $matchAsal   = $matchAsal   && is_null($row->divisi_asal_id);
                 }
 
-                if ($matchTujuan) {
+                if ($matchTujuan && !$matchAsal) {
                     $isMasuk = true;
-                } elseif ($matchAsal) {
+                } elseif ($matchAsal && !$matchTujuan) {
                     $isKeluar = true;
                 }
             } else {
@@ -676,17 +682,7 @@ class StokGudangController extends Controller
         }
 
         foreach ($draftPbks as $pbk) {
-            $kodeOpname = null;
-            if (preg_match('/SO-\d+/', $pbk->kode_pengeluaran, $matches)) {
-                $kodeOpname = $matches[0];
-            } elseif (preg_match('/SO-\d+/', $pbk->keterangan ?? '', $matches)) {
-                $kodeOpname = $matches[0];
-            }
-
-            $opname = null;
-            if ($kodeOpname) {
-                $opname = \App\Models\StockOpname::where('kode_opname', $kodeOpname)->first();
-            }
+            $opname = $pbk->findAssociatedStockOpname();
 
             if ($opname) {
                 $txQuery = \App\Models\TransaksiStok::where('source_type', 'stock_opname')

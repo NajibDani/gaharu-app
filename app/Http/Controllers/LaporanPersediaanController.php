@@ -265,10 +265,7 @@ class LaporanPersediaanController extends Controller
         $totalNilaiHpp  = $data->sum(function($d) {
             $isOpname = ($d->jenis_pengeluaran === 'stock_opname' || str_starts_with($d->kode_pengeluaran, 'PBK-SO-'));
             if ($isOpname) {
-                $kodeOpname = null;
-                if (preg_match('/SO-\d+/', $d->kode_pengeluaran, $m)) $kodeOpname = $m[0];
-                elseif (preg_match('/SO-\d+/', $d->keterangan ?? '', $m)) $kodeOpname = $m[0];
-                $so = $kodeOpname ? \App\Models\StockOpname::with('details')->where('kode_opname', $kodeOpname)->first() : null;
+                $so = $d->findAssociatedStockOpname();
                 if ($so) {
                     $map = [];
                     foreach ($so->details as $sod) $map[$sod->barang_id] = (float)$sod->selisih;

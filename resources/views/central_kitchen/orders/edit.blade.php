@@ -44,6 +44,8 @@
         <form action="{{ route('ck-orders.update', $pesanan->id) }}" method="POST" id="form-ck-order">
             @csrf
             @method('PUT')
+            <input type="hidden" name="page" value="{{ request('page', 1) }}">
+            <input type="hidden" name="search" value="{{ request('search', '') }}">
 
             <div class="card card-form p-4 mb-4">
                 <h6 class="fw-bold text-dark mb-3 border-bottom pb-2">Informasi Order</h6>

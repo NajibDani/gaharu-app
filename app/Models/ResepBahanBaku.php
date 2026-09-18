@@ -13,7 +13,7 @@ class ResepBahanBaku extends Model
     public function bahan()
     {
         // Menghubungkan bahan_id kembali ke MasterBarang untuk ambil Nama Barang
-        return $this->belongsTo(MasterBarang::class, 'bahan_id', 'id');
+        return $this->belongsTo(MasterBarang::class, 'bahan_id', 'id')->withoutGlobalScopes();
     }
 
     public function resep()

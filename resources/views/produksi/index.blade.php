@@ -668,6 +668,10 @@
                                                             </div>
                                                             <form action="{{ route('produksi.edit-qty-wo', $wo->id) }}" method="POST" onsubmit="return confirm('Simpan perubahan kuantitas Work Order ini?')">
                                                                 @csrf
+                                                                <input type="hidden" name="tab" value="wo">
+                                                                <input type="hidden" name="wo_page" value="{{ request('wo_page', 1) }}">
+                                                                <input type="hidden" name="search" value="{{ request('search', '') }}">
+                                                                <input type="hidden" name="customer_id" value="{{ request('customer_id', '') }}">
                                                                 <div class="modal-body p-4">
                                                                     <div class="alert alert-warning border-warning d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
                                                                         <i class="bi bi-shield-lock-fill fs-5 text-warning flex-shrink-0"></i>
