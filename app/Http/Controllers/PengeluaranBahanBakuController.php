@@ -53,6 +53,7 @@ class PengeluaranBahanBakuController extends Controller
         $search = $request->query('search');
         $jenisFilter = $request->query('jenis');
         $divisiId = $request->query('divisi_id');
+        $statusFilter = $request->query('status');
         $sort = $request->query('sort', 'terbaru');
         $dari = $request->query('dari');
         $sampai = $request->query('sampai');
@@ -88,12 +89,42 @@ class PengeluaranBahanBakuController extends Controller
         if ($divisiId) {
             $query->where('pengeluaran_bahan_baku.divisi_id', $divisiId);
         }
+        if ($statusFilter === 'draft' || $statusFilter === 'belum_approved') {
+            $query->where('pengeluaran_bahan_baku.status', 'draft');
+        } elseif ($statusFilter === 'approved' || $statusFilter === 'disetujui') {
+            $query->whereIn('pengeluaran_bahan_baku.status', ['approved', 'disetujui']);
+        }
         if ($dari) {
             $query->whereDate('pengeluaran_bahan_baku.tanggal', '>=', $dari);
         }
         if ($sampai) {
             $query->whereDate('pengeluaran_bahan_baku.tanggal', '<=', $sampai);
         }
+
+        // Akumulasi statistik seluruh database sesuai filter
+        $countQuery = DB::table('pengeluaran_bahan_baku');
+        if ($search) {
+            $countQuery->where(function($q) use ($search) {
+                $q->where('pengeluaran_bahan_baku.kode_pengeluaran', 'like', '%' . $search . '%')
+                  ->orWhere('pengeluaran_bahan_baku.keterangan', 'like', '%' . $search . '%');
+            });
+        }
+        if ($jenisFilter) {
+            $countQuery->where('pengeluaran_bahan_baku.jenis_pengeluaran', $jenisFilter);
+        }
+        if ($divisiId) {
+            $countQuery->where('pengeluaran_bahan_baku.divisi_id', $divisiId);
+        }
+        if ($dari) {
+            $countQuery->whereDate('pengeluaran_bahan_baku.tanggal', '>=', $dari);
+        }
+        if ($sampai) {
+            $countQuery->whereDate('pengeluaran_bahan_baku.tanggal', '<=', $sampai);
+        }
+
+        $totalCount = (clone $countQuery)->count();
+        $draftCount = (clone $countQuery)->where('pengeluaran_bahan_baku.status', 'draft')->count();
+        $approvedCount = (clone $countQuery)->whereIn('pengeluaran_bahan_baku.status', ['approved', 'disetujui'])->count();
 
         if ($sort === 'terlama') {
             $query->orderBy('pengeluaran_bahan_baku.tanggal', 'asc')
@@ -182,7 +213,7 @@ class PengeluaranBahanBakuController extends Controller
 
         return view(
             'pengeluaran-bahan-baku.index',
-            compact('data', 'outletSuggestionsSummary', 'divisiList')
+            compact('data', 'outletSuggestionsSummary', 'divisiList', 'totalCount', 'draftCount', 'approvedCount', 'statusFilter')
         );
     }
 
@@ -1239,8 +1270,14 @@ class PengeluaranBahanBakuController extends Controller
                 }
             });
 
+            $page = $request->input('page', 1);
+            $redirectParams = [];
+            if ($page && (int)$page > 1) {
+                $redirectParams['page'] = (int)$page;
+            }
+
             return redirect()
-                ->route('pengeluaran-bahan-baku.index')
+                ->route('pengeluaran-bahan-baku.index', $redirectParams)
                 ->with(
                     'success',
                     'Pengeluaran bahan baku berhasil diperbarui' . ($isApprovedGlobal ? ' dan alokasi stok telah disinkronkan ulang.' : '.')

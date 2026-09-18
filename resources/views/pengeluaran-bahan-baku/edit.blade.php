@@ -68,6 +68,7 @@
         <form action="{{ route('pengeluaran-bahan-baku.update', $pengeluaran->id) }}" method="POST">
             @csrf
             @method('PUT')
+            <input type="hidden" name="page" value="{{ request('page', 1) }}">
 
             <div class="row mb-4">
                 <div class="col-md-4">
@@ -184,15 +185,11 @@
                                 <td>
                                     <select name="barang_id[]" class="form-select barang-select" required>
                                         <option value="">-- Pilih / Cari Bahan Baku --</option>
-                                        @foreach($barang as $b)
-                                            <option value="{{ $b->id }}" data-stok="{{ $b->stok }}"
-                                                data-kode="{{ $b->kode_barang }}" data-satuan="{{ $b->satuan }}"
-                                                data-satuan-pembelian="{{ $b->satuan_pembelian }}"
-                                                data-konversi-pembelian="{{ $b->konversi_pembelian }}"
-                                                {{ $detail->barang_id == $b->id ? 'selected' : '' }}>
-                                                {{ $b->nama }}
+                                        @if($detail->barang_id)
+                                            <option value="{{ $detail->barang_id }}" selected>
+                                                {{ $bItem ? $bItem->nama : ('ID: ' . $detail->barang_id) }}
                                             </option>
-                                        @endforeach
+                                        @endif
                                     </select>
                                 </td>
                                 <td>
