@@ -41,9 +41,16 @@ class PembelianController extends Controller
         // Auto-heal batch pembelian yang belum terkonversi otomatis tanpa perlu migrasi database
         MasterBarang::autoHealUnconvertedPembelianBatches();
 
-        $search = $request->query('search');
+        $search            = $request->query('search');
+        $sort              = $request->query('sort', 'terbaru');
+        $statusPembayaran  = $request->query('status_pembayaran');
+        $statusPenerimaan  = $request->query('status_penerimaan');
+        $dari              = $request->query('dari');
+        $sampai            = $request->query('sampai');
+
         $query = Pembelian::with(['supplier', 'gudang', 'user', 'details.barang']);
 
+        // Filter pencarian
         if ($search) {
             $hasKeterangan = Schema::hasColumn('pembelian', 'keterangan');
             $query->where(function($q) use ($search, $hasKeterangan) {
@@ -57,7 +64,45 @@ class PembelianController extends Controller
             });
         }
 
-        $pembelian = $query->orderBy('kode_pembelian', 'desc')->paginate(10)->withQueryString();
+        // Filter status pembayaran
+        if ($statusPembayaran === 'belum_dicatat') {
+            $query->whereNull('metode_pembayaran');
+        } elseif ($statusPembayaran === 'cod') {
+            $query->where('metode_pembayaran', 'cod');
+        } elseif ($statusPembayaran === 'belum_lunas') {
+            $query->whereNotNull('metode_pembayaran')
+                  ->where('metode_pembayaran', '!=', 'cod')
+                  ->where('is_lunas', false);
+        } elseif ($statusPembayaran === 'lunas') {
+            $query->where(function($q) {
+                $q->where('metode_pembayaran', 'cod')
+                  ->orWhere('is_lunas', true);
+            });
+        }
+
+        // Filter status penerimaan
+        if ($statusPenerimaan === 'belum_diterima') {
+            $query->where('is_diterima', false);
+        } elseif ($statusPenerimaan === 'diterima') {
+            $query->where('is_diterima', true);
+        }
+
+        // Filter tanggal
+        if ($dari) {
+            $query->whereDate('tanggal', '>=', $dari);
+        }
+        if ($sampai) {
+            $query->whereDate('tanggal', '<=', $sampai);
+        }
+
+        // Urutan
+        if ($sort === 'terlama') {
+            $query->orderBy('tanggal', 'asc')->orderBy('id', 'asc');
+        } else {
+            $query->orderBy('tanggal', 'desc')->orderBy('id', 'desc');
+        }
+
+        $pembelian = $query->paginate(10)->withQueryString();
 
         $dataPembayaran = $pembelian->mapWithKeys(function ($item) {
             $label = match($item->metode_pembayaran) {
