@@ -172,6 +172,9 @@
                     <a href="{{ route('stok-gudang.index') }}" class="{{ request()->routeIs('stok-gudang.index') || request()->routeIs('stok-gudang.detail') || request()->routeIs('stok-gudang-batch.*') ? 'active' : '' }}">
                         <i class="bi bi-box-seam me-2" style="font-size:12px;"></i>Stok Gudang
                     </a>
+                    <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
+                        <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
+                    </a>
                     <a href="{{ route('pembelian.index') }}" class="{{ request()->routeIs('pembelian.*') && !request()->routeIs('pembelian-kejingga.*') ? 'active' : '' }}">
                         <i class="bi bi-bag-plus me-2" style="font-size:12px;"></i>Pembelian Bahan Baku
                     </a>
@@ -294,7 +297,7 @@
             {{-- ========================================================================= --}}
             {{-- LAPORAN --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Kepala Gudang', 'Management', 'Direktur Keuangan']))
+            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang', 'Management', 'Direktur Keuangan']))
             <div class="menu-group {{ $reportsActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -365,6 +368,13 @@
                         <a href="{{ route('buku-pembantu.index') }}" class="{{ request()->routeIs('buku-pembantu.*') ? 'active' : '' }}">
                             <i class="bi bi-book-half me-2" style="font-size:12px;"></i>Buku Pembantu Piutang/Utang
                         </a>
+                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
+                            <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
+                        </a>
+                    @endif
+
+                    @if($canRole(['Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']))
+                        <div class="submenu-divider">PERSEDIAAN</div>
                         <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
                             <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
                         </a>

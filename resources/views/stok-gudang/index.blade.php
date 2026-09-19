@@ -2,10 +2,13 @@
 
     <div class="container-fluid px-2 px-md-4 py-3">
 
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="fw-bold mb-0">
                 Stok Gudang
             </h4>
+            <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="btn btn-sm btn-outline-secondary fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="border-radius: 8px;">
+                <i class="bi bi-journal-bookmark-fill text-primary"></i> Buku Pembantu Persediaan
+            </a>
         </div>
 
         <!-- FILTER -->

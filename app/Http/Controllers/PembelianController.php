@@ -509,6 +509,7 @@ class PembelianController extends Controller
 
                 // Tambah stok gudang
                 $this->stockService->stockIn([
+                    'tanggal'         => $pembelian->tanggal,
                     'barang_id'       => $detail->barang_id,
                     'gudang_tujuan_id'=> $pembelian->gudang_id,
                     'qty'             => $qtyMasukStok,
@@ -1001,7 +1002,7 @@ class PembelianController extends Controller
 
                     // Catat mutasi stok keluar (koreksi pembatalan pembelian)
                     \App\Models\TransaksiStok::create([
-                        'tanggal'        => now(),
+                        'tanggal'        => $pembelian->tanggal,
                         'tipe'           => 'keluar',
                         'source_type'    => 'pembelian_batal',
                         'source_id'      => $pembelian->id,
