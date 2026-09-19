@@ -367,6 +367,8 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
     Route::get('/stok-gudang/buku-pembantu', [StokGudangController::class, 'bukuPembantuIndex'])->name('stok-gudang.buku-pembantu.index');
     Route::get('/stok-gudang/buku-pembantu/mutasi', [StokGudangController::class, 'bukuPembantuMutasi'])->name('stok-gudang.buku-pembantu.mutasi');
+    Route::post('/stok-gudang/buku-pembantu/reset-pembelian', [StokGudangController::class, 'resetPembelianBarang'])->name('stok-gudang.buku-pembantu.reset-pembelian');
+    Route::post('/stok-gudang/buku-pembantu/reset-permintaan', [StokGudangController::class, 'resetPermintaanBarang'])->name('stok-gudang.buku-pembantu.reset-permintaan');
 
     Route::prefix('laporan')->name('laporan.')->group(function () {
         Route::get('/stok-gudang', [LaporanPersediaanController::class, 'stokGudang'])->name('stok-gudang');

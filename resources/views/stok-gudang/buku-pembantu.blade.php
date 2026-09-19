@@ -170,12 +170,20 @@
     <div class="modal fade" id="modalMutasi" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content border-0 shadow-lg" style="border-radius: 14px;">
-                <div class="modal-header text-white border-0 px-4 py-3" style="background-color: #715745; border-radius: 14px 14px 0 0;">
+                <div class="modal-header text-white border-0 px-4 py-3 d-flex justify-content-between align-items-center flex-wrap gap-2" style="background-color: #715745; border-radius: 14px 14px 0 0;">
                     <div>
                         <h5 class="modal-title fw-bold" id="modalBarangTitle">Rincian Buku Pembantu</h5>
                         <p class="text-white-50 mb-0 font-monospace" style="font-size: 12px;" id="modalBarangSubtitle"></p>
                     </div>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-none d-md-inline-flex align-items-center" onclick="document.getElementById('btnResetPembelianModal').click();" style="font-size: 11px;">
+                            <i class="bi bi-trash3 me-1 text-danger-emphasis bg-white rounded-circle p-0.5"></i> Hapus Pembelian
+                        </button>
+                        <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-none d-md-inline-flex align-items-center" onclick="document.getElementById('btnResetPermintaanModal').click();" style="font-size: 11px;">
+                            <i class="bi bi-arrow-counterclockwise me-1 text-warning-emphasis bg-white rounded-circle p-0.5"></i> Refresh Permintaan
+                        </button>
+                        <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
                 </div>
                 <div class="modal-body p-4" style="background-color: #f8f9fa;">
                     <!-- Filter Info Row -->
@@ -245,7 +253,15 @@
                         </table>
                     </div>
                 </div>
-                <div class="modal-footer border-0 px-4 py-3 bg-light">
+                <div class="modal-footer border-0 px-4 py-3 bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <button type="button" class="btn btn-outline-danger btn-sm fw-semibold shadow-sm px-3" id="btnResetPembelianModal" style="border-radius: 8px;">
+                            <i class="bi bi-trash3-fill me-1"></i> Hapus Semua Pembelian
+                        </button>
+                        <button type="button" class="btn btn-outline-warning text-dark btn-sm fw-semibold shadow-sm px-3" id="btnResetPermintaanModal" style="border-radius: 8px;">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Refresh / Hapus Semua Permintaan
+                        </button>
+                    </div>
                     <button type="button" class="btn btn-secondary fw-semibold px-4" style="border-radius: 8px;" data-bs-dismiss="modal">Tutup</button>
                 </div>
             </div>
@@ -477,6 +493,102 @@
                         });
                 });
             });
+
+            // RESET PEMBELIAN UNTUK ITEM AKTIF
+            let activeBarangId = null;
+            let activeBarangNama = '';
+
+            document.querySelectorAll('.btn-detail-mutasi').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    activeBarangId = this.dataset.barangId;
+                    activeBarangNama = this.dataset.barangNama;
+                });
+            });
+
+            const btnResetPembelian = document.getElementById('btnResetPembelianModal');
+            if (btnResetPembelian) {
+                btnResetPembelian.addEventListener('click', function() {
+                    if (!activeBarangId) return;
+
+                    const msg = `Apakah Anda YAKIN ingin MENGHAPUS SEMUA transaksi PEMBELIAN untuk item:\n\n"${activeBarangNama}"?\n\nIni akan:\n- Menghapus batch pembelian item ini\n- Mengembalikan / mengurangi penambahan stok gudang terkait\n- Menghapus transaksi penerimaan & mutasi stok pembelian\n- Menghitung ulang HPP FIFO\n\nTindakan ini berguna untuk mengulang pembelian dengan harga / kuantitas yang benar sejak awal. Lanjutkan?`;
+
+                    if (!confirm(msg)) return;
+
+                    const originalText = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menghapus...';
+
+                    fetch("{{ route('stok-gudang.buku-pembantu.reset-pembelian') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ barang_id: activeBarangId })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+
+                        if (data.success) {
+                            alert(data.message);
+                            window.location.reload();
+                        } else {
+                            alert('Gagal: ' + (data.message || 'Terjadi kesalahan sistem.'));
+                        }
+                    })
+                    .catch(err => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        alert('Terjadi kesalahan jaringan: ' + err.message);
+                    });
+                });
+            }
+
+            // RESET PERMINTAAN / PENGELUARAN UNTUK ITEM AKTIF
+            const btnResetPermintaan = document.getElementById('btnResetPermintaanModal');
+            if (btnResetPermintaan) {
+                btnResetPermintaan.addEventListener('click', function() {
+                    if (!activeBarangId) return;
+
+                    const msg = `Apakah Anda YAKIN ingin MENGHAPUS / REFRESH SEMUA transaksi PERMINTAAN & PENGELUARAN untuk item:\n\n"${activeBarangNama}"?\n\nIni akan:\n- Mengembalikan kuantitas stok yang keluar ke gudang asal (Gudang Utama)\n- Mengembalikan sisa batch FIFO yang terpakai\n- Menghapus mutasi pengeluaran barang ini\n- Menghitung ulang HPP FIFO\n\nTindakan ini berguna untuk mereset mutasi pengeluaran/permintaan yang salah. Lanjutkan?`;
+
+                    if (!confirm(msg)) return;
+
+                    const originalText = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Memproses...';
+
+                    fetch("{{ route('stok-gudang.buku-pembantu.reset-permintaan') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ barang_id: activeBarangId })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+
+                        if (data.success) {
+                            alert(data.message);
+                            window.location.reload();
+                        } else {
+                            alert('Gagal: ' + (data.message || 'Terjadi kesalahan sistem.'));
+                        }
+                    })
+                    .catch(err => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        alert('Terjadi kesalahan jaringan: ' + err.message);
+                    });
+                });
+            }
         });
     </script>
     @endpush

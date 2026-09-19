@@ -726,4 +726,264 @@ class StokGudangController extends Controller
             }
         }
     }
+
+    /**
+     * Hapus / Bersihkan semua transaksi pembelian untuk 1 item barang yang dipilih.
+     * Mengembalikan / membersihkan stok, batch pembelian, penerimaan, dan jurnal terkait.
+     */
+    public function resetPembelianBarang(Request $request)
+    {
+        $barangId = $request->barang_id;
+        $barang = MasterBarang::withoutGlobalScopes()->findOrFail($barangId);
+
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
+
+        if (!$isSuperAdmin && !$isGudang) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menghapus transaksi barang ini.'
+            ], 403);
+        }
+
+        try {
+            $deletedCount = 0;
+
+            DB::transaction(function () use ($barangId, &$deletedCount) {
+                // 1. Ambil seluruh pembelian detail untuk barang ini
+                $pembelianDetails = \App\Models\PembelianDetail::where('barang_id', $barangId)->get();
+
+                foreach ($pembelianDetails as $detail) {
+                    $pembelian = \App\Models\Pembelian::find($detail->pembelian_id);
+
+                    // 1a. Hapus batches terkait detail ini
+                    $batches = \App\Models\StokGudangBatch::where('pembelian_detail_id', $detail->id)->get();
+                    if ($batches->isEmpty()) {
+                        $batches = \App\Models\StokGudangBatch::where('pembelian_id', $detail->pembelian_id)
+                            ->where('barang_id', $barangId)
+                            ->get();
+                    }
+
+                    foreach ($batches as $batch) {
+                        if ($batch->qty_masuk > 0) {
+                            $stokGudang = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
+                                ->where('gudang_id', $batch->gudang_id)
+                                ->when($batch->divisi_id, fn($q) => $q->where('divisi_id', $batch->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($stokGudang) {
+                                $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
+                            }
+                        }
+                        $batch->delete();
+                    }
+
+                    // 1b. Hapus riwayat penerimaan pembelian untuk detail ini
+                    $rcvDetails = \App\Models\PenerimaanPembelianDetail::where('pembelian_detail_id', $detail->id)->get();
+                    foreach ($rcvDetails as $rcvD) {
+                        $headerId = $rcvD->penerimaan_pembelian_id;
+                        $rcvD->delete();
+
+                        // Jika header penerimaan sudah tidak punya detail lagi, hapus headernya
+                        if (\App\Models\PenerimaanPembelianDetail::where('penerimaan_pembelian_id', $headerId)->count() === 0) {
+                            \App\Models\PenerimaanPembelian::where('id', $headerId)->delete();
+                        }
+                    }
+
+                    // 1c. Hapus transaksi stok pembelian & pembelian_batal terkait
+                    \App\Models\TransaksiStok::where('barang_id', $barangId)
+                        ->where('source_id', $detail->pembelian_id)
+                        ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                        ->delete();
+
+                    // 1d. Hapus Jurnal Akuntansi terkait jika pembelian hanya berisi barang ini
+                    if ($pembelian) {
+                        $otherDetailsCount = \App\Models\PembelianDetail::where('pembelian_id', $pembelian->id)
+                            ->where('id', '!=', $detail->id)
+                            ->count();
+
+                        if ($otherDetailsCount === 0) {
+                            // Hapus jurnal
+                            $jurnalList = DB::table('jurnal_pembelian')
+                                ->where('source_type', 'pembelian')
+                                ->where('source_id', $pembelian->id)
+                                ->get();
+
+                            foreach ($jurnalList as $jp) {
+                                DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_pembelian')->delete();
+                                DB::table('jurnal_pembelian')->where('id', $jp->id)->delete();
+                            }
+
+                            // Hapus pembayaran
+                            \App\Models\Pembayaran::where('pembelian_id', $pembelian->id)->delete();
+
+                            // Hapus header pembelian
+                            $pembelian->delete();
+                        } else {
+                            // Update total pembelian
+                            $subtotalDetail = (float)$detail->qty * (float)$detail->harga_per_qty;
+                            $pembelian->decrement('total', $subtotalDetail);
+                        }
+                    }
+
+                    // Hapus pembelian_detail
+                    $detail->delete();
+                    $deletedCount++;
+                }
+
+                // 2. Bersihkan sisa TransaksiStok yatim (misal ID pembelian sudah terhapus) untuk barang ini
+                \App\Models\TransaksiStok::where('barang_id', $barangId)
+                    ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                    ->delete();
+
+                // 3. Rekonsiliasi ringkasan stok gudang
+                \App\Models\StokGudang::reconcileStockSummary($barangId);
+
+                // 4. Sinkronisasi HPP FIFO
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$barangId);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil menghapus seluruh transaksi pembelian untuk item '{$barang->nama}'. Stok dan HPP telah disesuaikan ulang."
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus pembelian: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Hapus / Bersihkan semua transaksi pengeluaran/permintaan transfer bahan untuk 1 item barang yang dipilih.
+     * Mengembalikan alokasi stok ke gudang asal dan membatalkan mutasi stok terkait.
+     */
+    public function resetPermintaanBarang(Request $request)
+    {
+        $barangId = $request->barang_id;
+        $barang = MasterBarang::withoutGlobalScopes()->findOrFail($barangId);
+
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
+
+        if (!$isSuperAdmin && !$isGudang) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menghapus permintaan barang ini.'
+            ], 403);
+        }
+
+        try {
+            $deletedCount = 0;
+
+            DB::transaction(function () use ($barangId, &$deletedCount) {
+                // Ambil semua detail pengeluaran/permintaan untuk barang ini
+                $details = \App\Models\PengeluaranBahanBakuDetail::where('barang_id', $barangId)->get();
+
+                $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+                $gudangAsalId = $gudangUtama ? $gudangUtama->id : 2;
+
+                foreach ($details as $detail) {
+                    $pengeluaran = \App\Models\PengeluaranBahanBaku::find($detail->pengeluaran_id);
+                    $isApproved = $pengeluaran && in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
+
+                    if ($isApproved) {
+                        // Rollback alokasi stok gudang asal
+                        $isOpnameOrWasted = str_starts_with($pengeluaran->kode_pengeluaran ?? '', 'PBK-SO-') 
+                            || $pengeluaran->jenis_pengeluaran === 'wasted' 
+                            || str_starts_with($pengeluaran->kode_pengeluaran ?? '', 'PBK-WST-');
+
+                        $asalId = $isOpnameOrWasted ? $pengeluaran->gudang_id : $gudangAsalId;
+                        $asalDivisiId = $isOpnameOrWasted ? $pengeluaran->divisi_id : null;
+
+                        $stokAsal = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
+                            ->where('gudang_id', $asalId)
+                            ->when($asalDivisiId, fn($q) => $q->where('divisi_id', $asalDivisiId), fn($q) => $q->whereNull('divisi_id'))
+                            ->lockForUpdate()
+                            ->first();
+
+                        if ($stokAsal) {
+                            $stokAsal->increment('jumlah', (float)$detail->qty);
+                        }
+
+                        // Rollback batch FIFO
+                        $fifoRecords = \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)
+                            ->where('detail_id', $detail->id)
+                            ->get();
+
+                        foreach ($fifoRecords as $fifo) {
+                            $batch = \App\Models\StokGudangBatch::find($fifo->batch_id);
+                            if ($batch) {
+                                $batch->qty_keluar = max(0, $batch->qty_keluar - $fifo->qty_keluar);
+                                $batch->qty_sisa   += $fifo->qty_keluar;
+                                $batch->is_habis   = false;
+                                $batch->save();
+                            }
+                            $fifo->delete();
+                        }
+
+                        // Rollback di tujuan jika transfer
+                        if (!$isOpnameOrWasted && $pengeluaran->gudang_id) {
+                            $stokTujuan = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
+                                ->where('gudang_id', $pengeluaran->gudang_id)
+                                ->when($pengeluaran->divisi_id, fn($q) => $q->where('divisi_id', $pengeluaran->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($stokTujuan) {
+                                $stokTujuan->decrement('jumlah', min((float)$stokTujuan->jumlah, (float)$detail->qty));
+                            }
+
+                            // Hapus batch mutasi di tujuan
+                            \App\Models\StokGudangBatch::where('barang_id', $detail->barang_id)
+                                ->where('gudang_id', $pengeluaran->gudang_id)
+                                ->where('batch_number', 'like', '%-MUT')
+                                ->delete();
+                        }
+
+                        // Hapus TransaksiStok terkait
+                        \App\Models\TransaksiStok::where('source_id', $pengeluaran->id)
+                            ->where('barang_id', $detail->barang_id)
+                            ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                            ->delete();
+                    }
+
+                    // Hapus detail
+                    $pId = $detail->pengeluaran_id;
+                    $detail->delete();
+                    $deletedCount++;
+
+                    // Jika pengeluaran sudah kosong, hapus dokumen pengeluarannya
+                    if ($pId && \App\Models\PengeluaranBahanBakuDetail::where('pengeluaran_id', $pId)->count() === 0) {
+                        \App\Models\PengeluaranBahanBaku::where('id', $pId)->delete();
+                    }
+                }
+
+                // Bersihkan TransaksiStok yatim
+                \App\Models\TransaksiStok::where('barang_id', $barangId)
+                    ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                    ->delete();
+
+                // Rekonsiliasi ringkasan stok gudang
+                \App\Models\StokGudang::reconcileStockSummary($barangId);
+
+                // Sinkronisasi HPP FIFO
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$barangId);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil membatalkan/menghapus seluruh permintaan/pengeluaran untuk item '{$barang->nama}'. Stok dan HPP telah disesuaikan ulang."
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus permintaan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
