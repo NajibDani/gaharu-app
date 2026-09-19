@@ -368,12 +368,9 @@
                         <a href="{{ route('buku-pembantu.index') }}" class="{{ request()->routeIs('buku-pembantu.*') ? 'active' : '' }}">
                             <i class="bi bi-book-half me-2" style="font-size:12px;"></i>Buku Pembantu Piutang/Utang
                         </a>
-                        <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
-                            <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
-                        </a>
                     @endif
 
-                    @if($canRole(['Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']))
+                    @if($canRole(['Management', 'Direktur Keuangan', 'Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang']))
                         <div class="submenu-divider">PERSEDIAAN</div>
                         <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="{{ request()->routeIs('stok-gudang.buku-pembantu.*') ? 'active' : '' }}">
                             <i class="bi bi-journal-bookmark-fill me-2" style="font-size:12px;"></i>Buku Pembantu Persediaan
