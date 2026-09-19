@@ -50,9 +50,14 @@ class StorePembelianRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($validator) {
-            // Validasi tanggal transaksi minimal hari ini
-            if ($this->input('tanggal') && date('Y-m-d', strtotime($this->input('tanggal'))) < date('Y-m-d')) {
-                $validator->errors()->add('tanggal', 'Tanggal transaksi tidak boleh sebelum hari ini.');
+            $user = $this->user() ?: auth()->user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Validasi tanggal transaksi minimal hari ini (hanya jika bukan Super Admin)
+            if (!$isSuperAdmin) {
+                if ($this->input('tanggal') && date('Y-m-d', strtotime($this->input('tanggal'))) < date('Y-m-d')) {
+                    $validator->errors()->add('tanggal', 'Tanggal transaksi tidak boleh sebelum hari ini.');
+                }
             }
 
             // Validasi tax_service jika diisi

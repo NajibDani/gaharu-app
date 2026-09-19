@@ -109,11 +109,17 @@ class CentralKitchenProductionController extends Controller
 
                 // Hitung kebutuhan bahan baku (untuk total target WO dan sisa target)
                 if ($hasResep) {
+                    $resepBtkl = $wod->produk ? ($wod->produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $wod->produk_id)->first()) : null;
+                    $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                    $batchCountTarget = $target / $outputQtyResep;
+                    $batchCountSisa   = $sisa / $outputQtyResep;
+
                     foreach ($wod->produk->resep as $resep) {
                         $bahanId = $resep->bahan_id;
-                        $qtyPerUnit = floatval($resep->qty_bahan);
-                        $butuhTarget = $qtyPerUnit * $target;
-                        $butuhSisa = $qtyPerUnit * $sisa;
+                        $qtyPerBatch = floatval($resep->qty_bahan);
+                        $qtyPerUnit = $outputQtyResep > 0 ? ($qtyPerBatch / $outputQtyResep) : $qtyPerBatch;
+                        $butuhTarget = $qtyPerBatch * $batchCountTarget;
+                        $butuhSisa = $qtyPerBatch * $batchCountSisa;
 
                         if (!isset($rekapBahanMap[$bahanId])) {
                             $rekapBahanMap[$bahanId] = [
@@ -310,10 +316,14 @@ class CentralKitchenProductionController extends Controller
                         continue;
                     }
 
-                    $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                    $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $detail->produk_id)->first()) : null;
+                    $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                    $batchCount = floatval($detail->qty) / $outputQtyResep;
+
+                    $resepId = $produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null);
                     $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
                     foreach ($resepItems as $resep) {
-                        $kebutuhan = floatval($resep->qty_bahan) * floatval($detail->qty);
+                        $kebutuhan = floatval($resep->qty_bahan) * $batchCount;
                         
                         $avail = $fifoService->checkBahanAvailability($resep, $kebutuhan, $gudangCkId);
                         if (!$avail['sufficient']) {
@@ -399,10 +409,12 @@ class CentralKitchenProductionController extends Controller
 
                 if ($qty <= 0) continue;
 
-                $produk = MasterBarang::with('resep.bahan')->find($pd->produk_id);
+                $produk = MasterBarang::with(['resep.bahan', 'resepBtklBop'])->find($pd->produk_id);
                 if ($produk && $produk->resep) {
+                    $outputQtyResep = ($produk->resepBtklBop && floatval($produk->resepBtklBop->output_qty) > 0) ? floatval($produk->resepBtklBop->output_qty) : 1;
+                    $batchCount = $qty / $outputQtyResep;
                     foreach ($produk->resep as $resep) {
-                        $kebutuhan = floatval($resep->qty_bahan) * $qty;
+                        $kebutuhan = floatval($resep->qty_bahan) * $batchCount;
                         $stok = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $resep->bahan_id)->value('jumlah') ?? 0);
                         if ($stok < $kebutuhan) {
                             $isBahanCukup = false;
@@ -452,7 +464,7 @@ class CentralKitchenProductionController extends Controller
      */
     public function kirimBahanBaku($woId)
     {
-        $wo = WorkOrder::with('details.produk.resep.bahan')->findOrFail($woId);
+        $wo = WorkOrder::with(['details.produk.resep.bahan', 'details.produk.resepBtklBop'])->findOrFail($woId);
 
         DB::beginTransaction();
         try {
@@ -475,8 +487,11 @@ class CentralKitchenProductionController extends Controller
                 $sisaQty = max(0, floatval($detail->qty_rencana) - floatval($sudah));
                 if ($sisaQty <= 0) $sisaQty = floatval($detail->qty_rencana);
 
+                $outputQtyResep = ($detail->produk->resepBtklBop && floatval($detail->produk->resepBtklBop->output_qty) > 0) ? floatval($detail->produk->resepBtklBop->output_qty) : 1;
+                $batchCount = $sisaQty / $outputQtyResep;
+
                 foreach ($detail->produk->resep as $resep) {
-                    $qtyKebutuhan = floatval($resep->qty_bahan) * $sisaQty;
+                    $qtyKebutuhan = floatval($resep->qty_bahan) * $batchCount;
                     if (!isset($agregatBahan[$resep->bahan_id])) {
                         $agregatBahan[$resep->bahan_id] = [
                             'nama'   => $resep->bahan->nama ?? 'Bahan',
@@ -502,34 +517,54 @@ class CentralKitchenProductionController extends Controller
             }
 
             if (empty($bahanKurang)) {
-                return redirect()->back()->with('success', 'Stok bahan baku di Gudang Central Kitchen sudah mencukupi seluruh target WO. Tidak perlu meminta bahan tambahan.');
+                return redirect()->back()->with('info', 'Seluruh bahan baku di Gudang Central Kitchen sudah mencukupi. Tidak ada bahan yang perlu diminta.');
             }
 
-            $pengeluaran = \App\Models\PengeluaranBahanBaku::create([
-                'kode_pengeluaran' => 'REQ-CK-' . date('Ymd') . '-' . strtoupper(\Str::random(4)),
+            // Gudang Utama sebagai gudang pengirim default
+            $gudangUtama = MasterGudang::where('nama', 'like', '%Utama%')->first()
+                ?? MasterGudang::where('kategori', 'Utama')->first()
+                ?? MasterGudang::first();
+
+            if (!$gudangUtama) {
+                throw new \Exception('Gudang Utama pengirim belum tersedia di Master Gudang.');
+            }
+
+            $kodePermintaan = 'REQ-CK-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+            // Buat permintaan bahan baku dengan status Disetujui (langsung kirim via transfer antar gudang)
+            $permintaanId = DB::table('permintaan_bahan_baku')->insertGetId([
+                'kode_permintaan'  => $kodePermintaan,
+                'gudang_asal_id'   => $gudangUtama->id,
+                'gudang_tujuan_id' => $gudangCk->id,
                 'tanggal'          => now(),
-                'gudang_id'        => $gudangCk->id,
-                'status'           => 'Draft',
-                'keterangan'       => 'Permintaan kekurangan bahan baku CK untuk ' . $wo->kode_wo,
+                'status'           => 'Disetujui',
+                'tipe_tujuan'      => 'central_kitchen',
+                'catatan'          => 'Permintaan otomatis bahan baku untuk Work Order ' . $wo->kode_wo,
                 'created_by'       => auth()->id(),
+                'created_at'       => now(),
+                'updated_at'       => now(),
             ]);
 
-            foreach ($bahanKurang as $bahanId => $data) {
-                \App\Models\PengeluaranBahanBakuDetail::create([
-                    'pengeluaran_id' => $pengeluaran->id,
-                    'barang_id'      => $bahanId,
-                    'qty'            => $data['qty'],
-                    'satuan'         => $data['satuan'],
+            foreach ($bahanKurang as $bahanId => $bData) {
+                DB::table('permintaan_bahan_baku_detail')->insert([
+                    'permintaan_id' => $permintaanId,
+                    'barang_id'     => $bahanId,
+                    'qty'           => $bData['qty'],
+                    'satuan'        => $bData['satuan'],
+                    'created_at'    => now(),
+                    'updated_at'    => now(),
                 ]);
             }
 
+            // Update status WO menjadi 'Diproses' karena permintaan bahan sudah dikirim
             $wo->update(['status_wo' => 'Diproses']);
 
             DB::commit();
-            return redirect()->back()->with('success', 'Permintaan kekurangan bahan baku untuk Central Kitchen berhasil dibuat.');
+            return redirect()->route('ck-produksi.index', ['tab' => 'wo'])
+                ->with('success', "Permintaan bahan baku ({$kodePermintaan}) berhasil dibuat untuk WO {$wo->kode_wo}. Segera lakukan pengiriman dari Gudang Utama ke Gudang CK.");
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->back()->with('error', 'Gagal: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Gagal mengirim permintaan bahan: ' . $e->getMessage());
         }
     }
 
@@ -592,8 +627,11 @@ class CentralKitchenProductionController extends Controller
                 $sisa = max(0, floatval($wod->qty_rencana) - floatval($sudah));
 
                 if ($hasResep && $sisa > 0) {
+                    $outputQtyResep = ($wod->produk->resepBtklBop && floatval($wod->produk->resepBtklBop->output_qty) > 0) ? floatval($wod->produk->resepBtklBop->output_qty) : 1;
+                    $batchCount = $sisa / $outputQtyResep;
+
                     foreach ($wod->produk->resep as $resep) {
-                        $kebutuhan = floatval($resep->qty_bahan) * $sisa;
+                        $kebutuhan = floatval($resep->qty_bahan) * $batchCount;
                         $bahanId = $resep->bahan_id;
                         if (!isset($agregatKebutuhan[$bahanId])) {
                             $agregatKebutuhan[$bahanId] = [
@@ -893,10 +931,14 @@ class CentralKitchenProductionController extends Controller
 
                 // Cek ketersediaan bahan jika BUKAN override persetujuan oleh Super Admin
                 if (!$isOverrideStok) {
-                    $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                    $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produkId)->first()) : null;
+                    $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                    $batchCount = $qtyHasil / $outputQtyResep;
+
+                    $resepId = $produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null);
                     $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
                     foreach ($resepItems as $item) {
-                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        $qtyButuh = floatval($item->qty_bahan) * $batchCount;
                         
                         $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangCkId);
                         if (!$avail['sufficient']) {
@@ -947,11 +989,15 @@ class CentralKitchenProductionController extends Controller
                 }
 
                 $totalBbbProduk = 0;
-                $resepId = $produk ? ($produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null)) : null;
+                $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produkId)->first()) : null;
+                $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                $batchCount = $qtyHasil / $outputQtyResep;
+
+                $resepId = $produk ? ($produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null)) : null;
                 if ($resepId) {
                     $resepItems = ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
-                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        $qtyButuh = floatval($item->qty_bahan) * $batchCount;
                         
                         $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangCkId);
                         $resolvedBahanId = $resolved['bahan_id'];
@@ -1571,10 +1617,14 @@ class CentralKitchenProductionController extends Controller
                 }
 
                 if (!$isOverrideStok) {
-                    $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                    $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $detail->produk_id)->first()) : null;
+                    $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                    $batchCount = floatval($detail->qty) / $outputQtyResep;
+
+                    $resepId = $produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null);
                     $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
                     foreach ($resepItems as $item) {
-                        $qtyButuh = floatval($item->qty_bahan) * floatval($detail->qty);
+                        $qtyButuh = floatval($item->qty_bahan) * $batchCount;
                         
                         $avail = $fifoService->checkBahanAvailability($item, $qtyButuh, $gudangBahanId);
                         if (!$avail['sufficient']) {
@@ -1592,11 +1642,15 @@ class CentralKitchenProductionController extends Controller
                 $produk   = MasterBarang::find($produkId);
 
                 $totalBbbProduk = 0;
-                $resepId = $produk ? ($produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null)) : null;
+                $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produkId)->first()) : null;
+                $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                $batchCount = $qtyHasil / $outputQtyResep;
+
+                $resepId = $produk ? ($produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null)) : null;
                 if ($resepId) {
                     $resepItems = ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
-                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        $qtyButuh = floatval($item->qty_bahan) * $batchCount;
                         
                         $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
                         $resolvedBahanId = $resolved['bahan_id'];
@@ -1849,10 +1903,14 @@ class CentralKitchenProductionController extends Controller
                     $qty = floatval($request->qty_hasil[$k] ?? 0);
                     if ($qty <= 0) continue;
                     $produk = MasterBarang::find($produkId);
-                    $resepId = $produk ? ($produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null)) : null;
+                    $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produkId)->first()) : null;
+                    $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                    $batchCount = $qty / $outputQtyResep;
+
+                    $resepId = $produk ? ($produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null)) : null;
                     if ($resepId) {
                         foreach (ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() as $r) {
-                            $butuh = floatval($r->qty_bahan) * $qty;
+                            $butuh = floatval($r->qty_bahan) * $batchCount;
                             $avail = $fifoService->checkBahanAvailability($r, $butuh, $gudangCkId);
                             if (!$avail['sufficient']) {
                                 $namaBahan = $avail['nama'];
@@ -1887,12 +1945,15 @@ class CentralKitchenProductionController extends Controller
 
                 $produk = MasterBarang::find($produkId);
                 $totalBbb = 0;
+                $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produkId)->first()) : null;
+                $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                $batchCount = $qty / $outputQtyResep;
 
                 // Konsumsi bahan baku via FIFO
-                $resepId = $produk ? ($produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null)) : null;
+                $resepId = $produk ? ($produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null)) : null;
                 if ($resepId) {
                     foreach (ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() as $r) {
-                        $butuh     = floatval($r->qty_bahan) * $qty;
+                        $butuh     = floatval($r->qty_bahan) * $batchCount;
                         
                         $resolved = $fifoService->resolveAlternativeBahan($r, $butuh, $gudangCkId);
                         $resolvedBahanId = $resolved['bahan_id'];

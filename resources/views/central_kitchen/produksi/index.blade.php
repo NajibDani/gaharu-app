@@ -1357,20 +1357,17 @@
                                                                                             $bahanId     = $b->bahan_id;
 
                                                                                             // Harga dari transaksi_stok FIFO aktual
-                                                                                            if (isset($transaksiHarga[$bahanId])) {
+                                                                                            if (isset($transaksiHarga[$bahanId]) && floatval($transaksiHarga[$bahanId]['harga_per_unit']) > 0) {
                                                                                                 $hData = $transaksiHarga[$bahanId];
                                                                                                 $hargaPerUnit  = $hData['harga_per_unit'];
                                                                                                 $totalHargaBahan = $hargaPerUnit * $totalQty;  // harga per unit × qty yg dipakai produk ini
                                                                                                 $sumberHarga   = 'FIFO Aktual';
                                                                                             } else {
-                                                                                                // Bahan tidak ada di transaksi (stok 0, pakai harga terakhir dari fifo_layers)
-                                                                                                $lastLayer = \DB::table('fifo_layers')
-                                                                                                    ->where('barang_id', $bahanId)
-                                                                                                    ->orderByDesc('id')
-                                                                                                    ->value('harga_per_unit');
-                                                                                                $hargaPerUnit  = floatval($lastLayer ?? 0);
+                                                                                                // Ambil harga terakhir via FifoService (stok_gudang_batch, pembelian_detail, resep, hpp_referensi)
+                                                                                                $fifoService = app(\App\Services\FifoService::class);
+                                                                                                $hargaPerUnit = $fifoService->getHargaTerakhirBahan($bahanId, $prod->gudang_bahan_id);
                                                                                                 $totalHargaBahan = $hargaPerUnit * $totalQty;
-                                                                                                $sumberHarga   = $lastLayer ? 'Harga Terakhir' : '-';
+                                                                                                $sumberHarga   = $hargaPerUnit > 0 ? 'Harga Terakhir' : '-';
                                                                                             }
 
                                                                                             return [

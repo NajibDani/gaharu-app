@@ -133,8 +133,12 @@ class ProduksiController extends Controller
 
                 // Cek kebutuhan bahan untuk sisa target produksi
                 if ($wod->produk && $wod->produk->resep && $sisa > 0) {
+                    $resepBtkl = $wod->produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $wod->produk_id)->first();
+                    $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                    $batchCount = $sisa / $outputQtyResep;
+
                     foreach ($wod->produk->resep as $resep) {
-                        $qtyButuh = floatval($resep->qty_bahan) * $sisa;
+                        $qtyButuh = floatval($resep->qty_bahan) * $batchCount;
                         if (!isset($agregatKebutuhan[$resep->bahan_id])) {
                             $agregatKebutuhan[$resep->bahan_id] = [
                                 'nama'   => $resep->bahan->nama ?? 'Bahan',
@@ -246,10 +250,13 @@ class ProduksiController extends Controller
                 $qty = floatval($request->qty_rencana[$key] ?? 0);
                 if ($qty <= 0) continue;
 
-                $produk = MasterBarang::with('resep.bahan')->find($produkId);
+                $produk = MasterBarang::with(['resep.bahan', 'resepBtklBop'])->find($produkId);
                 if ($produk && $produk->resep) {
+                    $outputQtyResep = ($produk->resepBtklBop && floatval($produk->resepBtklBop->output_qty) > 0) ? floatval($produk->resepBtklBop->output_qty) : 1;
+                    $batchCount = $qty / $outputQtyResep;
+
                     foreach ($produk->resep as $resep) {
-                        $kebutuhan = floatval($resep->qty_bahan) * $qty;
+                        $kebutuhan = floatval($resep->qty_bahan) * $batchCount;
                         $stok = floatval(StokGudang::where('gudang_id', $gudangB2BId)->where('barang_id', $resep->bahan_id)->value('jumlah') ?? 0);
                         if ($stok < $kebutuhan) {
                             $isBahanCukup = false;
@@ -464,11 +471,15 @@ class ProduksiController extends Controller
                 }
 
                 $totalBbbProduk = 0;
-                $resepId = $produk->resep_id ?: ($produk->resepBtklBop ? $produk->resepBtklBop->id : null);
+                $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produkId)->first()) : null;
+                $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                $batchCount = $qtyHasil / $outputQtyResep;
+
+                $resepId = $produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null);
                 if ($resepId) {
                     $resepItems = ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get();
                     foreach ($resepItems as $item) {
-                        $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                        $qtyButuh = floatval($item->qty_bahan) * $batchCount;
                         
                         // Tentukan bahan yang dipakai (utama atau alternatif)
                         $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
@@ -1424,12 +1435,13 @@ class ProduksiController extends Controller
 
                 $biayaTambahan = DB::table('resep_btkl_bop')->where('produk_id', $produkId)->first();
                 $outputQty = ($biayaTambahan && floatval($biayaTambahan->output_qty) > 0) ? floatval($biayaTambahan->output_qty) : 1;
+                $batchCount = $qtyHasil / $outputQty;
 
                 // A. FIFO BAHAN BAKU
                 $resepItems = ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get();
 
                 foreach ($resepItems as $item) {
-                    $qtyButuh = floatval($item->qty_bahan) * $qtyHasil;
+                    $qtyButuh = floatval($item->qty_bahan) * $batchCount;
 
                     // Tentukan bahan yang dipakai (utama atau alternatif)
                     $resolved = $fifoService->resolveAlternativeBahan($item, $qtyButuh, $gudangBahanId);
