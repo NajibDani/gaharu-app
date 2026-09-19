@@ -368,8 +368,7 @@ class CentralKitchenProductionController extends Controller
                 ->sum('qty') ?? 0);
 
             // 3. Qty yang sudah selesai / teralokasi dari produksi
-            $sudahDiproduksi = (float) (DB::table('alokasi_produksi_pesanan')
-                ->where('produk_id', $barang->id)
+            $sudahDiproduksi = (float) (\App\Models\ProduksiPesanan::where('produk_id', $barang->id)
                 ->whereHas('pesanan', function($q) {
                     $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
                 })
