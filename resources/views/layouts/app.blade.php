@@ -818,7 +818,7 @@
                 .then(res => res.text())
                 .then(html => {
                     let parser = new DOMParser();
-                    let newDoc = parser.parseFromString(html, 'text-html');
+                    let newDoc = parser.parseFromString(html, 'text/html');
 
                     let curTarget = getTableContainers(document);
                     let newTarget = getTableContainers(newDoc);
@@ -953,7 +953,7 @@
                         }
                         let text = await response.text();
                         let parser = new DOMParser();
-                        let resDoc = parser.parseFromString(text, 'text-html');
+                        let resDoc = parser.parseFromString(text, 'text/html');
 
                         // Cek pesan error dari session flash Laravel
                         let errorEl = resDoc.querySelector('.popup-toast.toast-error .toast-text, .alert-danger');
@@ -1023,13 +1023,25 @@
             document.addEventListener('DOMContentLoaded', function() {
                 if (!window.location.search) return;
                 
+                // Bersihkan query string aktif jika ada sisa _return_query agar URL tetap bersih
+                let currentParams = new URLSearchParams(window.location.search);
+                if (currentParams.has('_return_query')) {
+                    currentParams.delete('_return_query');
+                    let cleanSearch = currentParams.toString() ? '?' + currentParams.toString() : '';
+                    let cleanUrl = window.location.pathname + cleanSearch + window.location.hash;
+                    window.history.replaceState({}, document.title, cleanUrl);
+                }
+
                 // Tambahkan search query ke link aksi edit yang tidak menggunakan modal
+                let activeSearch = window.location.search;
+                if (!activeSearch) return;
+
                 document.querySelectorAll('a[href*="/edit"]').forEach(link => {
                     let href = link.getAttribute('href');
                     if (href && !href.includes('?')) {
-                        link.setAttribute('href', href + window.location.search);
-                    } else if (href && !href.includes('return_query=')) {
-                        link.setAttribute('href', href + '&_return_query=' + encodeURIComponent(window.location.search));
+                        link.setAttribute('href', href + activeSearch);
+                    } else if (href && !href.includes('_return_query=')) {
+                        link.setAttribute('href', href + '&_return_query=' + encodeURIComponent(activeSearch));
                     }
                 });
             });
