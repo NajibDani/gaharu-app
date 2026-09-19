@@ -39,23 +39,48 @@
                             </select>
                         </div>
 
+                        <!-- Jenis Barang -->
+                        <div class="col-12 col-md-3">
+                            <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Jenis Barang</label>
+                            <select name="jenis_barang" id="jenisBarangSelect" class="form-select border-2" style="border-radius: 8px;">
+                                <option value="">-- Semua Jenis --</option>
+                                <option value="bahan_baku" {{ ($jenisBarang ?? '') === 'bahan_baku' ? 'selected' : '' }}>Bahan Baku</option>
+                                <option value="bahan_setengah_jadi" {{ ($jenisBarang ?? '') === 'bahan_setengah_jadi' ? 'selected' : '' }}>Bahan Setengah Jadi</option>
+                                <option value="barang_jadi" {{ ($jenisBarang ?? '') === 'barang_jadi' ? 'selected' : '' }}>Barang Jadi</option>
+                                <option value="operational" {{ ($jenisBarang ?? '') === 'operational' ? 'selected' : '' }}>Operasional</option>
+                            </select>
+                        </div>
+
+                        <!-- Kategori Barang -->
+                        <div class="col-12 col-md-3">
+                            <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Kategori</label>
+                            <select name="kategori_id" id="kategoriSelect" class="form-select border-2" style="border-radius: 8px;">
+                                <option value="">-- Semua Kategori --</option>
+                                @foreach($kategoris as $kat)
+                                    <option value="{{ $kat->id }}" {{ ($kategoriId ?? '') == $kat->id ? 'selected' : '' }}>
+                                        {{ $kat->nama }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
                         <!-- Dari Tanggal -->
-                        <div class="col-12 col-md-2">
+                        <div class="col-12 col-md-3">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Dari Tanggal</label>
                             <input type="date" name="start_date" class="form-control border-2" style="border-radius: 8px;" value="{{ $startDate }}" required>
                         </div>
 
                         <!-- Sampai Tanggal -->
-                        <div class="col-12 col-md-2">
+                        <div class="col-12 col-md-3">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Sampai Tanggal</label>
                             <input type="date" name="end_date" class="form-control border-2" style="border-radius: 8px;" value="{{ $endDate }}" required>
                         </div>
 
                         <!-- Search -->
-                        <div class="col-12 col-md-2">
+                        <div class="col-12 col-md-6">
                             <label class="form-label fw-semibold text-secondary" style="font-size: 13px;">Cari Barang</label>
                             <div class="input-group">
-                                <input type="text" name="search" class="form-control border-2" style="border-radius: 8px 0 0 8px;" placeholder="Kode / Nama..." value="{{ $search }}">
+                                <input type="text" name="search" class="form-control border-2" style="border-radius: 8px 0 0 8px;" placeholder="Cari kode atau nama barang..." value="{{ $search }}">
                                 <button type="submit" class="btn text-white px-3 min-hitbox" style="background-color: #DE8958; border: none; border-radius: 0 8px 8px 0;">
                                     <i class="bi bi-search"></i>
                                 </button>

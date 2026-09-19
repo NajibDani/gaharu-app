@@ -207,9 +207,11 @@ class StokGudangController extends Controller
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';
 
-        $gudangId = $request->gudang_id;
-        $divisiId = $request->divisi_id;
-        $search   = $request->search;
+        $gudangId    = $request->gudang_id;
+        $divisiId    = $request->divisi_id;
+        $search      = $request->search;
+        $jenisBarang = $request->jenis_barang;
+        $kategoriId  = $request->kategori_id;
 
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
@@ -223,17 +225,35 @@ class StokGudangController extends Controller
             });
         }
 
+        if ($jenisBarang) {
+            $kolom = match ($jenisBarang) {
+                'bahan_baku'          => 'is_bahan_baku',
+                'bahan_setengah_jadi' => 'is_bahan_setengah_jadi',
+                'barang_jadi'         => 'is_barang_jadi',
+                'operational'         => 'is_operational',
+                default               => null,
+            };
+            if ($kolom) {
+                $query->where($kolom, true);
+            }
+        }
+
+        if ($kategoriId) {
+            $query->where('kategori_id', $kategoriId);
+        }
+
         $items = $query->orderBy('nama')->paginate(20)->withQueryString();
 
         foreach ($items as $item) {
             $item->stok_akhir = $this->calculateStockAtDate($item->id, $gudangId, $divisiId, $endDate);
         }
 
-        $gudangs = MasterGudang::orderBy('nama')->get();
-        $divisis = \App\Models\GudangDivisi::with('gudang')->orderBy('nama')->get();
+        $gudangs    = MasterGudang::orderBy('nama')->get();
+        $divisis    = \App\Models\GudangDivisi::with('gudang')->orderBy('nama')->get();
+        $kategoris  = \App\Models\Kategori::orderBy('nama')->get();
 
         return view('stok-gudang.buku-pembantu', compact(
-            'items', 'gudangs', 'divisis', 'gudangId', 'divisiId', 'startDate', 'endDate', 'search'
+            'items', 'gudangs', 'divisis', 'kategoris', 'gudangId', 'divisiId', 'startDate', 'endDate', 'search', 'jenisBarang', 'kategoriId'
         ));
     }
 
