@@ -34,7 +34,15 @@
                 Ubah informasi gudang tujuan, tambah/hapus bahan baku, atau sesuaikan kuantitas permintaan.
             </p>
         </div>
-        <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="btn btn-outline-secondary">
+        @php
+            $kembaliUrl = route('pengeluaran-bahan-baku.index');
+            if (request('_return_query')) {
+                $kembaliUrl .= '?' . ltrim(request('_return_query'), '?');
+            } elseif (request('page') && request('page') > 1) {
+                $kembaliUrl .= '?page=' . request('page');
+            }
+        @endphp
+        <a href="{{ $kembaliUrl }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Kembali
         </a>
     </div>
@@ -69,6 +77,9 @@
             @csrf
             @method('PUT')
             <input type="hidden" name="page" value="{{ request('page', 1) }}">
+            @if(request('_return_query'))
+                <input type="hidden" name="_return_query" value="{{ request('_return_query') }}">
+            @endif
 
             <div class="row mb-4">
                 <div class="col-md-4">

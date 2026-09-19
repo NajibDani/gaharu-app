@@ -81,7 +81,7 @@
             </li>
             <li class="nav-item">
                 <button class="nav-link {{ $activeTab === 'stok' ? 'active' : '' }}" id="stok-tab" data-bs-toggle="tab" data-bs-target="#stok-divisi" type="button">
-                    <i class="bi bi-layers-half me-1"></i> Stok BSJ per Divisi
+                    <i class="bi bi-box-seam me-1"></i> Stok BSJ Central Kitchen
                 </button>
             </li>
         </ul>
@@ -1485,63 +1485,84 @@
                 </div>
             </div>
 
-            {{-- TAB 4: STOK BSJ PER DIVISI CK --}}
+            {{-- TAB 4: STOK BSJ CENTRAL KITCHEN (PRODUKSI TANPA DIVISI) --}}
             <div class="tab-pane fade {{ $activeTab === 'stok' ? 'show active' : '' }}" id="stok-divisi" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
-                    <div class="card-header bg-white py-3 px-4">
+                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <div>
-                            <h6 class="fw-bold mb-0 text-dark">Stok Bahan Setengah Jadi per Divisi Central Kitchen</h6>
-                            <small class="text-muted">Pantau ketersediaan stok BSJ sebelum memutuskan produksi baru</small>
+                            <h6 class="fw-bold mb-0 text-dark">Monitoring Stok Bahan Setengah Jadi (BSJ) Central Kitchen</h6>
+                            <small class="text-muted">Ketahui ketersediaan stok BSJ belum terpakai di Central Kitchen & kalkulasi kuantitas yang perlu diproduksi untuk memenuhi permintaan outlet.</small>
                         </div>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill fw-semibold">
+                            <i class="bi bi-gear-wide-connected me-1"></i> Produksi Central Kitchen
+                        </span>
                     </div>
 
-                    @if(!empty($stokBsjPerDivisi))
-                        @foreach($stokBsjPerDivisi as $divisiNama => $items)
-                            <div class="px-4 pt-3 pb-2">
-                                <div class="d-flex align-items-center gap-2 mb-2">
-                                    <span class="badge rounded-pill fs-6 px-3 py-2" style="background:#ede9fe;color:#6d28d9;">
-                                        <i class="bi bi-layers-half me-1"></i>{{ $divisiNama }}
-                                    </span>
-                                    <span class="text-muted small">{{ count($items) }} jenis BSJ</span>
-                                </div>
-                                <div class="table-responsive mb-3">
-                                    <table class="table table-bordered table-sm align-middle mb-0">
-                                        <thead class="table-light">
-                                            <tr class="text-secondary small">
-                                                <th>NAMA BARANG (BSJ)</th>
-                                                <th class="text-center" style="width:100px;">STOK SAAT INI</th>
-                                                <th class="text-center" style="width:80px;">SATUAN</th>
-                                                <th class="text-center" style="width:120px;">STATUS</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach($items as $item)
-                                                <tr>
-                                                    <td class="fw-semibold">{{ $item['nama'] }}</td>
-                                                    <td class="text-center fw-bold {{ $item['jumlah'] <= 0 ? 'text-danger' : ($item['jumlah'] < 500 ? 'text-warning' : 'text-success') }}">
-                                                        {{ number_format($item['jumlah'], 0, ',', '.') }}
-                                                    </td>
-                                                    <td class="text-center text-muted">{{ $item['satuan'] }}</td>
-                                                    <td class="text-center">
-                                                        @if($item['jumlah'] <= 0)
-                                                            <span class="badge bg-danger">Habis</span>
-                                                        @elseif($item['jumlah'] < 500)
-                                                            <span class="badge bg-warning text-dark">Menipis</span>
-                                                        @else
-                                                            <span class="badge bg-success">Cukup</span>
-                                                        @endif
-                                                    </td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        @endforeach
+                    @if(!empty($stokBsjCk) && count($stokBsjCk) > 0)
+                        <div class="table-responsive">
+                            <table class="table table-hover table-bordered align-middle mb-0" style="font-size: 13px;">
+                                <thead class="table-light text-secondary small text-uppercase fw-bold">
+                                    <tr>
+                                        <th class="text-center" style="width: 50px;">NO</th>
+                                        <th style="min-width: 120px;">KODE BARANG</th>
+                                        <th style="min-width: 200px;">NAMA BAHAN SETENGAH JADI</th>
+                                        <th class="text-end table-success" style="width: 140px;">STOK DI CK</th>
+                                        <th class="text-end table-warning" style="width: 160px;">PERMINTAAN OUTLET</th>
+                                        <th class="text-end table-danger" style="width: 170px;">PERLU DIPRODUKSI</th>
+                                        <th class="text-center" style="width: 110px;">SATUAN</th>
+                                        <th class="text-center" style="width: 130px;">STATUS STOK</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($stokBsjCk as $index => $item)
+                                        <tr>
+                                            <td class="text-center text-muted fw-semibold">{{ $index + 1 }}</td>
+                                            <td class="font-monospace fw-bold text-primary">{{ $item['kode_barang'] }}</td>
+                                            <td class="fw-semibold text-dark">{{ $item['nama'] }}</td>
+                                            
+                                            {{-- Stok Tersedia di CK --}}
+                                            <td class="text-end fw-bold {{ $item['stok_tersedia'] > 0 ? 'text-success' : 'text-muted' }}">
+                                                {{ number_format($item['stok_tersedia'], 0, ',', '.') }}
+                                            </td>
+
+                                            {{-- Total Permintaan Outlet yang Pending / Belum Lengkap --}}
+                                            <td class="text-end fw-semibold text-warning-emphasis">
+                                                {{ number_format($item['total_permintaan'], 0, ',', '.') }}
+                                            </td>
+
+                                            {{-- Rekomendasi yang Harus Diproduksi --}}
+                                            <td class="text-end fw-bold {{ $item['rekomendasi_produksi'] > 0 ? 'text-danger' : 'text-secondary' }}">
+                                                @if($item['rekomendasi_produksi'] > 0)
+                                                    <span class="badge bg-danger fs-7 px-2 py-1">
+                                                        +{{ number_format($item['rekomendasi_produksi'], 0, ',', '.') }}
+                                                    </span>
+                                                @else
+                                                    <span class="text-muted">— (Tercukupi)</span>
+                                                @endif
+                                            </td>
+
+                                            <td class="text-center text-muted">{{ $item['satuan'] }}</td>
+
+                                            <td class="text-center">
+                                                @if($item['stok_tersedia'] <= 0 && $item['total_permintaan'] > 0)
+                                                    <span class="badge bg-danger">Kurang / Kosong</span>
+                                                @elseif($item['rekomendasi_produksi'] > 0)
+                                                    <span class="badge bg-warning text-dark">Perlu Tambah</span>
+                                                @elseif($item['stok_tersedia'] > 0)
+                                                    <span class="badge bg-success">Stok Cukup</span>
+                                                @else
+                                                    <span class="badge bg-light text-muted border">Kosong</span>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
                     @else
                         <div class="p-5 text-center text-muted">
                             <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
-                            Belum ada stok Bahan Setengah Jadi di Gudang Central Kitchen.
+                            Belum ada master Bahan Setengah Jadi yang aktif untuk Central Kitchen.
                         </div>
                     @endif
                 </div>

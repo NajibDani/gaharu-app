@@ -62,11 +62,22 @@
                         </select>
                     </div>
                     <div class="col-lg-2 col-md-4">
+                        <label class="form-label fw-semibold small mb-1">Filter Gudang Tujuan</label>
+                        <select name="gudang_id" id="filter_gudang_select" class="form-select form-select-sm">
+                            <option value="">-- Semua Gudang --</option>
+                            @foreach($gudangList as $g)
+                                <option value="{{ $g->id }}" {{ request('gudang_id') == $g->id ? 'selected' : '' }}>
+                                    {{ $g->nama }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-lg-2 col-md-4">
                         <label class="form-label fw-semibold small mb-1">Filter Divisi</label>
-                        <select name="divisi_id" class="form-select form-select-sm">
+                        <select name="divisi_id" id="filter_divisi_select" class="form-select form-select-sm">
                             <option value="">-- Semua Divisi --</option>
                             @foreach($divisiList as $div)
-                                <option value="{{ $div->id }}" {{ request('divisi_id') == $div->id ? 'selected' : '' }}>
+                                <option value="{{ $div->id }}" data-gudang-id="{{ $div->gudang_id }}" {{ request('divisi_id') == $div->id ? 'selected' : '' }}>
                                     {{ $div->nama }}{{ $div->gudang ? ' ('.$div->gudang->nama.')' : '' }}
                                 </option>
                             @endforeach
@@ -148,7 +159,7 @@
                         <button type="submit" class="btn btn-sm btn-primary flex-fill" title="Terapkan Filter">
                             <i class="bi bi-funnel-fill"></i> Filter
                         </button>
-                        @if(request('search') || (request('sort') && request('sort') !== 'terbaru') || request('status') || request('divisi_id') || request('dari') || request('sampai'))
+                        @if(request('search') || (request('sort') && request('sort') !== 'terbaru') || request('status') || request('gudang_id') || request('divisi_id') || request('dari') || request('sampai'))
                             <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="btn btn-sm btn-secondary" title="Reset Filter">
                                 <i class="bi bi-arrow-counterclockwise"></i>
                             </a>
@@ -1487,6 +1498,39 @@ document.addEventListener('DOMContentLoaded', function () {
             popover.style.display = 'none';
         }
     });
+
+    // Dynamic Divisi Filter based on Selected Gudang
+    const gudangSelect = document.getElementById('filter_gudang_select');
+    const divisiSelect = document.getElementById('filter_divisi_select');
+
+    if (gudangSelect && divisiSelect) {
+        function filterDivisiOptions() {
+            const selectedGudangId = gudangSelect.value;
+            const currentDivisiVal = divisiSelect.value;
+            let currentValVisible = false;
+
+            Array.from(divisiSelect.options).forEach(opt => {
+                if (!opt.value) {
+                    opt.hidden = false; // '-- Semua Divisi --'
+                    return;
+                }
+                const optGudangId = opt.getAttribute('data-gudang-id');
+                if (!selectedGudangId || optGudangId === selectedGudangId) {
+                    opt.hidden = false;
+                    if (opt.value === currentDivisiVal) currentValVisible = true;
+                } else {
+                    opt.hidden = true;
+                }
+            });
+
+            if (currentDivisiVal && !currentValVisible) {
+                divisiSelect.value = '';
+            }
+        }
+
+        gudangSelect.addEventListener('change', filterDivisiOptions);
+        filterDivisiOptions();
+    }
 
     // Init display on page load
     updateTriggerDisplay();

@@ -348,32 +348,54 @@ class CentralKitchenProductionController extends Controller
             return $prod;
         });
 
-        // Stok BSJ per Divisi Gudang Central Kitchen
-        $stokBsjPerDivisi = [];
-        $divisiList = \App\Models\GudangDivisi::where('gudang_id', $gudangCkId)->get();
-        foreach ($divisiList as $divisi) {
-            $stokItems = StokGudang::with('barang')
-                ->where('gudang_id', $gudangCkId)
-                ->where('divisi_id', $divisi->id)
-                ->whereHas('barang', fn($q) => $q->where('is_bahan_setengah_jadi', true)->where('is_active', true))
-                ->get();
-            if ($stokItems->isNotEmpty()) {
-                $stokBsjPerDivisi[$divisi->nama] = $stokItems->map(fn($s) => [
-                    'nama'   => $s->barang->nama ?? '-',
-                    'jumlah' => (float) $s->jumlah,
-                    'satuan' => $s->barang->satuan ?? '-',
-                ])->toArray();
-            }
-        }
-
-        $customers = \App\Models\Customer::orderBy('nama')->get();
-
-        $allProdukCk = MasterBarang::where('is_active', true)
+        // Stok BSJ & Kebutuhan Permintaan di Gudang Central Kitchen (Produksi Tanpa Divisi)
+        $bsjBarangList = MasterBarang::where('is_active', true)
             ->where('is_bahan_setengah_jadi', true)
             ->orderBy('nama', 'asc')
             ->get();
 
-        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjPerDivisi', 'customers', 'customerId', 'allProdukCk', 'isSuperAdmin'));
+        $stokBsjCk = $bsjBarangList->map(function ($barang) use ($gudangCkId) {
+            // 1. Stok fisik saat ini di Gudang Central Kitchen
+            $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangCkId)
+                ->where('barang_id', $barang->id)
+                ->sum('jumlah') ?? 0);
+
+            // 2. Permintaan Order CK yang belum dibuatkan WO atau sedang diproses
+            $totalPermintaan = (float) (PesananDetail::where('produk_id', $barang->id)
+                ->whereHas('pesanan', function($q) {
+                    $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
+                })
+                ->sum('qty') ?? 0);
+
+            // 3. Qty yang sudah selesai / teralokasi dari produksi
+            $sudahDiproduksi = (float) (DB::table('alokasi_produksi_pesanan')
+                ->where('produk_id', $barang->id)
+                ->whereHas('pesanan', function($q) {
+                    $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
+                })
+                ->sum('qty_alokasi') ?? 0);
+
+            $sisaPermintaan = max(0, $totalPermintaan - $sudahDiproduksi);
+
+            // 4. Rekomendasi produksi: berapa yang harus diproduksi dengan melihat stok yang sudah ada
+            $rekomendasiProduksi = max(0, $sisaPermintaan - $stokTersedia);
+
+            return [
+                'id'                   => $barang->id,
+                'kode_barang'          => $barang->kode_barang,
+                'nama'                 => $barang->nama,
+                'satuan'               => $barang->satuan ?? 'pcs',
+                'stok_tersedia'        => $stokTersedia,
+                'total_permintaan'     => $sisaPermintaan,
+                'rekomendasi_produksi' => $rekomendasiProduksi,
+            ];
+        })->toArray();
+
+        $customers = \App\Models\Customer::orderBy('nama')->get();
+
+        $allProdukCk = $bsjBarangList;
+
+        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjCk', 'customers', 'customerId', 'allProdukCk', 'isSuperAdmin'));
     }
 
     /**

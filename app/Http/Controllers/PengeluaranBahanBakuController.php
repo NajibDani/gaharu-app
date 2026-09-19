@@ -52,6 +52,7 @@ class PengeluaranBahanBakuController extends Controller
     {
         $search = $request->query('search');
         $jenisFilter = $request->query('jenis');
+        $gudangId = $request->query('gudang_id');
         $divisiId = $request->query('divisi_id');
         $statusFilter = $request->query('status');
         $sort = $request->query('sort', 'terbaru');
@@ -86,6 +87,9 @@ class PengeluaranBahanBakuController extends Controller
         if ($jenisFilter) {
             $query->where('pengeluaran_bahan_baku.jenis_pengeluaran', $jenisFilter);
         }
+        if ($gudangId) {
+            $query->where('pengeluaran_bahan_baku.gudang_id', $gudangId);
+        }
         if ($divisiId) {
             $query->where('pengeluaran_bahan_baku.divisi_id', $divisiId);
         }
@@ -111,6 +115,9 @@ class PengeluaranBahanBakuController extends Controller
         }
         if ($jenisFilter) {
             $countQuery->where('pengeluaran_bahan_baku.jenis_pengeluaran', $jenisFilter);
+        }
+        if ($gudangId) {
+            $countQuery->where('pengeluaran_bahan_baku.gudang_id', $gudangId);
         }
         if ($divisiId) {
             $countQuery->where('pengeluaran_bahan_baku.divisi_id', $divisiId);
@@ -211,9 +218,11 @@ class PengeluaranBahanBakuController extends Controller
             }
         }
 
+        $gudangList = MasterGudang::orderBy('nama', 'asc')->get();
+
         return view(
             'pengeluaran-bahan-baku.index',
-            compact('data', 'outletSuggestionsSummary', 'divisiList', 'totalCount', 'draftCount', 'approvedCount', 'statusFilter')
+            compact('data', 'outletSuggestionsSummary', 'gudangList', 'divisiList', 'totalCount', 'draftCount', 'approvedCount', 'statusFilter')
         );
     }
 

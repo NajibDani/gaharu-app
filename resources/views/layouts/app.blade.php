@@ -624,10 +624,27 @@
                 });
             });
 
-            // ── Auto-dismiss popup toast (sukses/error) ──
-            document.querySelectorAll('.popup-toast').forEach(function (toast) {
-                var delay = parseInt(toast.getAttribute('data-autohide')) || 4000;
+            // ── Global Popup Toast Helper ──
+            window.showToast = function(type, message, autohide = 4000) {
+                var wrapper = document.getElementById('popupToastWrapper');
+                if (!wrapper) return;
 
+                var toast = document.createElement('div');
+                toast.className = 'popup-toast' + (type === 'error' ? ' toast-error' : '');
+                toast.setAttribute('data-autohide', autohide);
+
+                var iconHtml = type === 'error' ? '<i class="bi bi-x-lg"></i>' : '<i class="bi bi-check-lg"></i>';
+                toast.innerHTML = `
+                    <div class="toast-icon">${iconHtml}</div>
+                    <div class="toast-text">${message}</div>
+                    <button type="button" class="toast-close" aria-label="Tutup">&times;</button>
+                `;
+
+                wrapper.appendChild(toast);
+                bindToastDismiss(toast, autohide);
+            };
+
+            function bindToastDismiss(toast, delay) {
                 var hideToast = function () {
                     if (toast.classList.contains('toast-hide')) return;
                     toast.classList.add('toast-hide');
@@ -636,12 +653,21 @@
                     }, 350);
                 };
 
-                var timer = setTimeout(hideToast, delay);
+                var timer = setTimeout(hideToast, delay || 4000);
 
-                toast.querySelector('.toast-close').addEventListener('click', function () {
-                    clearTimeout(timer);
-                    hideToast();
-                });
+                var closeBtn = toast.querySelector('.toast-close');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', function () {
+                        clearTimeout(timer);
+                        hideToast();
+                    });
+                }
+            }
+
+            // Bind existing toasts on page load
+            document.querySelectorAll('.popup-toast').forEach(function (toast) {
+                var delay = parseInt(toast.getAttribute('data-autohide')) || 4000;
+                bindToastDismiss(toast, delay);
             });
 
             // ── Auto-check Event Notifikasi (SweetAlert) untuk halaman aktif ──
@@ -745,6 +771,269 @@
             })
             .catch(() => {});
         }, 10 * 60 * 1000);
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // GLOBAL SEAMLESS TABLE RELOAD & STATE PRESERVATION (EDIT & HAPUS)
+        // ══════════════════════════════════════════════════════════════════════════
+        (function() {
+            /**
+             * Cari container tabel utama & paginasi di dalam halaman aktif
+             */
+            function getTableContainers(doc) {
+                doc = doc || document;
+                // Selector prioritas container tabel
+                let tableBox = doc.querySelector('.table-responsive');
+                if (!tableBox) {
+                    let table = doc.querySelector('table');
+                    if (table) tableBox = table.closest('.card-body') || table.closest('.card') || table;
+                }
+                
+                // Cari container paginasi
+                let paginationBox = null;
+                let navs = doc.querySelectorAll('nav[role="navigation"], .pagination, div:has(> ul.pagination)');
+                if (navs.length > 0) {
+                    paginationBox = navs[navs.length - 1].closest('.mt-3, .mt-4, .card-footer, div') || navs[navs.length - 1];
+                }
+
+                return { tableBox, paginationBox };
+            }
+
+            /**
+             * Reload isi tabel & paginasi secara parsial tanpa full-page reload
+             */
+            window.reloadCurrentTable = function(callback) {
+                let currentUrl = window.location.href;
+                
+                // Tambahkan efek subtle loading pada table jika ada
+                let { tableBox } = getTableContainers(document);
+                if (tableBox) {
+                    tableBox.style.transition = 'opacity 0.2s ease';
+                    tableBox.style.opacity = '0.4';
+                    tableBox.style.pointerEvents = 'none';
+                }
+
+                fetch(currentUrl, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(res => res.text())
+                .then(html => {
+                    let parser = new DOMParser();
+                    let newDoc = parser.parseFromString(html, 'text-html');
+
+                    let curTarget = getTableContainers(document);
+                    let newTarget = getTableContainers(newDoc);
+
+                    if (curTarget.tableBox && newTarget.tableBox) {
+                        curTarget.tableBox.innerHTML = newTarget.tableBox.innerHTML;
+                    }
+
+                    if (curTarget.paginationBox && newTarget.paginationBox) {
+                        curTarget.paginationBox.innerHTML = newTarget.paginationBox.innerHTML;
+                    } else if (!curTarget.paginationBox && newTarget.paginationBox && curTarget.tableBox) {
+                        curTarget.tableBox.insertAdjacentElement('afterend', newTarget.paginationBox);
+                    }
+
+                    // Perbarui CSRF Token jika ada yang baru
+                    let newCsrf = newDoc.querySelector('meta[name="csrf-token"]');
+                    if (newCsrf) {
+                        let token = newCsrf.getAttribute('content');
+                        let meta = document.querySelector('meta[name="csrf-token"]');
+                        if (meta) meta.setAttribute('content', token);
+                        document.querySelectorAll('input[name="_token"]').forEach(inp => inp.value = token);
+                    }
+
+                    // Sinkronkan script data inline jika halaman menyertakan variabel JS (seperti dataPembayaran)
+                    newDoc.querySelectorAll('script').forEach(script => {
+                        let content = script.textContent || '';
+                        if (content.includes('const dataPembayaran =') || content.includes('var dataPembayaran =') || content.includes('let dataPembayaran =')) {
+                            try {
+                                let match = content.match(/dataPembayaran\s*=\s*(\[[^;]+\]|\{[^;]+\});/);
+                                if (match && match[1]) {
+                                    window.dataPembayaran = JSON.parse(match[1]);
+                                }
+                            } catch(e) {}
+                        }
+                    });
+
+                    // Re-inisialisasi tooltip bootstrap jika ada
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+                        document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+                            new bootstrap.Tooltip(el);
+                        });
+                    }
+
+                    if (typeof callback === 'function') callback(true);
+                })
+                .catch(err => {
+                    console.error('Error saat seamless reloading tabel:', err);
+                    if (typeof callback === 'function') callback(false);
+                })
+                .finally(() => {
+                    let { tableBox } = getTableContainers(document);
+                    if (tableBox) {
+                        tableBox.style.opacity = '1';
+                        tableBox.style.pointerEvents = 'auto';
+                    }
+                });
+            };
+
+            /**
+             * Intercept form submit untuk Hapus dan Edit Modal
+             */
+            document.addEventListener('submit', function(e) {
+                let form = e.target;
+                if (!form || form.tagName !== 'FORM') return;
+
+                // Pastikan selalu menyisipkan query parameter URL saat ini agar jika redirect fallback jalan, filter tidak hilang
+                if (window.location.search) {
+                    let hiddenQuery = form.querySelector('input[name="_return_query"]');
+                    if (!hiddenQuery) {
+                        hiddenQuery = document.createElement('input');
+                        hiddenQuery.type = 'hidden';
+                        hiddenQuery.name = '_return_query';
+                        form.appendChild(hiddenQuery);
+                    }
+                    hiddenQuery.value = window.location.search;
+                }
+
+                // Cek apakah form adalah form DELETE atau form EDIT MODAL
+                let methodInput = form.querySelector('input[name="_method"]');
+                let formMethod = (methodInput ? methodInput.value : form.method || 'GET').toUpperCase();
+                let isInsideModal = !!form.closest('.modal');
+                let isInsideTable = !!form.closest('table, .table-responsive');
+
+                let isDeleteForm = formMethod === 'DELETE' || form.id.toLowerCase().includes('hapus') || form.id.toLowerCase().includes('delete');
+                let isEditModalForm = isInsideModal && (formMethod === 'PUT' || formMethod === 'PATCH' || (formMethod === 'POST' && form.id.toLowerCase().includes('edit')));
+
+                // Jangan intercept form GET (filter/search) atau form create data baru biasa jika bukan modal
+                if (!isDeleteForm && !isEditModalForm) {
+                    return;
+                }
+
+                // Jika form punya atribut data-no-ajax, biarkan submit normal
+                if (form.getAttribute('data-no-ajax') === 'true') {
+                    return;
+                }
+
+                // Lakukan submit via Fetch secara seamless di background
+                e.preventDefault();
+
+                let submitBtn = form.querySelector('button[type="submit"], input[type="submit"]');
+                let origBtnHtml = submitBtn ? submitBtn.innerHTML : '';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Memproses...';
+                }
+
+                let formData = new FormData(form);
+
+                fetch(form.action, {
+                    method: 'POST', // Laravel menangani _method via FormData
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'text/html, application/json'
+                    }
+                })
+                .then(async response => {
+                    let contentType = response.headers.get('content-type') || '';
+                    let successMessage = 'Data berhasil diperbarui.';
+                    let errorMessage = '';
+
+                    if (contentType.includes('application/json')) {
+                        let resJson = await response.json();
+                        if (!response.ok) {
+                            throw new Error(resJson.message || 'Terjadi kesalahan saat memproses data.');
+                        }
+                        if (resJson.message) successMessage = resJson.message;
+                    } else {
+                        // Response HTML (redirect dari Laravel)
+                        if (!response.ok) {
+                            throw new Error('Gagal memproses request (Status ' + response.status + ').');
+                        }
+                        let text = await response.text();
+                        let parser = new DOMParser();
+                        let resDoc = parser.parseFromString(text, 'text-html');
+
+                        // Cek pesan error dari session flash Laravel
+                        let errorEl = resDoc.querySelector('.popup-toast.toast-error .toast-text, .alert-danger');
+                        if (errorEl) {
+                            errorMessage = errorEl.textContent.trim();
+                            throw new Error(errorMessage);
+                        }
+
+                        // Cek pesan sukses dari session flash Laravel
+                        let successEl = resDoc.querySelector('.popup-toast:not(.toast-error) .toast-text, .alert-success');
+                        if (successEl) {
+                            successMessage = successEl.textContent.trim();
+                        } else if (isDeleteForm) {
+                            successMessage = 'Data berhasil dihapus.';
+                        }
+                    }
+
+                    // Tutup modal jika form berada di dalam modal
+                    if (isInsideModal) {
+                        let modalEl = form.closest('.modal');
+                        if (modalEl) {
+                            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                                let bsModal = bootstrap.Modal.getInstance(modalEl);
+                                if (bsModal) {
+                                    bsModal.hide();
+                                }
+                            }
+                            // Pastikan backdrop & scroll lock bersih
+                            setTimeout(() => {
+                                modalEl.classList.remove('show');
+                                modalEl.style.display = 'none';
+                                modalEl.setAttribute('aria-hidden', 'true');
+                                modalEl.removeAttribute('aria-modal');
+                                modalEl.removeAttribute('role');
+                                document.querySelectorAll('.modal-backdrop').forEach(bd => bd.remove());
+                                document.body.classList.remove('modal-open');
+                                document.body.style.removeProperty('overflow');
+                                document.body.style.removeProperty('padding-right');
+                            }, 200);
+                        }
+                    }
+
+                    // Reload tabel saat ini dengan tetap mempertahankan query param & pagination
+                    window.reloadCurrentTable(function() {
+                        if (window.showToast) {
+                            window.showToast('success', successMessage);
+                        }
+                    });
+                })
+                .catch(err => {
+                    console.error('Submit Error:', err);
+                    if (window.showToast) {
+                        window.showToast('error', err.message || 'Gagal menyimpan data.');
+                    } else {
+                        alert(err.message || 'Gagal menyimpan data.');
+                    }
+                })
+                .finally(() => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = origBtnHtml;
+                    }
+                });
+            }, true);
+
+            // Pasang automatic query preservation pada link tombol edit halaman tersendiri
+            document.addEventListener('DOMContentLoaded', function() {
+                if (!window.location.search) return;
+                
+                // Tambahkan search query ke link aksi edit yang tidak menggunakan modal
+                document.querySelectorAll('a[href*="/edit"]').forEach(link => {
+                    let href = link.getAttribute('href');
+                    if (href && !href.includes('?')) {
+                        link.setAttribute('href', href + window.location.search);
+                    } else if (href && !href.includes('return_query=')) {
+                        link.setAttribute('href', href + '&_return_query=' + encodeURIComponent(window.location.search));
+                    }
+                });
+            });
+        })();
     </script>
 
     @stack('scripts')
