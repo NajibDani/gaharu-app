@@ -272,11 +272,18 @@
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                                 <div>
                                     <label style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; margin-bottom: 4px;">
-                                        <span>Denda Keterlambatan</span>
+                                        <span>Denda Keterlambatan (Otomatis)</span>
+                                        <a href="#" target="_blank" id="mLinkKeterlambatanInput"
+                                           style="font-size: 10px; color: #2563eb; text-decoration: none; font-weight: 700; text-transform: none;">
+                                            Menu Keterlambatan &rarr;
+                                        </a>
                                     </label>
-                                    <input type="text" name="potongan_terlambat" id="mInputPotTerlambat"
-                                           class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-rose-500/20 modal-rupiah-potongan"
-                                           oninput="recalcModalPotongan()">
+                                    <input type="text" name="potongan_terlambat" id="mInputPotTerlambat" readonly
+                                           class="w-full border border-slate-200 bg-slate-100 rounded-lg px-3 py-1.5 text-xs font-black text-slate-700 text-right cursor-not-allowed modal-rupiah-potongan"
+                                           title="Denda keterlambatan terisi otomatis melalui Menu Keterlambatan">
+                                    <div style="font-size: 9.5px; color: #64748b; margin-top: 3px;">
+                                        * Diisi &amp; dihitung otomatis dari menu <strong>Keterlambatan</strong>
+                                    </div>
                                 </div>
 
                                 <div>
@@ -352,6 +359,9 @@
             let terlambatSum = parseFloat(data.terlambat_sum) || 0;
             document.getElementById('modalPotonganTerlambatSum').textContent = formatRupiahPot(terlambatSum);
             document.getElementById('modalPotonganLinkAbsensi').href = data.keterlambatan_url || '#';
+            if (document.getElementById('mLinkKeterlambatanInput')) {
+                document.getElementById('mLinkKeterlambatanInput').href = data.keterlambatan_url || '#';
+            }
 
             let pTerlambat = parseFloat(data.potongan_terlambat) || 0;
             let pInventaris = parseFloat(data.potongan_inventaris) || 0;

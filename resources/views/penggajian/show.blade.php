@@ -209,15 +209,17 @@
     {{-- ACTION BAR --}}
     <div class="no-print" style="max-width: 900px; margin: 0 auto 16px auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <a href="{{ route('penggajian.index', ['outlet' => $currentOutlet]) }}"
-               style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; color: #334155; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
-               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">
-                ← Kembali
-            </a>
             <a href="{{ route('penggajian.show-periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $currentOutlet]) }}"
                style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; color: #334155; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
-               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">
-                &#128197; Periode {{ $periodeLabel }}
+               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'"
+               title="Kembali ke daftar Hitung Gaji Pokok Periode {{ $periodeLabel }}">
+                ← Kembali ke Hitung Gaji
+            </a>
+            <a href="{{ route('penggajian.index', ['outlet' => $currentOutlet]) }}"
+               style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; color: #64748b; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
+               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'"
+               title="Daftar Semua Periode Penggajian">
+                &#128197; Daftar Periode
             </a>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">

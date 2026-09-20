@@ -253,7 +253,7 @@
                         {{-- PERIODE 1 --}}
                         <div class="card p-3 border rounded-3 mb-3" style="background:#f8fafc;">
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <h6 class="fw-bold text-dark mb-0" style="font-size: 13px;"><i class="bi bi-1-circle-fill text-primary me-1"></i> Periode Gaji 1 (Masa Probation / Awal)</h6>
+                                <h6 class="fw-bold text-dark mb-0" style="font-size: 13px;"><i class="bi bi-1-circle-fill text-primary me-1"></i> Periode Gaji 1</h6>
                             </div>
 
                             {{-- Satuan Gaji P1 --}}
@@ -310,7 +310,7 @@
                         {{-- PERIODE 2 --}}
                         <div class="card p-3 border rounded-3 mb-2" style="background:#fffcf7; border-color:#fed7aa !important;">
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <h6 class="fw-bold text-dark mb-0" style="font-size: 13px;"><i class="bi bi-2-circle-fill text-warning me-1"></i> Periode Gaji 2 (Setelah Probation / Lanjutan) <small class="text-muted fw-normal">(Opsional)</small></h6>
+                                <h6 class="fw-bold text-dark mb-0" style="font-size: 13px;"><i class="bi bi-2-circle-fill text-warning me-1"></i> Periode Gaji 2 <small class="text-muted fw-normal">(Opsional)</small></h6>
                             </div>
 
                             {{-- Satuan Gaji P2 --}}

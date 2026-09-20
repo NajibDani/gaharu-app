@@ -155,15 +155,19 @@
                     <div class="pg-grid-2">
                         <div class="pg-field">
                             <label class="pg-label">
-                                Denda Keterlambatan (Rp)
+                                Denda Keterlambatan (Rp) <span style="font-size:10px; color:#64748b; font-weight:normal;">(Otomatis)</span>
                                 <a href="{{ route('keterlambatan.index', ['periode' => $targetPeriode]) }}" target="_blank"
                                    style="font-size:10px;color:#3b82f6;font-weight:600;text-transform:none;text-decoration:none;margin-left:4px;">
-                                    &#9889; Data Keterlambatan
+                                    &#9889; Menu Keterlambatan &rarr;
                                 </a>
                             </label>
-                            <input type="text" name="potongan_terlambat" id="inputPotTerlambat"
+                            <input type="text" name="potongan_terlambat" id="inputPotTerlambat" readonly
                                    value="{{ number_format($payroll->potongan_terlambat ?? 0, 0, ',', '.') }}"
-                                   class="pg-input pg-input-rupiah input-rupiah" oninput="hitungPotongan()">
+                                   class="pg-input pg-input-rupiah input-rupiah" style="background:#f1f5f9; cursor:not-allowed;"
+                                   title="Denda keterlambatan terisi otomatis dari menu Keterlambatan">
+                            <div style="font-size:10px; color:#64748b; margin-top:2px;">
+                                * Dihitung otomatis dari menu Rekap Keterlambatan
+                            </div>
                         </div>
                         <div class="pg-field">
                             <label class="pg-label">Kerusakan Inventaris (Rp)</label>
