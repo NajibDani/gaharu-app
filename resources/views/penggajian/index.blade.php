@@ -1,176 +1,202 @@
 <x-app-layout>
-    <div class="py-12" x-data="{ openModalPeriode: false }">
-        <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
+    <div class="py-4" x-data="{ openModalPeriode: false }">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
-                <x-outlet-selector :selectedOutlet="$selectedOutlet" />
+            <x-outlet-selector :selectedOutlet="$selectedOutlet" />
 
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 border-b pb-4">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 mb-3">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                     <div>
-                        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                            Sistem Pencatatan Gaji & Jurnal - Outlet {{ $selectedOutlet }}
-                        </h2>
-                        <p class="text-sm text-gray-500 mt-1">Kelola data gaji kolektif per periode dan integrasi jurnal umum untuk Outlet {{ $selectedOutlet }}.</p>
+                        <h1 class="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
+                            Sistem Pencatatan Gaji Pokok &amp; Jurnal - Outlet {{ $selectedOutlet }}
+                        </h1>
+                        <p class="text-xs text-slate-600 font-medium mt-0.5">
+                            Kelola data gaji pokok &amp; hari kerja per periode dan integrasi jurnal umum untuk Outlet {{ $selectedOutlet }}.
+                        </p>
                     </div>
-                    <div class="flex gap-2 items-center">
+
+                    <div class="flex gap-2 items-center flex-wrap">
                         <form action="{{ route('penggajian.index') }}" method="GET" class="flex gap-2">
                             <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
-                            <input type="text" name="search" class="border rounded px-3 py-1 text-sm" placeholder="Cari periode/karyawan..." value="{{ request('search') }}" style="width: 220px;">
-                            <button type="submit" class="bg-gray-800 text-white px-3 py-1 rounded text-sm">Cari</button>
+                            <input type="text" name="search" class="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-[#7A4517]/20" placeholder="Cari periode..." value="{{ request('search') }}" style="width: 200px;">
+                            <button type="submit" style="background-color: #0f172a; color: #ffffff; font-weight: 700; padding: 6px 14px; border-radius: 8px; font-size: 12px; border: none; cursor: pointer; transition: background .15s;" onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#0f172a'">
+                                Cari
+                            </button>
                             @if(request('search'))
-                                <a href="{{ route('penggajian.index', ['outlet' => $selectedOutlet]) }}" class="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm">Reset</a>
+                                <a href="{{ route('penggajian.index', ['outlet' => $selectedOutlet]) }}" style="background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-weight: 700; padding: 6px 12px; border-radius: 8px; font-size: 12px; text-decoration: none;">
+                                    Reset
+                                </a>
                             @endif
                         </form>
-                        <button @click="openModalPeriode = true" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg shadow-sm text-sm font-medium transition-all cursor-pointer">
-                            + Buat Periode Baru
+                        <button @click="openModalPeriode = true"
+                                style="background-color: #7A4517; color: #ffffff; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.15); transition: background .15s;"
+                                onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'">
+                            <span style="font-size: 14px; line-height: 1;">+</span> Buat Periode Baru
                         </button>
                     </div>
                 </div>
-
-                @if(session('success'))
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
-                    {{ session('success') }}
-                </div>
-                @endif
-
-                @if(session('error'))
-                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
-                    {{ session('error') }}
-                </div>
-                @endif
-
-                <div class="overflow-x-auto border border-gray-200 rounded-xl shadow-sm">
-                    <table class="w-full text-sm text-left text-gray-500">
-                        <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b">
-                            <tr>
-                                <th class="px-6 py-4 text-center w-16">No</th>
-                                <th class="px-6 py-4">Periode Bulan-Tahun</th>
-                                <th class="px-6 py-4 text-center">Jumlah Karyawan</th>
-                                <th class="px-6 py-4 text-right">Total Gaji Kolektif</th>
-                                <th class="px-6 py-4 text-center">Status Approval</th>
-                                <th class="px-6 py-4 text-center w-64">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200 bg-white">
-                            @php
-                            // Mengelompokkan koleksi data $payrolls dari controller berdasarkan kolom periode_bulan_tahun
-                            $groupedPayrolls = $payrolls->groupBy('periode_bulan_tahun');
-                            $no = 1;
-                            @endphp
-
-                            @forelse($groupedPayrolls as $periode => $items)
-                            @php
-                            // Sinkronisasi status menggunakan huruf kecil (lowercase) sesuai controller kamu
-                            $currentStatus = $items->first()->status;
-                            $statusJurnal = $items->first()->status_jurnal;
-                            $totalGajiPeriode = $items->sum('total_gaji_bersih');
-                            @endphp
-                            <tr class="hover:bg-gray-50/50 transition-colors">
-                                <td class="px-6 py-4 text-center font-medium text-gray-900">{{ $no++ }}</td>
-                                <td class="px-6 py-4 font-bold text-gray-800 tracking-wide">{{ \App\Models\Penggajian::formatPeriode($periode) }}</td>
-                                <td class="px-6 py-4 text-center font-medium text-gray-700">{{ $items->count() }} Orang</td>
-                                <td class="px-6 py-4 text-right font-semibold text-gray-900">Rp {{ number_format($totalGajiPeriode, 0, ',', '.') }}</td>
-
-                                <td class="px-6 py-4 text-center">
-                                    @if($currentStatus == 'draft')
-                                    <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 border border-gray-200">Draft</span>
-                                    @elseif($currentStatus == 'waiting approval')
-                                    <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">Waiting Approval</span>
-                                    @elseif($currentStatus == 'approved')
-                                    <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">Approved</span>
-                                    @endif
-                                </td>
-
-                                <td class="px-6 py-4 text-center">
-                                    <div class="flex justify-center items-center gap-2">
-
-                                        <a href="{{ route('penggajian.show-periode', ['periode' => $periode, 'outlet' => $selectedOutlet]) }}"
-                                            class="inline-block bg-cyan-500 hover:bg-cyan-600 text-white font-semibold px-4 py-2 rounded-lg text-xs shadow-sm transition-all text-center">
-                                            Detail
-                                        </a>
-
-                                        @if($currentStatus == 'draft')
-                                        <form action="{{ route('penggajian.ajukanApproval') }}" method="POST" class="inline m-0 p-0">
-                                            @csrf
-                                            <input type="hidden" name="periode" value="{{ $periode }}">
-                                            <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white font-semibold px-4 py-2 rounded-lg text-xs shadow-sm transition-all cursor-pointer">
-                                                Ajukan
-                                            </button>
-                                        </form>
-                                        @endif
-
-                                        @if($currentStatus == 'waiting approval')
-                                        <form action="{{ route('penggajian.approve') }}" method="POST" class="inline m-0 p-0">
-                                            @csrf
-                                            <input type="hidden" name="periode" value="{{ $periode }}">
-                                            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded-lg text-xs shadow-sm transition-all cursor-pointer">
-                                                Approve
-                                            </button>
-                                        </form>
-                                        @endif
-
-                                        @if($currentStatus == 'approved' && !$statusJurnal)
-                                        <form action="{{ route('penggajian.kirimJurnalUmum') }}" method="POST" class="inline m-0 p-0">
-                                            @csrf
-                                            <input type="hidden" name="periode" value="{{ $periode }}">
-                                            <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-2 rounded-lg text-xs shadow-sm transition-all cursor-pointer">
-                                                Jurnal
-                                            </button>
-                                        </form>
-                                        @endif
-
-                                        @if($statusJurnal)
-                                        <span class="bg-gray-100 text-gray-600 border border-gray-200 font-medium px-3 py-2 rounded-lg text-xs italic">
-                                            ✓ Dijurnal
-                                        </span>
-                                        @endif
-
-                                    </div>
-                                </td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="6" class="px-6 py-12 text-center text-gray-400">
-                                    Belum ada data penggajian. Silakan klik "+ Buat Periode Baru" untuk memulai.
-                                </td>
-                            </tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-
             </div>
+
+            @if(session('success'))
+            <div class="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-2.5 rounded-xl mb-3 text-xs font-bold flex items-center gap-2 shadow-sm">
+                <span class="text-emerald-600 text-sm">&#10003;</span> {{ session('success') }}
+            </div>
+            @endif
+
+            @if(session('error'))
+            <div class="bg-rose-50 border border-rose-300 text-rose-900 px-4 py-2.5 rounded-xl mb-3 text-xs font-bold flex items-center gap-2 shadow-sm">
+                <span class="text-rose-600 text-sm">&#9888;</span> {{ session('error') }}
+            </div>
+            @endif
+
+            <div class="overflow-x-auto border border-slate-200 rounded-xl shadow-sm bg-white">
+                <table class="w-full text-xs text-left">
+                    <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100 border-b border-slate-200">
+                        <tr>
+                            <th class="px-4 py-2.5 text-center w-12">No</th>
+                            <th class="px-4 py-2.5 min-w-[200px]">Periode Bulan-Tahun</th>
+                            <th class="px-4 py-2.5 text-center">Jumlah Karyawan</th>
+                            <th class="px-4 py-2.5 text-right">Total Gaji Kolektif</th>
+                            <th class="px-4 py-2.5 text-center">Status Approval</th>
+                            <th class="px-4 py-2.5 text-center w-56">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                        @php
+                        $groupedPayrolls = $payrolls->groupBy('periode_bulan_tahun');
+                        $no = 1;
+                        @endphp
+
+                        @forelse($groupedPayrolls as $periode => $items)
+                        @php
+                        $currentStatus = $items->first()->status;
+                        $statusJurnal = $items->first()->status_jurnal;
+                        $totalGajiPeriode = $items->sum('total_gaji_bersih');
+                        @endphp
+                        <tr class="hover:bg-slate-50/80 transition-colors">
+                            <td class="px-4 py-2.5 text-center font-bold text-slate-500">{{ $no++ }}</td>
+                            <td class="px-4 py-2.5 font-extrabold text-slate-900">
+                                <span>&#128197;</span> {{ \App\Models\Penggajian::formatPeriode($periode) }}
+                            </td>
+                            <td class="px-4 py-2.5 text-center font-bold text-slate-700">{{ $items->count() }} Orang</td>
+                            <td class="px-4 py-2.5 text-right font-black text-slate-900">Rp {{ number_format($totalGajiPeriode, 0, ',', '.') }}</td>
+
+                            <td class="px-4 py-2.5 text-center">
+                                @if($currentStatus == 'draft')
+                                    <span class="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-300">Draft</span>
+                                @elseif($currentStatus == 'waiting approval')
+                                    <span class="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-amber-100 text-amber-900 border border-amber-300">Waiting Approval</span>
+                                @elseif($currentStatus == 'approved')
+                                    <span class="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">Approved</span>
+                                @endif
+                            </td>
+
+                            <td class="px-4 py-2.5 text-center">
+                                <div class="flex justify-center items-center gap-1.5 flex-wrap">
+
+                                    <a href="{{ route('penggajian.show-periode', ['periode' => $periode, 'outlet' => $selectedOutlet]) }}"
+                                       style="background-color: #0284c7; color: #ffffff; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; text-decoration: none; transition: background .15s;"
+                                       onmouseover="this.style.background='#0369a1'" onmouseout="this.style.background='#0284c7'">
+                                        Detail
+                                    </a>
+
+                                    @if($currentStatus == 'draft')
+                                    <form action="{{ route('penggajian.ajukanApproval') }}" method="POST" class="inline m-0 p-0">
+                                        @csrf
+                                        <input type="hidden" name="periode" value="{{ $periode }}">
+                                        <button type="submit" style="background-color: #d97706; color: #ffffff; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; border: none; cursor: pointer; transition: background .15s;"
+                                                onmouseover="this.style.background='#b45309'" onmouseout="this.style.background='#d97706'">
+                                            Ajukan
+                                        </button>
+                                    </form>
+                                    @endif
+
+                                    @if($currentStatus == 'waiting approval')
+                                    <form action="{{ route('penggajian.approve') }}" method="POST" class="inline m-0 p-0">
+                                        @csrf
+                                        <input type="hidden" name="periode" value="{{ $periode }}">
+                                        <button type="submit" style="background-color: #16a34a; color: #ffffff; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; border: none; cursor: pointer; transition: background .15s;"
+                                                onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'">
+                                            Approve
+                                        </button>
+                                    </form>
+                                    @endif
+
+                                    @if($currentStatus == 'approved' && !$statusJurnal)
+                                    <form action="{{ route('penggajian.kirimJurnalUmum') }}" method="POST" class="inline m-0 p-0">
+                                        @csrf
+                                        <input type="hidden" name="periode" value="{{ $periode }}">
+                                        <button type="submit" style="background-color: #7e22ce; color: #ffffff; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; border: none; cursor: pointer; transition: background .15s;"
+                                                onmouseover="this.style.background='#6b21a8'" onmouseout="this.style.background='#7e22ce'">
+                                            Jurnal
+                                        </button>
+                                    </form>
+                                    @endif
+
+                                    @if($statusJurnal)
+                                    <span class="bg-slate-100 text-slate-700 border border-slate-300 font-bold px-2 py-0.5 rounded text-[11px]">
+                                        ✓ Dijurnal
+                                    </span>
+                                    @endif
+
+                                </div>
+                            </td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="6" class="px-6 py-12 text-center text-slate-400 font-medium">
+                                Belum ada data penggajian. Silakan klik "+ Buat Periode Baru" untuk memulai.
+                            </td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+
+            @if($periods->hasPages())
+            <div class="mt-4">
+                {{ $periods->links() }}
+            </div>
+            @endif
         </div>
 
-        <div x-show="openModalPeriode" class="fixed inset-0 z-50 overflow-y-auto" style="display: none;">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="openModalPeriode = false"></div>
-            <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-                <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-md p-6">
+        <div x-show="openModalPeriode" style="display: none;"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0"
+             x-transition:enter-end="opacity-100"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100"
+             x-transition:leave-end="opacity-0">
+            <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 99998;"
+                 @click="openModalPeriode = false"></div>
+            <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none;">
+                <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 440px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; pointer-events: auto; padding: 24px; position: relative;">
                     <div class="mb-4">
-                        <h3 class="text-lg font-bold text-gray-900">Inisiasi Periode Gaji Baru</h3>
-                        <p class="text-xs text-gray-500 mt-1">Pilih bulan dan tahun untuk membuat penampung data penggajian baru.</p>
+                        <h3 class="text-base font-extrabold text-slate-900">Inisiasi Periode Gaji Baru</h3>
+                        <p class="text-xs text-slate-600 mt-1 font-medium">Pilih bulan dan tahun untuk membuat penampung data penggajian baru.</p>
                     </div>
 
                     <form action="{{ route('penggajian.show-periode') }}" method="GET">
                         <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                         <div class="mb-4">
-                            <label for="periode_baru" class="block text-sm font-medium text-gray-700 mb-1">Pilih Bulan & Tahun</label>
+                            <label for="periode_baru" class="block text-xs font-bold text-slate-800 mb-1.5 uppercase tracking-wider">Pilih Bulan &amp; Tahun</label>
                             <input type="month" id="periode_baru" name="periode" required
-                                class="w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm">
+                                class="w-full rounded-lg border-slate-300 shadow-sm focus:border-[#7A4517] focus:ring-[#7A4517] text-sm py-2 px-3 font-bold text-slate-900">
                         </div>
 
                         <div class="flex justify-end gap-2 mt-6">
-                            <button type="button" @click="openModalPeriode = false" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
+                            <button type="button" @click="openModalPeriode = false"
+                                    style="background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-weight: 700; padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: background .15s;"
+                                    onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
                                 Batal
                             </button>
-                            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm cursor-pointer">
+                            <button type="submit"
+                                    style="background-color: #7A4517; color: #ffffff; font-weight: 800; padding: 6px 16px; border-radius: 8px; font-size: 12px; border: none; cursor: pointer; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s;"
+                                    onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'">
                                 Lanjut Buka Periode
                             </button>
                         </div>
                     </form>
-                </div>
-                <div class="mt-4">
-                    {{ $periods->links() }}
                 </div>
             </div>
         </div>

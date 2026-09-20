@@ -349,34 +349,88 @@ class CentralKitchenProductionController extends Controller
         });
 
         // Stok BSJ & Kebutuhan Permintaan di Gudang Central Kitchen (Produksi Tanpa Divisi)
-        $bsjBarangList = MasterBarang::where('is_active', true)
-            ->where('is_bahan_setengah_jadi', true)
-            ->orderBy('nama', 'asc')
-            ->get();
+        $searchBsj = $request->query('search_bsj');
+        if (!$searchBsj && $activeTab === 'stok') {
+            $searchBsj = $search;
+        }
 
-        $stokBsjCk = $bsjBarangList->map(function ($barang) use ($gudangCkId) {
+        $queryBsj = MasterBarang::where('is_active', true)
+            ->where('is_bahan_setengah_jadi', true);
+
+        if (!empty($searchBsj)) {
+            $queryBsj->where(function($q) use ($searchBsj) {
+                $q->where('nama', 'like', '%' . $searchBsj . '%')
+                  ->orWhere('kode_barang', 'like', '%' . $searchBsj . '%');
+            });
+        }
+
+        $stokBsjCk = $queryBsj->orderBy('nama', 'asc')
+            ->paginate(15, ['*'], 'bsj_page')
+            ->withQueryString();
+
+        $stokBsjCk->getCollection()->transform(function ($barang) use ($gudangCkId, $customerId) {
             // 1. Stok fisik saat ini di Gudang Central Kitchen
             $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangCkId)
                 ->where('barang_id', $barang->id)
                 ->sum('jumlah') ?? 0);
 
-            // 2. Permintaan Order CK yang belum dibuatkan WO atau sedang diproses
-            $totalPermintaan = (float) (PesananDetail::where('produk_id', $barang->id)
-                ->whereHas('pesanan', function($q) {
+            // 2. Query PesananDetail untuk barang ini yang belum selesai terkirim
+            $pdQuery = PesananDetail::with('pesanan.customer')
+                ->where('produk_id', $barang->id)
+                ->whereHas('pesanan', function($q) use ($customerId) {
                     $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
-                })
-                ->sum('qty') ?? 0);
+                    if ($customerId) {
+                        $q->where('customer_id', $customerId);
+                    }
+                });
+
+            $pesananDetails = $pdQuery->get();
+
+            // Total permintaan kotor
+            $totalPermintaan = (float) $pesananDetails->sum('qty');
 
             // 3. Qty yang sudah selesai / teralokasi dari produksi
-            $sudahDiproduksi = (float) (\App\Models\ProduksiPesanan::where('produk_id', $barang->id)
-                ->whereHas('pesanan', function($q) {
+            $sudahDiproduksiQuery = \App\Models\ProduksiPesanan::where('produk_id', $barang->id)
+                ->whereHas('pesanan', function($q) use ($customerId) {
                     $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
-                })
-                ->sum('qty_alokasi') ?? 0);
+                    if ($customerId) {
+                        $q->where('customer_id', $customerId);
+                    }
+                });
+            $sudahDiproduksi = (float) ($sudahDiproduksiQuery->sum('qty_alokasi') ?? 0);
 
             $sisaPermintaan = max(0, $totalPermintaan - $sudahDiproduksi);
 
-            // 4. Rekomendasi produksi: berapa yang harus diproduksi dengan melihat stok yang sudah ada
+            // 4. Breakdown permintaan per masing-masing outlet pemesan
+            $outletBreakdown = [];
+            $groupedByCustomer = $pesananDetails->groupBy('pesanan.customer_id');
+
+            foreach ($groupedByCustomer as $cId => $detailsGroup) {
+                $custNama = $detailsGroup->first()?->pesanan?->customer?->nama ?? 'Outlet #' . $cId;
+                $custTotalQty = (float) $detailsGroup->sum('qty');
+
+                // Alokasi produksi untuk customer ini
+                $custAlokasi = (float) (\App\Models\ProduksiPesanan::where('produk_id', $barang->id)
+                    ->whereHas('pesanan', function($q) use ($cId) {
+                        $q->centralKitchen()
+                          ->where('customer_id', $cId)
+                          ->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
+                    })
+                    ->sum('qty_alokasi') ?? 0);
+
+                $custSisa = max(0, $custTotalQty - $custAlokasi);
+
+                if ($custSisa > 0) {
+                    $outletBreakdown[] = [
+                        'customer_id'   => $cId,
+                        'customer_nama' => $custNama,
+                        'qty'           => $custSisa,
+                        'satuan'        => $barang->satuan ?? 'pcs',
+                    ];
+                }
+            }
+
+            // 5. Rekomendasi produksi: berapa yang harus diproduksi dengan melihat stok yang sudah ada
             $rekomendasiProduksi = max(0, $sisaPermintaan - $stokTersedia);
 
             return [
@@ -387,14 +441,31 @@ class CentralKitchenProductionController extends Controller
                 'stok_tersedia'        => $stokTersedia,
                 'total_permintaan'     => $sisaPermintaan,
                 'rekomendasi_produksi' => $rekomendasiProduksi,
+                'outlet_breakdown'     => $outletBreakdown,
             ];
-        })->toArray();
+        });
 
         $customers = \App\Models\Customer::orderBy('nama')->get();
 
-        $allProdukCk = $bsjBarangList;
+        $allProdukCk = MasterBarang::where('is_active', true)
+            ->where('is_bahan_setengah_jadi', true)
+            ->orderBy('nama', 'asc')
+            ->get();
 
-        return view('central_kitchen.produksi.index', compact('woList', 'pesananCkPending', 'riwayatProduksi', 'stokBsjCk', 'customers', 'customerId', 'allProdukCk', 'isSuperAdmin'));
+        $canDeleteWo = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty()));
+
+        return view('central_kitchen.produksi.index', compact(
+            'woList', 
+            'pesananCkPending', 
+            'riwayatProduksi', 
+            'stokBsjCk', 
+            'customers', 
+            'customerId', 
+            'allProdukCk', 
+            'isSuperAdmin', 
+            'canDeleteWo',
+            'searchBsj'
+        ));
     }
 
     /**
@@ -2092,13 +2163,15 @@ class CentralKitchenProductionController extends Controller
     }
 
     /**
-     * Hapus Work Order Central Kitchen yang belum terkirim (Khusus Superadmin)
+     * Hapus Work Order Central Kitchen yang belum terkirim karena kesalahan produksi
      */
     public function destroyWo($id)
     {
         $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
-        if (!$isSuperAdmin) {
-            abort(403, 'Akses ditolak: Hanya Super Admin yang berwenang menghapus Work Order.');
+        $canDelete = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty()));
+
+        if (!$canDelete) {
+            abort(403, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus Work Order.');
         }
 
         $wo = WorkOrder::with('details')->findOrFail($id);

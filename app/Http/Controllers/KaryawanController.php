@@ -6,6 +6,7 @@ use App\Models\Karyawan;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 
 class KaryawanController extends Controller
 {
@@ -31,18 +32,45 @@ class KaryawanController extends Controller
     {
         $search = $request->query('search');
         $selectedOutlet = $this->getOutlet($request);
+        $departemen = $request->query('departemen');
+        $jabatan = $request->query('jabatan');
+        $sort = strtolower($request->query('sort', ''));
+
         $query = Karyawan::where('outlet', $selectedOutlet);
 
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('nama_karyawan', 'like', '%' . $search . '%')
+                  ->orWhere('nik', 'like', '%' . $search . '%')
+                  ->orWhere('whatsapp', 'like', '%' . $search . '%')
+                  ->orWhere('email', 'like', '%' . $search . '%')
                   ->orWhere('jabatan', 'like', '%' . $search . '%')
                   ->orWhere('departemen', 'like', '%' . $search . '%');
             });
         }
 
-        $karyawans = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
-        return view('karyawan.index', compact('karyawans', 'selectedOutlet'));
+        if ($departemen) {
+            $query->where('departemen', $departemen);
+        }
+
+        if ($jabatan) {
+            $query->where('jabatan', $jabatan);
+        }
+
+        if ($sort === 'asc') {
+            $query->orderBy('nama_karyawan', 'asc');
+        } elseif ($sort === 'desc') {
+            $query->orderBy('nama_karyawan', 'desc');
+        } else {
+            $query->orderBy('urutan', 'asc')->orderBy('id', 'asc');
+        }
+
+        $karyawans = $query->paginate(100)->withQueryString();
+
+        $departemenList = Karyawan::DEPARTEMEN_LIST;
+        $jabatanList = Karyawan::JABATAN_LIST;
+
+        return view('karyawan.index', compact('karyawans', 'selectedOutlet', 'departemenList', 'jabatanList'));
     }
 
     /**
@@ -59,7 +87,9 @@ class KaryawanController extends Controller
      */
     public function create(): View
     {
-        return view('karyawan.create');
+        $departemenList = Karyawan::DEPARTEMEN_LIST;
+        $jabatanList = Karyawan::JABATAN_LIST;
+        return view('karyawan.create', compact('departemenList', 'jabatanList'));
     }
 
     /**
@@ -69,15 +99,36 @@ class KaryawanController extends Controller
     {
         $validated = $request->validate([
             'nama_karyawan'      => 'required|string|max:255',
+            'nik'                => 'nullable|string|max:50',
+            'tempat_lahir'       => 'nullable|string|max:100',
+            'tanggal_lahir'      => 'nullable|date',
+            'ttl'                => 'nullable|string|max:100',
+            'whatsapp'           => 'nullable|string|max:50',
+            'email'              => 'nullable|email|max:100',
+            'nomor_darurat'      => 'nullable|string|max:100',
             'jabatan'            => 'required|string',
             'jenis_tenaga_kerja' => 'required|string',
             'departemen'         => 'required|string',
             'outlet'             => 'required|string|in:Gaharu,Kejingga',
+            'satuan_gaji'        => 'nullable|string|in:Harian,Bulanan,Per Jam',
             'no_rekening'        => 'nullable|string|max:100',
-            'gaji_pokok'         => 'required|numeric|min:0',
+            'gaji_pokok'         => 'nullable|numeric|min:0',
             'uang_makan'         => 'nullable|numeric|min:0',
             'uang_transport'     => 'nullable|numeric|min:0',
         ]);
+
+        $validated['satuan_gaji'] = $validated['satuan_gaji'] ?? 'Harian';
+        $validated['gaji_pokok'] = $validated['gaji_pokok'] ?? 0;
+        $validated['uang_makan'] = $validated['uang_makan'] ?? 0;
+        $validated['uang_transport'] = $validated['uang_transport'] ?? 0;
+
+        if (empty($validated['ttl']) && (!empty($validated['tempat_lahir']) || !empty($validated['tanggal_lahir']))) {
+            $parts = array_filter([$validated['tempat_lahir'] ?? null, $validated['tanggal_lahir'] ?? null]);
+            $validated['ttl'] = implode(', ', $parts);
+        }
+
+        $maxUrutan = Karyawan::where('outlet', $validated['outlet'])->max('urutan') ?? 0;
+        $validated['urutan'] = $maxUrutan + 1;
 
         Karyawan::create($validated);
 
@@ -85,11 +136,35 @@ class KaryawanController extends Controller
     }
 
     /**
+     * Menyimpan urutan baru baris karyawan setelah drag-and-drop.
+     */
+    public function reorder(Request $request)
+    {
+        $request->validate([
+            'ids'   => 'required|array',
+            'ids.*' => 'integer|exists:karyawan,id',
+        ]);
+
+        DB::transaction(function () use ($request) {
+            foreach ($request->ids as $index => $id) {
+                Karyawan::where('id', $id)->update(['urutan' => $index + 1]);
+            }
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Urutan karyawan berhasil disimpan.'
+        ]);
+    }
+
+    /**
      * Menampilkan form edit untuk satu karyawan tertentu.
      */
     public function edit(Karyawan $karyawan): View
     {
-        return view('karyawan.edit', compact('karyawan'));
+        $departemenList = Karyawan::DEPARTEMEN_LIST;
+        $jabatanList = Karyawan::JABATAN_LIST;
+        return view('karyawan.edit', compact('karyawan', 'departemenList', 'jabatanList'));
     }
 
     /**
@@ -99,15 +174,28 @@ class KaryawanController extends Controller
     {
         $validated = $request->validate([
             'nama_karyawan'      => 'required|string|max:255',
+            'nik'                => 'nullable|string|max:50',
+            'tempat_lahir'       => 'nullable|string|max:100',
+            'tanggal_lahir'      => 'nullable|date',
+            'ttl'                => 'nullable|string|max:100',
+            'whatsapp'           => 'nullable|string|max:50',
+            'email'              => 'nullable|email|max:100',
+            'nomor_darurat'      => 'nullable|string|max:100',
             'jabatan'            => 'required|string',
             'jenis_tenaga_kerja' => 'required|string',
             'departemen'         => 'required|string',
             'outlet'             => 'required|string|in:Gaharu,Kejingga',
+            'satuan_gaji'        => 'nullable|string|in:Harian,Bulanan,Per Jam',
             'no_rekening'        => 'nullable|string|max:100',
-            'gaji_pokok'         => 'required|numeric|min:0',
+            'gaji_pokok'         => 'nullable|numeric|min:0',
             'uang_makan'         => 'nullable|numeric|min:0',
             'uang_transport'     => 'nullable|numeric|min:0',
         ]);
+
+        if (empty($validated['ttl']) && (!empty($validated['tempat_lahir']) || !empty($validated['tanggal_lahir']))) {
+            $parts = array_filter([$validated['tempat_lahir'] ?? null, $validated['tanggal_lahir'] ?? null]);
+            $validated['ttl'] = implode(', ', $parts);
+        }
 
         $karyawan->update($validated);
 

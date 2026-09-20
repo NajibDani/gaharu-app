@@ -152,22 +152,21 @@ class PenggajianController extends Controller
             'potongan_dll'            => 'nullable|string',
         ]);
 
-        // Cek duplikat: izinkan jika rentang tanggal berbeda (probation split)
+        // Cek duplikat identik: izinkan jika pilihan periode atau rentang tanggal berbeda
         $duplicateQuery = Penggajian::where('karyawan_id', $request->karyawan_id)
-            ->where('periode_bulan_tahun', $request->periode);
+            ->where('periode_bulan_tahun', $request->periode)
+            ->where('hari_kerja', '>', 0);
 
-        if ($request->tanggal_mulai && $request->tanggal_selesai) {
-            // Cek overlap rentang tanggal
+        if ($request->filled('tanggal_mulai') && $request->filled('tanggal_selesai')) {
             $duplicateQuery->where(function ($q) use ($request) {
                 $q->where(function ($q2) use ($request) {
                     $q2->where('tanggal_mulai', '<=', $request->tanggal_selesai)
                        ->where('tanggal_selesai', '>=', $request->tanggal_mulai);
                 });
             });
-        }
-
-        if ($duplicateQuery->exists()) {
-            return back()->withErrors(['karyawan_id' => 'Gaji karyawan ini untuk periode/rentang tanggal tersebut sudah diinput sebelumnya.'])->withInput();
+            if ($duplicateQuery->exists()) {
+                return back()->withErrors(['karyawan_id' => 'Gaji karyawan ini untuk rentang tanggal tersebut sudah pernah diinput sebelumnya. Silakan gunakan rentang tanggal yang berbeda atau edit data yang ada.'])->withInput();
+            }
         }
 
         $karyawan = Karyawan::findOrFail($request->karyawan_id);
@@ -177,15 +176,29 @@ class PenggajianController extends Controller
             return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', $value));
         };
 
-        // 1. Data Dasar Harian & Gaji Utama (Kalkulasi Berbasis Fluktuasi Periode Gaji Karyawan)
-        $hariKerja = floatval($request->hari_kerja ?? 0);
-        $calcTariff = $this->calculateWeightedTariff($karyawan, $request->tanggal_mulai, $request->tanggal_selesai, $request->periode, $hariKerja);
+        // 1. Data Dasar Berdasarkan Pilihan Periode Gaji (Periode 1 vs Periode 2)
+        $pilihanPeriode = intval($request->pilihan_periode ?? 1);
+        if ($pilihanPeriode === 2 && $karyawan->gaji_pokok_2 !== null) {
+            $gajiPokokHarian  = floatval($karyawan->gaji_pokok_2);
+            $uangMakan        = floatval($karyawan->uang_makan_2);
+            $uangTransport    = floatval($karyawan->uang_transport_2);
+            $satuanGaji       = $karyawan->satuan_gaji_2 ?? $karyawan->satuan_gaji ?? 'Harian';
+        } else {
+            $pilihanPeriode   = 1;
+            $gajiPokokHarian  = floatval($karyawan->gaji_pokok);
+            $uangMakan        = floatval($karyawan->uang_makan);
+            $uangTransport    = floatval($karyawan->uang_transport);
+            $satuanGaji       = $karyawan->satuan_gaji ?? 'Harian';
+        }
 
-        $gajiPokokHarian  = $calcTariff['gaji_pokok'];
-        $uangMakan        = $calcTariff['uang_makan'];
-        $uangTransport    = $calcTariff['uang_transport'];
-        $tarifHarianTotal = $calcTariff['tarif_harian_total'];
-        $gajiUtama        = $calcTariff['gaji_utama'];
+        $tarifHarianTotal = $gajiPokokHarian + $uangMakan + $uangTransport;
+        $hariKerja        = floatval($request->hari_kerja ?? 0);
+
+        if ($satuanGaji === 'Bulanan') {
+            $gajiUtama = $tarifHarianTotal;
+        } else {
+            $gajiUtama = $hariKerja * $tarifHarianTotal;
+        }
 
         // 2. Presensi & Kinerja
         $jamLembur              = floatval($request->jam_lembur ?? 0);
@@ -195,18 +208,39 @@ class PenggajianController extends Controller
 
         // 3. Kalkulasi Earnings (Pendapatan)
         $lembur               = $jamLembur * 10000;
-        $bonusTarget          = $banyakTarget * $tarifHarianTotal;
-        $bonusTanggalMerah    = $banyakTanggalMerah * $tarifHarianTotal;
         $bonusBirthdayService = $banyakBirthdayService * 5000;
-        $bonusDll             = $cleanRupiah($request->bonus_dll);
+        $bonusDll             = $request->has('bonus_dll') ? $cleanRupiah($request->bonus_dll) : 0;
+
+        if ($satuanGaji === 'Harian') {
+            $bonusTarget          = $banyakTarget * $tarifHarianTotal;
+            $bonusTanggalMerah    = $banyakTanggalMerah * $tarifHarianTotal;
+            $catatanTarget        = null;
+            $catatanTanggalMerah  = null;
+        } else {
+            $bonusTarget          = $request->filled('manual_bonus_target') ? $cleanRupiah($request->manual_bonus_target) : ($banyakTarget > 0 ? $banyakTarget * $tarifHarianTotal : $cleanRupiah($request->bonus_target ?? 0));
+            $bonusTanggalMerah    = $request->filled('manual_bonus_tanggal_merah') ? $cleanRupiah($request->manual_bonus_tanggal_merah) : ($banyakTanggalMerah > 0 ? $banyakTanggalMerah * $tarifHarianTotal : $cleanRupiah($request->bonus_tanggal_merah ?? 0));
+            $catatanTarget        = $request->catatan_bonus_target;
+            $catatanTanggalMerah  = $request->catatan_bonus_tanggal_merah;
+        }
 
         $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
 
-        // 4. Kalkulasi Deductions (Pengurangan)
-        $potonganTerlambat  = $cleanRupiah($request->potongan_terlambat);
-        $potonganInventaris = $cleanRupiah($request->potongan_inventaris);
-        $potonganKasbon     = $cleanRupiah($request->potongan_kasbon);
-        $potonganDll        = $cleanRupiah($request->potongan_dll);
+        // 4. Kalkulasi Deductions (Pengurangan) - Otomatis sinkronkan potongan terlambat dari tabel Keterlambatan jika tidak diset
+        if ($request->has('potongan_terlambat')) {
+            $potonganTerlambat = $cleanRupiah($request->potongan_terlambat);
+        } else {
+            $qLate = Keterlambatan::where('karyawan_id', $karyawan->id);
+            if ($request->tanggal_mulai && $request->tanggal_selesai) {
+                $qLate->whereBetween('tanggal', [$request->tanggal_mulai, $request->tanggal_selesai]);
+            } else {
+                $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
+            }
+            $potonganTerlambat = floatval($qLate->sum('potongan'));
+        }
+
+        $potonganInventaris = $request->has('potongan_inventaris') ? $cleanRupiah($request->potongan_inventaris) : 0;
+        $potonganKasbon     = $request->has('potongan_kasbon') ? $cleanRupiah($request->potongan_kasbon) : 0;
+        $potonganDll        = $request->has('potongan_dll') ? $cleanRupiah($request->potongan_dll) : 0;
 
         $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
 
@@ -215,40 +249,57 @@ class PenggajianController extends Controller
 
         $existingStatus = Penggajian::where('periode_bulan_tahun', $request->periode)->first()?->status ?? 'draft';
 
+        // Jika ada record draft hasil auto-fill dengan hari_kerja = 0 untuk karyawan dan periode yang sama, timpa/hapus record draft tersebut agar tidak duplikat
+        $emptyDraft = Penggajian::where('karyawan_id', $karyawan->id)
+            ->where('periode_bulan_tahun', $request->periode)
+            ->where('hari_kerja', 0)
+            ->where('status', 'draft')
+            ->where('status_jurnal', false)
+            ->first();
+
+        if ($emptyDraft) {
+            $emptyDraft->delete();
+        }
+
         Penggajian::create([
-            'karyawan_id'             => $karyawan->id,
-            'outlet'                  => $karyawan->outlet ?? 'Gaharu',
-            'periode_bulan_tahun'     => $request->periode,
-            'tanggal_mulai'           => $request->tanggal_mulai,
-            'tanggal_selesai'         => $request->tanggal_selesai,
-            'hari_kerja'              => $hariKerja,
-            'tarif_harian_total'      => $tarifHarianTotal,
-            'gaji_utama'              => $gajiUtama,
-            'gaji_pokok'              => $gajiPokokHarian,
-            'tunjangan_transport'     => $uangTransport,
-            'tunjangan_makan'         => $uangMakan,
-            'jam_lembur'              => $jamLembur,
-            'lembur'                  => $lembur,
-            'banyak_target'           => $banyakTarget,
-            'bonus_target'            => $bonusTarget,
-            'banyak_tanggal_merah'    => $banyakTanggalMerah,
-            'bonus_tanggal_merah'     => $bonusTanggalMerah,
-            'banyak_birthday_service' => $banyakBirthdayService,
-            'bonus_birthday'          => $bonusBirthdayService,
-            'bonus_dll'               => $bonusDll,
-            'potongan_terlambat'      => $potonganTerlambat,
-            'potongan_inventaris'     => $potonganInventaris,
-            'potongan_kasbon'         => $potonganKasbon,
-            'potongan_dll'            => $potonganDll,
-            'total_earnings'          => $totalEarnings,
-            'total_deductions'        => $totalDeductions,
-            'total_gaji_bersih'       => $totalGajiBersih,
-            'status'                  => $existingStatus,
-            'status_jurnal'           => false
+            'karyawan_id'                 => $karyawan->id,
+            'outlet'                      => $karyawan->outlet ?? 'Gaharu',
+            'satuan_gaji'                 => $satuanGaji,
+            'satuan_gaji_2'               => $karyawan->satuan_gaji_2 ?? $satuanGaji,
+            'pilihan_periode'             => $pilihanPeriode,
+            'periode_bulan_tahun'         => $request->periode,
+            'tanggal_mulai'               => $request->tanggal_mulai,
+            'tanggal_selesai'             => $request->tanggal_selesai,
+            'hari_kerja'                  => $hariKerja,
+            'tarif_harian_total'          => $tarifHarianTotal,
+            'gaji_utama'                  => $gajiUtama,
+            'gaji_pokok'                  => $gajiPokokHarian,
+            'tunjangan_transport'         => $uangTransport,
+            'tunjangan_makan'             => $uangMakan,
+            'jam_lembur'                  => $jamLembur,
+            'lembur'                      => $lembur,
+            'banyak_target'               => $banyakTarget,
+            'bonus_target'                => $bonusTarget,
+            'catatan_bonus_target'        => $catatanTarget,
+            'banyak_tanggal_merah'        => $banyakTanggalMerah,
+            'bonus_tanggal_merah'         => $bonusTanggalMerah,
+            'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
+            'banyak_birthday_service'     => $banyakBirthdayService,
+            'bonus_birthday'              => $bonusBirthdayService,
+            'bonus_dll'                   => $bonusDll,
+            'potongan_terlambat'          => $potonganTerlambat,
+            'potongan_inventaris'         => $potonganInventaris,
+            'potongan_kasbon'             => $potonganKasbon,
+            'potongan_dll'                => $potonganDll,
+            'total_earnings'              => $totalEarnings,
+            'total_deductions'            => $totalDeductions,
+            'total_gaji_bersih'           => $totalGajiBersih,
+            'status'                      => $existingStatus,
+            'status_jurnal'               => false
         ]);
 
         return redirect()->route('penggajian.show-periode', ['periode' => $request->periode, 'outlet' => $karyawan->outlet ?? 'Gaharu'])
-            ->with('success', "Data gaji {$karyawan->nama_karyawan} berhasil ditambahkan ke periode.");
+            ->with('success', "Data gaji ({$satuanGaji} Periode {$pilihanPeriode}) untuk {$karyawan->nama_karyawan} berhasil ditambahkan ke periode.");
     }
 
 
@@ -261,7 +312,7 @@ class PenggajianController extends Controller
         $selectedOutlet = $this->getOutlet($request);
 
         // Ambil semua data karyawan yang ada di periode & outlet ini
-        $payrolls = Penggajian::with('karyawan')
+        $rawPayrolls = Penggajian::with('karyawan')
             ->where('periode_bulan_tahun', $periode)
             ->where(function ($q) use ($selectedOutlet) {
                 $q->where('outlet', $selectedOutlet)
@@ -271,8 +322,26 @@ class PenggajianController extends Controller
             })
             ->get();
 
+        // Bersihkan duplikat otomatis di database: jika ada karyawan yang punya slip aktif (hari_kerja > 0)
+        // dan juga punya slip kosong (hari_kerja == 0 & draft), gabungkan potongan terlambat ke slip aktif dan hapus slip kosong
+        $groupedByKaryawan = $rawPayrolls->groupBy('karyawan_id');
+        foreach ($groupedByKaryawan as $empId => $items) {
+            if ($items->count() > 1) {
+                $activeItem = $items->where('hari_kerja', '>', 0)->sortByDesc('id')->first();
+                $zeroItems = $items->where('hari_kerja', '<=', 0)->where('status', 'draft')->where('status_jurnal', false);
+                if ($activeItem && $zeroItems->isNotEmpty()) {
+                    $extraLate = $zeroItems->sum('potongan_terlambat');
+                    $zeroItemsIds = $zeroItems->pluck('id')->toArray();
+                    Penggajian::whereIn('id', $zeroItemsIds)->delete();
+                    
+                    // Re-query needed if items deleted
+                    $rawPayrolls = $rawPayrolls->reject(fn($p) => in_array($p->id, $zeroItemsIds));
+                }
+            }
+        }
+
         // Otomatis sinkronkan potongan keterlambatan untuk slip draft / waiting approval di periode ini
-        foreach ($payrolls as $payroll) {
+        foreach ($rawPayrolls as $payroll) {
             if ($payroll->status !== 'approved') {
                 $pMulai = $payroll->tanggal_mulai ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : null;
                 $pSelesai = $payroll->tanggal_selesai ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : null;
@@ -310,13 +379,221 @@ class PenggajianController extends Controller
             }
         }
 
+        // Grouping: 1 BARIS PER KARYAWAN
+        $payrolls = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) {
+            $first = $items->first();
+            $primaryPayroll = $items->sortByDesc('hari_kerja')->first() ?? $first;
+            
+            $totalHariKerja = $items->sum('hari_kerja');
+            $totalGajiUtama = $items->sum('gaji_utama');
+            $totalLembur = $items->sum('lembur');
+            $totalJamLembur = $items->sum('jam_lembur');
+            $totalTarget = $items->sum('bonus_target');
+            $totalBanyakTarget = $items->sum('banyak_target');
+            $totalMerah = $items->sum('bonus_tanggal_merah');
+            $totalBanyakMerah = $items->sum('banyak_tanggal_merah');
+            $totalBirthday = $items->sum('bonus_birthday');
+            $totalBanyakBirthday = $items->sum('banyak_birthday_service');
+            $totalBonusDll = $items->sum('bonus_dll');
+
+            $totalEarnings = $items->sum(function($p) {
+                return $p->total_earnings > 0 ? (float)$p->total_earnings : (
+                    (float)($p->gaji_utama ?? 0) + (float)($p->lembur ?? 0) + (float)($p->bonus_target ?? 0) +
+                    (float)($p->bonus_tanggal_merah ?? 0) + (float)($p->bonus_birthday ?? 0) + (float)($p->bonus_dll ?? 0)
+                );
+            });
+
+            $totalPotonganTerlambat = $items->sum('potongan_terlambat');
+            $totalPotonganInventaris = $items->sum('potongan_inventaris');
+            $totalPotonganKasbon = $items->sum('potongan_kasbon');
+            $totalPotonganDll = $items->sum('potongan_dll');
+
+            $totalDeductions = $items->sum(function($p) {
+                return $p->total_deductions > 0 ? (float)$p->total_deductions : (
+                    (float)($p->potongan_terlambat ?? 0) + (float)($p->potongan_inventaris ?? 0) +
+                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_dll ?? 0)
+                );
+            });
+
+            $takeHomePay = $totalEarnings - $totalDeductions;
+            $isPaid = $items->every(fn($p) => $p->status_jurnal || $p->status === 'approved');
+
+            // Hitung tarif harian representatif
+            $tarifHarian = $primaryPayroll->tarif_harian_total > 0
+                ? $primaryPayroll->tarif_harian_total
+                : (($primaryPayroll->gaji_pokok ?? 0) + ($primaryPayroll->tunjangan_makan ?? 0) + ($primaryPayroll->tunjangan_transport ?? 0));
+
+            return (object) [
+                'id'                      => $primaryPayroll->id,
+                'primary_payroll'         => $primaryPayroll,
+                'items'                   => $items,
+                'karyawan_id'             => $first->karyawan_id,
+                'karyawan'                => $first->karyawan,
+                'outlet'                  => $first->outlet,
+                'periode_bulan_tahun'     => $first->periode_bulan_tahun,
+                'hari_kerja'              => $totalHariKerja,
+                'tarif_harian_total'      => $tarifHarian,
+                'gaji_utama'              => $totalGajiUtama,
+                'gaji_pokok'              => $primaryPayroll->gaji_pokok,
+                'tunjangan_transport'     => $primaryPayroll->tunjangan_transport,
+                'tunjangan_makan'         => $primaryPayroll->tunjangan_makan,
+                'jam_lembur'              => $totalJamLembur,
+                'lembur'                  => $totalLembur,
+                'banyak_target'           => $totalBanyakTarget,
+                'bonus_target'            => $totalTarget,
+                'banyak_tanggal_merah'    => $totalBanyakMerah,
+                'bonus_tanggal_merah'     => $totalMerah,
+                'banyak_birthday_service' => $totalBanyakBirthday,
+                'bonus_birthday'          => $totalBirthday,
+                'bonus_dll'               => $totalBonusDll,
+                'potongan_terlambat'      => $totalPotonganTerlambat,
+                'potongan_inventaris'     => $totalPotonganInventaris,
+                'potongan_kasbon'         => $totalPotonganKasbon,
+                'potongan_dll'            => $totalPotonganDll,
+                'total_earnings'          => $totalEarnings,
+                'total_deductions'        => $totalDeductions,
+                'total_gaji_bersih'       => $takeHomePay,
+                'take_home_pay'           => $takeHomePay,
+                'status'                  => $primaryPayroll->status,
+                'status_jurnal'           => $isPaid,
+                'is_paid'                 => $isPaid,
+                'tanggal_mulai'           => $primaryPayroll->tanggal_mulai,
+                'tanggal_selesai'         => $primaryPayroll->tanggal_selesai,
+                'satuan_gaji'             => $primaryPayroll->satuan_gaji,
+                'satuan_gaji_2'           => $primaryPayroll->satuan_gaji_2,
+                'pilihan_periode'         => $primaryPayroll->pilihan_periode ?? 1,
+            ];
+        })->values();
+
         if ($payrolls->isEmpty()) {
             $currentStatus = 'draft';
         } else {
             $currentStatus = $payrolls->first()->status;
         }
 
-        return view('penggajian.show-periode', compact('payrolls', 'periode', 'currentStatus', 'selectedOutlet'));
+        $payrollCounts = $rawPayrolls->groupBy('karyawan_id')->map->count();
+        $allKaryawans = Karyawan::where('outlet', $selectedOutlet)->get()->map(function($k) use ($payrollCounts) {
+            $k->payroll_count = $payrollCounts[$k->id] ?? 0;
+            return $k;
+        });
+        $availableKaryawans = $allKaryawans;
+
+        return view('penggajian.show-periode', compact('payrolls', 'periode', 'currentStatus', 'selectedOutlet', 'availableKaryawans', 'allKaryawans'));
+    }
+
+    /**
+     * EXPORT EXCEL: Data Transfer Gaji Karyawan (Format Payroll Bank)
+     * Kolom: REKENING | NOMINAL | EMAIL
+     * Rekening & Nominal: tanpa titik, spasi, atau tanda baca
+     */
+    public function exportPayrollExcel(Request $request)
+    {
+        $periode = $request->query('periode');
+        $selectedOutlet = $this->getOutlet($request);
+
+        if (!$periode) {
+            return back()->with('error', 'Periode tidak valid.');
+        }
+
+        // Ambil semua penggajian untuk periode & outlet ini
+        $rawPayrolls = Penggajian::with('karyawan')
+            ->where('periode_bulan_tahun', $periode)
+            ->where(function ($q) use ($selectedOutlet) {
+                $q->where('outlet', $selectedOutlet)
+                  ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
+                      $kq->where('outlet', $selectedOutlet);
+                  });
+            })
+            ->get();
+
+        // Group per karyawan, hitung take home pay total
+        $rows = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) {
+            $first = $items->first();
+            $karyawan = $first->karyawan;
+
+            $totalEarnings = $items->sum(function($p) {
+                return $p->total_earnings > 0 ? (float)$p->total_earnings : (
+                    (float)($p->gaji_utama ?? 0) + (float)($p->lembur ?? 0) +
+                    (float)($p->bonus_target ?? 0) + (float)($p->bonus_tanggal_merah ?? 0) +
+                    (float)($p->bonus_birthday ?? 0) + (float)($p->bonus_dll ?? 0)
+                );
+            });
+
+            $totalDeductions = $items->sum(function($p) {
+                return $p->total_deductions > 0 ? (float)$p->total_deductions : (
+                    (float)($p->potongan_terlambat ?? 0) + (float)($p->potongan_inventaris ?? 0) +
+                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_dll ?? 0)
+                );
+            });
+
+            $takeHomePay = $totalEarnings - $totalDeductions;
+
+            // Bersihkan nomor rekening: hanya digit, hapus semua non-digit
+            $rekening = preg_replace('/\D/', '', $karyawan->no_rekening ?? '');
+
+            // Nominal tanpa desimal, tanpa titik/koma/spasi
+            $nominal = (int) round($takeHomePay);
+
+            return [
+                'rekening' => $rekening,
+                'nominal'  => $nominal,
+                'email'    => $karyawan->email ?? '',
+                'nama'     => $karyawan->nama_karyawan ?? '-',
+            ];
+        })->values()->filter(fn($r) => $r['rekening'] !== '' && $r['nominal'] > 0);
+
+        // Build Excel
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Header row
+        $sheet->setCellValue('A1', 'REKENING');
+        $sheet->setCellValue('B1', 'NOMINAL');
+        $sheet->setCellValue('C1', 'EMAIL');
+
+        // Style header: bold
+        $sheet->getStyle('A1:C1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:C1')->getFill()
+              ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+              ->getStartColor()->setARGB('FFE2E8F0');
+
+        // Data rows
+        $rowNum = 2;
+        foreach ($rows as $row) {
+            // Set rekening as text to prevent scientific notation
+            $sheet->setCellValueExplicit(
+                'A' . $rowNum,
+                $row['rekening'],
+                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
+            );
+            // Nominal as plain integer (no formatting in cell)
+            $sheet->setCellValueExplicit(
+                'B' . $rowNum,
+                (string) $row['nominal'],
+                \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING
+            );
+            $sheet->setCellValue('C' . $rowNum, $row['email']);
+            $rowNum++;
+        }
+
+        // Auto-size columns
+        foreach (['A', 'B', 'C'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Nama file: Transfer_Gaji_Outlet_Periode.xlsx
+        $periodeFormatted = \App\Models\Penggajian::formatPeriode($periode);
+        $filename = 'Transfer_Gaji_' . $selectedOutlet . '_' . str_replace(' ', '_', $periodeFormatted) . '.xlsx';
+
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+
+        return response()->streamDownload(function () use ($writer) {
+            $writer->save('php://output');
+        }, $filename, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control'       => 'max-age=0',
+        ]);
     }
 
     /**
@@ -324,6 +601,7 @@ class PenggajianController extends Controller
      */
     public function autoFill(Request $request)
     {
+
         $periode = $request->input('periode');
         $selectedOutlet = $this->getOutlet($request);
 
@@ -355,6 +633,7 @@ class PenggajianController extends Controller
 
         $count = 0;
         foreach ($karyawans as $k) {
+            $satuanGaji = $k->satuan_gaji ?? 'Harian';
             $gajiPokok = floatval($k->gaji_pokok ?? 0);
             $uangMakan = floatval($k->uang_makan ?? 0);
             $uangTransport = floatval($k->uang_transport ?? 0);
@@ -366,15 +645,19 @@ class PenggajianController extends Controller
                 ->sum('potongan');
 
             $totalDeductions = floatval($potonganTerlambat);
-            $totalGajiBersih = 0 - $totalDeductions;
+            $gajiUtama = ($satuanGaji === 'Bulanan') ? $tarifHarian : 0;
+            $totalEarnings = $gajiUtama;
+            $totalGajiBersih = $totalEarnings - $totalDeductions;
 
             Penggajian::create([
                 'karyawan_id'             => $k->id,
                 'outlet'                  => $k->outlet ?? $selectedOutlet,
+                'satuan_gaji'             => $satuanGaji,
+                'satuan_gaji_2'           => $k->satuan_gaji_2 ?? $satuanGaji,
                 'periode_bulan_tahun'     => $periode,
                 'hari_kerja'              => 0,
                 'tarif_harian_total'      => $tarifHarian,
-                'gaji_utama'              => 0,
+                'gaji_utama'              => $gajiUtama,
                 'gaji_pokok'              => $gajiPokok,
                 'tunjangan_transport'     => $uangTransport,
                 'tunjangan_makan'         => $uangMakan,
@@ -391,7 +674,7 @@ class PenggajianController extends Controller
                 'potongan_inventaris'     => 0,
                 'potongan_kasbon'         => 0,
                 'potongan_dll'            => 0,
-                'total_earnings'          => 0,
+                'total_earnings'          => $totalEarnings,
                 'total_deductions'        => $totalDeductions,
                 'total_gaji_bersih'       => $totalGajiBersih,
                 'status'                  => $existingStatus,
@@ -596,36 +879,60 @@ class PenggajianController extends Controller
             return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', $value));
         };
 
-        // 1. Data Dasar Harian & Gaji Utama (Kalkulasi Berbasis Fluktuasi Periode Gaji Karyawan)
-        $hariKerja = floatval($request->hari_kerja ?? 0);
-        $calcTariff = $this->calculateWeightedTariff($karyawan, $request->tanggal_mulai, $request->tanggal_selesai, $payroll->periode_bulan_tahun, $hariKerja);
+        // 1. Data Dasar Berdasarkan Pilihan Periode Gaji (Periode 1 vs Periode 2)
+        $pilihanPeriode = intval($request->pilihan_periode ?? ($payroll->pilihan_periode ?? 1));
+        if ($pilihanPeriode === 2 && $karyawan && $karyawan->gaji_pokok_2 !== null) {
+            $gajiPokokHarian  = floatval($karyawan->gaji_pokok_2);
+            $uangMakan        = floatval($karyawan->uang_makan_2);
+            $uangTransport    = floatval($karyawan->uang_transport_2);
+            $satuanGaji       = $karyawan->satuan_gaji_2 ?? $karyawan->satuan_gaji ?? 'Harian';
+        } else {
+            $pilihanPeriode   = 1;
+            $gajiPokokHarian  = floatval($karyawan->gaji_pokok ?? $payroll->gaji_pokok);
+            $uangMakan        = floatval($karyawan->uang_makan ?? $payroll->tunjangan_makan);
+            $uangTransport    = floatval($karyawan->uang_transport ?? $payroll->tunjangan_transport);
+            $satuanGaji       = $karyawan->satuan_gaji ?? $payroll->satuan_gaji ?? 'Harian';
+        }
 
-        $gajiPokokHarian  = $calcTariff['gaji_pokok'];
-        $uangMakan        = $calcTariff['uang_makan'];
-        $uangTransport    = $calcTariff['uang_transport'];
-        $tarifHarianTotal = $calcTariff['tarif_harian_total'];
-        $gajiUtama        = $calcTariff['gaji_utama'];
+        $tarifHarianTotal = $gajiPokokHarian + $uangMakan + $uangTransport;
+        $hariKerja        = floatval($request->hari_kerja ?? $payroll->hari_kerja);
 
-        // 2. Presensi & Kinerja
-        $jamLembur              = floatval($request->jam_lembur ?? 0);
-        $banyakTarget           = intval($request->banyak_target ?? 0);
-        $banyakTanggalMerah     = intval($request->banyak_tanggal_merah ?? 0);
-        $banyakBirthdayService  = intval($request->banyak_birthday_service ?? 0);
+        if ($satuanGaji === 'Bulanan') {
+            $gajiUtama = $tarifHarianTotal;
+        } else {
+            $gajiUtama = $hariKerja * $tarifHarianTotal;
+        }
+
+        // 2. Presensi & Kinerja (Pertahankan nilai lama jika form tidak mengirimkan field bonus)
+        $jamLembur              = $request->has('jam_lembur') ? floatval($request->jam_lembur ?? 0) : floatval($payroll->jam_lembur ?? 0);
+        $banyakTarget           = $request->has('banyak_target') ? intval($request->banyak_target ?? 0) : intval($payroll->banyak_target ?? 0);
+        $banyakTanggalMerah     = $request->has('banyak_tanggal_merah') ? intval($request->banyak_tanggal_merah ?? 0) : intval($payroll->banyak_tanggal_merah ?? 0);
+        $banyakBirthdayService  = $request->has('banyak_birthday_service') ? intval($request->banyak_birthday_service ?? 0) : intval($payroll->banyak_birthday_service ?? 0);
 
         // 3. Kalkulasi Earnings (Pendapatan)
         $lembur               = $jamLembur * 10000;
-        $bonusTarget          = $banyakTarget * $tarifHarianTotal;
-        $bonusTanggalMerah    = $banyakTanggalMerah * $tarifHarianTotal;
         $bonusBirthdayService = $banyakBirthdayService * 5000;
-        $bonusDll             = $cleanRupiah($request->bonus_dll);
+        $bonusDll             = $request->has('bonus_dll') ? $cleanRupiah($request->bonus_dll) : floatval($payroll->bonus_dll ?? 0);
+
+        if ($satuanGaji === 'Harian') {
+            $bonusTarget         = $banyakTarget * $tarifHarianTotal;
+            $bonusTanggalMerah   = $banyakTanggalMerah * $tarifHarianTotal;
+            $catatanTarget       = null;
+            $catatanTanggalMerah = null;
+        } else {
+            $bonusTarget         = $request->filled('manual_bonus_target') ? $cleanRupiah($request->manual_bonus_target) : ($request->has('bonus_target') ? $cleanRupiah($request->bonus_target) : floatval($payroll->bonus_target ?? 0));
+            $bonusTanggalMerah   = $request->filled('manual_bonus_tanggal_merah') ? $cleanRupiah($request->manual_bonus_tanggal_merah) : ($request->has('bonus_tanggal_merah') ? $cleanRupiah($request->bonus_tanggal_merah) : floatval($payroll->bonus_tanggal_merah ?? 0));
+            $catatanTarget       = $request->catatan_bonus_target ?? $payroll->catatan_bonus_target;
+            $catatanTanggalMerah = $request->catatan_bonus_tanggal_merah ?? $payroll->catatan_bonus_tanggal_merah;
+        }
 
         $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
 
-        // 4. Kalkulasi Deductions (Pengurangan)
-        $potonganTerlambat  = $cleanRupiah($request->potongan_terlambat);
-        $potonganInventaris = $cleanRupiah($request->potongan_inventaris);
-        $potonganKasbon     = $cleanRupiah($request->potongan_kasbon);
-        $potonganDll        = $cleanRupiah($request->potongan_dll);
+        // 4. Kalkulasi Deductions (Pengurangan - Pertahankan nilai lama jika tidak dikirim)
+        $potonganTerlambat  = $request->has('potongan_terlambat') ? $cleanRupiah($request->potongan_terlambat) : floatval($payroll->potongan_terlambat ?? 0);
+        $potonganInventaris = $request->has('potongan_inventaris') ? $cleanRupiah($request->potongan_inventaris) : floatval($payroll->potongan_inventaris ?? 0);
+        $potonganKasbon     = $request->has('potongan_kasbon') ? $cleanRupiah($request->potongan_kasbon) : floatval($payroll->potongan_kasbon ?? 0);
+        $potonganDll        = $request->has('potongan_dll') ? $cleanRupiah($request->potongan_dll) : floatval($payroll->potongan_dll ?? 0);
 
         $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
 
@@ -633,30 +940,35 @@ class PenggajianController extends Controller
         $totalGajiBersih = $totalEarnings - $totalDeductions;
 
         $payroll->update([
-            'tanggal_mulai'           => $request->tanggal_mulai,
-            'tanggal_selesai'         => $request->tanggal_selesai,
-            'hari_kerja'              => $hariKerja,
-            'tarif_harian_total'      => $tarifHarianTotal,
-            'gaji_utama'              => $gajiUtama,
-            'gaji_pokok'              => $gajiPokokHarian,
-            'tunjangan_transport'     => $uangTransport,
-            'tunjangan_makan'         => $uangMakan,
-            'jam_lembur'              => $jamLembur,
-            'lembur'                  => $lembur,
-            'banyak_target'           => $banyakTarget,
-            'bonus_target'            => $bonusTarget,
-            'banyak_tanggal_merah'    => $banyakTanggalMerah,
-            'bonus_tanggal_merah'     => $bonusTanggalMerah,
-            'banyak_birthday_service' => $banyakBirthdayService,
-            'bonus_birthday'          => $bonusBirthdayService,
-            'bonus_dll'               => $bonusDll,
-            'potongan_terlambat'      => $potonganTerlambat,
-            'potongan_inventaris'     => $potonganInventaris,
-            'potongan_kasbon'         => $potonganKasbon,
-            'potongan_dll'            => $potonganDll,
-            'total_earnings'          => $totalEarnings,
-            'total_deductions'        => $totalDeductions,
-            'total_gaji_bersih'       => $totalGajiBersih,
+            'satuan_gaji'                 => $satuanGaji,
+            'satuan_gaji_2'               => $karyawan->satuan_gaji_2 ?? $payroll->satuan_gaji_2 ?? $satuanGaji,
+            'pilihan_periode'             => $pilihanPeriode,
+            'tanggal_mulai'               => $request->tanggal_mulai,
+            'tanggal_selesai'             => $request->tanggal_selesai,
+            'hari_kerja'                  => $hariKerja,
+            'tarif_harian_total'          => $tarifHarianTotal,
+            'gaji_utama'                  => $gajiUtama,
+            'gaji_pokok'                  => $gajiPokokHarian,
+            'tunjangan_transport'         => $uangTransport,
+            'tunjangan_makan'             => $uangMakan,
+            'jam_lembur'                  => $jamLembur,
+            'lembur'                      => $lembur,
+            'banyak_target'               => $banyakTarget,
+            'bonus_target'                => $bonusTarget,
+            'catatan_bonus_target'        => $catatanTarget,
+            'banyak_tanggal_merah'        => $banyakTanggalMerah,
+            'bonus_tanggal_merah'         => $bonusTanggalMerah,
+            'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
+            'banyak_birthday_service'     => $banyakBirthdayService,
+            'bonus_birthday'              => $bonusBirthdayService,
+            'bonus_dll'                   => $bonusDll,
+            'potongan_terlambat'          => $potonganTerlambat,
+            'potongan_inventaris'         => $potonganInventaris,
+            'potongan_kasbon'             => $potonganKasbon,
+            'potongan_dll'                => $potonganDll,
+            'total_earnings'              => $totalEarnings,
+            'total_deductions'            => $totalDeductions,
+            'total_gaji_bersih'           => $totalGajiBersih,
         ]);
 
         // Kembalikan ke halaman detail kelompok karyawan per periode dengan pesan sukses
@@ -664,10 +976,66 @@ class PenggajianController extends Controller
             ->with('success', 'Data gaji ' . $payroll->karyawan->nama_karyawan . ' berhasil diperbarui.');
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
-        // Ambil data penggajian satu karyawan beserta relasi datanya
-        $payroll = Penggajian::with('karyawan')->findOrFail($id);
+        $basePayroll = Penggajian::with('karyawan')->findOrFail($id);
+        $karyawanId = $basePayroll->karyawan_id;
+        $periodeMonth = $basePayroll->periode_bulan_tahun;
+
+        // Ambil semua payroll karyawan ini di bulan tersebut
+        $allEntries = Penggajian::with('karyawan')
+            ->where('karyawan_id', $karyawanId)
+            ->where('periode_bulan_tahun', $periodeMonth)
+            ->orderBy('pilihan_periode', 'asc')
+            ->get();
+
+        $selectedP = $request->query('periode'); // 'all', '1', '2', or null
+
+        if ($allEntries->count() > 1 && ($selectedP === 'all' || !$selectedP)) {
+            // Tampilan gabungan (SEMUA PERIODE di bulan tersebut)
+            $payroll = clone $basePayroll;
+            $payroll->is_combined = true;
+            $payroll->pilihan_periode = 'all';
+            $payroll->entries = $allEntries;
+
+            $payroll->hari_kerja = $allEntries->sum('hari_kerja');
+            $payroll->gaji_utama = $allEntries->sum('gaji_utama');
+            $payroll->lembur = $allEntries->sum('lembur');
+            $payroll->jam_lembur = $allEntries->sum('jam_lembur');
+            $payroll->bonus_target = $allEntries->sum('bonus_target');
+            $payroll->banyak_target = $allEntries->sum('banyak_target');
+            $payroll->bonus_tanggal_merah = $allEntries->sum('bonus_tanggal_merah');
+            $payroll->banyak_tanggal_merah = $allEntries->sum('banyak_tanggal_merah');
+            $payroll->bonus_birthday = $allEntries->sum('bonus_birthday');
+            $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
+            $payroll->bonus_dll = $allEntries->sum('bonus_dll');
+
+            $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
+            $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
+            $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
+            $payroll->potongan_dll = $allEntries->sum('potongan_dll');
+
+            $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
+                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->bonus_dll;
+            $payroll->total_deductions = $payroll->potongan_terlambat + $payroll->potongan_inventaris +
+                $payroll->potongan_kasbon + $payroll->potongan_dll;
+            $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
+
+            // Rentang tanggal gabungan
+            $minDate = $allEntries->min('tanggal_mulai');
+            $maxDate = $allEntries->max('tanggal_selesai');
+            $payroll->tanggal_mulai = $minDate;
+            $payroll->tanggal_selesai = $maxDate;
+        } elseif ($selectedP && in_array($selectedP, ['1', '2'])) {
+            $matchEntry = $allEntries->firstWhere('pilihan_periode', intval($selectedP)) ?? $basePayroll;
+            $payroll = $matchEntry;
+            $payroll->is_combined = false;
+            $payroll->entries = $allEntries;
+        } else {
+            $payroll = $basePayroll;
+            $payroll->is_combined = false;
+            $payroll->entries = $allEntries;
+        }
 
         // Ambil rincian keterlambatan karyawan pada rentang slip atau bulan periode ini
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
@@ -681,44 +1049,69 @@ class PenggajianController extends Controller
         }
         $listKeterlambatan = $queryKeterlambatan->orderBy('tanggal', 'asc')->get();
 
-        // Hitung akumulasi Subtotal Penerimaan Tetap
-        $total_tetap = ($payroll->gaji_pokok ?? 0) +
-            ($payroll->tunjangan_transport ?? 0) +
-            ($payroll->tunjangan_makan ?? 0);
-
-        // Hitung akumulasi Subtotal Penerimaan Tidak Tetap (Bonus & Lembur)
-        $total_tidak_tetap = ($payroll->lembur ?? 0) +
-            ($payroll->bonus_target ?? 0) +
-            ($payroll->bonus_tanggal_merah ?? 0) +
-            ($payroll->bonus_birthday ?? 0) +
-            ($payroll->bonus_dll ?? 0);
-
-        // Hitung akumulasi Subtotal Potongan
-        $total_potongan = ($payroll->potongan_inventaris ?? 0) +
-            ($payroll->potongan_terlambat ?? 0) +
-            ($payroll->potongan_kasbon ?? 0) +
-            ($payroll->potongan_dll ?? 0);
-
-        // Hitung Take Home Pay (Gaji Bersih Akhir)
-        $total_gaji_bersih = ($total_tetap + $total_tidak_tetap) - $total_potongan;
-
-        // Kirim semua variabel perhitungan ke view show
-        return view('penggajian.show', compact(
-            'payroll',
-            'listKeterlambatan',
-            'total_tetap',
-            'total_tidak_tetap',
-            'total_potongan',
-            'total_gaji_bersih'
-        ));
+        return view('penggajian.show', compact('payroll', 'allEntries', 'listKeterlambatan', 'selectedP'));
     }
 
     /**
      * Download Slip Gaji sebagai PDF
      */
-    public function cetakPdf($id)
+    public function cetakPdf(Request $request, $id)
     {
-        $payroll = Penggajian::with('karyawan')->findOrFail($id);
+        $basePayroll = Penggajian::with('karyawan')->findOrFail($id);
+        $karyawanId = $basePayroll->karyawan_id;
+        $periodeMonth = $basePayroll->periode_bulan_tahun;
+
+        $allEntries = Penggajian::with('karyawan')
+            ->where('karyawan_id', $karyawanId)
+            ->where('periode_bulan_tahun', $periodeMonth)
+            ->orderBy('pilihan_periode', 'asc')
+            ->get();
+
+        $selectedP = $request->query('periode'); // 'all', '1', '2', or null
+
+        if ($allEntries->count() > 1 && ($selectedP === 'all' || !$selectedP)) {
+            $payroll = clone $basePayroll;
+            $payroll->is_combined = true;
+            $payroll->pilihan_periode = 'all';
+            $payroll->entries = $allEntries;
+
+            $payroll->hari_kerja = $allEntries->sum('hari_kerja');
+            $payroll->gaji_utama = $allEntries->sum('gaji_utama');
+            $payroll->lembur = $allEntries->sum('lembur');
+            $payroll->jam_lembur = $allEntries->sum('jam_lembur');
+            $payroll->bonus_target = $allEntries->sum('bonus_target');
+            $payroll->banyak_target = $allEntries->sum('banyak_target');
+            $payroll->bonus_tanggal_merah = $allEntries->sum('bonus_tanggal_merah');
+            $payroll->banyak_tanggal_merah = $allEntries->sum('banyak_tanggal_merah');
+            $payroll->bonus_birthday = $allEntries->sum('bonus_birthday');
+            $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
+            $payroll->bonus_dll = $allEntries->sum('bonus_dll');
+
+            $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
+            $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
+            $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
+            $payroll->potongan_dll = $allEntries->sum('potongan_dll');
+
+            $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
+                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->bonus_dll;
+            $payroll->total_deductions = $payroll->potongan_terlambat + $payroll->potongan_inventaris +
+                $payroll->potongan_kasbon + $payroll->potongan_dll;
+            $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
+
+            $minDate = $allEntries->min('tanggal_mulai');
+            $maxDate = $allEntries->max('tanggal_selesai');
+            $payroll->tanggal_mulai = $minDate;
+            $payroll->tanggal_selesai = $maxDate;
+        } elseif ($selectedP && in_array($selectedP, ['1', '2'])) {
+            $matchEntry = $allEntries->firstWhere('pilihan_periode', intval($selectedP)) ?? $basePayroll;
+            $payroll = $matchEntry;
+            $payroll->is_combined = false;
+            $payroll->entries = $allEntries;
+        } else {
+            $payroll = $basePayroll;
+            $payroll->is_combined = false;
+            $payroll->entries = $allEntries;
+        }
 
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
         if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
@@ -731,12 +1124,13 @@ class PenggajianController extends Controller
         }
         $listKeterlambatan = $queryKeterlambatan->orderBy('tanggal', 'asc')->get();
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('penggajian.slip-pdf', compact('payroll', 'listKeterlambatan'))
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('penggajian.slip-pdf', compact('payroll', 'allEntries', 'listKeterlambatan', 'selectedP'))
             ->setPaper('a4', 'portrait');
 
         $outletName = $payroll->outlet ?? $payroll->karyawan->outlet ?? 'Gaharu';
         $namaKaryawan = \Illuminate\Support\Str::slug($payroll->karyawan->nama_karyawan ?? 'karyawan');
-        $filename = "Slip_Gaji_{$namaKaryawan}_{$outletName}_{$payroll->periode_bulan_tahun}.pdf";
+        $periodeSuffix = $payroll->is_combined ? 'Gabungan' : ('P' . ($payroll->pilihan_periode ?? '1'));
+        $filename = "Slip_Gaji_{$namaKaryawan}_{$outletName}_{$payroll->periode_bulan_tahun}_{$periodeSuffix}.pdf";
 
         return $pdf->download($filename);
     }
@@ -894,8 +1288,11 @@ class PenggajianController extends Controller
         $ut2 = floatval($karyawan->uang_transport_2 ?? 0);
         $tarif2 = $gp2 + $um2 + $ut2;
 
+        $satuanGaji1 = $karyawan->satuan_gaji ?? 'Harian';
+        $satuanGaji2 = $karyawan->satuan_gaji_2 ?? $satuanGaji1;
+
         if (!$hasP2) {
-            $gajiUtama = $tarif1 * $hariKerja;
+            $gajiUtama = ($satuanGaji1 === 'Bulanan') ? $tarif1 : ($tarif1 * $hariKerja);
             return [
                 'gaji_pokok'         => $gp1,
                 'uang_makan'         => $um1,
@@ -951,10 +1348,10 @@ class PenggajianController extends Controller
         $prop1 = $n1 / $nTotal;
         $prop2 = $n2 / $nTotal;
 
-        $hariP1 = $hariKerja * $prop1;
-        $hariP2 = $hariKerja * $prop2;
+        $gajiP1 = ($satuanGaji1 === 'Bulanan') ? ($tarif1 * $prop1) : ($tarif1 * ($hariKerja * $prop1));
+        $gajiP2 = ($satuanGaji2 === 'Bulanan') ? ($tarif2 * $prop2) : ($tarif2 * ($hariKerja * $prop2));
 
-        $gajiUtama = ($hariP1 * $tarif1) + ($hariP2 * $tarif2);
+        $gajiUtama = $gajiP1 + $gajiP2;
 
         $gpWeighted    = ($n1 * $gp1 + $n2 * $gp2) / $nTotal;
         $umWeighted    = ($n1 * $um1 + $n2 * $um2) / $nTotal;

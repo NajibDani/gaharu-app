@@ -801,8 +801,14 @@
             /**
              * Reload isi tabel & paginasi secara parsial tanpa full-page reload
              */
-            window.reloadCurrentTable = function(callback) {
-                let currentUrl = window.location.href;
+            window.reloadCurrentTable = function(targetUrlOrCallback, maybeCallback) {
+                let currentUrl = (typeof targetUrlOrCallback === 'string' && targetUrlOrCallback) ? targetUrlOrCallback : window.location.href;
+                let callback = typeof targetUrlOrCallback === 'function' ? targetUrlOrCallback : maybeCallback;
+
+                // Jika target URL berbeda dari window.location.href, update URL browser secara seamless
+                if (typeof targetUrlOrCallback === 'string' && targetUrlOrCallback && targetUrlOrCallback !== window.location.href) {
+                    window.history.replaceState({}, '', targetUrlOrCallback);
+                }
                 
                 // Tambahkan efek subtle loading pada table jika ada
                 let { tableBox } = getTableContainers(document);
@@ -831,6 +837,17 @@
                         curTarget.paginationBox.innerHTML = newTarget.paginationBox.innerHTML;
                     } else if (!curTarget.paginationBox && newTarget.paginationBox && curTarget.tableBox) {
                         curTarget.tableBox.insertAdjacentElement('afterend', newTarget.paginationBox);
+                    }
+
+                    // Sinkronkan form filter jika ada (misal kategori_id, sort, search)
+                    let curFilterForm = document.querySelector('form[action*="/barang"]');
+                    let newFilterForm = newDoc.querySelector('form[action*="/barang"]');
+                    if (curFilterForm && newFilterForm) {
+                        ['kategori_id', 'sort', 'search'].forEach(field => {
+                            let curInp = curFilterForm.querySelector(`[name="${field}"]`);
+                            let newInp = newFilterForm.querySelector(`[name="${field}"]`);
+                            if (curInp && newInp) curInp.value = newInp.value;
+                        });
                     }
 
                     // Perbarui CSRF Token jika ada yang baru
@@ -996,8 +1013,9 @@
                         }
                     }
 
-                    // Reload tabel saat ini dengan tetap mempertahankan query param & pagination
-                    window.reloadCurrentTable(function() {
+                    // Reload tabel saat ini (gunakan response.url jika redirect ke URL spesifik, atau pertahankan URL saat ini)
+                    let targetUrl = (response && response.url) ? response.url : null;
+                    window.reloadCurrentTable(targetUrl, function() {
                         if (window.showToast) {
                             window.showToast('success', successMessage);
                         }

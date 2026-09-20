@@ -684,8 +684,14 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="custom-label">Kode Barang</label>
-                            <input type="text" name="kode_barang" id="editKodeBarang" class="form-control custom-input @error('kode_barang') is-invalid @enderror" required>
+                            <div class="input-group">
+                                <input type="text" name="kode_barang" id="editKodeBarang" class="form-control custom-input @error('kode_barang') is-invalid @enderror" required>
+                                <button type="button" class="btn btn-outline-secondary btn-sm px-2" id="btnGenKodeEdit" title="Generate kode baru sesuai kategori terpilih" style="border-radius: 0 8px 8px 0; border: 1px solid #ced4da;">
+                                    <i class="bi bi-magic"></i> Buat Kode
+                                </button>
+                            </div>
                             @error('kode_barang') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            <small class="text-muted d-block mt-1" id="editHelpKodeBarang" style="font-size: 0.72rem;">Klik tombol "Buat Kode" jika ingin kode baru sesuai kategori.</small>
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -1301,6 +1307,60 @@ document.addEventListener("DOMContentLoaded", function () {
 
         toggleEditForm();
     });
+
+    // Helper generate kode untuk modal edit jika kategori diganti
+    var btnGenKodeEdit = document.getElementById('btnGenKodeEdit');
+    if (btnGenKodeEdit) {
+        btnGenKodeEdit.addEventListener('click', function() {
+            var catId = document.getElementById('editKategoriId').value;
+            if (!catId) return;
+            btnGenKodeEdit.disabled = true;
+            btnGenKodeEdit.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            fetch("{{ route('barang.generate-kode', ':kategori') }}".replace(':kategori', catId))
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.kode_barang) {
+                        document.getElementById('editKodeBarang').value = data.kode_barang;
+                    }
+                })
+                .catch(err => console.error('Error generate kode:', err))
+                .finally(() => {
+                    btnGenKodeEdit.disabled = false;
+                    btnGenKodeEdit.innerHTML = '<i class="bi bi-magic"></i> Buat Kode';
+                });
+        });
+    }
+
+    // Ketika kategori di modal edit diubah, sesuaikan _return_query agar tabel memuat kategori baru tersebut
+    var formEditBarang = document.getElementById('formEditBarang');
+    if (formEditBarang) {
+        formEditBarang.addEventListener('submit', function() {
+            var newCatId = document.getElementById('editKategoriId').value;
+            var currentUrlParams = new URLSearchParams(window.location.search);
+            var currentCatId = currentUrlParams.get('kategori_id');
+
+            // Jika kategori berbeda dari filter saat ini, sesuaikan URL query agar row yang diedit tetap terlihat di tabel
+            if (newCatId && newCatId !== currentCatId) {
+                currentUrlParams.set('kategori_id', newCatId);
+                // Reset page ke 1 karena kategori berganti
+                currentUrlParams.delete('page');
+
+                var newQueryString = '?' + currentUrlParams.toString();
+                var hiddenQuery = formEditBarang.querySelector('input[name="_return_query"]');
+                if (!hiddenQuery) {
+                    hiddenQuery = document.createElement('input');
+                    hiddenQuery.type = 'hidden';
+                    hiddenQuery.name = '_return_query';
+                    formEditBarang.appendChild(hiddenQuery);
+                }
+                hiddenQuery.value = newQueryString;
+
+                // Update URL browser secara seamless
+                var newUrl = window.location.pathname + newQueryString;
+                window.history.replaceState({}, '', newUrl);
+            }
+        });
+    }
 
     function updateBoxAppearance(chk) {
         if (!chk) return;

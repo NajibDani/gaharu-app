@@ -1,614 +1,662 @@
 <x-app-layout>
-    <style>
-        .slip-page-wrapper {
-            background-color: #f1f5f9;
-            padding: 30px 15px;
-            min-height: 100vh;
-        }
+@php
+    $k = $payroll->karyawan;
+    $currentOutlet = $payroll->outlet ?? $k->outlet ?? 'Gaharu';
+    $isKejingga    = (strtolower($currentOutlet) === 'kejingga');
+    $accentColor   = $isKejingga ? '#0f766e' : '#7A4517';
+    $accentLight   = $isKejingga ? '#f0fdfa' : '#fffbf5';
+    $accentBorder  = $isKejingga ? '#99f6e4' : '#fde68a';
 
-        @php
-            $currentOutlet = $payroll->outlet ?? $payroll->karyawan->outlet ?? 'Gaharu';
-            $isKejingga = (strtolower($currentOutlet) === 'kejingga');
-            $carbonPeriode = \Carbon\Carbon::parse($payroll->periode_bulan_tahun . '-01');
-            $daysInMonth = $carbonPeriode->daysInMonth;
-            $namaBulanTahun = $carbonPeriode->translatedFormat('F Y');
+    $carbonPeriode   = \Carbon\Carbon::parse($payroll->periode_bulan_tahun . '-01');
+    $namaBulanTahun  = $carbonPeriode->translatedFormat('F Y');
 
-            // Dynamic color schemes
-            $bgCard = $isKejingga ? '#134e4a' : '#c87a4b';
-            $takeHomeBg = $isKejingga ? '#ea580c' : '#b8622f';
-        @endphp
+    // Period label
+    $periodeLabel = \App\Models\Penggajian::formatPeriode($payroll->periode_bulan_tahun);
 
-        .slip-container {
-            max-width: 920px;
-            margin: 0 auto;
-            background-color: {{ $bgCard }};
-            padding: 20px 24px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            color: #ffffff;
-        }
+    $isCombined = !empty($payroll->is_combined);
+    $allEntries = $allEntries ?? collect([$payroll]);
+    $hasMultiple = $allEntries->count() > 1;
 
-        /* HEADER */
-        .slip-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-            gap: 20px;
-        }
+    // Satuan gaji
+    $pilihanPeriode = $payroll->pilihan_periode ?? 1;
+    $satuan = ($pilihanPeriode == 2 && $k->satuan_gaji_2) ? ($k->satuan_gaji_2 ?? 'Harian') : ($k->satuan_gaji ?? 'Harian');
 
-        .slip-brand {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
+    // Tariff rates (from the chosen period)
+    $gpRate  = ($pilihanPeriode == 2 && $k->gaji_pokok_2  !== null) ? $k->gaji_pokok_2  : ($k->gaji_pokok  ?? 0);
+    $umRate  = ($pilihanPeriode == 2 && $k->uang_makan_2  !== null) ? $k->uang_makan_2  : ($k->uang_makan  ?? 0);
+    $utRate  = ($pilihanPeriode == 2 && $k->uang_transport_2 !== null) ? $k->uang_transport_2 : ($k->uang_transport ?? 0);
+    $tarifTotal = $gpRate + $umRate + $utRate;
 
-        .brand-logo-text {
-            font-size: 26px;
-            font-weight: 900;
-            letter-spacing: 1px;
-            color: #ffffff;
-            margin: 0;
-            line-height: 1.1;
-        }
+    // Earnings
+    $gajiUtama = $payroll->gaji_utama > 0
+        ? $payroll->gaji_utama
+        : ($payroll->hari_kerja * ($payroll->tarif_harian_total ?? $tarifTotal));
 
-        .brand-logo-kejingga-ke {
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            vertical-align: super;
-            color: #fdba74;
-            margin-right: 1px;
-        }
+    $calcEarnings = $payroll->total_earnings > 0 ? $payroll->total_earnings : (
+        $gajiUtama + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
+        ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
+    );
 
-        .brand-logo-kejingga-jingga {
-            color: #fdba74;
-        }
+    $calcDeductions = $payroll->total_deductions > 0 ? $payroll->total_deductions : (
+        ($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) +
+        ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_dll ?? 0)
+    );
 
-        .brand-logo-gaharu-icon {
-            display: inline-block;
-            border: 2px solid #ffffff;
-            border-radius: 50%;
-            width: 28px;
-            height: 28px;
-            text-align: center;
-            line-height: 24px;
-            font-size: 14px;
-            margin-right: 8px;
-        }
+    $takeHomePay = $payroll->total_gaji_bersih ?: ($calcEarnings - $calcDeductions);
 
-        .slip-title-meta {
-            margin-top: 4px;
-            font-size: 11.5px;
-            font-weight: 700;
-            color: #ffffff;
-            line-height: 1.3;
-        }
+    // Tanggal slip
+    $tglSlip = '';
+    if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
+        $tglSlip = \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('d/m/Y')
+                 . ' – '
+                 . \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('d/m/Y');
+    }
 
-        .slip-employee-box {
-            border: 1.5px solid rgba(255, 255, 255, 0.9);
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.12);
-            min-width: 360px;
-        }
+    // WhatsApp link
+    $waRaw = preg_replace('/\D/', '', $k->whatsapp ?? '');
+    if ($waRaw !== '' && substr($waRaw, 0, 1) === '0') {
+        $waRaw = '62' . substr($waRaw, 1);
+    } elseif ($waRaw !== '' && substr($waRaw, 0, 2) !== '62') {
+        $waRaw = '62' . $waRaw;
+    }
+    $pdfUrlParams = [];
+    if ($isCombined) {
+        $pdfUrlParams['periode'] = 'all';
+    } elseif ($selectedP) {
+        $pdfUrlParams['periode'] = $selectedP;
+    }
+    $pdfUrl = route('penggajian.pdf', array_merge(['id' => $payroll->id], $pdfUrlParams));
+    $slipTitleType = $isCombined ? 'Gabungan (P1 & P2)' : ('Periode ' . ($payroll->pilihan_periode ?? '1'));
+    $cleanEmployeeName = $k->nama_karyawan ?? 'Karyawan';
+    $pdfFileName = 'Slip_Gaji_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $cleanEmployeeName) . '_' . str_replace(' ', '_', $periodeLabel) . '.pdf';
+    $nominalFmt = number_format($takeHomePay, 0, ',', '.');
+    $waMessage = "Halo *{$cleanEmployeeName}*,\n\nTerlampir kami sampaikan dokumen resmi *Slip Gaji* untuk periode *{$periodeLabel}* ({$currentOutlet}).\nTotal Gaji Bersih (Take Home Pay): *Rp {$nominalFmt}*\n\nTerima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n🙏✨\n*Salam hangat,*\n*Manajemen {$currentOutlet}*";
+    $waUrl = $waRaw !== ''
+        ? 'https://api.whatsapp.com/send/?phone=' . $waRaw . '&text=' . rawurlencode($waMessage) . '&type=phone_number&app_absent=0'
+        : null;
+@endphp
+<style>
+    .sp-wrap { background: #f1f5f9; min-height: 100vh; padding: 28px 16px; }
+    .sp-card {
+        max-width: 900px; margin: 0 auto;
+        background: #fff; border-radius: 16px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+        overflow: hidden;
+    }
 
-        .emp-table-show {
-            width: 100%;
-            border-collapse: collapse;
-            color: #ffffff;
-            font-weight: bold;
-            font-size: 12px;
-        }
+    /* HEADER BAND */
+    .sp-header {
+        background: {{ $accentColor }};
+        color: #fff;
+        padding: 18px 28px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 16px;
+    }
+    .sp-header-left .sp-brand { font-size: 22px; font-weight: 900; letter-spacing: 0.5px; line-height: 1; }
+    .sp-header-left .sp-slip-label { font-size: 11px; font-weight: 700; opacity: 0.8; margin-top: 4px; letter-spacing: 1px; text-transform: uppercase; }
+    .sp-header-left .sp-periode { font-size: 13px; font-weight: 700; margin-top: 6px; opacity: 0.95; }
 
-        .emp-table-show td {
-            padding: 5px 8px;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-        }
+    .sp-emp-box {
+        background: rgba(255,255,255,0.15);
+        border: 1.5px solid rgba(255,255,255,0.4);
+        border-radius: 10px;
+        padding: 10px 14px;
+        min-width: 260px;
+        font-size: 11.5px;
+        font-weight: 700;
+    }
+    .sp-emp-box table { width: 100%; border-collapse: collapse; color: #fff; }
+    .sp-emp-box td { padding: 2.5px 4px; }
+    .sp-emp-box .lbl { width: 100px; opacity: 0.8; font-size: 10.5px; }
+    .sp-emp-box .sep { width: 10px; text-align: center; }
 
-        /* TABLES GRID */
-        .slip-body-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0;
-            background: #ffffff;
-            border: 1.5px solid #222222;
-        }
+    /* BODY */
+    .sp-body { display: grid; grid-template-columns: 1fr 1fr; }
+    .sp-col { padding: 0; }
+    .sp-col-left { border-right: 1.5px solid #e2e8f0; }
 
-        .slip-col-left {
-            border-right: 1px solid #333333;
-        }
+    /* SECTION HEADER */
+    .sp-section-hd {
+        font-size: 10px; font-weight: 900; text-transform: uppercase;
+        letter-spacing: 0.6px; padding: 6px 14px; border-bottom: 1px solid #e2e8f0;
+    }
+    .sp-section-hd.earn { background: #ecfdf5; color: #065f46; }
+    .sp-section-hd.deduct { background: #fefce8; color: #713f12; }
+    .sp-section-hd.sub { background: #f8fafc; color: #334155; font-weight: 800; }
 
-        .slip-col-right {
-        }
+    /* ROW TABLE */
+    .sp-tbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .sp-tbl tr { border-bottom: 1px solid #f1f5f9; }
+    .sp-tbl td { padding: 5px 14px; color: #334155; }
+    .sp-tbl .lbl { font-weight: 600; }
+    .sp-tbl .val { text-align: right; font-weight: 800; color: #0f172a; white-space: nowrap; }
+    .sp-tbl .note { font-size: 10px; color: #94a3b8; font-weight: 500; }
+    .sp-tbl .subtotal td { background: #f8fafc; font-weight: 800; color: #1e293b; border-top: 1px solid #e2e8f0; }
+    .sp-tbl .zero { color: #cbd5e1 !important; }
 
-        .table-slip {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 11px;
-            color: #111;
-        }
+    /* BADGE */
+    .badge-period {
+        display: inline-block; font-size: 9.5px; font-weight: 800;
+        border-radius: 4px; padding: 1px 7px; margin-left: 6px;
+        vertical-align: middle;
+    }
+    .badge-p1 { background: #fef3c7; color: #78350f; border: 1px solid #fcd34d; }
+    .badge-p2 { background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
+    .badge-satuan { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
 
-        .table-slip th, .table-slip td {
-            border: 1px solid #333333;
-            padding: 3.5px 6px;
-        }
+    /* TARIF INFO BOX */
+    .sp-tarif-box {
+        margin: 10px 14px;
+        background: {{ $accentLight }};
+        border: 1px solid {{ $accentBorder }};
+        border-radius: 8px;
+        padding: 8px 12px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+    .sp-tarif-item { text-align: center; }
+    .sp-tarif-item .t-label { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+    .sp-tarif-item .t-val { font-size: 11px; font-weight: 800; color: #0f172a; margin-top: 2px; }
 
-        .bg-header-pendapatan {
-            background-color: #2e6945 !important;
-            color: #ffffff !important;
-            text-align: center;
-            font-weight: bold;
-            font-size: 12px;
-            letter-spacing: 0.5px;
-            padding: 5px !important;
-        }
+    /* FOOTER TOTALS */
+    .sp-totals {
+        display: grid; grid-template-columns: 1fr 1fr;
+        border-top: 1.5px solid #e2e8f0;
+    }
+    .sp-total-earn { background: #ecfdf5; padding: 10px 18px; border-right: 1px solid #a7f3d0; }
+    .sp-total-deduct { background: #fefce8; padding: 10px 18px; }
+    .sp-total-earn .t-title, .sp-total-deduct .t-title { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #475569; }
+    .sp-total-earn .t-amount { font-size: 15px; font-weight: 900; color: #059669; margin-top: 2px; }
+    .sp-total-deduct .t-amount { font-size: 15px; font-weight: 900; color: #d97706; margin-top: 2px; }
 
-        .bg-header-pengurangan {
-            background-color: #eab308 !important;
-            color: #111827 !important;
-            text-align: center;
-            font-weight: bold;
-            font-size: 12px;
-            letter-spacing: 0.5px;
-            padding: 5px !important;
-        }
+    .sp-thp {
+        background: {{ $accentColor }};
+        padding: 14px 24px;
+        display: flex; justify-content: space-between; align-items: center;
+        gap: 16px;
+        box-sizing: border-box;
+    }
+    .sp-thp .thp-label { font-size: 13px; font-weight: 900; color: #fff; letter-spacing: 0.5px; text-transform: uppercase; }
+    .sp-thp .thp-amt { font-size: 22px; font-weight: 900; color: #fff; white-space: nowrap; flex-shrink: 0; }
+    .sp-thp .thp-sub { font-size: 11px; color: rgba(255,255,255,0.75); margin-top: 2px; }
 
-        .bg-section-title {
-            background-color: #ffffff !important;
-            font-weight: bold;
-            font-size: 11px;
-            color: #000;
-        }
+    /* LATE TABLE */
+    .late-tbl { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+    .late-tbl th { background: #f8fafc; padding: 4px 8px; font-size: 9.5px; font-weight: 800; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
+    .late-tbl td { padding: 4px 8px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .late-tbl .val { text-align: right; font-weight: 700; }
 
-        .bg-subtotal-row {
-            background-color: #fef3c7 !important;
-            font-weight: bold;
-        }
+    /* SIGNATURES */
+    .sp-sig { display: grid; grid-template-columns: 1fr 1fr; text-align: center; padding: 20px 28px 16px; font-size: 11px; font-weight: 700; color: #475569; gap: 20px; border-top: 1px solid #f1f5f9; }
+    .sp-sig .sig-line { border-top: 1.5px solid #475569; margin-top: 48px; padding-top: 4px; display: inline-block; min-width: 180px; }
 
-        .text-end {
-            text-align: right;
-        }
+    @media print {
+        .no-print { display: none !important; }
+        .sp-wrap { padding: 0; background: transparent; }
+        .sp-card { box-shadow: none; border-radius: 0; max-width: 100%; }
+        .sp-header, .sp-thp { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .sp-section-hd.earn, .sp-section-hd.deduct, .sp-section-hd.sub { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .sp-tarif-box, .sp-total-earn, .sp-total-deduct { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .sp-tbl .subtotal td { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+</style>
 
-        .text-center {
-            text-align: center;
-        }
+<div class="sp-wrap">
 
-        /* BOTTOM TOTALS */
-        .slip-bottom-bar {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            border: 1.5px solid #222222;
-            border-top: none;
-            background: #ffffff;
-        }
-
-        .total-pendapatan-box {
-            background-color: #2e6945;
-            color: #ffffff;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 12px;
-            font-weight: bold;
-            font-size: 11.5px;
-            border-right: 1px solid #333;
-        }
-
-        .total-pengurangan-box {
-            background-color: #eab308;
-            color: #111827;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 12px;
-            font-weight: bold;
-            font-size: 11.5px;
-        }
-
-        .take-home-pay-bar {
-            background-color: {{ $takeHomeBg }};
-            color: #ffffff;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 16px;
-            font-weight: 900;
-            font-size: 15px;
-            border: 1.5px solid #222222;
-            border-top: none;
-            letter-spacing: 0.5px;
-        }
-
-        /* PRINT STYLES */
-        @media print {
-            .no-print {
-                display: none !important;
-            }
-            .slip-page-wrapper {
-                padding: 0;
-                background: transparent;
-            }
-            .slip-container {
-                box-shadow: none;
-                max-width: 100%;
-                width: 100%;
-                padding: 12px;
-                border-radius: 0;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-            }
-        }
-    </style>
-
-    <div class="slip-page-wrapper">
-        @php
-            $currentOutlet = $payroll->outlet ?? $payroll->karyawan->outlet ?? 'Gaharu';
-            $isKejingga = (strtolower($currentOutlet) === 'kejingga');
-            $carbonPeriode = \Carbon\Carbon::parse($payroll->periode_bulan_tahun . '-01');
-            $daysInMonth = $carbonPeriode->daysInMonth;
-            $namaBulanTahun = $carbonPeriode->translatedFormat('F Y');
-        @endphp
-
-        {{-- TOMBOL AKSI ATAS --}}
-        <div class="no-print d-flex justify-content-between align-items-center mb-3" style="max-width: 960px; margin: 0 auto 15px auto;">
-            <a href="{{ route('penggajian.show-periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $currentOutlet]) }}" class="btn btn-outline-secondary btn-sm px-3 rounded-3 shadow-sm bg-white">
-                <i class="bi bi-arrow-left me-1"></i> Kembali ke Periode ({{ $currentOutlet }})
+    {{-- ACTION BAR --}}
+    <div class="no-print" style="max-width: 900px; margin: 0 auto 16px auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <a href="{{ route('penggajian.index', ['outlet' => $currentOutlet]) }}"
+               style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; color: #334155; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
+               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">
+                ← Kembali
             </a>
-            <div class="d-flex gap-2">
-                @if($payroll->status !== 'approved')
-                <a href="{{ route('penggajian.edit', $payroll->id) }}" class="btn btn-warning btn-sm px-3 rounded-3 shadow-sm text-dark font-medium">
-                    <i class="bi bi-pencil-square me-1"></i> Edit Data
-                </a>
-                @endif
-                <a href="{{ route('penggajian.pdf', $payroll->id) }}" class="btn btn-danger btn-sm px-3 rounded-3 shadow-sm text-white font-medium" style="background:#dc2626; border-color:#dc2626;">
-                    <i class="bi bi-file-earmark-pdf me-1"></i> Save as PDF
-                </a>
-                <button onclick="window.print()" class="btn btn-primary btn-sm px-4 rounded-3 shadow-sm" style="background:#5a3416; border-color:#5a3416;">
-                    <i class="bi bi-printer me-1"></i> Cetak Slip Gaji
-                </button>
-            </div>
+            <a href="{{ route('penggajian.show-periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $currentOutlet]) }}"
+               style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #fff; border: 1.5px solid #cbd5e1; color: #334155; text-decoration: none; display: inline-flex; align-items: center; gap: 5px;"
+               onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#fff'">
+                &#128197; Periode {{ $periodeLabel }}
+            </a>
         </div>
-
-        {{-- KARTU SLIP GAJI GAHARU --}}
-        <div class="slip-container">
-            {{-- HEADER --}}
-            <div class="slip-header">
-                <div class="slip-brand">
-                    <div class="slip-title-meta" style="padding-left: 10px; text-align: left;">
-                        <div style="font-size: 22px; font-weight: 800; letter-spacing: 1px;">SLIP GAJI</div>
-                        <div style="font-size: 13px; margin-top: 4px;">
-                            @if($payroll->tanggal_mulai && $payroll->tanggal_selesai)
-                                PERIODE {{ \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('d') }}-{{ \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('d') }} {{ strtoupper($namaBulanTahun) }}
-                            @else
-                                PERIODE 1-{{ $daysInMonth }} {{ strtoupper($namaBulanTahun) }}
-                            @endif
-                        </div>
-                    </div>
-                </div>
-
-                <div class="slip-employee-box">
-                    <table class="emp-table-show">
-                        <tr>
-                            <td style="width: 100px;">NAMA</td>
-                            <td style="width: 15px; text-align: center;">:</td>
-                            <td>{{ strtoupper($payroll->karyawan->nama_karyawan ?? '-') }}</td>
-                        </tr>
-                        <tr>
-                            <td>OUTLET</td>
-                            <td style="text-align: center;">:</td>
-                            <td>{{ strtoupper($payroll->karyawan->outlet ?? '-') }}</td>
-                        </tr>
-                        <tr>
-                            <td>DIVISI</td>
-                            <td style="text-align: center;">:</td>
-                            <td>{{ strtoupper($payroll->karyawan->departemen ?? '-') }}</td>
-                        </tr>
-                        <tr>
-                            <td>NO. REKENING</td>
-                            <td style="text-align: center;">:</td>
-                            <td>{{ strtoupper($payroll->karyawan->no_rekening ?? '-') }}</td>
-                        </tr>
-                    </table>
-                </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            @if($hasMultiple)
+            <div style="display: inline-flex; background: #e2e8f0; border-radius: 8px; padding: 2px;">
+                <a href="{{ route('penggajian.show', ['penggajian' => $payroll->id, 'periode' => 'all']) }}"
+                   style="padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800; text-decoration: none; {{ $isCombined ? 'background:#fff; color:#0f172a; box-shadow:0 1px 2px rgba(0,0,0,0.1);' : 'color:#475569;' }}">
+                    Gabungan
+                </a>
+                @foreach($allEntries as $ent)
+                    @php $pNum = $ent->pilihan_periode ?? 1; @endphp
+                    <a href="{{ route('penggajian.show', ['penggajian' => $ent->id, 'periode' => $pNum]) }}"
+                       style="padding: 4px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 800; text-decoration: none; {{ (!$isCombined && $pilihanPeriode == $pNum) ? 'background:#fff; color:#0f172a; box-shadow:0 1px 2px rgba(0,0,0,0.1);' : 'color:#475569;' }}">
+                        Periode {{ $pNum }}
+                    </a>
+                @endforeach
             </div>
-
-            {{-- BODY: 2 KOLOM (PENDAPATAN & PENGURANGAN) --}}
-            <div class="slip-body-grid">
-                {{-- KOLOM KIRI: PENDAPATAN --}}
-                <div class="slip-col-left">
-                    <table class="table-slip">
-                        <thead>
-                            <tr>
-                                <th colspan="4" class="bg-header-pendapatan">PENDAPATAN</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{-- SEKSI GAJI --}}
-                            <tr>
-                                <td colspan="4" class="bg-section-title">
-                                    GAJI
-                                    @if($payroll->tanggal_mulai && $payroll->tanggal_selesai)
-                                        <span class="badge bg-light text-dark float-end" style="font-size: 10px; font-weight: normal;">
-                                            {{ \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('d/m/Y') }} s/d {{ \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('d/m/Y') }}
-                                        </span>
-                                    @endif
-                                </td>
-                            </tr>
-                            <tr>
-                                <td style="width: 20px;"></td>
-                                <td>Gaji Pokok</td>
-                                <td class="text-center" style="width: 25px;">Rp</td>
-                                <td class="text-end" style="width: 80px;">{{ number_format($payroll->gaji_pokok ?? 0, 0, ',', '.') }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Tunjangan Makan</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end">{{ number_format($payroll->tunjangan_makan ?? 0, 0, ',', '.') }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Tunjangan/bonus lain-lain</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end">{{ number_format(($payroll->tunjangan_transport ?? 0), 0, ',', '.') }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>
-                                    Hari Kerja
-                                    @if($payroll->tanggal_mulai && $payroll->tanggal_selesai)
-                                        <small class="text-muted">({{ \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('d/m') }} - {{ \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('d/m') }})</small>
-                                    @endif
-                                </td>
-                                <td colspan="2" class="text-center">{{ $payroll->hari_kerja }} hari</td>
-                            </tr>
-                            @php
-                                $gajiUtamaVal = $payroll->gaji_utama > 0 ? $payroll->gaji_utama : ($payroll->hari_kerja * ($payroll->tarif_harian_total ?? ($payroll->gaji_pokok + $payroll->tunjangan_makan + $payroll->tunjangan_transport)));
-                            @endphp
-                            <tr class="bg-subtotal-row">
-                                <td colspan="2" style="font-weight: 800;">TOTAL GAJI</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ number_format($gajiUtamaVal, 0, ',', '.') }}</td>
-                            </tr>
-
-                            {{-- SEKSI LEMBUR --}}
-                            <tr>
-                                <td colspan="4" class="bg-section-title">LEMBUR</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Upah per jam</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end">{{ number_format(10000, 0, ',', '.') }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Banyak jam lembur</td>
-                                <td colspan="2" class="text-center">{{ $payroll->jam_lembur ?? 0 }} jam</td>
-                            </tr>
-                            <tr class="bg-subtotal-row">
-                                <td colspan="2" style="font-weight: 800;">TOTAL UPAH LEMBUR</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->lembur ?? 0) > 0 ? number_format($payroll->lembur, 0, ',', '.') : '-' }}</td>
-                            </tr>
-
-                            {{-- SEKSI BONUS TARGET PENJUALAN --}}
-                            @if(!$isKejingga || ($payroll->bonus_target ?? 0) > 0)
-                            <tr>
-                                <td colspan="4" class="bg-section-title">BONUS TARGET PENJUALAN</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Bonus per target</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end">{{ ($payroll->banyak_target ?? 0) > 0 ? number_format(($payroll->bonus_target / $payroll->banyak_target), 0, ',', '.') : '-' }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Banyak target</td>
-                                <td colspan="2" class="text-center">{{ ($payroll->banyak_target ?? 0) > 0 ? $payroll->banyak_target . ' target' : '-' }}</td>
-                            </tr>
-                            <tr class="bg-subtotal-row">
-                                <td colspan="2" style="font-weight: 800;">TOTAL BONUS TARGET PENJUALAN</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->bonus_target ?? 0) > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '-' }}</td>
-                            </tr>
-                            @endif
-
-                            {{-- SEKSI BONUS TANGGAL MERAH --}}
-                            <tr>
-                                <td colspan="4" class="bg-section-title">BONUS TANGGAL MERAH</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Bonus per tanggal</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end">{{ ($payroll->banyak_tanggal_merah ?? 0) > 0 ? number_format(($payroll->bonus_tanggal_merah / $payroll->banyak_tanggal_merah), 0, ',', '.') : '-' }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Banyak tanggal merah</td>
-                                <td colspan="2" class="text-center">{{ ($payroll->banyak_tanggal_merah ?? 0) > 0 ? $payroll->banyak_tanggal_merah . ' hari' : '-' }}</td>
-                            </tr>
-                            <tr class="bg-subtotal-row">
-                                <td colspan="2" style="font-weight: 800;">TOTAL BONUS TANGGAL MERAH</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->bonus_tanggal_merah ?? 0) > 0 ? number_format($payroll->bonus_tanggal_merah, 0, ',', '.') : '-' }}</td>
-                            </tr>
-
-                            {{-- SEKSI BIRTHDAY SERVICE --}}
-                            <tr>
-                                <td colspan="4" class="bg-section-title">BIRTHDAY SERVICE</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Bonus per service</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end">{{ ($payroll->banyak_birthday_service ?? 0) > 0 ? number_format(5000, 0, ',', '.') : '-' }}</td>
-                            </tr>
-                            <tr>
-                                <td></td>
-                                <td>Banyak service</td>
-                                <td colspan="2" class="text-center">{{ ($payroll->banyak_birthday_service ?? 0) > 0 ? $payroll->banyak_birthday_service : '-' }}</td>
-                            </tr>
-                            <tr class="bg-subtotal-row">
-                                <td colspan="2" style="font-weight: 800;">TOTAL BONUS SERVICE</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->bonus_birthday ?? 0) > 0 ? number_format($payroll->bonus_birthday, 0, ',', '.') : '-' }}</td>
-                            </tr>
-
-                            {{-- BONUS / UPAH LAIN-LAIN --}}
-                            <tr class="bg-subtotal-row">
-                                <td colspan="2" class="bg-section-title" style="font-weight: 800;">BONUS / UPAH LAIN-LAIN</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->bonus_dll ?? 0) > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '-' }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                {{-- KOLOM KANAN: PENGURANGAN --}}
-                <div class="slip-col-right">
-                    <table class="table-slip">
-                        <thead>
-                            <tr>
-                                <th colspan="5" class="bg-header-pengurangan">PENGURANGAN</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{-- SEKSI KETERLAMBATAN --}}
-                            <tr>
-                                <td colspan="5" class="bg-section-title">KETERLAMBATAN</td>
-                            </tr>
-                            <tr style="background: #f8fafc; font-weight: 700; font-size: 10px;">
-                                <td class="text-center" style="width: 28%;">Tanggal</td>
-                                <td class="text-center" style="width: 25%;">Shift</td>
-                                <td class="text-center" style="width: 22%;">Jam datang</td>
-                                <td class="text-center" colspan="2" style="width: 25%;">Potongan</td>
-                            </tr>
-
-                            {{-- Looping Catatan Keterlambatan --}}
-                            @php
-                                $countTerlambat = count($listKeterlambatan);
-                            @endphp
-
-                            @forelse($listKeterlambatan as $t)
-                            <tr>
-                                <td class="text-center">{{ \Carbon\Carbon::parse($t->tanggal)->translatedFormat('d F Y') }}</td>
-                                <td class="text-center">{{ $t->shift ?? '-' }}</td>
-                                <td class="text-center">{{ substr($t->jam_datang, 0, 8) }}</td>
-                                <td class="text-center" style="width: 15px;">Rp</td>
-                                <td class="text-end">{{ number_format($t->potongan, 0, ',', '.') }}</td>
-                            </tr>
-                            @empty
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-1" style="font-style: italic;">Tidak ada catatan keterlambatan</td>
-                            </tr>
-                            @endforelse
-
-                            {{-- Tambah baris kosong jika catatan sedikit agar tabel simetris dan mirip spreadsheet --}}
-                            @for($i = $countTerlambat; $i < ($countTerlambat == 0 ? 4 : 2); $i++)
-                            <tr>
-                                <td style="height: 18px;">&nbsp;</td>
-                                <td>&nbsp;</td>
-                                <td>&nbsp;</td>
-                                <td>&nbsp;</td>
-                                <td>&nbsp;</td>
-                            </tr>
-                            @endfor
-
-                            <tr class="bg-subtotal-row">
-                                <td colspan="3" style="font-weight: 800;">TOTAL POTONGAN KETERLAMBATAN</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->potongan_terlambat ?? 0) > 0 ? number_format($payroll->potongan_terlambat, 0, ',', '.') : '-' }}</td>
-                            </tr>
-
-                            {{-- SEKSI KERUSAKAN INVENTARIS --}}
-                            <tr>
-                                <td colspan="5" class="bg-section-title">KERUSAKAN INVENTARIS</td>
-                            </tr>
-                            <tr style="background: #f8fafc; font-weight: 700; font-size: 10px;">
-                                <td colspan="3" class="text-center">Banyak Pecah</td>
-                                <td colspan="2" class="text-center">Potongan per satuan</td>
-                            </tr>
-                            <tr>
-                                <td colspan="3" class="text-center">-</td>
-                                <td class="text-center" style="width: 15px;">Rp</td>
-                                <td class="text-end">{{ ($payroll->potongan_inventaris ?? 0) > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '0' }}</td>
-                            </tr>
-                            <tr class="bg-subtotal-row">
-                                <td colspan="3" style="font-weight: 800;">TOTAL POTONGAN KERUSAKAN INVENTARIS</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->potongan_inventaris ?? 0) > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '0' }}</td>
-                            </tr>
-
-                            {{-- SEKSI LAIN-LAIN --}}
-                            <tr>
-                                <td colspan="5" class="bg-section-title">LAIN-LAIN</td>
-                            </tr>
-                            <tr style="background: #f8fafc; font-weight: 700; font-size: 10px;">
-                                <td colspan="3" class="text-center">Keterangan</td>
-                                <td colspan="2" class="text-center">Banyak Potongan</td>
-                            </tr>
-                            <tr>
-                                <td colspan="3" class="text-center">{{ ($payroll->potongan_dll ?? 0) > 0 ? 'Potongan Lain-lain' : '-' }}</td>
-                                <td class="text-center" style="width: 15px;">Rp</td>
-                                <td class="text-end">{{ ($payroll->potongan_dll ?? 0) > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '-' }}</td>
-                            </tr>
-
-                            {{-- SEKSI KASBON --}}
-                            <tr class="bg-subtotal-row">
-                                <td colspan="3" style="font-weight: 800;">KASBON</td>
-                                <td class="text-center">Rp</td>
-                                <td class="text-end" style="font-weight: 800;">{{ ($payroll->potongan_kasbon ?? 0) > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '-' }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            {{-- BAR TOTAL PENDAPATAN & TOTAL PENGURANGAN --}}
-            @php
-                $calcEarnings = $payroll->total_earnings > 0 ? $payroll->total_earnings : (
-                    $gajiUtamaVal + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-                    ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
-                );
-
-                $calcDeductions = $payroll->total_deductions > 0 ? $payroll->total_deductions : (
-                    ($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) +
-                    ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_dll ?? 0)
-                );
-            @endphp
-            <div class="slip-bottom-bar">
-                <div class="total-pendapatan-box">
-                    <span>TOTAL PENDAPATAN</span>
-                    <span>Rp {{ number_format($calcEarnings, 0, ',', '.') }}</span>
-                </div>
-                <div class="total-pengurangan-box">
-                    <span>TOTAL POTONGAN</span>
-                    <span>Rp {{ number_format($calcDeductions, 0, ',', '.') }}</span>
-                </div>
-            </div>
-
-            {{-- BAR TOTAL GAJI BERSIH (TAKE HOME PAY) --}}
-            <div class="take-home-pay-bar">
-                <span>TOTAL GAJI BERSIH</span>
-                <span>Rp {{ number_format($payroll->total_gaji_bersih, 0, ',', '.') }}</span>
-            </div>
-
-            {{-- TANDA TANGAN (TAMBAHAN RESMI SAAT CETAK) --}}
-            <div style="margin-top: 24px; display: grid; grid-template-columns: 1fr 1fr; text-align: center; font-size: 11px; color: #fff; font-weight: bold;">
-                <div>
-                    Penerima Gaji,<br><br><br><br>
-                    <u>( {{ strtoupper($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} )</u>
-                </div>
-                <div>
-                    Semarang, {{ date('d') }} {{ $namaBulanTahun }}<br>
-                    Manager / HRD,<br><br><br><br>
-                    <u>( ________________________ )</u>
-                </div>
-            </div>
+            @endif
+            @if($waUrl)
+            <button type="button"
+                    onclick="handleKirimWhatsApp('{{ $pdfUrl }}', '{{ $waUrl }}', '{{ addslashes($cleanEmployeeName) }}', '{{ $pdfFileName }}')"
+                    style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #16a34a; color: #fff; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(22,163,74,0.25);"
+                    onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'"
+                    title="Unduh file PDF dan buka WhatsApp ke {{ $k->whatsapp }}">
+                &#128242; Kirim WhatsApp
+            </button>
+            @else
+            <button type="button" disabled
+                    style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #94a3b8; color: #fff; border: none; cursor: not-allowed; display: inline-flex; align-items: center; gap: 5px; opacity: 0.6;"
+                    title="Nomor WhatsApp karyawan belum diisi">
+                &#128242; Kirim WhatsApp
+            </button>
+            @endif
+            <a href="{{ $pdfUrl }}"
+               style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #dc2626; color: #fff; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(220,38,38,0.25);"
+               onmouseover="this.style.background='#b91c1c'" onmouseout="this.style.background='#dc2626'">
+                &#128196; Save as PDF
+            </a>
+            <button onclick="window.print()"
+                    style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: {{ $accentColor }}; color: #fff; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.15);">
+                &#128424; Cetak Slip
+            </button>
         </div>
     </div>
+
+    {{-- SLIP CARD --}}
+    <div class="sp-card">
+
+        {{-- ═══ HEADER ═══ --}}
+        <div class="sp-header">
+            <div class="sp-header-left">
+                <div class="sp-brand">
+                    @if($isKejingga)
+                        <span style="font-size: 13px; font-weight: 700; vertical-align: super; color: #fdba74;">ke</span><span style="color: #fdba74; font-size: 22px;">JINGGA</span>
+                    @else
+                        GAHARU
+                    @endif
+                </div>
+                <div class="sp-slip-label">Slip Gaji Karyawan {{ $isCombined ? '· GABUNGAN SEMUA PERIODE' : '· PERIODE ' . $pilihanPeriode }}</div>
+                <div class="sp-periode">
+                    Periode {{ $periodeLabel }}
+                    @if($tglSlip) · {{ $tglSlip }} @endif
+                </div>
+            </div>
+            <div class="sp-emp-box">
+                <table>
+                    <tr>
+                        <td class="lbl">NAMA</td>
+                        <td class="sep">:</td>
+                        <td style="font-size: 13px; font-weight: 900;">{{ strtoupper($k->nama_karyawan ?? '-') }}</td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">JABATAN</td>
+                        <td class="sep">:</td>
+                        <td>{{ $k->jabatan ?? '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">DIVISI</td>
+                        <td class="sep">:</td>
+                        <td>{{ $k->departemen ?? '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">OUTLET</td>
+                        <td class="sep">:</td>
+                        <td>{{ strtoupper($currentOutlet) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="lbl">NO. REK</td>
+                        <td class="sep">:</td>
+                        <td style="letter-spacing: 0.5px;">{{ $k->no_rekening ?? '-' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        {{-- ═══ TARIF INFO BOX ═══ --}}
+        @if($isCombined)
+        <div style="margin: 10px 14px; background: {{ $accentLight }}; border: 1px solid {{ $accentBorder }}; border-radius: 8px; padding: 10px 14px;">
+            <div style="font-size: 10.5px; font-weight: 800; color: #78350f; text-transform: uppercase; margin-bottom: 6px;">
+                Rincian Periode Tergabung di Bulan Ini
+            </div>
+            <div style="display: grid; grid-template-columns: repeat({{ count($allEntries) }}, 1fr); gap: 10px;">
+                @foreach($allEntries as $ent)
+                    @php
+                        $pNum = $ent->pilihan_periode ?? 1;
+                        $sat = ($pNum == 2 && $k->satuan_gaji_2) ? ($k->satuan_gaji_2 ?? 'Harian') : ($k->satuan_gaji ?? 'Harian');
+                        $gp = ($pNum == 2 && $k->gaji_pokok_2 !== null) ? $k->gaji_pokok_2 : ($k->gaji_pokok ?? 0);
+                        $um = ($pNum == 2 && $k->uang_makan_2 !== null) ? $k->uang_makan_2 : ($k->uang_makan ?? 0);
+                        $ut = ($pNum == 2 && $k->uang_transport_2 !== null) ? $k->uang_transport_2 : ($k->uang_transport ?? 0);
+                        $tar = $gp + $um + $ut;
+                        $hkUnit = $sat == 'Per Jam' ? ' jam' : ($sat == 'Bulanan' ? ' bln' : ' hari');
+                    @endphp
+                    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; font-size: 11px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                            <span style="font-weight: 800; color: #0f172a;">Periode {{ $pNum }}</span>
+                            <span style="font-size: 9.5px; font-weight: 700; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; color: #475569;">{{ $sat }}</span>
+                        </div>
+                        <div style="color: #64748b; font-size: 10px;">
+                            @if($ent->tanggal_mulai && $ent->tanggal_selesai)
+                                {{ \Carbon\Carbon::parse($ent->tanggal_mulai)->format('d/m') }} - {{ \Carbon\Carbon::parse($ent->tanggal_selesai)->format('d/m/Y') }}
+                            @endif
+                        </div>
+                        <div style="margin-top: 4px; display: flex; justify-content: space-between; font-weight: 700;">
+                            <span>Tarif: Rp {{ number_format($tar, 0, ',', '.') }}</span>
+                            <span style="color: #0369a1;">{{ $ent->hari_kerja }}{{ $hkUnit }}</span>
+                        </div>
+                        <div style="margin-top: 2px; text-align: right; font-weight: 800; color: #059669;">
+                            Rp {{ number_format($ent->gaji_utama, 0, ',', '.') }}
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+        @else
+        <div class="sp-tarif-box">
+            <div class="sp-tarif-item">
+                <div class="t-label">
+                    Tarif Periode
+                    <span class="badge-period {{ $pilihanPeriode == 2 ? 'badge-p2' : 'badge-p1' }}">P{{ $pilihanPeriode }}</span>
+                </div>
+                <div class="t-val">
+                    <span class="badge-satuan" style="font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;">{{ $satuan }}</span>
+                </div>
+            </div>
+            <div class="sp-tarif-item">
+                <div class="t-label">Gaji Pokok/{{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
+                <div class="t-val">Rp {{ number_format($gpRate, 0, ',', '.') }}</div>
+            </div>
+            <div class="sp-tarif-item">
+                <div class="t-label">U. Makan/{{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
+                <div class="t-val">Rp {{ number_format($umRate, 0, ',', '.') }}</div>
+            </div>
+            <div class="sp-tarif-item">
+                <div class="t-label">Transport/{{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
+                <div class="t-val">Rp {{ number_format($utRate, 0, ',', '.') }}</div>
+            </div>
+        </div>
+        @endif
+
+        {{-- ═══ BODY: 2 COLUMNS ═══ --}}
+        <div class="sp-body">
+
+            {{-- LEFT: PENDAPATAN --}}
+            <div class="sp-col sp-col-left">
+                <div class="sp-section-hd earn">&#9650; Pendapatan</div>
+
+                {{-- Gaji Pokok --}}
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">GAJI POKOK</div>
+                <table class="sp-tbl">
+                    @if($isCombined)
+                        @foreach($allEntries as $ent)
+                            @php
+                                $pNum = $ent->pilihan_periode ?? 1;
+                                $sat = ($pNum == 2 && $k->satuan_gaji_2) ? ($k->satuan_gaji_2 ?? 'Harian') : ($k->satuan_gaji ?? 'Harian');
+                                $hkUnit = $sat == 'Per Jam' ? ' jam' : ($sat == 'Bulanan' ? ' bln' : ' hari');
+                            @endphp
+                            <tr>
+                                <td class="lbl">
+                                    Periode {{ $pNum }} ({{ $sat }})
+                                    <span class="note" style="display:block;">{{ $ent->hari_kerja }}{{ $hkUnit }} kerja</span>
+                                </td>
+                                <td class="val">Rp {{ number_format($ent->gaji_utama, 0, ',', '.') }}</td>
+                            </tr>
+                        @endforeach
+                    @else
+                        @if($satuan == 'Harian')
+                        <tr>
+                            <td class="lbl">Tarif / Hari</td>
+                            <td class="val">Rp {{ number_format($tarifTotal, 0, ',', '.') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">Hari Kerja</td>
+                            <td class="val">{{ $payroll->hari_kerja }} hari</td>
+                        </tr>
+                        @elseif($satuan == 'Bulanan')
+                        <tr>
+                            <td class="lbl">Tarif Bulanan</td>
+                            <td class="val">Rp {{ number_format($tarifTotal, 0, ',', '.') }}</td>
+                        </tr>
+                        @elseif($satuan == 'Per Jam')
+                        <tr>
+                            <td class="lbl">Tarif / Jam</td>
+                            <td class="val">Rp {{ number_format($tarifTotal, 0, ',', '.') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">Jam Kerja</td>
+                            <td class="val">{{ $payroll->hari_kerja }} jam</td>
+                        </tr>
+                        @endif
+                    @endif
+                    <tr class="subtotal">
+                        <td>Total Gaji Pokok</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($gajiUtama, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+
+                {{-- Lembur --}}
+                @if(($payroll->lembur ?? 0) > 0 || ($payroll->jam_lembur ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">LEMBUR</div>
+                <table class="sp-tbl">
+                    <tr>
+                        <td class="lbl">Jam Lembur</td>
+                        <td class="val">{{ $payroll->jam_lembur ?? 0 }} jam</td>
+                    </tr>
+                    <tr class="subtotal">
+                        <td>Total Lembur</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->lembur ?? 0, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Bonus Target --}}
+                @if(($payroll->bonus_target ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">BONUS TARGET PENJUALAN</div>
+                <table class="sp-tbl">
+                    <tr>
+                        <td class="lbl">Banyak Target</td>
+                        <td class="val">{{ $payroll->banyak_target }} target</td>
+                    </tr>
+                    @if($payroll->banyak_target > 0)
+                    <tr>
+                        <td class="lbl">Bonus / Target</td>
+                        <td class="val">Rp {{ number_format($payroll->bonus_target / $payroll->banyak_target, 0, ',', '.') }}</td>
+                    </tr>
+                    @endif
+                    <tr class="subtotal">
+                        <td>Total Bonus Target</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->bonus_target, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Bonus Tanggal Merah --}}
+                @if(($payroll->bonus_tanggal_merah ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">BONUS HARI MERAH</div>
+                <table class="sp-tbl">
+                    <tr>
+                        <td class="lbl">Banyak Hari Merah</td>
+                        <td class="val">{{ $payroll->banyak_tanggal_merah }} hari</td>
+                    </tr>
+                    <tr class="subtotal">
+                        <td>Total Bonus Hari Merah</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->bonus_tanggal_merah, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Birthday Service --}}
+                @if(($payroll->bonus_birthday ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">BIRTHDAY SERVICE</div>
+                <table class="sp-tbl">
+                    <tr>
+                        <td class="lbl">Banyak Service</td>
+                        <td class="val">{{ $payroll->banyak_birthday_service }}</td>
+                    </tr>
+                    <tr class="subtotal">
+                        <td>Total Bonus Birthday</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->bonus_birthday, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Bonus Lain --}}
+                @if(($payroll->bonus_dll ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">BONUS LAIN-LAIN</div>
+                <table class="sp-tbl">
+                    <tr class="subtotal">
+                        <td>Total Bonus Lain</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->bonus_dll, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+            </div>
+
+            {{-- RIGHT: POTONGAN --}}
+            <div class="sp-col">
+                <div class="sp-section-hd deduct">&#9660; Potongan</div>
+
+                {{-- Keterlambatan --}}
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">KETERLAMBATAN</div>
+                @if(count($listKeterlambatan) > 0)
+                <table class="late-tbl">
+                    <thead>
+                        <tr>
+                            <th>Tanggal</th>
+                            <th>Shift</th>
+                            <th>Jam Datang</th>
+                            <th class="val">Potongan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($listKeterlambatan as $t)
+                        <tr>
+                            <td>{{ \Carbon\Carbon::parse($t->tanggal)->format('d/m/Y') }}</td>
+                            <td>{{ $t->shift ?? '-' }}</td>
+                            <td>{{ substr($t->jam_datang, 0, 5) }}</td>
+                            <td class="val">Rp {{ number_format($t->potongan, 0, ',', '.') }}</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+                @else
+                <div style="padding: 8px 14px; font-size: 10.5px; color: #94a3b8; font-style: italic;">Tidak ada catatan keterlambatan</div>
+                @endif
+                <table class="sp-tbl">
+                    <tr class="subtotal">
+                        <td>Total Potongan Terlambat</td>
+                        <td class="val {{ ($payroll->potongan_terlambat ?? 0) == 0 ? 'zero' : '' }}" style="{{ ($payroll->potongan_terlambat ?? 0) > 0 ? 'color:#dc2626;' : '' }}">
+                            {{ ($payroll->potongan_terlambat ?? 0) > 0 ? 'Rp ' . number_format($payroll->potongan_terlambat, 0, ',', '.') : '-' }}
+                        </td>
+                    </tr>
+                </table>
+
+                {{-- Inventaris --}}
+                @if(($payroll->potongan_inventaris ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">KERUSAKAN INVENTARIS</div>
+                <table class="sp-tbl">
+                    <tr class="subtotal">
+                        <td>Total Potongan Inventaris</td>
+                        <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Kasbon --}}
+                @if(($payroll->potongan_kasbon ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">KASBON</div>
+                <table class="sp-tbl">
+                    <tr class="subtotal">
+                        <td>Total Kasbon</td>
+                        <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Potongan Lain --}}
+                @if(($payroll->potongan_dll ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">POTONGAN LAIN-LAIN</div>
+                <table class="sp-tbl">
+                    <tr class="subtotal">
+                        <td>Total Potongan Lain</td>
+                        <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_dll, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+            </div>
+        </div>
+
+        {{-- ═══ TOTALS ROW ═══ --}}
+        <div class="sp-totals">
+            <div class="sp-total-earn">
+                <div class="t-title">&#9650; Total Pendapatan</div>
+                <div class="t-amount">Rp {{ number_format($calcEarnings, 0, ',', '.') }}</div>
+            </div>
+            <div class="sp-total-deduct">
+                <div class="t-title">&#9660; Total Potongan</div>
+                <div class="t-amount">Rp {{ number_format($calcDeductions, 0, ',', '.') }}</div>
+            </div>
+        </div>
+
+        {{-- ═══ TAKE HOME PAY ═══ --}}
+        <div class="sp-thp">
+            <div>
+                <div class="thp-label">&#127968; Gaji Bersih Diterima</div>
+                <div class="thp-sub">{{ strtoupper($k->nama_karyawan ?? '') }} · Periode {{ $periodeLabel }}</div>
+            </div>
+            <div class="thp-amt">Rp {{ number_format($takeHomePay, 0, ',', '.') }}</div>
+        </div>
+
+        {{-- ═══ SIGNATURES ═══ --}}
+        <div class="sp-sig">
+            <div>
+                <div>Penerima Gaji,</div>
+                <div class="sig-line">( {{ strtoupper($k->nama_karyawan ?? 'Karyawan') }} )</div>
+            </div>
+            <div>
+                <div>Semarang, {{ \Carbon\Carbon::now()->translatedFormat('d F Y') }}</div>
+                <div style="margin-top: 4px;">Manager / HRD,</div>
+                <div class="sig-line">( _____________________ )</div>
+            </div>
+        </div>
+
+    </div>{{-- end .sp-card --}}
+</div>{{-- end .sp-wrap --}}
+
+<script>
+    function handleKirimWhatsApp(pdfUrl, waUrl, empName, fileName) {
+        // 1. Buka tab WhatsApp Web LANGSUNG seketika saat klik agar tidak diblokir popup blocker
+        if (waUrl) {
+            window.open(waUrl, '_blank');
+        }
+
+        // 2. Download file PDF secara otomatis
+        const a = document.createElement('a');
+        a.href = pdfUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        // 3. Tampilkan popup panduan praktis
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                icon: 'success',
+                title: 'Slip PDF Terunduh & WhatsApp Dibuka!',
+                html: '<div style="text-align: left; font-size: 13px; color: #334155; line-height: 1.6;">' +
+                      '<p style="margin-bottom: 8px;">Dokumen <strong>' + fileName + '</strong> otomatis terunduh dan tab WhatsApp karyawan sudah terbuka.</p>' +
+                      '<div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">' +
+                      '<strong>Langkah Praktis:</strong><br>' +
+                      '1. Masuk ke tab <strong>WhatsApp Web</strong> yang terbuka.<br>' +
+                      '2. Cukup <strong>tarik (drag & drop)</strong> file PDF dari bilah download ke kolom chat.<br>' +
+                      '3. Atau klik ikon <strong>Klip Kertas 📎 &rarr; Dokumen</strong>, lalu tekan <strong>Kirim</strong>.' +
+                      '</div>' +
+                      '</div>',
+                confirmButtonText: 'Siap, Mengerti',
+                confirmButtonColor: '#16a34a',
+                width: 480
+            });
+        }
+    }
+</script>
 </x-app-layout>

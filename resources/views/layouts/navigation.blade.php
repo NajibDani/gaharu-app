@@ -48,7 +48,11 @@
 
     $masterActive = request()->routeIs([
         'kategori.*', 'barang.*', 'suppliers.*', 'gudangs.*',
-        'karyawan.*', 'pengaturan-gaji.*', 'harga.*', 'event-notifikasi.*', 'resep.*',
+        'harga.*', 'event-notifikasi.*', 'resep.*',
+    ]);
+
+    $hrdActive = request()->routeIs([
+        'karyawan.*', 'pengaturan-gaji.*', 'penggajian.*', 'keterlambatan.*',
     ]);
 @endphp
 
@@ -92,14 +96,14 @@
             </div>
 
             {{-- ========================================================================= --}}
-            {{-- DATA MASTER & SDM (Nomor 2) --}}
+            {{-- DATA MASTER (Nomor 2) --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Kepala Gudang', 'HRD', 'Management', 'Direktur Keuangan']))
+            @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Kepala Gudang']))
             <div class="menu-group {{ $masterActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
                         <i class="bi bi-database me-3 fs-5"></i>
-                        <span>DATA MASTER &amp; SDM</span>
+                        <span>DATA MASTER</span>
                     </div>
                     <i class="bi {{ $masterActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
@@ -135,23 +139,45 @@
                             <i class="bi bi-geo-alt me-2" style="font-size:12px;"></i>Daftar Gudang / Outlet
                         </a>
                     @endif
+                </div>
+            </div>
+            @endif
 
-                    @if($canRole(['HRD', 'Management', 'Direktur Keuangan']))
-                        <div class="submenu-divider">SDM &amp; PENGGAJIAN</div>
-                        <a href="{{ route('karyawan.index') }}" class="{{ request()->routeIs('karyawan.*') ? 'active' : '' }}">
-                            <i class="bi bi-person-badge me-2" style="font-size:12px;"></i>Data Karyawan
+            {{-- ========================================================================= --}}
+            {{-- HRD & PERSONALIA --}}
+            {{-- ========================================================================= --}}
+            @if($canRole(['HRD', 'Management', 'Direktur Keuangan']))
+            <div class="menu-group {{ $hrdActive ? 'open' : '' }}">
+                <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-people me-3 fs-5"></i>
+                        <span>HRD &amp; PERSONALIA</span>
+                    </div>
+                    <i class="bi {{ $hrdActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
+                </div>
+
+                <div class="submenu-content">
+                    <div class="submenu-divider">MASTER</div>
+                    <a href="{{ route('karyawan.index') }}" class="{{ request()->routeIs('karyawan.*') ? 'active' : '' }}">
+                        <i class="bi bi-person-badge me-2" style="font-size:12px;"></i>Data Karyawan
+                    </a>
+                    @if($canRole(['HRD']))
+                        <a href="{{ route('pengaturan-gaji.index') }}" class="{{ request()->routeIs('pengaturan-gaji.*') ? 'active' : '' }}">
+                            <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Pengaturan Gaji
                         </a>
-                        @if($canRole(['HRD']))
-                            <a href="{{ route('pengaturan-gaji.index') }}" class="{{ request()->routeIs('pengaturan-gaji.*') ? 'active' : '' }}">
-                                <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Pengaturan Gaji
-                            </a>
-                            <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') ? 'active' : '' }}">
-                                <i class="bi bi-cash-stack me-2" style="font-size:12px;"></i>Penggajian Karyawan
-                            </a>
-                            <a href="{{ route('keterlambatan.index') }}" class="{{ request()->routeIs('keterlambatan.*') ? 'active' : '' }}">
-                                <i class="bi bi-clock-history me-2" style="font-size:12px;"></i>Data Keterlambatan
-                            </a>
-                        @endif
+                        <div class="submenu-divider">TRANSAKSI</div>
+                        <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') && !request()->routeIs('penggajian.bonus.*') && !request()->routeIs('penggajian.potongan.*') ? 'active' : '' }}">
+                            <i class="bi bi-cash-stack me-2" style="font-size:12px;"></i>Hitung Gaji Pokok
+                        </a>
+                        <a href="{{ route('penggajian.bonus.index') }}" class="{{ request()->routeIs('penggajian.bonus.*') ? 'active' : '' }}">
+                            <i class="bi bi-star me-2" style="font-size:12px;"></i>Bonus &amp; Lembur
+                        </a>
+                        <a href="{{ route('penggajian.potongan.index') }}" class="{{ request()->routeIs('penggajian.potongan.*') ? 'active' : '' }}">
+                            <i class="bi bi-scissors me-2" style="font-size:12px;"></i>Potongan &amp; Pengurangan
+                        </a>
+                        <a href="{{ route('keterlambatan.index') }}" class="{{ request()->routeIs('keterlambatan.*') ? 'active' : '' }}">
+                            <i class="bi bi-clock-history me-2" style="font-size:12px;"></i>Data Keterlambatan
+                        </a>
                     @endif
                 </div>
             </div>

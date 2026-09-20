@@ -399,12 +399,12 @@
                                                     </button>
                                                 @endif
 
-                                                {{-- 4. TOMBOL HAPUS WO KHUSUS SUPERADMIN (HANYA JIKA BELUM TERKIRIM) --}}
-                                                @if($isSuperAdmin && ($wo->is_belum_terkirim ?? true))
-                                                    <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Work Order {{ $wo->kode_wo }}? Status pesanan akan dikembalikan ke antrean Order Masuk (Pending). Tindakan ini tidak dapat dibatalkan.');">
+                                                {{-- 4. TOMBOL HAPUS WO (HANYA JIKA BELUM TERKIRIM - KARENA KESALAHAN PRODUKSI) --}}
+                                                @if(($canDeleteWo ?? $isSuperAdmin) && ($wo->is_belum_terkirim ?? true))
+                                                    <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Work Order {{ $wo->kode_wo }} karena kesalahan produksi? Status pesanan akan dikembalikan ke antrean Order Masuk (Pending). Tindakan ini tidak dapat dibatalkan.');">
                                                         @csrf
                                                         @method('DELETE')
-                                                        <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus Work Order yang belum terkirim (Khusus Superadmin)">
+                                                        <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus WO yang belum terkirim (karena kesalahan produksi)">
                                                             <i class="bi bi-trash"></i> Hapus WO
                                                         </button>
                                                     </form>
@@ -1493,12 +1493,31 @@
                             <h6 class="fw-bold mb-0 text-dark">Monitoring Stok Bahan Setengah Jadi (BSJ) Central Kitchen</h6>
                             <small class="text-muted">Ketahui ketersediaan stok BSJ belum terpakai di Central Kitchen & kalkulasi kuantitas yang perlu diproduksi untuk memenuhi permintaan outlet.</small>
                         </div>
-                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill fw-semibold">
-                            <i class="bi bi-gear-wide-connected me-1"></i> Produksi Central Kitchen
-                        </span>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <form action="{{ route('ck-produksi.index') }}" method="GET" class="d-flex align-items-center gap-1">
+                                <input type="hidden" name="tab" value="stok">
+                                @if(request('customer_id'))
+                                    <input type="hidden" name="customer_id" value="{{ request('customer_id') }}">
+                                @endif
+                                <div class="input-group input-group-sm" style="min-width: 220px;">
+                                    <input type="text" name="search_bsj" class="form-control" placeholder="Cari nama / kode BSJ..." value="{{ request('search_bsj', $searchBsj ?? '') }}" style="border-radius: 6px 0 0 6px;">
+                                    <button class="btn btn-outline-secondary" type="submit" title="Cari BSJ">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                    @if(request('search_bsj'))
+                                        <a href="{{ route('ck-produksi.index', array_merge(request()->except('search_bsj'), ['tab' => 'stok'])) }}" class="btn btn-outline-danger" title="Hapus Pencarian">
+                                            <i class="bi bi-x"></i>
+                                        </a>
+                                    @endif
+                                </div>
+                            </form>
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-3 py-2 rounded-pill fw-semibold">
+                                <i class="bi bi-gear-wide-connected me-1"></i> Produksi Central Kitchen
+                            </span>
+                        </div>
                     </div>
 
-                    @if(!empty($stokBsjCk) && count($stokBsjCk) > 0)
+                    @if(!empty($stokBsjCk) && $stokBsjCk->count() > 0)
                         <div class="table-responsive">
                             <table class="table table-hover table-bordered align-middle mb-0" style="font-size: 13px;">
                                 <thead class="table-light text-secondary small text-uppercase fw-bold">
@@ -1507,7 +1526,7 @@
                                         <th style="min-width: 120px;">KODE BARANG</th>
                                         <th style="min-width: 200px;">NAMA BAHAN SETENGAH JADI</th>
                                         <th class="text-end table-success" style="width: 140px;">STOK DI CK</th>
-                                        <th class="text-end table-warning" style="width: 160px;">PERMINTAAN OUTLET</th>
+                                        <th class="text-start table-warning" style="min-width: 240px; width: 280px;">PERMINTAAN OUTLET</th>
                                         <th class="text-end table-danger" style="width: 170px;">PERLU DIPRODUKSI</th>
                                         <th class="text-center" style="width: 110px;">SATUAN</th>
                                         <th class="text-center" style="width: 130px;">STATUS STOK</th>
@@ -1516,7 +1535,7 @@
                                 <tbody>
                                     @foreach($stokBsjCk as $index => $item)
                                         <tr>
-                                            <td class="text-center text-muted fw-semibold">{{ $index + 1 }}</td>
+                                            <td class="text-center text-muted fw-semibold">{{ $stokBsjCk->firstItem() + $index }}</td>
                                             <td class="font-monospace fw-bold text-primary">{{ $item['kode_barang'] }}</td>
                                             <td class="fw-semibold text-dark">{{ $item['nama'] }}</td>
                                             
@@ -1525,9 +1544,34 @@
                                                 {{ number_format($item['stok_tersedia'], 0, ',', '.') }}
                                             </td>
 
-                                            {{-- Total Permintaan Outlet yang Pending / Belum Lengkap --}}
-                                            <td class="text-end fw-semibold text-warning-emphasis">
-                                                {{ number_format($item['total_permintaan'], 0, ',', '.') }}
+                                            {{-- Permintaan Outlet: Total beserta Pemisahan Cabang/Outlet --}}
+                                            <td class="text-start">
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span class="small text-muted fw-semibold">Total:</span>
+                                                    <span class="fw-bold {{ $item['total_permintaan'] > 0 ? 'text-warning-emphasis' : 'text-muted' }}">
+                                                        {{ number_format($item['total_permintaan'], 0, ',', '.') }} {{ $item['satuan'] }}
+                                                    </span>
+                                                </div>
+
+                                                @if(!empty($item['outlet_breakdown']) && count($item['outlet_breakdown']) > 0)
+                                                    <div class="d-flex flex-wrap gap-1 mt-1 pt-1 border-top border-warning-subtle">
+                                                        @foreach($item['outlet_breakdown'] as $ob)
+                                                            <span class="badge bg-white text-dark border border-warning-subtle shadow-xs py-1 px-1.5" style="font-size: 11px; font-weight: 500;">
+                                                                <i class="bi bi-geo-alt-fill text-warning me-0.5"></i>
+                                                                <strong>{{ $ob['customer_nama'] }}</strong>: 
+                                                                <span class="text-primary font-monospace fw-bold">{{ number_format($ob['qty'], 0, ',', '.') }}</span>
+                                                            </span>
+                                                        @endforeach
+                                                    </div>
+                                                @elseif($item['total_permintaan'] > 0)
+                                                    <div class="small text-muted fst-italic" style="font-size: 11px;">
+                                                        Belum ada alokasi outlet spesifik
+                                                    </div>
+                                                @else
+                                                    <div class="small text-muted" style="font-size: 11px;">
+                                                        Tidak ada permintaan aktif
+                                                    </div>
+                                                @endif
                                             </td>
 
                                             {{-- Rekomendasi yang Harus Diproduksi --}}
@@ -1562,7 +1606,25 @@
                     @else
                         <div class="p-5 text-center text-muted">
                             <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
-                            Belum ada master Bahan Setengah Jadi yang aktif untuk Central Kitchen.
+                            @if(request('search_bsj'))
+                                Tidak ditemukan Bahan Setengah Jadi dengan kata kunci "<strong>{{ request('search_bsj') }}</strong>".
+                                <div class="mt-2">
+                                    <a href="{{ route('ck-produksi.index', array_merge(request()->except('search_bsj'), ['tab' => 'stok'])) }}" class="btn btn-sm btn-outline-secondary">Reset Pencarian</a>
+                                </div>
+                            @else
+                                Belum ada master Bahan Setengah Jadi yang aktif untuk Central Kitchen.
+                            @endif
+                        </div>
+                    @endif
+
+                    @if(!empty($stokBsjCk) && $stokBsjCk->hasPages())
+                        <div class="card-footer bg-white border-top py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div class="small text-muted">
+                                Menampilkan {{ $stokBsjCk->firstItem() }} sampai {{ $stokBsjCk->lastItem() }} dari {{ $stokBsjCk->total() }} barang BSJ
+                            </div>
+                            <div>
+                                {{ $stokBsjCk->appends(array_merge(request()->query(), ['tab' => 'stok']))->links() }}
+                            </div>
                         </div>
                     @endif
                 </div>

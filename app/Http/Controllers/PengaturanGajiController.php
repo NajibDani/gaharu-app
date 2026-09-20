@@ -56,11 +56,13 @@ class PengaturanGajiController extends Controller
     public function update(Request $request, $id): RedirectResponse
     {
         $request->validate([
+            'satuan_gaji'        => 'required|in:Harian,Bulanan,Per Jam',
             'gaji_pokok'         => 'required|numeric|min:0',
             'uang_makan'         => 'required|numeric|min:0',
             'uang_transport'     => 'required|numeric|min:0',
             'tanggal_mulai'      => 'nullable|date',
             'tanggal_selesai'    => 'nullable|date|after_or_equal:tanggal_mulai',
+            'satuan_gaji_2'      => 'nullable|in:Harian,Bulanan,Per Jam',
             'gaji_pokok_2'       => 'nullable|numeric|min:0',
             'uang_makan_2'       => 'nullable|numeric|min:0',
             'uang_transport_2'   => 'nullable|numeric|min:0',
@@ -70,11 +72,13 @@ class PengaturanGajiController extends Controller
 
         $karyawan = Karyawan::findOrFail($id);
         $karyawan->update([
+            'satuan_gaji'        => $request->satuan_gaji ?? 'Harian',
             'gaji_pokok'         => $request->gaji_pokok,
             'uang_makan'         => $request->uang_makan,
             'uang_transport'     => $request->uang_transport,
             'tanggal_mulai'      => $request->tanggal_mulai,
             'tanggal_selesai'    => $request->tanggal_selesai,
+            'satuan_gaji_2'      => $request->satuan_gaji_2 ?? ($request->satuan_gaji ?? 'Harian'),
             'gaji_pokok_2'       => $request->gaji_pokok_2,
             'uang_makan_2'       => $request->uang_makan_2,
             'uang_transport_2'   => $request->uang_transport_2,
@@ -83,6 +87,6 @@ class PengaturanGajiController extends Controller
         ]);
 
         return redirect()->route('pengaturan-gaji.index', ['outlet' => $karyawan->outlet])
-            ->with('success', "Pengaturan gaji harian untuk {$karyawan->nama_karyawan} berhasil diperbarui.");
+            ->with('success', "Pengaturan gaji ({$karyawan->satuan_gaji}) untuk {$karyawan->nama_karyawan} berhasil diperbarui.");
     }
 }

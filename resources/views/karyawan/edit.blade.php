@@ -1,17 +1,15 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-            {{ __('Edit Karyawan: ') . $karyawan->nama_karyawan }}
-        </h2>
+        Edit Data Karyawan: {{ $karyawan->nama_karyawan }}
     </x-slot>
 
-    <div class="py-12">
-        <div class="max-w-2xl mx-auto sm:px-6 lg:px-8">
-            <div class="bg-white p-6 shadow sm:rounded-lg">
-
+    <div class="py-10">
+        <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            <div class="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm">
                 @if ($errors->any())
-                <div class="mb-4 p-4 bg-red-100 border-l-4 border-red-500 text-red-700">
-                    <ul>
+                <div class="mb-6 p-4 bg-rose-50 border-l-4 border-rose-500 rounded-r-xl text-rose-800 text-sm font-semibold">
+                    <div class="font-bold mb-1">Perhatian:</div>
+                    <ul class="list-disc list-inside space-y-1">
                         @foreach ($errors->all() as $error)
                         <li>{{ $error }}</li>
                         @endforeach
@@ -19,78 +17,196 @@
                 </div>
                 @endif
 
-                <form action="{{ route('karyawan.update', $karyawan->id) }}" method="POST">
+                <form action="{{ route('karyawan.update', $karyawan->id) }}" method="POST" class="space-y-6">
                     @csrf
                     @method('PUT')
 
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Nama Karyawan</label>
-                        <input type="text" name="nama_karyawan"
-                            value="{{ old('nama_karyawan', $karyawan->nama_karyawan) }}"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                    {{-- SECTION 1: DATA IDENTITAS DIRI --}}
+                    <div>
+                        <div class="text-xs font-bold uppercase tracking-wider text-[#7A4517] mb-4 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <i class="bi bi-person-badge"></i> Data Identitas Karyawan
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">
+                                    Nama Lengkap <span class="text-rose-600">*</span>
+                                </label>
+                                <input type="text" name="nama_karyawan"
+                                       value="{{ old('nama_karyawan', $karyawan->nama_karyawan) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       required>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">NIK (Nomor Induk Kependudukan)</label>
+                                <input type="text" name="nik"
+                                       value="{{ old('nik', $karyawan->nik) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       placeholder="16 digit NIK...">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Tempat Lahir</label>
+                                <input type="text" name="tempat_lahir"
+                                       value="{{ old('tempat_lahir', $karyawan->tempat_lahir) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       placeholder="Contoh: Semarang">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Tanggal Lahir</label>
+                                <input type="date" name="tanggal_lahir"
+                                       value="{{ old('tanggal_lahir', $karyawan->tanggal_lahir ? $karyawan->tanggal_lahir->format('Y-m-d') : '') }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       style="cursor: pointer;">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">WhatsApp / No. Telepon</label>
+                                <input type="text" name="whatsapp"
+                                       value="{{ old('whatsapp', $karyawan->whatsapp) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       placeholder="0812xxxxxxxx">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Alamat Email</label>
+                                <input type="email" name="email"
+                                       value="{{ old('email', $karyawan->email) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       placeholder="nama@email.com">
+                            </div>
+
+                            <div class="md:col-span-2">
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Nomor Kontak Darurat (Keluarga / Kerabat)</label>
+                                <input type="text" name="nomor_darurat"
+                                       value="{{ old('nomor_darurat', $karyawan->nomor_darurat) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       placeholder="Contoh: 0813xxxxxxxx (Ibu / Saudara)">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Jabatan</label>
-                        <input type="text" name="jabatan"
-                            value="{{ old('jabatan', $karyawan->jabatan) }}"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required>
+                    {{-- SECTION 2: POSISI, DEPARTEMEN & OUTLET --}}
+                    <div>
+                        <div class="text-xs font-bold uppercase tracking-wider text-[#7A4517] mb-4 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <i class="bi bi-briefcase"></i> Penempatan &amp; Posisi Kerja
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">
+                                    Departemen <span class="text-rose-600">*</span>
+                                </label>
+                                <select name="departemen" class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20" required>
+                                    @foreach($departemenList as $dept)
+                                    <option value="{{ $dept }}" {{ old('departemen', $karyawan->departemen) == $dept ? 'selected' : '' }}>
+                                        {{ $dept }}
+                                    </option>
+                                    @endforeach
+                                    @if(!in_array($karyawan->departemen, $departemenList) && $karyawan->departemen)
+                                    <option value="{{ $karyawan->departemen }}" selected>{{ $karyawan->departemen }}</option>
+                                    @endif
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">
+                                    Jabatan / Posisi <span class="text-rose-600">*</span>
+                                </label>
+                                <select name="jabatan" class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20" required>
+                                    @foreach($jabatanList as $jbtn)
+                                    <option value="{{ $jbtn }}" {{ strcasecmp(old('jabatan', $karyawan->jabatan), $jbtn) === 0 ? 'selected' : '' }}>
+                                        {{ $jbtn }}
+                                    </option>
+                                    @endforeach
+                                    @php
+                                        $matchFound = false;
+                                        foreach($jabatanList as $j) {
+                                            if (strcasecmp($karyawan->jabatan, $j) === 0) { $matchFound = true; break; }
+                                        }
+                                    @endphp
+                                    @if(!$matchFound && $karyawan->jabatan)
+                                    <option value="{{ $karyawan->jabatan }}" selected>{{ $karyawan->jabatan }}</option>
+                                    @endif
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">
+                                    Jenis Tenaga Kerja <span class="text-rose-600">*</span>
+                                </label>
+                                <select name="jenis_tenaga_kerja" class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20" required>
+                                    @foreach(['Karyawan Tetap', 'Karyawan Kontrak', 'Part Time', 'Casual', 'Probation'] as $jenis)
+                                    <option value="{{ $jenis }}" {{ old('jenis_tenaga_kerja', $karyawan->jenis_tenaga_kerja) == $jenis ? 'selected' : '' }}>
+                                        {{ $jenis }}
+                                    </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">
+                                    Outlet Penempatan <span class="text-rose-600">*</span>
+                                </label>
+                                <select name="outlet" class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-extrabold text-amber-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20" required>
+                                    <option value="Gaharu" {{ old('outlet', $karyawan->outlet) == 'Gaharu' ? 'selected' : '' }}>Outlet Gaharu</option>
+                                    <option value="Kejingga" {{ old('outlet', $karyawan->outlet) == 'Kejingga' ? 'selected' : '' }}>Outlet Kejingga</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Jenis Tenaga Kerja</label>
-                        <select name="jenis_tenaga_kerja" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            @foreach(['Karyawan Tetap', 'Karyawan Kontrak', 'Part Time', 'Casual', 'Probation'] as $jenis)
-                            <option value="{{ $jenis }}" {{ old('jenis_tenaga_kerja', $karyawan->jenis_tenaga_kerja) == $jenis ? 'selected' : '' }}>
-                                {{ $jenis }}
-                            </option>
-                            @endforeach
-                        </select>
+                    {{-- SECTION 3: REKENING & PENGGAJIAN --}}
+                    <div>
+                        <div class="text-xs font-bold uppercase tracking-wider text-[#7A4517] mb-4 pb-2 border-b border-slate-200 flex items-center gap-2">
+                            <i class="bi bi-wallet2"></i> Data Pembayaran &amp; Gaji
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Nomor Rekening Bank</label>
+                                <input type="text" name="no_rekening"
+                                       value="{{ old('no_rekening', $karyawan->no_rekening) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-mono font-semibold text-slate-900 bg-white focus:border-[#7A4517] focus:ring focus:ring-[#7A4517]/20"
+                                       placeholder="Contoh: BCA 1234567890 an. Budi">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Gaji Pokok Harian</label>
+                                <input type="number" name="gaji_pokok"
+                                       value="{{ old('gaji_pokok', $karyawan->gaji_pokok) }}"
+                                       class="w-full bg-slate-100 border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900"
+                                       min="0" required>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Uang Makan / Hari</label>
+                                <input type="number" name="uang_makan"
+                                       value="{{ old('uang_makan', $karyawan->uang_makan ?? 0) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 bg-white"
+                                       min="0">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-slate-800 mb-1">Uang Transport / Hari</label>
+                                <input type="number" name="uang_transport"
+                                       value="{{ old('uang_transport', $karyawan->uang_transport ?? 0) }}"
+                                       class="w-full border-1.5 border-slate-300 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 bg-white"
+                                       min="0">
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Departemen</label>
-                        <select name="departemen" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                            @foreach(['Gudang', 'Produksi', 'Manajemen', 'Operasional', 'Kitchen', 'Central Kitchen', 'Cold Kitchen', 'Barista', 'Server', 'Satpam'] as $dept)
-                            <option value="{{ $dept }}" {{ old('departemen', $karyawan->departemen) == $dept ? 'selected' : '' }}>
-                                {{ $dept }}
-                            </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Outlet <span class="text-red-500">*</span></label>
-                        <select name="outlet" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm font-bold text-amber-900 focus:border-amber-500 focus:ring-amber-500" required>
-                            @foreach(['Gaharu', 'Kejingga'] as $outl)
-                            <option value="{{ $outl }}" {{ old('outlet', $karyawan->outlet ?? 'Gaharu') == $outl ? 'selected' : '' }}>
-                                Outlet {{ $outl }}
-                            </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Nomor Rekening</label>
-                        <input type="text" name="no_rekening"
-                            value="{{ old('no_rekening', $karyawan->no_rekening) }}"
-                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Contoh: BCA 1234567890">
-                    </div>
-
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700">Gaji Pokok</label>
-                        <input type="number" name="gaji_pokok"
-                            value="{{ old('gaji_pokok', $karyawan->gaji_pokok) }}"
-                            class="mt-1 block w-full bg-gray-100 text-gray-500 border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500" required min="0" readonly>
-                        <p class="text-xs text-gray-500 mt-1">Gaji pokok hanya dapat diubah melalui menu Pengaturan Gaji.</p>
-                    </div>
-
-                    <div class="flex items-center justify-end mt-4">
-                        <a href="{{ route('karyawan.index') }}" class="text-sm text-gray-600 hover:text-gray-900 underline mr-4">
+                    {{-- SUBMIT BUTTONS --}}
+                    <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                        <a href="{{ route('karyawan.index', ['outlet' => $karyawan->outlet ?? 'Gaharu']) }}"
+                           style="padding: 10px 20px; border-radius: 10px; border: 1.5px solid #cbd5e1; color: #334155; background: #ffffff; font-weight: 700; font-size: 13px; text-decoration: none; transition: background .15s;"
+                           onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#ffffff'">
                             Batal
                         </a>
-                        <button type="submit" class="inline-flex items-center px-4 py-2 bg-indigo-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-indigo-700 focus:bg-indigo-700 active:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150">
-                            Perbarui Karyawan
+                        <button type="submit"
+                                style="padding: 10px 24px; border-radius: 10px; background-color: #7A4517; color: #ffffff; font-weight: 800; font-size: 13px; border: none; cursor: pointer; box-shadow: 0 2px 4px rgba(122,69,23,0.3); transition: background .15s;"
+                                onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'">
+                            Perbarui Data Karyawan
                         </button>
                     </div>
                 </form>

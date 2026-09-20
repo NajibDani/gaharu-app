@@ -391,10 +391,11 @@
                                         @endif
 
                                         {{-- Tombol Hapus Draft --}}
-                                        <form action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Hapus draft pengeluaran/permintaan {{ $item->kode_pengeluaran }}?')">
+                                        <form id="delete-form-{{ $item->id }}" action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-danger btn-sm text-white" title="Hapus Draft">
+                                            <button type="button" class="btn btn-danger btn-sm text-white" title="Hapus Draft"
+                                                    onclick="confirmDeletePengeluaran('{{ $item->id }}', '{{ $item->kode_pengeluaran }}', false)">
                                                 <i class="bi bi-trash-fill"></i>
                                             </button>
                                         </form>
@@ -404,10 +405,11 @@
                                            class="btn btn-warning btn-sm" title="Edit Pengeluaran (Super Admin)">
                                             <i class="bi bi-pencil-square"></i>
                                         </a>
-                                        <form action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline" onsubmit="return confirm('PERINGATAN SUPER ADMIN: Dokumen {{ $item->kode_pengeluaran }} ini telah disetujui.\nMenghapusnya akan membatalkan pemotongan/mutasi stok dan mengembalikannya ke gudang asal.\n\nYakin ingin menghapus?')">
+                                        <form id="delete-form-{{ $item->id }}" action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-danger btn-sm text-white" title="Hapus Pengeluaran Approved (Super Admin)">
+                                            <button type="button" class="btn btn-danger btn-sm text-white" title="Hapus Pengeluaran Approved (Super Admin)"
+                                                    onclick="confirmDeletePengeluaran('{{ $item->id }}', '{{ $item->kode_pengeluaran }}', true)">
                                                 <i class="bi bi-trash-fill"></i>
                                             </button>
                                         </form>
@@ -714,10 +716,11 @@ function renderDetailPengeluaran(data) {
             </div>
             <div class="d-flex gap-2 align-items-center">
                 ${!data.is_approved ? `
-                    <form action="${data.delete_url}" method="POST" class="d-inline" onsubmit="return confirm('Yakin ingin menghapus dokumen permintaan / pengeluaran ${data.kode_pengeluaran}?')">
+                    <form id="modal-delete-form" action="${data.delete_url}" method="POST" class="d-inline">
                         <input type="hidden" name="_token" value="${csrfToken}">
                         <input type="hidden" name="_method" value="DELETE">
-                        <button type="submit" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm">
+                        <button type="button" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm"
+                                onclick="confirmDeletePengeluaran(null, '${data.kode_pengeluaran}', false, 'modal-delete-form')">
                             <i class="bi bi-trash-fill me-1"></i> Hapus
                         </button>
                     </form>
@@ -728,10 +731,11 @@ function renderDetailPengeluaran(data) {
                             : `<a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')"><i class="bi bi-check-circle me-1"></i> Approve Pengeluaran</a>`
                     ) : ''}
                 ` : (data.is_superadmin ? `
-                    <form action="${data.delete_url}" method="POST" class="d-inline" onsubmit="return confirm('PERINGATAN SUPERADMIN: Dokumen ini telah disetujui.\nMenghapus dokumen ini akan membatalkan pemotongan/mutasi stok secara otomatis.\n\nYakin ingin menghapus seluruh dokumen?')">
+                    <form id="modal-delete-form-approved" action="${data.delete_url}" method="POST" class="d-inline">
                         <input type="hidden" name="_token" value="${csrfToken}">
                         <input type="hidden" name="_method" value="DELETE">
-                        <button type="submit" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm" title="Hapus Dokumen Approved">
+                        <button type="button" class="btn btn-danger btn-sm px-3 fw-semibold shadow-sm" title="Hapus Dokumen Approved"
+                                onclick="confirmDeletePengeluaran(null, '${data.kode_pengeluaran}', true, 'modal-delete-form-approved')">
                             <i class="bi bi-trash-fill me-1"></i> Hapus Dokumen (Superadmin)
                         </button>
                     </form>
@@ -1535,6 +1539,56 @@ document.addEventListener('DOMContentLoaded', function () {
     // Init display on page load
     updateTriggerDisplay();
 });
+
+function confirmDeletePengeluaran(id, kode, isApproved, formId) {
+    const targetForm = formId ? document.getElementById(formId) : document.getElementById('delete-form-' + id);
+    if (!targetForm) return;
+
+    if (isApproved) {
+        Swal.fire({
+            title: 'Hapus Dokumen Approved?',
+            html: `
+                <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #334155;">
+                    <p style="margin-bottom: 8px;">Anda akan menghapus dokumen <strong>${kode}</strong> yang <strong>sudah disetujui</strong>.</p>
+                    <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 10px 12px; border-radius: 4px; margin-bottom: 8px;">
+                        <strong style="color: #991b1b; display: block; margin-bottom: 2px;">⚠️ Peringatan Penting:</strong>
+                        <span style="color: #b91c1c; font-size: 12.5px;">Menghapus dokumen ini akan <strong>membatalkan pemotongan / mutasi stok</strong> dan mengembalikan stok barang ke gudang asal.</span>
+                    </div>
+                    <p style="margin-bottom: 0; font-size: 12.5px; color: #64748b;">Tindakan ini tidak dapat dibatalkan. Apakah Anda yakin ingin melanjutkan?</p>
+                </div>
+            `,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: '<i class="bi bi-trash-fill me-1"></i> Ya, Hapus Dokumen',
+            cancelButtonText: 'Batal',
+            reverseButtons: true,
+            focusCancel: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                targetForm.submit();
+            }
+        });
+    } else {
+        Swal.fire({
+            title: 'Hapus Draft Pengeluaran?',
+            html: `Apakah Anda yakin ingin menghapus draft permintaan / pengeluaran <strong>${kode}</strong>?<br><span style="font-size: 12px; color: #64748b;">Data yang dihapus tidak dapat dikembalikan.</span>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: '<i class="bi bi-trash-fill me-1"></i> Ya, Hapus',
+            cancelButtonText: 'Batal',
+            reverseButtons: true,
+            focusCancel: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                targetForm.submit();
+            }
+        });
+    }
+}
 </script>
 
 </x-app-layout>

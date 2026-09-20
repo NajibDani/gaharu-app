@@ -11,8 +11,17 @@ class Karyawan extends Model
     public $timestamps = false;
     protected $fillable = [
         'nama_karyawan',
+        'nik',
+        'tempat_lahir',
+        'tanggal_lahir',
+        'ttl',
+        'whatsapp',
+        'email',
+        'nomor_darurat',
         'jabatan',
         'jenis_tenaga_kerja',
+        'satuan_gaji',
+        'satuan_gaji_2',
         'departemen',
         'outlet',
         'no_rekening',
@@ -26,9 +35,49 @@ class Karyawan extends Model
         'gaji_pokok_2',
         'uang_makan_2',
         'uang_transport_2',
+        'urutan',
+    ];
+
+    public const SATUAN_GAJI_LIST = [
+        'Harian',
+        'Bulanan',
+        'Per Jam',
+    ];
+
+    public const DEPARTEMEN_LIST = [
+        'Frontline',
+        'Kitchen',
+        'Cold Kitchen',
+        'Central Kitchen',
+        'Gudang',
+        'Manajemen',
+        'Satpam',
+        'Cleaning Service',
+    ];
+
+    public const JABATAN_LIST = [
+        'BARISTA',
+        'CAPTAIN',
+        'KASIR',
+        'FLOOR',
+        'PROBATION',
+        'PART TIME',
+        'CLEANING SERVICE',
+        'HEAD KITCHEN',
+        'COOK',
+        'COOK HELPER',
+        'DISHWASHER',
+        'ADMIN GUDANG',
+        'STAFF GUDANG',
+        'SECURITY',
+        'HRD',
+        'SUPERVISOR',
+        'MANAGER',
+        'CEO',
     ];
 
     protected $casts = [
+        'tanggal_lahir'      => 'date',
         'gaji_pokok'         => 'float',
         'uang_makan'         => 'float',
         'uang_transport'     => 'float',
@@ -40,6 +89,24 @@ class Karyawan extends Model
         'tanggal_mulai_2'    => 'date',
         'tanggal_selesai_2'  => 'date',
     ];
+
+    /**
+     * Format Tempat, Tanggal Lahir (TTL)
+     */
+    public function getTtlFormattedAttribute(): string
+    {
+        $parts = [];
+        if (!empty($this->tempat_lahir)) {
+            $parts[] = $this->tempat_lahir;
+        }
+        if (!empty($this->tanggal_lahir)) {
+            $parts[] = $this->tanggal_lahir->translatedFormat('d F Y');
+        }
+        if (!empty($parts)) {
+            return implode(', ', $parts);
+        }
+        return $this->ttl ?: '-';
+    }
 
     /**
      * Tarif Harian Total = Gaji Pokok Harian + Uang Makan + Uang Transport

@@ -16,6 +16,8 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\KaryawanController;
 use App\Http\Controllers\CoaController;
 use App\Http\Controllers\PenggajianController;
+use App\Http\Controllers\BonusPenggajianController;
+use App\Http\Controllers\PotonganPenggajianController;
 use App\Http\Controllers\JurnalController;
 use App\Http\Controllers\PembelianController;
 use App\Http\Controllers\StokGudangController;
@@ -382,6 +384,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // Hak Akses: Master Data Karyawan (HRD & Management), User, Role, Penggajian (Khusus HRD)
     // =========================================================================
     Route::middleware(['role:HRD,Management,Direktur Keuangan'])->group(function () {
+        Route::post('/karyawan/reorder', [KaryawanController::class, 'reorder'])->name('karyawan.reorder');
         Route::resource('karyawan', KaryawanController::class)->names('karyawan');
     });
 
@@ -393,6 +396,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::get('/penggajian/create', [PenggajianController::class, 'create'])->name('penggajian.create');
         Route::get('/penggajian/periode', [PenggajianController::class, 'periodeDetail'])->name('penggajian.show-periode');
         Route::post('/penggajian/auto-fill', [PenggajianController::class, 'autoFill'])->name('penggajian.auto-fill');
+        Route::get('/penggajian/export-excel', [PenggajianController::class, 'exportPayrollExcel'])->name('penggajian.export-excel');
         Route::post('/penggajian/ajukan-approval', [PenggajianController::class, 'ajukanApproval'])->name('penggajian.ajukanApproval');
         Route::post('/penggajian/approve', [PenggajianController::class, 'approve'])->name('penggajian.approve');
         Route::post('/penggajian/kirim-jurnal', [PenggajianController::class, 'kirimJurnalUmum'])->name('penggajian.kirimJurnalUmum');
@@ -407,6 +411,18 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::delete('/penggajian/{penggajian}', [PenggajianController::class, 'destroy'])->name('penggajian.destroy');
         Route::get('/pengaturan-gaji', [PengaturanGajiController::class, 'index'])->name('pengaturan-gaji.index');
         Route::put('/pengaturan-gaji/{id}', [PengaturanGajiController::class, 'update'])->name('pengaturan-gaji.update');
+
+        // Bonus & Lembur Standalone Menu
+        Route::get('/penggajian/bonus', [BonusPenggajianController::class, 'index'])->name('penggajian.bonus.index');
+        Route::get('/penggajian/bonus/periode/{periode?}', [BonusPenggajianController::class, 'showPeriode'])->name('penggajian.bonus.periode');
+        Route::get('/penggajian/bonus/{id}/edit', [BonusPenggajianController::class, 'edit'])->name('penggajian.bonus.edit');
+        Route::put('/penggajian/bonus/{id}', [BonusPenggajianController::class, 'update'])->name('penggajian.bonus.update');
+
+        // Potongan & Pengurangan Standalone Menu
+        Route::get('/penggajian/potongan', [PotonganPenggajianController::class, 'index'])->name('penggajian.potongan.index');
+        Route::get('/penggajian/potongan/periode/{periode?}', [PotonganPenggajianController::class, 'showPeriode'])->name('penggajian.potongan.periode');
+        Route::get('/penggajian/potongan/{id}/edit', [PotonganPenggajianController::class, 'edit'])->name('penggajian.potongan.edit');
+        Route::put('/penggajian/potongan/{id}', [PotonganPenggajianController::class, 'update'])->name('penggajian.potongan.update');
 
         // Data Keterlambatan Karyawan
         Route::get('/keterlambatan/hitung-ajax', [KeterlambatanController::class, 'hitungAjax'])->name('keterlambatan.hitung-ajax');
