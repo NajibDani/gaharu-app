@@ -81,8 +81,16 @@ class User extends Authenticatable
             || str_contains(strtolower($roleName), 'gaharu');
     }
 
+    public function isCentralKitchen(): bool
+    {
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, ['Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Produksi'])
+            || str_contains(strtolower($roleName), 'kitchen')
+            || str_contains(strtolower($roleName), 'produksi');
+    }
+
     public function canEditWoQty(): bool
     {
-        return $this->isSuperAdmin() || $this->isGaharu();
+        return $this->isSuperAdmin() || $this->isGaharu() || $this->isGudang() || $this->isCentralKitchen();
     }
 }

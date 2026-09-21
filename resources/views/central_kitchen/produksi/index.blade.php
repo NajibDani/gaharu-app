@@ -59,6 +59,7 @@
         {{-- TABS NAVIGATION --}}
         @php
             $activeTab = request('tab', 'pending');
+            $renderedWoModals = [];
         @endphp
         <ul class="nav nav-tabs mb-4" id="ckTab" role="tablist">
             <li class="nav-item">
@@ -989,6 +990,7 @@
                                             @endif
 
                                             @if(auth()->user() && auth()->user()->canEditWoQty() && !($wo->is_terkirim ?? false))
+                                                @php $renderedWoModals[$wo->id] = true; @endphp
                                                 {{-- MODAL EDIT QTY WORK ORDER (SUPERADMIN & GAHARU) --}}
                                                 <div class="modal fade text-start" id="modalEditQty{{ $wo->id }}" tabindex="-1" aria-hidden="true">
                                                     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -1198,7 +1200,7 @@
                                             </span>
                                         </td>
                                         <td class="text-center text-nowrap">
-                                            <div class="action-box d-flex justify-content-center">
+                                            <div class="action-box d-flex flex-column gap-1">
                                                 <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
                                                     <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalProd{{ $prod->id }}">
                                                         <i class="bi bi-eye"></i> Detail
@@ -1221,6 +1223,26 @@
                                                         </button>
                                                     @endif
                                                 </div>
+
+                                                {{-- TOMBOL KOREKSI / BATAL PRODUKSI QC (JIKA BELUM TERKIRIM) --}}
+                                                @if(($prod->is_belum_terkirim ?? true) && ($canDeleteWo ?? $isSuperAdmin))
+                                                    <div class="btn-group btn-group-sm w-100" role="group">
+                                                        @if($prod->work_order && auth()->user() && auth()->user()->canEditWoQty())
+                                                            <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="font-size: 0.74rem;" data-bs-toggle="modal" data-bs-target="#modalEditQtyProd{{ $prod->id }}" title="Edit / Koreksi Kuantitas WO (Kesalahan QC)">
+                                                                <i class="bi bi-pencil-square"></i> Edit WO
+                                                            </button>
+                                                        @endif
+
+                                                        <form action="{{ route('ck-produksi.destroy-produksi', $prod->id) }}" method="POST" class="d-inline {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '' : 'w-100' }}" onsubmit="return confirm('Apakah Anda yakin ingin membatalkan/menghapus hasil produksi {{ $prod->kode_produksi }} karena kesalahan produksi/QC? Stok produk jadi akan ditarik dan stok bahan baku akan dikembalikan ke gudang CK.');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '0 6px 6px 0' : '6px' }};" title="Batalkan Hasil Produksi (Kesalahan QC)">
+                                                                <i class="bi bi-trash"></i> Hapus
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                @endif
+
                                                 @if(strtolower($prod->status_produksi) == 'draft')
                                                     <form id="formApproveProd{{ $prod->id }}" action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" class="d-none">
                                                         @csrf
@@ -1436,6 +1458,150 @@
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            @if($prod->work_order && auth()->user() && auth()->user()->canEditWoQty() && !($prod->is_terkirim ?? false))
+                                                @php
+                                                    $wo = $prod->work_order;
+                                                @endphp
+                                                {{-- MODAL EDIT QTY WORK ORDER DARI RIWAYAT PRODUKSI --}}
+                                                <div class="modal fade text-start" id="modalEditQtyProd{{ $prod->id }}" tabindex="-1" aria-hidden="true">
+                                                    <div class="modal-dialog modal-lg modal-dialog-centered">
+                                                        <div class="modal-content border-0 shadow-lg rounded-4">
+                                                            <div class="modal-header text-white" style="background-color: #854d0e;">
+                                                                <h5 class="modal-title fw-bold">
+                                                                    <i class="bi bi-pencil-square me-2"></i> Edit Qty Work Order: {{ $wo->kode_wo }}
+                                                                </h5>
+                                                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <form action="{{ route('ck-produksi.edit-qty-wo', $wo->id) }}" method="POST" onsubmit="return confirm('Simpan perubahan kuantitas Work Order ini?')">
+                                                                @csrf
+                                                                <input type="hidden" name="tab" value="prod">
+                                                                <input type="hidden" name="prod_page" value="{{ request('prod_page', 1) }}">
+                                                                <input type="hidden" name="search" value="{{ request('search', '') }}">
+                                                                <input type="hidden" name="customer_id" value="{{ request('customer_id', '') }}">
+                                                                <div class="modal-body p-4">
+                                                                    <div class="alert alert-warning border-warning d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-shield-lock-fill fs-5 text-warning flex-shrink-0"></i>
+                                                                        <div>
+                                                                            <strong>Hak Akses:</strong> Anda dapat mengedit kuantitas item pada Work Order ini karena pesanan <strong>belum terkirim</strong>. Sistem akan otomatis menyesuaikan alokasi pesanan, stok jadi, dan perhitungan total HPP.
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="p-3 mb-3 bg-light rounded-3 border-start border-4 border-warning">
+                                                                        <div class="row g-2 small">
+                                                                            <div class="col-md-4">
+                                                                                <span class="text-muted d-block">Kode Work Order:</span>
+                                                                                <strong class="text-dark">{{ $wo->kode_wo }}</strong>
+                                                                            </div>
+                                                                            <div class="col-md-4">
+                                                                                <span class="text-muted d-block">Outlet Pemesan:</span>
+                                                                                <strong class="text-dark">{{ $prod->pesanan->customer->nama ?? 'Outlet Internal' }}</strong>
+                                                                            </div>
+                                                                            <div class="col-md-4">
+                                                                                <span class="text-muted d-block">Status Saat Ini:</span>
+                                                                                <span class="badge {{ strtolower($wo->status_wo) == 'selesai' ? 'bg-success' : 'bg-warning text-dark' }}">{{ $wo->status_wo }}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                                                        <h6 class="fw-bold text-dark mb-0 small text-uppercase">Daftar Item & Penyesuaian Kuantitas</h6>
+                                                                        <button type="button" class="btn btn-sm btn-outline-success fw-semibold btn-add-item-wo" data-target-table="#tableEditWoProd{{ $prod->id }}">
+                                                                            <i class="bi bi-plus-circle me-1"></i> Tambah Item Baru
+                                                                        </button>
+                                                                    </div>
+                                                                    <div class="table-responsive mb-3">
+                                                                        <table class="table table-bordered align-middle text-center mb-0" id="tableEditWoProd{{ $prod->id }}">
+                                                                            <thead class="table-light">
+                                                                                <tr>
+                                                                                    <th style="width: 5%;">No</th>
+                                                                                    <th class="text-start">Nama Produk</th>
+                                                                                    <th style="width: 25%;">Qty Saat Ini</th>
+                                                                                    <th style="width: 40%; min-width: 210px;">Qty Baru</th>
+                                                                                    <th style="width: 8%;">Aksi</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                @foreach($wo->details as $idx => $wod)
+                                                                                    @php
+                                                                                        $p = $wod->produk;
+                                                                                        $satDasar = $p->satuan ?? 'pcs';
+                                                                                        $hasKonv = !empty($p->satuan_pembelian) && floatval($p->konversi_pembelian ?? 1) > 1;
+                                                                                        $satBeli = $hasKonv ? strtoupper($p->satuan_pembelian) : '';
+                                                                                        $konvVal = $hasKonv ? floatval($p->konversi_pembelian) : 1;
+                                                                                        $qtySaatIni = floatval($wod->qty_rencana);
+                                                                                    @endphp
+                                                                                    <tr class="row-item-wo">
+                                                                                        <td class="row-number">{{ $idx + 1 }}</td>
+                                                                                        <td class="text-start">
+                                                                                            <div class="fw-bold text-dark">{{ $p->nama ?? 'Produk' }}</div>
+                                                                                            <div class="text-muted small">{{ $p->kode_barang ?? '-' }}</div>
+                                                                                        </td>
+                                                                                        <td class="fw-semibold">
+                                                                                            <div>{{ number_format($qtySaatIni, ($qtySaatIni == intval($qtySaatIni) ? 0 : 2), ',', '.') }} {{ $satDasar }}</div>
+                                                                                            @if($hasKonv)
+                                                                                                @php $packSaatIni = $qtySaatIni / $konvVal; @endphp
+                                                                                                <div class="small text-primary font-monospace" style="font-size: 11px;">
+                                                                                                    ({{ number_format($packSaatIni, ($packSaatIni == intval($packSaatIni) ? 0 : 2), ',', '.') }} {{ $satBeli }} @ {{ number_format($konvVal, 0, ',', '.') }} {{ $satDasar }})
+                                                                                                </div>
+                                                                                            @else
+                                                                                                <div class="small text-muted font-monospace" style="font-size: 11px;">-</div>
+                                                                                            @endif
+                                                                                        </td>
+                                                                                        <td>
+                                                                                            <input type="hidden" name="detail_id[]" value="{{ $wod->id }}">
+                                                                                            <input type="hidden" name="produk_id[]" value="{{ $wod->produk_id }}">
+                                                                                            <div class="input-group input-group-sm flex-nowrap shadow-sm">
+                                                                                                <input type="number" name="qty_baru[]" class="form-control text-end fw-bold input-qty-edit-wo px-2" 
+                                                                                                    min="0.01" step="any" value="{{ $qtySaatIni }}" 
+                                                                                                    data-konversi="{{ $konvVal }}"
+                                                                                                    data-satuan-dasar="{{ $satDasar }}"
+                                                                                                    data-satuan-konv="{{ $satBeli }}" required>
+                                                                                                @if($hasKonv)
+                                                                                                    <select name="satuan_input_edit[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 100px; flex: 0 0 100px; padding-left: 8px; padding-right: 22px; font-size: 0.78rem;">
+                                                                                                        <option value="dasar">{{ strtoupper($satDasar) }}</option>
+                                                                                                        <option value="konversi">{{ $satBeli }}</option>
+                                                                                                    </select>
+                                                                                                @else
+                                                                                                    <select name="satuan_input_edit[]" class="form-select select-unit-edit-wo fw-bold text-center bg-light text-primary" style="width: 100px; flex: 0 0 100px; padding-left: 8px; padding-right: 22px; font-size: 0.78rem;">
+                                                                                                        <option value="dasar">{{ strtoupper($satDasar) }}</option>
+                                                                                                    </select>
+                                                                                                @endif
+                                                                                            </div>
+                                                                                            <div class="live-konversi-edit-info small text-end mt-1 font-monospace" style="font-size: 11px; min-height: 16.5px;">
+                                                                                                @if(!$hasKonv)
+                                                                                                    <span class="text-muted">-</span>
+                                                                                                @endif
+                                                                                            </div>
+                                                                                        </td>
+                                                                                        <td>
+                                                                                            <button type="button" class="btn btn-outline-danger btn-sm rounded-3 btn-delete-existing-row" data-detail-id="{{ $wod->id }}" title="Hapus item ini dari Work Order">
+                                                                                                <i class="bi bi-trash"></i>
+                                                                                            </button>
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                @endforeach
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                    <div class="deleted-inputs-container"></div>
+
+                                                                    <div class="mb-0">
+                                                                        <label class="form-label fw-bold text-secondary small">Alasan / Catatan Penyesuaian (Opsional):</label>
+                                                                        <input type="text" name="alasan_edit" class="form-control form-control-sm" placeholder="Contoh: Koreksi kuantitas atau penyesuaian menu sebelum pengiriman">
+                                                                    </div>
+                                                                </div>
+                                                                <div class="modal-footer bg-light">
+                                                                    <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                                                                    <button type="submit" class="btn btn-warning px-4 fw-bold text-dark">
+                                                                        <i class="bi bi-check2-circle me-1"></i> Simpan Perubahan WO
+                                                                    </button>
+                                                                </div>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            @endif
                                         </td>
                                     </tr>
                                 @empty

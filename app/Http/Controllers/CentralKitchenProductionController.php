@@ -346,6 +346,32 @@ class CentralKitchenProductionController extends Controller
             $prod->is_bahan_sufficient = $isBahanSufficient;
             $prod->defisit_bahan = $defisitBahan;
             $prod->can_approve = !$hasMissingResep && $isBahanSufficient;
+
+            // Cek status pengiriman pesanan terkait produksi ini
+            $isTerkirim = false;
+            if ($prod->pesanan_id) {
+                $isTerkirim = Pengiriman::where('pesanan_id', $prod->pesanan_id)
+                    ->where('status_pengiriman', 'Selesai')
+                    ->exists();
+            }
+            $prod->is_terkirim = $isTerkirim;
+            $prod->is_belum_terkirim = !$isTerkirim;
+
+            // Cari WorkOrder terkait
+            $wo = null;
+            if ($prod->pesanan_id) {
+                $wod = WorkOrderDetail::with(['workOrder.details.produk', 'workOrder.details.pesanan'])->where('pesanan_id', $prod->pesanan_id)->first();
+                $wo = $wod ? $wod->workOrder : null;
+            }
+            if (!$wo) {
+                $pIds = ProduksiPesanan::where('produksi_id', $prod->id)->pluck('pesanan_id')->toArray();
+                if (!empty($pIds)) {
+                    $wod = WorkOrderDetail::with(['workOrder.details.produk', 'workOrder.details.pesanan'])->whereIn('pesanan_id', $pIds)->first();
+                    $wo = $wod ? $wod->workOrder : null;
+                }
+            }
+            $prod->work_order = $wo;
+
             return $prod;
         });
 
@@ -2200,11 +2226,67 @@ class CentralKitchenProductionController extends Controller
             // 2. Bersihkan alokasi produksi pesanan
             DB::table('alokasi_produksi_pesanan')->whereIn('pesanan_id', $pesananIds)->delete();
 
-            // 3. Bersihkan draft produksi jika ada
-            $draftProduksi = Produksi::whereIn('pesanan_id', $pesananIds)->where('status_produksi', 'Draft')->get();
-            foreach ($draftProduksi as $dp) {
-                DB::table('produksi_detail')->where('produksi_id', $dp->id)->delete();
-                $dp->delete();
+            // 3. Tangani Produksi terkait pesanan WO ini (baik Draft maupun Selesai yang perlu di-rollback)
+            $produksis = Produksi::whereIn('pesanan_id', $pesananIds)->get();
+            foreach ($produksis as $prod) {
+                if (strtolower($prod->status_produksi) === 'selesai') {
+                    $gHasilId = $prod->gudang_hasil_id ?? 5;
+                    $gBahanId = $prod->gudang_bahan_id ?? 5;
+
+                    // Kurangi stok barang jadi di gudang CK
+                    $pDetails = DB::table('produksi_detail')->where('produksi_id', $prod->id)->get();
+                    foreach ($pDetails as $pDet) {
+                        $stokGudang = StokGudang::where('gudang_id', $gHasilId)
+                            ->where('barang_id', $pDet->produk_id)
+                            ->first();
+                        if ($stokGudang) {
+                            $stokGudang->decrement('jumlah', min(floatval($stokGudang->jumlah), floatval($pDet->qty)));
+                        }
+
+                        // Hapus batch hasil produksi
+                        StokGudangBatch::where('gudang_id', $gHasilId)
+                            ->where('barang_id', $pDet->produk_id)
+                            ->where(function($q) use ($prod) {
+                                $q->where('batch_number', 'like', '%' . $prod->kode_produksi . '%')
+                                  ->orWhere('batch_number', 'like', 'CK-' . $prod->kode_produksi . '%');
+                            })
+                            ->delete();
+                    }
+
+                    // Kembalikan bahan baku yang terpotong ke stok gudang CK & batch
+                    $txKeluarList = TransaksiStok::where('source_type', 'produksi_ck')
+                        ->where('source_id', $prod->id)
+                        ->where('tipe', 'keluar')
+                        ->get();
+
+                    foreach ($txKeluarList as $tx) {
+                        $stokBahan = StokGudang::where('gudang_id', $gBahanId)
+                            ->where('barang_id', $tx->barang_id)
+                            ->first();
+                        if ($stokBahan) {
+                            $stokBahan->increment('jumlah', floatval($tx->qty));
+                        }
+
+                        $batchBahan = StokGudangBatch::where('gudang_id', $gBahanId)
+                            ->where('barang_id', $tx->barang_id)
+                            ->latest('id')
+                            ->first();
+                        if ($batchBahan) {
+                            $batchBahan->increment('qty_sisa', floatval($tx->qty));
+                            $batchBahan->decrement('qty_keluar', min(floatval($batchBahan->qty_keluar), floatval($tx->qty)));
+                            $batchBahan->is_habis = false;
+                            $batchBahan->save();
+                        }
+                    }
+
+                    // Hapus transaksi stok terkait produksi
+                    TransaksiStok::where('source_type', 'produksi_ck')
+                        ->where('source_id', $prod->id)
+                        ->delete();
+                }
+
+                DB::table('produksi_detail')->where('produksi_id', $prod->id)->delete();
+                $prod->delete();
             }
 
             // 4. Hapus detail WO dan record WO itu sendiri
@@ -2222,10 +2304,140 @@ class CentralKitchenProductionController extends Controller
 
             DB::commit();
             return redirect()->route('ck-produksi.index', ['tab' => 'wo'])
-                ->with('success', "Work Order {$woKode} berhasil dihapus. Status pesanan dikembalikan ke antrean Order Masuk (Pending).");
+                ->with('success', "Work Order {$woKode} berhasil dihapus dan dibatalkan. Status pesanan dikembalikan ke antrean Order Masuk (Pending).");
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', "Gagal menghapus Work Order: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Batalkan / Hapus Hasil Produksi Central Kitchen karena kesalahan produksi / gagal QC (Hanya jika belum terkirim)
+     */
+    public function destroyProduksi($id)
+    {
+        $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
+        $canDelete = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty()));
+
+        if (!$canDelete) {
+            abort(403, 'Akses ditolak: Anda tidak memiliki wewenang untuk membatalkan hasil produksi.');
+        }
+
+        $prod = Produksi::with(['details', 'pesanan'])->findOrFail($id);
+
+        // Validasi status pengiriman
+        $isTerkirim = false;
+        if ($prod->pesanan_id) {
+            $isTerkirim = Pengiriman::where('pesanan_id', $prod->pesanan_id)
+                ->where('status_pengiriman', 'Selesai')
+                ->exists();
+        }
+
+        if ($isTerkirim) {
+            return redirect()->back()->with('error', "Gagal: Hasil Produksi {$prod->kode_produksi} tidak dapat dibatalkan karena pesanan terkait sudah berstatus selesai dikirim ke outlet.");
+        }
+
+        DB::beginTransaction();
+        try {
+            $gudangHasilId = $prod->gudang_hasil_id ?? 5;
+            $gudangBahanId = $prod->gudang_bahan_id ?? 5;
+
+            // 1. Jika status Selesai: Rollback stok barang jadi (kurangi stok CK & hapus batch hasil produksi)
+            if (strtolower($prod->status_produksi) === 'selesai') {
+                foreach ($prod->details as $pDet) {
+                    $stokGudang = StokGudang::where('gudang_id', $gudangHasilId)
+                        ->where('barang_id', $pDet->produk_id)
+                        ->first();
+                    if ($stokGudang) {
+                        $stokGudang->decrement('jumlah', min(floatval($stokGudang->jumlah), floatval($pDet->qty)));
+                    }
+
+                    // Hapus batch hasil produksi
+                    StokGudangBatch::where('gudang_id', $gudangHasilId)
+                        ->where('barang_id', $pDet->produk_id)
+                        ->where(function($q) use ($prod) {
+                            $q->where('batch_number', 'like', '%' . $prod->kode_produksi . '%')
+                              ->orWhere('batch_number', 'like', 'CK-' . $prod->kode_produksi . '%');
+                        })
+                        ->delete();
+                }
+
+                // 2. Rollback stok bahan baku yang terpakai
+                $txKeluarList = TransaksiStok::where('source_type', 'produksi_ck')
+                    ->where('source_id', $prod->id)
+                    ->where('tipe', 'keluar')
+                    ->get();
+
+                foreach ($txKeluarList as $tx) {
+                    $stokBahan = StokGudang::where('gudang_id', $gBahanId)
+                        ->where('barang_id', $tx->barang_id)
+                        ->first();
+                    if ($stokBahan) {
+                        $stokBahan->increment('jumlah', floatval($tx->qty));
+                    }
+
+                    // Kembalikan qty_sisa pada batch bahan baku
+                    $batchBahan = StokGudangBatch::where('gudang_id', $gBahanId)
+                        ->where('barang_id', $tx->barang_id)
+                        ->latest('id')
+                        ->first();
+                    if ($batchBahan) {
+                        $batchBahan->increment('qty_sisa', floatval($tx->qty));
+                        $batchBahan->decrement('qty_keluar', min(floatval($batchBahan->qty_keluar), floatval($tx->qty)));
+                        $batchBahan->is_habis = false;
+                        $batchBahan->save();
+                    }
+                }
+
+                // 3. Bersihkan transaksi stok terkait produksi ini
+                TransaksiStok::where('source_type', 'produksi_ck')
+                    ->where('source_id', $prod->id)
+                    ->delete();
+            }
+
+            // 4. Hapus alokasi produksi pesanan
+            if ($prod->pesanan_id) {
+                DB::table('alokasi_produksi_pesanan')
+                    ->where('produksi_id', $prod->id)
+                    ->delete();
+            }
+
+            // 5. Bersihkan pengiriman draft/belum selesai jika ada
+            if ($prod->pesanan_id) {
+                $pengirimans = Pengiriman::where('pesanan_id', $prod->pesanan_id)->where('status_pengiriman', '!=', 'Selesai')->get();
+                foreach ($pengirimans as $pengiriman) {
+                    DB::table('pengiriman_detail')->where('pengiriman_id', $pengiriman->id)->delete();
+                    $pengiriman->delete();
+                }
+            }
+
+            // 6. Update status Work Order terkait jika ada
+            if ($prod->pesanan_id) {
+                $wodList = WorkOrderDetail::where('pesanan_id', $prod->pesanan_id)->get();
+                $woIds = $wodList->pluck('work_order_id')->unique();
+                foreach ($woIds as $woId) {
+                    $sisaAlokasi = DB::table('alokasi_produksi_pesanan')
+                        ->whereIn('pesanan_id', function($q) use ($woId) {
+                            $q->select('pesanan_id')->from('work_order_detail')->where('work_order_id', $woId);
+                        })
+                        ->sum('qty_alokasi');
+                    if ($sisaAlokasi <= 0) {
+                        WorkOrder::where('id', $woId)->update(['status_wo' => 'Draft', 'updated_at' => now()]);
+                    }
+                }
+            }
+
+            // 7. Hapus detail produksi & record produksi
+            DB::table('produksi_detail')->where('produksi_id', $prod->id)->delete();
+            $kodeProd = $prod->kode_produksi;
+            $prod->delete();
+
+            DB::commit();
+            return redirect()->route('ck-produksi.index', ['tab' => 'prod'])
+                ->with('success', "Hasil Produksi {$kodeProd} berhasil dibatalkan/dihapus karena kesalahan produksi/QC. Stok bahan baku dan produk jadi telah dikembalikan ke kondisi semula.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', "Gagal membatalkan hasil produksi: " . $e->getMessage());
         }
     }
 }

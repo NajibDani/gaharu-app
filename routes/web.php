@@ -334,6 +334,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::post('/central-kitchen/produksi/stok-internal/store', [CentralKitchenProductionController::class, 'storeStokInternal'])->name('ck-produksi.store-stok-internal');
     Route::post('/central-kitchen/produksi/wo/{id}/edit-qty', [CentralKitchenProductionController::class, 'editQtyWo'])->name('ck-produksi.edit-qty-wo');
     Route::delete('/central-kitchen/produksi/wo/{id}', [CentralKitchenProductionController::class, 'destroyWo'])->name('ck-produksi.destroy-wo');
+    Route::delete('/central-kitchen/produksi/{id}', [CentralKitchenProductionController::class, 'destroyProduksi'])->name('ck-produksi.destroy-produksi');
 
     // =========================================================================
     // 5. GROUP KEPALA GUDANG & KEPALA OUTLET GAHARU
