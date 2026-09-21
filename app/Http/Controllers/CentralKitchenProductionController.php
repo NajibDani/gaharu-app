@@ -30,6 +30,7 @@ class CentralKitchenProductionController extends Controller
 
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
+        $activeTab = $request->query('tab', 'pending');
 
         $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
 
@@ -464,7 +465,8 @@ class CentralKitchenProductionController extends Controller
             'allProdukCk', 
             'isSuperAdmin', 
             'canDeleteWo',
-            'searchBsj'
+            'searchBsj',
+            'activeTab'
         ));
     }
 
