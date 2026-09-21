@@ -609,6 +609,13 @@ class PengeluaranBahanBakuController extends Controller
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
         $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
 
+        $gudangNama = strtolower($pengeluaran->gudang->nama ?? '');
+        $divisiNama = strtolower($pengeluaran->divisi->nama ?? '');
+        $ketNama    = strtolower($pengeluaran->keterangan ?? '');
+        $isCentralKitchen = str_contains($gudangNama, 'central kitchen') 
+            || str_contains($divisiNama, 'central kitchen') 
+            || str_contains($ketNama, 'central kitchen');
+
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
@@ -656,7 +663,10 @@ class PengeluaranBahanBakuController extends Controller
                 }
             }
             if ($hppTotal <= 0) {
-                $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
+                if ($hargaUnit <= 0) {
+                    $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                }
                 $hppTotal = round($detail->qty * $hargaUnit, 2);
             }
             $detail->hpp_total = $hppTotal;
@@ -695,7 +705,7 @@ class PengeluaranBahanBakuController extends Controller
 
         return view(
             'pengeluaran-bahan-baku.show',
-            compact('pengeluaran', 'gudangUtama', 'isApproved', 'isWasted', 'isOpname', 'isSuperAdmin', 'grandTotal')
+            compact('pengeluaran', 'gudangUtama', 'isApproved', 'isWasted', 'isOpname', 'isSuperAdmin', 'grandTotal', 'isCentralKitchen')
         );
     }
 
@@ -712,6 +722,13 @@ class PengeluaranBahanBakuController extends Controller
 
         $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
         $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
+
+        $gudangNama = strtolower($pengeluaran->gudang->nama ?? '');
+        $divisiNama = strtolower($pengeluaran->divisi->nama ?? '');
+        $ketNama    = strtolower($pengeluaran->keterangan ?? '');
+        $isCentralKitchen = str_contains($gudangNama, 'central kitchen') 
+            || str_contains($divisiNama, 'central kitchen') 
+            || str_contains($ketNama, 'central kitchen');
 
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
@@ -743,7 +760,7 @@ class PengeluaranBahanBakuController extends Controller
         $totalShortageHpp = 0;
         $totalSurplusHpp = 0;
 
-        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $gudangUtamaId, &$grandTotal, &$totalKurang, &$totalShortageHpp, &$totalSurplusHpp, $soDetailsMap) {
+        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $isCentralKitchen, $gudangUtamaId, &$grandTotal, &$totalKurang, &$totalShortageHpp, &$totalSurplusHpp, $soDetailsMap) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
             if (!$isApproved || $hppTotal <= 0) {
                 if ($isOpname) {
@@ -764,7 +781,10 @@ class PengeluaranBahanBakuController extends Controller
                 }
             }
             if ($hppTotal <= 0) {
-                $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
+                if ($hargaUnit <= 0) {
+                    $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                }
                 $hppTotal = round($detail->qty * $hargaUnit, 2);
             }
 
@@ -824,8 +844,13 @@ class PengeluaranBahanBakuController extends Controller
                 $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
                 $statusColor = 'danger';
             } else {
-                $statusStok = 'Stok Habis (0)';
-                $statusColor = 'danger';
+                if ($isWasted && $isCentralKitchen) {
+                    $statusStok = 'Stok Habis (0) - HPP Harga Terakhir';
+                    $statusColor = 'warning';
+                } else {
+                    $statusStok = 'Stok Habis (0)';
+                    $statusColor = 'danger';
+                }
             }
 
             $bItem       = $detail->barang;
@@ -871,6 +896,7 @@ class PengeluaranBahanBakuController extends Controller
             'divisi_nama'         => $pengeluaran->divisi->nama ?? null,
             'lokasi_nama'         => $lokasiNama,
             'is_wasted'           => $isWasted,
+            'is_central_kitchen'  => $isCentralKitchen,
             'is_opname'           => $isOpname,
             'jenis_pengeluaran'   => $pengeluaran->jenis_pengeluaran ?? ($isWasted ? 'wasted' : 'transfer'),
             'status'              => $pengeluaran->status,
@@ -1567,8 +1593,11 @@ class PengeluaranBahanBakuController extends Controller
         $idBebanSelisih = DB::table('chart_of_accounts')->where('kode', '6401')->value('id')
             ?? DB::table('chart_of_accounts')->where('kode', '5104')->value('id') 
             ?? DB::table('chart_of_accounts')->where('kode', '5103')->value('id') 
+            ?? DB::table('chart_of_accounts')->value('id')
             ?? 44;
-        $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '4201')->value('id') ?? 32;
+        $idPendapatanLain = DB::table('chart_of_accounts')->where('kode', '4201')->value('id') 
+            ?? DB::table('chart_of_accounts')->value('id')
+            ?? 32;
 
         if ($isOpname) {
             $opname = $data->findAssociatedStockOpname();
@@ -1613,6 +1642,14 @@ class PengeluaranBahanBakuController extends Controller
                 }
             }
 
+            if ($hppTotal <= 0) {
+                $hargaFallback = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $gudangLokasi);
+                if ($hargaFallback <= 0) {
+                    $hargaFallback = $this->getHargaTerakhirBarang($detail->barang_id);
+                }
+                $hppTotal = round($detail->qty * $hargaFallback, 2);
+            }
+
             $hppTotal = round($hppTotal, 2);
             $detail->update(['hpp_total' => $hppTotal]);
 
@@ -1620,39 +1657,46 @@ class PengeluaranBahanBakuController extends Controller
                 $barang = MasterBarang::find($detail->barang_id);
                 $isOperational = $barang && ($barang->is_operational || (!$barang->is_bahan_baku && !$barang->is_bahan_setengah_jadi));
                 $coaCode = $isOperational ? '1501' : ($barang->is_bahan_setengah_jadi ? '1302' : ($barang->is_barang_jadi ? '1303' : '1301'));
-                $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOperational ? 27 : 19);
+                $idPersediaan = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') 
+                    ?? DB::table('chart_of_accounts')->value('id')
+                    ?? ($isOperational ? 27 : 19);
 
-                $deskripsiJp = $isWasted 
-                    ? "[AJP] Pengeluaran Wasted / Busuk / Rusak: " . ($barang->nama ?? 'Barang')
-                    : "[AJP] Penyesuaian Kurang (Shortage) Stock Opname: " . ($barang->nama ?? 'Barang');
+                $canJournal = DB::table('chart_of_accounts')->where('id', $idBebanSelisih)->exists()
+                    && DB::table('chart_of_accounts')->where('id', $idPersediaan)->exists();
 
-                $refPrefix = $isWasted ? 'AJP-WASTED-' : 'AJP-SO-SHORTAGE-';
+                if ($canJournal) {
+                    $deskripsiJp = $isWasted 
+                        ? "[AJP] Pengeluaran Wasted / Busuk / Rusak: " . ($barang->nama ?? 'Barang')
+                        : "[AJP] Penyesuaian Kurang (Shortage) Stock Opname: " . ($barang->nama ?? 'Barang');
 
-                $jp = \App\Models\JurnalPenyesuaian::create([
-                    'tanggal'     => now(),
-                    'deskripsi'   => $deskripsiJp,
-                    'no_ref'      => $refPrefix . $data->kode_pengeluaran . '-' . rand(100, 999),
-                    'source_type' => 'pengeluaran_bahan_baku',
-                    'source_id'   => $data->id,
-                    'created_by'  => auth()->id(),
-                    'status'      => 'approved',
-                ]);
+                    $refPrefix = $isWasted ? 'AJP-WASTED-' : 'AJP-SO-SHORTAGE-';
 
-                // Debit: Beban Selisih HPP / Kerusakan
-                $jp->details()->create([
-                    'account_id'   => $idBebanSelisih,
-                    'debit'        => $hppTotal,
-                    'kredit'       => 0,
-                    'journal_type' => 'jurnal_penyesuaian',
-                ]);
+                    $jp = \App\Models\JurnalPenyesuaian::create([
+                        'tanggal'     => now(),
+                        'deskripsi'   => $deskripsiJp,
+                        'no_ref'      => $refPrefix . $data->kode_pengeluaran . '-' . rand(100, 999),
+                        'source_type' => 'pengeluaran_bahan_baku',
+                        'source_id'   => $data->id,
+                        'created_by'  => auth()->id(),
+                        'status'      => 'approved',
+                    ]);
 
-                // Kredit: Persediaan
-                $jp->details()->create([
-                    'account_id'   => $idPersediaan,
-                    'debit'        => 0,
-                    'kredit'       => $hppTotal,
-                    'journal_type' => 'jurnal_penyesuaian',
-                ]);
+                    // Debit: Beban Selisih HPP / Kerusakan
+                    $jp->details()->create([
+                        'account_id'   => $idBebanSelisih,
+                        'debit'        => $hppTotal,
+                        'kredit'       => 0,
+                        'journal_type' => 'jurnal_penyesuaian',
+                    ]);
+
+                    // Kredit: Persediaan
+                    $jp->details()->create([
+                        'account_id'   => $idPersediaan,
+                        'debit'        => 0,
+                        'kredit'       => $hppTotal,
+                        'journal_type' => 'jurnal_penyesuaian',
+                    ]);
+                }
             }
 
             $stokQuery = StokGudang::where('barang_id', $detail->barang_id)
@@ -1667,7 +1711,8 @@ class PengeluaranBahanBakuController extends Controller
             $stokGudang = $stokQuery->lockForUpdate()->first();
 
             if ($stokGudang) {
-                $stokGudang->decrement('jumlah', $detail->qty);
+                $newJumlah = max(0, (float)$stokGudang->jumlah - (float)$detail->qty);
+                $stokGudang->update(['jumlah' => $newJumlah]);
             }
 
             TransaksiStok::create([
@@ -1693,6 +1738,11 @@ class PengeluaranBahanBakuController extends Controller
 
     public function getHargaTerakhirBarang($barangId): float
     {
+        $harga = $this->fifoService->getHargaTerakhirBahan((int)$barangId);
+        if ($harga > 0) {
+            return $harga;
+        }
+
         $hargaBatch = DB::table('stok_gudang_batch')
             ->where('barang_id', $barangId)
             ->where('harga_per_qty', '>', 0)
@@ -1779,6 +1829,35 @@ class PengeluaranBahanBakuController extends Controller
                 $isWasted = ($data->jenis_pengeluaran === 'wasted' || str_starts_with($data->kode_pengeluaran, 'PBK-WST-'));
 
                 if ($isFromOpname || $isWasted) {
+                    $isCentralKitchen = ($data->gudang && str_contains(strtolower($data->gudang->nama), 'central kitchen'))
+                        || ($data->divisi && str_contains(strtolower($data->divisi->nama), 'central kitchen'))
+                        || str_contains(strtolower($data->keterangan ?? ''), 'central kitchen');
+
+                    // Jika Wasted di luar Central Kitchen, tetap validasi kecukupan stok lokasi
+                    if ($isWasted && !$isCentralKitchen) {
+                        foreach ($data->details as $detail) {
+                            $stokQuery = StokGudang::where('barang_id', $detail->barang_id)
+                                ->where('gudang_id', $data->gudang_id);
+                            if ($data->divisi_id) {
+                                $stokQuery->where('divisi_id', $data->divisi_id);
+                            } else {
+                                $stokQuery->whereNull('divisi_id');
+                            }
+                            $stokTersedia = (float) ($stokQuery->sum('jumlah') ?? 0);
+
+                            if ($stokTersedia < $detail->qty) {
+                                $barang = MasterBarang::find($detail->barang_id);
+                                $namaBarang = $barang ? $barang->nama : "ID Barang: {$detail->barang_id}";
+                                $satuan = $barang->satuan ?? 'pcs';
+                                $kurang = $detail->qty - $stokTersedia;
+                                
+                                throw new \Exception(
+                                    "Gagal Approve: Stok \"{$namaBarang}\" di lokasi tidak mencukupi (Diminta: " . number_format($detail->qty, 2, ',', '.') . " {$satuan}, Tersedia: " . number_format($stokTersedia, 2, ',', '.') . " {$satuan}, Kekurangan: -" . number_format($kurang, 2, ',', '.') . " {$satuan}). Dokumen wasted non-Central Kitchen tidak dapat disetujui jika stok tidak mencukupi."
+                                );
+                            }
+                        }
+                    }
+
                     $this->executeApproveWastedOrOpname($data);
                 } else {
                     $gudangAsalId = MasterGudang::getGudangUtamaId();

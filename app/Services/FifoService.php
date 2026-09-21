@@ -453,30 +453,15 @@ class FifoService
         }
 
         if ($sisaPermintaan > 0) {
-            $fbQuery = DB::table('stok_gudang_batch')
-                ->where('barang_id', $barangId)
-                ->where('gudang_id', $gudangId);
+            $hargaFallback = $this->getHargaTerakhirBahan($barangId, $gudangId);
 
-            if ($divisiId) {
-                $fbQuery->where('divisi_id', $divisiId);
-            }
-
-            $hargaFallback = $fbQuery->avg('harga_per_qty');
-
-            if (!$hargaFallback) {
-                $hargaFallback = DB::table('stok_gudang_batch')
-                    ->where('barang_id', $barangId)
-                    ->where('gudang_id', $gudangId)
-                    ->avg('harga_per_qty');
-            }
-
-            if (!$hargaFallback) {
+            if (!$hargaFallback || $hargaFallback <= 0) {
                 $hargaFallback = DB::table('master_barang')
                     ->where('id', $barangId)
                     ->value('hpp_referensi') ?? 0;
             }
 
-            $totalHpp += $sisaPermintaan * $hargaFallback;
+            $totalHpp += $sisaPermintaan * (float) $hargaFallback;
         }
 
         $hargaSatuan = $qtyKeluar > 0 ? ($totalHpp / $qtyKeluar) : 0;
