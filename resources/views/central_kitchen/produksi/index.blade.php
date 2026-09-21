@@ -36,29 +36,156 @@
 
     <div class="container-fluid px-2 px-md-4 py-3">
 
-        <div class="d-flex justify-content-between align-items-start align-items-sm-center mb-4 flex-column flex-sm-row gap-3">
+        {{-- HEADER TITLE --}}
+        <div class="d-flex justify-content-between align-items-start align-items-sm-center mb-3 flex-column flex-sm-row gap-2">
             <div>
-                <h4 class="fw-bold text-dark mb-1">Central Kitchen Production</h4>
-                <p class="text-muted small mb-0">Manajemen Work Order (WO) &amp; Hasil Produksi Central Kitchen</p>
+                <h4 class="fw-bold text-dark mb-1" style="font-weight: 800; letter-spacing: -0.5px;">Central Kitchen Production</h4>
+                <p class="text-muted small mb-0"><i class="bi bi-info-circle me-1"></i> Manajemen Work Order (WO) &amp; Hasil Produksi Central Kitchen</p>
             </div>
-            <form action="{{ route('ck-produksi.index') }}" method="GET" class="d-flex gap-2 align-items-center flex-wrap w-100 w-sm-auto">
-                <select name="customer_id" class="form-select form-select-sm flex-grow-1" style="min-width: 180px; border-radius: 8px; border: 1px solid #DCD3CB; height: 36px;" onchange="this.form.submit()">
-                    <option value="">-- Semua Outlet Pemesan --</option>
-                    @if(isset($customers))
-                        @foreach($customers as $c)
-                            <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
-                        @endforeach
-                    @endif
-                </select>
-                @if(request('customer_id'))
-                    <a href="{{ route('ck-produksi.index') }}" class="btn btn-sm btn-secondary d-inline-flex align-items-center" style="border-radius: 8px; height: 36px; padding: 0 14px;">Reset</a>
-                @endif
-            </form>
+        </div>
+
+        {{-- FILTER BAR SECTION --}}
+        @php
+            $activeTab = request('tab', $activeTab ?? 'pending');
+            $hasFilter = request()->filled('customer_id') || (request()->filled('sort') && request('sort') !== 'latest') || request()->filled('start_date') || request()->filled('end_date') || request()->filled('search');
+        @endphp
+        <div class="card border-0 shadow-sm rounded-4 mb-4 bg-white">
+            <div class="card-body p-3 p-md-3">
+                <form action="{{ route('ck-produksi.index') }}" method="GET" id="filterFormCk" class="row g-2 align-items-end">
+                    <input type="hidden" name="tab" id="filterActiveTab" value="{{ $activeTab }}">
+
+                    {{-- 1. Filter Outlet Pemesan --}}
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <label class="form-label text-secondary small fw-bold mb-1">
+                            <i class="bi bi-shop me-1 text-primary"></i> Outlet Pemesan
+                        </label>
+                        <select name="customer_id" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 38px;">
+                            <option value="">-- Semua Outlet Pemesan --</option>
+                            @if(isset($customers))
+                                @foreach($customers as $c)
+                                    <option value="{{ $c->id }}" {{ (string)request('customer_id', $customerId ?? '') === (string)$c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
+                                @endforeach
+                            @endif
+                        </select>
+                    </div>
+
+                    {{-- 2. Sort / Urutan A-Z, Z-A, Tanggal --}}
+                    <div class="col-12 col-sm-6 col-lg-2">
+                        <label class="form-label text-secondary small fw-bold mb-1">
+                            <i class="bi bi-sort-alpha-down me-1 text-primary"></i> Urutan (Sort)
+                        </label>
+                        <select name="sort" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 38px;">
+                            <option value="latest" {{ request('sort', $sort ?? 'latest') == 'latest' ? 'selected' : '' }}>Terbaru (Default)</option>
+                            <option value="a_z" {{ request('sort', $sort ?? '') == 'a_z' ? 'selected' : '' }}>Outlet (A - Z)</option>
+                            <option value="z_a" {{ request('sort', $sort ?? '') == 'z_a' ? 'selected' : '' }}>Outlet (Z - A)</option>
+                            <option value="tgl_terdekat" {{ request('sort', $sort ?? '') == 'tgl_terdekat' ? 'selected' : '' }}>Tgl Permintaan (Terdekat)</option>
+                            <option value="tgl_terjauh" {{ request('sort', $sort ?? '') == 'tgl_terjauh' ? 'selected' : '' }}>Tgl Permintaan (Terjauh)</option>
+                            <option value="oldest" {{ request('sort', $sort ?? '') == 'oldest' ? 'selected' : '' }}>Terlama</option>
+                        </select>
+                    </div>
+
+                    {{-- 3. Tanggal Permintaan WO / Rentang Tanggal (Custom Date Range Picker Popover) --}}
+                    <div class="col-12 col-sm-6 col-lg-3 position-relative">
+                        <label class="form-label text-secondary small fw-bold mb-1">
+                            <i class="bi bi-calendar3 me-1 text-primary"></i> Tanggal Permintaan / WO
+                        </label>
+                        <input type="hidden" name="start_date" id="filter_start_date" value="{{ request('start_date', request('dari', $startDate ?? '')) }}">
+                        <input type="hidden" name="end_date" id="filter_end_date" value="{{ request('end_date', request('sampai', $endDate ?? '')) }}">
+                        
+                        <button type="button" class="btn btn-sm btn-outline-secondary bg-white text-dark w-100 d-flex align-items-center justify-content-between py-1 px-3 rounded-3 shadow-none border" id="btn-date-range-trigger" style="height: 38px; border-color: #DCD3CB !important;">
+                            <span id="date-range-label" class="small text-truncate">
+                                <i class="bi bi-calendar3 me-1.5 text-primary"></i> <span id="text-date-display" class="fw-semibold">Semua Tanggal</span>
+                            </span>
+                            <i class="bi bi-chevron-down small text-muted ms-1"></i>
+                        </button>
+
+                        {{-- POPOVER DATE RANGE PICKER --}}
+                        <div id="date-range-popover" class="card border-0 shadow-lg rounded-4 p-3 position-absolute" style="display:none; z-index:1060; width: 680px; max-width: 90vw; top: 105%; left: 0; background: #fff; border: 1px solid #e2e8f0 !important;">
+                            <div class="d-flex gap-3">
+                                <!-- LEFT PRESETS -->
+                                <div class="d-flex flex-column gap-1 flex-shrink-0" style="width: 130px;">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="today">Hari Ini</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="yesterday">Kemarin</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="this_week">Minggu Ini</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="last_week">Minggu Lalu</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="this_month">Bulan Ini</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="last_month">Bulan Lalu</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="this_year">Tahun Ini</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium btn-preset-range py-1 px-2" style="font-size:0.78rem;" data-preset="last_year">Tahun Lalu</button>
+                                </div>
+
+                                <!-- MIDDLE CALENDAR -->
+                                <div class="flex-grow-1 px-2 border-start border-end">
+                                    <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                                        <button type="button" class="btn btn-xs btn-light border rounded-circle p-1" id="cal-prev-month" title="Bulan Sebelumnya" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;">
+                                            <i class="bi bi-chevron-left"></i>
+                                        </button>
+                                        <div class="fw-bold text-dark font-monospace text-uppercase" id="cal-month-year-title" style="font-size: 0.9rem; letter-spacing: 0.5px;"></div>
+                                        <button type="button" class="btn btn-xs btn-light border rounded-circle p-1" id="cal-next-month" title="Bulan Selanjutnya" style="width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;">
+                                            <i class="bi bi-chevron-right"></i>
+                                        </button>
+                                    </div>
+
+                                    <div class="d-grid mb-1 text-center fw-bold text-muted" style="grid-template-columns: repeat(7, 1fr); font-size: 0.72rem;">
+                                        <div>MIN</div><div>SEN</div><div>SEL</div><div>RAB</div><div>KAM</div><div>JUM</div><div>SAB</div>
+                                    </div>
+
+                                    <div class="d-grid text-center" id="cal-days-grid" style="grid-template-columns: repeat(7, 1fr); gap: 2px;">
+                                    </div>
+                                </div>
+
+                                <!-- RIGHT SUMMARY & ACTIONS -->
+                                <div class="d-flex flex-column justify-content-between flex-shrink-0" style="width: 145px;">
+                                    <div>
+                                        <div class="mb-2">
+                                            <label class="form-label text-muted small mb-1" style="font-size:0.75rem;">Starts (Mulai)</label>
+                                            <input type="text" id="display-range-start" class="form-control form-control-sm text-center bg-light fw-bold" style="font-size:0.78rem; border-radius: 6px;" readonly placeholder="dd/mm/yyyy">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label text-muted small mb-1" style="font-size:0.75rem;">Ends (Selesai)</label>
+                                            <input type="text" id="display-range-end" class="form-control form-control-sm text-center bg-light fw-bold" style="font-size:0.78rem; border-radius: 6px;" readonly placeholder="dd/mm/yyyy">
+                                        </div>
+                                    </div>
+
+                                    <div class="d-grid gap-1.5">
+                                        <button type="button" class="btn text-white btn-sm fw-bold shadow-sm py-1.5 rounded-3" id="btn-apply-date-range" style="background-color: #DE8958;">
+                                            Apply
+                                        </button>
+                                        <button type="button" class="btn btn-light btn-sm text-muted py-1 rounded-3" id="btn-reset-date-range" style="font-size:0.78rem;">
+                                            Reset
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- 4. Pencarian Keyword & Action Buttons --}}
+                    <div class="col-12 col-sm-6 col-lg-4">
+                        <label class="form-label text-secondary small fw-bold mb-1">
+                            <i class="bi bi-search me-1 text-primary"></i> Cari Data
+                        </label>
+                        <div class="d-flex gap-2">
+                            <div class="input-group input-group-sm flex-grow-1">
+                                <input type="text" name="search" class="form-control form-control-sm" placeholder="No. WO, Order, Menu..." value="{{ request('search', $search ?? '') }}" style="border-radius: 8px 0 0 8px; border: 1px solid #DCD3CB; height: 38px;">
+                                <button type="submit" class="btn text-white fw-semibold d-inline-flex align-items-center gap-1" style="background-color: #DE8958; border-radius: 0 8px 8px 0; height: 38px; padding: 0 16px;">
+                                    <i class="bi bi-funnel-fill"></i> Filter
+                                </button>
+                            </div>
+
+                            @if($hasFilter)
+                                <a href="{{ route('ck-produksi.index', ['tab' => $activeTab]) }}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="border-radius: 8px; height: 38px; padding: 0 14px; white-space: nowrap;" title="Reset Filter">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reset
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
 
         {{-- TABS NAVIGATION --}}
         @php
-            $activeTab = request('tab', 'pending');
             $renderedWoModals = [];
         @endphp
         <ul class="nav nav-tabs mb-4" id="ckTab" role="tablist">
@@ -2605,6 +2732,312 @@
                 const modalEl = document.getElementById('modalRincianResep');
                 bootstrap.Modal.getOrCreateInstance(modalEl).show();
             });
+
+            // Sinkronisasi tab aktif ke input filter
+            const ckTabNav = document.getElementById('ckTab');
+            if (ckTabNav) {
+                ckTabNav.addEventListener('shown.bs.tab', function(e) {
+                    const targetId = e.target.getAttribute('data-bs-target');
+                    let tabVal = 'pending';
+                    if (targetId === '#wo-list') tabVal = 'wo';
+                    else if (targetId === '#prod-history') tabVal = 'prod';
+                    else if (targetId === '#stok-divisi') tabVal = 'stok';
+
+                    const filterTabInput = document.getElementById('filterActiveTab');
+                    if (filterTabInput) filterTabInput.value = tabVal;
+                });
+            }
+
+            // =========================================================
+            // DATE RANGE PICKER POPOVER LOGIC (CENTRAL KITCHEN)
+            // =========================================================
+            const btnTrigger   = document.getElementById('btn-date-range-trigger');
+            const popover      = document.getElementById('date-range-popover');
+            const inputStart   = document.getElementById('filter_start_date');
+            const inputEnd     = document.getElementById('filter_end_date');
+            const textDisplay  = document.getElementById('text-date-display');
+            const displayStart = document.getElementById('display-range-start');
+            const displayEnd   = document.getElementById('display-range-end');
+
+            const calTitle     = document.getElementById('cal-month-year-title');
+            const calDaysGrid  = document.getElementById('cal-days-grid');
+            const btnPrevMonth = document.getElementById('cal-prev-month');
+            const btnNextMonth = document.getElementById('cal-next-month');
+            const btnApply     = document.getElementById('btn-apply-date-range');
+            const btnReset     = document.getElementById('btn-reset-date-range');
+
+            const monthNamesIndo = ['JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'];
+
+            let activeYear  = new Date().getFullYear();
+            let activeMonth = new Date().getMonth();
+            let selStart    = inputStart ? inputStart.value : '';
+            let selEnd      = inputEnd ? inputEnd.value : '';
+
+            function formatDateToYMD(d) {
+                if (!d) return '';
+                let y = d.getFullYear();
+                let m = String(d.getMonth() + 1).padStart(2, '0');
+                let day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
+
+            function formatDateToDMY(ymdStr) {
+                if (!ymdStr) return '';
+                let parts = ymdStr.split('-');
+                if (parts.length !== 3) return ymdStr;
+                return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            }
+
+            function updateTriggerDisplay() {
+                let dVal = inputStart ? inputStart.value : '';
+                let sVal = inputEnd ? inputEnd.value : '';
+                if (dVal && sVal) {
+                    if (dVal === sVal) {
+                        if (textDisplay) textDisplay.innerText = formatDateToDMY(dVal);
+                    } else {
+                        if (textDisplay) textDisplay.innerText = `${formatDateToDMY(dVal)} - ${formatDateToDMY(sVal)}`;
+                    }
+                } else if (dVal) {
+                    if (textDisplay) textDisplay.innerText = `Dari ${formatDateToDMY(dVal)}`;
+                } else if (sVal) {
+                    if (textDisplay) textDisplay.innerText = `Sampai ${formatDateToDMY(sVal)}`;
+                } else {
+                    if (textDisplay) textDisplay.innerText = 'Semua Tanggal';
+                }
+            }
+
+            function updateSummaryInputs() {
+                if (displayStart) displayStart.value = formatDateToDMY(selStart);
+                if (displayEnd) displayEnd.value = formatDateToDMY(selEnd || selStart);
+            }
+
+            function renderCalendar() {
+                if (!calTitle || !calDaysGrid) return;
+                calTitle.innerText = `${monthNamesIndo[activeMonth]} ${activeYear}`;
+                calDaysGrid.innerHTML = '';
+
+                let firstDayIndex = new Date(activeYear, activeMonth, 1).getDay();
+                let totalDaysInMonth = new Date(activeYear, activeMonth + 1, 0).getDate();
+                let prevMonthTotalDays = new Date(activeYear, activeMonth, 0).getDate();
+
+                // Prev month days
+                for (let x = firstDayIndex; x > 0; x--) {
+                    let dayNum = prevMonthTotalDays - x + 1;
+                    let el = document.createElement('div');
+                    el.className = 'py-1 text-muted opacity-25 small';
+                    el.innerText = dayNum;
+                    calDaysGrid.appendChild(el);
+                }
+
+                // Current month days
+                for (let i = 1; i <= totalDaysInMonth; i++) {
+                    let monthStr = String(activeMonth + 1).padStart(2, '0');
+                    let dayStr = String(i).padStart(2, '0');
+                    let ymd = `${activeYear}-${monthStr}-${dayStr}`;
+
+                    let el = document.createElement('div');
+                    el.className = 'py-1 rounded-2 small cursor-pointer day-cell fw-semibold';
+                    el.innerText = i;
+                    el.style.cursor = 'pointer';
+
+                    let isStart = (ymd === selStart);
+                    let isEnd = (ymd === (selEnd || selStart));
+                    let inRange = false;
+
+                    if (selStart && selEnd && ymd > selStart && ymd < selEnd) {
+                        inRange = true;
+                    }
+
+                    if (isStart || isEnd) {
+                        el.style.backgroundColor = '#DE8958';
+                        el.style.color = '#FFFFFF';
+                        el.classList.add('shadow-sm');
+                    } else if (inRange) {
+                        el.style.backgroundColor = '#FFF3E0';
+                        el.style.color = '#C87443';
+                    } else {
+                        el.classList.add('text-dark');
+                        el.addEventListener('mouseenter', () => el.style.backgroundColor = '#F1F5F9');
+                        el.addEventListener('mouseleave', () => el.style.backgroundColor = 'transparent');
+                    }
+
+                    el.addEventListener('click', function () {
+                        if (!selStart || (selStart && selEnd)) {
+                            selStart = ymd;
+                            selEnd = '';
+                        } else if (selStart && !selEnd) {
+                            if (ymd < selStart) {
+                                selEnd = selStart;
+                                selStart = ymd;
+                            } else {
+                                selEnd = ymd;
+                            }
+                        }
+                        updateSummaryInputs();
+                        renderCalendar();
+                    });
+
+                    calDaysGrid.appendChild(el);
+                }
+            }
+
+            function applyPreset(presetKey) {
+                let now = new Date();
+                let y = now.getFullYear();
+                let m = now.getMonth();
+                let d = now.getDate();
+                let dayOfWeek = now.getDay();
+
+                let startDate, endDate;
+
+                switch (presetKey) {
+                    case 'today':
+                        startDate = new Date(y, m, d);
+                        endDate = new Date(y, m, d);
+                        break;
+                    case 'yesterday':
+                        startDate = new Date(y, m, d - 1);
+                        endDate = new Date(y, m, d - 1);
+                        break;
+                    case 'this_week':
+                        let diffMon = d - (dayOfWeek === 0 ? 6 : dayOfWeek - 1);
+                        startDate = new Date(y, m, diffMon);
+                        endDate = new Date(y, m, diffMon + 6);
+                        break;
+                    case 'last_week':
+                        let diffLastMon = d - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) - 7;
+                        startDate = new Date(y, m, diffLastMon);
+                        endDate = new Date(y, m, diffLastMon + 6);
+                        break;
+                    case 'this_month':
+                        startDate = new Date(y, m, 1);
+                        endDate = new Date(y, m + 1, 0);
+                        break;
+                    case 'last_month':
+                        startDate = new Date(y, m - 1, 1);
+                        endDate = new Date(y, m, 0);
+                        break;
+                    case 'this_year':
+                        startDate = new Date(y, 0, 1);
+                        endDate = new Date(y, 11, 31);
+                        break;
+                    case 'last_year':
+                        startDate = new Date(y - 1, 0, 1);
+                        endDate = new Date(y - 1, 11, 31);
+                        break;
+                }
+
+                selStart = formatDateToYMD(startDate);
+                selEnd = formatDateToYMD(endDate);
+
+                activeYear = startDate.getFullYear();
+                activeMonth = startDate.getMonth();
+
+                document.querySelectorAll('#date-range-popover .btn-preset-range').forEach(b => {
+                    b.style.backgroundColor = '';
+                    b.style.color = '';
+                    b.classList.remove('text-white');
+                    b.classList.add('btn-outline-secondary');
+                });
+
+                let activeBtn = document.querySelector(`#date-range-popover .btn-preset-range[data-preset="${presetKey}"]`);
+                if (activeBtn) {
+                    activeBtn.classList.remove('btn-outline-secondary');
+                    activeBtn.style.backgroundColor = '#DE8958';
+                    activeBtn.style.color = '#FFFFFF';
+                }
+
+                updateSummaryInputs();
+                renderCalendar();
+            }
+
+            if (btnTrigger) {
+                btnTrigger.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    let isShowing = popover.style.display === 'block';
+                    popover.style.display = isShowing ? 'none' : 'block';
+                    if (!isShowing) {
+                        if (selStart) {
+                            let parts = selStart.split('-');
+                            if (parts.length === 3) {
+                                activeYear = parseInt(parts[0]);
+                                activeMonth = parseInt(parts[1]) - 1;
+                            }
+                        }
+                        updateSummaryInputs();
+                        renderCalendar();
+                    }
+                });
+            }
+
+            if (btnPrevMonth) {
+                btnPrevMonth.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    activeMonth--;
+                    if (activeMonth < 0) {
+                        activeMonth = 11;
+                        activeYear--;
+                    }
+                    renderCalendar();
+                });
+            }
+
+            if (btnNextMonth) {
+                btnNextMonth.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    activeMonth++;
+                    if (activeMonth > 11) {
+                        activeMonth = 0;
+                        activeYear++;
+                    }
+                    renderCalendar();
+                });
+            }
+
+            document.querySelectorAll('#date-range-popover .btn-preset-range').forEach(btn => {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    let key = this.dataset.preset;
+                    applyPreset(key);
+                });
+            });
+
+            if (btnApply) {
+                btnApply.addEventListener('click', function () {
+                    if (inputStart) inputStart.value = selStart;
+                    if (inputEnd) inputEnd.value = selEnd || selStart;
+                    updateTriggerDisplay();
+                    popover.style.display = 'none';
+                    document.getElementById('filterFormCk').submit();
+                });
+            }
+
+            if (btnReset) {
+                btnReset.addEventListener('click', function () {
+                    selStart = '';
+                    selEnd = '';
+                    if (inputStart) inputStart.value = '';
+                    if (inputEnd) inputEnd.value = '';
+                    updateSummaryInputs();
+                    updateTriggerDisplay();
+                    popover.style.display = 'none';
+                    document.getElementById('filterFormCk').submit();
+                });
+            }
+
+            if (popover) {
+                popover.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                });
+            }
+
+            document.addEventListener('click', function (e) {
+                if (popover && popover.style.display === 'block') {
+                    popover.style.display = 'none';
+                }
+            });
+
+            updateTriggerDisplay();
         });
     </script>
 </x-app-layout>

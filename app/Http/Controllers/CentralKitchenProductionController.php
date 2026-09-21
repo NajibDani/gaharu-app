@@ -30,6 +30,9 @@ class CentralKitchenProductionController extends Controller
 
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
+        $sort = $request->query('sort', 'latest');
+        $startDate = $request->query('start_date') ?: $request->query('dari');
+        $endDate = $request->query('end_date') ?: $request->query('sampai');
         $activeTab = $request->query('tab', 'pending');
 
         $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
@@ -47,10 +50,91 @@ class CentralKitchenProductionController extends Controller
             });
 
         if ($search) {
-            $queryWo->where('kode_wo', 'like', '%' . $search . '%');
+            $queryWo->where(function($q) use ($search) {
+                $q->where('kode_wo', 'like', '%' . $search . '%')
+                  ->orWhereHas('details.pesanan.customer', function($cq) use ($search) {
+                      $cq->where('nama', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('details.pesanan', function($pq) use ($search) {
+                      $pq->where('kode_pesanan', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('details.produk', function($prq) use ($search) {
+                      $prq->where('nama', 'like', '%' . $search . '%')
+                          ->orWhere('kode_barang', 'like', '%' . $search . '%');
+                  });
+            });
         }
 
-        $woList = $queryWo->latest()->paginate(10, ['*'], 'wo_page')->withQueryString();
+        if ($startDate) {
+            $queryWo->where(function($q) use ($startDate) {
+                $q->whereDate('tanggal_wo', '>=', $startDate)
+                  ->orWhere(function($sub) use ($startDate) {
+                      $sub->whereNull('tanggal_wo')->whereDate('created_at', '>=', $startDate);
+                  })
+                  ->orWhereHas('details.pesanan', function($pq) use ($startDate) {
+                      $pq->whereDate('tanggal', '>=', $startDate)
+                         ->orWhereDate('estimasi_kirim', '>=', $startDate);
+                  });
+            });
+        }
+
+        if ($endDate) {
+            $queryWo->where(function($q) use ($endDate) {
+                $q->whereDate('tanggal_wo', '<=', $endDate)
+                  ->orWhere(function($sub) use ($endDate) {
+                      $sub->whereNull('tanggal_wo')->whereDate('created_at', '<=', $endDate);
+                  })
+                  ->orWhereHas('details.pesanan', function($pq) use ($endDate) {
+                      $pq->whereDate('tanggal', '<=', $endDate)
+                         ->orWhereDate('estimasi_kirim', '<=', $endDate);
+                  });
+            });
+        }
+
+        switch ($sort) {
+            case 'a_z':
+            case 'outlet_asc':
+                $queryWo->orderBy(
+                    Pesanan::select('customer.nama')
+                        ->join('customer', 'pesanan.customer_id', '=', 'customer.id')
+                        ->join('work_order_detail', 'pesanan.id', '=', 'work_order_detail.pesanan_id')
+                        ->whereColumn('work_order_detail.work_order_id', 'work_order.id')
+                        ->limit(1),
+                    'asc'
+                );
+                break;
+
+            case 'z_a':
+            case 'outlet_desc':
+                $queryWo->orderBy(
+                    Pesanan::select('customer.nama')
+                        ->join('customer', 'pesanan.customer_id', '=', 'customer.id')
+                        ->join('work_order_detail', 'pesanan.id', '=', 'work_order_detail.pesanan_id')
+                        ->whereColumn('work_order_detail.work_order_id', 'work_order.id')
+                        ->limit(1),
+                    'desc'
+                );
+                break;
+
+            case 'tgl_terdekat':
+                $queryWo->orderByRaw('COALESCE(tanggal_wo, created_at) ASC')->orderBy('id', 'asc');
+                break;
+
+            case 'tgl_terjauh':
+                $queryWo->orderByRaw('COALESCE(tanggal_wo, created_at) DESC')->orderBy('id', 'desc');
+                break;
+
+            case 'oldest':
+                $queryWo->orderBy('id', 'asc');
+                break;
+
+            case 'latest':
+            default:
+                $queryWo->orderByRaw('COALESCE(tanggal_wo, created_at) DESC')->orderBy('id', 'desc');
+                break;
+        }
+
+        $woList = $queryWo->paginate(10, ['*'], 'wo_page')->withQueryString();
 
         // Hitung progress produksi, sisa kekurangan, dan ketersediaan bahan baku di Gudang CK
         $woList->getCollection()->transform(function($wo) use ($gudangCkId) {
@@ -255,8 +339,75 @@ class CentralKitchenProductionController extends Controller
             $pesananCkQuery->where('customer_id', $customerId);
         }
 
+        if ($search) {
+            $pesananCkQuery->where(function($q) use ($search) {
+                $q->where('kode_pesanan', 'like', '%' . $search . '%')
+                  ->orWhereHas('customer', function($cq) use ($search) {
+                      $cq->where('nama', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('details.produk', function($prq) use ($search) {
+                      $prq->where('nama', 'like', '%' . $search . '%')
+                          ->orWhere('kode_barang', 'like', '%' . $search . '%');
+                  });
+            });
+        }
+
+        if ($startDate) {
+            $pesananCkQuery->where(function($q) use ($startDate) {
+                $q->whereDate('tanggal', '>=', $startDate)
+                  ->orWhereDate('estimasi_kirim', '>=', $startDate)
+                  ->orWhereDate('created_at', '>=', $startDate);
+            });
+        }
+
+        if ($endDate) {
+            $pesananCkQuery->where(function($q) use ($endDate) {
+                $q->whereDate('tanggal', '<=', $endDate)
+                  ->orWhereDate('estimasi_kirim', '<=', $endDate)
+                  ->orWhereDate('created_at', '<=', $endDate);
+            });
+        }
+
+        switch ($sort) {
+            case 'a_z':
+            case 'outlet_asc':
+                $pesananCkQuery->orderBy(
+                    \App\Models\Customer::select('nama')
+                        ->whereColumn('customer.id', 'pesanan.customer_id')
+                        ->limit(1),
+                    'asc'
+                );
+                break;
+
+            case 'z_a':
+            case 'outlet_desc':
+                $pesananCkQuery->orderBy(
+                    \App\Models\Customer::select('nama')
+                        ->whereColumn('customer.id', 'pesanan.customer_id')
+                        ->limit(1),
+                    'desc'
+                );
+                break;
+
+            case 'tgl_terdekat':
+                $pesananCkQuery->orderByRaw('COALESCE(estimasi_kirim, tanggal, created_at) ASC')->orderBy('id', 'asc');
+                break;
+
+            case 'tgl_terjauh':
+                $pesananCkQuery->orderByRaw('COALESCE(estimasi_kirim, tanggal, created_at) DESC')->orderBy('id', 'desc');
+                break;
+
+            case 'oldest':
+                $pesananCkQuery->orderBy('id', 'asc');
+                break;
+
+            case 'latest':
+            default:
+                $pesananCkQuery->orderBy('estimasi_kirim', 'asc')->orderBy('id', 'desc');
+                break;
+        }
+
         $pesananCkPending = $pesananCkQuery
-            ->orderBy('estimasi_kirim', 'asc')
             ->paginate(10, ['*'], 'pesanan_page')
             ->withQueryString();
 
@@ -277,22 +428,84 @@ class CentralKitchenProductionController extends Controller
             'divisi'
         ])
             ->where(function($q) use ($customerId) {
-                $q->whereHas('pesanan', function($pq) use ($customerId) {
-                    $pq->where('tipe_pesanan', 'central_kitchen');
-                    if ($customerId) {
-                        $pq->where('customer_id', $customerId);
-                    }
-                });
-                if (!$customerId) {
-                    $q->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
+                if ($customerId) {
+                    $q->whereHas('pesanan', function($pq) use ($customerId) {
+                        $pq->where('tipe_pesanan', 'central_kitchen')
+                           ->where('customer_id', $customerId);
+                    });
+                } else {
+                    $q->whereHas('pesanan', function($pq) {
+                        $pq->where('tipe_pesanan', 'central_kitchen');
+                    })->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
                 }
             });
 
         if ($search) {
-            $queryProduksi->where('kode_produksi', 'like', '%' . $search . '%');
+            $queryProduksi->where(function($q) use ($search) {
+                $q->where('kode_produksi', 'like', '%' . $search . '%')
+                  ->orWhereHas('pesanan.customer', function($cq) use ($search) {
+                      $cq->where('nama', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('pesanan', function($pq) use ($search) {
+                      $pq->where('kode_pesanan', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('details.produk', function($prq) use ($search) {
+                      $prq->where('nama', 'like', '%' . $search . '%')
+                          ->orWhere('kode_barang', 'like', '%' . $search . '%');
+                  });
+            });
         }
 
-        $riwayatProduksi = $queryProduksi->orderBy('id', 'desc')->paginate(10, ['*'], 'prod_page')->withQueryString();
+        if ($startDate) {
+            $queryProduksi->whereDate('tanggal_produksi', '>=', $startDate);
+        }
+
+        if ($endDate) {
+            $queryProduksi->whereDate('tanggal_produksi', '<=', $endDate);
+        }
+
+        switch ($sort) {
+            case 'a_z':
+            case 'outlet_asc':
+                $queryProduksi->orderBy(
+                    \App\Models\Customer::select('nama')
+                        ->join('pesanan', 'customer.id', '=', 'pesanan.customer_id')
+                        ->whereColumn('pesanan.id', 'produksi.pesanan_id')
+                        ->limit(1),
+                    'asc'
+                );
+                break;
+
+            case 'z_a':
+            case 'outlet_desc':
+                $queryProduksi->orderBy(
+                    \App\Models\Customer::select('nama')
+                        ->join('customer', 'pesanan.customer_id', '=', 'customer.id')
+                        ->whereColumn('pesanan.id', 'produksi.pesanan_id')
+                        ->limit(1),
+                    'desc'
+                );
+                break;
+
+            case 'tgl_terdekat':
+                $queryProduksi->orderBy('tanggal_produksi', 'asc')->orderBy('id', 'asc');
+                break;
+
+            case 'tgl_terjauh':
+                $queryProduksi->orderBy('tanggal_produksi', 'desc')->orderBy('id', 'desc');
+                break;
+
+            case 'oldest':
+                $queryProduksi->orderBy('id', 'asc');
+                break;
+
+            case 'latest':
+            default:
+                $queryProduksi->orderBy('id', 'desc');
+                break;
+        }
+
+        $riwayatProduksi = $queryProduksi->paginate(10, ['*'], 'prod_page')->withQueryString();
 
         // Hitung ketersediaan bahan baku & resep untuk setiap draft riwayat produksi CK
         $riwayatProduksi->getCollection()->transform(function($prod) use ($gudangCkId) {
@@ -391,8 +604,13 @@ class CentralKitchenProductionController extends Controller
             });
         }
 
-        $stokBsjCk = $queryBsj->orderBy('nama', 'asc')
-            ->paginate(15, ['*'], 'bsj_page')
+        if (in_array($sort, ['z_a', 'outlet_desc'])) {
+            $queryBsj->orderBy('nama', 'desc');
+        } else {
+            $queryBsj->orderBy('nama', 'asc');
+        }
+
+        $stokBsjCk = $queryBsj->paginate(15, ['*'], 'bsj_page')
             ->withQueryString();
 
         $stokBsjCk->getCollection()->transform(function ($barang) use ($gudangCkId, $customerId) {
@@ -492,7 +710,11 @@ class CentralKitchenProductionController extends Controller
             'isSuperAdmin', 
             'canDeleteWo',
             'searchBsj',
-            'activeTab'
+            'activeTab',
+            'sort',
+            'startDate',
+            'endDate',
+            'search'
         ));
     }
 
