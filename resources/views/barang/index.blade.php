@@ -329,7 +329,7 @@
                             <label class="custom-label">Satuan Utama</label>
                             <input type="text" name="satuan" id="satuan_input_create" class="form-control custom-input @error('satuan') is-invalid @enderror" value="{{ old('satuan') }}" required placeholder="Contoh: kg, pcs, liter, ml, porsi">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            <small class="form-text text-danger d-none" id="satuan-helper-create">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.</small>
+                            <small class="form-text text-danger d-none" id="satuan-helper-create">Untuk Bahan Setengah Jadi, satuan dapat berupa gram (gr), mililiter (ml), porsi, atau pcs.</small>
                         </div>
 
                         <div class="col-md-6 mb-3">
@@ -704,7 +704,7 @@
                             <label class="custom-label">Satuan Utama</label>
                             <input type="text" name="satuan" id="editSatuan" class="form-control custom-input @error('satuan') is-invalid @enderror" required placeholder="Contoh: kg, pcs, liter, ml, porsi">
                             @error('satuan') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            <small class="form-text text-danger d-none" id="satuan-helper-edit">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.</small>
+                            <small class="form-text text-danger d-none" id="satuan-helper-edit">Untuk Bahan Setengah Jadi, satuan dapat berupa gram (gr), mililiter (ml), porsi, atau pcs.</small>
                         </div>
 
                         <div class="col-md-6 mb-3">

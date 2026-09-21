@@ -99,5 +99,22 @@ class BahanSetengahJadiSatuanTest extends TestCase
             'satuan' => 'PORSI',
             'is_bahan_setengah_jadi' => true,
         ]);
+
+        // Test PCS/pcs
+        $response4 = $this->post(route('barang.store'), [
+            'kategori_id' => $kategori->id,
+            'kode_barang' => 'BB-104',
+            'nama' => 'Test BSJ Pcs',
+            'jenis_utama' => 'BAHAN_SETENGAH_JADI',
+            'satuan' => 'pcs',
+            'minimum_stock_ck' => 10,
+        ]);
+
+        $response4->assertRedirect(route('barang.index'));
+        $this->assertDatabaseHas('master_barang', [
+            'kode_barang' => 'BB-104',
+            'satuan' => 'PCS',
+            'is_bahan_setengah_jadi' => true,
+        ]);
     }
 }

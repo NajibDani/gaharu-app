@@ -148,9 +148,9 @@ class BarangController extends Controller
 
         if ($request->jenis_utama === 'BAHAN_SETENGAH_JADI') {
             $request->validate([
-                'satuan' => 'required|in:gr,ml,porsi,GR,ML,PORSI,gram,mililiter,Gram,Mililiter,Porsi',
+                'satuan' => 'required|in:gr,ml,porsi,pcs,GR,ML,PORSI,PCS,gram,mililiter,Gram,Mililiter,Porsi,Pcs,piece,pieces,PIECE,PIECES',
             ], [
-                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.',
+                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), porsi, atau pcs.',
             ]);
             
             $satuanUpper = strtoupper(trim($request->satuan));
@@ -160,6 +160,8 @@ class BarangController extends Controller
                 $satuanUpper = 'ML';
             } elseif ($satuanUpper === 'PORSI') {
                 $satuanUpper = 'PORSI';
+            } elseif ($satuanUpper === 'PCS' || $satuanUpper === 'PIECE' || $satuanUpper === 'PIECES') {
+                $satuanUpper = 'PCS';
             }
             $request->merge(['satuan' => $satuanUpper]);
         }
@@ -300,9 +302,9 @@ class BarangController extends Controller
 
         if ($request->jenis_utama === 'BAHAN_SETENGAH_JADI') {
             $request->validate([
-                'satuan' => 'required|in:gr,ml,porsi,GR,ML,PORSI,gram,mililiter,Gram,Mililiter,Porsi',
+                'satuan' => 'required|in:gr,ml,porsi,pcs,GR,ML,PORSI,PCS,gram,mililiter,Gram,Mililiter,Porsi,Pcs,piece,pieces,PIECE,PIECES',
             ], [
-                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.',
+                'satuan.in' => 'Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), porsi, atau pcs.',
             ]);
             
             $satuanUpper = strtoupper(trim($request->satuan));
@@ -312,6 +314,8 @@ class BarangController extends Controller
                 $satuanUpper = 'ML';
             } elseif ($satuanUpper === 'PORSI') {
                 $satuanUpper = 'PORSI';
+            } elseif ($satuanUpper === 'PCS' || $satuanUpper === 'PIECE' || $satuanUpper === 'PIECES') {
+                $satuanUpper = 'PCS';
             }
             $request->merge(['satuan' => $satuanUpper]);
         }

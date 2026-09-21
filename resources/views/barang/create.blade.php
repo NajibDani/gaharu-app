@@ -47,7 +47,7 @@
                     <div class="col-md-6 mb-3">
                         <label class="fw-semibold small text-muted">Satuan Utama</label>
                         <input type="text" name="satuan" id="satuan" class="form-control" required placeholder="Contoh: kg, pcs, liter, gr, ml, porsi">
-                        <small class="form-text text-danger d-none" id="satuan-helper">Untuk Bahan Setengah Jadi, satuan harus berupa gram (gr), mililiter (ml), atau porsi.</small>
+                        <small class="form-text text-danger d-none" id="satuan-helper">Untuk Bahan Setengah Jadi, satuan dapat berupa gram (gr), mililiter (ml), porsi, atau pcs.</small>
                     </div>
 
                     <div class="col-md-6 mb-3">
