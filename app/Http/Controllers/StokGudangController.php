@@ -216,6 +216,9 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
+        // Bersihkan data transaksi yatim (orphan) agar saldo akurat 100%
+        self::autoCleanOrphanMutations();
+
         $query = MasterBarang::query()->with('kategori');
 
         if ($search) {
@@ -294,6 +297,9 @@ class StokGudangController extends Controller
         $divisiId  = $request->divisi_id;
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
+
+        // Auto-clean mutasi orphan untuk barang ini sebelum perhitungan mutasi
+        self::autoCleanOrphanMutations($barangId);
 
         $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
         $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
@@ -499,6 +505,8 @@ class StokGudangController extends Controller
 
                 $mutations[] = [
                     'id' => $row->id,
+                    'source_type' => $row->source_type,
+                    'source_id' => $row->source_id,
                     'tanggal_formatted' => date('d/m/Y H:i', strtotime($row->tanggal)),
                     'keterangan' => $keterangan,
                     'is_masuk' => $isMasuk,
@@ -1003,6 +1011,365 @@ class StokGudangController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menghapus permintaan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Bersihkan secara otomatis seluruh data transaksi yatim (orphan) di tabel transaksi_stok
+     * yang dokumen induknya (Pembelian, Pengeluaran, Penerimaan) sudah dihapus atau tidak valid.
+     */
+    public static function autoCleanOrphanMutations($barangId = null)
+    {
+        try {
+            // 1. Orphan Pembelian / Pembelian Batal (source_id tidak ada di tabel pembelian ATAU pembelian dibatalkan/dihapus)
+            $hasIsDeletedCol = \Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'is_deleted');
+            $orphanPembelianQuery = DB::table('transaksi_stok')
+                ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                ->whereNotNull('source_id')
+                ->where(function($q) use ($hasIsDeletedCol) {
+                    $q->whereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('pembelian')
+                          ->whereColumn('pembelian.id', 'transaksi_stok.source_id');
+                    })->orWhereExists(function($sub) use ($hasIsDeletedCol) {
+                        $sub->select(DB::raw(1))
+                          ->from('pembelian')
+                          ->whereColumn('pembelian.id', 'transaksi_stok.source_id')
+                          ->where(function($batalSub) use ($hasIsDeletedCol) {
+                              $batalSub->where('catatan_pembayaran', 'like', '[DELETED]%')
+                                       ->orWhere('catatan_pembayaran', 'like', '[BATAL]%')
+                                       ->orWhere('keterangan', 'like', '[BATAL]%');
+                              if ($hasIsDeletedCol) {
+                                  $batalSub->orWhere('is_deleted', true);
+                              }
+                          });
+                    });
+                });
+            if ($barangId) {
+                $orphanPembelianQuery->where('barang_id', $barangId);
+            }
+            $orphanPembelianQuery->delete();
+
+            // 2. Orphan Penerimaan Pembelian (source_id tidak ada di tabel penerimaan_pembelian)
+            $orphanRcvQuery = DB::table('transaksi_stok')
+                ->where('source_type', 'penerimaan_pembelian')
+                ->whereNotNull('source_id')
+                ->whereNotExists(function($q) {
+                    $q->select(DB::raw(1))
+                      ->from('penerimaan_pembelian')
+                      ->whereColumn('penerimaan_pembelian.id', 'transaksi_stok.source_id');
+                });
+            if ($barangId) {
+                $orphanRcvQuery->where('barang_id', $barangId);
+            }
+            $orphanRcvQuery->delete();
+
+            // 3. Orphan Pengeluaran Bahan Baku / Wasted (source_id tidak ada di tabel pengeluaran_bahan_baku)
+            $orphanPbkQuery = DB::table('transaksi_stok')
+                ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                ->whereNotNull('source_id')
+                ->whereNotExists(function($q) {
+                    $q->select(DB::raw(1))
+                      ->from('pengeluaran_bahan_baku')
+                      ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id');
+                });
+            if ($barangId) {
+                $orphanPbkQuery->where('barang_id', $barangId);
+            }
+            $orphanPbkQuery->delete();
+
+            // 4. Orphan Stok Gudang Batch yang pembelian_id-nya sudah tidak ada di tabel pembelian atau pembelian dibatalkan/dihapus
+            $orphanBatchQuery = DB::table('stok_gudang_batch')
+                ->whereNotNull('pembelian_id')
+                ->where(function($q) use ($hasIsDeletedCol) {
+                    $q->whereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('pembelian')
+                          ->whereColumn('pembelian.id', 'stok_gudang_batch.pembelian_id');
+                    })->orWhereExists(function($sub) use ($hasIsDeletedCol) {
+                        $sub->select(DB::raw(1))
+                          ->from('pembelian')
+                          ->whereColumn('pembelian.id', 'stok_gudang_batch.pembelian_id')
+                          ->where(function($batalSub) use ($hasIsDeletedCol) {
+                              $batalSub->where('catatan_pembayaran', 'like', '[DELETED]%')
+                                       ->orWhere('catatan_pembayaran', 'like', '[BATAL]%')
+                                       ->orWhere('keterangan', 'like', '[BATAL]%');
+                              if ($hasIsDeletedCol) {
+                                  $batalSub->orWhere('is_deleted', true);
+                              }
+                          });
+                    });
+                });
+            if ($barangId) {
+                $orphanBatchQuery->where('barang_id', $barangId);
+            }
+            $orphanBatchQuery->delete();
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoCleanOrphanMutations error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hapus 1 baris transaksi mutasi secara permanen langsung dari modal Buku Pembantu Persediaan.
+     */
+    public function deleteMutasiRow(Request $request)
+    {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
+
+        if (!$isSuperAdmin && !$isGudang) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menghapus mutasi transaksi ini.'
+            ], 403);
+        }
+
+        $mutasiId = $request->mutasi_id;
+        $barangId = $request->barang_id;
+
+        $tx = \App\Models\TransaksiStok::find($mutasiId);
+        if (!$tx) {
+            if ($barangId) {
+                self::autoCleanOrphanMutations($barangId);
+                \App\Models\StokGudang::reconcileStockSummary($barangId);
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$barangId);
+            }
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaksi sudah tidak ada atau telah dibersihkan.'
+            ]);
+        }
+
+        $targetBarangId = $tx->barang_id ?: $barangId;
+        $sourceType = strtolower($tx->source_type ?? '');
+        $sourceId = $tx->source_id;
+
+        try {
+            DB::transaction(function () use ($tx, $targetBarangId, $sourceType, $sourceId) {
+                // Skenario 1: Pembelian / Penerimaan Pembelian
+                if (in_array($sourceType, ['pembelian', 'pembelian_batal', 'penerimaan_pembelian'])) {
+                    $pembelianId = $sourceId;
+                    if ($sourceType === 'penerimaan_pembelian') {
+                        $rcv = \App\Models\PenerimaanPembelian::find($sourceId);
+                        if ($rcv) {
+                            $pembelianId = $rcv->pembelian_id;
+                        }
+                    }
+
+                    $pembelian = $pembelianId ? \App\Models\Pembelian::find($pembelianId) : null;
+
+                    if ($pembelian) {
+                        $details = \App\Models\PembelianDetail::where('pembelian_id', $pembelian->id)->get();
+                        $targetDetails = $details->where('barang_id', $targetBarangId);
+
+                        // Hapus batches & kurangi stok gudang
+                        $batches = \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)
+                            ->where('barang_id', $targetBarangId)
+                            ->get();
+
+                        foreach ($batches as $b) {
+                            if ($b->qty_masuk > 0) {
+                                $stokGudang = \App\Models\StokGudang::where('barang_id', $b->barang_id)
+                                    ->where('gudang_id', $b->gudang_id)
+                                    ->when($b->divisi_id, fn($q) => $q->where('divisi_id', $b->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                    ->lockForUpdate()
+                                    ->first();
+                                if ($stokGudang) {
+                                    $stokGudang->decrement('jumlah', (float) $b->qty_masuk);
+                                }
+                            }
+                            $b->delete();
+                        }
+
+                        // Hapus penerimaan detail terkait
+                        foreach ($targetDetails as $td) {
+                            $rcvDetails = \App\Models\PenerimaanPembelianDetail::where('pembelian_detail_id', $td->id)->get();
+                            foreach ($rcvDetails as $rcvD) {
+                                $headerId = $rcvD->penerimaan_pembelian_id;
+                                $rcvD->delete();
+                                if (\App\Models\PenerimaanPembelianDetail::where('penerimaan_pembelian_id', $headerId)->count() === 0) {
+                                    \App\Models\PenerimaanPembelian::where('id', $headerId)->delete();
+                                }
+                            }
+                        }
+
+                        // Hapus transaksi stok pembelian & pembelian_batal terkait
+                        \App\Models\TransaksiStok::where('barang_id', $targetBarangId)
+                            ->where('source_id', $pembelian->id)
+                            ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                            ->delete();
+
+                        // Hapus jurnal & pembayaran terkait pembelian ini
+                        $jurnalList = DB::table('jurnal_pembelian')
+                            ->where('source_type', 'pembelian')
+                            ->where('source_id', $pembelian->id)
+                            ->get();
+                        foreach ($jurnalList as $jp) {
+                            DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_pembelian')->delete();
+                            DB::table('jurnal_pembelian')->where('id', $jp->id)->delete();
+                        }
+                        \App\Models\Pembayaran::where('pembelian_id', $pembelian->id)->delete();
+
+                        // Tandai pembelian sebagai Dihapus / Dibatalkan agar tetap tercatat di menu pembelian
+                        // Menggunakan catatan_pembayaran dengan format [DELETED] sehingga bekerja tanpa migrasi DB
+                        $deletedNote = '[DELETED] Dihapus pada ' . now()->format('d/m/Y H:i') . ' melalui Buku Pembantu Persediaan oleh ' . (auth()->user()->nama ?? auth()->user()->name ?? 'Pengguna');
+                        $updateData = [
+                            'catatan_pembayaran' => $deletedNote,
+                        ];
+
+                        if (\Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'is_deleted')) {
+                            $updateData['is_deleted']   = true;
+                            $updateData['deleted_at']   = now();
+                            $updateData['deleted_by']   = auth()->id();
+                            $updateData['alasan_batal'] = 'Dihapus melalui Buku Pembantu Persediaan';
+                        }
+
+                        $pembelian->update($updateData);
+                    } else {
+                        // Orphan row pembelian
+                        if ($pembelianId) {
+                            \App\Models\TransaksiStok::where('source_id', $pembelianId)
+                                ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                                ->delete();
+                            \App\Models\StokGudangBatch::where('pembelian_id', $pembelianId)->delete();
+                        }
+                    }
+                }
+                // Skenario 2: Pengeluaran Bahan Baku / Wasted
+                elseif (in_array($sourceType, ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])) {
+                    $pbk = $sourceId ? \App\Models\PengeluaranBahanBaku::with('details')->find($sourceId) : null;
+                    if ($pbk) {
+                        $isApproved = in_array(strtolower($pbk->status), ['approved', 'disetujui']);
+                        $isOpnameOrWasted = str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-SO-') 
+                            || $pbk->jenis_pengeluaran === 'wasted' 
+                            || str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-WST-');
+                        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
+                        $gudangAsalId = $gudangUtama ? $gudangUtama->id : 2;
+
+                        $targetDetails = $pbk->details->where('barang_id', $targetBarangId);
+
+                        foreach ($targetDetails as $detail) {
+                            if ($isApproved) {
+                                $asalId = $isOpnameOrWasted ? $pbk->gudang_id : $gudangAsalId;
+                                $asalDivisiId = $isOpnameOrWasted ? $pbk->divisi_id : null;
+
+                                $stokAsal = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
+                                    ->where('gudang_id', $asalId)
+                                    ->when($asalDivisiId, fn($q) => $q->where('divisi_id', $asalDivisiId), fn($q) => $q->whereNull('divisi_id'))
+                                    ->lockForUpdate()
+                                    ->first();
+                                if ($stokAsal) {
+                                    $stokAsal->increment('jumlah', (float)$detail->qty);
+                                }
+
+                                $fifoRecords = \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pbk->id)
+                                    ->where('detail_id', $detail->id)
+                                    ->get();
+                                foreach ($fifoRecords as $fifo) {
+                                    $batch = \App\Models\StokGudangBatch::find($fifo->batch_id);
+                                    if ($batch) {
+                                        $batch->qty_keluar = max(0, $batch->qty_keluar - $fifo->qty_keluar);
+                                        $batch->qty_sisa   += $fifo->qty_keluar;
+                                        $batch->is_habis   = false;
+                                        $batch->save();
+                                    }
+                                    $fifo->delete();
+                                }
+
+                                if (!$isOpnameOrWasted && $pbk->gudang_id) {
+                                    $stokTujuan = \App\Models\StokGudang::where('barang_id', $detail->barang_id)
+                                        ->where('gudang_id', $pbk->gudang_id)
+                                        ->when($pbk->divisi_id, fn($q) => $q->where('divisi_id', $pbk->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                        ->lockForUpdate()
+                                        ->first();
+                                    if ($stokTujuan) {
+                                        $stokTujuan->decrement('jumlah', min((float)$stokTujuan->jumlah, (float)$detail->qty));
+                                    }
+                                }
+
+                                \App\Models\TransaksiStok::where('source_id', $pbk->id)
+                                    ->where('barang_id', $detail->barang_id)
+                                    ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                                    ->delete();
+                            }
+                            $detail->delete();
+                        }
+
+                        if ($pbk->details()->count() === 0) {
+                            $jps = DB::table('jurnal_penyesuaian')->where('source_type', 'pengeluaran_bahan_baku')->where('source_id', $pbk->id)->pluck('id');
+                            if ($jps->isNotEmpty()) {
+                                DB::table('journal_items')->whereIn('journal_id', $jps)->where('journal_type', 'jurnal_penyesuaian')->delete();
+                                DB::table('jurnal_penyesuaian')->whereIn('id', $jps)->delete();
+                            }
+                            $pbk->delete();
+                        }
+                    } else {
+                        if ($sourceId) {
+                            \App\Models\TransaksiStok::where('source_id', $sourceId)
+                                ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                                ->delete();
+                        }
+                    }
+                }
+
+                // Hapus transaksi stok ini
+                $tx->delete();
+
+                // Bersihkan orphan mutasi jika ada
+                self::autoCleanOrphanMutations($targetBarangId);
+
+                // Rekonsiliasi & Sinkronisasi
+                \App\Models\StokGudang::reconcileStockSummary($targetBarangId);
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$targetBarangId);
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaksi berhasil dihapus secara permanen dan persediaan telah disinkronkan.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus mutasi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Endpoint untuk melakukan sinkronisasi dan refresh menyeluruh pada Buku Pembantu Persediaan.
+     */
+    public function syncRefreshBukuPembantu(Request $request)
+    {
+        $barangId = $request->barang_id;
+        $gudangId = $request->gudang_id;
+        $divisiId = $request->divisi_id;
+
+        try {
+            // 1. Auto-clean orphaned transactions
+            self::autoCleanOrphanMutations($barangId);
+
+            // 2. Auto-heal SO prematur
+            $this->autoHealPrematureDraftSoMutations($barangId);
+
+            // 3. Reconcile stok gudang
+            if ($barangId) {
+                MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
+                \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$barangId);
+            } else {
+                \App\Models\StokGudang::reconcileStockSummary();
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Buku Pembantu Persediaan berhasil disegarkan dan seluruh stok telah disinkronkan 100%.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menyinkronkan data: ' . $e->getMessage()
             ], 500);
         }
     }

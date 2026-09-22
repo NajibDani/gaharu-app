@@ -49,6 +49,45 @@ class Pembelian extends Model
 
     public $timestamps = false;
 
+    /**
+     * Accessor untuk status apakah transaksi pembelian ini telah dihapus/dibatalkan.
+     * Bekerja 100% menggunakan kolom database yang sudah ada (catatan_pembayaran/keterangan)
+     * tanpa memerlukan migrasi atau perubahan skema database di server hosting.
+     */
+    public function getIsDeletedAttribute(): bool
+    {
+        if (isset($this->attributes['is_deleted']) && $this->attributes['is_deleted']) {
+            return true;
+        }
+        $catatan = (string) ($this->attributes['catatan_pembayaran'] ?? '');
+        if (str_starts_with($catatan, '[DELETED]') || str_starts_with($catatan, '[BATAL]')) {
+            return true;
+        }
+        $keterangan = (string) ($this->attributes['keterangan'] ?? '');
+        if (str_starts_with($keterangan, '[BATAL]') || str_starts_with($keterangan, '[DELETED]')) {
+            return true;
+        }
+        return false;
+    }
+
+    public function isDeleted(): bool
+    {
+        return $this->getIsDeletedAttribute();
+    }
+
+    public function getAlasanBatalAttribute(): ?string
+    {
+        if (isset($this->attributes['alasan_batal']) && !empty($this->attributes['alasan_batal'])) {
+            return $this->attributes['alasan_batal'];
+        }
+        $catatan = (string) ($this->attributes['catatan_pembayaran'] ?? '');
+        if (str_starts_with($catatan, '[DELETED]') || str_starts_with($catatan, '[BATAL]')) {
+            $parts = explode(']', $catatan, 2);
+            return isset($parts[1]) ? trim($parts[1]) : 'Dihapus';
+        }
+        return null;
+    }
+
     
 
     /*

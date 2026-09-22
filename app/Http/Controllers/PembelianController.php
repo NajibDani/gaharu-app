@@ -999,21 +999,13 @@ class PembelianController extends Controller
                         // Kurangi stok sebesar qty_masuk yang pernah di-inbox dari pembelian ini
                         $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
                     }
-
-                    // Catat mutasi stok keluar (koreksi pembatalan pembelian)
-                    \App\Models\TransaksiStok::create([
-                        'tanggal'        => $pembelian->tanggal,
-                        'tipe'           => 'keluar',
-                        'source_type'    => 'pembelian_batal',
-                        'source_id'      => $pembelian->id,
-                        'gudang_asal_id' => $batch->gudang_id,
-                        'barang_id'      => $batch->barang_id,
-                        'qty'            => (float) $batch->qty_masuk,
-                        'total_harga'    => (float) ($batch->qty_masuk * $batch->harga_per_qty),
-                        'created_by'     => auth()->id() ?? 1,
-                    ]);
                 }
             }
+
+            // Hapus mutasi TransaksiStok terkait pembelian ini secara permanen
+            \App\Models\TransaksiStok::where('source_id', $pembelian->id)
+                ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                ->delete();
 
             // Hapus batch
             \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)->delete();
@@ -1043,13 +1035,26 @@ class PembelianController extends Controller
             // 3. Hapus Pembayaran
             \App\Models\Pembayaran::where('pembelian_id', $pembelian->id)->delete();
 
-            // 4. Hapus Detail & Header Pembelian
-            $pembelian->details()->delete();
-            $pembelian->delete();
+            // 4. Tandai status pembelian sebagai Dihapus / Dibatalkan agar tetap tercatat sebagai riwayat
+            // Menggunakan catatan_pembayaran dengan format [DELETED] sehingga bekerja tanpa perlu migrasi DB
+            $deletedNote = '[DELETED] Dihapus pada ' . now()->format('d/m/Y H:i') . ' oleh ' . (auth()->user()->nama ?? auth()->user()->name ?? 'Pengguna');
+            $updateData = [
+                'catatan_pembayaran' => $deletedNote,
+            ];
 
-            // 5. SINKRONISASI HPP BARANG SESUAI FIFO SETELAH PEMBELIAN DIHAPUS
+            if (\Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'is_deleted')) {
+                $updateData['is_deleted']   = true;
+                $updateData['deleted_at']   = now();
+                $updateData['deleted_by']   = auth()->id();
+                $updateData['alasan_batal'] = 'Dihapus oleh ' . (auth()->user()->nama ?? 'Pengguna');
+            }
+
+            $pembelian->update($updateData);
+
+            // 5. Rekonsiliasi stok & SINKRONISASI HPP BARANG SESUAI FIFO SETELAH PEMBELIAN DIHAPUS
             $fifoService = app(\App\Services\FifoService::class);
             foreach ($affectedBarangIds as $barangId) {
+                \App\Models\StokGudang::reconcileStockSummary($barangId);
                 $fifoService->syncBarangHpp($barangId);
             }
         });

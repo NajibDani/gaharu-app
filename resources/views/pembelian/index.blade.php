@@ -227,8 +227,19 @@
     
                             $adaKekurangan = $kekurangan > 0 && !$item->is_lunas;
                         @endphp
-                        <tr>
-                            <td class="font-monospace" style="font-size:12px;">{{ $item->kode_pembelian }}</td>
+                        <tr class="{{ $item->is_deleted ? 'table-danger bg-danger-subtle' : '' }}" style="{{ $item->is_deleted ? 'background-color: #fdf2f2 !important; opacity: 0.9;' : '' }}">
+                            <td class="font-monospace" style="font-size:12px;">
+                                @if($item->is_deleted)
+                                    <span class="text-danger text-decoration-line-through fw-bold">{{ $item->kode_pembelian }}</span>
+                                    <div class="mt-1">
+                                        <span class="badge bg-danger shadow-sm" style="font-size:10px;">
+                                            <i class="bi bi-x-circle me-1"></i>Dihapus
+                                        </span>
+                                    </div>
+                                @else
+                                    {{ $item->kode_pembelian }}
+                                @endif
+                            </td>
                             <td>{{ \Carbon\Carbon::parse($item->tanggal)->format('d M Y') }}</td>
                             <td>{{ $item->supplier->nama ?? '-' }}</td>
                             <td>{{ $item->gudang->nama ?? '-' }}</td>
@@ -242,12 +253,18 @@
     
                             {{-- TOTAL --}}
                             <td class="text-end fw-semibold">
-                                Rp {{ number_format($item->total, 0, ',', '.') }}
+                                @if($item->is_deleted)
+                                    <span class="text-decoration-line-through text-muted">Rp {{ number_format($item->total, 0, ',', '.') }}</span>
+                                @else
+                                    Rp {{ number_format($item->total, 0, ',', '.') }}
+                                @endif
                             </td>
     
                             {{-- KEKURANGAN --}}
                             <td class="text-end">
-                                @if(!$item->metode_pembayaran)
+                                @if($item->is_deleted)
+                                    <span class="badge bg-secondary" style="font-size:10px;">Dibatalkan</span>
+                                @elseif(!$item->metode_pembayaran)
                                     <span class="text-muted" style="font-size:11px;">—</span>
                                 @elseif($item->metode_pembayaran === 'cod' || $item->is_lunas)
                                     <span class="badge bg-success" style="font-size:11px;">Lunas</span>
@@ -267,7 +284,9 @@
                                     $isSuperAdmin = $user && $user->isSuperAdmin();
                                 @endphp
 
-                                @if($item->metode_pembayaran)
+                                @if($item->is_deleted)
+                                    <span class="badge bg-secondary" style="font-size:11px;">Dibatalkan</span>
+                                @elseif($item->metode_pembayaran)
                                     @php
                                         $labelMetode = match($item->metode_pembayaran) {
                                             'cod'    => ['text' => 'COD', 'class' => 'bg-success'],
@@ -340,7 +359,9 @@
                                     $isPartiallyReceived = $totalReceived > 0 && $totalReceived < $totalQty;
                                 @endphp
 
-                                @if($item->is_diterima)
+                                @if($item->is_deleted)
+                                    <span class="badge bg-secondary" style="font-size:11px;">Dibatalkan</span>
+                                @elseif($item->is_diterima)
                                     <div class="d-flex flex-column align-items-center">
                                         <span class="badge bg-success">✓ Diterima</span>
                                         <small class="text-muted mt-1" style="font-size:10px;">
@@ -376,7 +397,7 @@
                             {{-- AKSI --}}
                             <td class="text-center" style="width: 140px; white-space: nowrap;">
                                 <div class="d-inline-flex align-items-center justify-content-center gap-1">
-                                    {{-- Detail --}}
+                                    {{-- Detail (Selalu aktif sebagai dasar informasi histori) --}}
                                     <button type="button"
                                             class="btn btn-sm btn-info text-white rounded-2 px-2 py-1"
                                             onclick="bukaModalDetail({{ $item->id }})"
@@ -384,67 +405,77 @@
                                         <i class="bi bi-eye"></i>
                                     </button>
 
-                                    {{-- Cetak PO --}}
-                                    <a href="{{ route('pembelian.cetak-pdf', $item->id) }}"
-                                       class="btn btn-sm btn-danger text-white rounded-2 px-2 py-1"
-                                       target="_blank" title="Cetak PO (PDF)">
-                                        <i class="bi bi-printer"></i>
-                                    </a>
-
-                                    @php
-                                        $user = auth()->user();
-                                        $isSuperAdmin = $user && $user->isSuperAdmin();
-                                        $isGudangUser = $user && $user->isGudang();
-                                        $bisaEditHapusBelumTerkunci = $isSuperAdmin || $isGudangUser;
-                                    @endphp
-
-                                    @if(!$item->isTerkunci())
-                                        {{-- JIKA BELUM DITERIMA / DIBAYAR (User Gudang & Super Admin) --}}
-                                        @if($bisaEditHapusBelumTerkunci)
-                                            {{-- Edit --}}
-                                            <button type="button"
-                                                    class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
-                                                    onclick="bukaModalEdit({{ $item->id }})"
-                                                    title="Edit Pembelian">
-                                                <i class="bi bi-pencil-square"></i>
-                                            </button>
-
-                                            {{-- Hapus --}}
-                                            <form action="{{ route('pembelian.destroy', $item->id) }}"
-                                                  method="POST" class="d-inline"
-                                                  onsubmit="return confirm('Yakin ingin menghapus transaksi pembelian {{ $item->kode_pembelian }}?')">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit"
-                                                        class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
-                                                        title="Hapus Pembelian">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        @endif
+                                    @if($item->is_deleted)
+                                        {{-- JIKA SUDAH DIHAPUS: DISABLE SELURUH AKSI --}}
+                                        <button type="button"
+                                                class="btn btn-sm btn-secondary text-white rounded-2 px-2 py-1"
+                                                disabled
+                                                title="Aksi dinonaktifkan karena transaksi pembelian ini telah dihapus.">
+                                            <i class="bi bi-slash-circle"></i>
+                                        </button>
                                     @else
-                                        {{-- JIKA SUDAH DIBAYAR ATAU DITERIMA (KHUSUS SUPER ADMIN) --}}
-                                        @if($isSuperAdmin)
-                                            {{-- Edit (Khusus Super Admin) --}}
-                                            <button type="button"
-                                                    class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
-                                                    onclick="bukaModalEdit({{ $item->id }})"
-                                                    title="Edit Pembelian (Khusus Super Admin)">
-                                                <i class="bi bi-pencil-square"></i>
-                                            </button>
+                                        {{-- Cetak PO --}}
+                                        <a href="{{ route('pembelian.cetak-pdf', $item->id) }}"
+                                           class="btn btn-sm btn-danger text-white rounded-2 px-2 py-1"
+                                           target="_blank" title="Cetak PO (PDF)">
+                                            <i class="bi bi-printer"></i>
+                                        </a>
 
-                                            {{-- Hapus & Rollback (Khusus Super Admin) --}}
-                                            <form action="{{ route('pembelian.destroy', $item->id) }}"
-                                                  method="POST" class="d-inline"
-                                                  onsubmit="return confirm('PERINGATAN SUPER ADMIN:\n\nTransaksi {{ $item->kode_pembelian }} sudah diterima/lunas. Menghapus transaksi ini akan ME-ROLLBACK / MENGURANGI stok gudang, menghapus batch FIFO terkait, dan menghapus jurnal akuntansi pembelian.\n\nApakah Anda yakin ingin melanjutkan penghapusan?')">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit"
-                                                        class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
-                                                        title="Hapus & Rollback Stok (Super Admin)">
-                                                    <i class="bi bi-trash"></i>
+                                        @php
+                                            $user = auth()->user();
+                                            $isSuperAdmin = $user && $user->isSuperAdmin();
+                                            $isGudangUser = $user && $user->isGudang();
+                                            $bisaEditHapusBelumTerkunci = $isSuperAdmin || $isGudangUser;
+                                        @endphp
+
+                                        @if(!$item->isTerkunci())
+                                            {{-- JIKA BELUM DITERIMA / DIBAYAR (User Gudang & Super Admin) --}}
+                                            @if($bisaEditHapusBelumTerkunci)
+                                                {{-- Edit --}}
+                                                <button type="button"
+                                                        class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
+                                                        onclick="bukaModalEdit({{ $item->id }})"
+                                                        title="Edit Pembelian">
+                                                    <i class="bi bi-pencil-square"></i>
                                                 </button>
-                                            </form>
+
+                                                {{-- Hapus --}}
+                                                <form action="{{ route('pembelian.destroy', $item->id) }}"
+                                                      method="POST" class="d-inline"
+                                                      onsubmit="return confirm('yakin untuk menghapus pembelian {{ $item->kode_pembelian }}?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit"
+                                                            class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
+                                                            title="Hapus Pembelian">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            @endif
+                                        @else
+                                            {{-- JIKA SUDAH DIBAYAR ATAU DITERIMA (KHUSUS SUPER ADMIN) --}}
+                                            @if($isSuperAdmin)
+                                                {{-- Edit (Khusus Super Admin) --}}
+                                                <button type="button"
+                                                        class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
+                                                        onclick="bukaModalEdit({{ $item->id }})"
+                                                        title="Edit Pembelian (Khusus Super Admin)">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
+
+                                                {{-- Hapus & Rollback (Khusus Super Admin) --}}
+                                                <form action="{{ route('pembelian.destroy', $item->id) }}"
+                                                      method="POST" class="d-inline"
+                                                      onsubmit="return confirm('PERINGATAN SUPER ADMIN:\n\nTransaksi {{ $item->kode_pembelian }} sudah diterima/lunas. Menghapus transaksi ini akan ME-ROLLBACK / MENGURANGI stok gudang, menghapus batch FIFO terkait, dan membatalkan status pembelian.\n\nApakah Anda yakin untuk menghapus pembelian?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit"
+                                                            class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
+                                                            title="Hapus & Rollback Stok (Super Admin)">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            @endif
                                         @endif
                                     @endif
                                 </div>

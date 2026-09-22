@@ -88,7 +88,10 @@
                         </div>
                     </div>
 
-                    <div class="d-flex justify-content-end mt-3 gap-2">
+                    <div class="d-flex justify-content-end mt-3 gap-2 flex-wrap">
+                        <button type="button" class="btn btn-outline-success fw-semibold px-3 min-hitbox d-inline-flex align-items-center justify-content-center shadow-sm" id="btnSyncAllPage" style="border-radius: 8px;">
+                            <i class="bi bi-arrow-repeat me-1"></i> Sinkronkan & Refresh
+                        </button>
                         <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="btn btn-light border fw-semibold px-4 min-hitbox d-inline-flex align-items-center justify-content-center" style="border-radius: 8px;">
                             <i class="bi bi-arrow-counterclockwise me-1"></i> Reset
                         </a>
@@ -201,6 +204,9 @@
                         <p class="text-white-50 mb-0 font-monospace" style="font-size: 12px;" id="modalBarangSubtitle"></p>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-inline-flex align-items-center" id="btnRefreshMutasiModal" style="font-size: 11px;">
+                            <i class="bi bi-arrow-clockwise me-1"></i> Refresh Data
+                        </button>
                         <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-none d-md-inline-flex align-items-center" onclick="document.getElementById('btnResetPembelianModal').click();" style="font-size: 11px;">
                             <i class="bi bi-trash3 me-1 text-danger-emphasis bg-white rounded-circle p-0.5"></i> Hapus Pembelian
                         </button>
@@ -249,7 +255,7 @@
 
                     <!-- TABLE CONTENT -->
                     <div id="tableState" class="table-responsive d-none bg-white rounded-3 shadow-sm border border-light">
-                        <table class="table table-bordered align-middle mb-0" style="min-width: 950px; font-size: 13px;">
+                        <table class="table table-bordered align-middle mb-0" style="min-width: 980px; font-size: 13px;">
                             <thead class="table-light text-secondary text-uppercase fw-bold" style="font-size: 11px;">
                                 <tr>
                                     <th rowspan="2" class="text-center align-middle" width="100">Tanggal</th>
@@ -257,6 +263,7 @@
                                     <th colspan="3" class="text-center table-success py-2">Masuk (IN)</th>
                                     <th colspan="3" class="text-center table-danger py-2">Keluar (OUT)</th>
                                     <th colspan="2" class="text-center table-primary py-2">Saldo Persediaan</th>
+                                    <th rowspan="2" class="text-center align-middle text-danger" width="60">Aksi</th>
                                 </tr>
                                 <tr>
                                     <!-- Masuk -->
@@ -280,6 +287,9 @@
                 </div>
                 <div class="modal-footer border-0 px-4 py-3 bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <button type="button" class="btn btn-outline-success btn-sm fw-semibold shadow-sm px-3" id="btnRefreshMutasiModalFooter" style="border-radius: 8px;">
+                            <i class="bi bi-arrow-clockwise me-1"></i> Refresh Data Mutasi
+                        </button>
                         <button type="button" class="btn btn-outline-danger btn-sm fw-semibold shadow-sm px-3" id="btnResetPembelianModal" style="border-radius: 8px;">
                             <i class="bi bi-trash3-fill me-1"></i> Hapus Semua Pembelian
                         </button>
@@ -297,7 +307,8 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function () {
-            const modal = new bootstrap.Modal(document.getElementById('modalMutasi'));
+            const modalEl = document.getElementById('modalMutasi');
+            const modal = new bootstrap.Modal(modalEl);
             const modalTitle = document.getElementById('modalBarangTitle');
             const modalSubtitle = document.getElementById('modalBarangSubtitle');
             const infoGudang = document.getElementById('infoGudangText');
@@ -309,12 +320,18 @@
             const tableState = document.getElementById('tableState');
             const tbodyMutasi = document.getElementById('tbodyMutasi');
 
+            let activeBarangId = null;
+            let activeBarangNama = '';
+            let activeBarangKode = '';
+            let activeBarangSatuan = '';
+            let activeSatBeli = '';
+            let activeKonversi = 1;
+
             // Format Currency
             function formatIDR(num) {
                 if (num === null || num === undefined) return 'Rp 0';
                 const val = Number(num);
                 if (val === 0) return 'Rp 0';
-                // Jika nilai di bawah 1 atau pecahan kecil non-bulat, tampilkan hingga 4 digit desimal agar tidak terpotong menjadi Rp 0
                 const maxDecimals = (Math.abs(val) < 1 || (val % 1 !== 0 && Math.abs(val) < 100)) ? 4 : 2;
                 return 'Rp ' + val.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDecimals });
             }
@@ -325,130 +342,134 @@
                 return Number(num).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxDec });
             }
 
-            document.querySelectorAll('.btn-detail-mutasi').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    const barangId = this.dataset.barangId;
-                    const nama = this.dataset.barangNama;
-                    const kode = this.dataset.barangKode;
-                    const satuan = this.dataset.barangSatuan;
-                    const satBeli = this.dataset.satuanPembelian || '';
-                    const konversi = parseFloat(this.dataset.konversiPembelian) || 1;
+            function escapeHtml(text) {
+                if (!text) return '';
+                const map = {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                };
+                return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+            }
 
-                    // Ambil nilai filter saat ini
-                    const form = document.getElementById('formFilter');
-                    const gudangSelect = form.querySelector('[name="gudang_id"]');
-                    const divisiSelect = form.querySelector('[name="divisi_id"]');
-                    const startDateInput = form.querySelector('[name="start_date"]');
-                    const endDateInput = form.querySelector('[name="end_date"]');
+            function loadMutasiData(showSpinner = true) {
+                if (!activeBarangId) return;
 
-                    const gudangId = gudangSelect ? gudangSelect.value : '';
-                    const divisiId = divisiSelect ? divisiSelect.value : '';
-                    const start_date = startDateInput.value;
-                    const end_date = endDateInput.value;
+                const form = document.getElementById('formFilter');
+                const gudangSelect = form.querySelector('[name="gudang_id"]');
+                const divisiSelect = form.querySelector('[name="divisi_id"]');
+                const startDateInput = form.querySelector('[name="start_date"]');
+                const endDateInput = form.querySelector('[name="end_date"]');
 
-                    // Update Teks Info Header Modal
-                    modalTitle.textContent = nama;
-                    modalSubtitle.textContent = 'Kode Barang: ' + kode;
-                    
-                    let lokasiText = 'Semua Gudang';
+                const gudangId = gudangSelect ? gudangSelect.value : '';
+                const divisiId = divisiSelect ? divisiSelect.value : '';
+                const start_date = startDateInput.value;
+                const end_date = endDateInput.value;
+
+                // Update Teks Info Header Modal
+                modalTitle.textContent = activeBarangNama;
+                modalSubtitle.textContent = 'Kode Barang: ' + activeBarangKode;
+                
+                let lokasiText = 'Semua Gudang';
+                if (gudangSelect && gudangSelect.value) {
+                    lokasiText = gudangSelect.options[gudangSelect.selectedIndex].text;
+                }
+                if (divisiSelect && divisiSelect.value) {
+                    const divText = divisiSelect.options[divisiSelect.selectedIndex].text;
                     if (gudangSelect && gudangSelect.value) {
-                        lokasiText = gudangSelect.options[gudangSelect.selectedIndex].text;
-                    }
-                    if (divisiSelect && divisiSelect.value) {
-                        const divText = divisiSelect.options[divisiSelect.selectedIndex].text;
-                        if (gudangSelect && gudangSelect.value) {
-                            lokasiText += ' - ' + divText;
-                        } else {
-                            lokasiText = divText;
-                        }
-                    }
-                    infoGudang.textContent = lokasiText;
-                    
-                    const formatTgl = (tgl) => {
-                        const parts = tgl.split('-');
-                        if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-                        return tgl;
-                    };
-                    infoPeriode.textContent = formatTgl(start_date) + ' s/d ' + formatTgl(end_date);
-                    infoSatuan.textContent = satuan;
-
-                    if (satBeli && konversi > 1) {
-                        infoSatuanBeli.innerHTML = `${satBeli} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${satBeli} = ${formatNumber(konversi, 0)} ${satuan})</small>`;
+                        lokasiText += ' - ' + divText;
                     } else {
-                        infoSatuanBeli.textContent = satBeli ? satBeli : satuan;
+                        lokasiText = divText;
                     }
+                }
+                infoGudang.textContent = lokasiText;
+                
+                const formatTgl = (tgl) => {
+                    const parts = tgl.split('-');
+                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                    return tgl;
+                };
+                infoPeriode.textContent = formatTgl(start_date) + ' s/d ' + formatTgl(end_date);
+                infoSatuan.textContent = activeBarangSatuan;
 
-                    // Tampilkan Spinner & Sembunyikan Tabel
+                if (activeSatBeli && activeKonversi > 1) {
+                    infoSatuanBeli.innerHTML = `${activeSatBeli} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${activeSatBeli} = ${formatNumber(activeKonversi, 0)} ${activeBarangSatuan})</small>`;
+                } else {
+                    infoSatuanBeli.textContent = activeSatBeli ? activeSatBeli : activeBarangSatuan;
+                }
+
+                if (showSpinner) {
                     loadingState.classList.remove('d-none');
                     tableState.classList.add('d-none');
-                    tbodyMutasi.innerHTML = '';
+                }
 
-                    modal.show();
+                const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${activeBarangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}`;
 
-                    // Kirim Request Ajax
-                    const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${barangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}`;
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Gagal mengambil data mutasi.');
+                        return response.json();
+                    })
+                    .then(data => {
+                        loadingState.classList.add('d-none');
+                        tableState.classList.remove('d-none');
 
-                    fetch(url)
-                        .then(response => {
-                            if (!response.ok) throw new Error('Gagal mengambil data mutasi.');
-                            return response.json();
-                        })
-                        .then(data => {
-                            loadingState.classList.add('d-none');
-                            tableState.classList.remove('d-none');
+                        const bInfo = data.barang || {};
+                        const satuanDasar = bInfo.satuan || activeBarangSatuan;
+                        const satuanBeliRes = bInfo.satuan_pembelian || activeSatBeli;
+                        const konvFaktor = parseFloat(bInfo.konversi_pembelian) || activeKonversi;
+                        const isConverted = satuanBeliRes && konvFaktor > 1;
 
-                            const bInfo = data.barang || {};
-                            const satuanDasar = bInfo.satuan || satuan;
-                            const satuanBeliRes = bInfo.satuan_pembelian || satBeli;
-                            const konvFaktor = parseFloat(bInfo.konversi_pembelian) || konversi;
-                            const isConverted = satuanBeliRes && konvFaktor > 1;
+                        if (isConverted) {
+                            infoSatuanBeli.innerHTML = `${satuanBeliRes} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${satuanBeliRes} = ${formatNumber(konvFaktor, 0)} ${satuanDasar})</small>`;
+                        }
 
-                            if (isConverted) {
-                                infoSatuanBeli.innerHTML = `${satuanBeliRes} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${satuanBeliRes} = ${formatNumber(konvFaktor, 0)} ${satuanDasar})</small>`;
+                        // Helper Qty Cell
+                        const renderQtyCell = (qtyVal, qtyBeliVal, colorClass = '') => {
+                            let res = `<span class="${colorClass}">${formatNumber(qtyVal)} ${satuanDasar}</span>`;
+                            if (isConverted && qtyBeliVal !== undefined && qtyBeliVal !== null) {
+                                res += `<div class="text-muted fw-normal" style="font-size: 11px;">&asymp; ${formatNumber(qtyBeliVal, 2)} ${satuanBeliRes}</div>`;
                             }
+                            return res;
+                        };
 
-                            // Helper Qty Cell
-                            const renderQtyCell = (qtyVal, qtyBeliVal, colorClass = '') => {
-                                let res = `<span class="${colorClass}">${formatNumber(qtyVal)} ${satuanDasar}</span>`;
-                                if (isConverted && qtyBeliVal !== undefined && qtyBeliVal !== null) {
-                                    res += `<div class="text-muted fw-normal" style="font-size: 11px;">&asymp; ${formatNumber(qtyBeliVal, 2)} ${satuanBeliRes}</div>`;
-                                }
-                                return res;
-                            };
+                        // Helper Price Cell
+                        const renderPriceCell = (priceVal, priceBeliVal, colorClass = '') => {
+                            let res = `<span class="${colorClass}">${formatIDR(priceVal)}<span class="text-muted fw-normal" style="font-size: 10px;">/${satuanDasar}</span></span>`;
+                            if (isConverted && priceBeliVal !== undefined && priceBeliVal !== null) {
+                                res += `<div class="text-primary fw-semibold" style="font-size: 11px;">&asymp; ${formatIDR(priceBeliVal)}<span class="text-muted fw-normal" style="font-size: 10px;">/${satuanBeliRes}</span></div>`;
+                            }
+                            return res;
+                        };
 
-                            // Helper Price Cell
-                            const renderPriceCell = (priceVal, priceBeliVal, colorClass = '') => {
-                                let res = `<span class="${colorClass}">${formatIDR(priceVal)}<span class="text-muted fw-normal" style="font-size: 10px;">/${satuanDasar}</span></span>`;
-                                if (isConverted && priceBeliVal !== undefined && priceBeliVal !== null) {
-                                    res += `<div class="text-primary fw-semibold" style="font-size: 11px;">&asymp; ${formatIDR(priceBeliVal)}<span class="text-muted fw-normal" style="font-size: 10px;">/${satuanBeliRes}</span></div>`;
-                                }
-                                return res;
-                            };
+                        // 1. Baris Saldo Awal
+                        const saQty = Number(data.saldo_awal.qty);
+                        const saQtyBeli = data.saldo_awal.qty_pembelian !== undefined ? Number(data.saldo_awal.qty_pembelian) : (isConverted ? saQty / konvFaktor : null);
+                        const saNilai = Number(data.saldo_awal.nilai);
 
-                            // 1. Baris Saldo Awal
-                            const saQty = Number(data.saldo_awal.qty);
-                            const saQtyBeli = data.saldo_awal.qty_pembelian !== undefined ? Number(data.saldo_awal.qty_pembelian) : (isConverted ? saQty / konvFaktor : null);
-                            const saNilai = Number(data.saldo_awal.nilai);
+                        let html = `
+                            <tr class="table-info fw-semibold">
+                                <td class="text-center">—</td>
+                                <td><strong>SALDO AWAL PERIODE</strong></td>
+                                <!-- Masuk -->
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <!-- Keluar -->
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <!-- Saldo -->
+                                <td class="text-end">${renderQtyCell(saQty, saQtyBeli)}</td>
+                                <td class="text-end">${formatIDR(saNilai)}</td>
+                                <td class="text-center text-muted">—</td>
+                            </tr>
+                        `;
 
-                            let html = `
-                                <tr class="table-info fw-semibold">
-                                    <td class="text-center">—</td>
-                                    <td><strong>SALDO AWAL PERIODE</strong></td>
-                                    <!-- Masuk -->
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <!-- Keluar -->
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <!-- Saldo -->
-                                    <td class="text-end">${renderQtyCell(saQty, saQtyBeli)}</td>
-                                    <td class="text-end">${formatIDR(saNilai)}</td>
-                                </tr>
-                            `;
-
-                            // 2. Baris-Baris Mutasi Berjalan
+                        // 2. Baris-Baris Mutasi Berjalan
+                        if (data.mutasi && data.mutasi.length > 0) {
                             data.mutasi.forEach(m => {
                                 const qty = Number(m.qty);
                                 const qtyBeli = m.qty_pembelian !== undefined ? Number(m.qty_pembelian) : (isConverted ? qty / konvFaktor : null);
@@ -476,60 +497,215 @@
                                         <!-- SALDO BERJALAN -->
                                         <td class="text-end fw-bold">${renderQtyCell(saldoQ, saldoQBeli)}</td>
                                         <td class="text-end fw-bold text-primary">${formatIDR(m.saldo_nilai)}</td>
+
+                                        <!-- AKSI HAPUS -->
+                                        <td class="text-center">
+                                            <button type="button" 
+                                                    class="btn btn-sm btn-outline-danger p-1 px-2 btn-delete-single-mutasi shadow-sm" 
+                                                    data-mutasi-id="${m.id}" 
+                                                    data-source-type="${m.source_type || ''}"
+                                                    data-keterangan="${escapeHtml(m.keterangan)}"
+                                                    title="Hapus mutasi transaksi ini">
+                                                <i class="bi bi-trash3"></i>
+                                            </button>
+                                        </td>
                                     </tr>
                                 `;
                             });
-
-                            // 3. Baris Saldo Akhir
-                            const sfQty = Number(data.saldo_akhir.qty);
-                            const sfQtyBeli = data.saldo_akhir.qty_pembelian !== undefined ? Number(data.saldo_akhir.qty_pembelian) : (isConverted ? sfQty / konvFaktor : null);
-                            const sfNilai = Number(data.saldo_akhir.nilai);
-
+                        } else {
                             html += `
-                                <tr class="table-primary fw-bold text-dark">
-                                    <td class="text-center">—</td>
-                                    <td><strong>SALDO AKHIR PERIODE</strong></td>
-                                    <!-- Masuk -->
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <!-- Keluar -->
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <td class="text-end">—</td>
-                                    <!-- Saldo -->
-                                    <td class="text-end">${renderQtyCell(sfQty, sfQtyBeli, 'fw-bold')}</td>
-                                    <td class="text-end text-primary">${formatIDR(sfNilai)}</td>
-                                </tr>
-                            `;
-
-                            tbodyMutasi.innerHTML = html;
-                        })
-                        .catch(err => {
-                            loadingState.classList.add('d-none');
-                            tbodyMutasi.innerHTML = `
                                 <tr>
-                                    <td colspan="10" class="text-center py-4 text-danger fw-semibold">
-                                        <i class="bi bi-exclamation-triangle-fill fs-3 d-block mb-2"></i>
-                                        ${err.message}
+                                    <td colspan="11" class="text-center py-4 text-muted">
+                                        <i class="bi bi-info-circle me-1"></i> Tidak ada transaksi mutasi pada rentang periode ini.
                                     </td>
                                 </tr>
                             `;
+                        }
+
+                        // 3. Baris Saldo Akhir
+                        const sfQty = Number(data.saldo_akhir.qty);
+                        const sfQtyBeli = data.saldo_akhir.qty_pembelian !== undefined ? Number(data.saldo_akhir.qty_pembelian) : (isConverted ? sfQty / konvFaktor : null);
+                        const sfNilai = Number(data.saldo_akhir.nilai);
+
+                        html += `
+                            <tr class="table-primary fw-bold text-dark">
+                                <td class="text-center">—</td>
+                                <td><strong>SALDO AKHIR PERIODE</strong></td>
+                                <!-- Masuk -->
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <!-- Keluar -->
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <td class="text-end">—</td>
+                                <!-- Saldo -->
+                                <td class="text-end">${renderQtyCell(sfQty, sfQtyBeli, 'fw-bold')}</td>
+                                <td class="text-end text-primary">${formatIDR(sfNilai)}</td>
+                                <td class="text-center text-muted">—</td>
+                            </tr>
+                        `;
+
+                        tbodyMutasi.innerHTML = html;
+
+                        // Pasang Event Listener Hapus untuk Setiap Baris Mutasi
+                        tbodyMutasi.querySelectorAll('.btn-delete-single-mutasi').forEach(delBtn => {
+                            delBtn.addEventListener('click', function() {
+                                const mutasiId = this.dataset.mutasiId;
+                                const sourceType = (this.dataset.sourceType || '').toLowerCase();
+                                const ket = this.dataset.keterangan || 'Transaksi ini';
+
+                                const isBeli = sourceType.includes('pembelian') || ket.toLowerCase().includes('pembelian');
+                                const confirmMsg = isBeli ? "yakin untuk menghapus pembelian ?" : `Apakah Anda yakin ingin menghapus mutasi transaksi "${ket}"?`;
+
+                                if (!confirm(confirmMsg)) return;
+
+                                const originalBtnHtml = this.innerHTML;
+                                this.disabled = true;
+                                this.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+                                fetch("{{ route('stok-gudang.buku-pembantu.delete-mutasi') }}", {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                        'Accept': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        mutasi_id: mutasiId,
+                                        barang_id: activeBarangId
+                                    })
+                                })
+                                .then(res => res.json())
+                                .then(resData => {
+                                    if (resData.success) {
+                                        alert(resData.message || 'Transaksi berhasil dihapus.');
+                                        loadMutasiData(false);
+                                    } else {
+                                        this.disabled = false;
+                                        this.innerHTML = originalBtnHtml;
+                                        alert('Gagal: ' + (resData.message || 'Terjadi kesalahan sistem.'));
+                                    }
+                                })
+                                .catch(err => {
+                                    this.disabled = false;
+                                    this.innerHTML = originalBtnHtml;
+                                    alert('Terjadi kesalahan jaringan: ' + err.message);
+                                });
+                            });
                         });
-                });
-            });
+                    })
+                    .catch(err => {
+                        loadingState.classList.add('d-none');
+                        tbodyMutasi.innerHTML = `
+                            <tr>
+                                <td colspan="11" class="text-center py-4 text-danger fw-semibold">
+                                    <i class="bi bi-exclamation-triangle-fill fs-3 d-block mb-2"></i>
+                                    ${err.message}
+                                </td>
+                            </tr>
+                        `;
+                    });
+            }
 
-            // RESET PEMBELIAN UNTUK ITEM AKTIF
-            let activeBarangId = null;
-            let activeBarangNama = '';
-
+            // BUKA MODAL DETAIL MUTASI
             document.querySelectorAll('.btn-detail-mutasi').forEach(btn => {
-                btn.addEventListener('click', function() {
+                btn.addEventListener('click', function () {
                     activeBarangId = this.dataset.barangId;
                     activeBarangNama = this.dataset.barangNama;
+                    activeBarangKode = this.dataset.barangKode;
+                    activeBarangSatuan = this.dataset.barangSatuan;
+                    activeSatBeli = this.dataset.satuanPembelian || '';
+                    activeKonversi = parseFloat(this.dataset.konversiPembelian) || 1;
+
+                    modal.show();
+                    loadMutasiData(true);
                 });
             });
 
+            // REFRESH DATA MUTASI DALAM MODAL
+            const btnRefreshMutasi = document.getElementById('btnRefreshMutasiModal');
+            const btnRefreshMutasiFooter = document.getElementById('btnRefreshMutasiModalFooter');
+
+            const handleModalRefresh = function() {
+                if (!activeBarangId) return;
+                const form = document.getElementById('formFilter');
+                const gudangSelect = form.querySelector('[name="gudang_id"]');
+                const divisiSelect = form.querySelector('[name="divisi_id"]');
+                const gudangId = gudangSelect ? gudangSelect.value : '';
+                const divisiId = divisiSelect ? divisiSelect.value : '';
+
+                const btn = this;
+                const orig = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sinkronisasi...';
+
+                fetch("{{ route('stok-gudang.buku-pembantu.sync-refresh') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        barang_id: activeBarangId,
+                        gudang_id: gudangId,
+                        divisi_id: divisiId
+                    })
+                })
+                .then(res => res.json())
+                .then(resData => {
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                    loadMutasiData(false);
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.innerHTML = orig;
+                    loadMutasiData(false);
+                });
+            };
+
+            if (btnRefreshMutasi) btnRefreshMutasi.addEventListener('click', handleModalRefresh);
+            if (btnRefreshMutasiFooter) btnRefreshMutasiFooter.addEventListener('click', handleModalRefresh);
+
+            // SINKRONKAN & REFRESH SELURUH BUKU PEMBANTU (HALAMAN UTAMA)
+            const btnSyncAllPage = document.getElementById('btnSyncAllPage');
+            if (btnSyncAllPage) {
+                btnSyncAllPage.addEventListener('click', function() {
+                    const orig = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menyinkronkan...';
+
+                    fetch("{{ route('stok-gudang.buku-pembantu.sync-refresh') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({})
+                    })
+                    .then(res => res.json())
+                    .then(resData => {
+                        this.disabled = false;
+                        this.innerHTML = orig;
+                        if (resData.success) {
+                            alert(resData.message || 'Buku pembantu persediaan berhasil disinkronkan.');
+                            window.location.reload();
+                        } else {
+                            alert('Gagal: ' + (resData.message || 'Terjadi kesalahan.'));
+                        }
+                    })
+                    .catch(err => {
+                        this.disabled = false;
+                        this.innerHTML = orig;
+                        alert('Terjadi kesalahan jaringan: ' + err.message);
+                    });
+                });
+            }
+
+            // RESET PEMBELIAN UNTUK ITEM AKTIF
             const btnResetPembelian = document.getElementById('btnResetPembelianModal');
             if (btnResetPembelian) {
                 btnResetPembelian.addEventListener('click', function() {
