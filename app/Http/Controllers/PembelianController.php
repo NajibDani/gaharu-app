@@ -48,7 +48,18 @@ class PembelianController extends Controller
         $dari              = $request->query('dari');
         $sampai            = $request->query('sampai');
 
+        $user = auth()->user();
+        $roleName = $user?->role?->nama ?? '';
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
         $query = Pembelian::with(['supplier', 'gudang', 'user', 'details.barang']);
+
+        // Hak Akses Role: User Kepala Gudang hanya dapat melihat PBK yang masuk ke Gudang Utama saja.
+        // PBK Gudang KeJingga hanya bisa diakses oleh Superadmin.
+        if (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            $query->where('gudang_id', $gudangUtamaId);
+        }
 
         // Filter pencarian
         if ($search) {
@@ -206,7 +217,14 @@ class PembelianController extends Controller
         }
 
         $suppliers = Supplier::orderBy('nama')->get();
-        $gudangs   = MasterGudang::orderBy('nama')->get();
+        if (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gudangs = MasterGudang::where('id', $gudangUtamaId)->get();
+            if ($gudangs->isEmpty()) {
+                $gudangs = MasterGudang::where('nama', 'Gudang Utama')->get();
+            }
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
         $barangs   = MasterBarang::query()
             ->where('is_active', true)
             ->where(function ($q) {
@@ -239,8 +257,9 @@ class PembelianController extends Controller
     */
     public function suggestions(Request $request)
     {
-        $gudangUtama = MasterGudang::where('nama', 'Gudang Utama')->first();
-        $gudangId = $gudangUtama ? $gudangUtama->id : 1;
+        $gudangUtamaId = MasterGudang::getGudangUtamaId();
+        $gudangUtama = MasterGudang::find($gudangUtamaId);
+        $gudangId = $gudangUtamaId;
 
         $items = MasterBarang::where('is_active', true)
             ->where(function ($q) {
@@ -391,6 +410,17 @@ class PembelianController extends Controller
 
     public function terima(Request $request, Pembelian $pembelian)
     {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
+
+        if (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                return back()->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat menerima barang untuk Gudang Utama.');
+            }
+        }
+
         if (empty($pembelian->metode_pembayaran)) {
             return back()->with('error', 'Gagal memproses penerimaan barang: Metode pembayaran belum dicatat. Silakan catat metode pembayaran (COD / DP / Termin) terlebih dahulu.');
         }
@@ -609,8 +639,18 @@ class PembelianController extends Controller
     public function catatPembayaran(Request $request, Pembelian $pembelian)
     {
         $user = auth()->user();
-        if (!$user || (!$user->isSuperAdmin() && !$user->isGudang())) {
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
+
+        if (!$user || (!$isSuperAdmin && !$user->isGudang())) {
             return back()->with('error', 'Hanya Super Admin atau pengguna Gudang yang diizinkan untuk mencatat pembayaran pembelian.');
+        }
+
+        if (!$isSuperAdmin && ($user->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                return back()->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat mencatat pembayaran pembelian Gudang Utama.');
+            }
         }
 
         $validated = $request->validate([
@@ -693,6 +733,16 @@ class PembelianController extends Controller
 
     public function show(Pembelian $pembelian)
     {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
+        if (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                abort(403, 'Akses ditolak: User Kepala Gudang hanya dapat melihat transaksi pembelian Gudang Utama.');
+            }
+        }
+
         $pembelian->load(['supplier', 'gudang', 'details.barang', 'user', 'pembayaran']);
         return view('pembelian.show', compact('pembelian'));
     }
@@ -707,7 +757,16 @@ class PembelianController extends Controller
     {
         $user = auth()->user();
         $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
         $isGudang = $user && $user->isGudang();
+
+        if (!$isSuperAdmin && ($isGudang || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                return redirect()->route('pembelian.index')
+                    ->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat mengedit transaksi pembelian Gudang Utama.');
+            }
+        }
 
         if ($pembelian->isTerkunci() && !$isSuperAdmin) {
             return redirect()->route('pembelian.index')
@@ -721,7 +780,15 @@ class PembelianController extends Controller
 
         $pembelian->load('details');
         $suppliers = Supplier::orderBy('nama')->get();
-        $gudangs   = MasterGudang::orderBy('nama')->get();
+        if (!$isSuperAdmin && ($isGudang || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            $gudangs = MasterGudang::where('id', $gudangUtamaId)->get();
+            if ($gudangs->isEmpty()) {
+                $gudangs = MasterGudang::where('nama', 'Gudang Utama')->get();
+            }
+        } else {
+            $gudangs = MasterGudang::orderBy('nama')->get();
+        }
         $barangs   = MasterBarang::query()
             ->where('is_active', true)
             ->where(function ($q) {
@@ -746,7 +813,16 @@ class PembelianController extends Controller
     {
         $user = auth()->user();
         $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
         $isGudang = $user && $user->isGudang();
+
+        if (!$isSuperAdmin && ($isGudang || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                return redirect()->route('pembelian.index')
+                    ->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat mengedit transaksi pembelian Gudang Utama.');
+            }
+        }
 
         if ($pembelian->isTerkunci() && !$isSuperAdmin) {
             return redirect()->route('pembelian.index')
@@ -946,7 +1022,15 @@ class PembelianController extends Controller
     {
         $user = auth()->user();
         $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
         $isGudang = $user && $user->isGudang();
+
+        if (!$isSuperAdmin && ($isGudang || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                return back()->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat menghapus transaksi pembelian Gudang Utama.');
+            }
+        }
 
         // Jika terkunci (sudah diterima/lunas) dan bukan Super Admin, tolak
         if ($pembelian->isTerkunci() && !$isSuperAdmin) {
@@ -1074,6 +1158,18 @@ class PembelianController extends Controller
     public function cetakPoPdf($id)
     {
         $pembelian = Pembelian::with(['supplier', 'gudang', 'user', 'details.barang'])->findOrFail($id);
+
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $roleName = $user?->role?->nama ?? '';
+
+        if (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            if ($pembelian->gudang_id != $gudangUtamaId) {
+                abort(403, 'Akses ditolak: User Kepala Gudang hanya dapat mencetak PO pembelian Gudang Utama.');
+            }
+        }
+
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
         $pdf->loadView('pembelian.po-pdf', compact('pembelian'));
         return $pdf->stream('Purchase-Order-' . $pembelian->kode_pembelian . '.pdf');

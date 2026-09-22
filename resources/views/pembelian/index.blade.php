@@ -820,7 +820,7 @@
                                     <span class="input-group-text bg-white text-muted"><i class="bi bi-geo-alt-fill text-danger"></i></span>
                                     <input type="text" class="form-control form-control-sm bg-white fw-semibold text-dark" value="{{ $gudangUtama?->nama ?? 'Gudang Utama' }}" readonly>
                                 </div>
-                                <input type="hidden" name="gudang_id" value="{{ $gudangUtama?->id ?? 1 }}">
+                                <input type="hidden" name="gudang_id" value="{{ $gudangUtama?->id ?? \App\Models\MasterGudang::getGudangUtamaId() }}">
                             </div>
 
                             <div class="col-12 col-md-4">
