@@ -199,4 +199,71 @@ class PotonganPenggajianController extends Controller
         return redirect()->route('penggajian.potongan.periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $payroll->outlet ?? 'Gaharu'])
             ->with('success', "Data potongan karyawan {$payroll->karyawan->nama_karyawan} berhasil diperbarui.");
     }
+
+    /**
+     * Simpan batch/massal potongan seluruh karyawan dari tabel langsung
+     */
+    public function batchUpdate(Request $request)
+    {
+        $items = $request->input('items', []);
+        $periode = $request->input('periode');
+        $outlet = $request->input('outlet', 'Gaharu');
+
+        if (empty($items)) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Tidak ada data yang dikirim.'], 400);
+            }
+            return redirect()->back()->with('error', 'Tidak ada data potongan yang dikirim.');
+        }
+
+        $cleanRupiah = function ($value) {
+            if (is_null($value) || $value === '') return 0;
+            return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', (string)$value));
+        };
+
+        $updatedCount = 0;
+
+        foreach ($items as $item) {
+            $payrollId = $item['id'] ?? null;
+            if (!$payrollId) continue;
+
+            $payroll = Penggajian::find($payrollId);
+            if (!$payroll || $payroll->status === 'approved') continue;
+
+            $potonganTerlambat  = isset($item['potongan_terlambat']) ? $cleanRupiah($item['potongan_terlambat']) : (float)$payroll->potongan_terlambat;
+            $potonganInventaris = isset($item['potongan_inventaris']) ? $cleanRupiah($item['potongan_inventaris']) : (float)$payroll->potongan_inventaris;
+            $potonganKasbon     = isset($item['potongan_kasbon']) ? $cleanRupiah($item['potongan_kasbon']) : (float)$payroll->potongan_kasbon;
+            $potonganDll        = isset($item['potongan_dll']) ? $cleanRupiah($item['potongan_dll']) : (float)$payroll->potongan_dll;
+
+            $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
+
+            $totalEarnings = floatval($payroll->total_earnings > 0 ? $payroll->total_earnings : (
+                ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
+                ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
+            ));
+
+            $totalGajiBersih = $totalEarnings - $totalDeductions;
+
+            $payroll->update([
+                'potongan_terlambat'  => $potonganTerlambat,
+                'potongan_inventaris' => $potonganInventaris,
+                'potongan_kasbon'     => $potonganKasbon,
+                'potongan_dll'        => $potonganDll,
+                'total_deductions'    => $totalDeductions,
+                'total_gaji_bersih'   => $totalGajiBersih,
+            ]);
+
+            $updatedCount++;
+        }
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil menyimpan potongan untuk {$updatedCount} karyawan."
+            ]);
+        }
+
+        return redirect()->route('penggajian.potongan.periode', ['periode' => $periode, 'outlet' => $outlet])
+            ->with('success', "Seluruh potongan ({$updatedCount} karyawan) berhasil diperbarui secara bersamaan.");
+    }
 }

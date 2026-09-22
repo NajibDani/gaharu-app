@@ -1366,4 +1366,126 @@ class PenggajianController extends Controller
             'gaji_utama'         => round($gajiUtama, 2),
         ];
     }
+
+    /**
+     * Batch update hari kerja / gaji pokok untuk seluruh karyawan langsung dari tabel
+     */
+    public function batchUpdateGajiPokok(Request $request)
+    {
+        $items = $request->input('items', []);
+        $periode = $request->input('periode');
+        $outlet = $request->input('outlet', 'Gaharu');
+
+        if (empty($items)) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Tidak ada data yang dikirim.'], 400);
+            }
+            return redirect()->back()->with('error', 'Tidak ada data yang dikirim.');
+        }
+
+        $updatedCount = 0;
+
+        foreach ($items as $item) {
+            $karyawanId = $item['karyawan_id'] ?? null;
+            $payrollId  = $item['id'] ?? null;
+            $hariKerja  = floatval($item['hari_kerja'] ?? 0);
+
+            $payroll = null;
+            if ($payrollId) {
+                $payroll = Penggajian::find($payrollId);
+            } elseif ($karyawanId && $periode) {
+                $payroll = Penggajian::where('karyawan_id', $karyawanId)
+                    ->where('periode_bulan_tahun', $periode)
+                    ->first();
+            }
+
+            if ($payroll && $payroll->status === 'approved') continue;
+
+            $karyawan = $payroll ? $payroll->karyawan : ($karyawanId ? Karyawan::find($karyawanId) : null);
+            if (!$karyawan) continue;
+
+            $pilihanPeriode = intval($item['pilihan_periode'] ?? ($payroll->pilihan_periode ?? 1));
+            if ($pilihanPeriode === 2 && $karyawan->gaji_pokok_2 !== null) {
+                $gajiPokokHarian  = floatval($karyawan->gaji_pokok_2);
+                $uangMakan        = floatval($karyawan->uang_makan_2);
+                $uangTransport    = floatval($karyawan->uang_transport_2);
+                $satuanGaji       = $karyawan->satuan_gaji_2 ?? $karyawan->satuan_gaji ?? 'Harian';
+            } else {
+                $pilihanPeriode   = 1;
+                $gajiPokokHarian  = floatval($karyawan->gaji_pokok);
+                $uangMakan        = floatval($karyawan->uang_makan);
+                $uangTransport    = floatval($karyawan->uang_transport);
+                $satuanGaji       = $karyawan->satuan_gaji ?? 'Harian';
+            }
+
+            $tarifHarianTotal = $gajiPokokHarian + $uangMakan + $uangTransport;
+            $gajiUtama = ($satuanGaji === 'Bulanan') ? $tarifHarianTotal : ($hariKerja * $tarifHarianTotal);
+
+            if ($payroll) {
+                $lembur               = (float) ($payroll->lembur ?? 0);
+                $bonusTarget          = (float) ($payroll->bonus_target ?? 0);
+                $bonusTanggalMerah    = (float) ($payroll->bonus_tanggal_merah ?? 0);
+                $bonusBirthdayService = (float) ($payroll->bonus_birthday ?? 0);
+                $bonusDll             = (float) ($payroll->bonus_dll ?? 0);
+
+                $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+                $totalDeductions = (float) ($payroll->total_deductions ?? 0);
+                $totalGajiBersih = $totalEarnings - $totalDeductions;
+
+                $payroll->update([
+                    'hari_kerja'         => $hariKerja,
+                    'pilihan_periode'    => $pilihanPeriode,
+                    'satuan_gaji'        => $satuanGaji,
+                    'gaji_pokok'         => $gajiPokokHarian,
+                    'tunjangan_makan'    => $uangMakan,
+                    'tunjangan_transport'=> $uangTransport,
+                    'tarif_harian_total' => $tarifHarianTotal,
+                    'gaji_utama'         => $gajiUtama,
+                    'total_earnings'     => $totalEarnings,
+                    'total_gaji_bersih'  => $totalGajiBersih,
+                ]);
+            } else {
+                // Buat record baru jika belum ada
+                $qLate = Keterlambatan::where('karyawan_id', $karyawan->id)
+                    ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+                $potonganTerlambat = floatval($qLate->sum('potongan'));
+                $totalDeductions = $potonganTerlambat;
+                $totalEarnings = $gajiUtama;
+                $totalGajiBersih = $totalEarnings - $totalDeductions;
+
+                Penggajian::create([
+                    'karyawan_id'         => $karyawan->id,
+                    'outlet'              => $karyawan->outlet ?? $outlet,
+                    'satuan_gaji'         => $satuanGaji,
+                    'satuan_gaji_2'       => $karyawan->satuan_gaji_2 ?? $satuanGaji,
+                    'pilihan_periode'     => $pilihanPeriode,
+                    'periode_bulan_tahun' => $periode,
+                    'hari_kerja'          => $hariKerja,
+                    'tarif_harian_total'  => $tarifHarianTotal,
+                    'gaji_utama'          => $gajiUtama,
+                    'gaji_pokok'          => $gajiPokokHarian,
+                    'tunjangan_transport' => $uangTransport,
+                    'tunjangan_makan'     => $uangMakan,
+                    'potongan_terlambat'  => $potonganTerlambat,
+                    'total_earnings'      => $totalEarnings,
+                    'total_deductions'    => $totalDeductions,
+                    'total_gaji_bersih'   => $totalGajiBersih,
+                    'status'              => 'draft',
+                    'status_jurnal'       => false
+                ]);
+            }
+
+            $updatedCount++;
+        }
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil menyimpan gaji pokok / hari kerja untuk {$updatedCount} karyawan."
+            ]);
+        }
+
+        return redirect()->route('penggajian.periode', ['periode' => $periode, 'outlet' => $outlet])
+            ->with('success', "Seluruh waktu kerja ({$updatedCount} karyawan) berhasil disimpan secara bersamaan.");
+    }
 }

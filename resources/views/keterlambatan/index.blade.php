@@ -249,24 +249,22 @@
                                 <input type="date" name="tanggal" id="modalTanggal" class="form-control" value="{{ date('Y-m-d') }}" required>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label fw-semibold small">Pilih Shift</label>
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label fw-semibold small mb-0">Shift</label>
+                                    <button type="button" class="btn btn-link p-0 text-primary small text-decoration-none fw-semibold" onclick="bukaModalKelolaShift()" style="font-size: 11.5px;">
+                                        <i class="bi bi-gear-fill me-1"></i>Atur Pilihan Shift
+                                    </button>
+                                </div>
                                 <select name="shift" id="modalShift" class="form-select" onchange="onShiftSelectChange(this)">
-                                    <option value="Morning 07.00" data-time="07:00:00">Morning 07.00</option>
-                                    <option value="Morning 08.00" data-time="08:00:00">Morning 08.00</option>
-                                    <option value="Morning 08.30" data-time="08:30:00">Morning 08.30</option>
-                                    <option value="Morning 09.00" data-time="09:00:00">Morning 09.00</option>
-                                    <option value="Middle 10.00" data-time="10:00:00">Middle 10.00</option>
-                                    <option value="Middle 11.00" data-time="11:00:00">Middle 11.00</option>
-                                    <option value="Middle 12.00" data-time="12:00:00">Middle 12.00</option>
-                                    <option value="Middle 13.00" data-time="13:00:00">Middle 13.00</option>
-                                    <option value="Evening 14.00" data-time="14:00:00">Evening 14.00</option>
-                                    <option value="Evening 15.00" data-time="15:00:00">Evening 15.00</option>
-                                    <option value="Evening 16.00" data-time="16:00:00">Evening 16.00</option>
-                                    <option value="Night 22.00" data-time="22:00:00">Night 22.00</option>
-                                    <option value="Custom" data-time="">Kustom / Shift Lainnya...</option>
+                                    @foreach($shifts ?? [] as $s)
+                                        <option value="{{ $s->nama }}" data-time="{{ $s->jam_shift }}">{{ $s->nama }}</option>
+                                    @endforeach
+                                    <option value="__add_new__" class="text-primary fw-bold">+ Tambah Pilihan Shift Baru...</option>
                                 </select>
-                                <div id="wrapperCustomShift" class="mt-2 d-none">
-                                    <input type="text" name="custom_shift" id="modalCustomShift" class="form-control form-control-sm" placeholder="Nama shift kustom (misal: Shift Siang, Event Khusus)">
+                                <div class="mt-1 text-end">
+                                    <small class="text-muted" style="font-size: 11px;">
+                                        Ingin ubah daftar jam di atas? Klik <a href="javascript:void(0)" onclick="bukaModalKelolaShift()" class="text-primary fw-bold text-decoration-underline">Atur Pilihan Shift</a>
+                                    </small>
                                 </div>
                             </div>
                         </div>
@@ -275,16 +273,6 @@
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold small">Jam Shift JADWAL <span class="text-danger">*</span></label>
                                 <input type="time" step="1" name="jam_shift" id="modalJamShift" class="form-control" value="08:00:00" required onchange="onJamShiftManualChange()" oninput="onJamShiftManualChange()">
-                                <!-- Quick Presets -->
-                                <div class="d-flex gap-1 mt-1.5 flex-wrap">
-                                    <span class="text-muted small" style="font-size: 11px;">Cepat:</span>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('07:00:00', 'Morning 07.00')">07:00</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('08:00:00', 'Morning 08.00')">08:00</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('10:00:00', 'Middle 10.00')">10:00</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('11:00:00', 'Middle 11.00')">11:00</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('12:00:00', 'Middle 12.00')">12:00</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('15:00:00', 'Evening 15.00')">15:00</button>
-                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold small">Jam DATANG Aktual <span class="text-danger">*</span></label>
@@ -321,68 +309,190 @@
         </div>
     </div>
 
+    <!-- MODAL KELOLA / EDIT PILIHAN SHIFT (MASTER SHIFT) -->
+    <div class="modal fade" id="modalKelolaShift" tabindex="-1" aria-labelledby="modalKelolaShiftTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow rounded-4 overflow-hidden">
+                <div class="modal-header text-white px-4 py-3" style="background-color: #593b22;">
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0" id="modalKelolaShiftTitle"><i class="bi bi-clock-history me-2"></i>Kelola Pilihan Shift Dropdown</h5>
+                        <small class="text-white-50" style="font-size: 11.5px;">Atur, edit nama, jam shift, atau tambah opsi shift baru untuk pilihan dropdown.</small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    <!-- FORM TAMBAH SHIFT BARU -->
+                    <div class="card border-0 shadow-sm rounded-3 p-3 mb-4 bg-white">
+                        <h6 class="fw-bold text-dark mb-2" style="font-size: 13px;"><i class="bi bi-plus-circle-fill text-success me-1"></i> Tambah Pilihan Shift Baru</h6>
+                        <form id="formTambahShift" onsubmit="handleTambahShift(event)">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-md-5">
+                                    <label class="form-label fw-semibold small mb-1">Nama Shift <span class="text-danger">*</span></label>
+                                    <input type="text" id="tambahNamaShift" class="form-control form-control-sm" placeholder="Contoh: Morning 08.00 / Shift Siang" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-semibold small mb-1">Jam Shift JADWAL <span class="text-danger">*</span></label>
+                                    <input type="time" step="1" id="tambahJamShift" class="form-control form-control-sm" value="08:00:00" required>
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="submit" class="btn btn-success btn-sm w-100 fw-bold" id="btnSubmitTambahShift">
+                                        <i class="bi bi-plus-lg me-1"></i> Tambah Shift
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- DAFTAR PILIHAN SHIFT SAAT INI -->
+                    <div class="card border-0 shadow-sm rounded-3 overflow-hidden bg-white">
+                        <div class="card-header bg-white py-2.5 px-3 border-bottom d-flex justify-content-between align-items-center">
+                            <span class="fw-bold text-dark small"><i class="bi bi-list-ul me-1 text-primary"></i> Daftar Pilihan Shift di Dropdown</span>
+                            <span class="badge bg-secondary-subtle text-secondary px-2 py-1" id="badgeTotalShift" style="font-size: 11px;">0 Shift</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
+                                <thead class="table-light text-secondary text-uppercase" style="font-size: 11px;">
+                                    <tr>
+                                        <th class="ps-3 py-2" width="40">#</th>
+                                        <th class="py-2">Nama Shift</th>
+                                        <th class="py-2" width="160">Jam Shift</th>
+                                        <th class="text-center py-2" width="130">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyDaftarShift">
+                                    <tr>
+                                        <td colspan="4" class="text-center py-3 text-muted">Memuat data shift...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light px-4 py-2.5 border-top d-flex justify-content-between">
+                    <small class="text-muted"><i class="bi bi-info-circle me-1"></i>Perubahan akan langsung terupdate pada dropdown keterlambatan.</small>
+                    <button type="button" class="btn btn-secondary btn-sm px-4 fw-semibold" data-bs-dismiss="modal">Selesai</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
     <script>
-    const shiftTimePresets = {
-        '07:00:00': 'Morning 07.00',
-        '07:00': 'Morning 07.00',
-        '08:00:00': 'Morning 08.00',
-        '08:00': 'Morning 08.00',
-        '08:30:00': 'Morning 08.30',
-        '08:30': 'Morning 08.30',
-        '09:00:00': 'Morning 09.00',
-        '09:00': 'Morning 09.00',
-        '10:00:00': 'Middle 10.00',
-        '10:00': 'Middle 10.00',
-        '11:00:00': 'Middle 11.00',
-        '11:00': 'Middle 11.00',
-        '12:00:00': 'Middle 12.00',
-        '12:00': 'Middle 12.00',
-        '13:00:00': 'Middle 13.00',
-        '13:00': 'Middle 13.00',
-        '14:00:00': 'Evening 14.00',
-        '14:00': 'Evening 14.00',
-        '15:00:00': 'Evening 15.00',
-        '15:00': 'Evening 15.00',
-        '16:00:00': 'Evening 16.00',
-        '16:00': 'Evening 16.00',
-        '22:00:00': 'Night 22.00',
-        '22:00': 'Night 22.00'
-    };
+    let globalShifts = [];
+
+    // Load Master Shifts dari Server
+    function loadMasterShifts(selectedToSelect = null) {
+        fetch("{{ route('keterlambatan.shifts.index') }}")
+            .then(res => res.json())
+            .then(shifts => {
+                globalShifts = shifts;
+                renderShiftDropdown(shifts, selectedToSelect);
+                renderShiftTable(shifts);
+            })
+            .catch(err => {
+                console.error("Gagal memuat master shift:", err);
+            });
+    }
+
+    function renderShiftDropdown(shifts, selectedVal = null) {
+        const selectEl = document.getElementById('modalShift');
+        if (!selectEl) return;
+
+        const currentVal = selectedVal || selectEl.value;
+        let html = '';
+
+        shifts.forEach(s => {
+            const isSelected = (currentVal === s.nama) ? 'selected' : '';
+            html += `<option value="${escapeHtml(s.nama)}" data-time="${s.jam_shift}" ${isSelected}>${escapeHtml(s.nama)}</option>`;
+        });
+
+        // Opsi jika custom / tidak ada di list
+        if (currentVal && currentVal !== '__add_new__' && !shifts.some(s => s.nama === currentVal)) {
+            html += `<option value="${escapeHtml(currentVal)}" data-time="" selected>${escapeHtml(currentVal)}</option>`;
+        }
+
+        html += `<option value="__add_new__" class="text-primary fw-bold">+ Tambah / Edit Pilihan Shift...</option>`;
+        selectEl.innerHTML = html;
+
+        // Update jam shift input jika ada yang terpilih
+        const activeOpt = selectEl.options[selectEl.selectedIndex];
+        if (activeOpt && activeOpt.getAttribute('data-time')) {
+            document.getElementById('modalJamShift').value = activeOpt.getAttribute('data-time');
+            hitungLivePotongan();
+        }
+    }
+
+    function renderShiftTable(shifts) {
+        const tbody = document.getElementById('tbodyDaftarShift');
+        const badge = document.getElementById('badgeTotalShift');
+        if (badge) badge.innerText = shifts.length + ' Shift';
+
+        if (!shifts || shifts.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center py-3 text-muted">Belum ada pilihan shift. Silakan tambah di atas.</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        shifts.forEach((s, idx) => {
+            html += `
+                <tr id="shift-row-${s.id}">
+                    <td class="ps-3 text-muted font-monospace">${idx + 1}</td>
+                    <td>
+                        <span class="fw-semibold text-dark shift-view-nama">${escapeHtml(s.nama)}</span>
+                        <input type="text" class="form-control form-control-sm d-none shift-edit-nama" value="${escapeHtml(s.nama)}">
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-dark border font-monospace shift-view-jam">${s.jam_shift}</span>
+                        <input type="time" step="1" class="form-control form-control-sm d-none shift-edit-jam" value="${s.jam_shift}">
+                    </td>
+                    <td class="text-center">
+                        <div class="shift-view-actions">
+                            <button type="button" class="btn btn-outline-primary btn-sm py-0.5 px-2 me-1" onclick="mulaiEditShiftRow(${s.id})" title="Edit Shift">
+                                <i class="bi bi-pencil-fill"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm py-0.5 px-2" onclick="hapusShiftItem(${s.id}, '${escapeHtml(s.nama)}')" title="Hapus Shift">
+                                <i class="bi bi-trash3-fill"></i>
+                            </button>
+                        </div>
+                        <div class="shift-edit-actions d-none">
+                            <button type="button" class="btn btn-success btn-sm py-0.5 px-2 me-1" onclick="simpanEditShiftRow(${s.id})" title="Simpan">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                            <button type="button" class="btn btn-secondary btn-sm py-0.5 px-2" onclick="batalEditShiftRow(${s.id})" title="Batal">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
 
     function onShiftSelectChange(selectEl) {
         let val = selectEl.value;
-        let selectedOpt = selectEl.options[selectEl.selectedIndex];
-        let presetTime = selectedOpt.getAttribute('data-time');
-        let customWrapper = document.getElementById('wrapperCustomShift');
-        let customInput = document.getElementById('modalCustomShift');
-        let jamShiftInput = document.getElementById('modalJamShift');
-
-        if (val === 'Custom') {
-            customWrapper.classList.remove('d-none');
-            customInput.focus();
-        } else {
-            customWrapper.classList.add('d-none');
-            if (presetTime) {
-                jamShiftInput.value = presetTime;
-            }
+        if (val === '__add_new__') {
+            bukaModalKelolaShift();
+            return;
         }
 
-        hitungLivePotongan();
-    }
-
-    function setQuickShiftTime(timeStr, shiftName) {
+        let selectedOpt = selectEl.options[selectEl.selectedIndex];
+        let presetTime = selectedOpt.getAttribute('data-time');
         let jamShiftInput = document.getElementById('modalJamShift');
-        let selectEl = document.getElementById('modalShift');
-        let customWrapper = document.getElementById('wrapperCustomShift');
 
-        jamShiftInput.value = timeStr;
-        if (shiftName && selectEl.querySelector(`option[value="${shiftName}"]`)) {
-            selectEl.value = shiftName;
-            customWrapper.classList.add('d-none');
-        } else {
-            selectEl.value = 'Custom';
-            customWrapper.classList.remove('d-none');
+        if (presetTime) {
+            jamShiftInput.value = presetTime;
         }
 
         hitungLivePotongan();
@@ -391,25 +501,165 @@
     function onJamShiftManualChange() {
         let jamShiftInput = document.getElementById('modalJamShift');
         let selectEl = document.getElementById('modalShift');
-        let customWrapper = document.getElementById('wrapperCustomShift');
-        let customInput = document.getElementById('modalCustomShift');
         let val = jamShiftInput.value;
 
         if (!val) return;
 
-        let matchedPreset = shiftTimePresets[val];
-        if (matchedPreset && selectEl.querySelector(`option[value="${matchedPreset}"]`)) {
-            selectEl.value = matchedPreset;
-            customWrapper.classList.add('d-none');
-        } else {
-            selectEl.value = 'Custom';
-            customWrapper.classList.remove('d-none');
-            if (!customInput.value || customInput.value.startsWith('Custom')) {
-                customInput.value = 'Custom ' + val.substring(0, 5);
-            }
+        // Cari apakah ada shift di master yang jamnya sama
+        let matchedShift = globalShifts.find(s => s.jam_shift === val || s.jam_shift.substring(0, 5) === val.substring(0, 5));
+        if (matchedShift && selectEl.querySelector(`option[value="${matchedShift.nama}"]`)) {
+            selectEl.value = matchedShift.nama;
         }
 
         hitungLivePotongan();
+    }
+
+    function bukaModalKelolaShift() {
+        loadMasterShifts();
+        let modalEl = document.getElementById('modalKelolaShift');
+        let modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+
+    function handleTambahShift(e) {
+        e.preventDefault();
+        const namaInput = document.getElementById('tambahNamaShift');
+        const jamInput = document.getElementById('tambahJamShift');
+        const submitBtn = document.getElementById('btnSubmitTambahShift');
+
+        const nama = namaInput.value.trim();
+        const jam = jamInput.value;
+
+        if (!nama || !jam) return;
+
+        const origBtn = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menambah...';
+
+        fetch("{{ route('keterlambatan.shifts.store') }}", {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                nama: nama,
+                jam_shift: jam
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = origBtn;
+
+            if (data.success) {
+                namaInput.value = '';
+                globalShifts = data.shifts;
+                renderShiftTable(data.shifts);
+                renderShiftDropdown(data.shifts, data.shift.nama);
+            } else {
+                alert('Gagal: ' + (data.message || 'Terjadi kesalahan'));
+            }
+        })
+        .catch(err => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = origBtn;
+            alert('Kesalahan jaringan: ' + err.message);
+        });
+    }
+
+    function mulaiEditShiftRow(id) {
+        const row = document.getElementById(`shift-row-${id}`);
+        if (!row) return;
+
+        row.querySelector('.shift-view-nama').classList.add('d-none');
+        row.querySelector('.shift-edit-nama').classList.remove('d-none');
+
+        row.querySelector('.shift-view-jam').classList.add('d-none');
+        row.querySelector('.shift-edit-jam').classList.remove('d-none');
+
+        row.querySelector('.shift-view-actions').classList.add('d-none');
+        row.querySelector('.shift-edit-actions').classList.remove('d-none');
+    }
+
+    function batalEditShiftRow(id) {
+        const row = document.getElementById(`shift-row-${id}`);
+        if (!row) return;
+
+        row.querySelector('.shift-view-nama').classList.remove('d-none');
+        row.querySelector('.shift-edit-nama').classList.add('d-none');
+
+        row.querySelector('.shift-view-jam').classList.remove('d-none');
+        row.querySelector('.shift-edit-jam').classList.add('d-none');
+
+        row.querySelector('.shift-view-actions').classList.remove('d-none');
+        row.querySelector('.shift-edit-actions').classList.add('d-none');
+    }
+
+    function simpanEditShiftRow(id) {
+        const row = document.getElementById(`shift-row-${id}`);
+        if (!row) return;
+
+        const nama = row.querySelector('.shift-edit-nama').value.trim();
+        const jam = row.querySelector('.shift-edit-jam').value;
+
+        if (!nama || !jam) {
+            alert('Nama dan jam shift tidak boleh kosong.');
+            return;
+        }
+
+        fetch(`/keterlambatan/shifts/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                nama: nama,
+                jam_shift: jam
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                globalShifts = data.shifts;
+                renderShiftTable(data.shifts);
+                renderShiftDropdown(data.shifts, data.shift.nama);
+            } else {
+                alert('Gagal memperbarui shift: ' + (data.message || 'Terjadi kesalahan'));
+            }
+        })
+        .catch(err => {
+            alert('Kesalahan jaringan: ' + err.message);
+        });
+    }
+
+    function hapusShiftItem(id, nama) {
+        if (!confirm(`Apakah Anda yakin ingin menghapus pilihan shift "${nama}" dari dropdown?`)) return;
+
+        fetch(`/keterlambatan/shifts/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            }
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                globalShifts = data.shifts;
+                renderShiftTable(data.shifts);
+                renderShiftDropdown(data.shifts);
+            } else {
+                alert('Gagal menghapus shift: ' + (data.message || 'Terjadi kesalahan'));
+            }
+        })
+        .catch(err => {
+            alert('Kesalahan jaringan: ' + err.message);
+        });
     }
 
     function hitungLivePotongan() {
@@ -438,6 +688,8 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+        loadMasterShifts();
+
         const triggers = ['modalKaryawanId', 'modalTanggal', 'modalJamShift', 'modalJamDatang'];
         triggers.forEach(id => {
             const el = document.getElementById(id);
@@ -455,10 +707,14 @@
 
         document.getElementById('modalKaryawanId').value = '';
         document.getElementById('modalTanggal').value = "{{ date('Y-m-d') }}";
-        document.getElementById('modalShift').value = 'Morning 08.00';
-        document.getElementById('wrapperCustomShift').classList.add('d-none');
-        document.getElementById('modalCustomShift').value = '';
-        document.getElementById('modalJamShift').value = '08:00:00';
+        
+        if (globalShifts.length > 0) {
+            document.getElementById('modalShift').value = globalShifts[0].nama;
+            document.getElementById('modalJamShift').value = globalShifts[0].jam_shift;
+        } else {
+            document.getElementById('modalJamShift').value = '08:00:00';
+        }
+
         document.getElementById('modalJamDatang').value = '08:05:00';
         document.getElementById('modalKeterangan').value = '';
 
@@ -477,20 +733,8 @@
         document.getElementById('modalKaryawanId').value = item.karyawan_id;
         document.getElementById('modalTanggal').value = item.tanggal.substring(0, 10);
         
-        let shiftSelect = document.getElementById('modalShift');
-        let customWrapper = document.getElementById('wrapperCustomShift');
-        let customInput = document.getElementById('modalCustomShift');
-        let itemShift = item.shift || 'Morning 08.00';
-
-        if (shiftSelect.querySelector(`option[value="${itemShift}"]`)) {
-            shiftSelect.value = itemShift;
-            customWrapper.classList.add('d-none');
-            customInput.value = '';
-        } else {
-            shiftSelect.value = 'Custom';
-            customWrapper.classList.remove('d-none');
-            customInput.value = itemShift;
-        }
+        let itemShift = item.shift || (globalShifts.length > 0 ? globalShifts[0].nama : 'Morning 08.00');
+        renderShiftDropdown(globalShifts, itemShift);
 
         document.getElementById('modalJamShift').value = item.jam_shift;
         document.getElementById('modalJamDatang').value = item.jam_datang;

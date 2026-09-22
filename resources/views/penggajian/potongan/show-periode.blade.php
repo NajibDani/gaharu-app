@@ -26,9 +26,17 @@
                     </div>
 
                     <div class="flex items-center gap-2 shrink-0">
-                        <span style="font-size: 12px; font-weight: 800; background-color: #fff1f2; border: 1.5px solid #fecdd3; padding: 6px 14px; border-radius: 8px; color: #9f1239; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                        <span id="headerTotalPotonganBadge" style="font-size: 12px; font-weight: 800; background-color: #fff1f2; border: 1.5px solid #fecdd3; padding: 6px 14px; border-radius: 8px; color: #9f1239; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                             Total Potongan: Rp {{ number_format($payrolls->sum('total_potongan'), 0, ',', '.') }}
                         </span>
+                        @if(($currentStatus ?? 'draft') !== 'approved' && $payrolls->isNotEmpty())
+                        <button type="button" onclick="submitBatchPotongan(this)" id="btnBatchSavePotongan"
+                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 6px 16px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s;"
+                                onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
+                                title="Simpan seluruh perubahan input potongan di halaman ini sekaligus">
+                            <span>&#128190;</span> Simpan Semua Potongan
+                        </button>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -56,8 +64,8 @@
                     {{-- Search Input --}}
                     <div class="relative">
                         <input type="text" id="searchKaryawan" onkeyup="filterKaryawanTable()"
-                               placeholder="&#128269; Cari nama karyawan..."
-                               style="width: 220px; padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none;">
+                                placeholder="&#128269; Cari nama karyawan..."
+                                style="width: 220px; padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none;">
                     </div>
 
                     {{-- Filter Departemen --}}
@@ -85,34 +93,40 @@
                     </button>
                 </div>
 
-                <div class="text-xs text-slate-700 font-bold bg-white border border-slate-200 shadow-sm px-3 py-1.5 rounded-lg">
-                    <strong class="text-slate-900 font-black" id="visibleCount">{{ count($payrolls) }}</strong> karyawan terdaftar
+                <div class="flex items-center gap-2">
+                    <div class="text-xs text-slate-700 font-bold bg-white border border-slate-200 shadow-sm px-3 py-1.5 rounded-lg">
+                        <strong class="text-slate-900 font-black" id="visibleCount">{{ count($payrolls) }}</strong> karyawan terdaftar
+                    </div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-xs text-left">
-                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100 border-b border-slate-200">
+                    <table class="w-full min-w-[1020px] text-xs text-left divide-y divide-slate-200" id="tablePotongan">
+                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100/90 border-b border-slate-200">
                             <tr>
-                                <th class="px-3.5 py-2.5 w-10 text-center">#</th>
-                                <th class="px-4 py-2.5 min-w-[240px]">Karyawan</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Denda Terlambat</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Kerusakan Inventaris</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Kasbon</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Potongan Lain</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Total Potongan</th>
-                                <th class="px-3.5 py-2.5 text-center w-28 whitespace-nowrap">Aksi</th>
+                                <th class="px-3.5 py-3 w-10 text-center whitespace-nowrap">#</th>
+                                <th class="px-4 py-3 min-w-[220px] whitespace-nowrap">Karyawan</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Denda Terlambat</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[145px]">Kerusakan Inventaris</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[140px]">Kasbon</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[140px]">Potongan Lain</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[140px]">Total Potongan</th>
+                                <th class="px-3 py-3 text-center min-w-[90px] whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
                             @forelse($payrolls as $index => $payroll)
+                            @php
+                                $isRowLocked = $payroll->is_paid || $payroll->status === 'approved';
+                            @endphp
                             <tr class="payroll-row hover:bg-slate-50/80 transition-colors"
+                                data-id="{{ $payroll->id }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
-                                <td class="px-3.5 py-2.5 text-center text-xs text-slate-500 font-bold">{{ $index + 1 }}</td>
-                                <td class="px-4 py-2.5 min-w-[240px]">
+                                <td class="px-3.5 py-3 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
+                                <td class="px-4 py-3 min-w-[220px]">
                                     <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug">
                                         {{ $payroll->karyawan->nama_karyawan ?? '-' }}
                                     </div>
@@ -123,43 +137,68 @@
                                         @endif
                                     </div>
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
+                                
+                                {{-- DENDA TERLAMBAT (Otomatis dari menu Keterlambatan) --}}
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <input type="hidden" class="potongan-terlambat-raw" value="{{ (float)$payroll->potongan_terlambat }}">
                                     @if($payroll->potongan_terlambat > 0)
-                                        <span class="font-bold text-rose-700 text-xs">- Rp {{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</span>
+                                        <div class="font-bold text-rose-700 text-xs whitespace-nowrap">-&nbsp;Rp&nbsp;{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</div>
+                                        <div class="text-[9.5px] text-slate-500 font-semibold mt-0.5 whitespace-nowrap">Otomatis Absensi</div>
                                     @else
-                                        <span class="text-slate-400">-</span>
+                                        <span class="text-slate-400 font-bold text-xs whitespace-nowrap">-</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->potongan_inventaris > 0)
-                                        <span class="font-bold text-rose-700 text-xs">- Rp {{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</span>
+
+                                {{-- KERUSAKAN INVENTARIS --}}
+                                <td class="px-2.5 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="text"
+                                               class="batch-input-rupiah batch-potongan-inventaris w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
+                                               placeholder="0"
+                                               oninput="onPotonganRowInput(this)">
                                     @else
-                                        <span class="text-slate-400">-</span>
+                                        <span class="font-bold text-slate-700 text-xs">{{ $payroll->potongan_inventaris > 0 ? 'Rp ' . number_format($payroll->potongan_inventaris, 0, ',', '.') : '-' }}</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->potongan_kasbon > 0)
-                                        <span class="font-bold text-rose-700 text-xs">- Rp {{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</span>
+
+                                {{-- KASBON --}}
+                                <td class="px-2.5 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="text"
+                                               class="batch-input-rupiah batch-potongan-kasbon w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
+                                               placeholder="0"
+                                               oninput="onPotonganRowInput(this)">
                                     @else
-                                        <span class="text-slate-400">-</span>
+                                        <span class="font-bold text-slate-700 text-xs">{{ $payroll->potongan_kasbon > 0 ? 'Rp ' . number_format($payroll->potongan_kasbon, 0, ',', '.') : '-' }}</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->potongan_dll > 0)
-                                        <span class="font-bold text-rose-700 text-xs">- Rp {{ number_format($payroll->potongan_dll, 0, ',', '.') }}</span>
+
+                                {{-- POTONGAN LAIN --}}
+                                <td class="px-2.5 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="text"
+                                               class="batch-input-rupiah batch-potongan-dll w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
+                                               placeholder="0"
+                                               oninput="onPotonganRowInput(this)">
                                     @else
-                                        <span class="text-slate-400">-</span>
+                                        <span class="font-bold text-slate-700 text-xs">{{ $payroll->potongan_dll > 0 ? 'Rp ' . number_format($payroll->potongan_dll, 0, ',', '.') : '-' }}</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right font-black text-rose-700 text-xs whitespace-nowrap">
+
+                                {{-- TOTAL POTONGAN (LIVE CALCULATED) --}}
+                                <td class="px-4 py-3 text-right font-black text-rose-700 text-xs whitespace-nowrap row-total-potongan-cell">
                                     @if($payroll->total_potongan > 0)
-                                        - Rp {{ number_format($payroll->total_potongan, 0, ',', '.') }}
+                                        -&nbsp;Rp&nbsp;{{ number_format($payroll->total_potongan, 0, ',', '.') }}
                                     @else
-                                        <span class="text-slate-400">Rp 0</span>
+                                        <span class="text-slate-400 font-bold">Rp&nbsp;0</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-center">
-                                    @if(!$payroll->is_paid)
+
+                                <td class="px-3 py-3 text-center whitespace-nowrap">
+                                    @if(!$isRowLocked)
                                         <button type="button"
                                                 onclick="openModalEditPotongan({{ json_encode([
                                                     'id' => $payroll->id,
@@ -175,10 +214,10 @@
                                                     'update_url' => route('penggajian.potongan.update', $payroll->id),
                                                     'keterlambatan_url' => route('keterlambatan.index', ['periode' => $targetPeriode]),
                                                 ]) }})"
-                                                style="background-color: #fff1f2; border: 1.5px solid #fecdd3; color: #9f1239; font-weight: 800; font-size: 11.5px; padding: 5px 12px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: background .15s;"
+                                                style="background-color: #fff1f2; border: 1.5px solid #fecdd3; color: #9f1239; font-weight: 800; font-size: 11.5px; padding: 4px 10px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: background .15s;"
                                                 onmouseover="this.style.background='#ffe4e6'" onmouseout="this.style.background='#fff1f2'"
                                                 title="Edit Komponen Potongan via Pop-up">
-                                            <span>&#9999;</span> Edit
+                                            <span>&#9999;</span> Detail
                                         </button>
                                     @else
                                         <span class="text-[10.5px] text-slate-400 italic font-semibold">Terkunci</span>
@@ -349,6 +388,134 @@
             if (!val) return 0;
             let clean = String(val).replace(/[^0-9]/g, '');
             return parseFloat(clean) || 0;
+        }
+
+        function onPotonganRowInput(el) {
+            // Format input as thousands separator
+            let raw = String(el.value).replace(/[^0-9]/g, '');
+            if (raw) {
+                el.value = Math.round(parseFloat(raw)).toLocaleString('id-ID');
+            } else {
+                el.value = '';
+            }
+
+            const row = el.closest('.payroll-row');
+            if (!row) return;
+
+            recalcRowPotongan(row);
+            recalcGrandTotalPotongan();
+        }
+
+        function recalcRowPotongan(row) {
+            const terlambatEl = row.querySelector('.potongan-terlambat-raw');
+            const inventarisEl = row.querySelector('.batch-potongan-inventaris');
+            const kasbonEl = row.querySelector('.batch-potongan-kasbon');
+            const dllEl = row.querySelector('.batch-potongan-dll');
+            const totalCell = row.querySelector('.row-total-potongan-cell');
+
+            let pTerlambat  = terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0;
+            let pInventaris = inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0;
+            let pKasbon     = kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0;
+            let pDll        = dllEl ? parseRupiahPotVal(dllEl.value) : 0;
+
+            let totalRow = pTerlambat + pInventaris + pKasbon + pDll;
+
+            if (totalCell) {
+                if (totalRow > 0) {
+                    totalCell.innerHTML = '- ' + formatRupiahPot(totalRow);
+                } else {
+                    totalCell.innerHTML = '<span class="text-slate-400 font-bold">Rp 0</span>';
+                }
+            }
+        }
+
+        function recalcGrandTotalPotongan() {
+            let grandTotal = 0;
+            document.querySelectorAll('.payroll-row').forEach(row => {
+                const terlambatEl = row.querySelector('.potongan-terlambat-raw');
+                const inventarisEl = row.querySelector('.batch-potongan-inventaris');
+                const kasbonEl = row.querySelector('.batch-potongan-kasbon');
+                const dllEl = row.querySelector('.batch-potongan-dll');
+
+                let pTerlambat  = terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0;
+                let pInventaris = inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0;
+                let pKasbon     = kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0;
+                let pDll        = dllEl ? parseRupiahPotVal(dllEl.value) : 0;
+
+                grandTotal += (pTerlambat + pInventaris + pKasbon + pDll);
+            });
+
+            const badge = document.getElementById('headerTotalPotonganBadge');
+            if (badge) {
+                badge.textContent = 'Total Potongan: ' + formatRupiahPot(grandTotal);
+            }
+        }
+
+        async function submitBatchPotongan(btn) {
+            const rows = document.querySelectorAll('.payroll-row');
+            if (!rows.length) return;
+
+            const items = [];
+            rows.forEach(row => {
+                const id = row.getAttribute('data-id');
+                if (!id) return;
+
+                const terlambatEl = row.querySelector('.potongan-terlambat-raw');
+                const inventarisEl = row.querySelector('.batch-potongan-inventaris');
+                const kasbonEl = row.querySelector('.batch-potongan-kasbon');
+                const dllEl = row.querySelector('.batch-potongan-dll');
+
+                items.push({
+                    id: id,
+                    potongan_terlambat: terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0,
+                    potongan_inventaris: inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0,
+                    potongan_kasbon: kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0,
+                    potongan_dll: dllEl ? parseRupiahPotVal(dllEl.value) : 0,
+                });
+            });
+
+            const origContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span>&#8987;</span> Menyimpan...';
+
+            try {
+                const response = await fetch("{{ route('penggajian.potongan.batch-update') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        items: items,
+                        periode: "{{ $targetPeriode }}",
+                        outlet: "{{ $selectedOutlet }}"
+                    })
+                });
+
+                const res = await response.json();
+                if (response.ok && res.success) {
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Tersimpan!',
+                            text: res.message || 'Seluruh data potongan berhasil diperbarui.',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                    } else {
+                        alert(res.message || 'Seluruh data potongan berhasil disimpan!');
+                    }
+                } else {
+                    alert('Gagal menyimpan: ' + (res.message || 'Terjadi kesalahan sistem.'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Terjadi kesalahan jaringan atau server saat menyimpan data.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origContent;
+            }
         }
 
         function openModalEditPotongan(data) {

@@ -239,4 +239,96 @@ class BonusPenggajianController extends Controller
         return redirect()->route('penggajian.bonus.periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $payroll->outlet ?? 'Gaharu'])
             ->with('success', "Data bonus & lembur karyawan {$payroll->karyawan->nama_karyawan} berhasil diperbarui.");
     }
+
+    /**
+     * Simpan batch/massal bonus & lembur seluruh karyawan dari tabel langsung
+     */
+    public function batchUpdate(Request $request)
+    {
+        $items = $request->input('items', []);
+        $periode = $request->input('periode');
+        $outlet = $request->input('outlet', 'Gaharu');
+
+        if (empty($items)) {
+            if ($request->wantsJson() || $request->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Tidak ada data yang dikirim.'], 400);
+            }
+            return redirect()->back()->with('error', 'Tidak ada data bonus yang dikirim.');
+        }
+
+        $cleanRupiah = function ($value) {
+            if (is_null($value) || $value === '') return 0;
+            return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', (string)$value));
+        };
+
+        $updatedCount = 0;
+
+        foreach ($items as $item) {
+            $payrollId = $item['id'] ?? null;
+            if (!$payrollId) continue;
+
+            $payroll = Penggajian::find($payrollId);
+            if (!$payroll || $payroll->status === 'approved') continue;
+
+            $satuanGaji = $payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian';
+            $tarifHarian = $payroll->tarif_harian_total > 0
+                ? $payroll->tarif_harian_total
+                : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+
+            $jamLembur             = floatval($item['jam_lembur'] ?? $payroll->jam_lembur ?? 0);
+            $banyakTarget          = intval($item['banyak_target'] ?? $payroll->banyak_target ?? 0);
+            $banyakTanggalMerah    = intval($item['banyak_tanggal_merah'] ?? $payroll->banyak_tanggal_merah ?? 0);
+            $banyakBirthdayService = intval($item['banyak_birthday_service'] ?? $payroll->banyak_birthday_service ?? 0);
+            $bonusDll              = isset($item['bonus_dll']) ? $cleanRupiah($item['bonus_dll']) : (float)$payroll->bonus_dll;
+
+            $lembur               = $jamLembur * 10000;
+            $bonusBirthdayService = $banyakBirthdayService * 5000;
+
+            if ($satuanGaji === 'Harian') {
+                $bonusTarget         = $banyakTarget * $tarifHarian;
+                $bonusTanggalMerah   = $banyakTanggalMerah * $tarifHarian;
+                $catatanTarget       = null;
+                $catatanTanggalMerah = null;
+            } else {
+                $bonusTarget         = isset($item['bonus_target']) ? $cleanRupiah($item['bonus_target']) : ($banyakTarget > 0 ? $banyakTarget * $tarifHarian : (float)$payroll->bonus_target);
+                $bonusTanggalMerah   = isset($item['bonus_tanggal_merah']) ? $cleanRupiah($item['bonus_tanggal_merah']) : ($banyakTanggalMerah > 0 ? $banyakTanggalMerah * $tarifHarian : (float)$payroll->bonus_tanggal_merah);
+                $catatanTarget       = $item['catatan_bonus_target'] ?? $payroll->catatan_bonus_target;
+                $catatanTanggalMerah = $item['catatan_bonus_tanggal_merah'] ?? $payroll->catatan_bonus_tanggal_merah;
+            }
+
+            $gajiUtama = floatval($payroll->gaji_utama ?? 0);
+            $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+
+            $totalDeductions = floatval($payroll->total_deductions ?? 0);
+            $totalGajiBersih = $totalEarnings - $totalDeductions;
+
+            $payroll->update([
+                'jam_lembur'                  => $jamLembur,
+                'lembur'                      => $lembur,
+                'banyak_target'               => $banyakTarget,
+                'bonus_target'                => $bonusTarget,
+                'catatan_bonus_target'        => $catatanTarget,
+                'banyak_tanggal_merah'        => $banyakTanggalMerah,
+                'bonus_tanggal_merah'         => $bonusTanggalMerah,
+                'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
+                'banyak_birthday_service'     => $banyakBirthdayService,
+                'bonus_birthday'              => $bonusBirthdayService,
+                'bonus_dll'                   => $bonusDll,
+                'total_earnings'              => $totalEarnings,
+                'total_gaji_bersih'           => $totalGajiBersih,
+            ]);
+
+            $updatedCount++;
+        }
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil menyimpan bonus & lembur untuk {$updatedCount} karyawan."
+            ]);
+        }
+
+        return redirect()->route('penggajian.bonus.periode', ['periode' => $periode, 'outlet' => $outlet])
+            ->with('success', "Seluruh bonus & lembur ({$updatedCount} karyawan) berhasil diperbarui secara bersamaan.");
+    }
 }

@@ -400,6 +400,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::get('/penggajian/create', [PenggajianController::class, 'create'])->name('penggajian.create');
         Route::get('/penggajian/periode', [PenggajianController::class, 'periodeDetail'])->name('penggajian.show-periode');
         Route::post('/penggajian/auto-fill', [PenggajianController::class, 'autoFill'])->name('penggajian.auto-fill');
+        Route::post('/penggajian/periode/batch-update', [PenggajianController::class, 'batchUpdateGajiPokok'])->name('penggajian.periode.batch-update');
         Route::get('/penggajian/export-excel', [PenggajianController::class, 'exportPayrollExcel'])->name('penggajian.export-excel');
         Route::post('/penggajian/ajukan-approval', [PenggajianController::class, 'ajukanApproval'])->name('penggajian.ajukanApproval');
         Route::post('/penggajian/approve', [PenggajianController::class, 'approve'])->name('penggajian.approve');
@@ -419,16 +420,22 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         // Bonus & Lembur Standalone Menu
         Route::get('/penggajian/bonus', [BonusPenggajianController::class, 'index'])->name('penggajian.bonus.index');
         Route::get('/penggajian/bonus/periode/{periode?}', [BonusPenggajianController::class, 'showPeriode'])->name('penggajian.bonus.periode');
+        Route::post('/penggajian/bonus/batch-update', [BonusPenggajianController::class, 'batchUpdate'])->name('penggajian.bonus.batch-update');
         Route::get('/penggajian/bonus/{id}/edit', [BonusPenggajianController::class, 'edit'])->name('penggajian.bonus.edit');
         Route::put('/penggajian/bonus/{id}', [BonusPenggajianController::class, 'update'])->name('penggajian.bonus.update');
 
         // Potongan & Pengurangan Standalone Menu
         Route::get('/penggajian/potongan', [PotonganPenggajianController::class, 'index'])->name('penggajian.potongan.index');
         Route::get('/penggajian/potongan/periode/{periode?}', [PotonganPenggajianController::class, 'showPeriode'])->name('penggajian.potongan.periode');
+        Route::post('/penggajian/potongan/batch-update', [PotonganPenggajianController::class, 'batchUpdate'])->name('penggajian.potongan.batch-update');
         Route::get('/penggajian/potongan/{id}/edit', [PotonganPenggajianController::class, 'edit'])->name('penggajian.potongan.edit');
         Route::put('/penggajian/potongan/{id}', [PotonganPenggajianController::class, 'update'])->name('penggajian.potongan.update');
 
-        // Data Keterlambatan Karyawan
+        // Data Keterlambatan Karyawan & Master Shift
+        Route::get('/keterlambatan/shifts', [KeterlambatanController::class, 'getShifts'])->name('keterlambatan.shifts.index');
+        Route::post('/keterlambatan/shifts', [KeterlambatanController::class, 'storeShift'])->name('keterlambatan.shifts.store');
+        Route::put('/keterlambatan/shifts/{id}', [KeterlambatanController::class, 'updateShift'])->name('keterlambatan.shifts.update');
+        Route::delete('/keterlambatan/shifts/{id}', [KeterlambatanController::class, 'deleteShift'])->name('keterlambatan.shifts.destroy');
         Route::get('/keterlambatan/hitung-ajax', [KeterlambatanController::class, 'hitungAjax'])->name('keterlambatan.hitung-ajax');
         Route::resource('keterlambatan', KeterlambatanController::class)->names('keterlambatan');
 

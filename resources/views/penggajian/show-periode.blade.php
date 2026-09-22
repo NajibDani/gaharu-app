@@ -27,6 +27,13 @@
 
                     <div class="flex items-center gap-2 flex-wrap shrink-0">
                         @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
+                        <button type="button" onclick="submitBatchGajiPokok(this)" id="btnBatchSaveGajiPokok"
+                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s; white-space: nowrap;"
+                                onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
+                                title="Simpan seluruh perubahan hari kerja / waktu kerja di halaman ini sekaligus">
+                            <span>&#128190;</span> Simpan Semua Gaji Pokok
+                        </button>
+
                         <form action="{{ route('penggajian.auto-fill') }}" method="POST" class="inline m-0 p-0">
                             @csrf
                             <input type="hidden" name="periode" value="{{ $periode }}">
@@ -41,8 +48,8 @@
                         </form>
 
                         <button type="button" @click="openCreateModal()"
-                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s; white-space: nowrap;"
-                                onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
+                                style="background-color: #ffffff; color: #334155; border: 1.5px solid #cbd5e1; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
+                                onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#ffffff'"
                                 title="Input slip gaji baru secara manual via pop-up">
                             <span style="font-size: 14px; line-height: 1;">+</span> Input Gaji
                         </button>
@@ -136,17 +143,18 @@
 
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm" style="overflow: visible;">
                 <div class="overflow-x-auto pb-8" style="overflow-y: visible; min-height: 220px;">
-                    <table class="w-full text-xs text-left" id="tableKaryawan">
-                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100 border-b border-slate-200">
+                    <table class="w-full min-w-[1060px] text-xs text-left divide-y divide-slate-200" id="tableKaryawan">
+                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100/90 border-b border-slate-200">
                             <tr>
-                                <th class="px-3.5 py-2.5 w-10 text-center">#</th>
-                                <th class="px-4 py-2.5 min-w-[240px]">Karyawan</th>
-                                <th class="px-3.5 py-2.5 text-center whitespace-nowrap">Waktu Kerja</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Tarif Satuan</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Gaji Pokok / Pendapatan</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Potongan</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Gaji Bersih</th>
-                                <th class="px-3.5 py-2.5 text-center w-56 whitespace-nowrap">Aksi</th>
+                                <th class="px-3 py-3 w-10 text-center whitespace-nowrap">#</th>
+                                <th class="px-4 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
+                                <th class="px-3 py-3 text-center whitespace-nowrap min-w-[115px]">Hari Kerja</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[130px]">Tarif Satuan</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Gaji Pokok</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[125px]">Total Bonus</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Total Pengurangan</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[140px]">Gaji Bersih</th>
+                                <th class="px-4 py-3 text-center min-w-[170px] whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white" id="tbodyKaryawan">
@@ -155,8 +163,10 @@
                                 $tarifHarian = $payroll->tarif_harian_total > 0
                                     ? $payroll->tarif_harian_total
                                     : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
-                                $earnings = $payroll->total_earnings;
-                                $deductions = $payroll->total_deductions;
+                                $totalBonus = (float)(($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) + ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0));
+                                $totalPotongan = (float)($payroll->total_deductions ?? (($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) + ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_dll ?? 0)));
+                                $gajiPokok = (float)($payroll->gaji_utama ?? 0);
+                                $earnings = (float)($payroll->total_earnings > 0 ? $payroll->total_earnings : ($gajiPokok + $totalBonus));
                                 $isPaid = $payroll->is_paid;
                                 $confirmMsg = 'Bayar gaji ' . ($payroll->karyawan->nama_karyawan ?? 'Karyawan') . ' dan buat Jurnal Umum?';
                                 
@@ -281,7 +291,7 @@
                                             ? $itemBreakdowns->map(fn($ib) => 'P' . $ib['periode'] . ': Rp ' . number_format($ib['tarif'], 0, ',', '.') . $ib['per_label'])->implode(' · ')
                                             : 'Rp ' . number_format($tarifHarian, 0, ',', '.') . ($satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari')))
                                         : ('Rp ' . number_format($tarifHarian, 0, ',', '.') . ($satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari'))),
-                                    'gaji_utama' => number_format($payroll->gaji_utama, 0, ',', '.'),
+                                    'gaji_utama' => number_format($gajiPokok, 0, ',', '.'),
                                     'jam_lembur' => $payroll->jam_lembur,
                                     'lembur' => number_format($payroll->lembur, 0, ',', '.'),
                                     'banyak_target' => $payroll->banyak_target,
@@ -291,12 +301,13 @@
                                     'banyak_birthday' => $payroll->banyak_birthday_service,
                                     'bonus_birthday' => number_format($payroll->bonus_birthday, 0, ',', '.'),
                                     'bonus_dll' => number_format($payroll->bonus_dll, 0, ',', '.'),
-                                    'total_earnings' => number_format($payroll->total_earnings, 0, ',', '.'),
+                                    'total_bonus' => number_format($totalBonus, 0, ',', '.'),
+                                    'total_earnings' => number_format($earnings, 0, ',', '.'),
                                     'potongan_terlambat' => number_format($payroll->potongan_terlambat, 0, ',', '.'),
                                     'potongan_inventaris' => number_format($payroll->potongan_inventaris, 0, ',', '.'),
                                     'potongan_kasbon' => number_format($payroll->potongan_kasbon, 0, ',', '.'),
                                     'potongan_dll' => number_format($payroll->potongan_dll, 0, ',', '.'),
-                                    'total_deductions' => number_format($payroll->total_deductions, 0, ',', '.'),
+                                    'total_deductions' => number_format($totalPotongan, 0, ',', '.'),
                                     'take_home_pay' => number_format($payroll->take_home_pay, 0, ',', '.'),
                                     'is_paid' => $isPaid,
                                     'slip_url' => route('penggajian.show', $payroll->id),
@@ -333,121 +344,151 @@
                                 ];
                             @endphp
                             <tr class="payroll-row hover:bg-slate-50/80 transition-colors"
+                                data-id="{{ $payroll->id }}"
+                                data-karyawan-id="{{ $payroll->karyawan_id }}"
+                                data-satuan="{{ $satuanRow }}"
+                                data-tarif="{{ (float)$tarifHarian }}"
+                                data-bonus-total="{{ (float)$totalBonus }}"
+                                data-deductions-total="{{ (float)$totalPotongan }}"
+                                data-has-multiple="{{ $hasMultiplePeriods ? '1' : '0' }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
-                                <td class="px-3.5 py-2.5 text-center text-xs text-slate-500 font-bold">{{ $index + 1 }}</td>
+                                <td class="px-3 py-3 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
 
-                                <td class="px-4 py-2.5 min-w-[240px]">
+                                {{-- KARYAWAN --}}
+                                <td class="px-4 py-3 min-w-[200px]">
                                     <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug flex items-center gap-1.5 flex-wrap">
                                         <span>{{ $payroll->karyawan->nama_karyawan ?? '-' }}</span>
                                         @if($hasMultiplePeriods)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200" title="Akumulasi seluruh periode dalam bulan ini">
-                                                &#10003; {{ $payroll->items->count() }} Periode (Gabungan)
+                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap" title="Akumulasi seluruh periode dalam bulan ini">
+                                                &#10003; {{ $payroll->items->count() }} Periode
                                             </span>
                                         @endif
                                     </div>
-                                    <div class="text-[11px] text-slate-600 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                        <span class="font-bold text-slate-800">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
+                                    <div class="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1.5 flex-wrap">
+                                        <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                         @if($payroll->karyawan->departemen)
-                                            <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
+                                            <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600">{{ $payroll->karyawan->departemen }}</span>
                                         @endif
                                         <span class="bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800">{{ $badgeSatuanText }}</span>
                                     </div>
                                 </td>
 
-                                <td class="px-3.5 py-2.5 text-center whitespace-nowrap">
+                                {{-- 1. HARI KERJA (BISA DIISI LANGSUNG) --}}
+                                <td class="px-3 py-3 text-center whitespace-nowrap">
                                     @if($hasMultiplePeriods)
-                                        @if($isSameUnit)
-                                            <span class="text-xs font-extrabold text-slate-900">{{ $payroll->hari_kerja }}</span>
-                                            <span class="text-[11px] text-slate-600 font-medium"> {{ $primarySuffix }}</span>
-                                            <div class="text-[10px] text-indigo-700 font-semibold mt-0.5">
+                                        <div class="inline-flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
+                                            <span class="text-xs font-black text-slate-900">{{ $waktuDisplay }}</span>
+                                            <div class="flex items-center justify-center gap-1 text-[10px] text-indigo-700 font-semibold flex-wrap">
                                                 @foreach($itemBreakdowns as $ib)
-                                                    P{{ $ib['periode'] }}: {{ $ib['hari_kerja'] }} {{ $ib['suffix'] }}{{ !$loop->last ? ' + ' : '' }}
+                                                    <span class="bg-indigo-50 border border-indigo-200/80 px-1 py-0.2 rounded text-[9.5px]">P{{ $ib['periode'] }}: {{ $ib['hari_kerja'] }}{{ $ib['suffix'] }}</span>
                                                 @endforeach
+                                            </div>
+                                        </div>
+                                    @else
+                                        @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                            <div class="inline-flex items-center gap-1.5 justify-center whitespace-nowrap">
+                                                <input type="number" step="0.5" min="0"
+                                                       class="batch-hari-kerja w-16 text-center bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 focus:bg-white rounded-md px-2 py-1 text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                                       value="{{ ($payroll->hari_kerja && $payroll->hari_kerja > 0) ? (float)$payroll->hari_kerja : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onGajiPokokRowInput(this)">
+                                                <span class="text-[11px] text-slate-600 font-bold whitespace-nowrap">
+                                                    {{ $satuanRow === 'Per Jam' ? 'jam' : ($satuanRow === 'Bulanan' ? 'bln' : 'hr') }}
+                                                </span>
                                             </div>
                                         @else
-                                            <div class="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-lg text-center">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <span class="text-xs font-black text-indigo-950">
-                                                        {{ $ib['hari_kerja'] }}<span class="text-[10px] font-bold text-indigo-700 ml-0.5">{{ $ib['suffix'] }}</span>
-                                                    </span>
-                                                    @if(!$loop->last)
-                                                        <span class="text-xs font-black text-indigo-300 mx-0.5">+</span>
-                                                    @endif
-                                                @endforeach
-                                            </div>
-                                            <div class="text-[10px] text-indigo-600 font-semibold mt-0.5">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    P{{ $ib['periode'] }}: {{ $ib['hari_kerja'] }} {{ $ib['suffix'] }} ({{ $ib['satuan'] }}){{ !$loop->last ? ' · ' : '' }}
-                                                @endforeach
+                                            <div class="whitespace-nowrap">
+                                                <span class="text-xs font-black text-slate-900">{{ $payroll->hari_kerja }}</span>
+                                                <span class="text-[11px] text-slate-600 font-semibold">
+                                                    {{ $satuanRow === 'Per Jam' ? ' jam' : ($satuanRow === ' Bulanan' ? ' bln' : ' hr') }}
+                                                </span>
                                             </div>
                                         @endif
-                                    @else
-                                        <span class="text-xs font-extrabold text-slate-900">{{ $payroll->hari_kerja }}</span>
-                                        <span class="text-[11px] text-slate-600 font-medium">
-                                            {{ $satuanRow === 'Per Jam' ? ' jam' : ($satuanRow === 'Bulanan' ? ' bln' : ' hr') }}
-                                        </span>
                                     @endif
                                 </td>
 
-                                <td class="px-3.5 py-2.5 text-right whitespace-nowrap">
+                                {{-- 2. REKAP TARIF SATUAN --}}
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
                                     @if($hasMultiplePeriods && ($itemBreakdowns->pluck('tarif')->unique()->count() > 1 || !$isSameUnit))
-                                        <div class="space-y-0.5 text-right">
+                                        <div class="flex flex-col items-end gap-1">
                                             @foreach($itemBreakdowns as $ib)
-                                                <div class="text-[11px] whitespace-nowrap">
-                                                    <span class="text-[9.5px] font-extrabold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded border border-indigo-200">P{{ $ib['periode'] }}</span>
-                                                    <span class="font-extrabold text-slate-800">Rp {{ number_format($ib['tarif'], 0, ',', '.') }}</span><span class="text-[10px] text-slate-500 font-semibold">{{ $ib['per_label'] }}</span>
-                                                </div>
+                                                <span class="inline-flex items-center gap-1 text-[10.5px] whitespace-nowrap">
+                                                    <span class="text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0.2 rounded">P{{ $ib['periode'] }}</span>
+                                                    <span class="font-bold text-slate-800 whitespace-nowrap">Rp&nbsp;{{ number_format($ib['tarif'], 0, ',', '.') }}</span><span class="text-[10px] text-slate-500 font-normal">{{ $ib['per_label'] }}</span>
+                                                </span>
                                             @endforeach
                                         </div>
                                     @else
-                                        <span class="text-xs text-slate-800 font-bold">Rp {{ number_format($tarifHarian, 0, ',', '.') }}</span>
-                                        <span class="text-[10px] text-slate-500 font-semibold block">
-                                            {{ $satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari') }}
-                                        </span>
+                                        <div class="whitespace-nowrap">
+                                            <span class="text-xs text-slate-800 font-bold whitespace-nowrap">Rp&nbsp;{{ number_format($tarifHarian, 0, ',', '.') }}</span>
+                                            <span class="text-[10px] text-slate-500 font-medium block whitespace-nowrap">
+                                                {{ $satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari') }}
+                                            </span>
+                                        </div>
                                     @endif
                                 </td>
 
-                                <td class="px-4 py-3.5 text-right">
-                                    <span class="text-xs font-bold text-emerald-700">Rp {{ number_format($earnings, 0, ',', '.') }}</span>
-                                    <div class="text-[11px] text-slate-600 font-medium">
-                                        Pokok: Rp {{ number_format($payroll->gaji_utama, 0, ',', '.') }}
+                                {{-- 3. REKAP GAJI POKOK --}}
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <div class="whitespace-nowrap">
+                                        <span class="text-xs font-extrabold text-slate-900 row-gaji-pokok-cell whitespace-nowrap">Rp&nbsp;{{ number_format($gajiPokok, 0, ',', '.') }}</span>
                                     </div>
                                     @if($hasMultiplePeriods)
-                                        <div class="text-[10px] text-indigo-700 font-semibold mt-0.5 whitespace-nowrap">
+                                        <div class="flex flex-col items-end gap-0.5 mt-0.5">
                                             @foreach($itemBreakdowns as $ib)
-                                                P{{ $ib['periode'] }}: Rp {{ number_format($ib['gaji_utama'], 0, ',', '.') }} ({{ $ib['hari_kerja'] }} {{ $ib['suffix'] }}){{ !$loop->last ? ' · ' : '' }}
+                                                <span class="text-[10px] text-indigo-700 font-semibold whitespace-nowrap">P{{ $ib['periode'] }}: Rp&nbsp;{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span>
                                             @endforeach
                                         </div>
                                     @endif
                                 </td>
 
-                                <td class="px-4 py-3.5 text-right">
-                                    @if($deductions > 0)
-                                        <span class="text-xs font-bold text-rose-700">- Rp {{ number_format($deductions, 0, ',', '.') }}</span>
-                                        @if($payroll->potongan_terlambat > 0)
-                                            <div class="text-[11px] text-rose-600 font-medium">Terlambat: Rp {{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</div>
+                                {{-- 4. REKAP TOTAL BONUS (DARI MENU BONUS & LEMBUR) --}}
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    @if($totalBonus > 0)
+                                        <div class="whitespace-nowrap">
+                                            <span class="text-xs font-bold text-amber-700 whitespace-nowrap">+&nbsp;Rp&nbsp;{{ number_format($totalBonus, 0, ',', '.') }}</span>
+                                        </div>
+                                        @if($payroll->jam_lembur > 0)
+                                            <div class="text-[10px] text-slate-500 font-medium whitespace-nowrap">Lembur: {{ $payroll->jam_lembur }} jam</div>
                                         @endif
                                     @else
-                                        <span class="text-xs text-slate-400 font-medium">-</span>
+                                        <span class="text-slate-400 font-semibold text-xs whitespace-nowrap">-</span>
                                     @endif
                                 </td>
 
-                                <td class="px-4 py-3.5 text-right">
-                                    <span class="text-sm font-black text-slate-900">Rp {{ number_format($payroll->take_home_pay, 0, ',', '.') }}</span>
+                                {{-- 5. REKAP TOTAL PENGURANGAN (DARI MENU POTONGAN) --}}
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    @if($totalPotongan > 0)
+                                        <div class="whitespace-nowrap">
+                                            <span class="text-xs font-bold text-rose-700 whitespace-nowrap">-&nbsp;Rp&nbsp;{{ number_format($totalPotongan, 0, ',', '.') }}</span>
+                                        </div>
+                                        @if($payroll->potongan_terlambat > 0)
+                                            <div class="text-[10px] text-rose-600 font-medium whitespace-nowrap">Terlambat: Rp&nbsp;{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</div>
+                                        @endif
+                                    @else
+                                        <span class="text-slate-400 font-semibold text-xs whitespace-nowrap">-</span>
+                                    @endif
+                                </td>
+
+                                {{-- 6. GAJI BERSIH (TAKE HOME PAY) --}}
+                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                    <div class="whitespace-nowrap">
+                                        <span class="text-sm font-black text-slate-900 row-take-home-pay-cell whitespace-nowrap">Rp&nbsp;{{ number_format($payroll->take_home_pay, 0, ',', '.') }}</span>
+                                    </div>
                                     @if($hasMultiplePeriods)
-                                        <span class="block text-[10px] font-extrabold text-indigo-600 mt-0.5">Total Semua Periode</span>
+                                        <span class="block text-[9.5px] font-bold text-indigo-600 mt-0.5 whitespace-nowrap">Semua Periode</span>
                                     @endif
                                 </td>
 
-                                <td class="px-4 py-3.5 text-center">
-                                    <div class="flex items-center justify-center gap-1.5 flex-wrap">
+                                <td class="px-4 py-3 text-center whitespace-nowrap">
+                                    <div class="flex items-center justify-center gap-1.5 whitespace-nowrap">
 
                                         {{-- TOMBOL DETAIL POPUP --}}
                                         <button type="button"
                                                 @click="activeDetail = {{ json_encode($detailPayload) }}; openDetailModal = true;"
-                                                class="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors border border-slate-300 cursor-pointer"
+                                                class="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors border border-slate-300 cursor-pointer whitespace-nowrap"
                                                 title="Lihat rincian lengkap gaji bersih">
                                             &#128065; Detail
                                         </button>
@@ -461,7 +502,7 @@
                                                   onsubmit="return confirm('{{ addslashes($confirmMsg) }}')">
                                                 @csrf
                                                 <button type="submit"
-                                                        class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-all whitespace-nowrap">
+                                                        class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-all whitespace-nowrap cursor-pointer">
                                                     &#128179; Bayar
                                                 </button>
                                             </form>
@@ -1411,6 +1452,97 @@
                     confirmButtonColor: '#16a34a',
                     width: 480
                 });
+            }
+        }
+
+        // =========================================================================
+        // BATCH EDIT GAJI POKOK (INLINE HARI KERJA)
+        // =========================================================================
+        function onGajiPokokRowInput(el) {
+            const row = el.closest('.payroll-row');
+            if (!row) return;
+
+            const hk = parseFloat(el.value) || 0;
+            const satuan = row.getAttribute('data-satuan') || 'Harian';
+            const tarif = parseFloat(row.getAttribute('data-tarif')) || 0;
+            const totalBonus = parseFloat(row.getAttribute('data-bonus-total')) || 0;
+            const totalDeductions = parseFloat(row.getAttribute('data-deductions-total')) || 0;
+
+            let gajiPokok = (satuan === 'Bulanan') ? tarif : (hk * tarif);
+            let takeHomePay = gajiPokok + totalBonus - totalDeductions;
+
+            const pokokEl = row.querySelector('.row-gaji-pokok-cell');
+            const thpEl = row.querySelector('.row-take-home-pay-cell');
+
+            if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(gajiPokok).toLocaleString('id-ID');
+            if (thpEl) thpEl.textContent = 'Rp ' + Math.round(takeHomePay).toLocaleString('id-ID');
+        }
+
+        async function submitBatchGajiPokok(btn) {
+            const rows = document.querySelectorAll('.payroll-row');
+            if (!rows.length) return;
+
+            const items = [];
+            rows.forEach(row => {
+                const id = row.getAttribute('data-id');
+                const karyawanId = row.getAttribute('data-karyawan-id');
+                const hkInput = row.querySelector('.batch-hari-kerja');
+
+                if (hkInput) {
+                    items.push({
+                        id: id,
+                        karyawan_id: karyawanId,
+                        hari_kerja: parseFloat(hkInput.value) || 0,
+                    });
+                }
+            });
+
+            if (!items.length) {
+                alert('Tidak ada input waktu kerja yang dapat diedit langsung.');
+                return;
+            }
+
+            const origContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span>&#8987;</span> Menyimpan...';
+
+            try {
+                const response = await fetch("{{ route('penggajian.periode.batch-update') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        items: items,
+                        periode: "{{ $periode }}",
+                        outlet: "{{ $selectedOutlet }}"
+                    })
+                });
+
+                const res = await response.json();
+                if (response.ok && res.success) {
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Tersimpan!',
+                            text: res.message || 'Waktu kerja & gaji pokok berhasil diperbarui.',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                    } else {
+                        alert(res.message || 'Waktu kerja & gaji pokok berhasil disimpan!');
+                    }
+                } else {
+                    alert('Gagal menyimpan: ' + (res.message || 'Terjadi kesalahan sistem.'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Terjadi kesalahan jaringan atau server saat menyimpan data.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origContent;
             }
         }
     </script>

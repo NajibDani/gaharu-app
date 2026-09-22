@@ -26,9 +26,17 @@
                     </div>
 
                     <div class="flex items-center gap-2 shrink-0">
-                        <span style="font-size: 12px; font-weight: 800; background-color: #fffbf5; border: 1.5px solid #fcd34d; padding: 6px 14px; border-radius: 8px; color: #78350f; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                        <span id="headerTotalBonusBadge" style="font-size: 12px; font-weight: 800; background-color: #fffbf5; border: 1.5px solid #fcd34d; padding: 6px 14px; border-radius: 8px; color: #78350f; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                             Total Bonus: Rp {{ number_format($payrolls->sum('total_bonus'), 0, ',', '.') }}
                         </span>
+                        @if(($currentStatus ?? 'draft') !== 'approved' && $payrolls->isNotEmpty())
+                        <button type="button" onclick="submitBatchBonus(this)" id="btnBatchSaveBonus"
+                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 6px 16px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s;"
+                                onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
+                                title="Simpan seluruh perubahan input bonus & lembur di halaman ini sekaligus">
+                            <span>&#128190;</span> Simpan Semua Bonus
+                        </button>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -56,8 +64,8 @@
                     {{-- Search Input --}}
                     <div class="relative">
                         <input type="text" id="searchKaryawan" onkeyup="filterKaryawanTable()"
-                               placeholder="&#128269; Cari nama karyawan..."
-                               style="width: 220px; padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none;">
+                                placeholder="&#128269; Cari nama karyawan..."
+                                style="width: 220px; padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none;">
                     </div>
 
                     {{-- Filter Departemen --}}
@@ -85,35 +93,47 @@
                     </button>
                 </div>
 
-                <div class="text-xs text-slate-700 font-bold bg-white border border-slate-200 shadow-sm px-3 py-1.5 rounded-lg">
-                    <strong class="text-slate-900 font-black" id="visibleCount">{{ count($payrolls) }}</strong> karyawan terdaftar
+                <div class="flex items-center gap-2">
+                    <div class="text-xs text-slate-700 font-bold bg-white border border-slate-200 shadow-sm px-3 py-1.5 rounded-lg">
+                        <strong class="text-slate-900 font-black" id="visibleCount">{{ count($payrolls) }}</strong> karyawan terdaftar
+                    </div>
                 </div>
             </div>
 
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full text-xs text-left">
-                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100 border-b border-slate-200">
+                    <table class="w-full min-w-[1020px] text-xs text-left divide-y divide-slate-200" id="tableBonus">
+                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100/90 border-b border-slate-200">
                             <tr>
-                                <th class="px-3.5 py-2.5 w-10 text-center">#</th>
-                                <th class="px-4 py-2.5 min-w-[240px]">Karyawan</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Lembur (Jam)</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Target</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Tgl Merah</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Birthday</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Bonus Lain</th>
-                                <th class="px-3.5 py-2.5 text-right whitespace-nowrap">Total Bonus</th>
-                                <th class="px-3.5 py-2.5 text-center w-28 whitespace-nowrap">Aksi</th>
+                                <th class="px-3.5 py-3 w-10 text-center whitespace-nowrap">#</th>
+                                <th class="px-4 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[120px]">Lembur (Jam)</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Target</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Tgl Merah</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[120px]">Birthday (x)</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Bonus Lain</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Total Bonus</th>
+                                <th class="px-3 py-3 text-center min-w-[90px] whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
                             @forelse($payrolls as $index => $payroll)
+                            @php
+                                $isRowLocked = $payroll->is_paid || $payroll->status === 'approved';
+                                $satuanRow = $payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian';
+                                $tarifHarian = $payroll->tarif_harian_total > 0
+                                    ? $payroll->tarif_harian_total
+                                    : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+                            @endphp
                             <tr class="payroll-row hover:bg-slate-50/80 transition-colors"
+                                data-id="{{ $payroll->id }}"
+                                data-satuan="{{ $satuanRow }}"
+                                data-tarif="{{ (float)$tarifHarian }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
                                 <td class="px-3.5 py-2.5 text-center text-xs text-slate-500 font-bold">{{ $index + 1 }}</td>
-                                <td class="px-4 py-2.5 min-w-[240px]">
+                                <td class="px-4 py-2.5 min-w-[200px]">
                                     <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug">
                                         {{ $payroll->karyawan->nama_karyawan ?? '-' }}
                                     </div>
@@ -122,64 +142,124 @@
                                         @if($payroll->karyawan->departemen)
                                             <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
                                         @endif
+                                        <span class="bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800">{{ $satuanRow }}</span>
                                     </div>
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->jam_lembur > 0)
+
+                                {{-- 1. JAM LEMBUR (x 10.000) --}}
+                                <td class="px-2 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="number" step="0.5" min="0"
+                                               class="batch-jam-lembur w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ ($payroll->jam_lembur && $payroll->jam_lembur > 0) ? (float)$payroll->jam_lembur : '' }}"
+                                               placeholder="0"
+                                               oninput="onBonusRowInput(this)">
+                                        <div class="sub-lembur-text text-[10px] text-slate-500 font-semibold mt-0.5 text-right {{ ($payroll->jam_lembur ?? 0) > 0 ? '' : 'hidden' }}">
+                                            Rp {{ number_format(($payroll->jam_lembur ?? 0) * 10000, 0, ',', '.') }}
+                                        </div>
+                                    @else
                                         <div class="font-bold text-slate-800 text-xs">Rp {{ number_format($payroll->lembur, 0, ',', '.') }}</div>
                                         <div class="text-[10px] text-slate-500 font-medium">{{ $payroll->jam_lembur }} jam</div>
-                                    @else
-                                        <span class="text-slate-400">-</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->bonus_target > 0)
+
+                                {{-- 2. TARGET --}}
+                                <td class="px-2 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        @if($satuanRow === 'Harian')
+                                            <input type="number" step="1" min="0"
+                                                   class="batch-banyak-target w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                                   value="{{ ($payroll->banyak_target && $payroll->banyak_target > 0) ? (int)$payroll->banyak_target : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onBonusRowInput(this)">
+                                            <div class="sub-target-text text-[10px] text-slate-500 font-semibold mt-0.5 text-right {{ ($payroll->banyak_target ?? 0) > 0 ? '' : 'hidden' }}">
+                                                Rp {{ number_format(($payroll->banyak_target ?? 0) * $tarifHarian, 0, ',', '.') }}
+                                            </div>
+                                        @else
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-bonus-target w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                                   value="{{ $payroll->bonus_target > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onBonusRowInput(this)">
+                                            <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target }}">
+                                        @endif
+                                    @else
                                         <div class="font-bold text-slate-800 text-xs">Rp {{ number_format($payroll->bonus_target, 0, ',', '.') }}</div>
-                                        @if(($payroll->satuan_gaji ?? 'Harian') === 'Harian')
+                                        @if($satuanRow === 'Harian')
                                             <div class="text-[10px] text-slate-500 font-medium">{{ $payroll->banyak_target }}x target</div>
                                         @else
-                                            <div class="text-[10.5px] text-amber-800 font-bold max-w-[140px] truncate ml-auto" title="{{ $payroll->catatan_bonus_target ?: 'Manual' }}">
-                                                {{ $payroll->catatan_bonus_target ?: 'Rincian Manual' }}
-                                            </div>
+                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto">{{ $payroll->catatan_bonus_target ?: 'Manual' }}</div>
                                         @endif
-                                    @else
-                                        <span class="text-slate-400">-</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->bonus_tanggal_merah > 0)
+
+                                {{-- 3. TANGGAL MERAH --}}
+                                <td class="px-2 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        @if($satuanRow === 'Harian')
+                                            <input type="number" step="1" min="0"
+                                                   class="batch-banyak-merah w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                                   value="{{ ($payroll->banyak_tanggal_merah && $payroll->banyak_tanggal_merah > 0) ? (int)$payroll->banyak_tanggal_merah : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onBonusRowInput(this)">
+                                            <div class="sub-merah-text text-[10px] text-slate-500 font-semibold mt-0.5 text-right {{ ($payroll->banyak_tanggal_merah ?? 0) > 0 ? '' : 'hidden' }}">
+                                                Rp {{ number_format(($payroll->banyak_tanggal_merah ?? 0) * $tarifHarian, 0, ',', '.') }}
+                                            </div>
+                                        @else
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-bonus-merah w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                                   value="{{ $payroll->bonus_tanggal_merah > 0 ? number_format($payroll->bonus_tanggal_merah, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onBonusRowInput(this)">
+                                            <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah }}">
+                                        @endif
+                                    @else
                                         <div class="font-bold text-slate-800 text-xs">Rp {{ number_format($payroll->bonus_tanggal_merah, 0, ',', '.') }}</div>
-                                        @if(($payroll->satuan_gaji ?? 'Harian') === 'Harian')
+                                        @if($satuanRow === 'Harian')
                                             <div class="text-[10px] text-slate-500 font-medium">{{ $payroll->banyak_tanggal_merah }}x hadir</div>
                                         @else
-                                            <div class="text-[10.5px] text-amber-800 font-bold max-w-[140px] truncate ml-auto" title="{{ $payroll->catatan_bonus_tanggal_merah ?: 'Manual' }}">
-                                                {{ $payroll->catatan_bonus_tanggal_merah ?: 'Rincian Manual' }}
-                                            </div>
+                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto">{{ $payroll->catatan_bonus_tanggal_merah ?: 'Manual' }}</div>
                                         @endif
-                                    @else
-                                        <span class="text-slate-400">-</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->banyak_birthday_service > 0)
+
+                                {{-- 4. BIRTHDAY (x 5.000) --}}
+                                <td class="px-2 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="number" step="1" min="0"
+                                               class="batch-banyak-birthday w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ ($payroll->banyak_birthday_service && $payroll->banyak_birthday_service > 0) ? (int)$payroll->banyak_birthday_service : '' }}"
+                                               placeholder="0"
+                                               oninput="onBonusRowInput(this)">
+                                        <div class="sub-birthday-text text-[10px] text-slate-500 font-semibold mt-0.5 text-right {{ ($payroll->banyak_birthday_service ?? 0) > 0 ? '' : 'hidden' }}">
+                                            Rp {{ number_format(($payroll->banyak_birthday_service ?? 0) * 5000, 0, ',', '.') }}
+                                        </div>
+                                    @else
                                         <div class="font-bold text-slate-800 text-xs">Rp {{ number_format($payroll->bonus_birthday, 0, ',', '.') }}</div>
                                         <div class="text-[10px] text-slate-500 font-medium">{{ $payroll->banyak_birthday_service }}x</div>
-                                    @else
-                                        <span class="text-slate-400">-</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right">
-                                    @if($payroll->bonus_dll > 0)
-                                        <span class="font-bold text-slate-800 text-xs">Rp {{ number_format($payroll->bonus_dll, 0, ',', '.') }}</span>
+
+                                {{-- 5. BONUS LAIN --}}
+                                <td class="px-2 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="text"
+                                               class="batch-input-rupiah batch-bonus-dll w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-black text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ $payroll->bonus_dll > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '' }}"
+                                               placeholder="0"
+                                               oninput="onBonusRowInput(this)">
                                     @else
-                                        <span class="text-slate-400">-</span>
+                                        <span class="font-bold text-slate-700 text-xs">{{ $payroll->bonus_dll > 0 ? 'Rp ' . number_format($payroll->bonus_dll, 0, ',', '.') : '-' }}</span>
                                     @endif
                                 </td>
-                                <td class="px-3.5 py-2.5 text-right font-black text-amber-800 text-xs whitespace-nowrap">
-                                    Rp {{ number_format($payroll->total_bonus, 0, ',', '.') }}
+
+                                {{-- TOTAL BONUS (LIVE CALCULATED) --}}
+                                <td class="px-4 py-3 text-right font-black text-amber-800 text-xs whitespace-nowrap row-total-bonus-cell">
+                                    Rp&nbsp;{{ number_format($payroll->total_bonus, 0, ',', '.') }}
                                 </td>
-                                <td class="px-3.5 py-2.5 text-center">
-                                    @if(!$payroll->is_paid)
+
+                                <td class="px-3 py-3 text-center whitespace-nowrap">
+                                    @if(!$isRowLocked)
                                         <button type="button"
                                                 onclick="openModalEditBonus({{ json_encode([
                                                     'id' => $payroll->id,
@@ -200,10 +280,10 @@
                                                     'bonus_dll' => $payroll->bonus_dll ?? 0,
                                                     'update_url' => route('penggajian.bonus.update', $payroll->id),
                                                 ]) }})"
-                                                style="background-color: #fffbf5; border: 1.5px solid #fcd34d; color: #78350f; font-weight: 800; font-size: 11.5px; padding: 5px 12px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all .15s;"
+                                                style="background-color: #fffbf5; border: 1.5px solid #fcd34d; color: #78350f; font-weight: 800; font-size: 11.5px; padding: 4px 10px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all .15s;"
                                                 onmouseover="this.style.background='#fef3c7'" onmouseout="this.style.background='#fffbf5'"
                                                 title="Edit Komponen Bonus via Pop-up">
-                                            <span>&#9999;</span> Edit
+                                            <span>&#9999;</span> Detail
                                         </button>
                                     @else
                                         <span class="text-[10.5px] text-slate-400 italic font-semibold">Terkunci</span>
@@ -439,6 +519,220 @@
             if (!val) return 0;
             let clean = String(val).replace(/[^0-9]/g, '');
             return parseFloat(clean) || 0;
+        }
+
+        function onBonusRowInput(el) {
+            if (el.classList.contains('batch-input-rupiah')) {
+                let raw = String(el.value).replace(/[^0-9]/g, '');
+                if (raw) {
+                    el.value = Math.round(parseFloat(raw)).toLocaleString('id-ID');
+                } else {
+                    el.value = '';
+                }
+            }
+
+            const row = el.closest('.payroll-row');
+            if (!row) return;
+
+            recalcRowBonus(row);
+            recalcGrandTotalBonus();
+        }
+
+        function recalcRowBonus(row) {
+            const satuan = row.getAttribute('data-satuan') || 'Harian';
+            const tarifHarian = parseFloat(row.getAttribute('data-tarif')) || 0;
+
+            const jamLemburEl = row.querySelector('.batch-jam-lembur');
+            const targetEl    = row.querySelector('.batch-banyak-target') || row.querySelector('.batch-bonus-target');
+            const merahEl     = row.querySelector('.batch-banyak-merah') || row.querySelector('.batch-bonus-merah');
+            const birthdayEl  = row.querySelector('.batch-banyak-birthday');
+            const dllEl       = row.querySelector('.batch-bonus-dll');
+            const totalCell   = row.querySelector('.row-total-bonus-cell');
+
+            // 1. Lembur
+            let jamLembur = jamLemburEl ? parseFloat(jamLemburEl.value) || 0 : 0;
+            let upahLembur = jamLembur * 10000;
+            const subLembur = row.querySelector('.sub-lembur-text');
+            if (subLembur) {
+                subLembur.textContent = formatRupiahJs(upahLembur);
+                if (upahLembur > 0) subLembur.classList.remove('hidden');
+                else subLembur.classList.add('hidden');
+            }
+
+            // 2. Target
+            let bonusTarget = 0;
+            if (satuan === 'Harian') {
+                let banyakTarget = targetEl ? parseInt(targetEl.value) || 0 : 0;
+                bonusTarget = banyakTarget * tarifHarian;
+                const subTarget = row.querySelector('.sub-target-text');
+                if (subTarget) {
+                    subTarget.textContent = formatRupiahJs(bonusTarget);
+                    if (bonusTarget > 0) subTarget.classList.remove('hidden');
+                    else subTarget.classList.add('hidden');
+                }
+            } else {
+                bonusTarget = targetEl ? parseRupiahVal(targetEl.value) : 0;
+            }
+
+            // 3. Tgl Merah
+            let bonusMerah = 0;
+            if (satuan === 'Harian') {
+                let banyakMerah = merahEl ? parseInt(merahEl.value) || 0 : 0;
+                bonusMerah = banyakMerah * tarifHarian;
+                const subMerah = row.querySelector('.sub-merah-text');
+                if (subMerah) {
+                    subMerah.textContent = formatRupiahJs(bonusMerah);
+                    if (bonusMerah > 0) subMerah.classList.remove('hidden');
+                    else subMerah.classList.add('hidden');
+                }
+            } else {
+                bonusMerah = merahEl ? parseRupiahVal(merahEl.value) : 0;
+            }
+
+            // 4. Birthday
+            let banyakBirthday = birthdayEl ? parseInt(birthdayEl.value) || 0 : 0;
+            let bonusBirthday = banyakBirthday * 5000;
+            const subBirthday = row.querySelector('.sub-birthday-text');
+            if (subBirthday) {
+                subBirthday.textContent = formatRupiahJs(bonusBirthday);
+                if (bonusBirthday > 0) subBirthday.classList.remove('hidden');
+                else subBirthday.classList.add('hidden');
+            }
+
+            // 5. DLL
+            let bonusDll = dllEl ? parseRupiahVal(dllEl.value) : 0;
+
+            let totalRowBonus = upahLembur + bonusTarget + bonusMerah + bonusBirthday + bonusDll;
+            if (totalCell) {
+                totalCell.textContent = formatRupiahJs(totalRowBonus);
+            }
+        }
+
+        function recalcGrandTotalBonus() {
+            let grandTotal = 0;
+            document.querySelectorAll('.payroll-row').forEach(row => {
+                const satuan = row.getAttribute('data-satuan') || 'Harian';
+                const tarifHarian = parseFloat(row.getAttribute('data-tarif')) || 0;
+
+                const jamLemburEl = row.querySelector('.batch-jam-lembur');
+                const targetEl    = row.querySelector('.batch-banyak-target') || row.querySelector('.batch-bonus-target');
+                const merahEl     = row.querySelector('.batch-banyak-merah') || row.querySelector('.batch-bonus-merah');
+                const birthdayEl  = row.querySelector('.batch-banyak-birthday');
+                const dllEl       = row.querySelector('.batch-bonus-dll');
+
+                let jamLembur = jamLemburEl ? parseFloat(jamLemburEl.value) || 0 : 0;
+                let upahLembur = jamLembur * 10000;
+
+                let bonusTarget = 0;
+                if (satuan === 'Harian') {
+                    let banyakTarget = targetEl ? parseInt(targetEl.value) || 0 : 0;
+                    bonusTarget = banyakTarget * tarifHarian;
+                } else {
+                    bonusTarget = targetEl ? parseRupiahVal(targetEl.value) : 0;
+                }
+
+                let bonusMerah = 0;
+                if (satuan === 'Harian') {
+                    let banyakMerah = merahEl ? parseInt(merahEl.value) || 0 : 0;
+                    bonusMerah = banyakMerah * tarifHarian;
+                } else {
+                    bonusMerah = merahEl ? parseRupiahVal(merahEl.value) : 0;
+                }
+
+                let banyakBirthday = birthdayEl ? parseInt(birthdayEl.value) || 0 : 0;
+                let bonusBirthday = banyakBirthday * 5000;
+
+                let bonusDll = dllEl ? parseRupiahVal(dllEl.value) : 0;
+
+                grandTotal += (upahLembur + bonusTarget + bonusMerah + bonusBirthday + bonusDll);
+            });
+
+            const badge = document.getElementById('headerTotalBonusBadge');
+            if (badge) {
+                badge.textContent = 'Total Bonus: ' + formatRupiahJs(grandTotal);
+            }
+        }
+
+        async function submitBatchBonus(btn) {
+            const rows = document.querySelectorAll('.payroll-row');
+            if (!rows.length) return;
+
+            const items = [];
+            rows.forEach(row => {
+                const id = row.getAttribute('data-id');
+                if (!id) return;
+
+                const satuan = row.getAttribute('data-satuan') || 'Harian';
+                const jamLemburEl = row.querySelector('.batch-jam-lembur');
+                const targetEl    = row.querySelector('.batch-banyak-target') || row.querySelector('.batch-bonus-target');
+                const catatanTargetEl = row.querySelector('.batch-catatan-target');
+                const merahEl     = row.querySelector('.batch-banyak-merah') || row.querySelector('.batch-bonus-merah');
+                const catatanMerahEl = row.querySelector('.batch-catatan-merah');
+                const birthdayEl  = row.querySelector('.batch-banyak-birthday');
+                const dllEl       = row.querySelector('.batch-bonus-dll');
+
+                let itemData = {
+                    id: id,
+                    jam_lembur: jamLemburEl ? parseFloat(jamLemburEl.value) || 0 : 0,
+                    banyak_birthday_service: birthdayEl ? parseInt(birthdayEl.value) || 0 : 0,
+                    bonus_dll: dllEl ? parseRupiahVal(dllEl.value) : 0,
+                };
+
+                if (satuan === 'Harian') {
+                    itemData.banyak_target = targetEl ? parseInt(targetEl.value) || 0 : 0;
+                    itemData.banyak_tanggal_merah = merahEl ? parseInt(merahEl.value) || 0 : 0;
+                } else {
+                    itemData.bonus_target = targetEl ? parseRupiahVal(targetEl.value) : 0;
+                    itemData.catatan_bonus_target = catatanTargetEl ? catatanTargetEl.value : '';
+                    itemData.bonus_tanggal_merah = merahEl ? parseRupiahVal(merahEl.value) : 0;
+                    itemData.catatan_bonus_tanggal_merah = catatanMerahEl ? catatanMerahEl.value : '';
+                }
+
+                items.push(itemData);
+            });
+
+            const origContent = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span>&#8987;</span> Menyimpan...';
+
+            try {
+                const response = await fetch("{{ route('penggajian.bonus.batch-update') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        items: items,
+                        periode: "{{ $targetPeriode }}",
+                        outlet: "{{ $selectedOutlet }}"
+                    })
+                });
+
+                const res = await response.json();
+                if (response.ok && res.success) {
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Tersimpan!',
+                            text: res.message || 'Seluruh data bonus & lembur berhasil diperbarui.',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                    } else {
+                        alert(res.message || 'Seluruh data bonus & lembur berhasil disimpan!');
+                    }
+                } else {
+                    alert('Gagal menyimpan: ' + (res.message || 'Terjadi kesalahan sistem.'));
+                }
+            } catch (err) {
+                console.error(err);
+                alert('Terjadi kesalahan jaringan atau server saat menyimpan data.');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = origContent;
+            }
         }
 
         function openModalEditBonus(data) {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Keterlambatan;
 use App\Models\Karyawan;
 use App\Models\Penggajian;
+use App\Models\MasterShift;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -101,9 +102,13 @@ class KeterlambatanController extends Controller
             array_unshift($periodes, date('Y-m'));
         }
 
+        MasterShift::ensureTableExists();
+        $shifts = MasterShift::orderBy('jam_shift', 'asc')->get();
+
         return view('keterlambatan.index', compact(
             'listKeterlambatan',
             'karyawans',
+            'shifts',
             'periode',
             'periodes',
             'search',
@@ -322,5 +327,89 @@ class KeterlambatanController extends Controller
                 'total_gaji_bersih'  => $totalGajiBersih,
             ]);
         }
+    }
+
+    /**
+     * AJAX: Get all master shifts
+     */
+    public function getShifts(): JsonResponse
+    {
+        MasterShift::ensureTableExists();
+        $shifts = MasterShift::orderBy('jam_shift', 'asc')->get();
+        return response()->json($shifts);
+    }
+
+    /**
+     * AJAX: Tambah Master Shift baru
+     */
+    public function storeShift(Request $request): JsonResponse
+    {
+        $request->validate([
+            'nama'      => 'required|string|max:100',
+            'jam_shift' => 'required',
+        ]);
+
+        $jamShift = strlen($request->jam_shift) == 5 ? $request->jam_shift . ':00' : $request->jam_shift;
+
+        MasterShift::ensureTableExists();
+        $shift = MasterShift::create([
+            'nama'      => trim($request->nama),
+            'jam_shift' => $jamShift,
+            'urutan'    => (int) ($request->urutan ?? 0),
+        ]);
+
+        $allShifts = MasterShift::orderBy('jam_shift', 'asc')->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pilihan shift baru berhasil ditambahkan.',
+            'shift'   => $shift,
+            'shifts'  => $allShifts,
+        ]);
+    }
+
+    /**
+     * AJAX: Edit Master Shift
+     */
+    public function updateShift(Request $request, $id): JsonResponse
+    {
+        $request->validate([
+            'nama'      => 'required|string|max:100',
+            'jam_shift' => 'required',
+        ]);
+
+        $jamShift = strlen($request->jam_shift) == 5 ? $request->jam_shift . ':00' : $request->jam_shift;
+
+        $shift = MasterShift::findOrFail($id);
+        $shift->update([
+            'nama'      => trim($request->nama),
+            'jam_shift' => $jamShift,
+        ]);
+
+        $allShifts = MasterShift::orderBy('jam_shift', 'asc')->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pilihan shift berhasil diperbarui.',
+            'shift'   => $shift,
+            'shifts'  => $allShifts,
+        ]);
+    }
+
+    /**
+     * AJAX: Hapus Master Shift
+     */
+    public function deleteShift($id): JsonResponse
+    {
+        $shift = MasterShift::findOrFail($id);
+        $shift->delete();
+
+        $allShifts = MasterShift::orderBy('jam_shift', 'asc')->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pilihan shift berhasil dihapus.',
+            'shifts'  => $allShifts,
+        ]);
     }
 }
