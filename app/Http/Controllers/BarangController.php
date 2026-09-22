@@ -223,37 +223,32 @@ class BarangController extends Controller
                 'tipe_penjualan'        => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
             ]);
 
-            // Simpan minimum stock & status aktif per outlet & divisi jika jenis BAHAN_BAKU
-            if ($request->jenis_utama === 'BAHAN_BAKU') {
+            // Simpan alokasi/tagging divisi jika jenis BAHAN_BAKU
+            if ($request->jenis_utama === 'BAHAN_BAKU' && $request->has('divisi_tag')) {
                 $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
                 foreach ($gudangListAll as $g) {
                     if ($g->divisi->count() > 0) {
                         foreach ($g->divisi as $div) {
-                            $minVal = $request->input("min_stock_outlet.{$g->id}.{$div->id}");
-                            $isActive = (bool)$request->input("min_stock_active.{$g->id}.{$div->id}", true);
-                            
-                            // Jika ada nilai minimum stock atau status dinonaktifkan (atau diset khusus), simpan
-                            if (($minVal !== null && $minVal !== '') || !$isActive) {
+                            $isTagged = (bool)$request->input("divisi_tag.{$g->id}.{$div->id}", false);
+                            if ($isTagged) {
                                 \App\Models\BarangMinimumStock::create([
                                     'barang_id'     => $barang->id,
                                     'gudang_id'     => $g->id,
                                     'divisi_id'     => $div->id,
-                                    'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
-                                    'is_active'     => $isActive,
+                                    'minimum_stock' => 0,
+                                    'is_active'     => true,
                                 ]);
                             }
                         }
                     } else {
-                        $minVal = $request->input("min_stock_outlet.{$g->id}.none", $request->input("min_stock_outlet.{$g->id}"));
-                        $isActive = (bool)$request->input("min_stock_active.{$g->id}.none", $request->input("min_stock_active.{$g->id}", true));
-                        
-                        if (($minVal !== null && $minVal !== '') || !$isActive) {
+                        $isTagged = (bool)$request->input("divisi_tag.{$g->id}.none", false);
+                        if ($isTagged) {
                             \App\Models\BarangMinimumStock::create([
                                 'barang_id'     => $barang->id,
                                 'gudang_id'     => $g->id,
                                 'divisi_id'     => null,
-                                'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
-                                'is_active'     => $isActive,
+                                'minimum_stock' => 0,
+                                'is_active'     => true,
                             ]);
                         }
                     }
@@ -344,77 +339,85 @@ class BarangController extends Controller
                 return back()->withErrors(['tipe_penjualan' => 'Tipe penjualan tidak valid untuk role Anda.'])->withInput();
             }
         }
-
-        $data = MasterBarang::findOrFail($id);
     
-        $harga_b2b = str_replace('.', '', $request->harga_jual_b2b ?? 0);
-        $harga_pos = str_replace('.', '', $request->harga_jual_pos ?? 0);
-        $hpp = str_replace('.', '', $request->hpp_referensi ?? 0);
+        $hpp = null;
+        $harga_b2b = null;
+        $harga_pos = null;
+        
+        // HPP Referensi
+        if ($request->jenis_utama == 'BAHAN_BAKU' || $request->jenis_utama == 'OPERATIONAL') {
+            $hpp = $request->hpp_referensi;
+        } elseif ($request->jenis_utama == 'BAHAN_SETENGAH_JADI') {
+            $hpp = $request->hpp_bsj ?? $request->hpp_referensi;
+        } elseif ($request->jenis_utama == 'BARANG_JADI') {
+            $hpp = $request->hpp_bj ?? $request->hpp_referensi;
+        }
     
-        if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI', 'OPERATIONAL'])) {
-            $harga_b2b = 0;
-            $harga_pos = 0;
+        // Harga Jual
+        if ($request->jenis_utama == 'BARANG_JADI') {
+            if ($request->tipe_penjualan == 'B2B') {
+                $harga_b2b = $request->harga_jual_b2b;
+            } elseif ($request->tipe_penjualan == 'POS Kejingga' || $request->tipe_penjualan == 'POS Gaharu') {
+                $harga_pos = $request->harga_jual_pos;
+            }
         }
     
         $data->update([
-            'kategori_id' => $request->kategori_id,
-            'resep_id'    => $request->filled('resep_id') 
-                ? $request->resep_id 
-                : ($data->resep_id ?: ($data->resepBtklBop ? $data->resepBtklBop->id : null)), 
-            'kode_barang' => $request->kode_barang,
-            'nama'        => $request->nama,
-            'satuan'      => $request->satuan,
+            'kategori_id'    => $request->kategori_id,
+            'resep_id'       => $request->resep_id,
+            'kode_barang'    => $request->kode_barang,
+            'nama'           => $request->nama,
+            'satuan'         => $request->satuan,
             'satuan_pembelian' => $request->satuan_pembelian,
             'konversi_pembelian' => $request->konversi_pembelian ?? 1.00,
-    
             'is_bahan_baku'  => $request->jenis_utama == 'BAHAN_BAKU',
             'is_bahan_setengah_jadi' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI',
             'is_barang_jadi' => $request->jenis_utama == 'BARANG_JADI',
             'is_operational' => $request->jenis_utama == 'OPERATIONAL',
-            'is_direct_consumption' => false,
-    
             'hpp_referensi'  => $hpp,
             'harga_jual_b2b' => $harga_b2b,
             'harga_jual_pos' => $harga_pos,
-            'minimum_stock'  => $request->minimum_stock,
-            'minimum_stock_ck' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_ck : null,
-            'minimum_stock_kejingga' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_kejingga : null,
-            'minimum_stock_gaharu' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? $request->minimum_stock_gaharu : null,
+            'minimum_stock'  => $request->has('minimum_stock') ? $request->minimum_stock : $data->minimum_stock,
+            'minimum_stock_ck' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? ($request->has('minimum_stock_ck') ? $request->minimum_stock_ck : $data->minimum_stock_ck) : null,
+            'minimum_stock_kejingga' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? ($request->has('minimum_stock_kejingga') ? $request->minimum_stock_kejingga : $data->minimum_stock_kejingga) : null,
+            'minimum_stock_gaharu' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI' ? ($request->has('minimum_stock_gaharu') ? $request->minimum_stock_gaharu : $data->minimum_stock_gaharu) : null,
             'minimum_order'  => $request->minimum_order ?? 1.00,
             'tipe_penjualan' => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
         ]);
 
-        // Simpan / update minimum stock & status aktif per outlet & divisi
-        \App\Models\BarangMinimumStock::where('barang_id', $data->id)->delete();
-        if ($request->jenis_utama === 'BAHAN_BAKU') {
+        // Simpan / update tagging divisi jika form mengirimkan divisi_tag
+        if ($request->jenis_utama === 'BAHAN_BAKU' && $request->has('divisi_tag')) {
+            $existingMinStocks = \App\Models\BarangMinimumStock::where('barang_id', $data->id)->get();
+            \App\Models\BarangMinimumStock::where('barang_id', $data->id)->delete();
+
             $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
             foreach ($gudangListAll as $g) {
                 if ($g->divisi->count() > 0) {
                     foreach ($g->divisi as $div) {
-                        $minVal = $request->input("min_stock_outlet.{$g->id}.{$div->id}");
-                        $isActive = (bool)$request->input("min_stock_active.{$g->id}.{$div->id}", true);
-                        
-                        if (($minVal !== null && $minVal !== '') || !$isActive) {
+                        $isTagged = (bool)$request->input("divisi_tag.{$g->id}.{$div->id}", false);
+                        if ($isTagged) {
+                            $old = $existingMinStocks->where('gudang_id', $g->id)->where('divisi_id', $div->id)->first();
+                            $minVal = $old ? (float)$old->minimum_stock : 0;
                             \App\Models\BarangMinimumStock::create([
                                 'barang_id'     => $data->id,
                                 'gudang_id'     => $g->id,
                                 'divisi_id'     => $div->id,
-                                'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
-                                'is_active'     => $isActive,
+                                'minimum_stock' => $minVal,
+                                'is_active'     => true,
                             ]);
                         }
                     }
                 } else {
-                    $minVal = $request->input("min_stock_outlet.{$g->id}.none", $request->input("min_stock_outlet.{$g->id}"));
-                    $isActive = (bool)$request->input("min_stock_active.{$g->id}.none", $request->input("min_stock_active.{$g->id}", true));
-                    
-                    if (($minVal !== null && $minVal !== '') || !$isActive) {
+                    $isTagged = (bool)$request->input("divisi_tag.{$g->id}.none", false);
+                    if ($isTagged) {
+                        $old = $existingMinStocks->where('gudang_id', $g->id)->whereNull('divisi_id')->first();
+                        $minVal = $old ? (float)$old->minimum_stock : 0;
                         \App\Models\BarangMinimumStock::create([
                             'barang_id'     => $data->id,
                             'gudang_id'     => $g->id,
                             'divisi_id'     => null,
-                            'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
-                            'is_active'     => $isActive,
+                            'minimum_stock' => $minVal,
+                            'is_active'     => true,
                         ]);
                     }
                 }
@@ -423,6 +426,86 @@ class BarangController extends Controller
     
         $page = $request->query('page', 1);
         return redirect()->route('barang.index', ['page' => $page])->with('success', 'Data berhasil diupdate');
+    }
+
+    /**
+     * Update Minimum Stock khusus dari Modal "Atur Minimum Stock"
+     */
+    public function updateMinStock(Request $request, $id)
+    {
+        $barang = MasterBarang::withoutGlobalScopes()->findOrFail($id);
+
+        if ($barang->is_bahan_setengah_jadi) {
+            $barang->update([
+                'minimum_stock_ck'       => $request->filled('minimum_stock_ck') ? (float)$request->minimum_stock_ck : null,
+                'minimum_stock_kejingga' => $request->filled('minimum_stock_kejingga') ? (float)$request->minimum_stock_kejingga : null,
+                'minimum_stock_gaharu'   => $request->filled('minimum_stock_gaharu') ? (float)$request->minimum_stock_gaharu : null,
+            ]);
+        } elseif ($barang->is_bahan_baku) {
+            $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
+            foreach ($gudangListAll as $g) {
+                if ($g->divisi->count() > 0) {
+                    foreach ($g->divisi as $div) {
+                        $minVal = $request->input("min_stock_outlet.{$g->id}.{$div->id}");
+                        $isActive = (bool)$request->input("min_stock_active.{$g->id}.{$div->id}", false);
+
+                        if ($isActive || ($minVal !== null && $minVal !== '')) {
+                            \App\Models\BarangMinimumStock::updateOrCreate(
+                                [
+                                    'barang_id' => $barang->id,
+                                    'gudang_id' => $g->id,
+                                    'divisi_id' => $div->id,
+                                ],
+                                [
+                                    'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
+                                    'is_active'     => $isActive,
+                                ]
+                            );
+                        } else {
+                            \App\Models\BarangMinimumStock::where('barang_id', $barang->id)
+                                ->where('gudang_id', $g->id)
+                                ->where('divisi_id', $div->id)
+                                ->delete();
+                        }
+                    }
+                } else {
+                    $minVal = $request->input("min_stock_outlet.{$g->id}.none");
+                    $isActive = (bool)$request->input("min_stock_active.{$g->id}.none", false);
+
+                    if ($isActive || ($minVal !== null && $minVal !== '')) {
+                        \App\Models\BarangMinimumStock::updateOrCreate(
+                            [
+                                'barang_id' => $barang->id,
+                                'gudang_id' => $g->id,
+                                'divisi_id'     => null,
+                            ],
+                            [
+                                'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
+                                'is_active'     => $isActive,
+                            ]
+                        );
+                    } else {
+                        \App\Models\BarangMinimumStock::where('barang_id', $barang->id)
+                            ->where('gudang_id', $g->id)
+                            ->whereNull('divisi_id')
+                            ->delete();
+                    }
+                }
+            }
+        } else {
+            $barang->update([
+                'minimum_stock' => $request->filled('minimum_stock') ? (float)$request->minimum_stock : null,
+            ]);
+        }
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Minimum stock untuk '{$barang->nama}' berhasil disimpan."
+            ]);
+        }
+
+        return redirect()->back()->with('success', "Minimum stock untuk '{$barang->nama}' berhasil disimpan.");
     }
 
     public function destroy(MasterBarang $barang)
@@ -564,6 +647,7 @@ class BarangController extends Controller
         $minStockEndIndex = count($headers) - 1;
 
         // Tambahan kolom akhir
+        $headers[] = 'minimum_stock';
         $headers[] = 'minimum_stock_umum';
         $headers[] = 'minimum_order';
 

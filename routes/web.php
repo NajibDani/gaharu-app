@@ -82,6 +82,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/barang/check-nama', [BarangController::class, 'checkNama'])->name('barang.check-nama');
         Route::get('/barang/import/template', [BarangController::class, 'importTemplate'])->name('barang.import.template');
         Route::post('/barang/import', [BarangController::class, 'import'])->name('barang.import');
+        Route::post('/barang/{id}/update-min-stock', [BarangController::class, 'updateMinStock'])->name('barang.update-min-stock');
 
         // Event & Notifikasi Khusus (High Season, Promo, dll)
         Route::patch('event-notifikasi/{id}/toggle', [EventNotifikasiController::class, 'toggleActive'])->name('event-notifikasi.toggle');
