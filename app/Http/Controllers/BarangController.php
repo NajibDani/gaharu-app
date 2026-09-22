@@ -103,22 +103,32 @@ class BarangController extends Controller
             ], 404);
         }
 
-        // Ambil prefix dari tabel kategori
-        $prefix = strtoupper($kategori->prefix);
+        // Ambil prefix dari tabel kategori atau buat dari nama
+        $prefix = !empty($kategori->prefix)
+            ? strtoupper($kategori->prefix)
+            : strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $kategori->nama ?? 'BRG'), 0, 3));
 
-        // Cari kode terakhir berdasarkan prefix
-        $lastBarang = MasterBarang::where('kode_barang', 'like', $prefix . '%')
-            ->orderByRaw('CAST(SUBSTRING(kode_barang, ' . (strlen($prefix) + 1) . ') AS UNSIGNED) DESC')
-            ->first();
-
-        if ($lastBarang) {
-            // Ambil angka setelah prefix
-            $lastNumber = (int) substr($lastBarang->kode_barang, strlen($prefix));
-            $newNumber = $lastNumber + 1;
-        } else {
-            $newNumber = 1;
+        if (empty($prefix)) {
+            $prefix = 'BRG';
         }
 
+        // Cari nomor urut terbesar
+        $allCodes = MasterBarang::withoutGlobalScopes()
+            ->where('kode_barang', 'like', $prefix . '%')
+            ->pluck('kode_barang');
+
+        $maxNumber = 0;
+        foreach ($allCodes as $code) {
+            $suffix = substr($code, strlen($prefix));
+            if (is_numeric($suffix)) {
+                $num = (int) $suffix;
+                if ($num > $maxNumber) {
+                    $maxNumber = $num;
+                }
+            }
+        }
+
+        $newNumber = $maxNumber + 1;
         $kodeBarang = $prefix . str_pad($newNumber, 3, '0', STR_PAD_LEFT);
 
         return response()->json([
@@ -223,8 +233,8 @@ class BarangController extends Controller
                 'tipe_penjualan'        => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
             ]);
 
-            // Simpan alokasi/tagging divisi jika jenis BAHAN_BAKU
-            if ($request->jenis_utama === 'BAHAN_BAKU' && $request->has('divisi_tag')) {
+            // Simpan alokasi/tagging divisi jika jenis BAHAN_BAKU atau BAHAN_SETENGAH_JADI
+            if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI']) && $request->has('divisi_tag')) {
                 $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
                 foreach ($gudangListAll as $g) {
                     if ($g->divisi->count() > 0) {
@@ -277,6 +287,8 @@ class BarangController extends Controller
 
     public function update(Request $request, $id)
     {
+        $data = MasterBarang::withoutGlobalScopes()->findOrFail($id);
+
         $namaClean = trim($request->nama);
         $request->merge([
             'nama' => $namaClean,
@@ -340,27 +352,31 @@ class BarangController extends Controller
             }
         }
     
-        $hpp = null;
-        $harga_b2b = null;
-        $harga_pos = null;
+        $hpp = 0;
+        $harga_b2b = 0;
+        $harga_pos = 0;
         
         // HPP Referensi
         if ($request->jenis_utama == 'BAHAN_BAKU' || $request->jenis_utama == 'OPERATIONAL') {
-            $hpp = $request->hpp_referensi;
+            $hpp = $request->hpp_referensi ?? $data->hpp_referensi ?? 0;
         } elseif ($request->jenis_utama == 'BAHAN_SETENGAH_JADI') {
-            $hpp = $request->hpp_bsj ?? $request->hpp_referensi;
+            $hpp = $request->hpp_bsj ?? $request->hpp_referensi ?? $data->hpp_referensi ?? 0;
         } elseif ($request->jenis_utama == 'BARANG_JADI') {
-            $hpp = $request->hpp_bj ?? $request->hpp_referensi;
+            $hpp = $request->hpp_bj ?? $request->hpp_referensi ?? $data->hpp_referensi ?? 0;
         }
     
         // Harga Jual
         if ($request->jenis_utama == 'BARANG_JADI') {
             if ($request->tipe_penjualan == 'B2B') {
-                $harga_b2b = $request->harga_jual_b2b;
+                $harga_b2b = $request->harga_jual_b2b ?? $data->harga_jual_b2b ?? 0;
             } elseif ($request->tipe_penjualan == 'POS Kejingga' || $request->tipe_penjualan == 'POS Gaharu') {
-                $harga_pos = $request->harga_jual_pos;
+                $harga_pos = $request->harga_jual_pos ?? $data->harga_jual_pos ?? 0;
             }
         }
+    
+        $harga_b2b = (float) str_replace('.', '', (string)($harga_b2b ?? 0));
+        $harga_pos = (float) str_replace('.', '', (string)($harga_pos ?? 0));
+        $hpp       = (float) str_replace('.', '', (string)($hpp ?? 0));
     
         $data->update([
             'kategori_id'    => $request->kategori_id,
@@ -386,7 +402,7 @@ class BarangController extends Controller
         ]);
 
         // Simpan / update tagging divisi jika form mengirimkan divisi_tag
-        if ($request->jenis_utama === 'BAHAN_BAKU' && $request->has('divisi_tag')) {
+        if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI']) && $request->has('divisi_tag')) {
             $existingMinStocks = \App\Models\BarangMinimumStock::where('barang_id', $data->id)->get();
             \App\Models\BarangMinimumStock::where('barang_id', $data->id)->delete();
 
@@ -435,13 +451,7 @@ class BarangController extends Controller
     {
         $barang = MasterBarang::withoutGlobalScopes()->findOrFail($id);
 
-        if ($barang->is_bahan_setengah_jadi) {
-            $barang->update([
-                'minimum_stock_ck'       => $request->filled('minimum_stock_ck') ? (float)$request->minimum_stock_ck : null,
-                'minimum_stock_kejingga' => $request->filled('minimum_stock_kejingga') ? (float)$request->minimum_stock_kejingga : null,
-                'minimum_stock_gaharu'   => $request->filled('minimum_stock_gaharu') ? (float)$request->minimum_stock_gaharu : null,
-            ]);
-        } elseif ($barang->is_bahan_baku) {
+        if ($barang->is_bahan_baku || $barang->is_bahan_setengah_jadi) {
             $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
             foreach ($gudangListAll as $g) {
                 if ($g->divisi->count() > 0) {
@@ -477,7 +487,7 @@ class BarangController extends Controller
                             [
                                 'barang_id' => $barang->id,
                                 'gudang_id' => $g->id,
-                                'divisi_id'     => null,
+                                'divisi_id' => null,
                             ],
                             [
                                 'minimum_stock' => ($minVal !== null && $minVal !== '') ? (float)$minVal : 0,
@@ -491,6 +501,14 @@ class BarangController extends Controller
                             ->delete();
                     }
                 }
+            }
+
+            if ($barang->is_bahan_setengah_jadi && ($request->has('minimum_stock_ck') || $request->has('minimum_stock_kejingga') || $request->has('minimum_stock_gaharu'))) {
+                $barang->update([
+                    'minimum_stock_ck'       => $request->filled('minimum_stock_ck') ? (float)$request->minimum_stock_ck : null,
+                    'minimum_stock_kejingga' => $request->filled('minimum_stock_kejingga') ? (float)$request->minimum_stock_kejingga : null,
+                    'minimum_stock_gaharu'   => $request->filled('minimum_stock_gaharu') ? (float)$request->minimum_stock_gaharu : null,
+                ]);
             }
         } else {
             $barang->update([

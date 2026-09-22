@@ -360,17 +360,17 @@
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
-                        {{-- Tagging Divisi untuk Bahan Baku --}}
+                        {{-- Tagging Divisi untuk Bahan Baku & Bahan Setengah Jadi --}}
                         <div class="col-12 mb-3" id="group-tag-divisi" style="display: none;">
                             <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
                                     <label class="custom-label fw-bold mb-0" style="color: #d88656;">
-                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi (Bahan Baku)
+                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi (Bahan Baku &amp; Bahan Setengah Jadi)
                                     </label>
                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.7rem;">Pilih Divisi Pengguna</span>
                                 </div>
                                 <p class="text-muted small mb-3" style="font-size: 0.78rem;">
-                                    Aktifkan divisi tempat bahan baku ini digunakan. Bahan baku hanya akan muncul pada Stock Opname (SO) divisi yang aktif.
+                                    Aktifkan divisi tempat bahan baku / bahan setengah jadi ini digunakan. Item hanya akan muncul pada Stock Opname (SO) divisi yang aktif.
                                 </p>
                                 <div class="row g-3">
                                     @foreach($gudangList as $g)
@@ -652,17 +652,17 @@
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
-                        {{-- Tagging Divisi untuk Bahan Baku --}}
+                        {{-- Tagging Divisi untuk Bahan Baku & Bahan Setengah Jadi --}}
                         <div class="col-12 mb-3" id="editGroupTagDivisi" style="display: none;">
                             <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
                                     <label class="custom-label fw-bold mb-0" style="color: #d88656;">
-                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi (Bahan Baku)
+                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi (Bahan Baku &amp; Bahan Setengah Jadi)
                                     </label>
                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.7rem;">Pilih Divisi Pengguna</span>
                                 </div>
                                 <p class="text-muted small mb-3" style="font-size: 0.78rem;">
-                                    Aktifkan divisi tempat bahan baku ini digunakan. Bahan baku hanya akan muncul pada Stock Opname (SO) divisi yang aktif.
+                                    Aktifkan divisi tempat bahan baku / bahan setengah jadi ini digunakan. Item hanya akan muncul pada Stock Opname (SO) divisi yang aktif.
                                 </p>
                                 <div class="row g-3">
                                     @foreach($gudangList as $g)
@@ -1053,7 +1053,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const inpKonversiBeli = document.getElementById('konversi_pembelian');
 
         if (jenis.value === "BAHAN_SETENGAH_JADI") {
-            if (groupTagDivisi) groupTagDivisi.style.display = "none";
             if (satuanHelperCreate) satuanHelperCreate.classList.remove('d-none');
 
             // Khusus BSJ: jadikan satuan konversi / porsi / pack
@@ -1075,7 +1074,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (helpKonversiBeli) helpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         }
 
-        if (jenis.value === "BAHAN_BAKU") {
+        if (jenis.value === "BAHAN_BAKU" || jenis.value === "BAHAN_SETENGAH_JADI") {
             if (groupTagDivisi) groupTagDivisi.style.display = "block";
         } else {
             if (groupTagDivisi) groupTagDivisi.style.display = "none";
@@ -1179,14 +1178,7 @@ document.addEventListener("DOMContentLoaded", function () {
         var minStockBsjWrap = document.getElementById('detailMinStockBsjWrap');
         var tipeWrap = document.getElementById('detailTipePenjualanWrap');
 
-        if (jenisVal === 'BAHAN_SETENGAH_JADI') {
-            minStockWrap.style.display = 'none';
-            if (minStockBbWrap) minStockBbWrap.style.display = 'none';
-            minStockBsjWrap.style.display = 'block';
-            document.getElementById('detailMinStockCk').innerText = button.getAttribute('data-min-stock-ck') || '—';
-            document.getElementById('detailMinStockKejingga').innerText = button.getAttribute('data-min-stock-kejingga') || '—';
-            document.getElementById('detailMinStockGaharu').innerText = button.getAttribute('data-min-stock-gaharu') || '—';
-        } else if (jenisVal === 'BAHAN_BAKU') {
+        if (jenisVal === 'BAHAN_BAKU' || jenisVal === 'BAHAN_SETENGAH_JADI') {
             minStockWrap.style.display = 'none';
             minStockBsjWrap.style.display = 'none';
             if (minStockBbWrap) {
@@ -1249,7 +1241,6 @@ document.addEventListener("DOMContentLoaded", function () {
         const editInpKonversiBeli = document.getElementById('editKonversiPembelian');
 
         if (editJenis.value === "BAHAN_SETENGAH_JADI") {
-            if (editGroupTagDivisi) editGroupTagDivisi.style.display = "none";
             if (satuanHelperEdit) satuanHelperEdit.classList.remove('d-none');
 
             // Khusus BSJ
@@ -1271,7 +1262,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (editHelpKonversiBeli) editHelpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         }
 
-        if (editJenis.value === "BAHAN_BAKU") {
+        if (editJenis.value === "BAHAN_BAKU" || editJenis.value === "BAHAN_SETENGAH_JADI") {
             if (editGroupTagDivisi) editGroupTagDivisi.style.display = "block";
         } else {
             if (editGroupTagDivisi) editGroupTagDivisi.style.display = "none";
@@ -1351,7 +1342,7 @@ document.addEventListener("DOMContentLoaded", function () {
             secBsj.style.display = 'none';
             secGeneral.style.display = 'none';
 
-            if (jenisVal === 'BAHAN_BAKU') {
+            if (jenisVal === 'BAHAN_BAKU' || jenisVal === 'BAHAN_SETENGAH_JADI') {
                 secBb.style.display = 'block';
 
                 // Reset all inputs
@@ -1385,11 +1376,6 @@ document.addEventListener("DOMContentLoaded", function () {
                 document.querySelectorAll('#modalAturMinStock .outlet-active-toggle').forEach(function(chk) {
                     updateBoxAppearance(chk);
                 });
-            } else if (jenisVal === 'BAHAN_SETENGAH_JADI') {
-                secBsj.style.display = 'block';
-                document.getElementById('minStockCkInput').value = button.getAttribute('data-min-stock-ck') || '';
-                document.getElementById('minStockKejinggaInput').value = button.getAttribute('data-min-stock-kejingga') || '';
-                document.getElementById('minStockGaharuInput').value = button.getAttribute('data-min-stock-gaharu') || '';
             } else {
                 secGeneral.style.display = 'block';
                 document.getElementById('minStockGeneralInput').value = button.getAttribute('data-min-stock') || '';
