@@ -34,18 +34,18 @@
                                 </p>
                             </div>
                         </div>
-                        <a href="{{ route('pembelian.create') }}" class="btn text-white fw-bold shadow-sm" style="background-color: #DE8958;">
-                            <i class="bi bi-plus-circle-fill me-1"></i> Buat Pembelian & Lihat Saran
-                        </a>
+                        <button type="button" class="btn text-white fw-bold shadow-sm d-inline-flex align-items-center" id="btn-open-saran-modal" data-bs-toggle="modal" data-bs-target="#modalTambahPembelian" data-expand-saran="true" style="background-color: #DE8958;">
+                            <i class="bi bi-plus-circle-fill me-1"></i> Buat Pembelian &amp; Lihat Saran
+                        </button>
                     </div>
                 </div>
             </div>
         @endif
 
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <a href="{{ route('pembelian.create') }}" class="btn text-white mb-0 shadow-sm fw-semibold" style="background-color: #DE8958; border-radius: 8px;">
-                + Tambah Pembelian
-            </a>
+            <button type="button" class="btn text-white mb-0 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#modalTambahPembelian" style="background-color: #DE8958; border-radius: 8px;">
+                <i class="bi bi-plus-lg"></i> Tambah Pembelian
+            </button>
         </div>
 
         {{-- FILTER BAR --}}
@@ -740,6 +740,169 @@
         </div>
     </div>
 
+    {{-- ══════════════════ MODAL: TAMBAH PEMBELIAN (MINIMALIST & MODERN POP UP) ══════════════════ --}}
+    <div class="modal fade" id="modalTambahPembelian" tabindex="-1" aria-labelledby="modalTambahPembelianLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <form id="formTambahPembelian" method="POST" action="{{ route('pembelian.store') }}" class="modal-content rounded-4 border-0 shadow">
+                @csrf
+                <div class="modal-header py-3 border-bottom d-flex align-items-center justify-content-between" style="background: #ffffff;">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="rounded-circle d-flex align-items-center justify-content-center text-white shadow-sm" style="width: 42px; height: 42px; background: linear-gradient(135deg, #DE8958 0%, #c47141 100%); font-size: 18px;">
+                            <i class="bi bi-cart-plus-fill"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark mb-0">Tambah Pembelian Bahan Baku</h5>
+                            <small class="text-muted">Form pencatatan pengadaan &amp; pesanan barang ke Gudang Utama</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="submit" class="btn btn-sm text-white fw-bold px-3 shadow-sm d-none d-sm-inline-flex align-items-center" style="background-color: #DE8958; border-radius: 8px;">
+                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Pembelian
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                </div>
+
+                <div class="modal-body p-4">
+                    {{-- 1. INFORMASI TRANSAKSI --}}
+                    <div class="card border-0 rounded-3 p-3 mb-3" style="background-color: #f8fafc; border: 1px solid #e2e8f0 !important;">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-bold text-secondary small mb-1">
+                                    <i class="bi bi-truck me-1 text-primary"></i> Supplier <span class="text-danger">*</span>
+                                </label>
+                                <select name="supplier_id" id="tambah_supplier_id" class="form-select form-select-sm" required>
+                                    <option value="">-- Pilih Supplier --</option>
+                                    @foreach($suppliers as $supplier)
+                                        <option value="{{ $supplier->id }}" data-nama="{{ strtoupper($supplier->nama) }}">
+                                            {{ $supplier->nama }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-bold text-secondary small mb-1">
+                                    <i class="bi bi-building me-1 text-primary"></i> Gudang Tujuan <span class="text-danger">*</span>
+                                </label>
+                                @php
+                                    $gudangUtama = $gudangs->firstWhere('nama', 'Gudang Utama') ?? $gudangs->first();
+                                @endphp
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text bg-white text-muted"><i class="bi bi-geo-alt-fill text-danger"></i></span>
+                                    <input type="text" class="form-control form-control-sm bg-white fw-semibold text-dark" value="{{ $gudangUtama?->nama ?? 'Gudang Utama' }}" readonly>
+                                </div>
+                                <input type="hidden" name="gudang_id" value="{{ $gudangUtama?->id ?? 1 }}">
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-bold text-secondary small mb-1">
+                                    <i class="bi bi-calendar3 me-1 text-primary"></i> Tanggal Transaksi <span class="text-danger">*</span>
+                                </label>
+                                <input type="date" name="tanggal" id="tambah_tanggal" class="form-control form-control-sm bg-white" value="{{ date('Y-m-d') }}" required>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-bold text-secondary small mb-1">
+                                    Keterangan / Catatan Pembelian <span class="text-muted fw-normal">(Opsional)</span>
+                                </label>
+                                <input type="text" name="keterangan" id="tambah_keterangan" class="form-control form-control-sm bg-white" placeholder="Contoh: Pengadaan bahan baku mingguan, kebutuhan mendesak, dll.">
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- 2. SARAN RESTOCK (CONDITIONAL / EXPANDABLE) --}}
+                    <div id="modal-suggestion-wrapper" class="mb-3" style="display: none;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold rounded-pill shadow-xs" id="btn-modal-toggle-suggestions">
+                                <i class="bi bi-lightbulb-fill text-warning me-1"></i>
+                                <span id="modal-suggestion-btn-text">Tampilkan Saran Restock</span>
+                                <span class="badge bg-warning text-dark ms-1 rounded-pill" id="modal-suggestion-badge">0</span>
+                            </button>
+                            <button type="button" class="btn btn-xs btn-warning text-dark fw-bold shadow-xs rounded-pill px-3 py-1" id="btn-modal-apply-all-suggestions" style="display: none;">
+                                <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                            </button>
+                        </div>
+
+                        <div id="modal-suggestion-box" class="card p-3 bg-light border-warning shadow-xs rounded-3" style="display: none; border-left: 4px solid #f59e0b !important;">
+                            <p class="text-muted small mb-2" style="font-size: 0.78rem;">
+                                Bahan baku di Gudang Utama yang stoknya sudah atau hampir mencapai batas minimum:
+                            </p>
+                            <div id="modal-suggestion-list" class="d-flex flex-wrap gap-2">
+                                <!-- Dynamic suggestion pills -->
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- 3. DAFTAR BARANG PEMBELIAN --}}
+                    <div class="d-flex justify-content-between align-items-center mb-2 pt-1 border-top">
+                        <h6 class="fw-bold mb-0 text-dark small">
+                            <i class="bi bi-boxes me-1 text-primary"></i> Daftar Barang Pembelian
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-outline-primary fw-semibold rounded-3" id="btn-add-item-create">
+                            <i class="bi bi-plus-circle me-1"></i> Tambah Baris Barang
+                        </button>
+                    </div>
+
+                    <div class="table-responsive border rounded-3 mb-3" style="max-height: 380px; overflow-y: auto;">
+                        <table class="table table-hover align-middle mb-0 text-center" id="table-create-items" style="font-size: 13px;">
+                            <thead class="table-light sticky-top" style="z-index: 2;">
+                                <tr>
+                                    <th class="text-start" style="min-width: 250px;">Nama Barang <span class="text-danger">*</span></th>
+                                    <th style="width: 140px;">Qty <span class="text-danger">*</span></th>
+                                    <th style="width: 160px;">Total Harga (Rp) <span class="text-danger">*</span></th>
+                                    <th style="width: 140px;">Harga / Qty</th>
+                                    <th style="width: 170px;">Batch Preview</th>
+                                    <th style="width: 50px;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyCreateItems">
+                                {{-- Diisi via JS --}}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- 4. BIAYA TAMBAHAN & GRAND TOTAL --}}
+                    <div class="row justify-content-between align-items-center g-3">
+                        <div class="col-12 col-md-6">
+                            <div class="d-flex align-items-center gap-2 p-2 px-3 rounded-3 bg-light border text-muted small" style="font-size: 0.78rem;">
+                                <i class="bi bi-info-circle-fill text-primary fs-6 flex-shrink-0"></i>
+                                <span>Stok gudang &amp; antrean FIFO akan otomatis ditambahkan setelah Anda mengonfirmasi <strong>"Terima Barang"</strong> pada tabel data pembelian.</span>
+                            </div>
+                        </div>
+
+                        <div class="col-12 col-md-5">
+                            <div class="card border-0 rounded-3 p-3 bg-light shadow-xs" style="border: 1px solid #e2e8f0 !important;">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="text-secondary small fw-medium">Subtotal Barang:</span>
+                                    <span class="fw-bold text-dark small" id="tambah_subtotal_display">Rp 0</span>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label fw-semibold text-secondary small mb-1">Biaya Tambahan (Tax / Service / Ongkir)</label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-white fw-semibold text-muted">Rp</span>
+                                        <input type="text" name="tax_service" id="tambah_tax_service" class="form-control mask-number fw-bold text-end bg-white" placeholder="0">
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                                    <span class="fw-bold text-dark small">Grand Total Pembelian:</span>
+                                    <span class="fw-bold text-success fs-5" id="tambah_grand_total">Rp 0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light py-2 px-4 border-top d-flex justify-content-between">
+                    <button type="button" class="btn btn-sm btn-light border px-3 rounded-3" data-bs-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-sm text-white px-4 fw-bold shadow-sm rounded-3" style="background-color: #DE8958;">
+                        <i class="bi bi-check-circle-fill me-1"></i> Simpan Pembelian
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     {{-- ══════════════════ MODAL: EDIT PEMBELIAN (MINIMALIST POP UP) ══════════════════ --}}
     <div class="modal fade" id="modalEditPembelian" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -1233,6 +1396,437 @@
             document.querySelectorAll('#modalEditPembelian .mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
             });
+        });
+
+        // ── Modal Tambah Pembelian (Modern & Minimalist Pop Up) ──
+        let createRowIndex = 0;
+        let createTomSelectInstances = [];
+        let createSuggestions = [];
+        let supplierTomSelectInstance = null;
+
+        function initCreateBarangSelect(selectEl) {
+            if (!selectEl || selectEl.tomselect) return;
+            const ts = new TomSelect(selectEl, {
+                create: false,
+                placeholder: '-- Pilih Barang --',
+                allowEmptyOption: true,
+                dropdownParent: 'body',
+                maxOptions: 500,
+                onChange: function(value) {
+                    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+            createTomSelectInstances.push(ts);
+        }
+
+        function destroyCreateTomSelects() {
+            createTomSelectInstances.forEach(ts => {
+                if (ts) ts.destroy();
+            });
+            createTomSelectInstances = [];
+        }
+
+        function updateCreateQtyHint(row) {
+            const select = row.querySelector('.barang-select');
+            const qtyInput = row.querySelector('.qty-input');
+            const hint = row.querySelector('.qty-hint');
+            if (!select || !hint) return;
+
+            const opt = select.querySelector(`option[value="${select.value}"]`);
+            if (!opt || select.value === '') {
+                hint.textContent = '';
+                return;
+            }
+
+            const satuanPembelian = opt.dataset.satuanPembelian || '';
+            const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
+            const satuanUtama = opt.dataset.satuanUtama || 'Pcs';
+            const qtyVal = getCleanNumber(qtyInput ? qtyInput.value : 0);
+
+            if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
+                const totalUtama = qtyVal * konversi;
+                hint.innerHTML = `Satuan: <strong>${satuanPembelian}</strong><br><span class="text-primary">= ${Number(totalUtama).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${satuanUtama}</span> (1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})`;
+            } else {
+                hint.innerHTML = `Satuan: <strong>${satuanUtama}</strong>`;
+            }
+        }
+
+        function generateCreateBatchNumber(row) {
+            const tanggalInput = document.getElementById('tambah_tanggal');
+            const supplierSelect = document.getElementById('tambah_supplier_id');
+            const tanggal = tanggalInput ? tanggalInput.value : '';
+            const selectedSupplierId = supplierSelect ? supplierSelect.value : '';
+            const supplierOption = supplierSelect ? supplierSelect.querySelector(`option[value="${selectedSupplierId}"]`) : null;
+            const supplier = supplierOption ? (supplierOption.dataset.nama ?? '') : '';
+
+            const barangSelect = row.querySelector('.barang-select');
+            const barangOption = barangSelect ? barangSelect.querySelector(`option[value="${barangSelect.value}"]`) : null;
+            const kodeBarang = barangOption ? (barangOption.dataset.kode ?? '') : '';
+
+            const batchInput = row.querySelector('.batch-number');
+            if (!batchInput) return;
+
+            if (!tanggal || !supplier || !kodeBarang) {
+                batchInput.value = 'Otomatis';
+                return;
+            }
+
+            const tanggalFormat = tanggal.replaceAll('-', '');
+            batchInput.value = `${tanggalFormat}-${supplier}-${kodeBarang}`;
+        }
+
+        function calculateCreateHargaPerQty(row) {
+            const qtyInput = row.querySelector('.qty-input');
+            const hargaInput = row.querySelector('.harga-input');
+            const hargaPerQtyInput = row.querySelector('.harga-per-qty');
+
+            if (!qtyInput || !hargaInput || !hargaPerQtyInput) return;
+
+            const qty = getCleanNumber(qtyInput.value);
+            const harga = getCleanNumber(hargaInput.value);
+            let hasil = 0;
+
+            if (qty > 0) {
+                hasil = harga / qty;
+            }
+
+            hargaPerQtyInput.value = hasil > 0 ? ('Rp ' + formatNumberIndonesian(hasil.toFixed(2).replace('.', ','))) : '—';
+        }
+
+        function calcCreateGrandTotal() {
+            let subtotal = 0;
+            document.querySelectorAll('#tbodyCreateItems .harga-input').forEach(input => {
+                subtotal += getCleanNumber(input.value);
+            });
+            const taxService = getCleanNumber(document.getElementById('tambah_tax_service').value);
+            const grandTotal = subtotal + taxService;
+
+            const subtotalEl = document.getElementById('tambah_subtotal_display');
+            if (subtotalEl) subtotalEl.textContent = 'Rp ' + Number(subtotal).toLocaleString('id-ID');
+
+            const grandTotalEl = document.getElementById('tambah_grand_total');
+            if (grandTotalEl) grandTotalEl.textContent = 'Rp ' + Number(grandTotal).toLocaleString('id-ID');
+        }
+
+        function addCreateItemRow(barangId = '', qty = '', harga = '', batch = '') {
+            const tbody = document.getElementById('tbodyCreateItems');
+            const tr = document.createElement('tr');
+            tr.className = 'item-row';
+
+            tr.innerHTML = `
+                <td class="text-start">
+                    <select name="items[${createRowIndex}][barang_id]" class="form-select form-select-sm barang-select" required>
+                        ${generateBarangOptionsHtml(barangId)}
+                    </select>
+                </td>
+                <td>
+                    <input type="text" name="items[${createRowIndex}][qty]" class="form-control form-control-sm text-center qty-input mask-number fw-bold" value="${qty}" required placeholder="0">
+                    <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
+                </td>
+                <td>
+                    <input type="text" name="items[${createRowIndex}][harga]" class="form-control form-control-sm text-end harga-input mask-number fw-bold" value="${harga}" required placeholder="0">
+                </td>
+                <td>
+                    <input type="text" class="form-control form-control-sm text-end harga-per-qty bg-light" readonly tabindex="-1" value="—">
+                </td>
+                <td>
+                    <input type="text" name="items[${createRowIndex}][batch_number]" class="form-control form-control-sm text-center font-monospace bg-light batch-number" value="${batch}" readonly tabindex="-1" placeholder="Otomatis">
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger p-1 border-0 btn-remove-create-item" title="Hapus Baris">
+                        <i class="bi bi-trash3 fs-6"></i>
+                    </button>
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+
+            const selectEl = tr.querySelector('.barang-select');
+            initCreateBarangSelect(selectEl);
+            updateCreateQtyHint(tr);
+            generateCreateBatchNumber(tr);
+            calculateCreateHargaPerQty(tr);
+
+            createRowIndex++;
+            calcCreateGrandTotal();
+        }
+
+        function reindexCreateRows() {
+            document.querySelectorAll('#tbodyCreateItems tr.item-row').forEach((row, i) => {
+                const bSelect = row.querySelector('[name*="[barang_id]"]');
+                const qInput = row.querySelector('[name*="[qty]"]');
+                const hInput = row.querySelector('[name*="[harga]"]');
+                const btInput = row.querySelector('[name*="[batch_number]"]');
+                if (bSelect) bSelect.name = `items[${i}][barang_id]`;
+                if (qInput) qInput.name = `items[${i}][qty]`;
+                if (hInput) hInput.name = `items[${i}][harga]`;
+                if (btInput) btInput.name = `items[${i}][batch_number]`;
+            });
+            createRowIndex = document.querySelectorAll('#tbodyCreateItems tr.item-row').length;
+        }
+
+        function resetModalTambahPembelian() {
+            destroyCreateTomSelects();
+            const tbody = document.getElementById('tbodyCreateItems');
+            if (tbody) tbody.innerHTML = '';
+            createRowIndex = 0;
+
+            const form = document.getElementById('formTambahPembelian');
+            if (form) {
+                form.reset();
+                document.getElementById('tambah_tanggal').value = "{{ date('Y-m-d') }}";
+                document.getElementById('tambah_tax_service').value = '';
+            }
+
+            if (supplierTomSelectInstance) {
+                supplierTomSelectInstance.setValue('');
+            } else {
+                const suppSelect = document.getElementById('tambah_supplier_id');
+                if (suppSelect && !suppSelect.tomselect) {
+                    supplierTomSelectInstance = new TomSelect(suppSelect, {
+                        create: false,
+                        placeholder: '-- Pilih Supplier --',
+                        allowEmptyOption: true,
+                        dropdownParent: 'body',
+                    });
+                }
+            }
+
+            // Tambah minimal 1 baris kosong awal
+            addCreateItemRow();
+            calcCreateGrandTotal();
+        }
+
+        function fetchModalPembelianSuggestions(autoExpand = false) {
+            const wrapper = document.getElementById('modal-suggestion-wrapper');
+            const box = document.getElementById('modal-suggestion-box');
+            const list = document.getElementById('modal-suggestion-list');
+            const badge = document.getElementById('modal-suggestion-badge');
+            const btnApplyAll = document.getElementById('btn-modal-apply-all-suggestions');
+            const btnToggle = document.getElementById('btn-modal-toggle-suggestions');
+
+            fetch("{{ route('pembelian.suggestions') }}")
+                .then(r => r.json())
+                .then(data => {
+                    createSuggestions = data.suggestions || [];
+                    if (createSuggestions.length > 0) {
+                        wrapper.style.display = 'block';
+                        badge.textContent = createSuggestions.length;
+                        list.innerHTML = '';
+
+                        createSuggestions.forEach(item => {
+                            const pill = document.createElement('div');
+                            pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-xs rounded-3';
+                            pill.dataset.barangId = item.barang_id;
+                            pill.innerHTML = `
+                                <div class="text-start">
+                                    <div class="fw-bold">${item.nama} <span class="text-muted small">(${item.kode_barang})</span></div>
+                                    <div class="text-muted" style="font-size: 0.72rem;">
+                                        Stok Utama: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
+                                        <span class="text-success fw-bold ms-1">&rarr; Saran: ${item.suggested_qty_pembelian} ${item.satuan_pembelian}</span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-suggest-to-modal py-1 px-2 rounded-2" style="font-size: 0.72rem;" title="Tambah item ini">
+                                    <i class="bi bi-plus-circle-fill"></i> Tambah
+                                </button>
+                            `;
+
+                            pill.querySelector('.btn-add-suggest-to-modal').addEventListener('click', function () {
+                                addSuggestionToModal(item.barang_id, item.suggested_qty_pembelian, item.hpp_referensi);
+                                pill.classList.remove('bg-white');
+                                pill.classList.add('bg-warning-subtle');
+                                this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                                this.disabled = true;
+                            });
+
+                            list.appendChild(pill);
+                        });
+
+                        if (autoExpand) {
+                            box.style.display = 'block';
+                            btnApplyAll.style.display = 'inline-block';
+                            btnToggle.classList.remove('btn-outline-warning');
+                            btnToggle.classList.add('btn-warning');
+                            document.getElementById('modal-suggestion-btn-text').textContent = 'Sembunyikan Saran Restock';
+                        }
+                    } else {
+                        wrapper.style.display = 'none';
+                    }
+                })
+                .catch(() => {
+                    wrapper.style.display = 'none';
+                });
+        }
+
+        function addSuggestionToModal(barangId, qty, hppRef) {
+            const tbody = document.getElementById('tbodyCreateItems');
+            const rows = tbody.querySelectorAll('tr.item-row');
+
+            let targetRow = null;
+            for (let r of rows) {
+                let select = r.querySelector('.barang-select');
+                let qtyInp = r.querySelector('.qty-input');
+                if ((!select.value || select.value === '') && (!qtyInp.value || qtyInp.value === '')) {
+                    targetRow = r;
+                    break;
+                }
+            }
+
+            if (!targetRow) {
+                addCreateItemRow();
+                const updatedRows = tbody.querySelectorAll('tr.item-row');
+                targetRow = updatedRows[updatedRows.length - 1];
+            }
+
+            const barangSelect = targetRow.querySelector('.barang-select');
+            if (barangSelect.tomselect) {
+                barangSelect.tomselect.setValue(barangId);
+            } else {
+                barangSelect.value = barangId;
+            }
+            updateCreateQtyHint(targetRow);
+            generateCreateBatchNumber(targetRow);
+
+            const qtyInput = targetRow.querySelector('.qty-input');
+            qtyInput.value = formatNumberIndonesian(String(qty));
+
+            const hargaInput = targetRow.querySelector('.harga-input');
+            if (hppRef && hppRef > 0) {
+                const opt = barangSelect.querySelector(`option[value="${barangSelect.value}"]`);
+                const konversi = opt ? (parseFloat(opt.dataset.konversiPembelian) || 1) : 1;
+                const totalHargaEstimasi = qty * hppRef * konversi;
+                hargaInput.value = formatNumberIndonesian(String(Math.round(totalHargaEstimasi)));
+            }
+
+            calculateCreateHargaPerQty(targetRow);
+            calcCreateGrandTotal();
+        }
+
+        // Event listeners untuk Modal Tambah
+        document.getElementById('btn-add-item-create').addEventListener('click', function () {
+            addCreateItemRow();
+        });
+
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.btn-remove-create-item')) {
+                const rows = document.querySelectorAll('#tbodyCreateItems tr.item-row');
+                if (rows.length > 1) {
+                    const row = e.target.closest('tr.item-row');
+                    const select = row.querySelector('.barang-select');
+                    const barangId = select ? select.value : '';
+
+                    row.remove();
+                    reindexCreateRows();
+                    calcCreateGrandTotal();
+
+                    if (barangId) {
+                        const pill = document.querySelector(`#modal-suggestion-list [data-barang-id="${barangId}"]`);
+                        if (pill) {
+                            pill.classList.remove('bg-warning-subtle');
+                            pill.classList.add('bg-white');
+                            const btn = pill.querySelector('.btn-add-suggest-to-modal');
+                            if (btn) {
+                                btn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Tambah';
+                                btn.disabled = false;
+                            }
+                        }
+                    }
+                } else {
+                    alert('Minimal harus ada 1 barang pada pesanan.');
+                }
+            }
+        });
+
+        document.getElementById('btn-modal-toggle-suggestions').addEventListener('click', function () {
+            const box = document.getElementById('modal-suggestion-box');
+            const btnApplyAll = document.getElementById('btn-modal-apply-all-suggestions');
+            if (box.style.display === 'none') {
+                box.style.display = 'block';
+                btnApplyAll.style.display = 'inline-block';
+                document.getElementById('modal-suggestion-btn-text').textContent = 'Sembunyikan Saran Restock';
+                this.classList.remove('btn-outline-warning');
+                this.classList.add('btn-warning');
+            } else {
+                box.style.display = 'none';
+                btnApplyAll.style.display = 'none';
+                document.getElementById('modal-suggestion-btn-text').textContent = 'Tampilkan Saran Restock';
+                this.classList.remove('btn-warning');
+                this.classList.add('btn-outline-warning');
+            }
+        });
+
+        document.getElementById('btn-modal-apply-all-suggestions').addEventListener('click', function () {
+            createSuggestions.forEach(item => {
+                addSuggestionToModal(item.barang_id, item.suggested_qty_pembelian, item.hpp_referensi);
+            });
+            document.querySelectorAll('#modal-suggestion-list .btn-add-suggest-to-modal').forEach(btn => {
+                btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                btn.disabled = true;
+            });
+        });
+
+        document.getElementById('tambah_tax_service').addEventListener('input', calcCreateGrandTotal);
+
+        document.addEventListener('change', function(e) {
+            if (
+                e.target.classList.contains('barang-select') ||
+                e.target.id === 'tambah_supplier_id' ||
+                e.target.id === 'tambah_tanggal'
+            ) {
+                document.querySelectorAll('#tbodyCreateItems tr.item-row').forEach(row => {
+                    generateCreateBatchNumber(row);
+                });
+            }
+
+            if (e.target.classList.contains('barang-select')) {
+                const row = e.target.closest('#tbodyCreateItems tr.item-row');
+                if (row) {
+                    updateCreateQtyHint(row);
+                    calculateCreateHargaPerQty(row);
+                }
+            }
+        });
+
+        document.addEventListener('input', function(e) {
+            const row = e.target.closest('#tbodyCreateItems tr.item-row');
+            if (row && (e.target.classList.contains('qty-input') || e.target.classList.contains('harga-input'))) {
+                calculateCreateHargaPerQty(row);
+                calcCreateGrandTotal();
+            }
+        });
+
+        document.getElementById('formTambahPembelian').addEventListener('submit', function (e) {
+            document.querySelectorAll('#modalTambahPembelian .mask-number').forEach(input => {
+                input.value = getCleanNumber(input.value);
+            });
+        });
+
+        const modalTambahEl = document.getElementById('modalTambahPembelian');
+        if (modalTambahEl) {
+            modalTambahEl.addEventListener('show.bs.modal', function (event) {
+                const button = event ? event.relatedTarget : null;
+                const shouldExpandSaran = button && button.getAttribute('data-expand-saran') === 'true';
+
+                resetModalTambahPembelian();
+                fetchModalPembelianSuggestions(shouldExpandSaran);
+            });
+        }
+
+        // Auto open popup jika url mengandung query ?tambah=1 atau ?saran=1
+        document.addEventListener('DOMContentLoaded', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('tambah') || urlParams.has('saran')) {
+                const expandSaran = urlParams.has('saran');
+                if (modalTambahEl) {
+                    const bsModal = new bootstrap.Modal(modalTambahEl);
+                    bsModal.show();
+                    if (expandSaran) {
+                        setTimeout(() => {
+                            fetchModalPembelianSuggestions(true);
+                        }, 250);
+                    }
+                }
+            }
         });
 
         // ── Catat Pembayaran ──

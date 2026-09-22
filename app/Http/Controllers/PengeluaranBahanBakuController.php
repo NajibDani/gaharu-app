@@ -145,8 +145,8 @@ class PengeluaranBahanBakuController extends Controller
 
         $divisiList = \App\Models\GudangDivisi::with('gudang')->orderBy('nama', 'asc')->get();
 
-        // Hitung ringkasan saran restock per outlet/gudang cabang (selain Gudang Utama ID 1) secara batch
-        $outletGudangs = MasterGudang::where('id', '!=', 1)->get();
+        $gudangUtamaId = MasterGudang::getGudangUtamaId();
+        $outletGudangs = MasterGudang::where('id', '!=', $gudangUtamaId)->get();
         $outletSuggestionsSummary = [];
 
         if ($outletGudangs->isNotEmpty()) {
@@ -290,8 +290,9 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
+        $gudangUtamaId = MasterGudang::getGudangUtamaId();
         $itemIds = $items->pluck('id')->toArray();
-        $allStockRows = StokGudang::whereIn('gudang_id', array_unique([$gudang->id, 1]))
+        $allStockRows = StokGudang::whereIn('gudang_id', array_unique([$gudang->id, $gudangUtamaId]))
             ->whereIn('barang_id', $itemIds)
             ->get();
 
@@ -366,8 +367,8 @@ class PengeluaranBahanBakuController extends Controller
                 $hasKonversi = ($it->satuan_pembelian && $konversi > 1 && $it->satuan_pembelian !== $it->satuan);
                 $suggestedQtyInput = $hasKonversi ? (float) ceil($suggestedQty / $konversi) : $suggestedQty;
 
-                // Stok yang tersedia di Gudang Utama (Gudang ID 1, divisi 0/null)
-                $stokUtama = $stokMap['1_' . $it->id . '_0'] ?? 0.0;
+                // Stok yang tersedia di Gudang Utama
+                $stokUtama = $stokMap[$gudangUtamaId . '_' . $it->id . '_0'] ?? 0.0;
 
                 $suggestions[] = [
                     'barang_id'            => $it->id,
@@ -685,15 +686,9 @@ class PengeluaranBahanBakuController extends Controller
             $grandTotal += $signedHpp;
 
             if ($isWasted || $isOpname) {
-                $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
-                if ($pengeluaran->divisi_id) {
-                    $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
-                } else {
-                    $stokGudangQuery->whereNull('divisi_id');
-                }
-                $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
+                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
             } else {
-                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->whereNull('divisi_id')->sum('jumlah') ?? 0);
+                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $gudangUtamaId);
             }
 
             $detail->stok_tersedia = $stokTersedia;
@@ -809,15 +804,9 @@ class PengeluaranBahanBakuController extends Controller
             $qtyDiminta = (float) $detail->qty;
 
             if ($isWasted || $isOpname) {
-                $stokGudangQuery = StokGudang::where('gudang_id', $pengeluaran->gudang_id)->where('barang_id', $detail->barang_id);
-                if ($pengeluaran->divisi_id) {
-                    $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
-                } else {
-                    $stokGudangQuery->whereNull('divisi_id');
-                }
-                $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
+                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
             } else {
-                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->whereNull('divisi_id')->sum('jumlah') ?? 0);
+                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $gudangUtamaId);
             }
 
             if ($isOpname) {
@@ -987,15 +976,9 @@ class PengeluaranBahanBakuController extends Controller
             $detail->harga_satuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
 
             if ($isWasted || $isOpname) {
-                $stokGudangQuery = StokGudang::where('barang_id', $detail->barang_id)->where('gudang_id', $pengeluaran->gudang_id);
-                if ($pengeluaran->divisi_id) {
-                    $stokGudangQuery->where('divisi_id', $pengeluaran->divisi_id);
-                } else {
-                    $stokGudangQuery->whereNull('divisi_id');
-                }
-                $stokTersedia = (float) ($stokGudangQuery->sum('jumlah') ?? 0);
+                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
             } else {
-                $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $detail->barang_id)->whereNull('divisi_id')->sum('jumlah') ?? 0);
+                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $gudangUtamaId);
             }
 
             $detail->stok_tersedia = $stokTersedia;
@@ -1045,12 +1028,14 @@ class PengeluaranBahanBakuController extends Controller
         |--------------------------------------------------------------------------
         */
 
-        $jenis = $pengeluaran->jenis_pengeluaran ?? (str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-') ? 'wasted' : 'transfer');
+        $gudangUtamaId = MasterGudang::getGudangUtamaId();
+        $gudangSourceId = ($jenis === 'wasted') ? ($pengeluaran->gudang_id ?: $gudangUtamaId) : $gudangUtamaId;
 
         $queryBarang = MasterBarang::query()
-            ->leftJoin('stok_gudang', function ($join) use ($pengeluaran) {
+            ->leftJoin('stok_gudang', function ($join) use ($gudangSourceId) {
                 $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
-                     ->where('stok_gudang.gudang_id', $pengeluaran->gudang_id ?? 1);
+                     ->where('stok_gudang.gudang_id', $gudangSourceId)
+                     ->whereNull('stok_gudang.divisi_id');
             })
             ->where('master_barang.is_active', true);
 
@@ -1073,17 +1058,18 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $barangData = $barang->map(function ($b) {
+        $barangData = $barang->map(function ($b) use ($jenis) {
             $satuan = $b->satuan ?: 'Pcs';
             $satuanBeli = $b->satuan_pembelian ?: $satuan;
             $konversi = (float) ($b->konversi_pembelian ?: 1);
             $stok = (float) ($b->stok ?: 0);
             $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
+            $labelStokPrefix = ($jenis === 'wasted') ? 'Stok Lokasi' : 'Stok Utama';
 
             return [
                 'value'              => (string) $b->id,
-                'text'               => "{$b->kode_barang} - {$b->nama} ({$satuan}){$labelKonversi} - Stok Utama: {$stok}{$labelHabis}",
+                'text'               => "{$b->kode_barang} - {$b->nama} ({$satuan}){$labelKonversi} - {$labelStokPrefix}: {$stok}{$labelHabis}",
                 'nama'               => $b->nama,
                 'kode'               => $b->kode_barang,
                 'satuan'             => $satuan,

@@ -262,32 +262,7 @@ class StokGudangController extends Controller
 
     private function calculateStockAtDate($barangId, $gudangId, $divisiId, $date)
     {
-        $queryIn = DB::table('transaksi_stok')
-            ->where('barang_id', $barangId)
-            ->where('tanggal', '<=', $date . ' 23:59:59');
-
-        $queryOut = DB::table('transaksi_stok')
-            ->where('barang_id', $barangId)
-            ->where('tanggal', '<=', $date . ' 23:59:59');
-
-        if ($gudangId && $divisiId) {
-            $queryIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-            $queryOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
-        } elseif ($gudangId) {
-            $queryIn->where('gudang_tujuan_id', $gudangId)->whereNull('divisi_tujuan_id');
-            $queryOut->where('gudang_asal_id', $gudangId)->whereNull('divisi_asal_id');
-        } elseif ($divisiId) {
-            $queryIn->where('divisi_tujuan_id', $divisiId);
-            $queryOut->where('divisi_asal_id', $divisiId);
-        } else {
-            $queryIn->where('tipe', 'masuk');
-            $queryOut->where('tipe', 'keluar');
-        }
-
-        $in  = $queryIn->sum('qty');
-        $out = $queryOut->sum('qty');
-
-        return max(0, floatval($in) - floatval($out));
+        return \App\Models\StokGudang::getStokBukuPembantu($barangId, $gudangId, $divisiId, $date);
     }
 
     public function bukuPembantuMutasi(Request $request)
@@ -1105,6 +1080,83 @@ class StokGudangController extends Controller
                 $orphanBatchQuery->where('barang_id', $barangId);
             }
             $orphanBatchQuery->delete();
+
+            // 5. Auto-heal transaksi POS yang salah gudang (masuk ke Gudang Utama)
+            $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+            $misplacedPosOutputs = \App\Models\PengeluaranBahanBaku::where('keterangan', 'like', 'AUTO_POS%')
+                ->where('gudang_id', $gudangUtamaId)
+                ->with(['details'])
+                ->get();
+
+            if ($misplacedPosOutputs->isNotEmpty()) {
+                $gudangGaharu = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+                $gudangGaharuId = $gudangGaharu ? $gudangGaharu->id : 3;
+                $gudangKejingga = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->first();
+                $gudangKejinggaId = $gudangKejingga ? $gudangKejingga->id : 5;
+
+                foreach ($misplacedPosOutputs as $pbk) {
+                    $isKejingga = str_contains(strtolower($pbk->keterangan ?? ''), 'kj') || str_contains(strtolower($pbk->kode_pengeluaran ?? ''), 'kj');
+                    $targetGudangId = $isKejingga ? $gudangKejinggaId : $gudangGaharuId;
+
+                    foreach ($pbk->details as $d) {
+                        $qty = (float) $d->qty;
+                        $bId = $d->barang_id;
+
+                        // Kembalikan stok Gudang Utama
+                        $stokUtama = \App\Models\StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $bId)->first();
+                        if ($stokUtama) {
+                            $stokUtama->increment('jumlah', $qty);
+                        }
+
+                        // Kembalikan sisa batch FIFO di Gudang Utama
+                        $fifoRecords = DB::table('pengeluaran_bahan_baku_fifo')
+                            ->where('pengeluaran_id', $pbk->id)
+                            ->where('detail_id', $d->id)
+                            ->get();
+
+                        foreach ($fifoRecords as $fr) {
+                            if ($fr->batch_id) {
+                                $batch = \App\Models\StokGudangBatch::find($fr->batch_id);
+                                if ($batch && $batch->gudang_id == $gudangUtamaId) {
+                                    $batch->increment('qty_sisa', $fr->qty_keluar);
+                                    $batch->decrement('qty_keluar', $fr->qty_keluar);
+                                    $batch->update(['is_habis' => false]);
+                                }
+                            }
+                        }
+
+                        // Kurangkan stok di Gudang Outlet yang sebenarnya
+                        $stokOutlet = \App\Models\StokGudang::firstOrCreate(
+                            ['gudang_id' => $targetGudangId, 'barang_id' => $bId],
+                            ['jumlah' => 0]
+                        );
+                        $stokOutlet->decrement('jumlah', $qty);
+
+                        // Catat ke TransaksiStok untuk Gudang Outlet jika belum ada
+                        $exists = DB::table('transaksi_stok')
+                            ->where('source_type', 'penjualan_pos')
+                            ->where('source_id', $pbk->id)
+                            ->where('barang_id', $bId)
+                            ->exists();
+
+                        if (!$exists) {
+                            DB::table('transaksi_stok')->insert([
+                                'tanggal'        => $pbk->tanggal ?? now(),
+                                'tipe'           => 'keluar',
+                                'source_type'    => 'penjualan_pos',
+                                'source_id'      => $pbk->id,
+                                'gudang_asal_id' => $targetGudangId,
+                                'barang_id'      => $bId,
+                                'qty'            => $qty,
+                                'total_harga'    => (float) $d->hpp_total,
+                                'created_by'     => $pbk->created_by ?? 1,
+                            ]);
+                        }
+                    }
+
+                    $pbk->update(['gudang_id' => $targetGudangId]);
+                }
+            }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoCleanOrphanMutations error: ' . $e->getMessage());
         }
