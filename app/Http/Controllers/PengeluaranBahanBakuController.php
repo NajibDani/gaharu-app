@@ -1028,6 +1028,7 @@ class PengeluaranBahanBakuController extends Controller
         |--------------------------------------------------------------------------
         */
 
+        $jenis = $pengeluaran->jenis_pengeluaran ?? (str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-') ? 'wasted' : 'transfer');
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
         $gudangSourceId = ($jenis === 'wasted') ? ($pengeluaran->gudang_id ?: $gudangUtamaId) : $gudangUtamaId;
 
