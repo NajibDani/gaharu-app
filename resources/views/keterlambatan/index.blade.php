@@ -249,27 +249,46 @@
                                 <input type="date" name="tanggal" id="modalTanggal" class="form-control" value="{{ date('Y-m-d') }}" required>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label fw-semibold small">Shift</label>
-                                <select name="shift" id="modalShift" class="form-select" onchange="autoFillShiftTime(this)">
-                                    <option value="Morning 08.00">Morning 08.00</option>
-                                    <option value="Morning 07.00">Morning 07.00</option>
-                                    <option value="Middle 10.00">Middle 10.00</option>
-                                    <option value="Middle 11.00">Middle 11.00</option>
-                                    <option value="Middle 12.00">Middle 12.00</option>
-                                    <option value="Evening 15.00">Evening 15.00</option>
-                                    <option value="Custom">Custom Shift</option>
+                                <label class="form-label fw-semibold small">Pilih Shift</label>
+                                <select name="shift" id="modalShift" class="form-select" onchange="onShiftSelectChange(this)">
+                                    <option value="Morning 07.00" data-time="07:00:00">Morning 07.00</option>
+                                    <option value="Morning 08.00" data-time="08:00:00">Morning 08.00</option>
+                                    <option value="Morning 08.30" data-time="08:30:00">Morning 08.30</option>
+                                    <option value="Morning 09.00" data-time="09:00:00">Morning 09.00</option>
+                                    <option value="Middle 10.00" data-time="10:00:00">Middle 10.00</option>
+                                    <option value="Middle 11.00" data-time="11:00:00">Middle 11.00</option>
+                                    <option value="Middle 12.00" data-time="12:00:00">Middle 12.00</option>
+                                    <option value="Middle 13.00" data-time="13:00:00">Middle 13.00</option>
+                                    <option value="Evening 14.00" data-time="14:00:00">Evening 14.00</option>
+                                    <option value="Evening 15.00" data-time="15:00:00">Evening 15.00</option>
+                                    <option value="Evening 16.00" data-time="16:00:00">Evening 16.00</option>
+                                    <option value="Night 22.00" data-time="22:00:00">Night 22.00</option>
+                                    <option value="Custom" data-time="">Kustom / Shift Lainnya...</option>
                                 </select>
+                                <div id="wrapperCustomShift" class="mt-2 d-none">
+                                    <input type="text" name="custom_shift" id="modalCustomShift" class="form-control form-control-sm" placeholder="Nama shift kustom (misal: Shift Siang, Event Khusus)">
+                                </div>
                             </div>
                         </div>
 
                         <div class="row g-3 mb-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold small">Jam Shift JADWAL <span class="text-danger">*</span></label>
-                                <input type="time" step="1" name="jam_shift" id="modalJamShift" class="form-control" value="08:00:00" required onchange="hitungLivePotongan()">
+                                <input type="time" step="1" name="jam_shift" id="modalJamShift" class="form-control" value="08:00:00" required onchange="onJamShiftManualChange()" oninput="onJamShiftManualChange()">
+                                <!-- Quick Presets -->
+                                <div class="d-flex gap-1 mt-1.5 flex-wrap">
+                                    <span class="text-muted small" style="font-size: 11px;">Cepat:</span>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('07:00:00', 'Morning 07.00')">07:00</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('08:00:00', 'Morning 08.00')">08:00</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('10:00:00', 'Middle 10.00')">10:00</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('11:00:00', 'Middle 11.00')">11:00</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('12:00:00', 'Middle 12.00')">12:00</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1.5" style="font-size: 10.5px; border-radius: 4px;" onclick="setQuickShiftTime('15:00:00', 'Evening 15.00')">15:00</button>
+                                </div>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold small">Jam DATANG Aktual <span class="text-danger">*</span></label>
-                                <input type="time" step="1" name="jam_datang" id="modalJamDatang" class="form-control" value="08:05:00" required onchange="hitungLivePotongan()">
+                                <input type="time" step="1" name="jam_datang" id="modalJamDatang" class="form-control" value="08:05:00" required onchange="hitungLivePotongan()" oninput="hitungLivePotongan()">
                             </div>
                         </div>
 
@@ -304,16 +323,91 @@
 
     @push('scripts')
     <script>
-    function autoFillShiftTime(selectEl) {
+    const shiftTimePresets = {
+        '07:00:00': 'Morning 07.00',
+        '07:00': 'Morning 07.00',
+        '08:00:00': 'Morning 08.00',
+        '08:00': 'Morning 08.00',
+        '08:30:00': 'Morning 08.30',
+        '08:30': 'Morning 08.30',
+        '09:00:00': 'Morning 09.00',
+        '09:00': 'Morning 09.00',
+        '10:00:00': 'Middle 10.00',
+        '10:00': 'Middle 10.00',
+        '11:00:00': 'Middle 11.00',
+        '11:00': 'Middle 11.00',
+        '12:00:00': 'Middle 12.00',
+        '12:00': 'Middle 12.00',
+        '13:00:00': 'Middle 13.00',
+        '13:00': 'Middle 13.00',
+        '14:00:00': 'Evening 14.00',
+        '14:00': 'Evening 14.00',
+        '15:00:00': 'Evening 15.00',
+        '15:00': 'Evening 15.00',
+        '16:00:00': 'Evening 16.00',
+        '16:00': 'Evening 16.00',
+        '22:00:00': 'Night 22.00',
+        '22:00': 'Night 22.00'
+    };
+
+    function onShiftSelectChange(selectEl) {
         let val = selectEl.value;
+        let selectedOpt = selectEl.options[selectEl.selectedIndex];
+        let presetTime = selectedOpt.getAttribute('data-time');
+        let customWrapper = document.getElementById('wrapperCustomShift');
+        let customInput = document.getElementById('modalCustomShift');
         let jamShiftInput = document.getElementById('modalJamShift');
-        
-        if (val.includes('08.00')) jamShiftInput.value = '08:00:00';
-        else if (val.includes('07.00')) jamShiftInput.value = '07:00:00';
-        else if (val.includes('10.00')) jamShiftInput.value = '10:00:00';
-        else if (val.includes('11.00')) jamShiftInput.value = '11:00:00';
-        else if (val.includes('12.00')) jamShiftInput.value = '12:00:00';
-        else if (val.includes('15.00')) jamShiftInput.value = '15:00:00';
+
+        if (val === 'Custom') {
+            customWrapper.classList.remove('d-none');
+            customInput.focus();
+        } else {
+            customWrapper.classList.add('d-none');
+            if (presetTime) {
+                jamShiftInput.value = presetTime;
+            }
+        }
+
+        hitungLivePotongan();
+    }
+
+    function setQuickShiftTime(timeStr, shiftName) {
+        let jamShiftInput = document.getElementById('modalJamShift');
+        let selectEl = document.getElementById('modalShift');
+        let customWrapper = document.getElementById('wrapperCustomShift');
+
+        jamShiftInput.value = timeStr;
+        if (shiftName && selectEl.querySelector(`option[value="${shiftName}"]`)) {
+            selectEl.value = shiftName;
+            customWrapper.classList.add('d-none');
+        } else {
+            selectEl.value = 'Custom';
+            customWrapper.classList.remove('d-none');
+        }
+
+        hitungLivePotongan();
+    }
+
+    function onJamShiftManualChange() {
+        let jamShiftInput = document.getElementById('modalJamShift');
+        let selectEl = document.getElementById('modalShift');
+        let customWrapper = document.getElementById('wrapperCustomShift');
+        let customInput = document.getElementById('modalCustomShift');
+        let val = jamShiftInput.value;
+
+        if (!val) return;
+
+        let matchedPreset = shiftTimePresets[val];
+        if (matchedPreset && selectEl.querySelector(`option[value="${matchedPreset}"]`)) {
+            selectEl.value = matchedPreset;
+            customWrapper.classList.add('d-none');
+        } else {
+            selectEl.value = 'Custom';
+            customWrapper.classList.remove('d-none');
+            if (!customInput.value || customInput.value.startsWith('Custom')) {
+                customInput.value = 'Custom ' + val.substring(0, 5);
+            }
+        }
 
         hitungLivePotongan();
     }
@@ -362,6 +456,8 @@
         document.getElementById('modalKaryawanId').value = '';
         document.getElementById('modalTanggal').value = "{{ date('Y-m-d') }}";
         document.getElementById('modalShift').value = 'Morning 08.00';
+        document.getElementById('wrapperCustomShift').classList.add('d-none');
+        document.getElementById('modalCustomShift').value = '';
         document.getElementById('modalJamShift').value = '08:00:00';
         document.getElementById('modalJamDatang').value = '08:05:00';
         document.getElementById('modalKeterangan').value = '';
@@ -380,7 +476,22 @@
 
         document.getElementById('modalKaryawanId').value = item.karyawan_id;
         document.getElementById('modalTanggal').value = item.tanggal.substring(0, 10);
-        document.getElementById('modalShift').value = item.shift || 'Morning 08.00';
+        
+        let shiftSelect = document.getElementById('modalShift');
+        let customWrapper = document.getElementById('wrapperCustomShift');
+        let customInput = document.getElementById('modalCustomShift');
+        let itemShift = item.shift || 'Morning 08.00';
+
+        if (shiftSelect.querySelector(`option[value="${itemShift}"]`)) {
+            shiftSelect.value = itemShift;
+            customWrapper.classList.add('d-none');
+            customInput.value = '';
+        } else {
+            shiftSelect.value = 'Custom';
+            customWrapper.classList.remove('d-none');
+            customInput.value = itemShift;
+        }
+
         document.getElementById('modalJamShift').value = item.jam_shift;
         document.getElementById('modalJamDatang').value = item.jam_datang;
         document.getElementById('modalKeterangan').value = item.keterangan || '';

@@ -142,10 +142,17 @@ class KeterlambatanController extends Controller
             $potongan = $gajiHarian;
         }
 
+        $shiftName = $request->shift;
+        if ($shiftName === 'Custom' && $request->filled('custom_shift')) {
+            $shiftName = trim($request->custom_shift);
+        } elseif ($shiftName === 'Custom') {
+            $shiftName = 'Custom ' . substr($jamShift, 0, 5);
+        }
+
         $keterlambatan = Keterlambatan::create([
             'karyawan_id'  => $request->karyawan_id,
             'tanggal'      => $request->tanggal,
-            'shift'        => $request->shift,
+            'shift'        => $shiftName,
             'jam_shift'    => $jamShift,
             'jam_datang'   => $jamDatang,
             'durasi_menit' => $kalkulasi['durasi_menit'],
@@ -190,10 +197,17 @@ class KeterlambatanController extends Controller
             $potongan = $gajiHarian;
         }
 
+        $shiftName = $request->shift;
+        if ($shiftName === 'Custom' && $request->filled('custom_shift')) {
+            $shiftName = trim($request->custom_shift);
+        } elseif ($shiftName === 'Custom') {
+            $shiftName = 'Custom ' . substr($jamShift, 0, 5);
+        }
+
         $keterlambatan->update([
             'karyawan_id'  => $request->karyawan_id,
             'tanggal'      => $request->tanggal,
-            'shift'        => $request->shift,
+            'shift'        => $shiftName,
             'jam_shift'    => $jamShift,
             'jam_datang'   => $jamDatang,
             'durasi_menit' => $kalkulasi['durasi_menit'],
