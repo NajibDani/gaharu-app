@@ -540,7 +540,7 @@
                                                                             <td>
                                                                                 <div class="input-group input-group-sm">
                                                                                     <span class="input-group-text bg-light">Rp</span>
-                                                                                    <input type="number" name="harga[]" class="form-control form-control-sm text-end input-modal-harga" value="{{ (int)$dHarga }}" min="0" step="100" data-qty="{{ $d->qty }}" required oninput="recalcModalSubtotal(this)">
+                                                                                    <input type="number" name="harga[]" class="form-control form-control-sm text-end input-modal-harga" value="{{ (int)$dHarga }}" min="0" step="any" data-qty="{{ $d->qty }}" required oninput="recalcModalSubtotal(this)">
                                                                                 </div>
                                                                             </td>
                                                                             <td class="text-end fw-bold text-dark subtotal-cell">

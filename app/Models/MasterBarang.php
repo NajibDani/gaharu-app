@@ -227,20 +227,11 @@ public function resepBahanBakuAlternatif()
     }
 
     /**
-     * Auto-heal batch pembelian, detail pembelian, dan stok jika terdapat barang dengan konversi pembelian
-     * yang batch-nya belum terkonversi ke satuan dasar. Dijalankan via aplikasi tanpa memerlukan file migrasi baru.
+     * Normalisasi dan sinkronisasi kuantitas stok pembelian agar sesuai dengan satuan dasar.
+     * Mencegah dan memperbaiki kelipatan konversi ganda (misal 144 PCS terkalikan 24x menjadi 3456 PCS).
      */
     public static function autoHealUnconvertedPembelianBatches($targetBarangId = null): void
     {
-        // Cegah eksekusi global berulang yang membebani database pada setiap HTTP request
-        if (!$targetBarangId) {
-            $cacheKey = 'auto_heal_batches_last_run';
-            if (\Illuminate\Support\Facades\Cache::has($cacheKey)) {
-                return;
-            }
-            \Illuminate\Support\Facades\Cache::put($cacheKey, true, now()->addMinutes(30));
-        }
-
         $query = \Illuminate\Support\Facades\DB::table('master_barang')
             ->where('konversi_pembelian', '>', 1);
 
@@ -256,83 +247,68 @@ public function resepBahanBakuAlternatif()
                 continue;
             }
 
-            $unconvertedBatches = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
-                ->join('pembelian_detail', 'stok_gudang_batch.pembelian_detail_id', '=', 'pembelian_detail.id')
-                ->where('stok_gudang_batch.barang_id', $b->id)
-                ->where('stok_gudang_batch.pembelian_detail_id', '>', 0)
-                ->whereRaw('stok_gudang_batch.qty_masuk <= pembelian_detail.qty * 1.01')
-                ->select(
-                    'stok_gudang_batch.id as batch_id',
-                    'stok_gudang_batch.qty_masuk',
-                    'stok_gudang_batch.qty_keluar',
-                    'stok_gudang_batch.qty_sisa',
-                    'stok_gudang_batch.harga_per_qty',
-                    'stok_gudang_batch.gudang_id',
-                    'stok_gudang_batch.divisi_id',
-                    'pembelian_detail.id as p_detail_id',
-                    'pembelian_detail.pembelian_id',
-                    'pembelian_detail.qty as p_qty',
-                    'pembelian_detail.harga as p_harga'
-                )
+            $pDetails = \Illuminate\Support\Facades\DB::table('pembelian_detail')
+                ->where('barang_id', $b->id)
                 ->get();
 
-            foreach ($unconvertedBatches as $ub) {
-                $pQty = (float) $ub->p_qty;
+            foreach ($pDetails as $pd) {
+                $pQty = (float) ($pd->qty ?? 0);
+                $pHarga = (float) ($pd->harga ?? 0);
                 if ($pQty <= 0) {
                     continue;
                 }
 
-                $newMasuk = round($pQty * $konversi, 2);
-                $diff = $newMasuk - (float) $ub->qty_masuk;
+                $hargaPerItem = $pHarga / $pQty;
+                $refPrice = (float) ($b->hpp_referensi ?: 0);
 
-                if ($diff > 0) {
-                    $newSisa = max(0, $newMasuk - (float) $ub->qty_keluar);
-                    $newHargaPerQty = round((float) $ub->harga_per_qty / $konversi, 4);
+                // Tentukan apakah pQty ini diinput dalam satuan dasar (PCS) atau satuan pembelian (KARTON)
+                $isInputSatuanDasar = false;
+                if ($refPrice > 0) {
+                    if ($hargaPerItem < ($refPrice * ($konversi * 0.4))) {
+                        $isInputSatuanDasar = true;
+                    }
+                } elseif (strtolower($pd->satuan_pembelian ?? '') === strtolower($b->satuan ?? '')) {
+                    $isInputSatuanDasar = true;
+                }
 
-                    \Illuminate\Support\Facades\DB::table('stok_gudang_batch')->where('id', $ub->batch_id)->update([
-                        'qty_masuk'     => $newMasuk,
-                        'qty_sisa'      => $newSisa,
-                        'harga_per_qty' => $newHargaPerQty,
-                        'is_habis'      => ($newSisa <= 0),
-                        'updated_at'    => now(),
-                    ]);
+                $correctBaseQty = $isInputSatuanDasar ? $pQty : round($pQty * $konversi, 2);
+                $correctHargaPerQty = $correctBaseQty > 0 ? round($pHarga / $correctBaseQty, 4) : 0;
 
-                    \Illuminate\Support\Facades\DB::table('pembelian_detail')->where('id', $ub->p_detail_id)->update([
-                        'satuan_pembelian'   => $b->satuan_pembelian,
-                        'konversi_pembelian' => $konversi,
-                    ]);
+                // Perbaiki transaksi_stok jika overinflated (> correctBaseQty * 1.01)
+                $txList = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                    ->where('barang_id', $b->id)
+                    ->where('source_id', $pd->pembelian_id)
+                    ->whereIn('source_type', ['pembelian', 'penerimaan_pembelian'])
+                    ->get();
 
-                    \Illuminate\Support\Facades\DB::table('transaksi_stok')
-                        ->where('barang_id', $b->id)
-                        ->where('source_id', $ub->pembelian_id)
-                        ->whereIn('source_type', ['pembelian', 'penerimaan_pembelian'])
-                        ->where('qty', '<=', $pQty * 1.01)
-                        ->update([
-                            'qty' => $newMasuk,
-                        ]);
+                foreach ($txList as $tx) {
+                    if ((float)$tx->qty > ($correctBaseQty * 1.01)) {
+                        \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                            ->where('id', $tx->id)
+                            ->update(['qty' => $correctBaseQty]);
+                    }
+                }
 
-                    $sg = \Illuminate\Support\Facades\DB::table('stok_gudang')
-                        ->where('barang_id', $b->id)
-                        ->where('gudang_id', $ub->gudang_id)
-                        ->when($ub->divisi_id, fn($q) => $q->where('divisi_id', $ub->divisi_id), fn($q) => $q->whereNull('divisi_id'))
-                        ->first();
+                // Perbaiki stok_gudang_batch jika overinflated (> correctBaseQty * 1.01)
+                $batches = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                    ->where('pembelian_detail_id', $pd->id)
+                    ->get();
 
-                    if ($sg) {
-                        \Illuminate\Support\Facades\DB::table('stok_gudang')->where('id', $sg->id)->increment('jumlah', $diff);
+                foreach ($batches as $batch) {
+                    if ((float)$batch->qty_masuk > ($correctBaseQty * 1.01)) {
+                        $newSisa = max(0, $correctBaseQty - (float)$batch->qty_keluar);
+                        \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                            ->where('id', $batch->id)
+                            ->update([
+                                'qty_masuk'     => $correctBaseQty,
+                                'qty_sisa'      => $newSisa,
+                                'harga_per_qty' => $correctHargaPerQty,
+                                'is_habis'      => ($newSisa <= 0),
+                                'updated_at'    => now(),
+                            ]);
                     }
                 }
             }
-
-            \Illuminate\Support\Facades\DB::table('pembelian_detail')
-                ->where('barang_id', $b->id)
-                ->where(function ($q) {
-                    $q->whereNull('konversi_pembelian')
-                      ->orWhere('konversi_pembelian', '<=', 1);
-                })
-                ->update([
-                    'satuan_pembelian'   => $b->satuan_pembelian,
-                    'konversi_pembelian' => $konversi,
-                ]);
         }
     }
 }

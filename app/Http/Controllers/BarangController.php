@@ -21,6 +21,8 @@ class BarangController extends Controller
     public function index(Request $request)
     {
         MasterBarang::syncAllResepIds();
+        MasterBarang::autoHealUnconvertedPembelianBatches();
+        \App\Models\StokGudang::reconcileStockSummary();
 
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';

@@ -290,15 +290,15 @@
                             <div class="row g-2">
                                 <div class="col-4">
                                     <label class="form-label fw-semibold" style="font-size:11px;" id="lblGajiPokok1">Gaji Pokok (Rp) <span class="text-danger">*</span></label>
-                                    <input type="number" name="gaji_pokok" id="inputGajiPokok" class="form-control form-control-sm" min="0" step="100" required oninput="hitungTarifHarianModal()">
+                                    <input type="number" name="gaji_pokok" id="inputGajiPokok" class="form-control form-control-sm" min="0" step="any" required oninput="hitungTarifHarianModal()">
                                 </div>
                                 <div class="col-4">
                                     <label class="form-label fw-semibold" style="font-size:11px;" id="lblUangMakan1">Uang Makan (Rp) <span class="text-danger">*</span></label>
-                                    <input type="number" name="uang_makan" id="inputUangMakan" class="form-control form-control-sm" min="0" step="100" required oninput="hitungTarifHarianModal()">
+                                    <input type="number" name="uang_makan" id="inputUangMakan" class="form-control form-control-sm" min="0" step="any" required oninput="hitungTarifHarianModal()">
                                 </div>
                                 <div class="col-4">
                                     <label class="form-label fw-semibold" style="font-size:11px;" id="lblTransport1">Transport (Rp) <span class="text-danger">*</span></label>
-                                    <input type="number" name="uang_transport" id="inputUangTransport" class="form-control form-control-sm" min="0" step="100" required oninput="hitungTarifHarianModal()">
+                                    <input type="number" name="uang_transport" id="inputUangTransport" class="form-control form-control-sm" min="0" step="any" required oninput="hitungTarifHarianModal()">
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
@@ -347,15 +347,15 @@
                             <div class="row g-2">
                                 <div class="col-4">
                                     <label class="form-label fw-semibold" style="font-size:11px;" id="lblGajiPokok2">Gaji Pokok (Rp)</label>
-                                    <input type="number" name="gaji_pokok_2" id="inputGajiPokok2" class="form-control form-control-sm" min="0" step="100" oninput="hitungTarifHarianModal()">
+                                    <input type="number" name="gaji_pokok_2" id="inputGajiPokok2" class="form-control form-control-sm" min="0" step="any" oninput="hitungTarifHarianModal()">
                                 </div>
                                 <div class="col-4">
                                     <label class="form-label fw-semibold" style="font-size:11px;" id="lblUangMakan2">Uang Makan (Rp)</label>
-                                    <input type="number" name="uang_makan_2" id="inputUangMakan2" class="form-control form-control-sm" min="0" step="100" oninput="hitungTarifHarianModal()">
+                                    <input type="number" name="uang_makan_2" id="inputUangMakan2" class="form-control form-control-sm" min="0" step="any" oninput="hitungTarifHarianModal()">
                                 </div>
                                 <div class="col-4">
                                     <label class="form-label fw-semibold" style="font-size:11px;" id="lblTransport2">Transport (Rp)</label>
-                                    <input type="number" name="uang_transport_2" id="inputUangTransport2" class="form-control form-control-sm" min="0" step="100" oninput="hitungTarifHarianModal()">
+                                    <input type="number" name="uang_transport_2" id="inputUangTransport2" class="form-control form-control-sm" min="0" step="any" oninput="hitungTarifHarianModal()">
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">

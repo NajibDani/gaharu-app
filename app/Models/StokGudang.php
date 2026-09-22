@@ -70,41 +70,7 @@ class StokGudang extends Model
         $runningQty = 0;
 
         foreach ($items as $row) {
-            $rawQty = floatval($row->qty);
-            $qty = $rawQty;
-
-            if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian', 'pembelian_batal'])) {
-                $pDetail = null;
-                $sourceType = strtolower($row->source_type ?? '');
-                if ($sourceType === 'pembelian') {
-                    $pDetail = \Illuminate\Support\Facades\DB::table('pembelian_detail')
-                        ->where('pembelian_id', $row->source_id)
-                        ->where('barang_id', $barangId)
-                        ->first();
-                } elseif ($sourceType === 'penerimaan_pembelian') {
-                    $rcv = \Illuminate\Support\Facades\DB::table('penerimaan_pembelian')->where('id', $row->source_id)->first();
-                    if ($rcv) {
-                        $pDetail = \Illuminate\Support\Facades\DB::table('pembelian_detail')
-                            ->where('pembelian_id', $rcv->pembelian_id)
-                            ->where('barang_id', $barangId)
-                            ->first();
-                    }
-                }
-
-                $detailKonv = $pDetail ? (float)($pDetail->konversi_pembelian ?? 1) : 1.0;
-                $konvRow = $detailKonv > 1 ? $detailKonv : $konversiBarang;
-                $qtyInput = $pDetail ? (float)($pDetail->qty ?? 0) : 0.0;
-
-                if ($konvRow > 1 && $qtyInput > 0 && abs($rawQty - $qtyInput) < 0.01) {
-                    $qty = $rawQty * $konvRow;
-                } elseif ($konversiBarang > 1 && $rawQty > 0 && floatval($row->total_harga) > 0) {
-                    $unitPrice = floatval($row->total_harga) / $rawQty;
-                    $refPrice = $barang ? (float)($barang->hpp_referensi ?: 0) : 0;
-                    if ($refPrice > 0 && $unitPrice > ($refPrice * ($konversiBarang * 0.4))) {
-                        $qty = $rawQty * $konversiBarang;
-                    }
-                }
-            }
+            $qty = floatval($row->qty);
 
             $isMasuk = false;
             $isKeluar = false;

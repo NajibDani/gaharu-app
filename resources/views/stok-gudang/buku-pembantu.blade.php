@@ -548,6 +548,22 @@
 
                         tbodyMutasi.innerHTML = html;
 
+                        // Sinkronkan angka di tabel utama di halaman belakang modal secara realtime
+                        const targetRowBtn = document.querySelector(`.btn-detail-mutasi[data-barang-id="${activeBarangId}"]`);
+                        if (targetRowBtn) {
+                            const tr = targetRowBtn.closest('tr');
+                            if (tr) {
+                                const tdStok = tr.querySelector('td:nth-child(5)');
+                                if (tdStok) {
+                                    let htmlStok = `<div>${formatNumber(sfQty)} ${satuanDasar}</div>`;
+                                    if (isConverted && sfQtyBeli !== null && sfQtyBeli !== undefined) {
+                                        htmlStok += `<small class="text-primary fw-normal d-block mt-0.5" style="font-size: 12px;">&asymp; ${formatNumber(sfQtyBeli, 2)} ${satuanBeliRes}</small>`;
+                                    }
+                                    tdStok.innerHTML = htmlStok;
+                                }
+                            }
+                        }
+
                         // Pasang Event Listener Hapus untuk Setiap Baris Mutasi
                         tbodyMutasi.querySelectorAll('.btn-delete-single-mutasi').forEach(delBtn => {
                             delBtn.addEventListener('click', function() {

@@ -216,8 +216,11 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Bersihkan data transaksi yatim (orphan) agar saldo akurat 100%
+        // Bersihkan data transaksi yatim (orphan) & perbaiki konversi pembelian agar saldo akurat 100%
         self::autoCleanOrphanMutations();
+        MasterBarang::autoHealUnconvertedPembelianBatches();
+        $this->autoHealPrematureDraftSoMutations();
+        \App\Models\StokGudang::reconcileStockSummary();
 
         $query = MasterBarang::query()->with('kategori');
 
@@ -412,19 +415,8 @@ class StokGudangController extends Controller
                 $satBeliRow = $pDetailInfo['satuan_pembelian'] ?: $satuanBeliDefault;
                 $qtyBeliInput = $pDetailInfo['qty_input'];
 
-                if ($konversiRow > 1 && $qtyBeliInput > 0 && abs($rawQty - $qtyBeliInput) < 0.01) {
-                    $qty = $rawQty * $konversiRow;
-                    $keteranganExtra = " ({$qtyBeliInput} {$satBeliRow} @ 1 {$satBeliRow} = " . (float)$konversiRow . " {$satuanStok})";
-                } elseif ($konversiRow > 1 && $qtyBeliInput > 0) {
-                    $keteranganExtra = " (setara {$qtyBeliInput} {$satBeliRow})";
-                } elseif ($konversiBarang > 1 && $rawQty > 0 && $totalHarga > 0) {
-                    // Fallback jika relasi detail sudah terhapus (misal pembelian batal / dihapus)
-                    $unitPrice = $totalHarga / $rawQty;
-                    $refPrice = $barang ? (float)($barang->hpp_referensi ?: 0) : 0;
-                    if ($refPrice > 0 && $unitPrice > ($refPrice * ($konversiBarang * 0.4))) {
-                        $qty = $rawQty * $konversiBarang;
-                        $keteranganExtra = " ({$rawQty} {$satuanBeliDefault} @ 1 {$satuanBeliDefault} = " . (float)$konversiBarang . " {$satuanStok})";
-                    }
+                if ($konversiRow > 1 && $qtyBeliInput > 0) {
+                    $keteranganExtra = " (setara {$qtyBeliInput} {$satBeliRow} @ 1 {$satBeliRow} = " . (float)$konversiRow . " {$satuanStok})";
                 }
             }
 
@@ -563,26 +555,7 @@ class StokGudangController extends Controller
 
     private function calculateStockQtyForPembelian($row, $barangId, $konversiDefault)
     {
-        $rawQty = (float) $row->qty;
-        $info = $this->getPembelianDetailInfo($row, $barangId);
-        $konversi = ($info['konversi'] > 1) ? $info['konversi'] : $konversiDefault;
-        $qtyInput = $info['qty_input'];
-
-        if ($konversi > 1 && $qtyInput > 0 && abs($rawQty - $qtyInput) < 0.01) {
-            return $rawQty * $konversi;
-        }
-
-        // Fallback jika pembelian_detail sudah terhapus (misal pembelian dibatalkan / dihapus)
-        if ($konversi > 1 && $rawQty > 0 && floatval($row->total_harga) > 0) {
-            $unitPrice = floatval($row->total_harga) / $rawQty;
-            $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
-            $refPrice = $barang ? (float)($barang->hpp_referensi ?: 0) : 0;
-            if ($refPrice > 0 && $unitPrice > ($refPrice * ($konversi * 0.4))) {
-                return $rawQty * $konversi;
-            }
-        }
-
-        return $rawQty;
+        return (float) $row->qty;
     }
 
     private function formatSourceDescription($type, $id)
@@ -1411,6 +1384,7 @@ class StokGudangController extends Controller
                 \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);
                 app(\App\Services\FifoService::class)->syncBarangHpp((int)$barangId);
             } else {
+                MasterBarang::autoHealUnconvertedPembelianBatches();
                 \App\Models\StokGudang::reconcileStockSummary();
             }
 
