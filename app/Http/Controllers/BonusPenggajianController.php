@@ -92,16 +92,23 @@ class BonusPenggajianController extends Controller
 
         $karyawanIds = $rawPayrolls->pluck('karyawan_id')->unique();
 
-        $allPotonganDeposit = Penggajian::whereIn('karyawan_id', $karyawanIds)
-            ->groupBy('karyawan_id')
-            ->selectRaw('karyawan_id, SUM(potongan_deposit) as total_pot_deposit')
-            ->pluck('total_pot_deposit', 'karyawan_id');
+        $hasPotDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'potongan_deposit');
+        $hasRetDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'pengembalian_deposit');
 
-        $allReturnedOther = Penggajian::whereIn('karyawan_id', $karyawanIds)
-            ->where('periode_bulan_tahun', '!=', $targetPeriode)
-            ->groupBy('karyawan_id')
-            ->selectRaw('karyawan_id, SUM(pengembalian_deposit) as total_ret_deposit')
-            ->pluck('total_ret_deposit', 'karyawan_id');
+        $allPotonganDeposit = $hasPotDeposit
+            ? Penggajian::whereIn('karyawan_id', $karyawanIds)
+                ->groupBy('karyawan_id')
+                ->selectRaw('karyawan_id, SUM(potongan_deposit) as total_pot_deposit')
+                ->pluck('total_pot_deposit', 'karyawan_id')
+            : collect();
+
+        $allReturnedOther = $hasRetDeposit
+            ? Penggajian::whereIn('karyawan_id', $karyawanIds)
+                ->where('periode_bulan_tahun', '!=', $targetPeriode)
+                ->groupBy('karyawan_id')
+                ->selectRaw('karyawan_id, SUM(pengembalian_deposit) as total_ret_deposit')
+                ->pluck('total_ret_deposit', 'karyawan_id')
+            : collect();
 
         $payrolls = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) use ($allPotonganDeposit, $allReturnedOther) {
             $first = $items->first();
@@ -175,8 +182,11 @@ class BonusPenggajianController extends Controller
             ? $payroll->tarif_harian_total
             : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
 
-        $totalPotDeposit = Penggajian::where('karyawan_id', $payroll->karyawan_id)->sum('potongan_deposit');
-        $totalRetOther = Penggajian::where('karyawan_id', $payroll->karyawan_id)->where('id', '!=', $payroll->id)->sum('pengembalian_deposit');
+        $hasPotDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'potongan_deposit');
+        $hasRetDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'pengembalian_deposit');
+
+        $totalPotDeposit = $hasPotDeposit ? Penggajian::where('karyawan_id', $payroll->karyawan_id)->sum('potongan_deposit') : 0;
+        $totalRetOther = $hasRetDeposit ? Penggajian::where('karyawan_id', $payroll->karyawan_id)->where('id', '!=', $payroll->id)->sum('pengembalian_deposit') : 0;
         $saldoDeposit = max(0, $totalPotDeposit - $totalRetOther);
 
         return view('penggajian.bonus.edit', compact('payroll', 'targetPeriode', 'selectedOutlet', 'tarifHarian', 'saldoDeposit'));

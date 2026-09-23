@@ -587,7 +587,7 @@
                                                                                     <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk memenuhi kebutuhan produksi WO ini.</span>
                                                                                 </div>
                                                                             </div>
-                                                                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitWo{{ $wo->id }}" aria-expanded="false" aria-controls="collapseDefisitWo{{ $wo->id }}">
+                                                                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" onclick="toggleCustomCollapse('collapseDefisitWo{{ $wo->id }}', this)">
                                                                                 <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang ({{ count($wo->defisit_bahan) }})
                                                                             </button>
                                                                         </div>
@@ -778,7 +778,7 @@
                                                                                 @else
                                                                                     <span class="badge bg-success text-white small fw-bold"><i class="bi bi-check-circle-fill me-1"></i>Stok Cukup</span>
                                                                                 @endif
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" data-bs-toggle="collapse" data-bs-target="#collapseRekapBahanWo{{ $wo->id }}" aria-expanded="false" aria-controls="collapseRekapBahanWo{{ $wo->id }}">
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" onclick="toggleCustomCollapse('collapseRekapBahanWo{{ $wo->id }}', this)">
                                                                                     <i class="bi bi-chevron-down"></i> Rekap Bahan Baku
                                                                                 </button>
                                                                             </div>
@@ -909,7 +909,7 @@
                                                                             </h6>
                                                                             <div class="d-flex align-items-center gap-2">
                                                                                 <span class="badge bg-white text-dark border small fw-semibold">{{ $wo->total_jenis_bahan }} Jenis Bahan</span>
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" data-bs-toggle="collapse" data-bs-target="#collapseRekapBahanWoDone{{ $wo->id }}" aria-expanded="false" aria-controls="collapseRekapBahanWoDone{{ $wo->id }}">
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" onclick="toggleCustomCollapse('collapseRekapBahanWoDone{{ $wo->id }}', this)">
                                                                                     <i class="bi bi-chevron-down"></i> Rekap Bahan Baku
                                                                                 </button>
                                                                             </div>
@@ -1088,7 +1088,7 @@
                                                                                         @endif
                                                                                     </td>
                                                                                     <td class="text-center">
-                                                                                        <button class="btn btn-xs btn-outline-secondary py-0 px-2" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBreakdown{{ $wo->id }}_{{ $rb['bahan_id'] }}" style="font-size: 11px; border-radius: 5px;">
+                                                                                        <button class="btn btn-xs btn-outline-secondary py-0 px-2" type="button" onclick="toggleCustomCollapse('collapseBreakdown{{ $wo->id }}_{{ $rb['bahan_id'] }}', this)" style="font-size: 11px; border-radius: 5px;">
                                                                                             {{ count($rb['breakdown']) }} Menu <i class="bi bi-chevron-down ms-1"></i>
                                                                                         </button>
                                                                                     </td>
@@ -1443,7 +1443,7 @@
                                                                                 <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk pesanan produksi ini.</span>
                                                                             </div>
                                                                         </div>
-                                                                        <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitProd{{ $prod->id }}" aria-expanded="false" aria-controls="collapseDefisitProd{{ $prod->id }}">
+                                                                        <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" onclick="toggleCustomCollapse('collapseDefisitProd{{ $prod->id }}', this)">
                                                                             <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang ({{ count($prod->defisit_bahan) }})
                                                                         </button>
                                                                     </div>
@@ -2048,6 +2048,40 @@
 
     {{-- SCRIPT BATCH PRODUKSI CK --}}
     <script>
+        function toggleCustomCollapse(targetId, btnEl) {
+            const el = document.getElementById(targetId);
+            if (!el) return;
+            
+            const isHidden = (window.getComputedStyle(el).display === 'none') || (!el.classList.contains('show') && (!el.style.display || el.style.display === 'none'));
+            
+            if (isHidden) {
+                el.classList.add('show');
+                if (el.tagName === 'TR') {
+                    el.style.display = 'table-row';
+                } else {
+                    el.style.display = 'block';
+                }
+                if (btnEl) {
+                    btnEl.setAttribute('aria-expanded', 'true');
+                    const icon = btnEl.querySelector('i.bi-chevron-down');
+                    if (icon) {
+                        icon.className = 'bi bi-chevron-up';
+                    }
+                }
+            } else {
+                el.classList.remove('show');
+                el.style.display = 'none';
+                if (btnEl) {
+                    btnEl.setAttribute('aria-expanded', 'false');
+                    const icon = btnEl.querySelector('i.bi-chevron-up');
+                    if (icon) {
+                        icon.className = 'bi bi-chevron-down';
+                    }
+                }
+            }
+        }
+        window.toggleCustomCollapse = toggleCustomCollapse;
+
         function updateWoBatchSelectionCk() {
             const checks = document.querySelectorAll('.wo-check-ck:checked');
             const btn = document.getElementById('btnBatchProduksiCk');
@@ -2214,7 +2248,7 @@
                                     <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk total kebutuhan batch ini.</span>
                                 </div>
                             </div>
-                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitBatchCk" aria-expanded="false" aria-controls="collapseDefisitBatchCk">
+                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" onclick="toggleCustomCollapse('collapseDefisitBatchCk', this)">
                                 <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang (${totalDefisitCount})
                             </button>
                         </div>

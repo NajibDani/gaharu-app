@@ -456,7 +456,7 @@
                                                 </div>
 
                                                 @if($needBahanB2b)
-                                                    <form id="formMintaBahanB2B{{ $wo->id }}" action="{{ route('wo.kirim_produksi', $wo->id) }}" method="POST" class="d-none">
+                                                    <form id="formMintaBahanB2B{{ $wo->id }}" action="{{ route('produksi.kirim-bahan', $wo->id) }}" method="POST" class="d-none">
                                                         @csrf
                                                     </form>
                                                 @endif
@@ -489,7 +489,7 @@
                                                                                     <span class="text-muted" style="font-size: 11.5px;">Stok bahan baku belum mencukupi untuk kebutuhan WO ini.</span>
                                                                                 </div>
                                                                             </div>
-                                                                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitWoCk{{ $wo->id }}" aria-expanded="false" aria-controls="collapseDefisitWoCk{{ $wo->id }}">
+                                                                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" onclick="toggleCustomCollapse('collapseDefisitWoCk{{ $wo->id }}', this)">
                                                                                 <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang ({{ count($wo->defisit_bahan) }})
                                                                             </button>
                                                                         </div>
@@ -1072,6 +1072,40 @@
 
     {{-- SCRIPT UNTUK CHECKBOX MASSAL, BATCH PRODUKSI & TAB HANDLING --}}
     <script>
+        function toggleCustomCollapse(targetId, btnEl) {
+            const el = document.getElementById(targetId);
+            if (!el) return;
+            
+            const isHidden = (window.getComputedStyle(el).display === 'none') || (!el.classList.contains('show') && (!el.style.display || el.style.display === 'none'));
+            
+            if (isHidden) {
+                el.classList.add('show');
+                if (el.tagName === 'TR') {
+                    el.style.display = 'table-row';
+                } else {
+                    el.style.display = 'block';
+                }
+                if (btnEl) {
+                    btnEl.setAttribute('aria-expanded', 'true');
+                    const icon = btnEl.querySelector('i.bi-chevron-down');
+                    if (icon) {
+                        icon.className = 'bi bi-chevron-up';
+                    }
+                }
+            } else {
+                el.classList.remove('show');
+                el.style.display = 'none';
+                if (btnEl) {
+                    btnEl.setAttribute('aria-expanded', 'false');
+                    const icon = btnEl.querySelector('i.bi-chevron-up');
+                    if (icon) {
+                        icon.className = 'bi bi-chevron-down';
+                    }
+                }
+            }
+        }
+        window.toggleCustomCollapse = toggleCustomCollapse;
+
         function openReviewMassalModal() {
             const checkedDetails = document.querySelectorAll('.checkItem:checked');
             if (checkedDetails.length === 0) return;
@@ -1217,7 +1251,7 @@
                                     <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk total kebutuhan batch ini.</span>
                                 </div>
                             </div>
-                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitBatchCkCold" aria-expanded="false" aria-controls="collapseDefisitBatchCkCold">
+                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" onclick="toggleCustomCollapse('collapseDefisitBatchCkCold', this)">
                                 <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang (${totalDefisitCount})
                             </button>
                         </div>

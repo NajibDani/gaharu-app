@@ -1791,6 +1791,28 @@ class JurnalController extends Controller
                 $item->status = 'Lunas';
                 $item->keterangan_sub = 'Semua transaksi sudah selesai';
             } else {
+                // Fallback kalkulasi langsung jika saldo jurnal masih 0 tetapi ada pesanan aktif
+                if ($jenis === 'piutang' && floatval($item->total_debit) == 0 && floatval($item->total_kredit) == 0) {
+                    $custOrders = DB::table('pesanan')
+                        ->where('customer_id', $item->entity_id)
+                        ->whereNotIn(DB::raw('LOWER(COALESCE(status_pesanan, ""))'), ['batal', 'dibatalkan'])
+                        ->get();
+
+                    if ($custOrders->isNotEmpty()) {
+                        $totalTagihanCust = 0;
+                        foreach ($custOrders as $cOrd) {
+                            $totalTagihanCust += (float)($cOrd->total_pesanan > 0 ? $cOrd->total_pesanan : ($cOrd->total_harga ?? 0));
+                        }
+                        $totalBayarCust = (float)DB::table('pembayaran')
+                            ->whereIn('pesanan_id', $custOrders->pluck('id'))
+                            ->sum('jumlah_bayar');
+
+                        $item->total_debit = $totalTagihanCust;
+                        $item->total_kredit = $totalBayarCust;
+                        $item->saldo = max(0, $totalTagihanCust - $totalBayarCust);
+                    }
+                }
+
                 $item->status = ($item->saldo <= 0) ? 'Lunas' : 'Belum Lunas';
                 $item->keterangan_sub = ($item->saldo <= 0) 
                     ? 'Semua transaksi sudah selesai' 
@@ -1958,8 +1980,58 @@ class JurnalController extends Controller
                     ->orderBy('jurnal_penjualan_b2b.id', 'asc')
                     ->get();
 
+                // Jika belum ada jurnal akuntansi B2B tercatat, tampilkan mutasi langsung dari rekaman pesanan Cold Kitchen & pembayarannya
+                if ($mutasi->isEmpty()) {
+                    $directOrders = DB::table('pesanan')
+                        ->where('customer_id', $id)
+                        ->whereNotIn(DB::raw('LOWER(COALESCE(status_pesanan, ""))'), ['batal', 'dibatalkan'])
+                        ->orderBy('tanggal', 'asc')
+                        ->get();
+
+                    $directMutasi = [];
+                    foreach ($directOrders as $dOrd) {
+                        $orderHppTotal = (float)($dOrd->total_pesanan > 0 ? $dOrd->total_pesanan : ($dOrd->total_harga ?? 0));
+                        if ($orderHppTotal <= 0) {
+                            $orderHppTotal = (float)DB::table('pesanan_detail')->where('pesanan_id', $dOrd->id)->sum('subtotal');
+                        }
+
+                        $directMutasi[] = (object)[
+                            'tanggal'        => $dOrd->tanggal,
+                            'keterangan'     => 'Tagihan HPP Permintaan #' . $dOrd->kode_pesanan,
+                            'ref'            => $dOrd->kode_pesanan,
+                            'debit'          => $orderHppTotal,
+                            'kredit'         => 0,
+                            'pesanan_id'     => $dOrd->id,
+                            'kode_transaksi' => $dOrd->kode_pesanan,
+                            'created_at'     => $dOrd->created_at ?? $dOrd->tanggal,
+                        ];
+
+                        $pays = DB::table('pembayaran')->where('pesanan_id', $dOrd->id)->get();
+                        foreach ($pays as $py) {
+                            $directMutasi[] = (object)[
+                                'tanggal'        => $py->tanggal_bayar,
+                                'keterangan'     => 'Pembayaran Tagihan #' . $dOrd->kode_pesanan . ' (' . ($py->metode_pembayaran ?? 'Cash') . ')',
+                                'ref'            => 'PAY-' . $py->id,
+                                'debit'          => 0,
+                                'kredit'         => (float)$py->jumlah_bayar,
+                                'pesanan_id'     => $dOrd->id,
+                                'kode_transaksi' => $dOrd->kode_pesanan,
+                                'created_at'     => $py->created_at ?? $py->tanggal_bayar,
+                            ];
+                        }
+                    }
+
+                    usort($directMutasi, function($a, $b) {
+                        return strtotime($a->tanggal) <=> strtotime($b->tanggal);
+                    });
+                    $mutasi = collect($directMutasi);
+                }
+
                 // Ambil data lengkap pesanan terkait untuk pop-up modal rincian nota
                 $pesananIds = $mutasi->pluck('pesanan_id')->unique()->filter()->values();
+                if ($pesananIds->isEmpty()) {
+                    $pesananIds = DB::table('pesanan')->where('customer_id', $id)->pluck('id');
+                }
                 if ($pesananIds->isNotEmpty()) {
                     $pesananModels = \App\Models\Pesanan::with(['customer', 'details.produk', 'pembayaran'])
                         ->whereIn('id', $pesananIds)

@@ -38,16 +38,21 @@ class CustomerController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'nama' => 'required',
-            'jenis' => 'required|in:Internal,Reseller,Horeca,Corporate',
-            'no_hp' => 'required',
-            'alamat' => 'required',
+            'nama'   => 'required|string|max:255',
+            'jenis'  => 'required|string|max:100',
+            'no_hp'  => 'nullable|string|max:50',
+            'alamat' => 'nullable|string',
         ]);
 
-        Customer::create($request->all());
+        Customer::create([
+            'nama'   => $request->nama,
+            'jenis'  => $request->jenis,
+            'no_hp'  => $request->no_hp ?? '-',
+            'alamat' => $request->alamat ?? '-',
+        ]);
 
         return redirect()->route('customer.index')
-            ->with('success', 'Data berhasil ditambahkan');
+            ->with('success', 'Data Konsumen / Pelanggan berhasil ditambahkan');
     }
 
     public function edit($id)
@@ -59,14 +64,19 @@ class CustomerController extends Controller
     public function update(Request $request, $id)
     {
         $request->validate([
-            'nama' => 'required',
-            'jenis' => 'required|in:Internal,Reseller,Horeca,Corporate',
-            'no_hp' => 'required',
-            'alamat' => 'required',
+            'nama'   => 'required|string|max:255',
+            'jenis'  => 'required|string|max:100',
+            'no_hp'  => 'nullable|string|max:50',
+            'alamat' => 'nullable|string',
         ]);
 
         $data = Customer::findOrFail($id);
-        $data->update($request->all());
+        $data->update([
+            'nama'   => $request->nama,
+            'jenis'  => $request->jenis,
+            'no_hp'  => $request->no_hp ?? '-',
+            'alamat' => $request->alamat ?? '-',
+        ]);
 
         return redirect()->route('customer.index')
             ->with('success', 'Data berhasil diupdate');

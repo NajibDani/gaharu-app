@@ -52,6 +52,47 @@ class Penggajian extends Model
         'journal_id'
     ];
 
+    /**
+     * Cache kolom tabel database agar tidak melakukan schema querying berulang
+     */
+    protected static ?array $tableColumns = null;
+
+    public static function getTableColumns(): array
+    {
+        if (static::$tableColumns === null) {
+            try {
+                static::$tableColumns = \Illuminate\Support\Facades\Schema::getColumnListing('penggajian');
+            } catch (\Throwable $e) {
+                static::$tableColumns = [];
+            }
+        }
+        return static::$tableColumns;
+    }
+
+    /**
+     * Pastikan $fillable hanya memuat kolom yang benar-benar ada di tabel fisik database
+     */
+    public function getFillable(): array
+    {
+        $columns = static::getTableColumns();
+        if (!empty($columns)) {
+            return array_values(array_intersect($this->fillable, $columns));
+        }
+        return $this->fillable;
+    }
+
+    /**
+     * Filter atribut sebelum proses insert / update database agar tidak error jika kolom tidak ada di database fisik
+     */
+    public function save(array $options = [])
+    {
+        $columns = static::getTableColumns();
+        if (!empty($columns)) {
+            $this->attributes = array_intersect_key($this->attributes, array_flip($columns));
+        }
+        return parent::save($options);
+    }
+
     public function karyawan(): BelongsTo
     {
         // Pastikan model Karyawan sudah di-import di atas atau tulis lengkap path-nya

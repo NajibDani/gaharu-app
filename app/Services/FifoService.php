@@ -436,15 +436,22 @@ class FifoService
             }
 
             // 6. Fallback ke HPP referensi master barang / harga beli
-            if ($barang->hpp_referensi && floatval($barang->hpp_referensi) > 0) {
+            if (isset($barang->hpp_referensi) && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
                 if (count($visited) === 1) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
             }
-            if ($barang->harga_beli && floatval($barang->harga_beli) > 0) {
+            if (isset($barang->harga_beli) && floatval($barang->harga_beli) > 0) {
                 $res = (float) $barang->harga_beli;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
+            }
+            if (isset($barang->harga_satuan_terkecil) && floatval($barang->harga_satuan_terkecil) > 0) {
+                $res = (float) $barang->harga_satuan_terkecil;
                 if (count($visited) === 1) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }

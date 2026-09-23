@@ -93,7 +93,9 @@ class ProduksiController extends Controller
 
         $woList = $queryWo->latest()->paginate(10, ['*'], 'wo_page')->withQueryString();
 
-        $gudangB2BId = 3; // Gudang B2B
+        $gudangCold = MasterGudang::where('nama', 'like', '%Cold Kitchen%')->first();
+        $gudangColdId = $gudangCold ? $gudangCold->id : 4;
+        $gudangB2BId = $gudangColdId; // Gudang Cold Kitchen
 
         // Hitung progress produksi & ketersediaan bahan baku untuk setiap WO
         $woList->getCollection()->transform(function($wo) use ($gudangB2BId) {
@@ -242,9 +244,10 @@ class ProduksiController extends Controller
 
         DB::beginTransaction();
         try {
-            $gudangB2BId = 3;
+            $gudangCold = MasterGudang::where('nama', 'like', '%Cold Kitchen%')->first();
+            $gudangB2BId = $gudangCold ? $gudangCold->id : 4;
 
-            // Cek ketersediaan bahan baku di Gudang B2B
+            // Cek ketersediaan bahan baku di Gudang Cold Kitchen
             $isBahanCukup = true;
             foreach ($request->produk_id as $key => $produkId) {
                 $qty = floatval($request->qty_rencana[$key] ?? 0);
@@ -327,15 +330,10 @@ class ProduksiController extends Controller
             $pesananIdUtama = $workOrders->pluck('details')->flatten()->pluck('pesanan_id')->filter()->first();
             $pesanan = \App\Models\Pesanan::find($pesananIdUtama);
 
-            $gudangBahan = MasterGudang::where('kategori', 'Produksi')->first() 
-                ?? MasterGudang::where('nama', 'like', '%Produksi%')->first()
-                ?? MasterGudang::first();
-            $gudangBahanId = $gudangBahan ? $gudangBahan->id : 3;
-
-            $gudangHasil = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first()
-                ?? MasterGudang::where('kategori', 'Produksi')->first()
-                ?? $gudangBahan;
-            $gudangHasilId = $gudangHasil ? $gudangHasil->id : 3;
+            $gudangCold = MasterGudang::where('nama', 'like', '%Cold Kitchen%')->first() 
+                ?? MasterGudang::where('kategori', 'Produksi')->first();
+            $gudangBahanId = $gudangCold ? $gudangCold->id : 4;
+            $gudangHasilId = $gudangCold ? $gudangCold->id : 4;
 
             $hasValidQty = false;
             foreach ($request->produk_id as $key => $pid) {
@@ -1701,5 +1699,194 @@ class ProduksiController extends Controller
         $pdf = app('dompdf.wrapper');
         $pdf->loadView('produksi.show-pdf', compact('produksi', 'namaGudang'));
         return $pdf->download('produksi-' . $produksi->kode_produksi . '.pdf');
+    }
+
+    /**
+     * Minta / Mutasi Bahan Baku Kurang dari Gudang Utama ke Gudang Cold Kitchen
+     */
+    public function kirimBahanBaku($woId)
+    {
+        $wo = WorkOrder::with(['details.produk.resep.bahan', 'details.produk.resepBtklBop'])->findOrFail($woId);
+
+        DB::beginTransaction();
+        try {
+            $gudangCold = MasterGudang::where('nama', 'like', '%Cold Kitchen%')->first()
+                ?? MasterGudang::where('kategori', 'Produksi')->first();
+
+            if (!$gudangCold) {
+                throw new \Exception('Gudang Cold Kitchen belum tersedia di Master Gudang.');
+            }
+
+            $agregatBahan = [];
+            foreach ($wo->details as $detail) {
+                if (!$detail->produk || !$detail->produk->resep) continue;
+
+                $sudah = DB::table('alokasi_produksi_pesanan')
+                    ->where('pesanan_id', $detail->pesanan_id)
+                    ->where('produk_id', $detail->produk_id)
+                    ->sum('qty_alokasi') ?? 0;
+                $sisaQty = max(0, floatval($detail->qty_rencana) - floatval($sudah));
+                if ($sisaQty <= 0) $sisaQty = floatval($detail->qty_rencana);
+
+                $outputQtyResep = ($detail->produk->resepBtklBop && floatval($detail->produk->resepBtklBop->output_qty) > 0) ? floatval($detail->produk->resepBtklBop->output_qty) : 1;
+                $batchCount = $sisaQty / $outputQtyResep;
+
+                foreach ($detail->produk->resep as $resep) {
+                    $qtyKebutuhan = floatval($resep->qty_bahan) * $batchCount;
+                    if (!isset($agregatBahan[$resep->bahan_id])) {
+                        $agregatBahan[$resep->bahan_id] = [
+                            'nama'   => $resep->bahan->nama ?? 'Bahan',
+                            'butuh'  => 0,
+                            'satuan' => $resep->bahan->satuan ?? '-',
+                        ];
+                    }
+                    $agregatBahan[$resep->bahan_id]['butuh'] += $qtyKebutuhan;
+                }
+            }
+
+            $bahanKurang = [];
+            foreach ($agregatBahan as $bahanId => $data) {
+                $stokDiCold = floatval(StokGudang::where('gudang_id', $gudangCold->id)->where('barang_id', $bahanId)->value('jumlah') ?? 0);
+                $kurang = max(0, $data['butuh'] - $stokDiCold);
+                if ($kurang > 0) {
+                    $bahanKurang[$bahanId] = [
+                        'qty'    => $kurang,
+                        'satuan' => $data['satuan'],
+                    ];
+                }
+            }
+
+            if (empty($bahanKurang)) {
+                return redirect()->back()->with('info', 'Seluruh bahan baku di Gudang Cold Kitchen sudah mencukupi. Tidak ada bahan yang perlu diminta.');
+            }
+
+            $gudangUtama = MasterGudang::where('nama', 'like', '%Utama%')->first()
+                ?? MasterGudang::where('kategori', 'Utama')->first()
+                ?? MasterGudang::first();
+
+            if (!$gudangUtama) {
+                throw new \Exception('Gudang Utama pengirim belum tersedia di Master Gudang.');
+            }
+
+            $kodePermintaan = 'REQ-COLD-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('permintaan_bahan_baku')) {
+                $permintaanId = DB::table('permintaan_bahan_baku')->insertGetId([
+                    'kode_permintaan'  => $kodePermintaan,
+                    'gudang_asal_id'   => $gudangUtama->id,
+                    'gudang_tujuan_id' => $gudangCold->id,
+                    'tanggal'          => now(),
+                    'status'           => 'Disetujui',
+                    'catatan'          => 'Permintaan otomatis bahan baku untuk Work Order Cold Kitchen #' . $wo->kode_wo,
+                    'created_by'       => auth()->id() ?? 1,
+                    'created_at'       => now(),
+                    'updated_at'       => now(),
+                ]);
+
+                foreach ($bahanKurang as $bId => $d) {
+                    DB::table('permintaan_bahan_baku_detail')->insert([
+                        'permintaan_bahan_baku_id' => $permintaanId,
+                        'barang_id'                => $bId,
+                        'qty_minta'                => $d['qty'],
+                        'qty_disetujui'            => $d['qty'],
+                        'satuan'                   => $d['satuan'],
+                        'created_at'               => now(),
+                        'updated_at'               => now(),
+                    ]);
+                }
+            }
+
+            $fifoService = app(\App\Services\FifoService::class);
+            $itemsTransferred = 0;
+
+            foreach ($bahanKurang as $bId => $d) {
+                $qtyMinta = $d['qty'];
+                $layers = $fifoService->consumeFIFO($bId, $qtyMinta, $gudangUtama->id, null, true);
+
+                $hppSubtotal = 0;
+                foreach ($layers as $layer) {
+                    $hppSubtotal += floatval($layer['qty_keluar']) * floatval($layer['harga_per_qty']);
+                }
+
+                // Kurangi stok di Gudang Utama
+                $stokUtama = StokGudang::where('gudang_id', $gudangUtama->id)->where('barang_id', $bId)->first();
+                if ($stokUtama) {
+                    $stokUtama->decrement('jumlah', $qtyMinta);
+                }
+
+                // Catat transaksi stok keluar Gudang Utama
+                TransaksiStok::create([
+                    'tanggal'          => now(),
+                    'tipe'             => 'keluar',
+                    'source_type'      => 'mutasi_antar_gudang',
+                    'source_id'        => $wo->id,
+                    'gudang_asal_id'   => $gudangUtama->id,
+                    'gudang_tujuan_id' => $gudangCold->id,
+                    'barang_id'        => $bId,
+                    'qty'              => $qtyMinta,
+                    'total_harga'      => $hppSubtotal,
+                    'created_by'       => auth()->id() ?? 1,
+                ]);
+
+                // Tambahkan stok ke Gudang Cold Kitchen
+                $stokCold = StokGudang::where('gudang_id', $gudangCold->id)->where('barang_id', $bId)->first();
+                if ($stokCold) {
+                    $stokCold->increment('jumlah', $qtyMinta);
+                } else {
+                    StokGudang::create([
+                        'gudang_id' => $gudangCold->id,
+                        'barang_id' => $bId,
+                        'jumlah'    => $qtyMinta,
+                    ]);
+                }
+
+                // Buat batch baru di Gudang Cold Kitchen
+                $supplierId  = DB::table('suppliers')->value('id') ?? 1;
+                $pembelianId = DB::table('pembelian')->value('id') ?? 1;
+                $pemDetailId = DB::table('pembelian_detail')->value('id') ?? 1;
+                $hargaPerUnit = $qtyMinta > 0 ? ($hppSubtotal / $qtyMinta) : 0;
+
+                StokGudangBatch::create([
+                    'gudang_id'           => $gudangCold->id,
+                    'supplier_id'         => $supplierId,
+                    'barang_id'           => $bId,
+                    'pembelian_id'        => $pembelianId,
+                    'pembelian_detail_id' => $pemDetailId,
+                    'batch_number'        => 'MUTASI-COLD-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(2))),
+                    'qty_masuk'           => $qtyMinta,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qtyMinta,
+                    'harga_per_qty'       => $hargaPerUnit,
+                    'is_habis'            => false,
+                ]);
+
+                // Catat transaksi stok masuk Gudang Cold Kitchen
+                TransaksiStok::create([
+                    'tanggal'          => now(),
+                    'tipe'             => 'masuk',
+                    'source_type'      => 'mutasi_antar_gudang',
+                    'source_id'        => $wo->id,
+                    'gudang_asal_id'   => $gudangUtama->id,
+                    'gudang_tujuan_id' => $gudangCold->id,
+                    'barang_id'        => $bId,
+                    'qty'              => $qtyMinta,
+                    'total_harga'      => $hppSubtotal,
+                    'created_by'       => auth()->id() ?? 1,
+                ]);
+
+                $itemsTransferred++;
+            }
+
+            $wo->update([
+                'status_wo' => 'Diproses',
+                'catatan'   => ($wo->catatan ? $wo->catatan . ' | ' : '') . 'Bahan baku telah dimutasi dari Gudang Utama (' . date('d/m/Y H:i') . ')',
+            ]);
+
+            DB::commit();
+            return redirect()->back()->with('success', "Berhasil meminta {$itemsTransferred} jenis bahan baku dari Gudang Utama ke Gudang Cold Kitchen untuk WO #{$wo->kode_wo}. Status WO telah diperbarui menjadi 'Diproses'.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal memproses permintaan bahan ke Gudang Utama: ' . $e->getMessage());
+        }
     }
 }

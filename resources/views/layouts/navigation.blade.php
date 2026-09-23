@@ -48,7 +48,7 @@
 
     $masterActive = request()->routeIs([
         'kategori.*', 'barang.*', 'suppliers.*', 'gudangs.*',
-        'harga.*', 'event-notifikasi.*', 'resep.*',
+        'harga.*', 'event-notifikasi.*', 'resep.*', 'customer.*',
     ]);
 
     $hrdActive = request()->routeIs([
@@ -131,12 +131,15 @@
                     @endif
 
                     @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Kepala Gudang']))
-                        <div class="submenu-divider">SUPPLIER &amp; GUDANG</div>
+                        <div class="submenu-divider">SUPPLIER, GUDANG &amp; KONSUMEN</div>
                         <a href="{{ route('suppliers.index') }}" class="{{ request()->routeIs('suppliers.*') ? 'active' : '' }}">
                             <i class="bi bi-truck me-2" style="font-size:12px;"></i>Daftar Supplier
                         </a>
                         <a href="{{ route('gudangs.index') }}" class="{{ request()->routeIs('gudangs.*') ? 'active' : '' }}">
                             <i class="bi bi-geo-alt me-2" style="font-size:12px;"></i>Daftar Gudang / Outlet
+                        </a>
+                        <a href="{{ route('customer.index') }}" class="{{ request()->routeIs('customer.*') ? 'active' : '' }}">
+                            <i class="bi bi-people me-2" style="font-size:12px;"></i>Daftar Konsumen / Pelanggan
                         </a>
                     @endif
                 </div>

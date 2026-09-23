@@ -21,7 +21,7 @@ class PesananController extends Controller
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = Pesanan::b2b()->with(['customer', 'pembayaran', 'details.produk']);
+        $query = Pesanan::b2b()->with(['customer', 'pembayaran', 'details.produk.resepBtklBop', 'gudang', 'creator']);
 
         $customerId = $request->query('customer_id');
         if ($customerId) {
@@ -56,11 +56,21 @@ class PesananController extends Controller
 
         $customers = Customer::orderBy('nama')->get();
 
-        $totalPesanan = Pesanan::count();
-        $totalProses = Pesanan::whereIn('status_pesanan', ['Draft', 'Proses', 'Siap kirim', 'pending', 'ready'])->count();
-        $totalSelesai = Pesanan::where('status_pesanan', 'Selesai')->count();
+        $totalPesanan = Pesanan::b2b()->count();
+        $totalProses = Pesanan::b2b()->whereIn('status_pesanan', ['Draft', 'Proses', 'Siap kirim', 'pending', 'ready', 'Diproses'])->count();
+        $totalSelesai = Pesanan::b2b()->where('status_pesanan', 'Selesai')->count();
 
-        return view('pesanan.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'customerId'));
+        // Barang yang bisa dipilih: Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
+        $produk = MasterBarang::with('resepBtklBop')
+            ->where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_barang_jadi', true);
+            })
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        return view('pesanan.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'customerId', 'produk'));
     }
 
     /**
@@ -68,8 +78,17 @@ class PesananController extends Controller
      */
     public function create()
     {
-        $customers = Customer::all();
-        $produk = MasterBarang::where('is_barang_jadi', 1)->where('is_active', true)->get();
+        $customers = Customer::orderBy('nama')->get();
+        
+        // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
+        $produk = MasterBarang::with('resepBtklBop')
+            ->where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_barang_jadi', true);
+            })
+            ->orderBy('nama', 'asc')
+            ->get();
 
         return view('pesanan.create', compact('customers', 'produk'));
     }
@@ -80,13 +99,13 @@ class PesananController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'customer_id' => 'required',
-            'tanggal' => 'required',
+            'customer_id'    => 'required',
+            'tanggal'        => 'required',
             'estimasi_kirim' => 'nullable',
-            'produk_id' => 'required|array|min:1',
-            'qty' => 'required|array|min:1',
-            'harga' => 'nullable|array',
-            'subtotal' => 'nullable|array',
+            'produk_id'      => 'required|array|min:1',
+            'qty'            => 'required|array|min:1',
+            'harga'          => 'nullable|array',
+            'subtotal'       => 'nullable|array',
             'tax_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
@@ -108,55 +127,125 @@ class PesananController extends Controller
                     'produk_id' => "Barang " . ($barang->nama ?? 'pilihan') . " sedang tidak aktif dan tidak dapat dipilih dalam transaksi."
                 ])->withInput();
             }
-            $qty = $request->qty[$key] ?? 0;
-            if ($qty < $barang->minimum_order) {
+            $qty = floatval($request->qty[$key] ?? 0);
+            if ($barang->minimum_order && $qty < $barang->minimum_order) {
                 return redirect()->back()->withErrors([
                     'qty' => "Jumlah order untuk {$barang->nama} kurang dari batas minimum order (" . number_format($barang->minimum_order) . " {$barang->satuan})."
                 ])->withInput();
             }
         }
 
-        $taxPercentage = floatval($request->tax_percentage ?? 0);
-        $subtotalDpp = 0;
-        if (is_array($request->subtotal)) {
-            foreach ($request->subtotal as $sub) {
-                $subtotalDpp += floatval($sub);
+        DB::beginTransaction();
+        try {
+            $customer = Customer::findOrFail($request->customer_id);
+            $custNama = strtolower($customer->nama);
+            
+            // Tentukan gudang outlet tujuan jika ada
+            $gudangOutlet = null;
+            if (str_contains($custNama, 'kejingga')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')
+                    ->orWhere('nama', 'like', '%Kejingga%')->first();
+            } elseif (str_contains($custNama, 'gaharu')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')
+                    ->where('kategori', 'Operasional')->first();
+            } else {
+                $gudangOutlet = \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
             }
-        }
-        $taxAmount = round($subtotalDpp * ($taxPercentage / 100), 2);
-        $totalPesanan = $subtotalDpp + $taxAmount;
+            $gudangId = $gudangOutlet ? $gudangOutlet->id : null;
 
-        $pesanan = Pesanan::create([
-            'kode_pesanan' => $request->kode_pesanan,
-            'customer_id' => $request->customer_id,
-            'tanggal' => $request->tanggal,
-            'estimasi_kirim' => $estimasiKirim,
-            'estimasi_produksi' => $request->estimasi_produksi ?? null,
-            'total_pesanan' => $totalPesanan,
-            'tax_percentage' => $taxPercentage,
-            'tax_service' => $taxAmount,
-            'status_pesanan' => 'pending',
-            'status_pembayaran' => 'Belum Bayar',
-            'created_by' => auth()->id(),
-        ]);
-    
-        foreach ($request->produk_id as $key => $produk) {
-            if (!$produk) continue;
+            // Aturan Pembayaran: Outlet Gaharu internal default 'Lunas', Outlet KeJingga & Konsumen Luar/Cold Kitchen default 'Belum Bayar'
+            $isInternalGaharu = str_contains($custNama, 'gaharu') && !str_contains($custNama, 'luar');
+            $statusBayar = $isInternalGaharu ? 'Lunas' : 'Belum Bayar';
 
-            $qtyVal = floatval($request->qty[$key] ?? 0);
-            $hargaVal = floatval($request->harga[$key] ?? 0);
-            $subtotalVal = isset($request->subtotal[$key]) ? floatval($request->subtotal[$key]) : ($qtyVal * $hargaVal);
+            $orderModes = $request->input('order_mode', []);
+            $subtotalDpp = 0;
+            $itemsData = [];
+            $fifoService = app(\App\Services\FifoService::class);
 
-            PesananDetail::create([
-                'pesanan_id' => $pesanan->id,
-                'produk_id' => $produk,
-                'qty' => $qtyVal,
-                'harga' => $hargaVal,
-                'subtotal' => $subtotalVal,
+            foreach ($request->produk_id as $key => $produkId) {
+                if (!$produkId || floatval($request->qty[$key] ?? 0) <= 0) continue;
+
+                $rawQty = floatval($request->qty[$key]);
+                $mode = $orderModes[$key] ?? 'satuan';
+                $finalQty = $rawQty;
+
+                $itemObj = MasterBarang::with('resepBtklBop')->find($produkId);
+
+                if ($mode === 'konversi') {
+                    if ($itemObj && floatval($itemObj->konversi_pembelian) > 1) {
+                        $finalQty = $rawQty * floatval($itemObj->konversi_pembelian);
+                    }
+                } elseif ($mode === 'resep') {
+                    if ($itemObj && $itemObj->resepBtklBop && floatval($itemObj->resepBtklBop->output_qty) > 0) {
+                        $finalQty = $rawQty * floatval($itemObj->resepBtklBop->output_qty);
+                    }
+                }
+
+                $hargaVal = floatval($request->harga[$key] ?? 0);
+                if ($hargaVal <= 0) {
+                    $hargaVal = $fifoService->getHargaTerakhirBahan($produkId, 4); // Gudang Cold Kitchen
+                    if ($hargaVal <= 0) {
+                        $hargaVal = $fifoService->getHargaTerakhirBahan($produkId, 1); // Fallback Gudang Utama
+                    }
+                    if ($hargaVal <= 0 && $itemObj) {
+                        $hargaVal = floatval($itemObj->hpp_referensi ?? $itemObj->harga_satuan_terkecil ?? 0);
+                    }
+                }
+
+                $subtotalVal = isset($request->subtotal[$key]) && floatval($request->subtotal[$key]) > 0
+                    ? floatval($request->subtotal[$key])
+                    : ($finalQty * $hargaVal);
+
+                $subtotalDpp += $subtotalVal;
+                $itemsData[] = [
+                    'produk_id' => $produkId,
+                    'qty'       => $finalQty,
+                    'harga'     => $hargaVal,
+                    'subtotal'  => $subtotalVal,
+                ];
+            }
+
+            $taxPercentage = floatval($request->tax_percentage ?? 0);
+            $taxAmount = round($subtotalDpp * ($taxPercentage / 100), 2);
+            $totalPesanan = $subtotalDpp + $taxAmount;
+
+            $kodePesanan = $request->kode_pesanan;
+            if (!$kodePesanan) {
+                $kodePesanan = 'CK-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+            }
+
+            $pesanan = Pesanan::create([
+                'kode_pesanan'      => $kodePesanan,
+                'tipe_pesanan'      => 'b2b',
+                'customer_id'       => $request->customer_id,
+                'tanggal'           => $request->tanggal,
+                'estimasi_kirim'    => $estimasiKirim,
+                'estimasi_produksi' => $request->estimasi_produksi ?? null,
+                'total_pesanan'     => $totalPesanan,
+                'tax_percentage'    => $taxPercentage,
+                'tax_service'       => $taxAmount,
+                'status_pesanan'    => 'pending',
+                'status_pembayaran' => $statusBayar,
+                'created_by'        => auth()->id(),
+                'gudang_id'         => $gudangId,
             ]);
-        }
 
-        return redirect()->route('pesanan.index')->with('success', 'Permintaan Cold Kitchen baru berhasil diajukan!');
+            foreach ($itemsData as $item) {
+                PesananDetail::create([
+                    'pesanan_id' => $pesanan->id,
+                    'produk_id'  => $item['produk_id'],
+                    'qty'        => $item['qty'],
+                    'harga'      => $item['harga'],
+                    'subtotal'   => $item['subtotal'],
+                ]);
+            }
+
+            DB::commit();
+            return redirect()->route('pesanan.index')->with('success', 'Permintaan Cold Kitchen baru #' . $pesanan->kode_pesanan . ' berhasil diajukan!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menyimpan pesanan: ' . $e->getMessage())->withInput();
+        }
     }
 
     /**
@@ -164,8 +253,12 @@ class PesananController extends Controller
      */
     public function show(string $id)
     {
-        $pesanan = Pesanan::with(['customer', 'details.produk'])->findOrFail($id);
-        return view('pesanan.show', compact('pesanan'));
+        $pesanan = Pesanan::with(['customer', 'details.produk.resepBtklBop', 'gudang', 'creator'])->findOrFail($id);
+        
+        $woDetail = WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
+        $workOrder = $woDetail ? WorkOrder::find($woDetail->work_order_id) : null;
+
+        return view('pesanan.show', compact('pesanan', 'workOrder'));
     }
 
     /**
@@ -173,7 +266,7 @@ class PesananController extends Controller
      */
     public function edit(string $id)
     {
-        $pesanan = Pesanan::with('details.produk')->findOrFail($id);
+        $pesanan = Pesanan::with(['details.produk.resepBtklBop', 'customer'])->findOrFail($id);
 
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
         if ($sudahWO) {
@@ -186,8 +279,17 @@ class PesananController extends Controller
                 ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.');
         }
 
-        $customers = Customer::all();
-        $produk = MasterBarang::where('is_barang_jadi', 1)->where('is_active', true)->get();
+        $customers = Customer::orderBy('nama')->get();
+
+        // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
+        $produk = MasterBarang::with('resepBtklBop')
+            ->where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_barang_jadi', true);
+            })
+            ->orderBy('nama', 'asc')
+            ->get();
 
         return view('pesanan.edit', compact('pesanan', 'customers', 'produk'));
     }
@@ -210,13 +312,13 @@ class PesananController extends Controller
         }
 
         $request->validate([
-            'customer_id' => 'required',
-            'tanggal' => 'required',
+            'customer_id'    => 'required',
+            'tanggal'        => 'required',
             'estimasi_kirim' => 'nullable',
-            'produk_id' => 'required|array|min:1',
-            'qty' => 'required|array|min:1',
-            'harga' => 'nullable|array',
-            'subtotal' => 'nullable|array',
+            'produk_id'      => 'required|array|min:1',
+            'qty'            => 'required|array|min:1',
+            'harga'          => 'nullable|array',
+            'subtotal'       => 'nullable|array',
             'tax_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
@@ -236,8 +338,8 @@ class PesananController extends Controller
                     'produk_id' => "Barang " . ($barang->nama ?? 'pilihan') . " sedang tidak aktif dan tidak dapat dipilih dalam transaksi."
                 ])->withInput();
             }
-            $qty = $request->qty[$key] ?? 0;
-            if ($qty < $barang->minimum_order) {
+            $qty = floatval($request->qty[$key] ?? 0);
+            if ($barang->minimum_order && $qty < $barang->minimum_order) {
                 return redirect()->back()->withErrors([
                     'qty' => "Jumlah order untuk {$barang->nama} kurang dari batas minimum order (" . number_format($barang->minimum_order) . " {$barang->satuan})."
                 ])->withInput();
@@ -246,6 +348,22 @@ class PesananController extends Controller
 
         DB::beginTransaction();
         try {
+            $customer = Customer::findOrFail($request->customer_id);
+            $custNama = strtolower($customer->nama);
+            
+            $gudangOutlet = null;
+            if (str_contains($custNama, 'kejingga')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')
+                    ->orWhere('nama', 'like', '%Kejingga%')->first();
+            } elseif (str_contains($custNama, 'gaharu')) {
+                $gudangOutlet = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')
+                    ->where('kategori', 'Operasional')->first();
+            } else {
+                $gudangOutlet = \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
+            }
+            $gudangId = $gudangOutlet ? $gudangOutlet->id : $pesanan->gudang_id;
+
+            $orderModes = $request->input('order_mode', []);
             $subtotalDpp = 0;
             $itemsData = [];
 
@@ -253,19 +371,33 @@ class PesananController extends Controller
             $oldPrices = $pesanan->details->pluck('harga', 'produk_id')->toArray();
 
             foreach ($request->produk_id as $key => $produkId) {
-                if (!$produkId) continue;
-                $qtyVal = floatval($request->qty[$key] ?? 0);
-                if ($qtyVal <= 0) continue;
+                if (!$produkId || floatval($request->qty[$key] ?? 0) <= 0) continue;
+
+                $rawQty = floatval($request->qty[$key]);
+                $mode = $orderModes[$key] ?? 'satuan';
+                $finalQty = $rawQty;
+
+                if ($mode === 'konversi') {
+                    $itemObj = MasterBarang::find($produkId);
+                    if ($itemObj && floatval($itemObj->konversi_pembelian) > 1) {
+                        $finalQty = $rawQty * floatval($itemObj->konversi_pembelian);
+                    }
+                } elseif ($mode === 'resep') {
+                    $itemObj = MasterBarang::with('resepBtklBop')->find($produkId);
+                    if ($itemObj && $itemObj->resepBtklBop && floatval($itemObj->resepBtklBop->output_qty) > 0) {
+                        $finalQty = $rawQty * floatval($itemObj->resepBtklBop->output_qty);
+                    }
+                }
 
                 $hargaVal = isset($request->harga[$key]) ? floatval($request->harga[$key]) : ($oldPrices[$produkId] ?? 0);
                 $subtotalVal = isset($request->subtotal[$key]) && floatval($request->subtotal[$key]) > 0
                     ? floatval($request->subtotal[$key])
-                    : ($qtyVal * $hargaVal);
+                    : ($finalQty * $hargaVal);
 
                 $subtotalDpp += $subtotalVal;
                 $itemsData[] = [
                     'produk_id' => $produkId,
-                    'qty'       => $qtyVal,
+                    'qty'       => $finalQty,
                     'harga'     => $hargaVal,
                     'subtotal'  => $subtotalVal,
                 ];
@@ -283,6 +415,7 @@ class PesananController extends Controller
                 'total_pesanan'     => $totalPesanan,
                 'tax_percentage'    => $taxPercentage,
                 'tax_service'       => $taxAmount,
+                'gudang_id'         => $gudangId,
             ]);
 
             // Hapus detail lama dan ganti detail baru
@@ -304,7 +437,7 @@ class PesananController extends Controller
             } elseif ($totalBayarSelesai > 0) {
                 $pesanan->update(['status_pembayaran' => 'DP']);
             } else {
-                $pesanan->update(['status_pembayaran' => 'Belum Bayar']);
+                $pesanan->update(['status_pembayaran' => str_contains($custNama, 'kejingga') ? 'Belum Bayar' : 'Lunas']);
             }
 
             DB::commit();
@@ -320,10 +453,14 @@ class PesananController extends Controller
      */
     public function simpanPembayaran(Request $request, $id)
     {
-        $pesanan = Pesanan::findOrFail($id);
+        $pesanan = Pesanan::with(['pembayaran', 'details'])->findOrFail($id);
         
         $request->validate([
-            'tanggal_bayar' => 'required|date',
+            'tanggal_bayar'     => 'required|date',
+            'jumlah_bayar'      => 'required|numeric|min:0',
+            'metode_pembayaran' => 'required|string',
+            'bukti_file'        => 'nullable|array',
+            'bukti_file.*'      => 'file|image|max:2048'
         ]);
 
         if (\App\Models\Journal::isPeriodClosed($request->tanggal_bayar)) {
@@ -331,18 +468,9 @@ class PesananController extends Controller
         }
 
         $totalBayarSebelumnya = $pesanan->pembayaran()->sum('jumlah_bayar');
-        $sisaTagihan = max(0, $pesanan->total_pesanan - $totalBayarSebelumnya);
-    
-        $isTerminOrCod = in_array($request->metode_pembayaran, ['Termin', 'COD']);
-        $minBayar = $isTerminOrCod ? 0 : 1;
+        $totalTagihan = $pesanan->total_pesanan > 0 ? (float)$pesanan->total_pesanan : (float)$pesanan->details->sum('subtotal');
+        $sisaTagihan = max(0, $totalTagihan - $totalBayarSebelumnya);
         $jumlahBayarInput = floatval($request->jumlah_bayar ?? 0);
-
-        $request->validate([
-            'jumlah_bayar' => 'required|numeric|min:' . $minBayar . '|max:' . max(0.01, $sisaTagihan),
-            'metode_pembayaran' => 'required|string',
-            'bukti_file'        => 'nullable|array',
-            'bukti_file.*'      => 'file|image|max:2048'
-        ]);
 
         $buktiFiles = [];
         if ($request->hasFile('bukti_file')) {
@@ -354,14 +482,14 @@ class PesananController extends Controller
     
         if ($jumlahBayarInput > 0) {
             $pembayaran = Pembayaran::create([
-                'pesanan_id' => $pesanan->id,
+                'pesanan_id'          => $pesanan->id,
                 'kategori_pembayaran' => 'penjualan',
-                'tanggal_bayar' => $request->tanggal_bayar,
-                'jumlah_bayar' => $jumlahBayarInput,
-                'metode_pembayaran' => $request->metode_pembayaran,
-                'catatan' => $request->catatan,
-                'bukti_pembayaran' => $buktiFiles,
-                'created_by' => auth()->id()
+                'tanggal_bayar'       => $request->tanggal_bayar,
+                'jumlah_bayar'        => $jumlahBayarInput,
+                'metode_pembayaran'   => $request->metode_pembayaran,
+                'catatan'             => $request->catatan,
+                'bukti_pembayaran'    => $buktiFiles,
+                'created_by'          => auth()->id()
             ]);
 
             // Auto post B2B payment journal
@@ -370,10 +498,16 @@ class PesananController extends Controller
 
         $totalBayarBaru = $totalBayarSebelumnya + $jumlahBayarInput;
     
-        if ($totalBayarBaru >= $pesanan->total_pesanan) {
+        if ($totalTagihan > 0) {
+            if ($totalBayarBaru >= $totalTagihan) {
+                $pesanan->update(['status_pembayaran' => 'Lunas']);
+            } elseif ($totalBayarBaru > 0) {
+                $pesanan->update(['status_pembayaran' => 'DP']);
+            } else {
+                $pesanan->update(['status_pembayaran' => 'Belum Bayar']);
+            }
+        } else {
             $pesanan->update(['status_pembayaran' => 'Lunas']);
-        } elseif ($totalBayarBaru > 0) {
-            $pesanan->update(['status_pembayaran' => 'DP']);
         }
     
         return back()->with('success', 'Catatan pembayaran / termin berhasil disimpan!');
@@ -532,7 +666,7 @@ class PesananController extends Controller
 
     public function cetakSoPdf($id)
     {
-        $pesanan = Pesanan::with(['customer', 'gudang', 'creator', 'details.produk', 'pembayaran'])->findOrFail($id);
+        $pesanan = Pesanan::with(['customer', 'gudang', 'creator', 'details.produk.resepBtklBop', 'pembayaran'])->findOrFail($id);
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
         $pdf->loadView('pesanan.so-pdf', compact('pesanan'));
         return $pdf->stream('Sales-Order-' . $pesanan->kode_pesanan . '.pdf');
@@ -624,7 +758,8 @@ class PesananController extends Controller
 
             foreach ($pesanans as $pesanan) {
                 $totalBayarSebelumnya = $pesanan->pembayaran()->sum('jumlah_bayar');
-                $sisaTagihan = max(0, $pesanan->total_pesanan - $totalBayarSebelumnya);
+                $totalTagihan = $pesanan->total_pesanan > 0 ? (float)$pesanan->total_pesanan : (float)$pesanan->details->sum('subtotal');
+                $sisaTagihan = max(0, $totalTagihan - $totalBayarSebelumnya);
 
                 if ($sisaTagihan > 0) {
                     $pembayaran = Pembayaran::create([
@@ -633,7 +768,7 @@ class PesananController extends Controller
                         'tanggal_bayar'       => $request->tanggal_bayar,
                         'jumlah_bayar'        => $sisaTagihan,
                         'metode_pembayaran'   => $request->metode_pembayaran,
-                        'catatan'             => $request->catatan ? ($request->catatan . ' (Pelunasan Massal)') : 'Pelunasan Massal Termin/Periode',
+                        'catatan'             => $request->catatan ? ($request->catatan . ' (Pelunasan Massal Cold Kitchen)') : 'Pelunasan Massal Cold Kitchen Termin/Periode',
                         'bukti_pembayaran'    => $buktiFiles,
                         'created_by'          => auth()->id(),
                     ]);
@@ -643,11 +778,13 @@ class PesananController extends Controller
                     $pesanan->update(['status_pembayaran' => 'Lunas']);
                     $totalBayarSemua += $sisaTagihan;
                     $jumlahNota++;
+                } else {
+                    $pesanan->update(['status_pembayaran' => 'Lunas']);
                 }
             }
 
             DB::commit();
-            return back()->with('success', "Pembayaran berhasil! Sebanyak {$jumlahNota} nota telah dilunasi dengan total Rp " . number_format($totalBayarSemua, 0, ',', '.'));
+            return back()->with('success', "Pembayaran berhasil! Sebanyak {$jumlahNota} nota Cold Kitchen telah dilunasi dengan total Rp " . number_format($totalBayarSemua, 0, ',', '.'));
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal memproses pembayaran massal: ' . $e->getMessage());
