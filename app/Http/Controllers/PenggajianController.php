@@ -1162,6 +1162,113 @@ class PenggajianController extends Controller
     }
 
     /**
+     * Tampilan Slip Gaji Publik (Dapat diakses oleh karyawan melalui link WhatsApp tanpa login)
+     */
+    public function publicSlipView(Request $request, $id)
+    {
+        $basePayroll = Penggajian::with('karyawan')->findOrFail($id);
+        $selectedP = $request->query('periode'); // 'all', '1', '2', or null
+        $token = $request->query('token');
+
+        // Validasi Token Keamanan (jika tidak login)
+        $expectedToken = Penggajian::generateSlipToken($basePayroll->id, $selectedP);
+        $expectedTokenNull = Penggajian::generateSlipToken($basePayroll->id, null);
+        $expectedTokenAll = Penggajian::generateSlipToken($basePayroll->id, 'all');
+
+        if (!auth()->check() && $token !== $expectedToken && $token !== $expectedTokenNull && $token !== $expectedTokenAll) {
+            abort(403, 'Akses Slip Gaji tidak valid atau tautan kedaluwarsa.');
+        }
+
+        $karyawanId = $basePayroll->karyawan_id;
+        $periodeMonth = $basePayroll->periode_bulan_tahun;
+
+        $allEntries = Penggajian::with('karyawan')
+            ->where('karyawan_id', $karyawanId)
+            ->where('periode_bulan_tahun', $periodeMonth)
+            ->orderBy('pilihan_periode', 'asc')
+            ->get();
+
+        if ($allEntries->count() > 1 && ($selectedP === 'all' || !$selectedP)) {
+            $payroll = clone $basePayroll;
+            $payroll->is_combined = true;
+            $payroll->pilihan_periode = 'all';
+            $payroll->entries = $allEntries;
+
+            $payroll->hari_kerja = $allEntries->sum('hari_kerja');
+            $payroll->gaji_utama = $allEntries->sum('gaji_utama');
+            $payroll->lembur = $allEntries->sum('lembur');
+            $payroll->jam_lembur = $allEntries->sum('jam_lembur');
+            $payroll->bonus_target = $allEntries->sum('bonus_target');
+            $payroll->banyak_target = $allEntries->sum('banyak_target');
+            $payroll->bonus_tanggal_merah = $allEntries->sum('bonus_tanggal_merah');
+            $payroll->banyak_tanggal_merah = $allEntries->sum('banyak_tanggal_merah');
+            $payroll->bonus_birthday = $allEntries->sum('bonus_birthday');
+            $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
+            $payroll->pengembalian_deposit = $allEntries->sum('pengembalian_deposit');
+            $payroll->bonus_dll = $allEntries->sum('bonus_dll');
+
+            $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
+            $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
+            $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
+            $payroll->potongan_deposit = $allEntries->sum('potongan_deposit');
+            $payroll->potongan_dll = $allEntries->sum('potongan_dll');
+
+            $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
+                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->pengembalian_deposit + $payroll->bonus_dll;
+            $payroll->total_deductions = $payroll->potongan_terlambat + $payroll->potongan_inventaris +
+                $payroll->potongan_kasbon + $payroll->potongan_deposit + $payroll->potongan_dll;
+            $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
+
+            $minDate = $allEntries->min('tanggal_mulai');
+            $maxDate = $allEntries->max('tanggal_selesai');
+            $payroll->tanggal_mulai = $minDate;
+            $payroll->tanggal_selesai = $maxDate;
+        } elseif ($selectedP && in_array($selectedP, ['1', '2'])) {
+            $matchEntry = $allEntries->firstWhere('pilihan_periode', intval($selectedP)) ?? $basePayroll;
+            $payroll = $matchEntry;
+            $payroll->is_combined = false;
+            $payroll->entries = $allEntries;
+        } else {
+            $payroll = $basePayroll;
+            $payroll->is_combined = false;
+            $payroll->entries = $allEntries;
+        }
+
+        $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
+        if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
+            $queryKeterlambatan->whereBetween('tanggal', [
+                \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d'),
+                \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d')
+            ]);
+        } else {
+            $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+        }
+        $listKeterlambatan = $queryKeterlambatan->orderBy('tanggal', 'asc')->get();
+
+        return view('penggajian.public-slip', compact('payroll', 'allEntries', 'listKeterlambatan', 'selectedP', 'token'));
+    }
+
+    /**
+     * Download Slip Gaji PDF Publik tanpa login
+     */
+    public function publicSlipPdf(Request $request, $id)
+    {
+        $basePayroll = Penggajian::with('karyawan')->findOrFail($id);
+        $selectedP = $request->query('periode');
+        $token = $request->query('token');
+
+        $expectedToken = Penggajian::generateSlipToken($basePayroll->id, $selectedP);
+        $expectedTokenNull = Penggajian::generateSlipToken($basePayroll->id, null);
+        $expectedTokenAll = Penggajian::generateSlipToken($basePayroll->id, 'all');
+
+        if (!auth()->check() && $token !== $expectedToken && $token !== $expectedTokenNull && $token !== $expectedTokenAll) {
+            abort(403, 'Akses Slip Gaji tidak valid atau tautan kedaluwarsa.');
+        }
+
+        return $this->cetakPdf($request, $id);
+    }
+
+    /**
      * PROSES BAYAR GAJI KARYAWAN TUNGGAL (BAYAR + OTOMATIS BUAT JURNAL)
      */
     public function bayarKaryawan($id): RedirectResponse

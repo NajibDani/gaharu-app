@@ -67,10 +67,22 @@
     }
     $pdfUrl = route('penggajian.pdf', array_merge(['id' => $payroll->id], $pdfUrlParams));
     $slipTitleType = $isCombined ? 'Gabungan (P1 & P2)' : ('Periode ' . ($payroll->pilihan_periode ?? '1'));
-    $cleanEmployeeName = $k->nama_karyawan ?? 'Karyawan';
-    $pdfFileName = 'Slip_Gaji_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $cleanEmployeeName) . '_' . str_replace(' ', '_', $periodeLabel) . '.pdf';
+    $publicSlipParam = $isCombined ? 'all' : ($selectedP ?: ($payroll->pilihan_periode ?? 1));
+    $publicSlipUrl = route('penggajian.slip.public', [
+        'id' => $payroll->id,
+        'periode' => $publicSlipParam,
+        'token' => \App\Models\Penggajian::generateSlipToken($payroll->id, $publicSlipParam)
+    ]);
+    $brandName = (strtolower($payroll->outlet ?? $k->outlet ?? $currentOutlet ?? 'Gaharu') === 'kejingga') ? 'Kejingga' : 'Gaharu';
     $nominalFmt = number_format($takeHomePay, 0, ',', '.');
-    $waMessage = "Halo *{$cleanEmployeeName}*,\n\nTerlampir kami sampaikan dokumen resmi *Slip Gaji* untuk periode *{$periodeLabel}* ({$currentOutlet}).\nTotal Gaji Bersih (Take Home Pay): *Rp {$nominalFmt}*\n\nTerima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n🙏✨\n*Salam hangat,*\n*Manajemen {$currentOutlet}*";
+    $waMessage = "Halo, {$cleanEmployeeName}! \n\n" .
+        "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeLabel} ({$brandName}).\n" .
+        "*Total Gaji Bersih (Take Home Pay): Rp {$nominalFmt}*\n\n" .
+        "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicSlipUrl})\n" .
+        "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
+        "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
+        "Salam hangat,\n" .
+        "Manajemen {$brandName}";
     $waUrl = $waRaw !== ''
         ? 'https://api.whatsapp.com/send/?phone=' . $waRaw . '&text=' . rawurlencode($waMessage) . '&type=phone_number&app_absent=0'
         : null;
@@ -243,7 +255,7 @@
                     onclick="handleKirimWhatsApp('{{ $pdfUrl }}', '{{ $waUrl }}', '{{ addslashes($cleanEmployeeName) }}', '{{ $pdfFileName }}')"
                     style="padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; background: #16a34a; color: #fff; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(22,163,74,0.25);"
                     onmouseover="this.style.background='#15803d'" onmouseout="this.style.background='#16a34a'"
-                    title="Unduh file PDF dan buka WhatsApp ke {{ $k->whatsapp }}">
+                    title="Buka WhatsApp ke {{ $k->whatsapp }}">
                 &#128242; Kirim WhatsApp
             </button>
             @else
@@ -657,38 +669,11 @@
 
 <script>
     function handleKirimWhatsApp(pdfUrl, waUrl, empName, fileName) {
-        // 1. Buka tab WhatsApp Web LANGSUNG seketika saat klik agar tidak diblokir popup blocker
-        if (waUrl) {
-            window.open(waUrl, '_blank');
+        if (!waUrl) {
+            alert('Nomor WhatsApp karyawan belum terdaftar.');
+            return;
         }
-
-        // 2. Download file PDF secara otomatis
-        const a = document.createElement('a');
-        a.href = pdfUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        // 3. Tampilkan popup panduan praktis
-        if (typeof Swal !== 'undefined') {
-            Swal.fire({
-                icon: 'success',
-                title: 'Slip PDF Terunduh & WhatsApp Dibuka!',
-                html: '<div style="text-align: left; font-size: 13px; color: #334155; line-height: 1.6;">' +
-                      '<p style="margin-bottom: 8px;">Dokumen <strong>' + fileName + '</strong> otomatis terunduh dan tab WhatsApp karyawan sudah terbuka.</p>' +
-                      '<div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">' +
-                      '<strong>Langkah Praktis:</strong><br>' +
-                      '1. Masuk ke tab <strong>WhatsApp Web</strong> yang terbuka.<br>' +
-                      '2. Cukup <strong>tarik (drag & drop)</strong> file PDF dari bilah download ke kolom chat.<br>' +
-                      '3. Atau klik ikon <strong>Klip Kertas 📎 &rarr; Dokumen</strong>, lalu tekan <strong>Kirim</strong>.' +
-                      '</div>' +
-                      '</div>',
-                confirmButtonText: 'Siap, Mengerti',
-                confirmButtonColor: '#16a34a',
-                width: 480
-            });
-        }
+        window.open(waUrl, '_blank');
     }
 </script>
 </x-app-layout>

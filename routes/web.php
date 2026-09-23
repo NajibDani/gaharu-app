@@ -50,6 +50,12 @@ Route::get('/proposal-penawaran', function () {
     return file_get_contents(public_path('proposal/index.html'));
 })->name('proposal.penawaran');
 
+// =========================================================================
+// AKSES PUBLIK SLIP GAJI KARYAWAN (Bisa dibuka langsung via link WhatsApp tanpa login)
+// =========================================================================
+Route::get('/slip-gaji/publik/{id}', [PenggajianController::class, 'publicSlipView'])->name('penggajian.slip.public');
+Route::get('/slip-gaji/publik/{id}/pdf', [PenggajianController::class, 'publicSlipPdf'])->name('penggajian.slip.public-pdf');
+
 Route::get('/', function () {
     if (Auth::check()) {
         return redirect()->route('dashboard');

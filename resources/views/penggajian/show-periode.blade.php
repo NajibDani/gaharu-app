@@ -241,9 +241,19 @@
                                 $hasWa = !empty($cleanPhone);
                                 $periodeFmt = \App\Models\Penggajian::formatPeriode($periode);
 
+                                $brandName = (strtolower($payroll->outlet ?? $payroll->karyawan->outlet ?? $selectedOutlet ?? 'Gaharu') === 'kejingga') ? 'Kejingga' : 'Gaharu';
+
                                 // WA Gabungan
                                 $nomGabungan = number_format($payroll->take_home_pay, 0, ',', '.');
-                                $msgGabungan = "Halo *{$cleanName}*,\n\nTerlampir kami sampaikan dokumen resmi *Slip Gaji* untuk periode *{$periodeFmt}* ({$selectedOutlet}).\nTotal Gaji Bersih (Take Home Pay): *Rp {$nomGabungan}*\n\nTerima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n🙏✨\n*Salam hangat,*\n*Manajemen {$selectedOutlet}*";
+                                $publicLinkGabungan = route('penggajian.slip.public', ['id' => $payroll->id, 'periode' => 'all', 'token' => \App\Models\Penggajian::generateSlipToken($payroll->id, 'all')]);
+                                $msgGabungan = "Halo, {$cleanName}! \n\n" .
+                                    "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeFmt} ({$brandName}).\n" .
+                                    "*Total Gaji Bersih (Take Home Pay): Rp {$nomGabungan}*\n\n" .
+                                    "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicLinkGabungan})\n" .
+                                    "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
+                                    "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
+                                    "Salam hangat,\n" .
+                                    "Manajemen {$brandName}";
                                 $waUrlGabungan = $hasWa ? 'https://api.whatsapp.com/send/?phone=' . $cleanPhone . '&text=' . rawurlencode($msgGabungan) . '&type=phone_number&app_absent=0' : '';
                                 $pdfUrlGabungan = route('penggajian.pdf', ['id' => $payroll->id, 'periode' => 'all']);
                                 $fileNameGabungan = 'Slip_Gaji_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $cleanName) . '_' . str_replace(' ', '_', $periodeFmt) . '_Gabungan.pdf';
@@ -255,7 +265,15 @@
                                         $pNum = $pItem->pilihan_periode ?? 1;
                                         $takeHomePItem = $pItem->total_gaji_bersih > 0 ? $pItem->total_gaji_bersih : ($pItem->total_earnings - $pItem->total_deductions);
                                         $nomItem = number_format($takeHomePItem, 0, ',', '.');
-                                        $msgPItem = "Halo *{$cleanName}*,\n\nTerlampir kami sampaikan dokumen resmi *Slip Gaji* untuk periode *{$periodeFmt}* ({$selectedOutlet}).\nTotal Gaji Bersih (Take Home Pay): *Rp {$nomItem}*\n\nTerima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n🙏✨\n*Salam hangat,*\n*Manajemen {$selectedOutlet}*";
+                                        $publicLinkItem = route('penggajian.slip.public', ['id' => $pItem->id, 'periode' => $pNum, 'token' => \App\Models\Penggajian::generateSlipToken($pItem->id, $pNum)]);
+                                        $msgPItem = "Halo, {$cleanName}! \n\n" .
+                                            "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeFmt} ({$brandName}) - Periode {$pNum}.\n" .
+                                            "*Total Gaji Bersih (Take Home Pay): Rp {$nomItem}*\n\n" .
+                                            "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicLinkItem})\n" .
+                                            "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
+                                            "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
+                                            "Salam hangat,\n" .
+                                            "Manajemen {$brandName}";
                                         $waItems[] = [
                                             'periode' => $pNum,
                                             'waUrl' => $hasWa ? 'https://api.whatsapp.com/send/?phone=' . $cleanPhone . '&text=' . rawurlencode($msgPItem) . '&type=phone_number&app_absent=0' : '',
@@ -265,7 +283,15 @@
                                     }
                                 } else {
                                     $nomSingle = number_format($payroll->take_home_pay, 0, ',', '.');
-                                    $msgSingle = "Halo *{$cleanName}*,\n\nTerlampir kami sampaikan dokumen resmi *Slip Gaji* untuk periode *{$periodeFmt}* ({$selectedOutlet}).\nTotal Gaji Bersih (Take Home Pay): *Rp {$nomSingle}*\n\nTerima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n🙏✨\n*Salam hangat,*\n*Manajemen {$selectedOutlet}*";
+                                    $publicLinkSingle = route('penggajian.slip.public', ['id' => $payroll->id, 'periode' => ($payroll->pilihan_periode ?? 1), 'token' => \App\Models\Penggajian::generateSlipToken($payroll->id, ($payroll->pilihan_periode ?? 1))]);
+                                    $msgSingle = "Halo, {$cleanName}! \n\n" .
+                                        "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeFmt} ({$brandName}).\n" .
+                                        "*Total Gaji Bersih (Take Home Pay): Rp {$nomSingle}*\n\n" .
+                                        "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicLinkSingle})\n" .
+                                        "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
+                                        "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
+                                        "Salam hangat,\n" .
+                                        "Manajemen {$brandName}";
                                     $waUrlSingle = $hasWa ? 'https://api.whatsapp.com/send/?phone=' . $cleanPhone . '&text=' . rawurlencode($msgSingle) . '&type=phone_number&app_absent=0' : '';
                                     $pdfUrlSingle = route('penggajian.pdf', ['id' => $payroll->id, 'periode' => ($payroll->pilihan_periode ?? 1)]);
                                     $fileNameSingle = 'Slip_Gaji_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $cleanName) . '_' . str_replace(' ', '_', $periodeFmt) . '.pdf';
@@ -1423,44 +1449,15 @@
             }
         });
 
-        // Tutup juga menu saat scroll layar agar posisi tidak melayang salah
-        // Kirim Slip ke WhatsApp: Auto Download PDF + Auto Buka WhatsApp Web
+        // Kirim Slip ke WhatsApp: Langsung Buka Chat WhatsApp
         function sendSlipWa(pdfUrl, waUrl, fileName) {
             if (!waUrl) {
                 alert('Nomor WhatsApp karyawan belum terdaftar.');
                 return;
             }
 
-            // 1. Buka tab WhatsApp Web LANGSUNG seketika saat klik agar tidak diblokir browser
+            // Buka tab / aplikasi WhatsApp langsung dengan pesan berisi link slip gaji publik
             window.open(waUrl, '_blank');
-
-            // 2. Download file PDF secara otomatis
-            const a = document.createElement('a');
-            a.href = pdfUrl;
-            a.download = fileName || 'Slip_Gaji.pdf';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-
-            // 3. Tampilkan popup SweetAlert panduan praktis
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Slip PDF Terunduh & WhatsApp Dibuka!',
-                    html: '<div style="text-align: left; font-size: 13px; color: #334155; line-height: 1.6;">' +
-                          '<p style="margin-bottom: 8px;">File <strong>' + (fileName || 'Slip Gaji') + '</strong> otomatis terunduh dan tab chat WhatsApp karyawan sudah terbuka.</p>' +
-                          '<div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;">' +
-                          '<strong>Langkah Cepat Kirim:</strong><br>' +
-                          '1. Masuk ke tab <strong>WhatsApp Web</strong> yang terbuka.<br>' +
-                          '2. Cukup <strong>seret (drag & drop)</strong> file PDF dari bilah download ke kolom chat.<br>' +
-                          '3. Tekan <strong>Enter / Kirim</strong>. Selesai!' +
-                          '</div>' +
-                          '</div>',
-                    confirmButtonText: 'Siap, Mengerti',
-                    confirmButtonColor: '#16a34a',
-                    width: 480
-                });
-            }
         }
 
         // =========================================================================

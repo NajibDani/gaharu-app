@@ -205,4 +205,60 @@ class Penggajian extends Model
     {
         return self::formatPeriode($this->periode_bulan_tahun);
     }
+
+    /**
+     * Generate secure token for public slip viewing without login
+     */
+    public static function generateSlipToken($payrollId, $periode = null): string
+    {
+        $key = config('app.key') ?: 'gaharu_public_slip_token_key';
+        return substr(hash_hmac('sha256', "public_slip_{$payrollId}_{$periode}", $key), 0, 16);
+    }
+
+    /**
+     * Generate public URL to view/download slip without login
+     */
+    public function getPublicSlipUrl($periode = null): string
+    {
+        $token = self::generateSlipToken($this->id, $periode);
+        $params = ['id' => $this->id, 'token' => $token];
+        if ($periode !== null && $periode !== '') {
+            $params['periode'] = $periode;
+        }
+        return route('penggajian.slip.public', $params);
+    }
+
+    /**
+     * Helper Konversi Angka ke Kalimat Terbilang Rupiah
+     */
+    public static function terbilang($number): string
+    {
+        $number = abs(round((float)$number));
+        if ($number == 0) return 'Nol';
+        $huruf = ['', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
+
+        if ($number < 12) {
+            $hasil = $huruf[$number];
+        } elseif ($number < 20) {
+            $hasil = self::terbilang($number - 10) . ' Belas';
+        } elseif ($number < 100) {
+            $hasil = self::terbilang((int)($number / 10)) . ' Puluh ' . self::terbilang($number % 10);
+        } elseif ($number < 200) {
+            $hasil = 'Seratus ' . self::terbilang($number - 100);
+        } elseif ($number < 1000) {
+            $hasil = self::terbilang((int)($number / 100)) . ' Ratus ' . self::terbilang($number % 100);
+        } elseif ($number < 2000) {
+            $hasil = 'Seribu ' . self::terbilang($number - 1000);
+        } elseif ($number < 1000000) {
+            $hasil = self::terbilang((int)($number / 1000)) . ' Ribu ' . self::terbilang($number % 1000);
+        } elseif ($number < 1000000000) {
+            $hasil = self::terbilang((int)($number / 1000000)) . ' Juta ' . self::terbilang($number % 1000000);
+        } elseif ($number < 1000000000000) {
+            $hasil = self::terbilang((int)($number / 1000000000)) . ' Miliar ' . self::terbilang(fmod($number, 1000000000));
+        } else {
+            $hasil = self::terbilang((int)($number / 1000000000000)) . ' Triliun ' . self::terbilang(fmod($number, 1000000000000));
+        }
+
+        return trim(preg_replace('/\s+/', ' ', $hasil));
+    }
 }
