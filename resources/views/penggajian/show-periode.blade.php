@@ -453,9 +453,6 @@
                                         <div class="whitespace-nowrap">
                                             <span class="text-xs font-bold text-amber-700 whitespace-nowrap">+&nbsp;Rp&nbsp;{{ number_format($totalBonus, 0, ',', '.') }}</span>
                                         </div>
-                                        @if($payroll->jam_lembur > 0)
-                                            <div class="text-[10px] text-slate-500 font-medium whitespace-nowrap">Lembur: {{ $payroll->jam_lembur }} jam</div>
-                                        @endif
                                     @else
                                         <span class="text-slate-400 font-semibold text-xs whitespace-nowrap">-</span>
                                     @endif
@@ -466,23 +463,6 @@
                                     @if($totalPotongan > 0)
                                         <div class="whitespace-nowrap">
                                             <span class="text-xs font-bold text-rose-700 whitespace-nowrap">-&nbsp;Rp&nbsp;{{ number_format($totalPotongan, 0, ',', '.') }}</span>
-                                        </div>
-                                        <div class="text-[9.5px] font-medium whitespace-nowrap flex flex-col items-end gap-0.5 mt-0.5">
-                                            @if($payroll->potongan_terlambat > 0)
-                                                <span class="text-rose-600">Terlambat: Rp&nbsp;{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</span>
-                                            @endif
-                                            @if(($payroll->potongan_kasbon ?? 0) > 0)
-                                                <span class="text-amber-700">Kasbon: Rp&nbsp;{{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</span>
-                                            @endif
-                                            @if(($payroll->potongan_deposit ?? 0) > 0)
-                                                <span class="text-indigo-700">Deposit: Rp&nbsp;{{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</span>
-                                            @endif
-                                            @if(($payroll->potongan_inventaris ?? 0) > 0)
-                                                <span class="text-slate-600">Inventaris: Rp&nbsp;{{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</span>
-                                            @endif
-                                            @if(($payroll->potongan_dll ?? 0) > 0)
-                                                <span class="text-slate-600">Lainnya: Rp&nbsp;{{ number_format($payroll->potongan_dll, 0, ',', '.') }}</span>
-                                            @endif
                                         </div>
                                     @else
                                         <span class="text-slate-400 font-semibold text-xs whitespace-nowrap">-</span>
