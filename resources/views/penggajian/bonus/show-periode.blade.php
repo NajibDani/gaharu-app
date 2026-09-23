@@ -111,6 +111,7 @@
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Target</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Tgl Merah</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[120px]">Birthday (x)</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[135px]">Kembali Deposit</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Bonus Lain</th>
                                 <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Total Bonus</th>
                                 <th class="px-3 py-3 text-center min-w-[90px] whitespace-nowrap">Aksi</th>
@@ -140,7 +141,7 @@
                                     <div class="text-[11px] text-slate-600 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
                                         <span class="font-bold text-slate-800">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                         @if($payroll->karyawan->departemen)
-                                            <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
+                                             <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
                                         @endif
                                         <span class="bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800">{{ $satuanRow }}</span>
                                     </div>
@@ -240,7 +241,20 @@
                                     @endif
                                 </td>
 
-                                {{-- 5. BONUS LAIN --}}
+                                {{-- 5. PENGEMBALIAN DEPOSIT --}}
+                                <td class="px-2 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="text"
+                                               class="batch-input-rupiah batch-pengembalian-deposit w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-emerald-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
+                                               placeholder="0"
+                                               oninput="onBonusRowInput(this)">
+                                    @else
+                                        <span class="font-bold text-emerald-800 text-xs">{{ $payroll->pengembalian_deposit > 0 ? 'Rp ' . number_format($payroll->pengembalian_deposit, 0, ',', '.') : '-' }}</span>
+                                    @endif
+                                </td>
+
+                                {{-- 6. BONUS LAIN --}}
                                 <td class="px-2 py-2 text-right">
                                     @if(!$isRowLocked)
                                         <input type="text"
@@ -277,6 +291,7 @@
                                                     'bonus_tanggal_merah' => $payroll->bonus_tanggal_merah ?? 0,
                                                     'catatan_bonus_tanggal_merah' => $payroll->catatan_bonus_tanggal_merah ?? '',
                                                     'banyak_birthday_service' => $payroll->banyak_birthday_service ?? 0,
+                                                    'pengembalian_deposit' => $payroll->pengembalian_deposit ?? 0,
                                                     'bonus_dll' => $payroll->bonus_dll ?? 0,
                                                     'update_url' => route('penggajian.bonus.update', $payroll->id),
                                                 ]) }})"
@@ -292,7 +307,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="9" class="px-6 py-12 text-center text-slate-500 font-medium">
+                                <td colspan="10" class="px-6 py-12 text-center text-slate-500 font-medium">
                                     Belum ada data karyawan di periode ini.
                                 </td>
                             </tr>
@@ -460,14 +475,24 @@
                                     <div style="font-size: 10.5px; color: #64748b; text-align: right; margin-top: 2px; font-weight: 600;" id="mSubBirthday">Bonus: Rp 0</div>
                                 </div>
 
-                                {{-- 5. BONUS LAIN-LAIN --}}
+                                {{-- 5. PENGEMBALIAN DEPOSIT --}}
+                                <div>
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #047857; text-transform: uppercase; margin-bottom: 4px;">
+                                        Pengembalian Deposit (Rp)
+                                    </label>
+                                    <input type="text" name="pengembalian_deposit" id="mInputPengembalianDeposit"
+                                           class="w-full border border-emerald-300 rounded-lg px-3 py-1.5 text-xs font-black text-emerald-900 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500/20 modal-rupiah-bonus"
+                                           oninput="recalcModalBonus()" placeholder="0">
+                                </div>
+
+                                {{-- 6. BONUS LAIN-LAIN --}}
                                 <div style="grid-column: span 2;">
                                     <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; margin-bottom: 4px;">
                                         Bonus Lain-lain (Rp)
                                     </label>
                                     <input type="text" name="bonus_dll" id="mInputBonusDll"
                                            class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-amber-500/20 modal-rupiah-bonus"
-                                           oninput="recalcModalBonus()">
+                                           oninput="recalcModalBonus()" placeholder="0">
                                 </div>
                             </div>
                         </div>
@@ -546,6 +571,7 @@
             const targetEl    = row.querySelector('.batch-banyak-target') || row.querySelector('.batch-bonus-target');
             const merahEl     = row.querySelector('.batch-banyak-merah') || row.querySelector('.batch-bonus-merah');
             const birthdayEl  = row.querySelector('.batch-banyak-birthday');
+            const depositEl   = row.querySelector('.batch-pengembalian-deposit');
             const dllEl       = row.querySelector('.batch-bonus-dll');
             const totalCell   = row.querySelector('.row-total-bonus-cell');
 
@@ -599,10 +625,13 @@
                 else subBirthday.classList.add('hidden');
             }
 
-            // 5. DLL
+            // 5. Deposit
+            let pengembalianDeposit = depositEl ? parseRupiahVal(depositEl.value) : 0;
+
+            // 6. DLL
             let bonusDll = dllEl ? parseRupiahVal(dllEl.value) : 0;
 
-            let totalRowBonus = upahLembur + bonusTarget + bonusMerah + bonusBirthday + bonusDll;
+            let totalRowBonus = upahLembur + bonusTarget + bonusMerah + bonusBirthday + pengembalianDeposit + bonusDll;
             if (totalCell) {
                 totalCell.textContent = formatRupiahJs(totalRowBonus);
             }
@@ -618,6 +647,7 @@
                 const targetEl    = row.querySelector('.batch-banyak-target') || row.querySelector('.batch-bonus-target');
                 const merahEl     = row.querySelector('.batch-banyak-merah') || row.querySelector('.batch-bonus-merah');
                 const birthdayEl  = row.querySelector('.batch-banyak-birthday');
+                const depositEl   = row.querySelector('.batch-pengembalian-deposit');
                 const dllEl       = row.querySelector('.batch-bonus-dll');
 
                 let jamLembur = jamLemburEl ? parseFloat(jamLemburEl.value) || 0 : 0;
@@ -642,9 +672,10 @@
                 let banyakBirthday = birthdayEl ? parseInt(birthdayEl.value) || 0 : 0;
                 let bonusBirthday = banyakBirthday * 5000;
 
+                let pengembalianDeposit = depositEl ? parseRupiahVal(depositEl.value) : 0;
                 let bonusDll = dllEl ? parseRupiahVal(dllEl.value) : 0;
 
-                grandTotal += (upahLembur + bonusTarget + bonusMerah + bonusBirthday + bonusDll);
+                grandTotal += (upahLembur + bonusTarget + bonusMerah + bonusBirthday + pengembalianDeposit + bonusDll);
             });
 
             const badge = document.getElementById('headerTotalBonusBadge');
@@ -669,12 +700,14 @@
                 const merahEl     = row.querySelector('.batch-banyak-merah') || row.querySelector('.batch-bonus-merah');
                 const catatanMerahEl = row.querySelector('.batch-catatan-merah');
                 const birthdayEl  = row.querySelector('.batch-banyak-birthday');
+                const depositEl   = row.querySelector('.batch-pengembalian-deposit');
                 const dllEl       = row.querySelector('.batch-bonus-dll');
 
                 let itemData = {
                     id: id,
                     jam_lembur: jamLemburEl ? parseFloat(jamLemburEl.value) || 0 : 0,
                     banyak_birthday_service: birthdayEl ? parseInt(birthdayEl.value) || 0 : 0,
+                    pengembalian_deposit: depositEl ? parseRupiahVal(depositEl.value) : 0,
                     bonus_dll: dllEl ? parseRupiahVal(dllEl.value) : 0,
                 };
 
@@ -783,6 +816,9 @@
             document.getElementById('mInputJamLembur').value = data.jam_lembur || 0;
             document.getElementById('mInputBanyakBirthday').value = data.banyak_birthday_service || 0;
             
+            let pDeposit = parseFloat(data.pengembalian_deposit) || 0;
+            document.getElementById('mInputPengembalianDeposit').value = pDeposit ? Math.round(pDeposit).toLocaleString('id-ID') : '0';
+
             let bDll = parseFloat(data.bonus_dll) || 0;
             document.getElementById('mInputBonusDll').value = bDll ? Math.round(bDll).toLocaleString('id-ID') : '0';
 
@@ -824,9 +860,10 @@
             let bonusBirthday = banyakBirthday * 5000;
             document.getElementById('mSubBirthday').innerText = 'Bonus: ' + formatRupiahJs(bonusBirthday);
 
+            let pengembalianDeposit = parseRupiahVal(document.getElementById('mInputPengembalianDeposit').value);
             let bonusDll = parseRupiahVal(document.getElementById('mInputBonusDll').value);
 
-            let bonusKinerja = bonusTarget + bonusMerah + bonusBirthday + bonusDll;
+            let bonusKinerja = bonusTarget + bonusMerah + bonusBirthday + pengembalianDeposit + bonusDll;
             let totalBonus = upahLembur + bonusKinerja;
 
             document.getElementById('mSumUpahLembur').innerText = formatRupiahJs(upahLembur);

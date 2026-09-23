@@ -105,26 +105,29 @@ class PotonganPenggajianController extends Controller
             $totalPotTerlambat = $items->sum('potongan_terlambat');
             $totalPotInventaris = $items->sum('potongan_inventaris');
             $totalPotKasbon = $items->sum('potongan_kasbon');
+            $totalPotDeposit = $items->sum('potongan_deposit');
             $totalPotDll = $items->sum('potongan_dll');
 
-            $totalPotonganKeseluruhan = $totalPotTerlambat + $totalPotInventaris + $totalPotKasbon + $totalPotDll;
+            $totalPotonganKeseluruhan = $totalPotTerlambat + $totalPotInventaris + $totalPotKasbon + $totalPotDeposit + $totalPotDll;
 
             return (object) [
-                'id'                  => $primaryPayroll->id,
-                'payroll_id'          => $primaryPayroll->id,
-                'karyawan_id'         => $first->karyawan_id,
-                'karyawan'            => $first->karyawan,
-                'outlet'              => $first->outlet,
-                'periode_bulan_tahun' => $first->periode_bulan_tahun,
-                'hari_kerja'          => $items->sum('hari_kerja') ?: ($primaryPayroll->hari_kerja ?? 0),
-                'terlambat_sum'       => $terlambatMap[$first->karyawan_id] ?? 0,
-                'potongan_terlambat'  => $totalPotTerlambat,
-                'potongan_inventaris' => $totalPotInventaris,
-                'potongan_kasbon'     => $totalPotKasbon,
-                'potongan_dll'        => $totalPotDll,
-                'total_potongan'      => $totalPotonganKeseluruhan,
-                'status'              => $primaryPayroll->status,
-                'is_paid'             => $items->every(fn($p) => $p->status_jurnal || $p->status === 'approved'),
+                'id'                   => $primaryPayroll->id,
+                'payroll_id'           => $primaryPayroll->id,
+                'karyawan_id'          => $first->karyawan_id,
+                'karyawan'             => $first->karyawan,
+                'outlet'               => $first->outlet,
+                'periode_bulan_tahun'  => $first->periode_bulan_tahun,
+                'hari_kerja'           => $items->sum('hari_kerja') ?: ($primaryPayroll->hari_kerja ?? 0),
+                'terlambat_sum'        => $terlambatMap[$first->karyawan_id] ?? 0,
+                'potongan_terlambat'   => $totalPotTerlambat,
+                'potongan_inventaris'  => $totalPotInventaris,
+                'potongan_kasbon'      => $totalPotKasbon,
+                'potongan_deposit'     => $totalPotDeposit,
+                'potongan_dll'         => $totalPotDll,
+                'catatan_potongan_dll' => $primaryPayroll->catatan_potongan_dll,
+                'total_potongan'       => $totalPotonganKeseluruhan,
+                'status'               => $primaryPayroll->status,
+                'is_paid'              => $items->every(fn($p) => $p->status_jurnal || $p->status === 'approved'),
             ];
         })->values();
 
@@ -162,10 +165,12 @@ class PotonganPenggajianController extends Controller
         }
 
         $request->validate([
-            'potongan_terlambat'  => 'nullable|string',
-            'potongan_inventaris' => 'nullable|string',
-            'potongan_kasbon'     => 'nullable|string',
-            'potongan_dll'        => 'nullable|string',
+            'potongan_terlambat'   => 'nullable|string',
+            'potongan_inventaris'  => 'nullable|string',
+            'potongan_kasbon'      => 'nullable|string',
+            'potongan_deposit'     => 'nullable|string',
+            'potongan_dll'         => 'nullable|string',
+            'catatan_potongan_dll' => 'nullable|string|max:255',
         ]);
 
         $cleanRupiah = function ($value) {
@@ -176,24 +181,28 @@ class PotonganPenggajianController extends Controller
         $potonganTerlambat  = $cleanRupiah($request->potongan_terlambat);
         $potonganInventaris = $cleanRupiah($request->potongan_inventaris);
         $potonganKasbon     = $cleanRupiah($request->potongan_kasbon);
+        $potonganDeposit    = $cleanRupiah($request->potongan_deposit);
         $potonganDll        = $cleanRupiah($request->potongan_dll);
+        $catatanPotonganDll = $request->catatan_potongan_dll;
 
-        $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
+        $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
 
         $totalEarnings = floatval($payroll->total_earnings > 0 ? $payroll->total_earnings : (
             ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-            ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
+            ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
         ));
 
         $totalGajiBersih = $totalEarnings - $totalDeductions;
 
         $payroll->update([
-            'potongan_terlambat'  => $potonganTerlambat,
-            'potongan_inventaris' => $potonganInventaris,
-            'potongan_kasbon'     => $potonganKasbon,
-            'potongan_dll'        => $potonganDll,
-            'total_deductions'    => $totalDeductions,
-            'total_gaji_bersih'   => $totalGajiBersih,
+            'potongan_terlambat'   => $potonganTerlambat,
+            'potongan_inventaris'  => $potonganInventaris,
+            'potongan_kasbon'      => $potonganKasbon,
+            'potongan_deposit'     => $potonganDeposit,
+            'potongan_dll'         => $potonganDll,
+            'catatan_potongan_dll' => $catatanPotonganDll,
+            'total_deductions'     => $totalDeductions,
+            'total_gaji_bersih'    => $totalGajiBersih,
         ]);
 
         return redirect()->route('penggajian.potongan.periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $payroll->outlet ?? 'Gaharu'])
@@ -233,24 +242,28 @@ class PotonganPenggajianController extends Controller
             $potonganTerlambat  = isset($item['potongan_terlambat']) ? $cleanRupiah($item['potongan_terlambat']) : (float)$payroll->potongan_terlambat;
             $potonganInventaris = isset($item['potongan_inventaris']) ? $cleanRupiah($item['potongan_inventaris']) : (float)$payroll->potongan_inventaris;
             $potonganKasbon     = isset($item['potongan_kasbon']) ? $cleanRupiah($item['potongan_kasbon']) : (float)$payroll->potongan_kasbon;
+            $potonganDeposit    = isset($item['potongan_deposit']) ? $cleanRupiah($item['potongan_deposit']) : (float)$payroll->potongan_deposit;
             $potonganDll        = isset($item['potongan_dll']) ? $cleanRupiah($item['potongan_dll']) : (float)$payroll->potongan_dll;
+            $catatanPotonganDll = array_key_exists('catatan_potongan_dll', $item) ? $item['catatan_potongan_dll'] : $payroll->catatan_potongan_dll;
 
-            $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
+            $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
 
             $totalEarnings = floatval($payroll->total_earnings > 0 ? $payroll->total_earnings : (
                 ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-                ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
+                ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
             ));
 
             $totalGajiBersih = $totalEarnings - $totalDeductions;
 
             $payroll->update([
-                'potongan_terlambat'  => $potonganTerlambat,
-                'potongan_inventaris' => $potonganInventaris,
-                'potongan_kasbon'     => $potonganKasbon,
-                'potongan_dll'        => $potonganDll,
-                'total_deductions'    => $totalDeductions,
-                'total_gaji_bersih'   => $totalGajiBersih,
+                'potongan_terlambat'   => $potonganTerlambat,
+                'potongan_inventaris'  => $potonganInventaris,
+                'potongan_kasbon'      => $potonganKasbon,
+                'potongan_deposit'     => $potonganDeposit,
+                'potongan_dll'         => $potonganDll,
+                'catatan_potongan_dll' => $catatanPotonganDll,
+                'total_deductions'     => $totalDeductions,
+                'total_gaji_bersih'    => $totalGajiBersih,
             ]);
 
             $updatedCount++;

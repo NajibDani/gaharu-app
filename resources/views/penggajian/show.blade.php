@@ -154,7 +154,7 @@
         border-radius: 8px;
         padding: 8px 12px;
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat({{ ($utRate > 0) ? 4 : 3 }}, 1fr);
         gap: 8px;
     }
     .sp-tarif-item { text-align: center; }
@@ -372,10 +372,12 @@
                 <div class="t-label">U. Makan/{{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
                 <div class="t-val">Rp {{ number_format($umRate, 0, ',', '.') }}</div>
             </div>
+            @if($utRate > 0)
             <div class="sp-tarif-item">
                 <div class="t-label">Transport/{{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
                 <div class="t-val">Rp {{ number_format($utRate, 0, ',', '.') }}</div>
             </div>
+            @endif
         </div>
         @endif
 
@@ -502,6 +504,17 @@
                 </table>
                 @endif
 
+                {{-- Pengembalian Deposit --}}
+                @if(($payroll->pengembalian_deposit ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px; color: #047857; background: #f0fdf4;">PENGEMBALIAN DEPOSIT</div>
+                <table class="sp-tbl">
+                    <tr class="subtotal">
+                        <td>Pengembalian Deposit</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->pengembalian_deposit, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
                 {{-- Bonus Lain --}}
                 @if(($payroll->bonus_dll ?? 0) > 0)
                 <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">BONUS LAIN-LAIN</div>
@@ -575,13 +588,30 @@
                 </table>
                 @endif
 
-                {{-- Potongan Lain --}}
-                @if(($payroll->potongan_dll ?? 0) > 0)
-                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">POTONGAN LAIN-LAIN</div>
+                {{-- Pengurangan Deposit --}}
+                @if(($payroll->potongan_deposit ?? 0) > 0)
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px; color: #991b1b; background: #fff5f5;">PENGURANGAN DEPOSIT</div>
                 <table class="sp-tbl">
                     <tr class="subtotal">
+                        <td>Pengurangan Deposit (Karyawan Baru)</td>
+                        <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</td>
+                    </tr>
+                </table>
+                @endif
+
+                {{-- Potongan Lain --}}
+                @if(($payroll->potongan_dll ?? 0) > 0 || !empty($payroll->catatan_potongan_dll))
+                <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">POTONGAN LAIN-LAIN</div>
+                <table class="sp-tbl">
+                    @if(!empty($payroll->catatan_potongan_dll))
+                    <tr>
+                        <td class="lbl">Keterangan</td>
+                        <td class="val" style="font-weight: 600; color: #475569; font-size: 10.5px;">{{ $payroll->catatan_potongan_dll }}</td>
+                    </tr>
+                    @endif
+                    <tr class="subtotal">
                         <td>Total Potongan Lain</td>
-                        <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_dll, 0, ',', '.') }}</td>
+                        <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_dll ?? 0, 0, ',', '.') }}</td>
                     </tr>
                 </table>
                 @endif

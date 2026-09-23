@@ -102,9 +102,10 @@ class BonusPenggajianController extends Controller
             $totalBonusMerah = $items->sum('bonus_tanggal_merah');
             $totalBanyakBirthday = $items->sum('banyak_birthday_service');
             $totalBonusBirthday = $items->sum('bonus_birthday');
+            $totalPengembalianDeposit = $items->sum('pengembalian_deposit');
             $totalBonusDll = $items->sum('bonus_dll');
 
-            $totalBonusKeseluruhan = $totalLembur + $totalBonusTarget + $totalBonusMerah + $totalBonusBirthday + $totalBonusDll;
+            $totalBonusKeseluruhan = $totalLembur + $totalBonusTarget + $totalBonusMerah + $totalBonusBirthday + $totalPengembalianDeposit + $totalBonusDll;
 
             $tarifHarian = $primaryPayroll->tarif_harian_total > 0
                 ? $primaryPayroll->tarif_harian_total
@@ -130,6 +131,7 @@ class BonusPenggajianController extends Controller
                 'catatan_bonus_tanggal_merah' => $primaryPayroll->catatan_bonus_tanggal_merah,
                 'banyak_birthday_service'     => $totalBanyakBirthday,
                 'bonus_birthday'              => $totalBonusBirthday,
+                'pengembalian_deposit'        => $totalPengembalianDeposit,
                 'bonus_dll'                   => $totalBonusDll,
                 'total_bonus'                 => $totalBonusKeseluruhan,
                 'status'                      => $primaryPayroll->status,
@@ -180,6 +182,7 @@ class BonusPenggajianController extends Controller
             'catatan_bonus_target'        => 'nullable|string|max:255',
             'catatan_bonus_tanggal_merah' => 'nullable|string|max:255',
             'banyak_birthday_service'     => 'nullable|integer|min:0',
+            'pengembalian_deposit'        => 'nullable|string',
             'bonus_dll'                   => 'nullable|string',
         ]);
 
@@ -196,6 +199,7 @@ class BonusPenggajianController extends Controller
         $banyakTarget          = intval($request->banyak_target ?? 0);
         $banyakTanggalMerah    = intval($request->banyak_tanggal_merah ?? 0);
         $banyakBirthdayService = intval($request->banyak_birthday_service ?? 0);
+        $pengembalianDeposit   = $cleanRupiah($request->pengembalian_deposit);
         $bonusDll              = $cleanRupiah($request->bonus_dll);
 
         $lembur               = $jamLembur * 10000;
@@ -215,7 +219,7 @@ class BonusPenggajianController extends Controller
         }
 
         $gajiUtama = floatval($payroll->gaji_utama ?? 0);
-        $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+        $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
 
         $totalDeductions = floatval($payroll->total_deductions ?? 0);
         $totalGajiBersih = $totalEarnings - $totalDeductions;
@@ -231,6 +235,7 @@ class BonusPenggajianController extends Controller
             'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
             'banyak_birthday_service'     => $banyakBirthdayService,
             'bonus_birthday'              => $bonusBirthdayService,
+            'pengembalian_deposit'        => $pengembalianDeposit,
             'bonus_dll'                   => $bonusDll,
             'total_earnings'              => $totalEarnings,
             'total_gaji_bersih'           => $totalGajiBersih,
@@ -279,6 +284,7 @@ class BonusPenggajianController extends Controller
             $banyakTarget          = intval($item['banyak_target'] ?? $payroll->banyak_target ?? 0);
             $banyakTanggalMerah    = intval($item['banyak_tanggal_merah'] ?? $payroll->banyak_tanggal_merah ?? 0);
             $banyakBirthdayService = intval($item['banyak_birthday_service'] ?? $payroll->banyak_birthday_service ?? 0);
+            $pengembalianDeposit   = isset($item['pengembalian_deposit']) ? $cleanRupiah($item['pengembalian_deposit']) : (float)$payroll->pengembalian_deposit;
             $bonusDll              = isset($item['bonus_dll']) ? $cleanRupiah($item['bonus_dll']) : (float)$payroll->bonus_dll;
 
             $lembur               = $jamLembur * 10000;
@@ -297,7 +303,7 @@ class BonusPenggajianController extends Controller
             }
 
             $gajiUtama = floatval($payroll->gaji_utama ?? 0);
-            $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+            $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
 
             $totalDeductions = floatval($payroll->total_deductions ?? 0);
             $totalGajiBersih = $totalEarnings - $totalDeductions;
@@ -313,6 +319,7 @@ class BonusPenggajianController extends Controller
                 'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
                 'banyak_birthday_service'     => $banyakBirthdayService,
                 'bonus_birthday'              => $bonusBirthdayService,
+                'pengembalian_deposit'        => $pengembalianDeposit,
                 'bonus_dll'                   => $bonusDll,
                 'total_earnings'              => $totalEarnings,
                 'total_gaji_bersih'           => $totalGajiBersih,

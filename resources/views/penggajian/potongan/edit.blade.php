@@ -175,17 +175,31 @@
                                    value="{{ number_format($payroll->potongan_inventaris ?? 0, 0, ',', '.') }}"
                                    class="pg-input pg-input-rupiah input-rupiah" oninput="hitungPotongan()">
                         </div>
-                        <div class="pg-field" style="margin-bottom:0;">
+                        <div class="pg-field">
                             <label class="pg-label">Potongan Kasbon (Rp)</label>
                             <input type="text" name="potongan_kasbon" id="inputPotKasbon"
                                    value="{{ number_format($payroll->potongan_kasbon ?? 0, 0, ',', '.') }}"
                                    class="pg-input pg-input-rupiah input-rupiah" oninput="hitungPotongan()">
                         </div>
-                        <div class="pg-field" style="margin-bottom:0;">
+                        <div class="pg-field">
+                            <label class="pg-label" style="color: #b91c1c;">Pengurangan Deposit (Rp)</label>
+                            <input type="text" name="potongan_deposit" id="inputPotDeposit"
+                                   value="{{ number_format($payroll->potongan_deposit ?? 0, 0, ',', '.') }}"
+                                   class="pg-input pg-input-rupiah input-rupiah" oninput="hitungPotongan()"
+                                   style="border-color: #fca5a5; background: #fff5f5;">
+                        </div>
+                        <div class="pg-field" style="grid-column: span 2; margin-bottom:0;">
                             <label class="pg-label">Potongan Lain-lain (Rp)</label>
                             <input type="text" name="potongan_dll" id="inputPotDll"
                                    value="{{ number_format($payroll->potongan_dll ?? 0, 0, ',', '.') }}"
                                    class="pg-input pg-input-rupiah input-rupiah" oninput="hitungPotongan()">
+                            <div style="margin-top: 6px;">
+                                <label class="pg-label" style="text-transform:none; font-size:10.5px;">Keterangan Potongan Lain-lain:</label>
+                                <input type="text" name="catatan_potongan_dll" id="inputCatatanPotDll"
+                                       value="{{ $payroll->catatan_potongan_dll ?? '' }}"
+                                       placeholder="Contoh: Potongan seragam / denda khusus"
+                                       class="pg-input" style="font-size:12px; padding: 7px 11px;">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -224,9 +238,10 @@
             let potTerlambat  = parseRupiahInput('inputPotTerlambat');
             let potInventaris = parseRupiahInput('inputPotInventaris');
             let potKasbon     = parseRupiahInput('inputPotKasbon');
+            let potDeposit    = parseRupiahInput('inputPotDeposit');
             let potDll        = parseRupiahInput('inputPotDll');
 
-            let totalDeductions = potTerlambat + potInventaris + potKasbon + potDll;
+            let totalDeductions = potTerlambat + potInventaris + potKasbon + potDeposit + potDll;
             document.getElementById('sumTotalPotongan').innerText = '- ' + formatRupiah(totalDeductions);
         }
 

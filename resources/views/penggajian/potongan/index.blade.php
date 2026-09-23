@@ -66,7 +66,7 @@
                         @php
                             $currentStatus = $items->first()->status;
                             $totalPotonganPeriode = $items->sum(function($p) {
-                                return ($p->potongan_terlambat ?? 0) + ($p->potongan_inventaris ?? 0) + ($p->potongan_kasbon ?? 0) + ($p->potongan_dll ?? 0);
+                                return ($p->potongan_terlambat ?? 0) + ($p->potongan_inventaris ?? 0) + ($p->potongan_kasbon ?? 0) + ($p->potongan_deposit ?? 0) + ($p->potongan_dll ?? 0);
                             });
                         @endphp
                         <tr class="hover:bg-slate-50/80 transition-colors">

@@ -145,11 +145,14 @@ class PenggajianController extends Controller
             'banyak_target'           => 'nullable|integer|min:0',
             'banyak_tanggal_merah'    => 'nullable|integer|min:0',
             'banyak_birthday_service' => 'nullable|integer|min:0',
+            'pengembalian_deposit'    => 'nullable|string',
             'bonus_dll'               => 'nullable|string',
             'potongan_terlambat'      => 'nullable|string',
             'potongan_inventaris'     => 'nullable|string',
             'potongan_kasbon'         => 'nullable|string',
+            'potongan_deposit'        => 'nullable|string',
             'potongan_dll'            => 'nullable|string',
+            'catatan_potongan_dll'    => 'nullable|string|max:255',
         ]);
 
         // Cek duplikat identik: izinkan jika pilihan periode atau rentang tanggal berbeda
@@ -209,6 +212,7 @@ class PenggajianController extends Controller
         // 3. Kalkulasi Earnings (Pendapatan)
         $lembur               = $jamLembur * 10000;
         $bonusBirthdayService = $banyakBirthdayService * 5000;
+        $pengembalianDeposit  = $request->has('pengembalian_deposit') ? $cleanRupiah($request->pengembalian_deposit) : 0;
         $bonusDll             = $request->has('bonus_dll') ? $cleanRupiah($request->bonus_dll) : 0;
 
         if ($satuanGaji === 'Harian') {
@@ -223,7 +227,7 @@ class PenggajianController extends Controller
             $catatanTanggalMerah  = $request->catatan_bonus_tanggal_merah;
         }
 
-        $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+        $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
 
         // 4. Kalkulasi Deductions (Pengurangan) - Otomatis sinkronkan potongan terlambat dari tabel Keterlambatan jika tidak diset
         if ($request->has('potongan_terlambat')) {
@@ -240,9 +244,10 @@ class PenggajianController extends Controller
 
         $potonganInventaris = $request->has('potongan_inventaris') ? $cleanRupiah($request->potongan_inventaris) : 0;
         $potonganKasbon     = $request->has('potongan_kasbon') ? $cleanRupiah($request->potongan_kasbon) : 0;
+        $potonganDeposit    = $request->has('potongan_deposit') ? $cleanRupiah($request->potongan_deposit) : 0;
         $potonganDll        = $request->has('potongan_dll') ? $cleanRupiah($request->potongan_dll) : 0;
 
-        $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
+        $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
 
         // 5. Gaji Bersih (Take Home Pay)
         $totalGajiBersih = $totalEarnings - $totalDeductions;
@@ -286,11 +291,14 @@ class PenggajianController extends Controller
             'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
             'banyak_birthday_service'     => $banyakBirthdayService,
             'bonus_birthday'              => $bonusBirthdayService,
+            'pengembalian_deposit'        => $pengembalianDeposit,
             'bonus_dll'                   => $bonusDll,
             'potongan_terlambat'          => $potonganTerlambat,
             'potongan_inventaris'         => $potonganInventaris,
             'potongan_kasbon'             => $potonganKasbon,
+            'potongan_deposit'            => $potonganDeposit,
             'potongan_dll'                => $potonganDll,
+            'catatan_potongan_dll'        => $request->catatan_potongan_dll,
             'total_earnings'              => $totalEarnings,
             'total_deductions'            => $totalDeductions,
             'total_gaji_bersih'           => $totalGajiBersih,
@@ -356,12 +364,13 @@ class PenggajianController extends Controller
 
                 $earnings = (float) ($payroll->total_earnings > 0 ? $payroll->total_earnings : (
                     ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-                    ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
+                    ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
                 ));
 
                 $deductions = $potonganTerlambat +
                               floatval($payroll->potongan_inventaris ?? 0) +
                               floatval($payroll->potongan_kasbon ?? 0) +
+                              floatval($payroll->potongan_deposit ?? 0) +
                               floatval($payroll->potongan_dll ?? 0);
 
                 $thp = $earnings - $deductions;
@@ -394,24 +403,26 @@ class PenggajianController extends Controller
             $totalBanyakMerah = $items->sum('banyak_tanggal_merah');
             $totalBirthday = $items->sum('bonus_birthday');
             $totalBanyakBirthday = $items->sum('banyak_birthday_service');
+            $totalPengembalianDeposit = $items->sum('pengembalian_deposit');
             $totalBonusDll = $items->sum('bonus_dll');
 
             $totalEarnings = $items->sum(function($p) {
                 return $p->total_earnings > 0 ? (float)$p->total_earnings : (
                     (float)($p->gaji_utama ?? 0) + (float)($p->lembur ?? 0) + (float)($p->bonus_target ?? 0) +
-                    (float)($p->bonus_tanggal_merah ?? 0) + (float)($p->bonus_birthday ?? 0) + (float)($p->bonus_dll ?? 0)
+                    (float)($p->bonus_tanggal_merah ?? 0) + (float)($p->bonus_birthday ?? 0) + (float)($p->pengembalian_deposit ?? 0) + (float)($p->bonus_dll ?? 0)
                 );
             });
 
             $totalPotonganTerlambat = $items->sum('potongan_terlambat');
             $totalPotonganInventaris = $items->sum('potongan_inventaris');
             $totalPotonganKasbon = $items->sum('potongan_kasbon');
+            $totalPotonganDeposit = $items->sum('potongan_deposit');
             $totalPotonganDll = $items->sum('potongan_dll');
 
             $totalDeductions = $items->sum(function($p) {
                 return $p->total_deductions > 0 ? (float)$p->total_deductions : (
                     (float)($p->potongan_terlambat ?? 0) + (float)($p->potongan_inventaris ?? 0) +
-                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_dll ?? 0)
+                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_deposit ?? 0) + (float)($p->potongan_dll ?? 0)
                 );
             });
 
@@ -445,11 +456,14 @@ class PenggajianController extends Controller
                 'bonus_tanggal_merah'     => $totalMerah,
                 'banyak_birthday_service' => $totalBanyakBirthday,
                 'bonus_birthday'          => $totalBirthday,
+                'pengembalian_deposit'    => $totalPengembalianDeposit,
                 'bonus_dll'               => $totalBonusDll,
                 'potongan_terlambat'      => $totalPotonganTerlambat,
                 'potongan_inventaris'     => $totalPotonganInventaris,
                 'potongan_kasbon'         => $totalPotonganKasbon,
+                'potongan_deposit'        => $totalPotonganDeposit,
                 'potongan_dll'            => $totalPotonganDll,
+                'catatan_potongan_dll'    => $primaryPayroll->catatan_potongan_dll,
                 'total_earnings'          => $totalEarnings,
                 'total_deductions'        => $totalDeductions,
                 'total_gaji_bersih'       => $takeHomePay,
@@ -515,14 +529,14 @@ class PenggajianController extends Controller
                 return $p->total_earnings > 0 ? (float)$p->total_earnings : (
                     (float)($p->gaji_utama ?? 0) + (float)($p->lembur ?? 0) +
                     (float)($p->bonus_target ?? 0) + (float)($p->bonus_tanggal_merah ?? 0) +
-                    (float)($p->bonus_birthday ?? 0) + (float)($p->bonus_dll ?? 0)
+                    (float)($p->bonus_birthday ?? 0) + (float)($p->pengembalian_deposit ?? 0) + (float)($p->bonus_dll ?? 0)
                 );
             });
 
             $totalDeductions = $items->sum(function($p) {
                 return $p->total_deductions > 0 ? (float)$p->total_deductions : (
                     (float)($p->potongan_terlambat ?? 0) + (float)($p->potongan_inventaris ?? 0) +
-                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_dll ?? 0)
+                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_deposit ?? 0) + (float)($p->potongan_dll ?? 0)
                 );
             });
 
@@ -669,11 +683,14 @@ class PenggajianController extends Controller
                 'bonus_tanggal_merah'     => 0,
                 'banyak_birthday_service' => 0,
                 'bonus_birthday'          => 0,
+                'pengembalian_deposit'    => 0,
                 'bonus_dll'               => 0,
                 'potongan_terlambat'      => $potonganTerlambat,
                 'potongan_inventaris'     => 0,
                 'potongan_kasbon'         => 0,
+                'potongan_deposit'        => 0,
                 'potongan_dll'            => 0,
+                'catatan_potongan_dll'    => null,
                 'total_earnings'          => $totalEarnings,
                 'total_deductions'        => $totalDeductions,
                 'total_gaji_bersih'       => $totalGajiBersih,
@@ -865,11 +882,14 @@ class PenggajianController extends Controller
             'banyak_target'           => 'nullable|integer|min:0',
             'banyak_tanggal_merah'    => 'nullable|integer|min:0',
             'banyak_birthday_service' => 'nullable|integer|min:0',
+            'pengembalian_deposit'    => 'nullable|string',
             'bonus_dll'               => 'nullable|string',
             'potongan_terlambat'      => 'nullable|string',
             'potongan_inventaris'     => 'nullable|string',
             'potongan_kasbon'         => 'nullable|string',
+            'potongan_deposit'        => 'nullable|string',
             'potongan_dll'            => 'nullable|string',
+            'catatan_potongan_dll'    => 'nullable|string|max:255',
         ]);
 
         $karyawan = Karyawan::findOrFail($payroll->karyawan_id);
@@ -912,6 +932,7 @@ class PenggajianController extends Controller
         // 3. Kalkulasi Earnings (Pendapatan)
         $lembur               = $jamLembur * 10000;
         $bonusBirthdayService = $banyakBirthdayService * 5000;
+        $pengembalianDeposit  = $request->has('pengembalian_deposit') ? $cleanRupiah($request->pengembalian_deposit) : floatval($payroll->pengembalian_deposit ?? 0);
         $bonusDll             = $request->has('bonus_dll') ? $cleanRupiah($request->bonus_dll) : floatval($payroll->bonus_dll ?? 0);
 
         if ($satuanGaji === 'Harian') {
@@ -926,15 +947,17 @@ class PenggajianController extends Controller
             $catatanTanggalMerah = $request->catatan_bonus_tanggal_merah ?? $payroll->catatan_bonus_tanggal_merah;
         }
 
-        $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+        $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
 
         // 4. Kalkulasi Deductions (Pengurangan - Pertahankan nilai lama jika tidak dikirim)
         $potonganTerlambat  = $request->has('potongan_terlambat') ? $cleanRupiah($request->potongan_terlambat) : floatval($payroll->potongan_terlambat ?? 0);
         $potonganInventaris = $request->has('potongan_inventaris') ? $cleanRupiah($request->potongan_inventaris) : floatval($payroll->potongan_inventaris ?? 0);
         $potonganKasbon     = $request->has('potongan_kasbon') ? $cleanRupiah($request->potongan_kasbon) : floatval($payroll->potongan_kasbon ?? 0);
+        $potonganDeposit    = $request->has('potongan_deposit') ? $cleanRupiah($request->potongan_deposit) : floatval($payroll->potongan_deposit ?? 0);
         $potonganDll        = $request->has('potongan_dll') ? $cleanRupiah($request->potongan_dll) : floatval($payroll->potongan_dll ?? 0);
+        $catatanPotonganDll = $request->has('catatan_potongan_dll') ? $request->catatan_potongan_dll : $payroll->catatan_potongan_dll;
 
-        $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDll;
+        $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
 
         // 5. Gaji Bersih (Take Home Pay)
         $totalGajiBersih = $totalEarnings - $totalDeductions;
@@ -961,11 +984,14 @@ class PenggajianController extends Controller
             'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
             'banyak_birthday_service'     => $banyakBirthdayService,
             'bonus_birthday'              => $bonusBirthdayService,
+            'pengembalian_deposit'        => $pengembalianDeposit,
             'bonus_dll'                   => $bonusDll,
             'potongan_terlambat'          => $potonganTerlambat,
             'potongan_inventaris'         => $potonganInventaris,
             'potongan_kasbon'             => $potonganKasbon,
+            'potongan_deposit'            => $potonganDeposit,
             'potongan_dll'                => $potonganDll,
+            'catatan_potongan_dll'        => $catatanPotonganDll,
             'total_earnings'              => $totalEarnings,
             'total_deductions'            => $totalDeductions,
             'total_gaji_bersih'           => $totalGajiBersih,
@@ -1008,17 +1034,19 @@ class PenggajianController extends Controller
             $payroll->banyak_tanggal_merah = $allEntries->sum('banyak_tanggal_merah');
             $payroll->bonus_birthday = $allEntries->sum('bonus_birthday');
             $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
+            $payroll->pengembalian_deposit = $allEntries->sum('pengembalian_deposit');
             $payroll->bonus_dll = $allEntries->sum('bonus_dll');
 
             $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
             $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
             $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
+            $payroll->potongan_deposit = $allEntries->sum('potongan_deposit');
             $payroll->potongan_dll = $allEntries->sum('potongan_dll');
 
             $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
-                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->bonus_dll;
+                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->pengembalian_deposit + $payroll->bonus_dll;
             $payroll->total_deductions = $payroll->potongan_terlambat + $payroll->potongan_inventaris +
-                $payroll->potongan_kasbon + $payroll->potongan_dll;
+                $payroll->potongan_kasbon + $payroll->potongan_deposit + $payroll->potongan_dll;
             $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
 
             // Rentang tanggal gabungan
@@ -1085,17 +1113,20 @@ class PenggajianController extends Controller
             $payroll->banyak_tanggal_merah = $allEntries->sum('banyak_tanggal_merah');
             $payroll->bonus_birthday = $allEntries->sum('bonus_birthday');
             $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
+            $payroll->pengembalian_deposit = $allEntries->sum('pengembalian_deposit');
             $payroll->bonus_dll = $allEntries->sum('bonus_dll');
 
             $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
             $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
             $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
+            $payroll->potongan_deposit = $allEntries->sum('potongan_deposit');
             $payroll->potongan_dll = $allEntries->sum('potongan_dll');
 
             $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
-                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->bonus_dll;
+                $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->pengembalian_deposit + $payroll->bonus_dll;
             $payroll->total_deductions = $payroll->potongan_terlambat + $payroll->potongan_inventaris +
-                $payroll->potongan_kasbon + $payroll->potongan_dll;
+                $payroll->potongan_kasbon + $payroll->potongan_deposit + $payroll->potongan_dll;
+            $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
             $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
 
             $minDate = $allEntries->min('tanggal_mulai');
@@ -1426,9 +1457,10 @@ class PenggajianController extends Controller
                 $bonusTarget          = (float) ($payroll->bonus_target ?? 0);
                 $bonusTanggalMerah    = (float) ($payroll->bonus_tanggal_merah ?? 0);
                 $bonusBirthdayService = (float) ($payroll->bonus_birthday ?? 0);
+                $pengembalianDeposit  = (float) ($payroll->pengembalian_deposit ?? 0);
                 $bonusDll             = (float) ($payroll->bonus_dll ?? 0);
 
-                $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $bonusDll;
+                $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
                 $totalDeductions = (float) ($payroll->total_deductions ?? 0);
                 $totalGajiBersih = $totalEarnings - $totalDeductions;
 

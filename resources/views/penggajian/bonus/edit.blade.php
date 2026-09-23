@@ -181,6 +181,13 @@
                                    class="pg-input" oninput="hitungBonus()">
                             <div class="pg-sub-calc" id="subBirthday">Bonus: Rp 0</div>
                         </div>
+                        <div class="pg-field">
+                            <label class="pg-label" style="color: #047857;">Pengembalian Deposit (Rp)</label>
+                            <input type="text" name="pengembalian_deposit" id="inputPengembalianDeposit"
+                                   value="{{ number_format($payroll->pengembalian_deposit ?? 0, 0, ',', '.') }}"
+                                   class="pg-input pg-input-rupiah input-rupiah" oninput="hitungBonus()"
+                                   style="border-color: #a7f3d0; background: #f0fdf4;">
+                        </div>
                     </div>
                     <div class="pg-field" style="margin-bottom:0;margin-top:4px;">
                         <label class="pg-label">Bonus Lain-lain (Rp)</label>
@@ -247,9 +254,10 @@
             let bonusBirthday = banyakBirthday * 5000;
             document.getElementById('subBirthday').innerText = 'Bonus: ' + formatRupiah(bonusBirthday);
 
+            let pengembalianDeposit = parseRupiahInput('inputPengembalianDeposit');
             let bonusDll = parseRupiahInput('inputBonusDll');
 
-            let bonusKinerja = bonusTarget + bonusMerah + bonusBirthday + bonusDll;
+            let bonusKinerja = bonusTarget + bonusMerah + bonusBirthday + pengembalianDeposit + bonusDll;
             let totalBonus = upahLembur + bonusKinerja;
 
             document.getElementById('sumUpahLembur').innerText = formatRupiah(upahLembur);

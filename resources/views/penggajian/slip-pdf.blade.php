@@ -531,10 +531,12 @@
                         <div class="t-lbl">Uang Makan / {{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
                         <div class="t-val">Rp {{ number_format($umRate, 0, ',', '.') }}</div>
                     </td>
+                    @if($utRate > 0)
                     <td>
                         <div class="t-lbl">Transport / {{ $satuan == 'Per Jam' ? 'Jam' : 'Hari' }}</div>
                         <div class="t-val">Rp {{ number_format($utRate, 0, ',', '.') }}</div>
                     </td>
+                    @endif
                 </tr>
             </table>
         </div>
@@ -646,6 +648,16 @@
                     </table>
                     @endif
 
+                    @if(($payroll->pengembalian_deposit ?? 0) > 0)
+                    <div class="sec-sub" style="color: #065f46; background: #ecfdf5;">Pengembalian Deposit</div>
+                    <table class="row-tbl">
+                        <tr class="subtotal">
+                            <td>Total Pengembalian Deposit</td>
+                            <td class="val" style="color:#059669;">Rp {{ number_format($payroll->pengembalian_deposit, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                    @endif
+
                     @if(($payroll->bonus_dll ?? 0) > 0)
                     <div class="sec-sub">Bonus Lain-lain</div>
                     <table class="row-tbl">
@@ -716,12 +728,28 @@
                     </table>
                     @endif
 
-                    @if(($payroll->potongan_dll ?? 0) > 0)
-                    <div class="sec-sub">Potongan Lain-lain</div>
+                    @if(($payroll->potongan_deposit ?? 0) > 0)
+                    <div class="sec-sub" style="color: #991b1b; background: #fff5f5;">Pengurangan Deposit</div>
                     <table class="row-tbl">
                         <tr class="subtotal">
+                            <td>Pengurangan Deposit (Karyawan Baru)</td>
+                            <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</td>
+                        </tr>
+                    </table>
+                    @endif
+
+                    @if(($payroll->potongan_dll ?? 0) > 0 || !empty($payroll->catatan_potongan_dll))
+                    <div class="sec-sub">Potongan Lain-lain</div>
+                    <table class="row-tbl">
+                        @if(!empty($payroll->catatan_potongan_dll))
+                        <tr>
+                            <td class="lbl">Keterangan</td>
+                            <td class="val" style="font-weight: normal; color: #475569; font-size: 8.5px;">{{ $payroll->catatan_potongan_dll }}</td>
+                        </tr>
+                        @endif
+                        <tr class="subtotal">
                             <td>Total Potongan Lain</td>
-                            <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_dll, 0, ',', '.') }}</td>
+                            <td class="val" style="color:#dc2626;">Rp {{ number_format($payroll->potongan_dll ?? 0, 0, ',', '.') }}</td>
                         </tr>
                     </table>
                     @endif

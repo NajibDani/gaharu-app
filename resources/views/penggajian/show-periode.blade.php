@@ -163,8 +163,8 @@
                                 $tarifHarian = $payroll->tarif_harian_total > 0
                                     ? $payroll->tarif_harian_total
                                     : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
-                                $totalBonus = (float)(($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) + ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0));
-                                $totalPotongan = (float)($payroll->total_deductions ?? (($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) + ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_dll ?? 0)));
+                                $totalBonus = (float)(($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) + ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0));
+                                $totalPotongan = (float)($payroll->total_deductions ?? (($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) + ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_deposit ?? 0) + ($payroll->potongan_dll ?? 0)));
                                 $gajiPokok = (float)($payroll->gaji_utama ?? 0);
                                 $earnings = (float)($payroll->total_earnings > 0 ? $payroll->total_earnings : ($gajiPokok + $totalBonus));
                                 $isPaid = $payroll->is_paid;
@@ -300,13 +300,16 @@
                                     'bonus_merah' => number_format($payroll->bonus_tanggal_merah, 0, ',', '.'),
                                     'banyak_birthday' => $payroll->banyak_birthday_service,
                                     'bonus_birthday' => number_format($payroll->bonus_birthday, 0, ',', '.'),
+                                    'pengembalian_deposit' => number_format($payroll->pengembalian_deposit ?? 0, 0, ',', '.'),
                                     'bonus_dll' => number_format($payroll->bonus_dll, 0, ',', '.'),
                                     'total_bonus' => number_format($totalBonus, 0, ',', '.'),
                                     'total_earnings' => number_format($earnings, 0, ',', '.'),
                                     'potongan_terlambat' => number_format($payroll->potongan_terlambat, 0, ',', '.'),
                                     'potongan_inventaris' => number_format($payroll->potongan_inventaris, 0, ',', '.'),
                                     'potongan_kasbon' => number_format($payroll->potongan_kasbon, 0, ',', '.'),
+                                    'potongan_deposit' => number_format($payroll->potongan_deposit ?? 0, 0, ',', '.'),
                                     'potongan_dll' => number_format($payroll->potongan_dll, 0, ',', '.'),
+                                    'catatan_potongan_dll' => $payroll->catatan_potongan_dll ?? '',
                                     'total_deductions' => number_format($totalPotongan, 0, ',', '.'),
                                     'take_home_pay' => number_format($payroll->take_home_pay, 0, ',', '.'),
                                     'is_paid' => $isPaid,
@@ -993,6 +996,10 @@
                                             <span>Birthday Service (<span x-text="activeDetail.banyak_birthday"></span>x)</span>
                                             <span style="font-weight: 700; color: #0f172a;" x-text="'Rp ' + activeDetail.bonus_birthday"></span>
                                         </div>
+                                        <div style="display: flex; justify-content: space-between;" x-show="activeDetail.pengembalian_deposit != '0'">
+                                            <span>Pengembalian Deposit</span>
+                                            <span style="font-weight: 700; color: #059669;" x-text="'Rp ' + activeDetail.pengembalian_deposit"></span>
+                                        </div>
                                         <div style="display: flex; justify-content: space-between;" x-show="activeDetail.bonus_dll != '0'">
                                             <span>Bonus Lain-lain</span>
                                             <span style="font-weight: 700; color: #0f172a;" x-text="'Rp ' + activeDetail.bonus_dll"></span>
@@ -1019,8 +1026,15 @@
                                             <span>Potongan Kasbon</span>
                                             <span style="font-weight: 700; color: #dc2626;" x-text="'- Rp ' + activeDetail.potongan_kasbon"></span>
                                         </div>
+                                        <div style="display: flex; justify-content: space-between;" x-show="activeDetail.potongan_deposit != '0'">
+                                            <span>Pengurangan Deposit</span>
+                                            <span style="font-weight: 700; color: #dc2626;" x-text="'- Rp ' + activeDetail.potongan_deposit"></span>
+                                        </div>
                                         <div style="display: flex; justify-content: space-between;" x-show="activeDetail.potongan_dll != '0'">
-                                            <span>Potongan Lain-lain</span>
+                                            <span>
+                                                Potongan Lain-lain
+                                                <span class="text-[10px] text-slate-500 italic font-normal block" x-show="activeDetail.catatan_potongan_dll" x-text="'(' + activeDetail.catatan_potongan_dll + ')'"></span>
+                                            </span>
                                             <span style="font-weight: 700; color: #dc2626;" x-text="'- Rp ' + activeDetail.potongan_dll"></span>
                                         </div>
                                         <div style="display: flex; justify-content: space-between; color: #64748b; font-style: italic; font-weight: 500;" x-show="activeDetail.total_deductions == '0'">

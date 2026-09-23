@@ -102,16 +102,17 @@
 
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
-                    <table class="w-full min-w-[1020px] text-xs text-left divide-y divide-slate-200" id="tablePotongan">
+                    <table class="w-full min-w-[1100px] text-xs text-left divide-y divide-slate-200" id="tablePotongan">
                         <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100/90 border-b border-slate-200">
                             <tr>
                                 <th class="px-3.5 py-3 w-10 text-center whitespace-nowrap">#</th>
-                                <th class="px-4 py-3 min-w-[220px] whitespace-nowrap">Karyawan</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Denda Terlambat</th>
-                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[145px]">Kerusakan Inventaris</th>
-                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[140px]">Kasbon</th>
-                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[140px]">Potongan Lain</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[140px]">Total Potongan</th>
+                                <th class="px-4 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[130px]">Denda Terlambat</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[135px]">Kerusakan Inventaris</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Kasbon</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[135px]">Pengurangan Deposit</th>
+                                <th class="px-3 py-3 text-right whitespace-nowrap min-w-[145px]">Potongan Lain</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Total Potongan</th>
                                 <th class="px-3 py-3 text-center min-w-[90px] whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
@@ -126,14 +127,14 @@
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
                                 <td class="px-3.5 py-3 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
-                                <td class="px-4 py-3 min-w-[220px]">
+                                <td class="px-4 py-3 min-w-[200px]">
                                     <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug">
                                         {{ $payroll->karyawan->nama_karyawan ?? '-' }}
                                     </div>
                                     <div class="text-[11px] text-slate-600 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
                                         <span class="font-bold text-slate-800">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                         @if($payroll->karyawan->departemen)
-                                            <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
+                                             <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
                                         @endif
                                     </div>
                                 </td>
@@ -175,7 +176,21 @@
                                     @endif
                                 </td>
 
-                                {{-- POTONGAN LAIN --}}
+                                {{-- PENGURANGAN DEPOSIT (KARYAWAN BARU) --}}
+                                <td class="px-2.5 py-2 text-right">
+                                    @if(!$isRowLocked)
+                                        <input type="text"
+                                               class="batch-input-rupiah batch-potongan-deposit w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
+                                               placeholder="0"
+                                               title="Pengurangan deposit untuk karyawan baru"
+                                               oninput="onPotonganRowInput(this)">
+                                    @else
+                                        <span class="font-bold text-slate-700 text-xs">{{ $payroll->potongan_deposit > 0 ? 'Rp ' . number_format($payroll->potongan_deposit, 0, ',', '.') : '-' }}</span>
+                                    @endif
+                                </td>
+
+                                {{-- POTONGAN LAIN & KETERANGAN --}}
                                 <td class="px-2.5 py-2 text-right">
                                     @if(!$isRowLocked)
                                         <input type="text"
@@ -183,8 +198,18 @@
                                                value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
                                                placeholder="0"
                                                oninput="onPotonganRowInput(this)">
+                                        <input type="text"
+                                               class="batch-catatan-potongan-dll w-full text-left bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2 py-0.5 text-[10.5px] font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-400 mt-1 placeholder:text-slate-300 placeholder:italic"
+                                               value="{{ $payroll->catatan_potongan_dll ?? '' }}"
+                                               placeholder="Keterangan..."
+                                               title="Keterangan / rincian potongan lain-lain">
                                     @else
-                                        <span class="font-bold text-slate-700 text-xs">{{ $payroll->potongan_dll > 0 ? 'Rp ' . number_format($payroll->potongan_dll, 0, ',', '.') : '-' }}</span>
+                                        <div class="font-bold text-slate-700 text-xs">{{ $payroll->potongan_dll > 0 ? 'Rp ' . number_format($payroll->potongan_dll, 0, ',', '.') : '-' }}</div>
+                                        @if($payroll->catatan_potongan_dll)
+                                            <div class="text-[10px] text-slate-500 italic font-medium truncate max-w-[130px] ml-auto" title="{{ $payroll->catatan_potongan_dll }}">
+                                                {{ $payroll->catatan_potongan_dll }}
+                                            </div>
+                                        @endif
                                     @endif
                                 </td>
 
@@ -210,7 +235,9 @@
                                                     'potongan_terlambat' => $payroll->potongan_terlambat ?? 0,
                                                     'potongan_inventaris' => $payroll->potongan_inventaris ?? 0,
                                                     'potongan_kasbon' => $payroll->potongan_kasbon ?? 0,
+                                                    'potongan_deposit' => $payroll->potongan_deposit ?? 0,
                                                     'potongan_dll' => $payroll->potongan_dll ?? 0,
+                                                    'catatan_potongan_dll' => $payroll->catatan_potongan_dll ?? '',
                                                     'update_url' => route('penggajian.potongan.update', $payroll->id),
                                                     'keterlambatan_url' => route('keterlambatan.index', ['periode' => $targetPeriode]),
                                                 ]) }})"
@@ -226,7 +253,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="8" class="px-6 py-12 text-center text-slate-500 font-medium">
+                                <td colspan="9" class="px-6 py-12 text-center text-slate-500 font-medium">
                                     Belum ada data karyawan di periode ini.
                                 </td>
                             </tr>
@@ -249,7 +276,7 @@
 
         {{-- MODAL CONTAINER CENTERED --}}
         <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none;">
-            <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 620px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; pointer-events: auto; overflow: hidden;">
+            <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 640px; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; pointer-events: auto; overflow: hidden;">
                 
                 {{-- MODAL HEADER --}}
                 <div style="background: #f8fafc; padding: 14px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
@@ -266,7 +293,7 @@
                             </span>
                         </div>
                         <p style="font-size: 11px; color: #475569; font-weight: 600; margin: 2px 0 0 0;">
-                            Kelola denda keterlambatan, kasbon, inventaris, dan potongan lainnya.
+                            Kelola denda keterlambatan, kasbon, pengurangan deposit, inventaris, dan potongan lainnya.
                         </p>
                     </div>
                     <button type="button" onclick="closeModalEditPotongan()"
@@ -345,11 +372,29 @@
 
                                 <div>
                                     <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; margin-bottom: 4px;">
+                                        Pengurangan Deposit (Karyawan Baru) (Rp)
+                                    </label>
+                                    <input type="text" name="potongan_deposit" id="mInputPotDeposit"
+                                           class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-rose-500/20 modal-rupiah-potongan"
+                                           oninput="recalcModalPotongan()">
+                                </div>
+
+                                <div>
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; margin-bottom: 4px;">
                                         Potongan Lain-lain (Rp)
                                     </label>
                                     <input type="text" name="potongan_dll" id="mInputPotDll"
                                            class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-black text-slate-900 text-right focus:outline-none focus:ring-2 focus:ring-rose-500/20 modal-rupiah-potongan"
                                            oninput="recalcModalPotongan()">
+                                </div>
+
+                                <div>
+                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #334155; text-transform: uppercase; margin-bottom: 4px;">
+                                        Keterangan Potongan Lain-lain
+                                    </label>
+                                    <input type="text" name="catatan_potongan_dll" id="mInputCatatanPotDll"
+                                           placeholder="Contoh: Seragam, ID Card, dll..."
+                                           class="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/20">
                                 </div>
                             </div>
                         </div>
@@ -410,15 +455,17 @@
             const terlambatEl = row.querySelector('.potongan-terlambat-raw');
             const inventarisEl = row.querySelector('.batch-potongan-inventaris');
             const kasbonEl = row.querySelector('.batch-potongan-kasbon');
+            const depositEl = row.querySelector('.batch-potongan-deposit');
             const dllEl = row.querySelector('.batch-potongan-dll');
             const totalCell = row.querySelector('.row-total-potongan-cell');
 
             let pTerlambat  = terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0;
             let pInventaris = inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0;
             let pKasbon     = kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0;
+            let pDeposit    = depositEl ? parseRupiahPotVal(depositEl.value) : 0;
             let pDll        = dllEl ? parseRupiahPotVal(dllEl.value) : 0;
 
-            let totalRow = pTerlambat + pInventaris + pKasbon + pDll;
+            let totalRow = pTerlambat + pInventaris + pKasbon + pDeposit + pDll;
 
             if (totalCell) {
                 if (totalRow > 0) {
@@ -435,14 +482,16 @@
                 const terlambatEl = row.querySelector('.potongan-terlambat-raw');
                 const inventarisEl = row.querySelector('.batch-potongan-inventaris');
                 const kasbonEl = row.querySelector('.batch-potongan-kasbon');
+                const depositEl = row.querySelector('.batch-potongan-deposit');
                 const dllEl = row.querySelector('.batch-potongan-dll');
 
                 let pTerlambat  = terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0;
                 let pInventaris = inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0;
                 let pKasbon     = kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0;
+                let pDeposit    = depositEl ? parseRupiahPotVal(depositEl.value) : 0;
                 let pDll        = dllEl ? parseRupiahPotVal(dllEl.value) : 0;
 
-                grandTotal += (pTerlambat + pInventaris + pKasbon + pDll);
+                grandTotal += (pTerlambat + pInventaris + pKasbon + pDeposit + pDll);
             });
 
             const badge = document.getElementById('headerTotalPotonganBadge');
@@ -463,14 +512,18 @@
                 const terlambatEl = row.querySelector('.potongan-terlambat-raw');
                 const inventarisEl = row.querySelector('.batch-potongan-inventaris');
                 const kasbonEl = row.querySelector('.batch-potongan-kasbon');
+                const depositEl = row.querySelector('.batch-potongan-deposit');
                 const dllEl = row.querySelector('.batch-potongan-dll');
+                const catatanDllEl = row.querySelector('.batch-catatan-potongan-dll');
 
                 items.push({
                     id: id,
                     potongan_terlambat: terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0,
                     potongan_inventaris: inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0,
                     potongan_kasbon: kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0,
+                    potongan_deposit: depositEl ? parseRupiahPotVal(depositEl.value) : 0,
                     potongan_dll: dllEl ? parseRupiahPotVal(dllEl.value) : 0,
+                    catatan_potongan_dll: catatanDllEl ? catatanDllEl.value : '',
                 });
             });
 
@@ -533,12 +586,15 @@
             let pTerlambat = parseFloat(data.potongan_terlambat) || 0;
             let pInventaris = parseFloat(data.potongan_inventaris) || 0;
             let pKasbon = parseFloat(data.potongan_kasbon) || 0;
+            let pDeposit = parseFloat(data.potongan_deposit) || 0;
             let pDll = parseFloat(data.potongan_dll) || 0;
 
             document.getElementById('mInputPotTerlambat').value = pTerlambat ? Math.round(pTerlambat).toLocaleString('id-ID') : '0';
             document.getElementById('mInputPotInventaris').value = pInventaris ? Math.round(pInventaris).toLocaleString('id-ID') : '0';
             document.getElementById('mInputPotKasbon').value = pKasbon ? Math.round(pKasbon).toLocaleString('id-ID') : '0';
+            document.getElementById('mInputPotDeposit').value = pDeposit ? Math.round(pDeposit).toLocaleString('id-ID') : '0';
             document.getElementById('mInputPotDll').value = pDll ? Math.round(pDll).toLocaleString('id-ID') : '0';
+            document.getElementById('mInputCatatanPotDll').value = data.catatan_potongan_dll || '';
 
             document.getElementById('formEditPotonganModal').action = data.update_url;
 
@@ -557,9 +613,10 @@
             let potTerlambat  = parseRupiahPotVal(document.getElementById('mInputPotTerlambat').value);
             let potInventaris = parseRupiahPotVal(document.getElementById('mInputPotInventaris').value);
             let potKasbon     = parseRupiahPotVal(document.getElementById('mInputPotKasbon').value);
+            let potDeposit    = parseRupiahPotVal(document.getElementById('mInputPotDeposit').value);
             let potDll        = parseRupiahPotVal(document.getElementById('mInputPotDll').value);
 
-            let totalDeductions = potTerlambat + potInventaris + potKasbon + potDll;
+            let totalDeductions = potTerlambat + potInventaris + potKasbon + potDeposit + potDll;
             if (totalDeductions > 0) {
                 document.getElementById('mSumTotalPotongan').innerText = '- ' + formatRupiahPot(totalDeductions);
             } else {

@@ -66,7 +66,7 @@
                         @php
                             $currentStatus = $items->first()->status;
                             $totalBonusPeriode = $items->sum(function($p) {
-                                return ($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->bonus_dll ?? 0);
+                                return ($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->pengembalian_deposit ?? 0) + ($p->bonus_dll ?? 0);
                             });
                         @endphp
                         <tr class="hover:bg-slate-50/80 transition-colors">
