@@ -182,7 +182,16 @@
                             <div class="pg-sub-calc" id="subBirthday">Bonus: Rp 0</div>
                         </div>
                         <div class="pg-field">
-                            <label class="pg-label" style="color: #047857;">Pengembalian Deposit (Rp)</label>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                                <label class="pg-label" style="color: #047857; margin-bottom: 0;">Pengembalian Deposit (Rp)</label>
+                                @if(($saldoDeposit ?? 0) > 0)
+                                <button type="button" onclick="document.getElementById('inputPengembalianDeposit').value = Math.round({{ $saldoDeposit }}).toLocaleString('id-ID'); hitungBonus();"
+                                        style="font-size: 10px; font-weight: 700; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 2px 7px; cursor: pointer;"
+                                        title="Isi otomatis dengan total saldo deposit yang pernah dipotong">
+                                    &#8629; Isi Saldo (Rp {{ number_format($saldoDeposit, 0, ',', '.') }})
+                                </button>
+                                @endif
+                            </div>
                             <input type="text" name="pengembalian_deposit" id="inputPengembalianDeposit"
                                    value="{{ number_format($payroll->pengembalian_deposit ?? 0, 0, ',', '.') }}"
                                    class="pg-input pg-input-rupiah input-rupiah" oninput="hitungBonus()"

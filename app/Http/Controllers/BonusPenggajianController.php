@@ -90,7 +90,20 @@ class BonusPenggajianController extends Controller
             })
             ->get();
 
-        $payrolls = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) {
+        $karyawanIds = $rawPayrolls->pluck('karyawan_id')->unique();
+
+        $allPotonganDeposit = Penggajian::whereIn('karyawan_id', $karyawanIds)
+            ->groupBy('karyawan_id')
+            ->selectRaw('karyawan_id, SUM(potongan_deposit) as total_pot_deposit')
+            ->pluck('total_pot_deposit', 'karyawan_id');
+
+        $allReturnedOther = Penggajian::whereIn('karyawan_id', $karyawanIds)
+            ->where('periode_bulan_tahun', '!=', $targetPeriode)
+            ->groupBy('karyawan_id')
+            ->selectRaw('karyawan_id, SUM(pengembalian_deposit) as total_ret_deposit')
+            ->pluck('total_ret_deposit', 'karyawan_id');
+
+        $payrolls = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) use ($allPotonganDeposit, $allReturnedOther) {
             $first = $items->first();
             $primaryPayroll = $items->sortByDesc('hari_kerja')->first() ?? $first;
 
@@ -110,6 +123,10 @@ class BonusPenggajianController extends Controller
             $tarifHarian = $primaryPayroll->tarif_harian_total > 0
                 ? $primaryPayroll->tarif_harian_total
                 : (($primaryPayroll->gaji_pokok ?? 0) + ($primaryPayroll->tunjangan_makan ?? 0) + ($primaryPayroll->tunjangan_transport ?? 0));
+
+            $potDeposit = (float) ($allPotonganDeposit[$first->karyawan_id] ?? 0);
+            $retOther = (float) ($allReturnedOther[$first->karyawan_id] ?? 0);
+            $saldoDeposit = max(0, $potDeposit - $retOther);
 
             return (object) [
                 'id'                          => $primaryPayroll->id,
@@ -132,6 +149,7 @@ class BonusPenggajianController extends Controller
                 'banyak_birthday_service'     => $totalBanyakBirthday,
                 'bonus_birthday'              => $totalBonusBirthday,
                 'pengembalian_deposit'        => $totalPengembalianDeposit,
+                'saldo_deposit'               => $saldoDeposit,
                 'bonus_dll'                   => $totalBonusDll,
                 'total_bonus'                 => $totalBonusKeseluruhan,
                 'status'                      => $primaryPayroll->status,
@@ -157,7 +175,11 @@ class BonusPenggajianController extends Controller
             ? $payroll->tarif_harian_total
             : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
 
-        return view('penggajian.bonus.edit', compact('payroll', 'targetPeriode', 'selectedOutlet', 'tarifHarian'));
+        $totalPotDeposit = Penggajian::where('karyawan_id', $payroll->karyawan_id)->sum('potongan_deposit');
+        $totalRetOther = Penggajian::where('karyawan_id', $payroll->karyawan_id)->where('id', '!=', $payroll->id)->sum('pengembalian_deposit');
+        $saldoDeposit = max(0, $totalPotDeposit - $totalRetOther);
+
+        return view('penggajian.bonus.edit', compact('payroll', 'targetPeriode', 'selectedOutlet', 'tarifHarian', 'saldoDeposit'));
     }
 
     /**

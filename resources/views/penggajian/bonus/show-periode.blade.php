@@ -134,16 +134,16 @@
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
                                 <td class="px-3.5 py-2.5 text-center text-xs text-slate-500 font-bold">{{ $index + 1 }}</td>
-                                <td class="px-4 py-2.5 min-w-[200px]">
-                                    <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug">
+                                <td class="px-4 py-3 min-w-[200px]">
+                                    <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-tight">
                                         {{ $payroll->karyawan->nama_karyawan ?? '-' }}
                                     </div>
-                                    <div class="text-[11px] text-slate-600 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
-                                        <span class="font-bold text-slate-800">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
+                                    <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
+                                        <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                         @if($payroll->karyawan->departemen)
-                                             <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-700">{{ $payroll->karyawan->departemen }}</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 leading-normal">{{ $payroll->karyawan->departemen }}</span>
                                         @endif
-                                        <span class="bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800">{{ $satuanRow }}</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 leading-normal">{{ $satuanRow }}</span>
                                     </div>
                                 </td>
 
@@ -249,6 +249,14 @@
                                                value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
                                                placeholder="0"
                                                oninput="onBonusRowInput(this)">
+                                        @if(($payroll->saldo_deposit ?? 0) > 0)
+                                            <button type="button"
+                                                    onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
+                                                    class="mt-1 text-[9.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                    title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
+                                                <span>&#8629; Saldo: Rp {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                            </button>
+                                        @endif
                                     @else
                                         <span class="font-bold text-emerald-800 text-xs">{{ $payroll->pengembalian_deposit > 0 ? 'Rp ' . number_format($payroll->pengembalian_deposit, 0, ',', '.') : '-' }}</span>
                                     @endif
@@ -292,6 +300,7 @@
                                                     'catatan_bonus_tanggal_merah' => $payroll->catatan_bonus_tanggal_merah ?? '',
                                                     'banyak_birthday_service' => $payroll->banyak_birthday_service ?? 0,
                                                     'pengembalian_deposit' => $payroll->pengembalian_deposit ?? 0,
+                                                    'saldo_deposit' => $payroll->saldo_deposit ?? 0,
                                                     'bonus_dll' => $payroll->bonus_dll ?? 0,
                                                     'update_url' => route('penggajian.bonus.update', $payroll->id),
                                                 ]) }})"
@@ -477,9 +486,16 @@
 
                                 {{-- 5. PENGEMBALIAN DEPOSIT --}}
                                 <div>
-                                    <label style="display: block; font-size: 11px; font-weight: 700; color: #047857; text-transform: uppercase; margin-bottom: 4px;">
-                                        Pengembalian Deposit (Rp)
-                                    </label>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                        <label style="font-size: 11px; font-weight: 700; color: #047857; text-transform: uppercase; margin: 0;">
+                                            Pengembalian Deposit (Rp)
+                                        </label>
+                                        <button type="button" id="btnModalIsiDeposit" onclick="isiModalDepositOtomatis()"
+                                                style="display: none; font-size: 9.5px; font-weight: 800; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 4px; padding: 1px 6px; cursor: pointer;"
+                                                title="Isi otomatis dengan saldo deposit yang tersimpan">
+                                            &#8629; Isi Saldo (Rp <span id="mTextSaldoDeposit">0</span>)
+                                        </button>
+                                    </div>
                                     <input type="text" name="pengembalian_deposit" id="mInputPengembalianDeposit"
                                            class="w-full border border-emerald-300 rounded-lg px-3 py-1.5 text-xs font-black text-emerald-900 text-right focus:outline-none focus:ring-2 focus:ring-emerald-500/20 modal-rupiah-bonus"
                                            oninput="recalcModalBonus()" placeholder="0">
@@ -535,6 +551,24 @@
     <script>
         let currentModalTarifHarian = 0;
         let currentModalSatuanGaji = 'Harian';
+        let currentModalSaldoDeposit = 0;
+
+        function isiDepositOtomatis(btn, saldo) {
+            const row = btn.closest('.payroll-row');
+            if (!row) return;
+            const input = row.querySelector('.batch-pengembalian-deposit');
+            if (!input) return;
+
+            input.value = Math.round(saldo).toLocaleString('id-ID');
+            onBonusRowInput(input);
+        }
+
+        function isiModalDepositOtomatis() {
+            if (currentModalSaldoDeposit > 0) {
+                document.getElementById('mInputPengembalianDeposit').value = Math.round(currentModalSaldoDeposit).toLocaleString('id-ID');
+                recalcModalBonus();
+            }
+        }
 
         function formatRupiahJs(number) {
             return 'Rp ' + Math.round(number).toLocaleString('id-ID');
@@ -818,6 +852,16 @@
             
             let pDeposit = parseFloat(data.pengembalian_deposit) || 0;
             document.getElementById('mInputPengembalianDeposit').value = pDeposit ? Math.round(pDeposit).toLocaleString('id-ID') : '0';
+
+            currentModalSaldoDeposit = parseFloat(data.saldo_deposit) || 0;
+            const btnIsi = document.getElementById('btnModalIsiDeposit');
+            const txtSaldo = document.getElementById('mTextSaldoDeposit');
+            if (currentModalSaldoDeposit > 0) {
+                if (btnIsi) btnIsi.style.display = 'inline-block';
+                if (txtSaldo) txtSaldo.textContent = Math.round(currentModalSaldoDeposit).toLocaleString('id-ID');
+            } else {
+                if (btnIsi) btnIsi.style.display = 'none';
+            }
 
             let bDll = parseFloat(data.bonus_dll) || 0;
             document.getElementById('mInputBonusDll').value = bDll ? Math.round(bDll).toLocaleString('id-ID') : '0';

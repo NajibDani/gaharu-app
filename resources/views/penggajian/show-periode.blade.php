@@ -369,12 +369,12 @@
                                             </span>
                                         @endif
                                     </div>
-                                    <div class="text-[11px] text-slate-500 font-medium mt-1 flex items-center gap-1.5 flex-wrap">
+                                    <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
                                         <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                         @if($payroll->karyawan->departemen)
-                                            <span class="bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-slate-600">{{ $payroll->karyawan->departemen }}</span>
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 leading-normal">{{ $payroll->karyawan->departemen }}</span>
                                         @endif
-                                        <span class="bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800">{{ $badgeSatuanText }}</span>
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 leading-normal">{{ $badgeSatuanText }}</span>
                                     </div>
                                 </td>
 
