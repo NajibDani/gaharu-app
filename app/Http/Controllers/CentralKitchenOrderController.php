@@ -295,6 +295,9 @@ class CentralKitchenOrderController extends Controller
             }
             $gudangId = $gudangOutlet ? $gudangOutlet->id : null;
 
+            $isKejingga = str_contains($custNama, 'kejingga');
+            $statusBayar = $isKejingga ? 'Belum Bayar' : 'Lunas';
+
             $pesanan = Pesanan::create([
                 'kode_pesanan'      => $request->kode_pesanan ?? $kode,
                 'tipe_pesanan'      => 'central_kitchen',
@@ -306,7 +309,7 @@ class CentralKitchenOrderController extends Controller
                 'tax_percentage'    => 0,
                 'tax_service'       => 0,
                 'status_pesanan'    => 'pending',
-                'status_pembayaran' => 'Lunas',
+                'status_pembayaran' => $statusBayar,
                 'created_by'        => auth()->id(),
                 'gudang_id'         => $gudangId,
                 'divisi_id'         => $request->divisi_id,
@@ -638,111 +641,116 @@ class CentralKitchenOrderController extends Controller
     /**
      * Simpan Pembayaran & Upload Bukti Bayar CK Order
      */
-    public function simpanPembayaran(Request $request, $id)
-    {
-        $pesanan = Pesanan::findOrFail($id);
-        
-        $request->validate([
-            'tanggal_bayar' => 'required|date',
-            'jumlah_bayar' => 'required|numeric|min:1',
-            'metode_pembayaran' => 'required|string',
-            'bukti_file' => 'nullable|array',
-            'bukti_file.*' => 'file|image|max:2048'
-        ]);
-
-        if (\App\Models\Journal::isPeriodClosed($request->tanggal_bayar)) {
-            return redirect()->back()->with('error', 'Gagal menyimpan: Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal_bayar)) . ' sudah ditutup buku.')->withInput();
-        }
-
-        $buktiFiles = [];
-        if ($request->hasFile('bukti_file')) {
-            foreach ($request->file('bukti_file') as $file) {
-                $path = $file->store('pembayaran_bukti', 'public');
-                $buktiFiles[] = $path;
-            }
-        }
-    
-        $pembayaran = Pembayaran::create([
-            'pesanan_id' => $pesanan->id,
-            'kategori_pembayaran' => 'penjualan',
-            'tanggal_bayar' => $request->tanggal_bayar,
-            'jumlah_bayar' => $request->jumlah_bayar,
-            'metode_pembayaran' => $request->metode_pembayaran,
-            'catatan' => $request->catatan,
-            'bukti_pembayaran' => $buktiFiles,
-            'created_by' => auth()->id()
-        ]);
-
-        if ($pesanan->total_pesanan > 0) {
-            $totalBayar = $pesanan->pembayaran()->sum('jumlah_bayar');
-            if ($totalBayar >= $pesanan->total_pesanan) {
-                $pesanan->update(['status_pembayaran' => 'Lunas']);
-            } elseif ($totalBayar > 0) {
-                $pesanan->update(['status_pembayaran' => 'DP']);
-            }
-        }
-
-        return back()->with('success', 'Pembayaran berhasil disimpan dan bukti bayar telah di-upload!');
-    }
-
-    /**
-     * Pembayaran Massal / Multi-Nota untuk Central Kitchen
-     */
-    public function pembayaranMassal(Request $request)
-    {
-        $request->validate([
-            'pesanan_ids'       => 'required|array|min:1',
-            'tanggal_bayar'     => 'required|date',
-            'metode_pembayaran' => 'required|string',
-            'bukti_file'        => 'nullable|array',
-            'bukti_file.*'      => 'file|image|max:2048',
-        ]);
-
-        if (\App\Models\Journal::isPeriodClosed($request->tanggal_bayar)) {
-            return redirect()->back()->with('error', 'Gagal memproses pembayaran: Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal_bayar)) . ' sudah ditutup buku.')->withInput();
-        }
-
-        $buktiFiles = [];
-        if ($request->hasFile('bukti_file')) {
-            foreach ($request->file('bukti_file') as $file) {
-                $path = $file->store('pembayaran_bukti', 'public');
-                $buktiFiles[] = $path;
-            }
-        }
-
-        DB::beginTransaction();
-        try {
-            $pesanans = Pesanan::centralKitchen()->whereIn('id', $request->pesanan_ids)->get();
-            $totalBayarSemua = 0;
-            $jumlahNota = 0;
-
-            foreach ($pesanans as $pesanan) {
-                $totalBayarSebelumnya = $pesanan->pembayaran()->sum('jumlah_bayar');
-                $sisaTagihan = max(0, $pesanan->total_pesanan - $totalBayarSebelumnya);
-
-                if ($sisaTagihan > 0) {
-                    $pembayaran = Pembayaran::create([
-                        'pesanan_id'          => $pesanan->id,
-                        'kategori_pembayaran' => 'penjualan',
-                        'tanggal_bayar'       => $request->tanggal_bayar,
-                        'jumlah_bayar'        => $sisaTagihan,
-                        'metode_pembayaran'   => $request->metode_pembayaran,
-                        'catatan'             => $request->catatan ? ($request->catatan . ' (Pelunasan Massal CK)') : 'Pelunasan Massal CK Termin/Periode',
-                        'bukti_pembayaran'    => $buktiFiles,
-                        'created_by'          => auth()->id(),
-                    ]);
-
-                    $pesanan->update(['status_pembayaran' => 'Lunas']);
-                    $totalBayarSemua += $sisaTagihan;
-                    $jumlahNota++;
-                }
-            }
-
-            DB::commit();
-            return back()->with('success', "Pembayaran berhasil! Sebanyak {$jumlahNota} nota CK telah dilunasi dengan total Rp " . number_format($totalBayarSemua, 0, ',', '.'));
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->with('error', 'Gagal memproses pembayaran massal CK: ' . $e->getMessage());
-        }
-    }
+     public function simpanPembayaran(Request $request, $id)
+     {
+         $pesanan = Pesanan::with(['pembayaran', 'details'])->findOrFail($id);
+         
+         $request->validate([
+             'tanggal_bayar'     => 'required|date',
+             'jumlah_bayar'      => 'required|numeric|min:0',
+             'metode_pembayaran' => 'required|string',
+             'bukti_file'        => 'nullable|array',
+             'bukti_file.*'      => 'file|image|max:2048'
+         ]);
+ 
+         if (\App\Models\Journal::isPeriodClosed($request->tanggal_bayar)) {
+             return redirect()->back()->with('error', 'Gagal menyimpan: Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal_bayar)) . ' sudah ditutup buku.')->withInput();
+         }
+ 
+         $buktiFiles = [];
+         if ($request->hasFile('bukti_file')) {
+             foreach ($request->file('bukti_file') as $file) {
+                 $path = $file->store('pembayaran_bukti', 'public');
+                 $buktiFiles[] = $path;
+             }
+         }
+     
+         $pembayaran = Pembayaran::create([
+             'pesanan_id'          => $pesanan->id,
+             'kategori_pembayaran' => 'penjualan',
+             'tanggal_bayar'       => $request->tanggal_bayar,
+             'jumlah_bayar'        => $request->jumlah_bayar,
+             'metode_pembayaran'   => $request->metode_pembayaran,
+             'catatan'             => $request->catatan,
+             'bukti_pembayaran'    => $buktiFiles,
+             'created_by'          => auth()->id()
+         ]);
+ 
+         $totalBayar = $pesanan->pembayaran()->sum('jumlah_bayar');
+         $totalTagihan = $pesanan->total_pesanan > 0 ? (float)$pesanan->total_pesanan : (float)$pesanan->details->sum('subtotal');
+         
+         if ($totalTagihan > 0) {
+             if ($totalBayar >= $totalTagihan) {
+                 $pesanan->update(['status_pembayaran' => 'Lunas']);
+             } elseif ($totalBayar > 0) {
+                 $pesanan->update(['status_pembayaran' => 'DP']);
+             } else {
+                 $pesanan->update(['status_pembayaran' => 'Belum Bayar']);
+             }
+         } else {
+             $pesanan->update(['status_pembayaran' => 'Lunas']);
+         }
+ 
+         return back()->with('success', 'Pembayaran berhasil disimpan dan bukti bayar telah di-upload!');
+     }
+ 
+     /**
+      * Pembayaran Massal / Multi-Nota untuk Central Kitchen
+      */
+     public function pembayaranMassal(Request $request)
+     {
+         $request->validate([
+             'pesanan_ids'       => 'required|array|min:1',
+             'tanggal_bayar'     => 'required|date',
+             'metode_pembayaran' => 'required|string',
+             'bukti_file'        => 'nullable|array',
+             'bukti_file.*'      => 'file|image|max:2048',
+         ]);
+ 
+         if (\App\Models\Journal::isPeriodClosed($request->tanggal_bayar)) {
+             return redirect()->back()->with('error', 'Gagal memproses pembayaran: Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal_bayar)) . ' sudah ditutup buku.')->withInput();
+         }
+ 
+         $buktiFiles = [];
+         if ($request->hasFile('bukti_file')) {
+             foreach ($request->file('bukti_file') as $file) {
+                 $path = $file->store('pembayaran_bukti', 'public');
+                 $buktiFiles[] = $path;
+             }
+         }
+ 
+         DB::beginTransaction();
+         try {
+             $pesanans = Pesanan::centralKitchen()->with(['pembayaran', 'details'])->whereIn('id', $request->pesanan_ids)->get();
+             $totalBayarSemua = 0;
+             $jumlahNota = 0;
+ 
+             foreach ($pesanans as $pesanan) {
+                 $totalBayarSebelumnya = $pesanan->pembayaran->sum('jumlah_bayar');
+                 $totalTagihan = $pesanan->total_pesanan > 0 ? (float)$pesanan->total_pesanan : (float)$pesanan->details->sum('subtotal');
+                 $sisaTagihan = max(0, $totalTagihan - $totalBayarSebelumnya);
+ 
+                 $pembayaran = Pembayaran::create([
+                     'pesanan_id'          => $pesanan->id,
+                     'kategori_pembayaran' => 'penjualan',
+                     'tanggal_bayar'       => $request->tanggal_bayar,
+                     'jumlah_bayar'        => $sisaTagihan,
+                     'metode_pembayaran'   => $request->metode_pembayaran,
+                     'catatan'             => $request->catatan ? ($request->catatan . ' (Pelunasan Massal CK)') : 'Pelunasan Massal CK Termin/Periode',
+                     'bukti_pembayaran'    => $buktiFiles,
+                     'created_by'          => auth()->id(),
+                 ]);
+ 
+                 $pesanan->update(['status_pembayaran' => 'Lunas']);
+                 $totalBayarSemua += $sisaTagihan;
+                 $jumlahNota++;
+             }
+ 
+             DB::commit();
+             return back()->with('success', "Pembayaran berhasil! Sebanyak {$jumlahNota} nota Central Kitchen telah dilunasi dengan total Rp " . number_format($totalBayarSemua, 0, ',', '.'));
+         } catch (\Exception $e) {
+             DB::rollBack();
+             return back()->with('error', 'Gagal memproses pembayaran massal CK: ' . $e->getMessage());
+         }
+     }
 }

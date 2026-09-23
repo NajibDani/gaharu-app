@@ -228,10 +228,25 @@
                     <tbody class="table-custom-body">
                         @forelse($pesanan as $index => $p)
                             @php
-                                $totalNilaiItem = $p->total_harga ?? $p->total_pesanan ?? 0;
-                                $sudahBayarItem = isset($p->pembayaran) ? $p->pembayaran->sum('jumlah_bayar') : 0;
+                                $totalNilaiItem = (float)($p->total_harga ?? $p->total_pesanan ?? 0);
+                                if ($totalNilaiItem <= 0 && $p->details->isNotEmpty()) {
+                                    $totalNilaiItem = (float)$p->details->sum('subtotal');
+                                }
+                                $sudahBayarItem = isset($p->pembayaran) ? (float)$p->pembayaran->sum('jumlah_bayar') : 0;
                                 $sisaTagihanItem = max(0, $totalNilaiItem - $sudahBayarItem);
                                 $isLunasOrBatal = ($p->status_pembayaran == 'Lunas' || in_array(strtolower($p->status_pesanan ?? ''), ['batal', 'dibatalkan']));
+
+                                $orderItemsList = $p->details->map(function($d) {
+                                    return [
+                                        'barang_id'   => $d->produk_id,
+                                        'kode_barang' => $d->produk->kode_barang ?? '-',
+                                        'nama_barang' => $d->produk->nama ?? 'N/A',
+                                        'qty'         => (float)$d->qty,
+                                        'satuan'      => $d->produk->satuan ?? '',
+                                        'harga'       => (float)($d->harga ?? 0),
+                                        'subtotal'    => (float)($d->subtotal ?? 0),
+                                    ];
+                                })->values();
                             @endphp
                             <tr>
                                 <td class="text-center">
@@ -239,9 +254,12 @@
                                            value="{{ $p->id }}" 
                                            data-kode="{{ $p->kode_pesanan }}" 
                                            data-customer="{{ $p->customer->nama ?? '-' }}" 
+                                           data-tanggal="{{ date('d M Y', strtotime($p->tanggal)) }}"
+                                           data-status-produksi="{{ ucfirst($p->status_pesanan) }}"
                                            data-total="{{ $totalNilaiItem }}" 
                                            data-sisa="{{ $sisaTagihanItem }}"
-                                           {{ ($isLunasOrBatal || $sisaTagihanItem <= 0) ? 'disabled' : '' }}>
+                                           data-items="{{ json_encode($orderItemsList) }}"
+                                           {{ $isLunasOrBatal ? 'disabled' : '' }}>
                                 </td>
                                 <td class="text-center fw-semibold text-muted">{{ $pesanan->firstItem() + $index }}</td>
                                 <td class="fw-bold text-dark text-nowrap" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; letter-spacing: -0.2px;">{{ $p->kode_pesanan }}</td>
@@ -251,7 +269,7 @@
                                 <td class="text-nowrap">
                                     @if($p->divisi)
                                         <span class="badge rounded-pill" style="background:#ede9fe;color:#6d28d9;font-size:0.72rem;font-weight:600;">
-                                            <i class="bi bi-layers-half me-1"></i>{{ $p->divisi->nama }}
+                                             <i class="bi bi-layers-half me-1"></i>{{ $p->divisi->nama }}
                                         </span>
                                     @else
                                         <span class="text-muted small">-</span>
@@ -287,7 +305,7 @@
                                     @elseif($p->status_pembayaran == 'DP')
                                         <span class="badge-subtle badge-status-pending">DP</span>
                                     @else
-                                        <span class="badge-subtle badge-status-batal">Belum</span>
+                                        <span class="badge-subtle badge-status-batal">Belum Bayar</span>
                                     @endif
                                 </td>
                                 <td class="text-center text-nowrap">
@@ -632,81 +650,158 @@
 
         {{-- MODAL BAYAR MASSAL CK --}}
         <div class="modal fade text-start" id="modalBulkBayarCk" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered modal-lg">
-                <form action="{{ route('ck-orders.pembayaran-massal') }}" method="POST" enctype="multipart/form-data">
+            <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+                <form action="{{ route('ck-orders.pembayaran-massal') }}" method="POST" enctype="multipart/form-data" class="w-100">
                     @csrf
                     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-                        <div class="modal-header text-white border-0 p-4" style="background-color: #715745;">
-                            <h5 class="modal-title fw-bold d-flex align-items-center gap-2">
-                                <i class="bi bi-wallet2"></i> Pelunasan Massal Multi-Nota (Central Kitchen)
-                            </h5>
+                        <div class="modal-header text-white border-0 p-3 px-4" style="background-color: #715745;">
+                            <div>
+                                <h5 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
+                                    <i class="bi bi-wallet2"></i> Pelunasan Central Kitchen Order (Outlet KeJingga)
+                                </h5>
+                                <small class="text-white-50">Pelunasan multi-nota CKO beserta rincian akumulasi barang yang diminta</small>
+                            </div>
                             <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
                         </div>
-                        <div class="modal-body p-4 bg-white">
-                            <div class="alert alert-info py-2 px-3 small mb-3">
-                                <i class="bi bi-info-circle me-1"></i> Anda memilih <strong id="bulkSelectedCountCk">0</strong> order Central Kitchen untuk dilunasi sekaligus pada akhir bulan/termin. Biaya dihitung murni dari FIFO HPP bahan baku.
+                        <div class="modal-body p-3 p-md-4 bg-white">
+                            {{-- BANNER RINGKASAN --}}
+                            <div class="p-3 rounded-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2" style="background-color: #f8fafc; border: 1px solid #e2e8f0;">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="rounded-circle bg-warning-subtle text-warning d-flex align-items-center justify-content-center" style="width: 42px; height: 42px; font-size: 20px;">
+                                        <i class="bi bi-receipt-cutoff"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold text-dark">
+                                            <span id="bulkSelectedCountCk">0</span> Nota CKO Terpilih
+                                        </div>
+                                        <div class="text-muted small">
+                                            Total <span id="bulkTotalItemsSummary" class="fw-semibold text-dark">0 Jenis Barang</span> (<span id="bulkTotalQtySummary" class="fw-semibold text-dark">0</span> total kuantitas)
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="text-end">
+                                    <span class="text-muted small d-block">Total Pelunasan HPP:</span>
+                                    <h4 class="fw-bold text-success mb-0" id="bulkTotalBayarDisplayCk">Rp 0</h4>
+                                </div>
                             </div>
 
                             <div id="bulkCkHiddenInputs"></div>
 
-                            <div class="table-responsive mb-3" style="max-height: 220px; overflow-y: auto;">
-                                <table class="table table-sm table-bordered align-middle mb-0">
-                                    <thead class="table-light small">
-                                        <tr>
-                                            <th>Kode Order</th>
-                                            <th>Outlet Pemesan</th>
-                                            <th class="text-end">Sisa Tagihan (HPP)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="bulkCkTableBody" class="small">
-                                    </tbody>
-                                    <tfoot>
-                                        <tr class="table-warning fw-bold">
-                                            <td colspan="2" class="text-end">Total Pelunasan HPP:</td>
-                                            <td class="text-end text-success" id="bulkTotalBayarDisplayCk">Rp 0</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
+                            {{-- NAV TABS: RINCIAN NOTA vs REKAP BARANG --}}
+                            <ul class="nav nav-tabs nav-fill mb-3" id="bulkCkTab" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active fw-semibold py-2" id="tab-orders-link" data-bs-toggle="tab" data-bs-target="#tab-orders-content" type="button" role="tab" aria-selected="true">
+                                        <i class="bi bi-receipt me-1"></i> 1. Rincian Nota CKO &amp; Harga (<span id="bulkTabOrderCount">0</span>)
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link fw-semibold py-2" id="tab-items-link" data-bs-toggle="tab" data-bs-target="#tab-items-content" type="button" role="tab" aria-selected="false">
+                                        <i class="bi bi-boxes me-1"></i> 2. Total Barang yang Diminta (<span id="bulkTabItemCount">0</span> Jenis)
+                                    </button>
+                                </li>
+                            </ul>
 
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label fw-semibold small text-secondary">Tanggal Pembayaran</label>
-                                    <input type="date" name="tanggal_bayar" class="form-control" value="{{ date('Y-m-d') }}" required>
-                                    <div class="d-flex gap-1 flex-wrap mt-1">
-                                        <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'ini')">
-                                            <i class="bi bi-calendar-check me-1"></i> Akhir Bulan Ini
-                                        </button>
-                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'depan')">
-                                            <i class="bi bi-calendar-plus me-1"></i> Akhir Bulan Depan
-                                        </button>
+                            <div class="tab-content mb-4" id="bulkCkTabContent">
+                                {{-- TAB 1: TABEL DAFTAR CKO TERPILIH --}}
+                                <div class="tab-pane fade show active" id="tab-orders-content" role="tabpanel">
+                                    <div class="table-responsive rounded-3 border" style="max-height: 260px; overflow-y: auto;">
+                                        <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
+                                            <thead class="table-light text-secondary sticky-top">
+                                                <tr>
+                                                    <th width="40">No</th>
+                                                    <th class="text-start">Kode Order</th>
+                                                    <th>Tanggal Order</th>
+                                                    <th>Outlet Pemesan</th>
+                                                    <th>Status Produksi</th>
+                                                    <th class="text-end" width="130">Total HPP</th>
+                                                    <th class="text-end" width="140">Sisa Pelunasan</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="bulkCkTableBody">
+                                            </tbody>
+                                            <tfoot class="table-light fw-bold sticky-bottom">
+                                                <tr>
+                                                    <td colspan="5" class="text-end text-uppercase">Total Keseluruhan Pelunasan:</td>
+                                                    <td class="text-end" id="bulkTfootTotalHpp">Rp 0</td>
+                                                    <td class="text-end text-success fs-6" id="bulkTfootTotalSisa">Rp 0</td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
                                     </div>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label fw-semibold small text-secondary">Metode Pembayaran</label>
-                                    <select name="metode_pembayaran" class="form-select text-secondary" required>
-                                        <option value="Transfer">Transfer Bank</option>
-                                        <option value="Cash">Cash / Tunai</option>
-                                        <option value="QRIS">QRIS</option>
-                                        <option value="Termin">Termin / Piutang</option>
-                                    </select>
+
+                                {{-- TAB 2: TABEL REKAPITULASI TOTAL BARANG YANG DIMINTA --}}
+                                <div class="tab-pane fade" id="tab-items-content" role="tabpanel">
+                                    <div class="table-responsive rounded-3 border" style="max-height: 260px; overflow-y: auto;">
+                                        <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
+                                            <thead class="table-light text-secondary sticky-top">
+                                                <tr>
+                                                    <th width="40">No</th>
+                                                    <th width="110">Kode Barang</th>
+                                                    <th class="text-start">Nama Bahan Setengah Jadi / Barang</th>
+                                                    <th width="80">Satuan</th>
+                                                    <th width="130" class="text-end">Total Qty Diminta</th>
+                                                    <th class="text-start" width="220">Rincian per Nota CKO</th>
+                                                    <th width="120" class="text-end">Subtotal HPP</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="bulkCkItemsTableBody">
+                                            </tbody>
+                                            <tfoot class="table-light fw-bold sticky-bottom">
+                                                <tr>
+                                                    <td colspan="4" class="text-end text-uppercase">Total Akumulasi Barang:</td>
+                                                    <td class="text-end text-primary" id="bulkTfootTotalQty">0</td>
+                                                    <td class="text-start text-muted small"><span id="bulkTfootItemTypes">0</span> jenis barang</td>
+                                                    <td class="text-end text-success" id="bulkTfootTotalItemHpp">Rp 0</td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold small text-secondary">Catatan Pembayaran</label>
-                                <textarea name="catatan" class="form-control" rows="2" placeholder="Contoh: Pelunasan biaya HPP CK outlet akhir bulan..."></textarea>
-                            </div>
-
-                            <div class="mb-0">
-                                <label class="form-label fw-semibold small text-secondary">Upload Bukti Pembayaran <span class="text-muted">(bisa >1 gambar)</span></label>
-                                <input type="file" name="bukti_file[]" class="form-control" accept="image/*" multiple>
+                            {{-- SEKSI FORM PEMBAYARAN --}}
+                            <div class="card border rounded-3 p-3 bg-light">
+                                <h6 class="fw-bold text-dark small text-uppercase mb-3 d-flex align-items-center gap-2">
+                                    <i class="bi bi-credit-card"></i> Form Pelunasan Pembayaran
+                                </h6>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-secondary">Tanggal Pembayaran <span class="text-danger">*</span></label>
+                                        <input type="date" name="tanggal_bayar" class="form-control rounded-3" value="{{ date('Y-m-d') }}" required>
+                                        <div class="d-flex gap-1 flex-wrap mt-1">
+                                            <button type="button" class="btn btn-xs btn-outline-primary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'ini')">
+                                                <i class="bi bi-calendar-check me-1"></i> Akhir Bulan Ini
+                                            </button>
+                                            <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.72rem; border-radius: 6px;" onclick="setTanggalAkhirBulan(this, 'depan')">
+                                                <i class="bi bi-calendar-plus me-1"></i> Akhir Bulan Depan
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-secondary">Metode Pembayaran <span class="text-danger">*</span></label>
+                                        <select name="metode_pembayaran" class="form-select rounded-3 text-secondary" required>
+                                            <option value="Transfer">Transfer Bank</option>
+                                            <option value="Cash">Cash / Tunai</option>
+                                            <option value="QRIS">QRIS</option>
+                                            <option value="Termin">Termin / Piutang</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-secondary">Catatan Pembayaran</label>
+                                        <textarea name="catatan" class="form-control rounded-3" rows="2" placeholder="Contoh: Pelunasan biaya HPP CK KeJingga periode akhir bulan..."></textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-semibold small text-secondary">Upload Bukti Pembayaran <span class="text-muted">(bisa &gt;1 gambar)</span></label>
+                                        <input type="file" name="bukti_file[]" class="form-control rounded-3" accept="image/*" multiple>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="modal-footer border-0 p-4 pt-0 bg-white">
-                            <button type="button" class="btn btn-light px-4 rounded-3 text-secondary" data-bs-dismiss="modal">Batal</button>
-                            <button type="submit" class="btn btn-success px-4 rounded-3 fw-semibold">
-                                <i class="bi bi-check-circle-fill me-1"></i> Proses Pelunasan Massal
+                        <div class="modal-footer border-0 p-3 px-4 bg-light d-flex justify-content-between align-items-center">
+                            <button type="button" class="btn btn-secondary px-4 rounded-3 fw-semibold" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-success px-4 rounded-3 fw-bold d-inline-flex align-items-center gap-1 shadow-sm">
+                                <i class="bi bi-check-circle-fill"></i> Proses Pelunasan (<span id="bulkSubmitTotalText">Rp 0</span>)
                             </button>
                         </div>
                     </div>
@@ -1268,36 +1363,140 @@
                 modalBulkCk.addEventListener('show.bs.modal', function() {
                     var selected = document.querySelectorAll('.check-ck-order:checked');
                     var containerInputs = document.getElementById('bulkCkHiddenInputs');
-                    var tbody = document.getElementById('bulkCkTableBody');
+                    var tbodyOrders = document.getElementById('bulkCkTableBody');
+                    var tbodyItems = document.getElementById('bulkCkItemsTableBody');
                     var countEl = document.getElementById('bulkSelectedCountCk');
                     var totalEl = document.getElementById('bulkTotalBayarDisplayCk');
+                    var tabOrderCount = document.getElementById('bulkTabOrderCount');
+                    var tabItemCount = document.getElementById('bulkTabItemCount');
+                    var totalItemsSummary = document.getElementById('bulkTotalItemsSummary');
+                    var totalQtySummary = document.getElementById('bulkTotalQtySummary');
+                    var tfootTotalHpp = document.getElementById('bulkTfootTotalHpp');
+                    var tfootTotalSisa = document.getElementById('bulkTfootTotalSisa');
+                    var tfootTotalQty = document.getElementById('bulkTfootTotalQty');
+                    var tfootItemTypes = document.getElementById('bulkTfootItemTypes');
+                    var tfootTotalItemHpp = document.getElementById('bulkTfootTotalItemHpp');
+                    var submitTotalText = document.getElementById('bulkSubmitTotalText');
 
                     containerInputs.innerHTML = '';
-                    tbody.innerHTML = '';
-                    var totalBayar = 0;
+                    tbodyOrders.innerHTML = '';
+                    tbodyItems.innerHTML = '';
 
-                    selected.forEach(function(cb) {
+                    var totalHppKeseluruhan = 0;
+                    var totalSisaKeseluruhan = 0;
+                    var aggregatedItems = {};
+                    var totalQtyKeseluruhan = 0;
+                    var totalItemHppKeseluruhan = 0;
+
+                    selected.forEach(function(cb, index) {
                         var id = cb.value;
                         var kode = cb.getAttribute('data-kode');
                         var customer = cb.getAttribute('data-customer');
+                        var tanggal = cb.getAttribute('data-tanggal') || '-';
+                        var statusProduksi = cb.getAttribute('data-status-produksi') || 'Pending';
+                        var totalHpp = parseFloat(cb.getAttribute('data-total')) || 0;
                         var sisa = parseFloat(cb.getAttribute('data-sisa')) || 0;
-                        totalBayar += sisa;
+                        var items = [];
+                        try {
+                            items = JSON.parse(cb.getAttribute('data-items') || '[]');
+                        } catch(e) {
+                            items = [];
+                        }
 
+                        totalHppKeseluruhan += totalHpp;
+                        totalSisaKeseluruhan += sisa;
+
+                        // Hidden input for form submission
                         var hidden = document.createElement('input');
                         hidden.type = 'hidden';
                         hidden.name = 'pesanan_ids[]';
                         hidden.value = id;
                         containerInputs.appendChild(hidden);
 
-                        var tr = document.createElement('tr');
-                        tr.innerHTML = '<td><strong>#' + kode + '</strong></td>' +
-                                       '<td>' + customer + '</td>' +
-                                       '<td class="text-end text-success fw-semibold">Rp ' + sisa.toLocaleString('id-ID') + '</td>';
-                        tbody.appendChild(tr);
+                        // Render Tab 1: Orders Row
+                        var trOrder = document.createElement('tr');
+                        trOrder.innerHTML = `
+                            <td class="text-muted">${index + 1}</td>
+                            <td class="text-start">
+                                <span class="font-monospace fw-bold text-dark">#${kode}</span>
+                            </td>
+                            <td>${tanggal}</td>
+                            <td><span class="badge bg-light text-dark border">${customer}</span></td>
+                            <td><span class="badge bg-secondary-subtle text-dark">${statusProduksi}</span></td>
+                            <td class="text-end fw-semibold">Rp ${totalHpp.toLocaleString('id-ID')}</td>
+                            <td class="text-end text-success fw-bold">Rp ${sisa.toLocaleString('id-ID')}</td>
+                        `;
+                        tbodyOrders.appendChild(trOrder);
+
+                        // Aggregate items for Tab 2
+                        items.forEach(function(it) {
+                            var key = it.barang_id || (it.kode_barang + '_' + it.nama_barang);
+                            if (!aggregatedItems[key]) {
+                                aggregatedItems[key] = {
+                                    kode_barang: it.kode_barang || '-',
+                                    nama_barang: it.nama_barang || 'N/A',
+                                    satuan: it.satuan || '',
+                                    total_qty: 0,
+                                    total_subtotal: 0,
+                                    orders: []
+                                };
+                            }
+                            var q = parseFloat(it.qty) || 0;
+                            var sub = parseFloat(it.subtotal) || 0;
+                            aggregatedItems[key].total_qty += q;
+                            aggregatedItems[key].total_subtotal += sub;
+                            aggregatedItems[key].orders.push({
+                                kode: kode,
+                                qty: q,
+                                satuan: it.satuan || ''
+                            });
+
+                            totalQtyKeseluruhan += q;
+                            totalItemHppKeseluruhan += sub;
+                        });
                     });
 
-                    countEl.textContent = selected.length;
-                    totalEl.textContent = 'Rp ' + totalBayar.toLocaleString('id-ID');
+                    // Render Tab 2: Items Rows
+                    var itemKeys = Object.keys(aggregatedItems);
+                    var itemIndex = 1;
+                    itemKeys.forEach(function(k) {
+                        var it = aggregatedItems[k];
+                        var formattedQty = (it.total_qty % 1 === 0) ? it.total_qty.toLocaleString('id-ID') : it.total_qty.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        
+                        var breakdownBadges = it.orders.map(function(o) {
+                            var qFmt = (o.qty % 1 === 0) ? o.qty.toLocaleString('id-ID') : o.qty.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            return `<span class="badge bg-white text-dark border me-1 mb-1 font-monospace" style="font-size: 11px;">#${o.kode}: <strong>${qFmt} ${o.satuan}</strong></span>`;
+                        }).join('');
+
+                        var trItem = document.createElement('tr');
+                        trItem.innerHTML = `
+                            <td class="text-muted">${itemIndex++}</td>
+                            <td class="font-monospace fw-semibold text-secondary">${it.kode_barang}</td>
+                            <td class="text-start fw-bold text-dark">${it.nama_barang}</td>
+                            <td><span class="badge bg-light text-secondary border">${it.satuan}</span></td>
+                            <td class="text-end fw-bold text-primary fs-6">${formattedQty} ${it.satuan}</td>
+                            <td class="text-start">${breakdownBadges}</td>
+                            <td class="text-end fw-semibold text-dark">${it.total_subtotal > 0 ? 'Rp ' + it.total_subtotal.toLocaleString('id-ID') : '-'}</td>
+                        `;
+                        tbodyItems.appendChild(trItem);
+                    });
+
+                    // Update Summaries & Displays
+                    var totalQtyFmt = (totalQtyKeseluruhan % 1 === 0) ? totalQtyKeseluruhan.toLocaleString('id-ID') : totalQtyKeseluruhan.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    
+                    if (countEl) countEl.textContent = selected.length;
+                    if (tabOrderCount) tabOrderCount.textContent = selected.length;
+                    if (tabItemCount) tabItemCount.textContent = itemKeys.length;
+                    if (totalItemsSummary) totalItemsSummary.textContent = itemKeys.length + ' Jenis Barang';
+                    if (totalQtySummary) totalQtySummary.textContent = totalQtyFmt;
+                    if (totalEl) totalEl.textContent = 'Rp ' + totalSisaKeseluruhan.toLocaleString('id-ID');
+                    
+                    if (tfootTotalHpp) tfootTotalHpp.textContent = 'Rp ' + totalHppKeseluruhan.toLocaleString('id-ID');
+                    if (tfootTotalSisa) tfootTotalSisa.textContent = 'Rp ' + totalSisaKeseluruhan.toLocaleString('id-ID');
+                    if (tfootTotalQty) tfootTotalQty.textContent = totalQtyFmt;
+                    if (tfootItemTypes) tfootItemTypes.textContent = itemKeys.length;
+                    if (tfootTotalItemHpp) tfootTotalItemHpp.textContent = totalItemHppKeseluruhan > 0 ? 'Rp ' + totalItemHppKeseluruhan.toLocaleString('id-ID') : 'Rp ' + totalHppKeseluruhan.toLocaleString('id-ID');
+                    if (submitTotalText) submitTotalText.textContent = 'Rp ' + totalSisaKeseluruhan.toLocaleString('id-ID');
                 });
             }
         });

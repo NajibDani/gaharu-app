@@ -309,11 +309,12 @@ class FifoService
 
     /**
      * Ambil harga terakhir bahan dengan prioritas:
-     * 1. Harga per qty batch terakhir di gudang spesifik
-     * 2. Harga per qty batch terakhir secara global (semua gudang)
-     * 3. Harga per qty detail pembelian terakhir (pembelian_detail)
-     * 4. Formulasi resep jika barang merupakan Bahan Setengah Jadi / memiliki resep
-     * 5. HPP referensi master barang
+     * 1. Harga per qty batch terakhir di gudang spesifik yang memiliki harga > 0
+     * 2. Harga per qty batch terakhir di Gudang Utama (sebagai referensi harga pusat)
+     * 3. Harga per qty detail pembelian terakhir (pembelian_detail ke Gudang Utama)
+     * 4. Harga per qty batch terakhir secara global (semua gudang)
+     * 5. Formulasi resep jika barang merupakan Bahan Setengah Jadi / memiliki resep
+     * 6. HPP referensi / harga beli master barang
      */
     public function getHargaTerakhirBahan(int $barangId, ?int $gudangId = null, array $visited = []): float
     {
@@ -347,19 +348,29 @@ class FifoService
             }
         }
 
-        // 2. Cek batch terakhir secara global yang memiliki harga > 0
-        $latestBatchGlobal = DB::table('stok_gudang_batch')
-            ->where('barang_id', $barangId)
-            ->where('harga_per_qty', '>', 0)
-            ->latest('id')
-            ->value('harga_per_qty');
+        // 2. Cek batch terakhir di GUDANG UTAMA sebagai harga referensi pusat (tanpa mengubah stoknya)
+        $gudangUtama = DB::table('master_gudang')
+            ->where(function($q) {
+                $q->where('nama', 'like', '%Gudang Utama%')
+                  ->orWhere('kategori', 'Utama');
+            })
+            ->first();
 
-        if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
-            $res = (float) $latestBatchGlobal;
-            if (count($visited) === 1) {
-                self::$hargaTerakhirCache[$cacheKey] = $res;
+        if ($gudangUtama && (!$gudangId || $gudangId != $gudangUtama->id)) {
+            $latestUtamaBatch = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangUtama->id)
+                ->where('barang_id', $barangId)
+                ->where('harga_per_qty', '>', 0)
+                ->latest('id')
+                ->value('harga_per_qty');
+
+            if ($latestUtamaBatch && floatval($latestUtamaBatch) > 0) {
+                $res = (float) $latestUtamaBatch;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
             }
-            return $res;
         }
 
         // 3. Cek detail pembelian terakhir pada tabel pembelian_detail
@@ -379,7 +390,22 @@ class FifoService
             return $res;
         }
 
-        // 4. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
+        // 4. Cek batch terakhir secara global (semua gudang) yang memiliki harga > 0
+        $latestBatchGlobal = DB::table('stok_gudang_batch')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->latest('id')
+            ->value('harga_per_qty');
+
+        if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
+            $res = (float) $latestBatchGlobal;
+            if (count($visited) === 1) {
+                self::$hargaTerakhirCache[$cacheKey] = $res;
+            }
+            return $res;
+        }
+
+        // 5. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
         $barang = DB::table('master_barang')->where('id', $barangId)->first();
         if ($barang) {
             $resep = null;
@@ -409,9 +435,16 @@ class FifoService
                 }
             }
 
-            // 5. Fallback ke HPP referensi master barang
+            // 6. Fallback ke HPP referensi master barang / harga beli
             if ($barang->hpp_referensi && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
+            }
+            if ($barang->harga_beli && floatval($barang->harga_beli) > 0) {
+                $res = (float) $barang->harga_beli;
                 if (count($visited) === 1) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
