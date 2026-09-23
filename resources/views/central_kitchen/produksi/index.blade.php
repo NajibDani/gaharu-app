@@ -578,38 +578,53 @@
 
                                                                 {{-- ALERT PERINGATAN: BAHAN BAKU KURANG --}}
                                                                 @if(!($wo->is_bahan_sufficient ?? true) && !empty($wo->defisit_bahan))
-                                                                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
-                                                                        <i class="bi bi-exclamation-triangle-fill fs-5 text-warning mt-1 flex-shrink-0"></i>
-                                                                        <div class="flex-grow-1">
-                                                                            <strong class="d-block mb-1">Perhatian - Bahan Baku di Central Kitchen Kurang:</strong>
-                                                                            <span>Stok bahan baku di Gudang Central Kitchen belum mencukupi untuk memenuhi kebutuhan produksi WO ini:</span>
-                                                                            <ul class="mb-2 mt-1 ps-3">
-                                                                                @foreach($wo->defisit_bahan as $def)
-                                                                                    <li>{{ $def['nama'] }}: Tersedia <strong>{{ number_format($def['stok'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ number_format($def['butuh'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ number_format($def['kurang'], 0, ',', '.') }} {{ $def['satuan'] }}</span>)</li>
-                                                                                @endforeach
-                                                                            </ul>
-                                                                            <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                                                                                <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold" onclick="if(confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')) document.getElementById('formMintaBahanCk{{ $wo->id }}').submit();">
-                                                                                    <i class="bi bi-box-arrow-right me-1"></i> Minta Bahan ke Gudang Utama
-                                                                                </button>
+                                                                    <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
+                                                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                                                            <div class="d-flex align-items-center gap-2">
+                                                                                <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0"></i>
+                                                                                <div>
+                                                                                    <strong class="text-dark d-block">Bahan Baku di Central Kitchen Kurang ({{ count($wo->defisit_bahan) }} Bahan)</strong>
+                                                                                    <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk memenuhi kebutuhan produksi WO ini.</span>
+                                                                                </div>
                                                                             </div>
-
-                                                                            @if($isSuperAdmin)
-                                                                                <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
-                                                                                    <input class="form-check-input check-override-stok" type="checkbox" name="override_stok" value="1" id="overrideStokWo{{ $wo->id }}" data-wo-id="{{ $wo->id }}" data-has-missing-resep="{{ ($wo->has_missing_resep ?? false) ? '1' : '0' }}">
-                                                                                    <label class="form-check-label fw-bold text-dark small" for="overrideStokWo{{ $wo->id }}">
-                                                                                        <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
-                                                                                    </label>
-                                                                                    <div class="text-muted mt-0" style="font-size: 11px;">
-                                                                                        Centang opsi ini jika fisik bahan ada di dapur namun belum selesai di-stock opname pada sistem. HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.
-                                                                                    </div>
-                                                                                </div>
-                                                                            @else
-                                                                                <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
-                                                                                    <i class="bi bi-info-circle me-1"></i> Jika stok fisik ada namun belum selesai stock opname, hubungi <strong>Super Admin</strong> untuk menyetujui produksi dengan override stok.
-                                                                                </div>
-                                                                            @endif
+                                                                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitWo{{ $wo->id }}" aria-expanded="false" aria-controls="collapseDefisitWo{{ $wo->id }}">
+                                                                                <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang ({{ count($wo->defisit_bahan) }})
+                                                                            </button>
                                                                         </div>
+
+                                                                        {{-- DAFTAR BAHAN KURANG (COLLAPSIBLE) --}}
+                                                                        <div class="collapse mt-2 pt-2 border-top border-warning-subtle" id="collapseDefisitWo{{ $wo->id }}">
+                                                                            <span class="d-block text-muted mb-1 fw-semibold" style="font-size: 11px;">Rincian Bahan Baku yang Kurang:</span>
+                                                                            <div class="bg-white p-2.5 rounded border border-warning-subtle" style="max-height: 180px; overflow-y: auto;">
+                                                                                <ul class="mb-0 ps-3">
+                                                                                    @foreach($wo->defisit_bahan as $def)
+                                                                                        <li class="mb-1">{{ $def['nama'] }}: Tersedia <strong>{{ number_format($def['stok'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ number_format($def['butuh'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ number_format($def['kurang'], 0, ',', '.') }} {{ $def['satuan'] }}</span>)</li>
+                                                                                    @endforeach
+                                                                                </ul>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div class="d-flex flex-wrap align-items-center gap-2 mt-2 pt-2 border-top border-warning-subtle">
+                                                                            <button type="button" class="btn btn-sm btn-outline-warning text-dark fw-bold" onclick="if(confirm('Minta bahan baku dari Gudang Utama untuk WO ini?')) document.getElementById('formMintaBahanCk{{ $wo->id }}').submit();">
+                                                                                <i class="bi bi-box-arrow-right me-1"></i> Minta Bahan ke Gudang Utama
+                                                                            </button>
+                                                                        </div>
+
+                                                                        @if($isSuperAdmin)
+                                                                            <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
+                                                                                <input class="form-check-input check-override-stok" type="checkbox" name="override_stok" value="1" id="overrideStokWo{{ $wo->id }}" data-wo-id="{{ $wo->id }}" data-has-missing-resep="{{ ($wo->has_missing_resep ?? false) ? '1' : '0' }}">
+                                                                                <label class="form-check-label fw-bold text-dark small" for="overrideStokWo{{ $wo->id }}">
+                                                                                    <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
+                                                                                </label>
+                                                                                <div class="text-muted mt-0" style="font-size: 11px;">
+                                                                                    Centang opsi ini jika fisik bahan ada di dapur namun belum selesai di-stock opname pada sistem. HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.
+                                                                                </div>
+                                                                            </div>
+                                                                        @else
+                                                                            <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                                                                                <i class="bi bi-info-circle me-1"></i> Jika stok fisik ada namun belum selesai stock opname, hubungi <strong>Super Admin</strong> untuk menyetujui produksi dengan override stok.
+                                                                            </div>
+                                                                        @endif
                                                                     </div>
                                                                 @endif
 
@@ -1407,29 +1422,45 @@
                                                             @endif
 
                                                             @if(strtolower($prod->status_produksi) == 'draft' && isset($prod->is_bahan_sufficient) && !$prod->is_bahan_sufficient && !empty($prod->defisit_bahan))
-                                                                <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                                                                    <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1 flex-shrink-0"></i>
-                                                                    <div class="flex-grow-1">
-                                                                        <strong class="d-block mb-1">Perhatian Ketersediaan Bahan Baku di Gudang Central Kitchen:</strong>
-                                                                        <ul class="mb-2 ps-3">
-                                                                            @foreach($prod->defisit_bahan as $def)
-                                                                                <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
-                                                                            @endforeach
-                                                                        </ul>
-                                                                        @if($isSuperAdmin)
-                                                                            <div class="form-check pt-2 border-top border-warning-subtle">
-                                                                                <input class="form-check-input check-override-draft" type="checkbox" name="override_stok" value="1" id="overrideDraft{{ $prod->id }}" data-prod-id="{{ $prod->id }}" data-has-missing-resep="{{ ($prod->has_missing_resep ?? false) ? '1' : '0' }}" form="formApproveProd{{ $prod->id }}">
-                                                                                <label class="form-check-label fw-bold text-dark small" for="overrideDraft{{ $prod->id }}">
-                                                                                    <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
-                                                                                </label>
-                                                                                <div class="text-muted" style="font-size: 11px;">HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.</div>
+                                                                <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
+                                                                    <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                                                        <div class="d-flex align-items-center gap-2">
+                                                                            <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0"></i>
+                                                                            <div>
+                                                                                <strong class="text-dark d-block">Bahan Baku Central Kitchen Kurang ({{ count($prod->defisit_bahan) }} Bahan)</strong>
+                                                                                <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk pesanan produksi ini.</span>
                                                                             </div>
-                                                                        @else
-                                                                            <div class="pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
-                                                                                <i class="bi bi-info-circle me-1"></i> Hubungi <strong>Super Admin</strong> untuk menyetujui produksi jika stok fisik ada namun belum opname di sistem.
-                                                                            </div>
-                                                                        @endif
+                                                                        </div>
+                                                                        <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitProd{{ $prod->id }}" aria-expanded="false" aria-controls="collapseDefisitProd{{ $prod->id }}">
+                                                                            <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang ({{ count($prod->defisit_bahan) }})
+                                                                        </button>
                                                                     </div>
+
+                                                                    {{-- DAFTAR BAHAN KURANG (COLLAPSIBLE) --}}
+                                                                    <div class="collapse mt-2 pt-2 border-top border-warning-subtle" id="collapseDefisitProd{{ $prod->id }}">
+                                                                        <span class="d-block text-muted mb-1 fw-semibold" style="font-size: 11px;">Rincian Bahan Baku yang Kurang:</span>
+                                                                        <div class="bg-white p-2.5 rounded border border-warning-subtle mb-2" style="max-height: 180px; overflow-y: auto;">
+                                                                            <ul class="mb-0 ps-3">
+                                                                                @foreach($prod->defisit_bahan as $def)
+                                                                                    <li class="mb-1">{{ $def['nama'] }}: Tersedia <strong>{{ number_format($def['stok'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ number_format($def['butuh'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ number_format($def['kurang'], 0, ',', '.') }} {{ $def['satuan'] }}</span>)</li>
+                                                                                @endforeach
+                                                                            </ul>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    @if($isSuperAdmin)
+                                                                        <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
+                                                                            <input class="form-check-input check-override-draft" type="checkbox" name="override_stok" value="1" id="overrideDraft{{ $prod->id }}" data-prod-id="{{ $prod->id }}" data-has-missing-resep="{{ ($prod->has_missing_resep ?? false) ? '1' : '0' }}" form="formApproveProd{{ $prod->id }}">
+                                                                            <label class="form-check-label fw-bold text-dark small" for="overrideDraft{{ $prod->id }}">
+                                                                                <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
+                                                                            </label>
+                                                                            <div class="text-muted" style="font-size: 11px;">HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.</div>
+                                                                        </div>
+                                                                    @else
+                                                                        <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                                                                            <i class="bi bi-info-circle me-1"></i> Hubungi <strong>Super Admin</strong> untuk menyetujui produksi jika stok fisik ada namun belum opname di sistem.
+                                                                        </div>
+                                                                    @endif
                                                                 </div>
                                                             @endif
 
@@ -2135,9 +2166,10 @@
             // Render Alert Defisit
             const isSuperAdminGlobal = {{ $isSuperAdmin ? 'true' : 'false' }};
             if (hasDefisit) {
+                const totalDefisitCount = Object.keys(defisitBahanMap).length;
                 let listHtml = '<ul class="mb-0 ps-3">';
                 Object.values(defisitBahanMap).forEach(def => {
-                    listHtml += `<li>${def.nama}: Tersedia <strong>${def.stok.toLocaleString('id-ID')} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh.toLocaleString('id-ID')} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang.toLocaleString('id-ID')} ${def.satuan}</span>)</li>`;
+                    listHtml += `<li class="mb-1">${def.nama}: Tersedia <strong>${def.stok.toLocaleString('id-ID')} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh.toLocaleString('id-ID')} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang.toLocaleString('id-ID')} ${def.satuan}</span>)</li>`;
                 });
                 listHtml += '</ul>';
 
@@ -2161,13 +2193,26 @@
                 }
 
                 alertsHtml += `
-                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1 flex-shrink-0"></i>
-                        <div class="flex-grow-1">
-                            <strong class="d-block mb-1">Perhatian - Bahan Baku di Central Kitchen Kurang:</strong>
-                            ${listHtml}
-                            ${overrideSection}
+                    <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
+                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0"></i>
+                                <div>
+                                    <strong class="text-dark d-block">Bahan Baku Central Kitchen Kurang (${totalDefisitCount} Bahan)</strong>
+                                    <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk total kebutuhan batch ini.</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitBatchCk" aria-expanded="false" aria-controls="collapseDefisitBatchCk">
+                                <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang (${totalDefisitCount})
+                            </button>
                         </div>
+                        <div class="collapse mt-2 pt-2 border-top border-warning-subtle" id="collapseDefisitBatchCk">
+                            <span class="d-block text-muted mb-1 fw-semibold" style="font-size: 11px;">Rincian Bahan Baku yang Kurang:</span>
+                            <div class="bg-white p-2.5 rounded border border-warning-subtle mb-2" style="max-height: 180px; overflow-y: auto;">
+                                ${listHtml}
+                            </div>
+                        </div>
+                        ${overrideSection}
                     </div>
                 `;
             }

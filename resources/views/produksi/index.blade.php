@@ -480,20 +480,35 @@
 
                                                             <div class="modal-body p-4">
                                                                 @if(!$wo->is_bahan_sufficient && !empty($wo->defisit_bahan))
-                                                                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                                                                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
-                                                                        <div>
-                                                                            <strong>Perhatian Ketersediaan Bahan Baku di Gudang B2B:</strong>
-                                                                            <ul class="mb-0 ps-3">
-                                                                                @foreach($wo->defisit_bahan as $def)
-                                                                                    <li>{{ $def['nama'] }}: Tersedia <strong>{{ $def['stok'] }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ $def['butuh'] }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ $def['kurang'] }} {{ $def['satuan'] }}</span>)</li>
-                                                                                @endforeach
-                                                                            </ul>
+                                                                    <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
+                                                                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                                                                            <div class="d-flex align-items-center gap-2">
+                                                                                <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0"></i>
+                                                                                <div>
+                                                                                    <strong class="text-dark d-block">Bahan Baku Gudang B2B Kurang ({{ count($wo->defisit_bahan) }} Bahan)</strong>
+                                                                                    <span class="text-muted" style="font-size: 11.5px;">Stok bahan baku belum mencukupi untuk kebutuhan WO ini.</span>
+                                                                                </div>
+                                                                            </div>
+                                                                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitWoCk{{ $wo->id }}" aria-expanded="false" aria-controls="collapseDefisitWoCk{{ $wo->id }}">
+                                                                                <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang ({{ count($wo->defisit_bahan) }})
+                                                                            </button>
+                                                                        </div>
+
+                                                                        {{-- DAFTAR BAHAN KURANG (COLLAPSIBLE) --}}
+                                                                        <div class="collapse mt-2 pt-2 border-top border-warning-subtle" id="collapseDefisitWoCk{{ $wo->id }}">
+                                                                            <span class="d-block text-muted mb-1 fw-semibold" style="font-size: 11px;">Rincian Bahan Baku yang Kurang:</span>
+                                                                            <div class="bg-white p-2.5 rounded border border-warning-subtle" style="max-height: 180px; overflow-y: auto;">
+                                                                                <ul class="mb-0 ps-3">
+                                                                                    @foreach($wo->defisit_bahan as $def)
+                                                                                        <li class="mb-1">{{ $def['nama'] }}: Tersedia <strong>{{ number_format($def['stok'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> / Butuh <strong>{{ number_format($def['butuh'], 0, ',', '.') }} {{ $def['satuan'] }}</strong> (Kurang <span class="text-danger fw-bold">{{ number_format($def['kurang'], 0, ',', '.') }} {{ $def['satuan'] }}</span>)</li>
+                                                                                    @endforeach
+                                                                                </ul>
+                                                                            </div>
                                                                         </div>
                                                                     </div>
                                                                 @else
-                                                                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2 rounded-3 mb-3 small">
-                                                                        <i class="bi bi-check-circle-fill fs-6 text-success"></i>
+                                                                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                                                                        <i class="bi bi-check-circle-fill fs-5 text-success"></i>
                                                                         <span><strong>Bahan Baku Siap:</strong> Stok bahan baku di Gudang B2B mencukupi seluruh kebutuhan resep. Anda dapat langsung memproses produksi.</span>
                                                                     </div>
                                                                 @endif
@@ -1186,24 +1201,38 @@
 
             // Render Alert Defisit
             if (hasDefisit) {
+                const totalDefisitCount = Object.keys(defisitBahanMap).length;
                 let listHtml = '<ul class="mb-0 ps-3">';
                 Object.values(defisitBahanMap).forEach(def => {
-                    listHtml += `<li>${def.nama}: Tersedia <strong>${def.stok} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang} ${def.satuan}</span>)</li>`;
+                    listHtml += `<li class="mb-1">${def.nama}: Tersedia <strong>${def.stok.toLocaleString('id-ID')} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh.toLocaleString('id-ID')} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang.toLocaleString('id-ID')} ${def.satuan}</span>)</li>`;
                 });
                 listHtml += '</ul>';
                 alertDiv.innerHTML = `
-                    <div class="alert alert-warning border-warning d-flex align-items-start gap-2 p-2 rounded-3 mb-3 small">
-                        <i class="bi bi-exclamation-triangle-fill fs-6 text-warning mt-1"></i>
-                        <div>
-                            <strong>Perhatian Aggregat Ketersediaan Bahan Baku di Gudang Cold Kitchen:</strong>
-                            ${listHtml}
+                    <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
+                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0"></i>
+                                <div>
+                                    <strong class="text-dark d-block">Bahan Baku Gudang Cold Kitchen Kurang (${totalDefisitCount} Bahan)</strong>
+                                    <span class="text-muted" style="font-size: 11.5px;">Stok di Gudang CK belum mencukupi untuk total kebutuhan batch ini.</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-warning text-dark fw-bold px-2.5 py-1" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDefisitBatchCkCold" aria-expanded="false" aria-controls="collapseDefisitBatchCkCold">
+                                <i class="bi bi-eye me-1"></i> Lihat Bahan Kurang (${totalDefisitCount})
+                            </button>
+                        </div>
+                        <div class="collapse mt-2 pt-2 border-top border-warning-subtle" id="collapseDefisitBatchCkCold">
+                            <span class="d-block text-muted mb-1 fw-semibold" style="font-size: 11px;">Rincian Bahan Baku yang Kurang:</span>
+                            <div class="bg-white p-2.5 rounded border border-warning-subtle mb-2" style="max-height: 180px; overflow-y: auto;">
+                                ${listHtml}
+                            </div>
                         </div>
                     </div>
                 `;
             } else {
                 alertDiv.innerHTML = `
-                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2 rounded-3 mb-3 small">
-                        <i class="bi bi-check-circle-fill fs-6 text-success"></i>
+                    <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
+                        <i class="bi bi-check-circle-fill fs-5 text-success"></i>
                         <span><strong>Bahan Baku Siap:</strong> Stok bahan baku di Gudang Cold Kitchen mencukupi seluruh kebutuhan gabungan Work Order terpilih.</span>
                     </div>
                 `;

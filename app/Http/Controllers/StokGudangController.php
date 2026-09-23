@@ -279,12 +279,6 @@ class StokGudangController extends Controller
         // Auto-clean mutasi orphan untuk barang ini sebelum perhitungan mutasi
         self::autoCleanOrphanMutations($barangId);
 
-        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
-        $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
-        $satuanBeliDefault = $barang ? ($barang->satuan_pembelian ?: $satuanStok) : $satuanStok;
-        $konversiBarang = $barang ? (float)($barang->konversi_pembelian ?: 1.0) : 1.0;
-        if ($konversiBarang <= 0) $konversiBarang = 1.0;
-
         // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
         MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
 
@@ -293,6 +287,12 @@ class StokGudangController extends Controller
 
         // Rekonsiliasi ringkasan stok gudang agar 100% selaras dengan batch aktif & transaksi stok
         \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);
+
+        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
+        $satuanBeliDefault = $barang ? ($barang->satuan_pembelian ?: $satuanStok) : $satuanStok;
+        $konversiBarang = $barang ? (float)($barang->konversi_pembelian ?: 1.0) : 1.0;
+        if ($konversiBarang <= 0) $konversiBarang = 1.0;
 
         $saQty = 0;
         $saNilai = 0;
