@@ -61,6 +61,7 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            width: 100%;
         }
 
         /* Top Action Bar */
@@ -99,6 +100,7 @@
         .btn-action {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 6px;
             padding: 8px 16px;
             border-radius: 10px;
@@ -109,13 +111,14 @@
             border: none;
             transition: all 0.2s ease;
             box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            user-select: none;
         }
 
         .btn-image {
             background-color: {{ $primaryColor }};
             color: #ffffff;
         }
-        .btn-image:hover {
+        .btn-image:hover, .btn-image:active {
             background-color: {{ $primaryDark }};
             transform: translateY(-1px);
         }
@@ -124,7 +127,7 @@
             background-color: #dc2626;
             color: #ffffff;
         }
-        .btn-pdf:hover {
+        .btn-pdf:hover, .btn-pdf:active {
             background-color: #b91c1c;
             transform: translateY(-1px);
         }
@@ -134,7 +137,7 @@
             color: #334155;
             border: 1.5px solid #cbd5e1;
         }
-        .btn-print:hover {
+        .btn-print:hover, .btn-print:active {
             background-color: #f8fafc;
         }
 
@@ -148,17 +151,25 @@
             background: #e2e8f0;
             padding: 4px;
             border-radius: 12px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .period-tabs::-webkit-scrollbar {
+            display: none;
         }
         .period-tab-item {
             flex: 1;
             text-align: center;
-            padding: 6px 12px;
+            padding: 7px 12px;
             font-size: 12px;
             font-weight: 800;
             color: #475569;
             text-decoration: none;
             border-radius: 8px;
             transition: all 0.15s;
+            white-space: nowrap;
+            min-width: max-content;
         }
         .period-tab-item.active {
             background: #ffffff;
@@ -237,16 +248,20 @@
         .info-row {
             display: flex;
             justify-content: space-between;
-            padding: 2px 0;
+            align-items: baseline;
+            gap: 10px;
+            padding: 3px 0;
         }
         .info-label {
             color: #64748b;
             font-weight: 600;
+            flex-shrink: 0;
         }
         .info-value {
             color: #0f172a;
             font-weight: 800;
             text-align: right;
+            word-break: break-word;
         }
 
         /* Breakdown Grid (Penerimaan vs Potongan) */
@@ -341,6 +356,11 @@
             flex-wrap: wrap;
         }
 
+        .thp-left {
+            flex: 1;
+            min-width: 200px;
+        }
+
         .thp-left .thp-title {
             font-size: 12px;
             font-weight: 800;
@@ -354,7 +374,7 @@
             margin-top: 4px;
             opacity: 0.85;
             font-style: italic;
-            max-width: 480px;
+            line-height: 1.4;
         }
 
         .thp-right .thp-amount {
@@ -376,28 +396,51 @@
             font-weight: 800;
             color: #9a3412;
             text-transform: uppercase;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
+        .late-scroll-hint {
+            display: none;
+            font-size: 10px;
+            color: #b45309;
+            font-weight: 600;
+            margin-bottom: 8px;
+            align-items: center;
+            gap: 4px;
+        }
+        .late-tbl-scroll {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 8px;
+            border: 1px solid #fed7aa;
+            background: #ffffff;
+        }
         .late-tbl {
             width: 100%;
+            min-width: 500px;
             border-collapse: collapse;
             font-size: 11px;
         }
         .late-tbl th {
             text-align: left;
-            padding: 5px 8px;
+            padding: 7px 10px;
             color: #7c2d12;
             font-weight: 800;
             border-bottom: 1px solid #fdba74;
             background: #ffedd5;
+            white-space: nowrap;
         }
         .late-tbl td {
-            padding: 5px 8px;
-            border-bottom: 1px solid #fed7aa;
+            padding: 7px 10px;
+            border-bottom: 1px solid #fef3c7;
             color: #431407;
+            white-space: nowrap;
+        }
+        .late-tbl tr:last-child td {
+            border-bottom: none;
         }
 
         /* Slip Footer Signatures */
@@ -435,7 +478,7 @@
             align-items: center;
             justify-content: center;
             gap: 4px;
-            margin: 12px 0 6px 0;
+            margin: 10px 0 6px 0;
             padding: 4px 10px;
             border-radius: 6px;
             font-size: 10.5px;
@@ -463,38 +506,198 @@
             background: #0f172a;
             color: #ffffff;
             padding: 10px 20px;
-            border-radius: 10px;
-            font-size: 13px;
+            border-radius: 12px;
+            font-size: 12.5px;
             font-weight: 700;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.35);
             display: none;
             z-index: 999999;
             align-items: center;
             gap: 8px;
+            width: 90%;
+            max-width: 400px;
+            justify-content: center;
+            text-align: center;
         }
 
+        /* ========================================================================= */
+        /* MOBILE / HANDPHONE RESPONSIVE ADAPTATIONS (max-width: 680px) */
+        /* ========================================================================= */
         @media (max-width: 680px) {
+            .public-wrapper {
+                padding: 12px 8px 48px 8px;
+            }
+
+            .top-action-bar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                margin-bottom: 12px;
+            }
+
+            .brand-badge {
+                width: 100%;
+                justify-content: center;
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+
+            .btn-group-actions {
+                width: 100%;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .btn-action.btn-image {
+                width: 100%;
+                padding: 12px 16px;
+                font-size: 13.5px;
+                border-radius: 12px;
+                box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+            }
+
+            .btn-action.btn-pdf,
+            .btn-action.btn-print {
+                flex: 1;
+                padding: 9px 12px;
+                font-size: 12px;
+                border-radius: 10px;
+            }
+
+            .period-tabs {
+                margin-bottom: 10px;
+                padding: 3px;
+                border-radius: 10px;
+            }
+            .period-tab-item {
+                font-size: 11.5px;
+                padding: 6px 10px;
+            }
+
+            .slip-card {
+                border-radius: 14px;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+            }
+
+            .slip-header {
+                padding: 16px 16px;
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px;
+            }
+
+            .slip-header-brand h1 {
+                font-size: 20px;
+            }
+            .slip-header-brand p {
+                font-size: 10px;
+                letter-spacing: 0.5px;
+            }
+
+            .slip-header-badge {
+                padding: 5px 10px;
+                border-radius: 8px;
+            }
+            .slip-header-badge .periode-title {
+                font-size: 11.5px;
+            }
+            .slip-header-badge .outlet-title {
+                font-size: 10px;
+            }
+
+            .employee-info-box {
+                grid-template-columns: 1fr;
+                padding: 12px 16px;
+                gap: 4px;
+                font-size: 11.5px;
+            }
+            .info-row {
+                padding: 2px 0;
+            }
+            .info-label {
+                font-size: 11px;
+            }
+            .info-value {
+                font-size: 11.5px;
+            }
+
             .breakdown-grid {
                 grid-template-columns: 1fr;
             }
             .breakdown-col-left {
                 border-right: none;
-                border-bottom: 1.5px solid #e2e8f0;
+                border-bottom: 2px dashed #e2e8f0;
             }
-            .slip-header {
-                padding: 18px 20px;
+
+            .section-header {
+                padding: 8px 16px;
+                font-size: 10.5px;
             }
-            .employee-info-box {
-                padding: 14px 20px;
+
+            .items-table td {
+                padding: 7px 16px;
+                font-size: 11.5px;
             }
-            .items-table td, .subtotal-row td {
-                padding: 8px 18px;
+            .items-table .item-sub {
+                font-size: 9.5px;
             }
+            .items-table .item-amount {
+                font-size: 11.5px;
+            }
+
+            .subtotal-row td {
+                padding: 8px 16px;
+                font-size: 12px;
+            }
+
             .thp-box {
-                padding: 16px 20px;
+                padding: 16px 16px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+            .thp-left {
+                width: 100%;
+            }
+            .thp-left .thp-title {
+                font-size: 11px;
+            }
+            .thp-left .thp-terbilang {
+                font-size: 10.5px;
+                margin-top: 2px;
+            }
+            .thp-right {
+                width: 100%;
+                display: flex;
+                justify-content: flex-end;
             }
             .thp-right .thp-amount {
-                font-size: 22px;
+                font-size: 24px;
+            }
+
+            .late-details-section {
+                padding: 14px 16px;
+            }
+            .late-scroll-hint {
+                display: inline-flex;
+            }
+
+            .slip-footer {
+                padding: 16px 16px 14px;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 14px;
+            }
+            .legal-notice {
+                text-align: center;
+                font-size: 9.5px;
+                max-width: 100%;
+            }
+            .signature-box {
+                width: 100%;
             }
         }
 
@@ -505,6 +708,8 @@
             .slip-card { box-shadow: none; border-radius: 0; border: none; }
             .slip-header, .thp-box { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             .section-header, .employee-info-box { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .late-tbl-scroll { border: none; overflow: visible; }
+            .late-scroll-hint { display: none !important; }
         }
     </style>
 </head>
@@ -814,30 +1019,45 @@
                 <i class="bi bi-clock-history"></i>
                 <span>Rincian Presensi Keterlambatan</span>
             </div>
-            <table class="late-tbl">
-                <thead>
-                    <tr>
-                        <th>Tanggal</th>
-                        <th>Shift</th>
-                        <th>Jadwal Masuk</th>
-                        <th>Absen Masuk</th>
-                        <th>Menit Terlambat</th>
-                        <th style="text-align: right;">Potongan</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($listKeterlambatan as $late)
-                    <tr>
-                        <td>{{ \Carbon\Carbon::parse($late->tanggal)->format('d/m/Y') }}</td>
-                        <td>{{ $late->shift_nama ?? '-' }}</td>
-                        <td>{{ $late->jam_masuk_jadwal ? \Carbon\Carbon::parse($late->jam_masuk_jadwal)->format('H:i') : '-' }}</td>
-                        <td>{{ $late->jam_masuk_absen ? \Carbon\Carbon::parse($late->jam_masuk_absen)->format('H:i') : '-' }}</td>
-                        <td>{{ $late->menit_terlambat }} Menit</td>
-                        <td style="text-align: right; font-weight: 800; color: #dc2626;">Rp {{ number_format($late->potongan, 0, ',', '.') }}</td>
-                    </tr>
-                    @endforeach
-                </tbody>
-            </table>
+            <div class="late-scroll-hint">
+                <i class="bi bi-arrows-expand" style="transform: rotate(45deg);"></i>
+                <span>Geser tabel ke samping untuk melihat detail presensi</span>
+            </div>
+            <div class="late-tbl-scroll">
+                <table class="late-tbl">
+                    <thead>
+                        <tr>
+                            <th>Tanggal</th>
+                            <th>Shift</th>
+                            <th>Jadwal Masuk</th>
+                            <th>Absen Masuk</th>
+                            <th>Menit Terlambat</th>
+                            <th style="text-align: right;">Potongan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($listKeterlambatan as $late)
+                        @php
+                            $shiftVal = $late->shift ?? $late->shift_nama ?? '-';
+                            $jamJadwal = $late->jam_shift ?? $late->jam_masuk_jadwal ?? null;
+                            $jamAbsen = $late->jam_datang ?? $late->jam_masuk_absen ?? null;
+                            $durasiMenit = $late->durasi_menit ?? $late->menit_terlambat ?? 0;
+
+                            $fmtJadwal = $jamJadwal ? substr($jamJadwal, 0, 5) : '-';
+                            $fmtAbsen = $jamAbsen ? substr($jamAbsen, 0, 5) : '-';
+                        @endphp
+                        <tr>
+                            <td>{{ \Carbon\Carbon::parse($late->tanggal)->format('d/m/Y') }}</td>
+                            <td>{{ $shiftVal }}</td>
+                            <td>{{ $fmtJadwal }}</td>
+                            <td>{{ $fmtAbsen }}</td>
+                            <td>{{ $durasiMenit }} Menit</td>
+                            <td style="text-align: right; font-weight: 800; color: #dc2626;">Rp {{ number_format($late->potongan, 0, ',', '.') }}</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
         @endif
 
