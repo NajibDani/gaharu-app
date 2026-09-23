@@ -419,12 +419,7 @@ class PenggajianController extends Controller
             $totalPotonganDeposit = $items->sum('potongan_deposit');
             $totalPotonganDll = $items->sum('potongan_dll');
 
-            $totalDeductions = $items->sum(function($p) {
-                return $p->total_deductions > 0 ? (float)$p->total_deductions : (
-                    (float)($p->potongan_terlambat ?? 0) + (float)($p->potongan_inventaris ?? 0) +
-                    (float)($p->potongan_kasbon ?? 0) + (float)($p->potongan_deposit ?? 0) + (float)($p->potongan_dll ?? 0)
-                );
-            });
+            $totalDeductions = $totalPotonganTerlambat + $totalPotonganInventaris + $totalPotonganKasbon + $totalPotonganDeposit + $totalPotonganDll;
 
             $takeHomePay = $totalEarnings - $totalDeductions;
             $isPaid = $items->every(fn($p) => $p->status_jurnal || $p->status === 'approved');
@@ -1460,8 +1455,7 @@ class PenggajianController extends Controller
                 $pengembalianDeposit  = (float) ($payroll->pengembalian_deposit ?? 0);
                 $bonusDll             = (float) ($payroll->bonus_dll ?? 0);
 
-                $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
-                $totalDeductions = (float) ($payroll->total_deductions ?? 0);
+                $totalDeductions = floatval($payroll->potongan_terlambat ?? 0) + floatval($payroll->potongan_inventaris ?? 0) + floatval($payroll->potongan_kasbon ?? 0) + floatval($payroll->potongan_deposit ?? 0) + floatval($payroll->potongan_dll ?? 0);
                 $totalGajiBersih = $totalEarnings - $totalDeductions;
 
                 $payroll->update([

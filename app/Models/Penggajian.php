@@ -57,16 +57,74 @@ class Penggajian extends Model
      */
     protected static ?array $tableColumns = null;
 
-    public static function getTableColumns(): array
+    /**
+     * Pastikan semua kolom yang dibutuhkan selalu tersedia secara fisik di database
+     * tanpa memerlukan file migrasi baru.
+     */
+    public static function ensureSchemaColumns(): void
     {
-        if (static::$tableColumns === null) {
+        if (static::$tableColumns !== null) {
+            return;
+        }
+
+        try {
+            $existing = \Illuminate\Support\Facades\Schema::getColumnListing('penggajian');
+            $existingFlip = array_flip($existing);
+
+            $requiredDefinitions = [
+                'hari_kerja'                  => fn($t) => $t->decimal('hari_kerja', 8, 2)->default(0),
+                'satuan_gaji'                 => fn($t) => $t->string('satuan_gaji', 30)->default('Harian'),
+                'satuan_gaji_2'               => fn($t) => $t->string('satuan_gaji_2', 30)->default('Harian'),
+                'pilihan_periode'             => fn($t) => $t->integer('pilihan_periode')->default(1),
+                'tarif_harian_total'          => fn($t) => $t->decimal('tarif_harian_total', 15, 2)->default(0),
+                'gaji_utama'                  => fn($t) => $t->decimal('gaji_utama', 15, 2)->default(0),
+                'jam_lembur'                  => fn($t) => $t->decimal('jam_lembur', 8, 2)->default(0),
+                'banyak_target'               => fn($t) => $t->integer('banyak_target')->default(0),
+                'catatan_bonus_target'        => fn($t) => $t->string('catatan_bonus_target', 255)->nullable(),
+                'banyak_tanggal_merah'        => fn($t) => $t->integer('banyak_tanggal_merah')->default(0),
+                'catatan_bonus_tanggal_merah' => fn($t) => $t->string('catatan_bonus_tanggal_merah', 255)->nullable(),
+                'banyak_birthday_service'     => fn($t) => $t->integer('banyak_birthday_service')->default(0),
+                'pengembalian_deposit'        => fn($t) => $t->decimal('pengembalian_deposit', 15, 2)->default(0),
+                'potongan_kasbon'             => fn($t) => $t->decimal('potongan_kasbon', 15, 2)->default(0),
+                'potongan_deposit'            => fn($t) => $t->decimal('potongan_deposit', 15, 2)->default(0),
+                'potongan_dll'                => fn($t) => $t->decimal('potongan_dll', 15, 2)->default(0),
+                'catatan_potongan_dll'        => fn($t) => $t->string('catatan_potongan_dll', 255)->nullable(),
+                'total_earnings'              => fn($t) => $t->decimal('total_earnings', 15, 2)->default(0),
+                'total_deductions'            => fn($t) => $t->decimal('total_deductions', 15, 2)->default(0),
+            ];
+
+            $toAdd = [];
+            foreach ($requiredDefinitions as $col => $def) {
+                if (!isset($existingFlip[$col])) {
+                    $toAdd[] = $def;
+                }
+            }
+
+            if (!empty($toAdd)) {
+                \Illuminate\Support\Facades\Schema::table('penggajian', function (\Illuminate\Database\Schema\Blueprint $table) use ($toAdd) {
+                    foreach ($toAdd as $addCol) {
+                        $addCol($table);
+                    }
+                });
+                $existing = \Illuminate\Support\Facades\Schema::getColumnListing('penggajian');
+            }
+
+            static::$tableColumns = $existing;
+        } catch (\Throwable $e) {
             try {
                 static::$tableColumns = \Illuminate\Support\Facades\Schema::getColumnListing('penggajian');
-            } catch (\Throwable $e) {
+            } catch (\Throwable $ex) {
                 static::$tableColumns = [];
             }
         }
-        return static::$tableColumns;
+    }
+
+    public static function getTableColumns(): array
+    {
+        if (static::$tableColumns === null) {
+            static::ensureSchemaColumns();
+        }
+        return static::$tableColumns ?? [];
     }
 
     /**

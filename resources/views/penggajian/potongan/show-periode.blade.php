@@ -124,6 +124,7 @@
                             @endphp
                             <tr class="payroll-row hover:bg-slate-50/80 transition-colors"
                                 data-id="{{ $payroll->id }}"
+                                data-karyawan-id="{{ $payroll->karyawan_id }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
@@ -513,7 +514,8 @@
             const items = [];
             rows.forEach(row => {
                 const id = row.getAttribute('data-id');
-                if (!id) return;
+                const karyawanId = row.getAttribute('data-karyawan-id');
+                if (!id && !karyawanId) return;
 
                 const terlambatEl = row.querySelector('.potongan-terlambat-raw');
                 const inventarisEl = row.querySelector('.batch-potongan-inventaris');
@@ -524,6 +526,7 @@
 
                 items.push({
                     id: id,
+                    karyawan_id: karyawanId,
                     potongan_terlambat: terlambatEl ? parseFloat(terlambatEl.value) || 0 : 0,
                     potongan_inventaris: inventarisEl ? parseRupiahPotVal(inventarisEl.value) : 0,
                     potongan_kasbon: kasbonEl ? parseRupiahPotVal(kasbonEl.value) : 0,
@@ -559,11 +562,14 @@
                             icon: 'success',
                             title: 'Tersimpan!',
                             text: res.message || 'Seluruh data potongan berhasil diperbarui.',
-                            timer: 2000,
+                            timer: 1500,
                             showConfirmButton: false
+                        }).then(() => {
+                            window.location.reload();
                         });
                     } else {
                         alert(res.message || 'Seluruh data potongan berhasil disimpan!');
+                        window.location.reload();
                     }
                 } else {
                     alert('Gagal menyimpan: ' + (res.message || 'Terjadi kesalahan sistem.'));
