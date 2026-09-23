@@ -363,12 +363,33 @@ class StokGudangController extends Controller
                 }
             }
 
+            $isStockOpname = (strtolower($row->source_type ?? '') === 'stock_opname');
+
             if ($isMasuk) {
                 $saQty += $qty;
                 $saNilai += $totalHarga;
             } elseif ($isKeluar) {
+                $prevSaQty = $saQty;
+                $prevSaNilai = $saNilai;
+
                 $saQty -= $qty;
-                $saNilai -= $totalHarga;
+
+                if ($saQty <= 0) {
+                    $saQty = 0;
+                    $saNilai = 0;
+                } else {
+                    if ($isStockOpname && $prevSaQty > 0) {
+                        $deductedNilai = min($prevSaNilai, $prevSaNilai * ($qty / $prevSaQty));
+                        $saNilai = max(0, $prevSaNilai - $deductedNilai);
+                    } else {
+                        $saNilai = max(0, $saNilai - $totalHarga);
+                    }
+                }
+            }
+
+            if ($saQty <= 0 || $saNilai < 0) {
+                if ($saQty <= 0) $saQty = 0;
+                $saNilai = max(0, $saNilai);
             }
         }
 
@@ -420,8 +441,6 @@ class StokGudangController extends Controller
                 }
             }
 
-            $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
-
             $isMasuk = false;
             $isKeluar = false;
 
@@ -454,14 +473,44 @@ class StokGudangController extends Controller
                 }
             }
 
+            $isStockOpname = (strtolower($row->source_type ?? '') === 'stock_opname');
+
             if ($isMasuk || $isKeluar) {
+                $prevRunningQty = $runningQty;
+                $prevRunningNilai = $runningNilai;
+
                 if ($isMasuk) {
                     $runningQty += $qty;
                     $runningNilai += $totalHarga;
                 } else {
                     $runningQty -= $qty;
-                    $runningNilai -= $totalHarga;
+
+                    if ($runningQty <= 0) {
+                        $runningQty = 0;
+                        if ($isStockOpname || $totalHarga > $prevRunningNilai) {
+                            $totalHarga = max(0, $prevRunningNilai);
+                        }
+                        $runningNilai = 0;
+                    } else {
+                        if ($isStockOpname && $prevRunningQty > 0) {
+                            $deductedNilai = min($prevRunningNilai, $prevRunningNilai * ($qty / $prevRunningQty));
+                            $totalHarga = $deductedNilai;
+                            $runningNilai = max(0, $prevRunningNilai - $deductedNilai);
+                        } else {
+                            if ($totalHarga > $prevRunningNilai) {
+                                $totalHarga = max(0, $prevRunningNilai);
+                            }
+                            $runningNilai = max(0, $prevRunningNilai - $totalHarga);
+                        }
+                    }
                 }
+
+                if ($runningQty <= 0 || $runningNilai < 0) {
+                    if ($runningQty <= 0) $runningQty = 0;
+                    $runningNilai = max(0, $runningNilai);
+                }
+
+                $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
 
                 $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id) . $keteranganExtra;
                 if ($row->tipe === 'transfer') {

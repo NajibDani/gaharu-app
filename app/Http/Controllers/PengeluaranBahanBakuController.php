@@ -1747,11 +1747,19 @@ class PengeluaranBahanBakuController extends Controller
             ->value('harga_per_qty');
 
         if (!$hargaBeli) {
-            $hargaBeli = DB::table('pembelian_detail')
+            $pbRow = DB::table('pembelian_detail')
                 ->where('barang_id', $barangId)
                 ->where('harga', '>', 0)
                 ->orderBy('id', 'desc')
-                ->value('harga');
+                ->first();
+            if ($pbRow) {
+                $konv = floatval($pbRow->konversi ?? 1);
+                if ($konv <= 0) {
+                    $konv = floatval(DB::table('master_barang')->where('id', $barangId)->value('konversi_pembelian') ?? 1);
+                }
+                if ($konv <= 0) $konv = 1;
+                $hargaBeli = floatval($pbRow->harga) / $konv;
+            }
         }
 
         if ($hargaBeli && (float)$hargaBeli > 0) {
