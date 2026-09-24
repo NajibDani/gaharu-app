@@ -272,7 +272,9 @@ function loadBarang() {
         },
         body: JSON.stringify({
             gudang_id: gudangId,
-            divisi_id: divisiId || null
+            divisi_id: divisiId || null,
+            opname_id: '{{ $opname->id }}',
+            tanggal: document.getElementById('tanggal') ? document.getElementById('tanggal').value : null
         })
     })
     .then(response => response.json())

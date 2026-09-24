@@ -124,6 +124,7 @@ class StockOpnameController extends Controller
         $request->validate(['gudang_id' => 'required']);
         $gudangId = $request->gudang_id;
         $divisiId = $request->divisi_id;
+        $opnameId = $request->opname_id;
 
         $barang = DB::table('master_barang')
             ->leftJoin('kategori', 'master_barang.kategori_id', '=', 'kategori.id')
@@ -141,7 +142,7 @@ class StockOpnameController extends Controller
                 $q->where('master_barang.is_bahan_baku', 1)
                   ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
             })
-            ->where(function($q) use ($gudangId, $divisiId) {
+            ->where(function($q) use ($gudangId, $divisiId, $opnameId) {
                 if ($divisiId) {
                     // Ketika SO dilakukan per divisi:
                     // Bahan Baku & Bahan Setengah Jadi HANYA muncul jika tagging divisinya aktif (ON) untuk divisi tersebut
@@ -156,15 +157,25 @@ class StockOpnameController extends Controller
                         }
                     });
                 } else {
-                    // Jika SO gudang umum / tanpa divisi:
-                    // Bahan Baku & Bahan Setengah Jadi HANYA muncul jika tagging aktif untuk gudang tersebut tanpa divisi
-                    $q->whereExists(function($existsQuery) use ($gudangId) {
-                        $existsQuery->select(DB::raw(1))
+                    // Jika SO gudang umum / tanpa divisi (misal Gudang Utama):
+                    // Semua Bahan Baku & Bahan Setengah Jadi muncul kecuali yang dinonaktifkan eksplisit untuk gudang tersebut
+                    $q->whereNotExists(function($notExistsQuery) use ($gudangId) {
+                        $notExistsQuery->select(DB::raw(1))
                             ->from('barang_minimum_stock')
                             ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
                             ->where('barang_minimum_stock.gudang_id', $gudangId)
-                            ->whereNull('barang_minimum_stock.divisi_id')
-                            ->where('barang_minimum_stock.is_active', true);
+                            ->where('barang_minimum_stock.is_active', false)
+                            ->whereNull('barang_minimum_stock.divisi_id');
+                    });
+                }
+
+                // Jika sedang edit SO, item yang sudah tercatat di detail SO ini harus selalu muncul
+                if ($opnameId) {
+                    $q->orWhereExists(function($opnameDetailQuery) use ($opnameId) {
+                        $opnameDetailQuery->select(DB::raw(1))
+                            ->from('stock_opname_detail')
+                            ->whereColumn('stock_opname_detail.barang_id', 'master_barang.id')
+                            ->where('stock_opname_detail.stock_opname_id', $opnameId);
                     });
                 }
             })
@@ -450,7 +461,7 @@ class StockOpnameController extends Controller
                     $q->where('master_barang.is_bahan_baku', 1)
                       ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
                 })
-                ->where(function($q) use ($gudangId, $divisiId) {
+                ->where(function($q) use ($gudangId, $divisiId, $opname) {
                     if ($divisiId) {
                         $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
                             $existsQuery->select(DB::raw(1))
@@ -463,13 +474,22 @@ class StockOpnameController extends Controller
                             }
                         });
                     } else {
-                        $q->whereExists(function($existsQuery) use ($gudangId) {
-                            $existsQuery->select(DB::raw(1))
+                        $q->whereNotExists(function($notExistsQuery) use ($gudangId) {
+                            $notExistsQuery->select(DB::raw(1))
                                 ->from('barang_minimum_stock')
                                 ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
                                 ->where('barang_minimum_stock.gudang_id', $gudangId)
-                                ->whereNull('barang_minimum_stock.divisi_id')
-                                ->where('barang_minimum_stock.is_active', true);
+                                ->where('barang_minimum_stock.is_active', false)
+                                ->whereNull('barang_minimum_stock.divisi_id');
+                        });
+                    }
+
+                    if ($opname && $opname->id) {
+                        $q->orWhereExists(function($opnameDetailQuery) use ($opname) {
+                            $opnameDetailQuery->select(DB::raw(1))
+                                ->from('stock_opname_detail')
+                                ->whereColumn('stock_opname_detail.barang_id', 'master_barang.id')
+                                ->where('stock_opname_detail.stock_opname_id', $opname->id);
                         });
                     }
                 })
@@ -1543,13 +1563,13 @@ class StockOpnameController extends Controller
                     }
                 });
             } else {
-                $q->whereExists(function ($existsQuery) use ($gudangId) {
-                    $existsQuery->select(DB::raw(1))
+                $q->whereNotExists(function ($notExistsQuery) use ($gudangId) {
+                    $notExistsQuery->select(DB::raw(1))
                         ->from('barang_minimum_stock')
                         ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
                         ->where('barang_minimum_stock.gudang_id', $gudangId)
-                        ->whereNull('barang_minimum_stock.divisi_id')
-                        ->where('barang_minimum_stock.is_active', true);
+                        ->where('barang_minimum_stock.is_active', false)
+                        ->whereNull('barang_minimum_stock.divisi_id');
                 });
             }
         });
@@ -1896,13 +1916,13 @@ class StockOpnameController extends Controller
                     }
                 });
             } else {
-                $q->whereExists(function ($existsQuery) use ($gudangId) {
-                    $existsQuery->select(DB::raw(1))
+                $q->whereNotExists(function ($notExistsQuery) use ($gudangId) {
+                    $notExistsQuery->select(DB::raw(1))
                         ->from('barang_minimum_stock')
                         ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
                         ->where('barang_minimum_stock.gudang_id', $gudangId)
-                        ->whereNull('barang_minimum_stock.divisi_id')
-                        ->where('barang_minimum_stock.is_active', true);
+                        ->where('barang_minimum_stock.is_active', false)
+                        ->whereNull('barang_minimum_stock.divisi_id');
                 });
             }
         });
