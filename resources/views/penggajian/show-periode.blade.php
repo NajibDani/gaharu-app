@@ -249,7 +249,7 @@
                                 $msgGabungan = "Halo, {$cleanName}! \n\n" .
                                     "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeFmt} ({$brandName}).\n" .
                                     "*Total Gaji Bersih (Take Home Pay): Rp {$nomGabungan}*\n\n" .
-                                    "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicLinkGabungan})\n" .
+                                    "Link Slip Gaji: {$publicLinkGabungan}\n" .
                                     "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
                                     "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
                                     "Salam hangat,\n" .
@@ -269,7 +269,7 @@
                                         $msgPItem = "Halo, {$cleanName}! \n\n" .
                                             "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeFmt} ({$brandName}) - Periode {$pNum}.\n" .
                                             "*Total Gaji Bersih (Take Home Pay): Rp {$nomItem}*\n\n" .
-                                            "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicLinkItem})\n" .
+                                            "Link Slip Gaji: {$publicLinkItem}\n" .
                                             "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
                                             "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
                                             "Salam hangat,\n" .
@@ -287,7 +287,7 @@
                                     $msgSingle = "Halo, {$cleanName}! \n\n" .
                                         "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeFmt} ({$brandName}).\n" .
                                         "*Total Gaji Bersih (Take Home Pay): Rp {$nomSingle}*\n\n" .
-                                        "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicLinkSingle})\n" .
+                                        "Link Slip Gaji: {$publicLinkSingle}\n" .
                                         "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
                                         "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
                                         "Salam hangat,\n" .

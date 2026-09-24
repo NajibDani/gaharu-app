@@ -345,9 +345,6 @@ class StokGudangController extends Controller
                 if ($divisiId) {
                     $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
-                } elseif ($gudangId) {
-                    $matchTujuan = $matchTujuan && is_null($row->divisi_tujuan_id);
-                    $matchAsal   = $matchAsal   && is_null($row->divisi_asal_id);
                 }
 
                 if ($matchTujuan && !$matchAsal) {
@@ -366,8 +363,18 @@ class StokGudangController extends Controller
             $isStockOpname = (strtolower($row->source_type ?? '') === 'stock_opname');
 
             if ($isMasuk) {
+                $prevSaQty = $saQty;
                 $saQty += $qty;
-                $saNilai += $totalHarga;
+                if ($prevSaQty < 0) {
+                    if ($saQty > 0) {
+                        $unitPrice = $qty > 0 ? ($totalHarga / $qty) : 0;
+                        $saNilai = $saQty * $unitPrice;
+                    } else {
+                        $saNilai = 0;
+                    }
+                } else {
+                    $saNilai += $totalHarga;
+                }
             } elseif ($isKeluar) {
                 $prevSaQty = $saQty;
                 $prevSaNilai = $saNilai;
@@ -375,21 +382,18 @@ class StokGudangController extends Controller
                 $saQty -= $qty;
 
                 if ($saQty <= 0) {
-                    $saQty = 0;
                     $saNilai = 0;
                 } else {
                     if ($isStockOpname && $prevSaQty > 0) {
                         $deductedNilai = min($prevSaNilai, $prevSaNilai * ($qty / $prevSaQty));
                         $saNilai = max(0, $prevSaNilai - $deductedNilai);
                     } else {
-                        $saNilai = max(0, $saNilai - $totalHarga);
+                        if ($totalHarga > $prevSaNilai && $prevSaNilai > 0) {
+                            $totalHarga = $prevSaNilai;
+                        }
+                        $saNilai = max(0, $prevSaNilai - $totalHarga);
                     }
                 }
-            }
-
-            if ($saQty <= 0 || $saNilai < 0) {
-                if ($saQty <= 0) $saQty = 0;
-                $saNilai = max(0, $saNilai);
             }
         }
 
@@ -455,9 +459,6 @@ class StokGudangController extends Controller
                 if ($divisiId) {
                     $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
-                } elseif ($gudangId) {
-                    $matchTujuan = $matchTujuan && is_null($row->divisi_tujuan_id);
-                    $matchAsal   = $matchAsal   && is_null($row->divisi_asal_id);
                 }
 
                 if ($matchTujuan && !$matchAsal) {
@@ -481,15 +482,20 @@ class StokGudangController extends Controller
 
                 if ($isMasuk) {
                     $runningQty += $qty;
-                    $runningNilai += $totalHarga;
+                    if ($prevRunningQty < 0) {
+                        if ($runningQty > 0) {
+                            $unitPrice = $qty > 0 ? ($totalHarga / $qty) : 0;
+                            $runningNilai = $runningQty * $unitPrice;
+                        } else {
+                            $runningNilai = 0;
+                        }
+                    } else {
+                        $runningNilai += $totalHarga;
+                    }
                 } else {
                     $runningQty -= $qty;
 
                     if ($runningQty <= 0) {
-                        $runningQty = 0;
-                        if ($isStockOpname || $totalHarga > $prevRunningNilai) {
-                            $totalHarga = max(0, $prevRunningNilai);
-                        }
                         $runningNilai = 0;
                     } else {
                         if ($isStockOpname && $prevRunningQty > 0) {
@@ -497,17 +503,12 @@ class StokGudangController extends Controller
                             $totalHarga = $deductedNilai;
                             $runningNilai = max(0, $prevRunningNilai - $deductedNilai);
                         } else {
-                            if ($totalHarga > $prevRunningNilai) {
-                                $totalHarga = max(0, $prevRunningNilai);
+                            if ($totalHarga > $prevRunningNilai && $prevRunningNilai > 0) {
+                                $totalHarga = $prevRunningNilai;
                             }
                             $runningNilai = max(0, $prevRunningNilai - $totalHarga);
                         }
                     }
-                }
-
-                if ($runningQty <= 0 || $runningNilai < 0) {
-                    if ($runningQty <= 0) $runningQty = 0;
-                    $runningNilai = max(0, $runningNilai);
                 }
 
                 $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;

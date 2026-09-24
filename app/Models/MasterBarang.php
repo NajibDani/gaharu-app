@@ -278,8 +278,14 @@ public function resepBahanBakuAlternatif()
         foreach ($pDetails as $pd) {
             $pQty = (float) ($pd->qty ?? 0);
             $pHarga = (float) ($pd->harga ?? 0);
+            $pHargaPerQty = (float) ($pd->harga_per_qty ?? 0);
             if ($pQty <= 0) {
                 continue;
+            }
+
+            $unitPriceBeli = $pHargaPerQty > 0 ? $pHargaPerQty : ($pQty > 0 ? ($pHarga / $pQty) : 0);
+            if ($pHarga <= 0 && $unitPriceBeli > 0) {
+                $pHarga = round($pQty * $unitPriceBeli, 2);
             }
 
             $detailKonv = (float) ($pd->konversi_pembelian ?? 1);
@@ -289,16 +295,16 @@ public function resepBahanBakuAlternatif()
             $satBeli = strtolower(trim($pd->satuan_pembelian ?: ($pd->master_satuan_pembelian ?: '')));
             $satDasar = strtolower(trim($pd->master_satuan ?: ''));
 
-            // Jika satuan pembelian sama dengan satuan dasar dan konversi <= 1, lewati
-            if ($satBeli === $satDasar || $konversi <= 1) {
-                continue;
-            }
-
             // Kuantitas dasar yang benar dalam satuan stok dasar (misal 18 GALON * 19.000 ML = 342.000 ML)
             $correctBaseQty = round($pQty * $konversi, 4);
-            $correctHargaPerQty = $correctBaseQty > 0 ? round($pHarga / $correctBaseQty, 4) : 0;
+            $correctHargaPerQty = $konversi > 0 ? round($unitPriceBeli / $konversi, 4) : round($unitPriceBeli, 4);
 
-            // Perbaiki transaksi_stok jika tidak sesuai dengan correctBaseQty (baik under-converted maupun over-inflated)
+            // Jika satuan pembelian sama dengan satuan dasar dan konversi <= 1, hanya perbaiki harga_per_qty jika beda
+            if ($satBeli === $satDasar || $konversi <= 1) {
+                $correctBaseQty = $pQty;
+            }
+
+            // Perbaiki transaksi_stok jika tidak sesuai dengan correctBaseQty
             $txList = \Illuminate\Support\Facades\DB::table('transaksi_stok')
                 ->where('barang_id', $pd->barang_id)
                 ->where('source_id', $pd->pembelian_id)
@@ -306,7 +312,7 @@ public function resepBahanBakuAlternatif()
                 ->get();
 
             foreach ($txList as $tx) {
-                if (abs((float)$tx->qty - $correctBaseQty) > 0.01) {
+                if (abs((float)$tx->qty - $correctBaseQty) > 0.01 || abs((float)$tx->total_harga - $pHarga) > 0.01) {
                     \Illuminate\Support\Facades\DB::table('transaksi_stok')
                         ->where('id', $tx->id)
                         ->update([
@@ -316,25 +322,43 @@ public function resepBahanBakuAlternatif()
                 }
             }
 
-            // Perbaiki stok_gudang_batch jika tidak sesuai dengan correctBaseQty
+            // Perbaiki stok_gudang_batch jika tidak sesuai dengan correctBaseQty atau harga_per_qty
             $batches = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
                 ->where('pembelian_detail_id', $pd->id)
                 ->get();
 
             foreach ($batches as $batch) {
+                $needsUpdate = false;
+                $updateData = [];
+
                 if (abs((float)$batch->qty_masuk - $correctBaseQty) > 0.01) {
                     $qtyKeluar = (float)$batch->qty_keluar;
                     $newSisa = max(0, $correctBaseQty - $qtyKeluar);
+                    $updateData['qty_masuk'] = $correctBaseQty;
+                    $updateData['qty_sisa']  = $newSisa;
+                    $updateData['is_habis']  = ($newSisa <= 0);
+                    $needsUpdate = true;
+                }
+
+                if ($correctHargaPerQty > 0 && abs((float)$batch->harga_per_qty - $correctHargaPerQty) > 0.0001) {
+                    $updateData['harga_per_qty'] = $correctHargaPerQty;
+                    $needsUpdate = true;
+                }
+
+                if ($needsUpdate) {
+                    $updateData['updated_at'] = now();
                     \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
                         ->where('id', $batch->id)
-                        ->update([
-                            'qty_masuk'     => $correctBaseQty,
-                            'qty_sisa'      => $newSisa,
-                            'harga_per_qty' => $correctHargaPerQty,
-                            'is_habis'      => ($newSisa <= 0),
-                            'updated_at'    => now(),
-                        ]);
+                        ->update($updateData);
                 }
+            }
+        }
+
+        if ($targetBarangId) {
+            try {
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$targetBarangId);
+            } catch (\Throwable $e) {
+                // Ignore if service fails during migration/testing
             }
         }
     }

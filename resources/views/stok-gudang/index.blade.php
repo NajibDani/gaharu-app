@@ -118,8 +118,10 @@
                                     @endif
                                 </td>
                                 <td>
-                                    @if($stok->qty <= 0)
-                                        <span class="badge bg-danger">STOK HABIS</span>
+                                    @if($stok->qty < 0)
+                                        <span class="badge bg-danger">MINUS ({{ number_format($stok->qty, 2, ',', '.') }})</span>
+                                    @elseif($stok->qty == 0)
+                                        <span class="badge bg-secondary">STOK HABIS</span>
                                     @else
                                         <span class="badge bg-success">TERSEDIA</span>
                                     @endif

@@ -78,7 +78,7 @@
     $waMessage = "Halo, {$cleanEmployeeName}! \n\n" .
         "Terlampir kami sampaikan dokumen resmi Slip Gaji untuk periode {$periodeLabel} ({$brandName}).\n" .
         "*Total Gaji Bersih (Take Home Pay): Rp {$nominalFmt}*\n\n" .
-        "Link Slip Gaji: [Klik di sini untuk melihat & mengunduh]({$publicSlipUrl})\n" .
+        "Link Slip Gaji: {$publicSlipUrl}\n" .
         "⚠️ Catatan: Jangan lupa untuk langsung unduh/simpan slip gajinya, ya, karena tautan di atas hanya aktif selama 14 hari ke depan.\n\n" .
         "Terima kasih atas dedikasi dan kerja keras yang telah Anda berikan untuk tim. Semoga berkah dan memotivasi kinerja ke depan.\n\n" .
         "Salam hangat,\n" .

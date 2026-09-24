@@ -135,8 +135,6 @@
                         <option value="">-- Semua Jenis --</option>
                         <option value="bahan_baku">Bahan Baku</option>
                         <option value="bahan_setengah_jadi">Bahan Setengah Jadi</option>
-                        <option value="barang_jadi">Barang Jadi</option>
-                        <option value="operational">Operational</option>
                     </select>
 
                     {{-- Filter Status Stok --}}

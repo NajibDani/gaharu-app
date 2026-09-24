@@ -86,9 +86,6 @@ class StokGudang extends Model
                 if ($divisiId) {
                     $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
-                } elseif ($gudangId) {
-                    $matchTujuan = $matchTujuan && is_null($row->divisi_tujuan_id);
-                    $matchAsal   = $matchAsal   && is_null($row->divisi_asal_id);
                 }
 
                 if ($matchTujuan && !$matchAsal) {
@@ -111,7 +108,7 @@ class StokGudang extends Model
             }
         }
 
-        return max(0, $runningQty);
+        return (float) $runningQty;
     }
 
     public static function reconcileStockSummary($barangId = null, $gudangId = null, $divisiId = null)
@@ -164,7 +161,7 @@ class StokGudang extends Model
                     \Illuminate\Support\Facades\DB::table('stok_gudang')->where('id', $existing->id)->update(['jumlah' => $targetJumlah]);
                 }
             } else {
-                if ($targetJumlah > 0) {
+                if (abs($targetJumlah) > 0.0001) {
                     \Illuminate\Support\Facades\DB::table('stok_gudang')->insert([
                         'gudang_id' => $gId,
                         'divisi_id' => $dId,

@@ -330,13 +330,121 @@ class FifoService
 
         $visited[] = $barangId;
 
-        // 1. Cek batch terakhir di gudang spesifik yang memiliki harga > 0
+        // 1. Cek batch aktif di gudang spesifik yang memiliki sisa stok (qty_sisa > 0)
+        if ($gudangId) {
+            $activeGudangBatch = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangId)
+                ->where('barang_id', $barangId)
+                ->where('qty_sisa', '>', 0)
+                ->where('is_habis', false)
+                ->where('harga_per_qty', '>', 0)
+                ->orderBy('id', 'asc')
+                ->value('harga_per_qty');
+
+            if ($activeGudangBatch && floatval($activeGudangBatch) > 0) {
+                $res = (float) $activeGudangBatch;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
+            }
+        }
+
+        // 2. Cek batch aktif di GUDANG UTAMA sebagai harga referensi pusat
+        $gudangUtama = DB::table('master_gudang')
+            ->where(function($q) {
+                $q->where('nama', 'like', '%Gudang Utama%')
+                  ->orWhere('kategori', 'Utama');
+            })
+            ->first();
+
+        if ($gudangUtama && (!$gudangId || $gudangId != $gudangUtama->id)) {
+            $activeUtamaBatch = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangUtama->id)
+                ->where('barang_id', $barangId)
+                ->where('qty_sisa', '>', 0)
+                ->where('is_habis', false)
+                ->where('harga_per_qty', '>', 0)
+                ->orderBy('id', 'asc')
+                ->value('harga_per_qty');
+
+            if ($activeUtamaBatch && floatval($activeUtamaBatch) > 0) {
+                $res = (float) $activeUtamaBatch;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
+            }
+        }
+
+        // 3. Cek batch aktif di gudang mana saja secara global
+        $activeAnyBatch = DB::table('stok_gudang_batch')
+            ->where('barang_id', $barangId)
+            ->where('qty_sisa', '>', 0)
+            ->where('is_habis', false)
+            ->where('harga_per_qty', '>', 0)
+            ->orderBy('id', 'asc')
+            ->value('harga_per_qty');
+
+        if ($activeAnyBatch && floatval($activeAnyBatch) > 0) {
+            $res = (float) $activeAnyBatch;
+            if (count($visited) === 1) {
+                self::$hargaTerakhirCache[$cacheKey] = $res;
+            }
+            return $res;
+        }
+
+        // 4. Cek detail pembelian terakhir pada tabel pembelian_detail yang valid (tidak dihapus / batal)
+        $latestPembelian = DB::table('pembelian_detail')
+            ->join('pembelian', 'pembelian.id', '=', 'pembelian_detail.pembelian_id')
+            ->where('pembelian_detail.barang_id', $barangId)
+            ->where(function($q) {
+                $q->where('pembelian_detail.harga_per_qty', '>', 0)
+                  ->orWhere('pembelian_detail.harga', '>', 0);
+            })
+            ->where(function($q) {
+                $q->whereNull('pembelian.catatan_pembayaran')
+                  ->orWhere(function($sub) {
+                      $sub->where('pembelian.catatan_pembayaran', 'not like', '[DELETED]%')
+                          ->where('pembelian.catatan_pembayaran', 'not like', '[BATAL]%');
+                  });
+            })
+            ->where(function($q) {
+                $q->whereNull('pembelian.keterangan')
+                  ->orWhere('pembelian.keterangan', 'not like', '[BATAL]%');
+            })
+            ->select('pembelian_detail.*', 'pembelian.tanggal')
+            ->orderBy('pembelian.tanggal', 'desc')
+            ->orderBy('pembelian.id', 'desc')
+            ->orderBy('pembelian_detail.id', 'desc')
+            ->first();
+
+        if ($latestPembelian) {
+            $pQty = (float)($latestPembelian->qty ?? 0);
+            $pHarga = (float)($latestPembelian->harga ?? 0);
+            $pHargaPerQty = (float)($latestPembelian->harga_per_qty ?? 0);
+            $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
+            if ($konversi <= 0) $konversi = 1;
+
+            $unitPriceBeli = $pHargaPerQty > 0 ? $pHargaPerQty : ($pQty > 0 ? ($pHarga / $pQty) : 0);
+            $unitPriceDasar = $konversi > 0 ? ($unitPriceBeli / $konversi) : $unitPriceBeli;
+
+            if ($unitPriceDasar > 0) {
+                $res = (float) $unitPriceDasar;
+                if (count($visited) === 1) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                }
+                return $res;
+            }
+        }
+
+        // 5. Cek batch historis terakhir di gudang spesifik / gudang utama / global
         if ($gudangId) {
             $latestGudangBatch = DB::table('stok_gudang_batch')
                 ->where('gudang_id', $gudangId)
                 ->where('barang_id', $barangId)
                 ->where('harga_per_qty', '>', 0)
-                ->latest('id')
+                ->orderBy('id', 'desc')
                 ->value('harga_per_qty');
 
             if ($latestGudangBatch && floatval($latestGudangBatch) > 0) {
@@ -348,20 +456,12 @@ class FifoService
             }
         }
 
-        // 2. Cek batch terakhir di GUDANG UTAMA sebagai harga referensi pusat (tanpa mengubah stoknya)
-        $gudangUtama = DB::table('master_gudang')
-            ->where(function($q) {
-                $q->where('nama', 'like', '%Gudang Utama%')
-                  ->orWhere('kategori', 'Utama');
-            })
-            ->first();
-
         if ($gudangUtama && (!$gudangId || $gudangId != $gudangUtama->id)) {
             $latestUtamaBatch = DB::table('stok_gudang_batch')
                 ->where('gudang_id', $gudangUtama->id)
                 ->where('barang_id', $barangId)
                 ->where('harga_per_qty', '>', 0)
-                ->latest('id')
+                ->orderBy('id', 'desc')
                 ->value('harga_per_qty');
 
             if ($latestUtamaBatch && floatval($latestUtamaBatch) > 0) {
@@ -373,28 +473,10 @@ class FifoService
             }
         }
 
-        // 3. Cek detail pembelian terakhir pada tabel pembelian_detail
-        $latestPembelian = DB::table('pembelian_detail')
-            ->where('barang_id', $barangId)
-            ->where('harga_per_qty', '>', 0)
-            ->latest('id')
-            ->first();
-
-        if ($latestPembelian && floatval($latestPembelian->harga_per_qty) > 0) {
-            $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
-            if ($konversi <= 0) $konversi = 1;
-            $res = (float) ($latestPembelian->harga_per_qty / $konversi);
-            if (count($visited) === 1) {
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-            }
-            return $res;
-        }
-
-        // 4. Cek batch terakhir secara global (semua gudang) yang memiliki harga > 0
         $latestBatchGlobal = DB::table('stok_gudang_batch')
             ->where('barang_id', $barangId)
             ->where('harga_per_qty', '>', 0)
-            ->latest('id')
+            ->orderBy('id', 'desc')
             ->value('harga_per_qty');
 
         if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
@@ -405,7 +487,22 @@ class FifoService
             return $res;
         }
 
-        // 5. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
+        // 6. Fallback ke persediaan awal
+        $sa = DB::table('persediaan_awal_detail')
+            ->where('barang_id', $barangId)
+            ->where('harga_satuan', '>', 0)
+            ->orderBy('id', 'desc')
+            ->value('harga_satuan');
+
+        if ($sa && floatval($sa) > 0) {
+            $res = (float) $sa;
+            if (count($visited) === 1) {
+                self::$hargaTerakhirCache[$cacheKey] = $res;
+            }
+            return $res;
+        }
+
+        // 7. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
         $barang = DB::table('master_barang')->where('id', $barangId)->first();
         if ($barang) {
             $resep = null;
@@ -435,7 +532,7 @@ class FifoService
                 }
             }
 
-            // 6. Fallback ke HPP referensi master barang / harga beli
+            // 8. Fallback ke HPP referensi master barang / harga beli
             if (isset($barang->hpp_referensi) && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
                 if (count($visited) === 1) {
@@ -519,17 +616,18 @@ class FifoService
     |
     | Menghitung HPP aktif untuk barang berdasarkan aturan FIFO:
     | 1. Batch aktif tertua yang masih memiliki sisa stok (qty_sisa > 0, is_habis = false).
-    | 2. Jika seluruh batch habis, ambil dari batch historis terakhir (harga beli terbaru).
-    | 3. Jika tidak ada batch, ambil dari detail pembelian terakhir yang valid.
-    | 4. Jika tidak ada pembelian, ambil dari persediaan awal.
-    | 5. Fallback ke hpp_referensi yang tersimpan saat ini.
+    | 2. Jika seluruh batch habis, ambil dari detail pembelian terakhir yang valid.
+    | 3. Jika tidak ada pembelian, ambil dari persediaan awal.
+    | 4. Fallback ke hpp_referensi yang tersimpan saat ini.
     |
     | Hasil kalkulasi langsung disimpan ke master_barang.hpp_referensi.
     |
     */
     public function syncBarangHpp(int $barangId): float
     {
-        $newHpp = $this->getFifoHpp($barangId);
+        self::clearHargaCache();
+        $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+        $newHpp = $this->getFifoHpp($barangId, $gudangUtamaId);
 
         MasterBarang::withoutGlobalScopes()
             ->where('id', $barangId)
@@ -545,111 +643,7 @@ class FifoService
     */
     public function getFifoHpp(int $barangId, ?int $gudangId = null): float
     {
-        // 1. Batch aktif tertua yang masih memiliki sisa stok
-        $activeBatchQuery = StokGudangBatch::where('barang_id', $barangId)
-            ->where('qty_sisa', '>', 0)
-            ->where('is_habis', false);
-
-        if ($gudangId) {
-            $activeBatchQuery->where('gudang_id', $gudangId);
-        }
-
-        $activeBatch = $activeBatchQuery->orderBy('id', 'asc')->first();
-
-        if ($activeBatch && (float)$activeBatch->harga_per_qty > 0) {
-            return (float) $activeBatch->harga_per_qty;
-        }
-
-        // 2. Jika tidak ada batch aktif pada gudang tersebut, cari di gudang mana saja
-        if ($gudangId) {
-            $anyActiveBatch = StokGudangBatch::where('barang_id', $barangId)
-                ->where('qty_sisa', '>', 0)
-                ->where('is_habis', false)
-                ->orderBy('id', 'asc')
-                ->first();
-
-            if ($anyActiveBatch && (float)$anyActiveBatch->harga_per_qty > 0) {
-                return (float) $anyActiveBatch->harga_per_qty;
-            }
-        }
-
-        // 3. Jika seluruh stok habis, ambil batch historis terakhir yang valid
-        $latestBatchQuery = StokGudangBatch::where('barang_id', $barangId)
-            ->where('harga_per_qty', '>', 0);
-
-        if ($gudangId) {
-            $latestBatchQuery->where('gudang_id', $gudangId);
-        }
-
-        $latestBatch = $latestBatchQuery->orderBy('id', 'desc')->first();
-
-        if ($latestBatch && (float)$latestBatch->harga_per_qty > 0) {
-            return (float) $latestBatch->harga_per_qty;
-        }
-
-        if ($gudangId) {
-            $anyLatestBatch = StokGudangBatch::where('barang_id', $barangId)
-                ->where('harga_per_qty', '>', 0)
-                ->orderBy('id', 'desc')
-                ->first();
-
-            if ($anyLatestBatch && (float)$anyLatestBatch->harga_per_qty > 0) {
-                return (float) $anyLatestBatch->harga_per_qty;
-            }
-        }
-
-        // 4. Fallback ke pembelian terakhir yang masih tersimpan di database
-        $latestPembelian = DB::table('pembelian_detail')
-            ->where('barang_id', $barangId)
-            ->where('harga_per_qty', '>', 0)
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if ($latestPembelian && (float)$latestPembelian->harga_per_qty > 0) {
-            $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
-            if ($konversi <= 0) $konversi = 1;
-            return (float) $latestPembelian->harga_per_qty / $konversi;
-        }
-
-        // 5. Fallback ke persediaan awal
-        $sa = DB::table('persediaan_awal_detail')
-            ->where('barang_id', $barangId)
-            ->where('harga_satuan', '>', 0)
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if ($sa && (float)$sa->harga_satuan > 0) {
-            return (float) $sa->harga_satuan;
-        }
-
-        // 6. Fallback ke formulasi resep jika barang memiliki resep (Bahan Setengah Jadi)
-        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
-        if ($barang) {
-            $resep = null;
-            if (!empty($barang->resep_id)) {
-                $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
-            }
-            if (!$resep) {
-                $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
-            }
-
-            if ($resep) {
-                $subBahanList = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
-                if ($subBahanList->count() > 0) {
-                    $outQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
-                    $totalBiaya = 0.0;
-                    foreach ($subBahanList as $sb) {
-                        $totalBiaya += (floatval($sb->qty_bahan) * $this->getHargaTerakhirBahan($sb->bahan_id, $gudangId));
-                    }
-                    if ($totalBiaya > 0) {
-                        return (float) ($totalBiaya / $outQty);
-                    }
-                }
-            }
-        }
-
-        // 7. Fallback ke master_barang hpp_referensi saat ini
-        return (float) ($barang->hpp_referensi ?? 0);
+        return $this->getHargaTerakhirBahan($barangId, $gudangId);
     }
 
     /*

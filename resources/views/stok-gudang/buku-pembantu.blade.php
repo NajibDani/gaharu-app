@@ -153,7 +153,7 @@
                                         <span class="badge bg-light text-dark px-3 py-1.5">Umum</span>
                                     @endif
                                 </td>
-                                <td class="text-end fw-bold text-dark pe-4">
+                                <td class="text-end fw-bold {{ $item->stok_akhir < 0 ? 'text-danger' : 'text-dark' }} pe-4">
                                     <div>{{ number_format($item->stok_akhir, 2, ',', '.') }} {{ $item->satuan }}</div>
                                     @if($hasKonversi && $stokAkhirBeli !== null)
                                         <small class="text-primary fw-normal d-block mt-0.5" style="font-size: 12px;">
@@ -427,10 +427,15 @@
                         }
 
                         // Helper Qty Cell
+                        // Helper Qty Cell
                         const renderQtyCell = (qtyVal, qtyBeliVal, colorClass = '') => {
-                            let res = `<span class="${colorClass}">${formatNumber(qtyVal)} ${satuanDasar}</span>`;
+                            let textClass = colorClass;
+                            if (!textClass && Number(qtyVal) < 0) {
+                                textClass = 'text-danger fw-bold';
+                            }
+                            let res = `<span class="${textClass}">${formatNumber(qtyVal)} ${satuanDasar}</span>`;
                             if (isConverted && qtyBeliVal !== undefined && qtyBeliVal !== null) {
-                                res += `<div class="text-muted fw-normal" style="font-size: 11px;">&asymp; ${formatNumber(qtyBeliVal, 2)} ${satuanBeliRes}</div>`;
+                                res += `<div class="${Number(qtyBeliVal) < 0 ? 'text-danger' : 'text-muted'} fw-normal" style="font-size: 11px;">&asymp; ${formatNumber(qtyBeliVal, 2)} ${satuanBeliRes}</div>`;
                             }
                             return res;
                         };
@@ -462,7 +467,7 @@
                                 <td class="text-end">—</td>
                                 <td class="text-end">—</td>
                                 <!-- Saldo -->
-                                <td class="text-end">${renderQtyCell(saQty, saQtyBeli)}</td>
+                                <td class="text-end">${renderQtyCell(saQty, saQtyBeli, saQty < 0 ? 'text-danger fw-bold' : '')}</td>
                                 <td class="text-end">${formatIDR(saNilai)}</td>
                                 <td class="text-center text-muted">—</td>
                             </tr>
@@ -495,7 +500,7 @@
                                         <td class="text-end text-danger fw-semibold">${!m.is_masuk ? formatIDR(total) : '—'}</td>
                                         
                                         <!-- SALDO BERJALAN -->
-                                        <td class="text-end fw-bold">${renderQtyCell(saldoQ, saldoQBeli)}</td>
+                                        <td class="text-end fw-bold">${renderQtyCell(saldoQ, saldoQBeli, saldoQ < 0 ? 'text-danger fw-bold' : '')}</td>
                                         <td class="text-end fw-bold text-primary">${formatIDR(m.saldo_nilai)}</td>
 
                                         <!-- AKSI HAPUS -->
@@ -540,7 +545,7 @@
                                 <td class="text-end">—</td>
                                 <td class="text-end">—</td>
                                 <!-- Saldo -->
-                                <td class="text-end">${renderQtyCell(sfQty, sfQtyBeli, 'fw-bold')}</td>
+                                <td class="text-end">${renderQtyCell(sfQty, sfQtyBeli, sfQty < 0 ? 'text-danger fw-bold' : 'fw-bold')}</td>
                                 <td class="text-end text-primary">${formatIDR(sfNilai)}</td>
                                 <td class="text-center text-muted">—</td>
                             </tr>
@@ -555,7 +560,7 @@
                             if (tr) {
                                 const tdStok = tr.querySelector('td:nth-child(5)');
                                 if (tdStok) {
-                                    let htmlStok = `<div>${formatNumber(sfQty)} ${satuanDasar}</div>`;
+                                    let htmlStok = `<div class="${sfQty < 0 ? 'text-danger fw-bold' : ''}">${formatNumber(sfQty)} ${satuanDasar}</div>`;
                                     if (isConverted && sfQtyBeli !== null && sfQtyBeli !== undefined) {
                                         htmlStok += `<small class="text-primary fw-normal d-block mt-0.5" style="font-size: 12px;">&asymp; ${formatNumber(sfQtyBeli, 2)} ${satuanBeliRes}</small>`;
                                     }

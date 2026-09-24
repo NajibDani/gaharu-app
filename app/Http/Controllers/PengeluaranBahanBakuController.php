@@ -355,8 +355,7 @@ class PengeluaranBahanBakuController extends Controller
                 continue;
             }
 
-            $currentKey = $gudang->id . '_' . $it->id . '_' . ($divisiId ?: '0');
-            $currentStock = $stokMap[$currentKey] ?? 0.0;
+            $currentStock = (float) StokGudang::getStokBukuPembantu($it->id, $gudang->id, $divisiId);
 
             if ($currentStock < $minStock) {
                 $deficit = $minStock - $currentStock;
@@ -368,7 +367,7 @@ class PengeluaranBahanBakuController extends Controller
                 $suggestedQtyInput = $hasKonversi ? (float) ceil($suggestedQty / $konversi) : $suggestedQty;
 
                 // Stok yang tersedia di Gudang Utama
-                $stokUtama = $stokMap[$gudangUtamaId . '_' . $it->id . '_0'] ?? 0.0;
+                $stokUtama = (float) StokGudang::getStokBukuPembantu($it->id, $gudangUtamaId);
 
                 $suggestions[] = [
                     'barang_id'            => $it->id,
@@ -439,11 +438,11 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $barangData = $barang->map(function ($b) {
+        $barangData = $barang->map(function ($b) use ($gudangSourceId) {
             $satuan = $b->satuan ?: 'Pcs';
             $satuanBeli = $b->satuan_pembelian ?: $satuan;
             $konversi = (float) ($b->konversi_pembelian ?: 1);
-            $stok = (float) ($b->stok ?: 0);
+            $stok = (float) StokGudang::getStokBukuPembantu($b->id, $gudangSourceId);
             $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
 
@@ -620,7 +619,9 @@ class PengeluaranBahanBakuController extends Controller
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
+        FifoService::clearHargaCache();
         foreach ($pengeluaran->details as $dItem) {
+            MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
             if ($pengeluaran->gudang_id) {
                 StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
             }
@@ -728,8 +729,10 @@ class PengeluaranBahanBakuController extends Controller
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
+        FifoService::clearHargaCache();
         // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
         foreach ($pengeluaran->details as $dItem) {
+            MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
             if ($pengeluaran->gudang_id) {
                 StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
             }
@@ -927,6 +930,17 @@ class PengeluaranBahanBakuController extends Controller
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
+        FifoService::clearHargaCache();
+        foreach ($pengeluaran->details as $dItem) {
+            MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
+            if ($pengeluaran->gudang_id) {
+                StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+            }
+            if ($gudangUtamaId) {
+                StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+            }
+        }
+
         $soDetailsMap = [];
         if ($isOpname) {
             $so = $pengeluaran->findAssociatedStockOpname();
@@ -1059,11 +1073,11 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $barangData = $barang->map(function ($b) use ($jenis) {
+        $barangData = $barang->map(function ($b) use ($jenis, $gudangSourceId) {
             $satuan = $b->satuan ?: 'Pcs';
             $satuanBeli = $b->satuan_pembelian ?: $satuan;
             $konversi = (float) ($b->konversi_pembelian ?: 1);
-            $stok = (float) ($b->stok ?: 0);
+            $stok = (float) StokGudang::getStokBukuPembantu($b->id, $gudangSourceId);
             $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
             $labelStokPrefix = ($jenis === 'wasted') ? 'Stok Lokasi' : 'Stok Utama';
@@ -1695,11 +1709,15 @@ class PengeluaranBahanBakuController extends Controller
                 $stokQuery->whereNull('divisi_id');
             }
 
-            $stokGudang = $stokQuery->lockForUpdate()->first();
-
             if ($stokGudang) {
-                $newJumlah = max(0, (float)$stokGudang->jumlah - (float)$detail->qty);
-                $stokGudang->update(['jumlah' => $newJumlah]);
+                $stokGudang->decrement('jumlah', (float)$detail->qty);
+            } else {
+                StokGudang::create([
+                    'barang_id' => $detail->barang_id,
+                    'gudang_id' => $gudangLokasi,
+                    'divisi_id' => $divisiLokasi,
+                    'jumlah'    => -1 * (float)$detail->qty,
+                ]);
             }
 
             TransaksiStok::create([
