@@ -38,137 +38,189 @@ class StokGudang extends Model
     public static function getStokBukuPembantu($barangId, $gudangId = null, $divisiId = null, $date = null): float
     {
         $date = $date ?: date('Y-m-d');
-        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
-        $konversiBarang = $barang ? (float)($barang->konversi_pembelian ?: 1.0) : 1.0;
-        if ($konversiBarang <= 0) $konversiBarang = 1.0;
+        $cutoff = $date . ' 23:59:59';
 
-        $rawTxs = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+        $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
-            ->where('tanggal', '<=', $date . ' 23:59:59');
+            ->where('tanggal', '<=', $cutoff);
+
+        $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->where('tanggal', '<=', $cutoff);
 
         if ($gudangId && $divisiId) {
-            $rawTxs->where(function ($q) use ($gudangId, $divisiId) {
-                $q->where(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
-                })->orWhere(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-                });
-            });
+            $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+            $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
         } elseif ($gudangId) {
-            $rawTxs->where(function ($q) use ($gudangId) {
-                $q->where('gudang_asal_id', $gudangId)
-                  ->orWhere('gudang_tujuan_id', $gudangId);
-            });
+            $qIn->where('gudang_tujuan_id', $gudangId);
+            $qOut->where('gudang_asal_id', $gudangId);
         } elseif ($divisiId) {
-            $rawTxs->where(function ($q) use ($divisiId) {
-                $q->where('divisi_asal_id', $divisiId)
-                  ->orWhere('divisi_tujuan_id', $divisiId);
-            });
+            $qIn->where('divisi_tujuan_id', $divisiId);
+            $qOut->where('divisi_asal_id', $divisiId);
+        } else {
+            $qIn->where('tipe', 'masuk');
+            $qOut->where('tipe', 'keluar');
         }
 
-        $items = $rawTxs->orderBy('tanggal', 'asc')->orderBy('id', 'asc')->get();
-        $runningQty = 0;
+        $totalIn = (float) $qIn->sum('qty');
+        $totalOut = (float) $qOut->sum('qty');
 
-        foreach ($items as $row) {
-            $qty = floatval($row->qty);
-
-            $isMasuk = false;
-            $isKeluar = false;
-
-            if ($gudangId || $divisiId) {
-                $matchTujuan = true;
-                $matchAsal   = true;
-
-                if ($gudangId) {
-                    $matchTujuan = $matchTujuan && ($row->gudang_tujuan_id == $gudangId);
-                    $matchAsal   = $matchAsal   && ($row->gudang_asal_id   == $gudangId);
-                }
-                if ($divisiId) {
-                    $matchTujuan = $matchTujuan && ($row->divisi_tujuan_id == $divisiId);
-                    $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
-                }
-
-                if ($matchTujuan && !$matchAsal) {
-                    $isMasuk = true;
-                } elseif ($matchAsal && !$matchTujuan) {
-                    $isKeluar = true;
-                }
-            } else {
-                if ($row->tipe === 'masuk') {
-                    $isMasuk = true;
-                } elseif ($row->tipe === 'keluar') {
-                    $isKeluar = true;
-                }
-            }
-
-            if ($isMasuk) {
-                $runningQty += $qty;
-            } elseif ($isKeluar) {
-                $runningQty -= $qty;
-            }
-        }
-
-        return (float) $runningQty;
+        return (float) ($totalIn - $totalOut);
     }
 
+    /**
+     * Bulk hitung stok real-time untuk banyak barang sekaligus dalam 1-2 query database.
+     */
+    public static function getBulkStokBukuPembantu(array $barangIds, $gudangId = null, $divisiId = null, $date = null): array
+    {
+        if (empty($barangIds)) return [];
+
+        $date = $date ?: date('Y-m-d');
+        $cutoff = $date . ' 23:59:59';
+
+        $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->whereIn('barang_id', $barangIds)
+            ->where('tanggal', '<=', $cutoff)
+            ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_in'))
+            ->groupBy('barang_id');
+
+        $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->whereIn('barang_id', $barangIds)
+            ->where('tanggal', '<=', $cutoff)
+            ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_out'))
+            ->groupBy('barang_id');
+
+        if ($gudangId && $divisiId) {
+            $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+            $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+        } elseif ($gudangId) {
+            $qIn->where('gudang_tujuan_id', $gudangId);
+            $qOut->where('gudang_asal_id', $gudangId);
+        } elseif ($divisiId) {
+            $qIn->where('divisi_tujuan_id', $divisiId);
+            $qOut->where('divisi_asal_id', $divisiId);
+        } else {
+            $qIn->where('tipe', 'masuk');
+            $qOut->where('tipe', 'keluar');
+        }
+
+        $ins = $qIn->pluck('total_in', 'barang_id');
+        $outs = $qOut->pluck('total_out', 'barang_id');
+
+        $result = [];
+        foreach ($barangIds as $id) {
+            $result[$id] = (float) (($ins[$id] ?? 0) - ($outs[$id] ?? 0));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Rekonsiliasi ringkasan stok stok_gudang dengan performa tinggi (bulk aggregated queries).
+     */
     public static function reconcileStockSummary($barangId = null, $gudangId = null, $divisiId = null)
     {
-        $q1 = \Illuminate\Support\Facades\DB::table('stok_gudang')->select('gudang_id', 'divisi_id', 'barang_id');
-        $q2 = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')->select('gudang_id', 'divisi_id', 'barang_id');
-        $q3 = \Illuminate\Support\Facades\DB::table('transaksi_stok')->whereNotNull('gudang_tujuan_id')->select('gudang_tujuan_id as gudang_id', 'divisi_tujuan_id as divisi_id', 'barang_id');
-        $q4 = \Illuminate\Support\Facades\DB::table('transaksi_stok')->whereNotNull('gudang_asal_id')->select('gudang_asal_id as gudang_id', 'divisi_asal_id as divisi_id', 'barang_id');
+        $inQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->whereNotNull('gudang_tujuan_id')
+            ->select(
+                'gudang_tujuan_id as gudang_id',
+                \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_tujuan_id, 0) as divisi_id'),
+                'barang_id',
+                \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_in')
+            )
+            ->groupBy('gudang_tujuan_id', \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_tujuan_id, 0)'), 'barang_id');
+
+        $outQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->whereNotNull('gudang_asal_id')
+            ->select(
+                'gudang_asal_id as gudang_id',
+                \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_asal_id, 0) as divisi_id'),
+                'barang_id',
+                \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_out')
+            )
+            ->groupBy('gudang_asal_id', \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_asal_id, 0)'), 'barang_id');
 
         if ($barangId) {
-            $q1->where('barang_id', $barangId);
-            $q2->where('barang_id', $barangId);
-            $q3->where('barang_id', $barangId);
-            $q4->where('barang_id', $barangId);
+            $inQuery->where('barang_id', $barangId);
+            $outQuery->where('barang_id', $barangId);
         }
         if ($gudangId) {
-            $q1->where('gudang_id', $gudangId);
-            $q2->where('gudang_id', $gudangId);
-            $q3->where('gudang_tujuan_id', $gudangId);
-            $q4->where('gudang_asal_id', $gudangId);
+            $inQuery->where('gudang_tujuan_id', $gudangId);
+            $outQuery->where('gudang_asal_id', $gudangId);
         }
         if ($divisiId) {
-            $q1->where('divisi_id', $divisiId);
-            $q2->where('divisi_id', $divisiId);
-            $q3->where('divisi_tujuan_id', $divisiId);
-            $q4->where('divisi_asal_id', $divisiId);
+            $inQuery->where('divisi_tujuan_id', $divisiId);
+            $outQuery->where('divisi_asal_id', $divisiId);
         }
 
-        $combos = $q1->union($q2)->union($q3)->union($q4)->get();
+        $ins = $inQuery->get();
+        $outs = $outQuery->get();
 
-        foreach ($combos as $c) {
-            $gId = $c->gudang_id;
-            $dId = $c->divisi_id;
-            $bId = $c->barang_id;
+        $stockMap = [];
+        foreach ($ins as $row) {
+            $key = "{$row->gudang_id}_{$row->divisi_id}_{$row->barang_id}";
+            $stockMap[$key] = [
+                'gudang_id' => $row->gudang_id,
+                'divisi_id' => $row->divisi_id == 0 ? null : $row->divisi_id,
+                'barang_id' => $row->barang_id,
+                'jumlah'    => (float) $row->total_in,
+            ];
+        }
 
-            if (!$gId || !$bId) continue;
-
-            $targetJumlah = self::getStokBukuPembantu($bId, $gId, $dId);
-
-            $sgQuery = \Illuminate\Support\Facades\DB::table('stok_gudang')->where('gudang_id', $gId)->where('barang_id', $bId);
-            if ($dId) {
-                $sgQuery->where('divisi_id', $dId);
+        foreach ($outs as $row) {
+            $key = "{$row->gudang_id}_{$row->divisi_id}_{$row->barang_id}";
+            if (!isset($stockMap[$key])) {
+                $stockMap[$key] = [
+                    'gudang_id' => $row->gudang_id,
+                    'divisi_id' => $row->divisi_id == 0 ? null : $row->divisi_id,
+                    'barang_id' => $row->barang_id,
+                    'jumlah'    => -(float) $row->total_out,
+                ];
             } else {
-                $sgQuery->whereNull('divisi_id');
+                $stockMap[$key]['jumlah'] -= (float) $row->total_out;
             }
-            $existing = $sgQuery->first();
+        }
 
-            if ($existing) {
-                if (abs((float)$existing->jumlah - $targetJumlah) > 0.0001) {
-                    \Illuminate\Support\Facades\DB::table('stok_gudang')->where('id', $existing->id)->update(['jumlah' => $targetJumlah]);
+        // Ambil existing stok_gudang
+        $sgQuery = \Illuminate\Support\Facades\DB::table('stok_gudang');
+        if ($barangId) $sgQuery->where('barang_id', $barangId);
+        if ($gudangId) $sgQuery->where('gudang_id', $gudangId);
+        if ($divisiId) $sgQuery->where('divisi_id', $divisiId);
+        $existingRows = $sgQuery->get();
+
+        $existingMap = [];
+        foreach ($existingRows as $er) {
+            $dKey = $er->divisi_id ? $er->divisi_id : 0;
+            $existingMap["{$er->gudang_id}_{$dKey}_{$er->barang_id}"] = $er;
+        }
+
+        // Update beda nilai atau insert baru
+        foreach ($stockMap as $key => $target) {
+            if (isset($existingMap[$key])) {
+                $current = $existingMap[$key];
+                if (abs((float)$current->jumlah - $target['jumlah']) > 0.0001) {
+                    \Illuminate\Support\Facades\DB::table('stok_gudang')
+                        ->where('id', $current->id)
+                        ->update(['jumlah' => $target['jumlah']]);
                 }
             } else {
-                if (abs($targetJumlah) > 0.0001) {
+                if (abs($target['jumlah']) > 0.0001) {
                     \Illuminate\Support\Facades\DB::table('stok_gudang')->insert([
-                        'gudang_id' => $gId,
-                        'divisi_id' => $dId,
-                        'barang_id' => $bId,
-                        'jumlah'    => $targetJumlah,
+                        'gudang_id' => $target['gudang_id'],
+                        'divisi_id' => $target['divisi_id'],
+                        'barang_id' => $target['barang_id'],
+                        'jumlah'    => $target['jumlah'],
                     ]);
                 }
+            }
+        }
+
+        // Jika baris stok_gudang ada tapi di stockMap tidak ada sama sekali mutasinya
+        foreach ($existingMap as $key => $current) {
+            if (!isset($stockMap[$key]) && abs((float)$current->jumlah) > 0.0001) {
+                \Illuminate\Support\Facades\DB::table('stok_gudang')
+                    ->where('id', $current->id)
+                    ->update(['jumlah' => 0]);
             }
         }
     }

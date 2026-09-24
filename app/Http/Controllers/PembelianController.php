@@ -38,8 +38,9 @@ class PembelianController extends Controller
 
     public function index(Request $request)
     {
-        // Auto-heal batch pembelian yang belum terkonversi otomatis tanpa perlu migrasi database
-        MasterBarang::autoHealUnconvertedPembelianBatches();
+        if ($request->has('heal')) {
+            MasterBarang::autoHealUnconvertedPembelianBatches();
+        }
 
         $search            = $request->query('search');
         $sort              = $request->query('sort', 'terbaru');

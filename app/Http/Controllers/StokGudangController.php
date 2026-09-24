@@ -19,8 +19,6 @@ class StokGudangController extends Controller
         $barangId    = $request->barang_id;
         $jenisBarang = $request->jenis_barang ?? $request->jenis_utama;
         
-        // Auto-heal batch pembelian yang belum terkonversi otomatis tanpa perlu migrasi database
-        MasterBarang::autoHealUnconvertedPembelianBatches();
 
         /*
         |--------------------------------------------------------------------------
@@ -102,26 +100,19 @@ class StokGudangController extends Controller
               });
         });
 
-        // Ambil semua hasil (kita paginate manual di bawah)
-        $rows = $query->orderBy('master_barang.nama')->orderBy('master_gudang.nama')->get();
+        // Paginasi langsung di tingkat database (jauh lebih hemat memori dan CPU)
+        $stokGudang = $query->orderBy('master_barang.nama')
+            ->orderBy('master_gudang.nama')
+            ->paginate(20)
+            ->withQueryString();
 
         /*
         |--------------------------------------------------------------------------
-        | PAGINATE MANUAL (Slice Terlebih Dahulu Sebelum Map untuk Efisiensi)
+        | BULK PRE-FETCH HARGA FIFO & FALLBACK (Hanya pada 20 items halaman aktif)
         |--------------------------------------------------------------------------
         */
-        $perPage     = 20;
-        $currentPage = (int) ($request->page ?? 1);
-        $total       = $rows->count();
-        $items       = $rows->slice(($currentPage - 1) * $perPage, $perPage)->values();
-
-        /*
-        |--------------------------------------------------------------------------
-        | BULK PRE-FETCH HARGA FIFO & FALLBACK
-        |--------------------------------------------------------------------------
-        */
-        $itemIds = $items->pluck('id')->toArray();
-        $gudangIds = $items->pluck('gudang_id')->unique()->toArray();
+        $itemIds   = $stokGudang->pluck('id')->toArray();
+        $gudangIds = $stokGudang->pluck('gudang_id')->unique()->toArray();
 
         // 1. Ambil harga rata-rata dari batch aktif
         $batchPrices = DB::table('stok_gudang_batch')
@@ -151,10 +142,10 @@ class StokGudangController extends Controller
 
         /*
         |--------------------------------------------------------------------------
-        | HITUNG STATUS & NILAI FIFO PER BARIS (Hanya pada items halaman aktif)
+        | HITUNG STATUS & NILAI FIFO PER BARIS (Transform items paginasi)
         |--------------------------------------------------------------------------
         */
-        $items = $items->map(function ($row) use ($batchPrices, $historicalPrices, $hppReferences) {
+        $stokGudang->getCollection()->transform(function ($row) use ($batchPrices, $historicalPrices, $hppReferences) {
             $row->status = $row->qty > 0 ? 'tersedia' : 'habis';
 
             $key = $row->id . '-' . $row->gudang_id . '-' . ($row->divisi_id ?? '0');
@@ -177,14 +168,6 @@ class StokGudangController extends Controller
 
             return $row;
         });
-
-        $stokGudang = new \Illuminate\Pagination\LengthAwarePaginator(
-            $items,
-            $total,
-            $perPage,
-            $currentPage,
-            ['path' => $request->url(), 'query' => $request->query()]
-        );
 
 
         /*
@@ -216,12 +199,6 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Bersihkan data transaksi yatim (orphan) & perbaiki konversi pembelian agar saldo akurat 100%
-        self::autoCleanOrphanMutations();
-        MasterBarang::autoHealUnconvertedPembelianBatches();
-        $this->autoHealPrematureDraftSoMutations();
-        \App\Models\StokGudang::reconcileStockSummary();
-
         $query = MasterBarang::query()->with('kategori');
 
         if ($search) {
@@ -250,8 +227,13 @@ class StokGudangController extends Controller
 
         $items = $query->orderBy('nama')->paginate(20)->withQueryString();
 
-        foreach ($items as $item) {
-            $item->stok_akhir = $this->calculateStockAtDate($item->id, $gudangId, $divisiId, $endDate);
+        // Hitung stok akhir untuk 20 barang pada halaman aktif secara bulk dalam 1 query agregat
+        $itemIds = $items->pluck('id')->toArray();
+        if (!empty($itemIds)) {
+            $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($itemIds, $gudangId, $divisiId, $endDate);
+            foreach ($items as $item) {
+                $item->stok_akhir = (float) ($bulkStok[$item->id] ?? 0);
+            }
         }
 
         $gudangs    = MasterGudang::orderBy('nama')->get();
@@ -281,6 +263,9 @@ class StokGudangController extends Controller
 
         // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
         MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
+
+        // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
+        self::autoHealMissingDivisiInTransaksiStok($barangId);
 
         // Auto-heal mutasi stok opname prematur yang PBK-nya masih berstatus Draft
         $this->autoHealPrematureDraftSoMutations($barangId);
@@ -750,6 +735,92 @@ class StokGudangController extends Controller
 
                 $opname->update(['status' => 'draft']);
             }
+        }
+    }
+
+    /**
+     * Auto-heal transaksi_stok yang divisi_tujuan_id atau divisi_asal_id-nya belum tersinkronisasi dari dokumen sumber (PBK, SO, Persediaan Awal).
+     */
+    public static function autoHealMissingDivisiInTransaksiStok($barangId = null)
+    {
+        try {
+            // 1. Backfill divisi_tujuan_id dari pengeluaran_bahan_baku (PBK Masuk ke Divisi)
+            $q1 = DB::table('transaksi_stok as ts')
+                ->join('pengeluaran_bahan_baku as pbk', 'ts.source_id', '=', 'pbk.id')
+                ->where('ts.source_type', 'pengeluaran_bahan_baku')
+                ->where('ts.tipe', 'masuk')
+                ->whereNotNull('pbk.divisi_id')
+                ->where(function($q) {
+                    $q->whereNull('ts.divisi_tujuan_id')
+                      ->orWhereColumn('ts.divisi_tujuan_id', '!=', 'pbk.divisi_id');
+                });
+            if ($barangId) {
+                $q1->where('ts.barang_id', $barangId);
+            }
+            $q1->update(['ts.divisi_tujuan_id' => DB::raw('pbk.divisi_id')]);
+
+            // 2. Backfill divisi_asal_id dari pengeluaran_bahan_baku / wasted (PBK Keluar dari Divisi)
+            $q2 = DB::table('transaksi_stok as ts')
+                ->join('pengeluaran_bahan_baku as pbk', 'ts.source_id', '=', 'pbk.id')
+                ->whereIn('ts.source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                ->where('ts.tipe', 'keluar')
+                ->whereNotNull('pbk.divisi_id')
+                ->whereColumn('ts.gudang_asal_id', 'pbk.gudang_id')
+                ->where(function($q) {
+                    $q->whereNull('ts.divisi_asal_id')
+                      ->orWhereColumn('ts.divisi_asal_id', '!=', 'pbk.divisi_id');
+                });
+            if ($barangId) {
+                $q2->where('ts.barang_id', $barangId);
+            }
+            $q2->update(['ts.divisi_asal_id' => DB::raw('pbk.divisi_id')]);
+
+            // 3. Backfill divisi_tujuan_id dari stock_opname (Surplus Divisi)
+            $q3 = DB::table('transaksi_stok as ts')
+                ->join('stock_opname as so', 'ts.source_id', '=', 'so.id')
+                ->where('ts.source_type', 'stock_opname')
+                ->where('ts.tipe', 'masuk')
+                ->whereNotNull('so.divisi_id')
+                ->where(function($q) {
+                    $q->whereNull('ts.divisi_tujuan_id')
+                      ->orWhereColumn('ts.divisi_tujuan_id', '!=', 'so.divisi_id');
+                });
+            if ($barangId) {
+                $q3->where('ts.barang_id', $barangId);
+            }
+            $q3->update(['ts.divisi_tujuan_id' => DB::raw('so.divisi_id')]);
+
+            // 4. Backfill divisi_asal_id dari stock_opname (Shortage Divisi)
+            $q4 = DB::table('transaksi_stok as ts')
+                ->join('stock_opname as so', 'ts.source_id', '=', 'so.id')
+                ->where('ts.source_type', 'stock_opname')
+                ->where('ts.tipe', 'keluar')
+                ->whereNotNull('so.divisi_id')
+                ->where(function($q) {
+                    $q->whereNull('ts.divisi_asal_id')
+                      ->orWhereColumn('ts.divisi_asal_id', '!=', 'so.divisi_id');
+                });
+            if ($barangId) {
+                $q4->where('ts.barang_id', $barangId);
+            }
+            $q4->update(['ts.divisi_asal_id' => DB::raw('so.divisi_id')]);
+
+            // 5. Backfill divisi_tujuan_id dari persediaan_awal (Saldo Awal Divisi)
+            $q5 = DB::table('transaksi_stok as ts')
+                ->join('persediaan_awal as pa', 'ts.source_id', '=', 'pa.id')
+                ->where('ts.source_type', 'persediaan_awal')
+                ->where('ts.tipe', 'masuk')
+                ->whereNotNull('pa.divisi_id')
+                ->where(function($q) {
+                    $q->whereNull('ts.divisi_tujuan_id')
+                      ->orWhereColumn('ts.divisi_tujuan_id', '!=', 'pa.divisi_id');
+                });
+            if ($barangId) {
+                $q5->where('ts.barang_id', $barangId);
+            }
+            $q5->update(['ts.divisi_tujuan_id' => DB::raw('pa.divisi_id')]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoHealMissingDivisiInTransaksiStok error: ' . $e->getMessage());
         }
     }
 

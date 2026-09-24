@@ -424,6 +424,12 @@ class FifoService
             $pHarga = (float)($latestPembelian->harga ?? 0);
             $pHargaPerQty = (float)($latestPembelian->harga_per_qty ?? 0);
             $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
+            if ($konversi <= 1) {
+                $masterKonv = (float) DB::table('master_barang')->where('id', $barangId)->value('konversi_pembelian');
+                if ($masterKonv > 1) {
+                    $konversi = $masterKonv;
+                }
+            }
             if ($konversi <= 0) $konversi = 1;
 
             $unitPriceBeli = $pHargaPerQty > 0 ? $pHargaPerQty : ($pQty > 0 ? ($pHarga / $pQty) : 0);

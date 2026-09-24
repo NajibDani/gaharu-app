@@ -129,9 +129,15 @@ class PengeluaranBahanBakuController extends Controller
             $countQuery->whereDate('pengeluaran_bahan_baku.tanggal', '<=', $sampai);
         }
 
-        $totalCount = (clone $countQuery)->count();
-        $draftCount = (clone $countQuery)->where('pengeluaran_bahan_baku.status', 'draft')->count();
-        $approvedCount = (clone $countQuery)->whereIn('pengeluaran_bahan_baku.status', ['approved', 'disetujui'])->count();
+        $stats = (clone $countQuery)->selectRaw("
+            COUNT(*) as total_count,
+            COUNT(CASE WHEN pengeluaran_bahan_baku.status = 'draft' THEN 1 END) as draft_count,
+            COUNT(CASE WHEN pengeluaran_bahan_baku.status IN ('approved', 'disetujui') THEN 1 END) as approved_count
+        ")->first();
+
+        $totalCount = $stats->total_count ?? 0;
+        $draftCount = $stats->draft_count ?? 0;
+        $approvedCount = $stats->approved_count ?? 0;
 
         if ($sort === 'terlama') {
             $query->orderBy('pengeluaran_bahan_baku.tanggal', 'asc')
@@ -292,15 +298,10 @@ class PengeluaranBahanBakuController extends Controller
 
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
         $itemIds = $items->pluck('id')->toArray();
-        $allStockRows = StokGudang::whereIn('gudang_id', array_unique([$gudang->id, $gudangUtamaId]))
-            ->whereIn('barang_id', $itemIds)
-            ->get();
 
-        $stokMap = [];
-        foreach ($allStockRows as $sr) {
-            $divKey = $sr->divisi_id ?? '0';
-            $stokMap[$sr->gudang_id . '_' . $sr->barang_id . '_' . $divKey] = (float) $sr->jumlah;
-        }
+        // Bulk fetch stok buku pembantu untuk gudang outlet & gudang utama dalam 2 query agregat
+        $currentStocks = StokGudang::getBulkStokBukuPembantu($itemIds, $gudang->id, $divisiId);
+        $utamaStocks   = StokGudang::getBulkStokBukuPembantu($itemIds, $gudangUtamaId);
 
         $suggestions = [];
         foreach ($items as $it) {
@@ -355,7 +356,7 @@ class PengeluaranBahanBakuController extends Controller
                 continue;
             }
 
-            $currentStock = (float) StokGudang::getStokBukuPembantu($it->id, $gudang->id, $divisiId);
+            $currentStock = (float) ($currentStocks[$it->id] ?? 0);
 
             if ($currentStock < $minStock) {
                 $deficit = $minStock - $currentStock;
@@ -367,7 +368,7 @@ class PengeluaranBahanBakuController extends Controller
                 $suggestedQtyInput = $hasKonversi ? (float) ceil($suggestedQty / $konversi) : $suggestedQty;
 
                 // Stok yang tersedia di Gudang Utama
-                $stokUtama = (float) StokGudang::getStokBukuPembantu($it->id, $gudangUtamaId);
+                $stokUtama = (float) ($utamaStocks[$it->id] ?? 0);
 
                 $suggestions[] = [
                     'barang_id'            => $it->id,
@@ -438,11 +439,14 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $barangData = $barang->map(function ($b) use ($gudangSourceId) {
+        $barangIds = $barang->pluck('id')->toArray();
+        $bulkStok = StokGudang::getBulkStokBukuPembantu($barangIds, $gudangSourceId);
+
+        $barangData = $barang->map(function ($b) use ($gudangSourceId, $bulkStok) {
             $satuan = $b->satuan ?: 'Pcs';
             $satuanBeli = $b->satuan_pembelian ?: $satuan;
             $konversi = (float) ($b->konversi_pembelian ?: 1);
-            $stok = (float) StokGudang::getStokBukuPembantu($b->id, $gudangSourceId);
+            $stok = (float) ($bulkStok[$b->id] ?? 0);
             $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
 
@@ -1073,11 +1077,14 @@ class PengeluaranBahanBakuController extends Controller
             ->orderBy('master_barang.nama')
             ->get();
 
-        $barangData = $barang->map(function ($b) use ($jenis, $gudangSourceId) {
+        $barangIds = $barang->pluck('id')->toArray();
+        $bulkStok = StokGudang::getBulkStokBukuPembantu($barangIds, $gudangSourceId);
+
+        $barangData = $barang->map(function ($b) use ($jenis, $gudangSourceId, $bulkStok) {
             $satuan = $b->satuan ?: 'Pcs';
             $satuanBeli = $b->satuan_pembelian ?: $satuan;
             $konversi = (float) ($b->konversi_pembelian ?: 1);
-            $stok = (float) StokGudang::getStokBukuPembantu($b->id, $gudangSourceId);
+            $stok = (float) ($bulkStok[$b->id] ?? 0);
             $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
             $labelStokPrefix = ($jenis === 'wasted') ? 'Stok Lokasi' : 'Stok Utama';
@@ -1708,6 +1715,8 @@ class PengeluaranBahanBakuController extends Controller
             } else {
                 $stokQuery->whereNull('divisi_id');
             }
+
+            $stokGudang = $stokQuery->first();
 
             if ($stokGudang) {
                 $stokGudang->decrement('jumlah', (float)$detail->qty);

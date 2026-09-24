@@ -100,10 +100,10 @@ class PengeluaranBahanBakuService
                     StokGudangBatch::create([
                         'gudang_id'           => $pengeluaran->gudang_id, // Gudang tujuan
                         'divisi_id'           => $pengeluaran->divisi_id, // Divisi tujuan (Kitchen/Barista/Server)
-                        'supplier_id'         => $originalBatch ? $originalBatch->supplier_id : 1,
+                        'supplier_id'         => $originalBatch ? $originalBatch->supplier_id : null,
                         'barang_id'           => $detail->barang_id,
-                        'pembelian_id'        => $originalBatch ? $originalBatch->pembelian_id : 1,
-                        'pembelian_detail_id' => $originalBatch ? $originalBatch->pembelian_detail_id : 1,
+                        'pembelian_id'        => $originalBatch ? $originalBatch->pembelian_id : null,
+                        'pembelian_detail_id' => $originalBatch ? $originalBatch->pembelian_detail_id : null,
                         'batch_number'        => $layer['batch_number'] . '-MUT', // Beri penanda mutasi
                         'qty_masuk'           => $layer['qty_keluar'],
                         'qty_keluar'          => 0,

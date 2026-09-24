@@ -72,8 +72,12 @@ class StockOpnameController extends Controller
 
         $stockOpname = $query->latest()->paginate(20)->withQueryString();
 
-        $totalDraft = StockOpname::where('status', 'draft')->count();
-        $totalApproved = StockOpname::where('status', 'approved')->count();
+        $stats = StockOpname::selectRaw("
+            COUNT(CASE WHEN status = 'draft' THEN 1 END) as total_draft,
+            COUNT(CASE WHEN status = 'approved' THEN 1 END) as total_approved
+        ")->first();
+        $totalDraft = $stats->total_draft ?? 0;
+        $totalApproved = $stats->total_approved ?? 0;
 
         $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         $kategoris = \App\Models\Kategori::orderBy('nama')->get();
@@ -192,6 +196,7 @@ class StockOpnameController extends Controller
                 'master_barang.is_bahan_setengah_jadi',
                 'master_barang.is_barang_jadi',
                 'master_barang.is_operational',
+                'master_barang.hpp_referensi',
                 DB::raw('COALESCE(stok_gudang.jumlah, 0) as stok')
             )
             ->orderByRaw('CASE 
@@ -202,29 +207,21 @@ class StockOpnameController extends Controller
             ->orderBy('master_barang.nama', 'asc')
             ->get();
 
+        $barangIds = $barang->pluck('id')->toArray();
+
         $tanggal = $request->tanggal;
-        if ($tanggal && $tanggal !== date('Y-m-d')) {
+        if ($tanggal && $tanggal !== date('Y-m-d') && !empty($barangIds)) {
             $cutoff = $tanggal . ' 23:59:59';
+            $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($barangIds, $gudangId, $divisiId, $cutoff);
             foreach ($barang as $item) {
-                $qIn = DB::table('transaksi_stok')->where('barang_id', $item->id)->where('tanggal', '<=', $cutoff);
-                $qOut = DB::table('transaksi_stok')->where('barang_id', $item->id)->where('tanggal', '<=', $cutoff);
-                if ($gudangId && $divisiId) {
-                    $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-                    $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
-                } elseif ($gudangId) {
-                    $qIn->where('gudang_tujuan_id', $gudangId);
-                    $qOut->where('gudang_asal_id', $gudangId);
-                }
-                $item->stok = max(0, (float)($qIn->sum('qty') - $qOut->sum('qty')));
+                $item->stok = max(0, (float)($bulkStok[$item->id] ?? 0));
             }
         }
 
+        // Bulk pre-fetch harga FIFO untuk seluruh barang sekaligus (mengurangi hingga 1500 query)
+        $bulkHarga = $this->getBulkHargaFIFO($gudangId, $barangIds, $divisiId);
         foreach ($barang as $item) {
-            $item->harga_fifo = $this->getHargaFIFO(
-                $gudangId,
-                $item->id,
-                $divisiId
-            );
+            $item->harga_fifo = (float) ($bulkHarga[$item->id] ?? ($item->hpp_referensi ?? 0));
         }
 
         return response()->json($barang);
@@ -1177,10 +1174,10 @@ class StockOpnameController extends Controller
                 \App\Models\StokGudangBatch::create([
                     'gudang_id'           => $opname->gudang_id,
                     'divisi_id'           => $opname->divisi_id,
-                    'supplier_id'         => $defaultSupplierId,
+                    'supplier_id'         => $defaultSupplierId ?: null,
                     'barang_id'           => $detail->barang_id,
-                    'pembelian_id'        => $defaultPembelianId,
-                    'pembelian_detail_id' => $defaultPemDetailId,
+                    'pembelian_id'        => null,
+                    'pembelian_detail_id' => null,
                     'batch_number'        => 'SO-SURPLUS-' . $opname->kode_opname,
                     'qty_masuk'           => $selisih,
                     'qty_keluar'          => 0,
@@ -1382,6 +1379,103 @@ class StockOpnameController extends Controller
         }
 
         return (float) $harga;
+    }
+
+    /**
+     * Pre-fetch harga FIFO secara kolektif (bulk) untuk banyak barang sekaligus.
+     * Mengurangi ratusan hingga ribuan query menjadi maksimal 4 query database.
+     */
+    private function getBulkHargaFIFO($gudangId, array $barangIds, $divisiId = null): array
+    {
+        if (empty($barangIds)) {
+            return [];
+        }
+
+        // 1. Batch aktif terlama di gudang & divisi ini (order by id ASC)
+        $qActive = DB::table('stok_gudang_batch')
+            ->where('gudang_id', $gudangId)
+            ->whereIn('barang_id', $barangIds)
+            ->where('qty_sisa', '>', 0);
+        if ($divisiId) {
+            $qActive->where('divisi_id', $divisiId);
+        }
+        $activeBatches = $qActive->orderBy('id', 'asc')
+            ->select('barang_id', 'harga_per_qty')
+            ->get()
+            ->unique('barang_id')
+            ->pluck('harga_per_qty', 'barang_id')
+            ->toArray();
+
+        $result = [];
+        $missing = [];
+        foreach ($barangIds as $id) {
+            if (isset($activeBatches[$id])) {
+                $result[$id] = (float) $activeBatches[$id];
+            } else {
+                $missing[] = $id;
+            }
+        }
+
+        // Fallback 1: rata-rata semua batch historis di gudang/divisi ini
+        if (!empty($missing)) {
+            $fbQ = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangId)
+                ->whereIn('barang_id', $missing);
+            if ($divisiId) {
+                $fbQ->where('divisi_id', $divisiId);
+            }
+            $historicalAvgs = $fbQ->groupBy('barang_id')
+                ->select('barang_id', DB::raw('AVG(harga_per_qty) as avg_harga'))
+                ->pluck('avg_harga', 'barang_id')
+                ->toArray();
+
+            $nextMissing = [];
+            foreach ($missing as $id) {
+                if (isset($historicalAvgs[$id]) && $historicalAvgs[$id] !== null) {
+                    $result[$id] = (float) $historicalAvgs[$id];
+                } else {
+                    $nextMissing[] = $id;
+                }
+            }
+            $missing = $nextMissing;
+        }
+
+        // Fallback 2: batch aktif di gudang manapun (order by id DESC)
+        if (!empty($missing)) {
+            $globalActives = DB::table('stok_gudang_batch')
+                ->whereIn('barang_id', $missing)
+                ->where('qty_sisa', '>', 0)
+                ->orderBy('id', 'desc')
+                ->select('barang_id', 'harga_per_qty')
+                ->get()
+                ->unique('barang_id')
+                ->pluck('harga_per_qty', 'barang_id')
+                ->toArray();
+
+            $nextMissing = [];
+            foreach ($missing as $id) {
+                if (isset($globalActives[$id])) {
+                    $result[$id] = (float) $globalActives[$id];
+                } else {
+                    $nextMissing[] = $id;
+                }
+            }
+            $missing = $nextMissing;
+        }
+
+        // Fallback akhir: hpp_referensi di master barang
+        if (!empty($missing)) {
+            $hppRefs = DB::table('master_barang')
+                ->whereIn('id', $missing)
+                ->pluck('hpp_referensi', 'id')
+                ->toArray();
+
+            foreach ($missing as $id) {
+                $result[$id] = (float) ($hppRefs[$id] ?? 0);
+            }
+        }
+
+        return $result;
     }
 
     /*
