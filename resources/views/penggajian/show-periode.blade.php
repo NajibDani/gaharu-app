@@ -122,16 +122,20 @@
             {{-- TOOLBAR FILTER & PENCARIAN --}}
             <div class="flex justify-between items-center gap-2.5 mb-3 flex-wrap">
                 <div class="flex items-center gap-2 flex-wrap flex-1">
-                    {{-- Pilihan Bulan / Periode (sama seperti Keterlambatan) --}}
-                    <select class="form-select form-select-sm" style="width: auto; min-width: 155px; padding: 6px 28px 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;"
-                            onchange="window.location.href='{{ route('penggajian.show-periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
-                        @foreach($periodes as $p)
-                            @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
-                            <option value="{{ $p }}" {{ $periode == $p ? 'selected' : '' }}>
-                                {{ $carbonP->translatedFormat('F Y') }}
-                            </option>
-                        @endforeach
-                    </select>
+                    {{-- Pilihan Bulan / Periode --}}
+                    <div class="relative">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; z-index: 1;">📅</span>
+                        <select style="padding: 6px 36px 6px 32px; border: 1.5px solid #7A4517; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #fffaf7; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; min-width: 175px; box-shadow: 0 1px 3px rgba(122,69,23,0.1);"
+                                onchange="window.location.href='{{ route('penggajian.show-periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
+                            @foreach($periodes as $p)
+                                @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
+                                <option value="{{ $p }}" {{ $periode == $p ? 'selected' : '' }}>
+                                    {{ $carbonP->translatedFormat('F Y') }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <svg style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #7A4517;" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+                    </div>
 
                     {{-- Search Input --}}
                     <div class="relative">

@@ -68,9 +68,111 @@ class KaryawanController extends Controller
         $karyawans = $query->paginate(100)->withQueryString();
 
         $departemenList = Karyawan::DEPARTEMEN_LIST;
-        $jabatanList = Karyawan::JABATAN_LIST;
+        $jabatanList = Karyawan::getJabatanList();
 
         return view('karyawan.index', compact('karyawans', 'selectedOutlet', 'departemenList', 'jabatanList'));
+    }
+
+    /**
+     * AJAX: Ambil seluruh daftar Master Jabatan
+     */
+    public function getJabatan(): \Illuminate\Http\JsonResponse
+    {
+        \App\Models\MasterJabatan::ensureTableExists();
+        $jabatans = \App\Models\MasterJabatan::orderBy('urutan', 'asc')->orderBy('id', 'asc')->get();
+        return response()->json($jabatans);
+    }
+
+    /**
+     * AJAX: Tambah Master Jabatan baru
+     */
+    public function storeJabatan(Request $request): \Illuminate\Http\JsonResponse
+    {
+        \App\Models\MasterJabatan::ensureTableExists();
+        $request->validate([
+            'nama' => 'required|string|max:100',
+        ]);
+
+        $nama = strtoupper(trim($request->nama));
+
+        $existing = \App\Models\MasterJabatan::where('nama', $nama)->first();
+        if ($existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jabatan / Posisi ini sudah ada.',
+            ], 422);
+        }
+
+        $maxUrutan = \App\Models\MasterJabatan::max('urutan') ?? 0;
+        $jabatan = \App\Models\MasterJabatan::create([
+            'nama'   => $nama,
+            'urutan' => $maxUrutan + 1,
+        ]);
+
+        $allJabatan = \App\Models\MasterJabatan::orderBy('urutan', 'asc')->orderBy('id', 'asc')->get();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Pilihan jabatan baru berhasil ditambahkan.',
+            'jabatan'  => $jabatan,
+            'jabatans' => $allJabatan,
+        ]);
+    }
+
+    /**
+     * AJAX: Edit Master Jabatan
+     */
+    public function updateJabatan(Request $request, $id): \Illuminate\Http\JsonResponse
+    {
+        $request->validate([
+            'nama' => 'required|string|max:100',
+        ]);
+
+        $nama = strtoupper(trim($request->nama));
+        $existing = \App\Models\MasterJabatan::where('nama', $nama)->where('id', '!=', $id)->first();
+        if ($existing) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nama Jabatan / Posisi ini sudah digunakan oleh opsi lain.',
+            ], 422);
+        }
+
+        $jabatan = \App\Models\MasterJabatan::findOrFail($id);
+        $oldNama = $jabatan->nama;
+        $jabatan->update([
+            'nama' => $nama,
+        ]);
+
+        // Opsional: update data karyawan yang menggunakan nama jabatan lama agar tetap sinkron
+        if ($oldNama !== $nama) {
+            Karyawan::where('jabatan', $oldNama)->update(['jabatan' => $nama]);
+        }
+
+        $allJabatan = \App\Models\MasterJabatan::orderBy('urutan', 'asc')->orderBy('id', 'asc')->get();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Pilihan jabatan berhasil diperbarui.',
+            'jabatan'  => $jabatan,
+            'jabatans' => $allJabatan,
+        ]);
+    }
+
+    /**
+     * AJAX: Hapus Master Jabatan
+     */
+    public function deleteJabatan($id): \Illuminate\Http\JsonResponse
+    {
+        $jabatan = \App\Models\MasterJabatan::findOrFail($id);
+        $jabatan->delete();
+
+        $allJabatan = \App\Models\MasterJabatan::orderBy('urutan', 'asc')->orderBy('id', 'asc')->get();
+
+        return response()->json([
+            'success'  => true,
+            'message'  => 'Pilihan jabatan berhasil dihapus.',
+            'jabatans' => $allJabatan,
+        ]);
     }
 
     /**
@@ -88,7 +190,7 @@ class KaryawanController extends Controller
     public function create(): View
     {
         $departemenList = Karyawan::DEPARTEMEN_LIST;
-        $jabatanList = Karyawan::JABATAN_LIST;
+        $jabatanList = Karyawan::getJabatanList();
         return view('karyawan.create', compact('departemenList', 'jabatanList'));
     }
 
@@ -163,7 +265,7 @@ class KaryawanController extends Controller
     public function edit(Karyawan $karyawan): View
     {
         $departemenList = Karyawan::DEPARTEMEN_LIST;
-        $jabatanList = Karyawan::JABATAN_LIST;
+        $jabatanList = Karyawan::getJabatanList();
         return view('karyawan.edit', compact('karyawan', 'departemenList', 'jabatanList'));
     }
 

@@ -76,6 +76,18 @@ class Karyawan extends Model
         'CEO',
     ];
 
+    public static function getJabatanList(): array
+    {
+        try {
+            MasterJabatan::ensureTableExists();
+            $list = MasterJabatan::orderBy('urutan', 'asc')->orderBy('id', 'asc')->pluck('nama')->toArray();
+            return !empty($list) ? $list : self::JABATAN_LIST;
+        } catch (\Throwable $e) {
+            return self::JABATAN_LIST;
+        }
+    }
+
+
     protected $casts = [
         'tanggal_lahir'      => 'date',
         'gaji_pokok'         => 'float',

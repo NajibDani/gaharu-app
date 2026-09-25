@@ -400,6 +400,11 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     // Hak Akses: Master Data Karyawan (HRD & Management), User, Role, Penggajian (Khusus HRD)
     // =========================================================================
     Route::middleware(['role:HRD,Management,Direktur Keuangan'])->group(function () {
+        Route::get('/karyawan/jabatan', [KaryawanController::class, 'getJabatan'])->name('karyawan.jabatan.index');
+        Route::post('/karyawan/jabatan', [KaryawanController::class, 'storeJabatan'])->name('karyawan.jabatan.store');
+        Route::put('/karyawan/jabatan/{id}', [KaryawanController::class, 'updateJabatan'])->name('karyawan.jabatan.update');
+        Route::delete('/karyawan/jabatan/{id}', [KaryawanController::class, 'deleteJabatan'])->name('karyawan.jabatan.destroy');
+
         Route::post('/karyawan/reorder', [KaryawanController::class, 'reorder'])->name('karyawan.reorder');
         Route::resource('karyawan', KaryawanController::class)->names('karyawan');
     });
