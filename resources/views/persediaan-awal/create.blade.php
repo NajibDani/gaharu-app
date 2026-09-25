@@ -105,22 +105,22 @@
                 </div>
 
                 <!-- SECTION 3: TABEL DAFTAR BARANG -->
-                <div class="table-responsive border rounded-3 mb-4" style="max-height: 540px; overflow-y: auto;">
-                    <table class="table table-hover align-middle mb-0 text-center" id="tableBarang">
+                <div class="table-responsive border rounded-3 mb-4" style="max-height: 540px; overflow-y: auto; font-size: 0.85rem;">
+                    <table class="table table-sm table-hover align-middle mb-0 text-center" id="tableBarang">
                         <thead class="table-light sticky-top" style="z-index: 2;">
                             <tr>
-                                <th style="width: 45px;">No</th>
-                                <th class="text-start" style="width: 110px;">Kode</th>
-                                <th class="text-start" style="min-width: 160px;">Nama Barang</th>
-                                <th style="width: 110px;">Kategori</th>
-                                <th style="width: 130px;">Satuan & Konversi</th>
-                                <th style="width: 95px;">Stok Saat Ini</th>
-                                <th style="width: 130px;">Qty Input <span class="text-danger">*</span></th>
-                                <th style="width: 135px;">Satuan Input <span class="text-danger">*</span></th>
-                                <th style="width: 155px;">Harga per Satuan Input (Rp) <span class="text-danger">*</span></th>
-                                <th style="width: 155px;">Masuk ke Stok Utama</th>
-                                <th class="text-end" style="width: 140px;">Subtotal Nilai (Rp)</th>
-                                <th style="width: 45px;">Aksi</th>
+                                <th class="py-2" style="width: 35px;">No</th>
+                                <th class="text-start py-2" style="width: 80px;">Kode</th>
+                                <th class="text-start py-2" style="min-width: 140px;">Nama Barang</th>
+                                <th class="py-2" style="width: 90px;">Kategori</th>
+                                <th class="py-2" style="width: 110px;">Satuan & Konversi</th>
+                                <th class="py-2" style="width: 85px;">Stok Saat Ini</th>
+                                <th class="py-2" style="width: 90px;">Qty Input <span class="text-danger">*</span></th>
+                                <th class="py-2" style="width: 115px;">Satuan Input <span class="text-danger">*</span></th>
+                                <th class="py-2" style="min-width: 145px;">Harga per Satuan (Rp) <span class="text-danger">*</span></th>
+                                <th class="py-2" style="width: 125px;">Masuk Stok Utama</th>
+                                <th class="text-end py-2" style="min-width: 120px;">Subtotal Nilai (Rp)</th>
+                                <th class="py-2" style="width: 40px;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyBarang">
@@ -383,7 +383,7 @@
                     <td>${satuanBadge}</td>
                     <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
                     <td>
-                        <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
+                        <input type="number" class="form-control form-control-sm text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
                         <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
@@ -393,9 +393,14 @@
                     <td>
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
-                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput}" placeholder="0" ${hargaInputAttr}>
+                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput > 0 ? defaultHargaInput : ''}" placeholder="0" ${hargaInputAttr}>
                         </div>
-                        ${isReadonlyHarga ? '<small class="text-muted d-block text-end" style="font-size: 9.5px;">(Ref. Gudang Utama)</small>' : ''}
+                        ${isReadonlyHarga ? `
+                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                                <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. HPP:</span>
+                                <strong class="text-dark font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
+                            </div>
+                        ` : ''}
                     </td>
                     <td class="conversion-cell text-center">
                         <span class="text-muted small">-</span>
@@ -441,7 +446,12 @@
                         const isPembelian    = selectedUnit === 'pembelian';
 
                         const qtyInput   = parseFloat(qtyInputEl.value) || 0;
-                        const hargaInput = parseFloat(hargaInputEl.value) || 0;
+                        let hargaInput = parseFloat(hargaInputEl.value);
+                        if (isNaN(hargaInput) || hargaInput <= 0) {
+                            hargaInput = isPembelian 
+                                ? (parseFloat(row.getAttribute('data-harga-beli-utama')) || 0)
+                                : (parseFloat(row.getAttribute('data-harga-stok-utama')) || 0);
+                        }
 
                         const multiplier = isPembelian ? konversi : 1.00;
                         const qtyStok    = qtyInput * multiplier;
@@ -478,7 +488,12 @@
                             const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
 
                             if (isReadonly) {
-                                hargaInputEl.value = this.value === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                                const newPrice = this.value === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                                hargaInputEl.value = newPrice > 0 ? newPrice : '';
+                                const refSubtext = row.querySelector('.ref-price-subtext');
+                                if (refSubtext) {
+                                    refSubtext.textContent = 'Rp ' + Number(newPrice).toLocaleString('id-ID');
+                                }
                             }
                             calcRow();
                         });
