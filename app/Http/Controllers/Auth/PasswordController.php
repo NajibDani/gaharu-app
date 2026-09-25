@@ -16,8 +16,12 @@ class PasswordController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validateWithBag('updatePassword', [
-            'current_password' => ['required', 'current_password'],
-            'password' => ['required', Password::defaults(), 'confirmed'],
+            'current_password' => ['required', function ($attribute, $value, $fail) use ($request) {
+                if (!\Illuminate\Support\Facades\Hash::check($value, $request->user()->password)) {
+                    $fail('The current password is incorrect.');
+                }
+            }],
+            'password' => ['required', \Illuminate\Validation\Rules\Password::defaults(), 'confirmed'],
         ]);
 
         $request->user()->update([

@@ -16,6 +16,18 @@
                     </div>
 
                     <div class="flex gap-2 items-center flex-wrap">
+                        {{-- Dropdown Pilih Bulan / Periode (sama seperti Keterlambatan) --}}
+                        <select class="form-select form-select-sm" style="width: auto; min-width: 160px; padding: 6px 28px 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;"
+                                onchange="if(this.value) window.location.href='{{ route('penggajian.show-periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
+                            <option value="">-- Pilih Bulan Gaji --</option>
+                            @foreach($periodes as $p)
+                                @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
+                                <option value="{{ $p }}">
+                                    {{ $carbonP->translatedFormat('F Y') }}
+                                </option>
+                            @endforeach
+                        </select>
+
                         <form action="{{ route('penggajian.index') }}" method="GET" class="flex gap-2">
                             <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                             <input type="text" name="search" class="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-[#7A4517]/20" placeholder="Cari periode..." value="{{ request('search') }}" style="width: 200px;">

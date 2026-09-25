@@ -7,15 +7,27 @@
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 mb-3">
                 <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5">
                     <div>
-                        <h1 class="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight">
+                        <h1 class="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
                             Daftar Bonus &amp; Lembur Karyawan - Outlet {{ $selectedOutlet }}
                         </h1>
-                        <p class="text-[11.5px] text-slate-500 font-medium mt-0.5">
+                        <p class="text-xs text-slate-600 font-medium mt-0.5">
                             Kelola komponen bonus target, upah lembur, tanggal merah, birthday service, dan bonus per periode.
                         </p>
                     </div>
 
                     <div class="flex gap-2 items-center flex-wrap">
+                        {{-- Dropdown Pilih Bulan / Periode (sama seperti Keterlambatan) --}}
+                        <select class="form-select form-select-sm" style="width: auto; min-width: 160px; padding: 6px 28px 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;"
+                                onchange="if(this.value) window.location.href='{{ route('penggajian.bonus.periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
+                            <option value="">-- Pilih Bulan Bonus --</option>
+                            @foreach($periodes as $p)
+                                @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
+                                <option value="{{ $p }}">
+                                    {{ $carbonP->translatedFormat('F Y') }}
+                                </option>
+                            @endforeach
+                        </select>
+
                         <form action="{{ route('penggajian.bonus.index') }}" method="GET" class="flex gap-2">
                             <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                             <input type="text" name="search" class="border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 bg-white focus:outline-none focus:ring-2 focus:ring-[#7A4517]/20" placeholder="Cari periode..." value="{{ request('search') }}" style="width: 180px;">

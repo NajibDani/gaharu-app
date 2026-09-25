@@ -90,17 +90,140 @@
         @endif
 
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <a href="{{ route('pembelian-kejingga.create') }}" class="btn btn-primary mb-0">
-                <i class="bi bi-plus-circle me-1"></i> Tambah Pembelian Kejingga
+            <a href="{{ route('pembelian-kejingga.create') }}" class="btn text-white mb-0 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" style="background-color: #DE8958; border-radius: 8px;">
+                <i class="bi bi-plus-lg"></i> Tambah Pembelian Kejingga
             </a>
+        </div>
 
-            <form action="{{ route('pembelian-kejingga.index') }}" method="GET" class="d-flex gap-2">
-                <input type="text" name="search" class="form-control form-control-sm" placeholder="Cari kode/supplier/barang..." value="{{ request('search') }}" style="width: 220px; border-radius: 6px;">
-                <button type="submit" class="btn btn-sm btn-primary" style="border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
-                @if(request('search'))
-                    <a href="{{ route('pembelian-kejingga.index') }}" class="btn btn-sm btn-secondary" style="border-radius: 6px; padding: 5px 15px;">Reset</a>
-                @endif
-            </form>
+        {{-- FILTER BAR --}}
+        <div class="card border-0 shadow-sm rounded-4 mb-4" style="border: 1px solid #DCD3CB !important;">
+            <div class="card-body py-3">
+                <form action="{{ route('pembelian-kejingga.index') }}" method="GET" id="form-filter-pembelian">
+                    <div class="row g-2 align-items-end">
+
+                        {{-- CARI --}}
+                        <div class="col-lg-3 col-md-4">
+                            <label class="form-label fw-semibold small mb-1">Cari Kode / Keterangan</label>
+                            <input type="text" name="search" class="form-control form-control-sm"
+                                   placeholder="Cari kode, supplier, keterangan..."
+                                   value="{{ request('search') }}">
+                        </div>
+
+                        {{-- URUTAN --}}
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label fw-semibold small mb-1">Urutan</label>
+                            <select name="sort" class="form-select form-select-sm">
+                                <option value="terbaru" {{ request('sort', 'terbaru') === 'terbaru' ? 'selected' : '' }}>Terbaru</option>
+                                <option value="terlama" {{ request('sort') === 'terlama' ? 'selected' : '' }}>Terlama</option>
+                            </select>
+                        </div>
+
+                        {{-- STATUS PEMBAYARAN --}}
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label fw-semibold small mb-1">Status Pembayaran</label>
+                            <select name="status_pembayaran" class="form-select form-select-sm">
+                                <option value="">-- Semua Status --</option>
+                                <option value="belum_dicatat" {{ request('status_pembayaran') === 'belum_dicatat' ? 'selected' : '' }}>Belum Dicatat</option>
+                                <option value="cod"           {{ request('status_pembayaran') === 'cod'           ? 'selected' : '' }}>COD</option>
+                                <option value="belum_lunas"   {{ request('status_pembayaran') === 'belum_lunas'   ? 'selected' : '' }}>Belum Lunas</option>
+                                <option value="lunas"         {{ request('status_pembayaran') === 'lunas'         ? 'selected' : '' }}>Lunas</option>
+                            </select>
+                        </div>
+
+                        {{-- STATUS PENERIMAAN --}}
+                        <div class="col-lg-2 col-md-3">
+                            <label class="form-label fw-semibold small mb-1">Status Penerimaan</label>
+                            <select name="status_penerimaan" class="form-select form-select-sm">
+                                <option value="">-- Semua Status --</option>
+                                <option value="belum_diterima" {{ request('status_penerimaan') === 'belum_diterima' ? 'selected' : '' }}>Belum Diterima</option>
+                                <option value="diterima"       {{ request('status_penerimaan') === 'diterima'       ? 'selected' : '' }}>Sudah Diterima</option>
+                            </select>
+                        </div>
+
+                        {{-- FILTER TANGGAL --}}
+                        <div class="col-lg-2 col-md-3 position-relative">
+                            <label class="form-label fw-semibold small mb-1">Filter Tanggal</label>
+                            <input type="hidden" name="dari"   id="pb_filter_dari"   value="{{ request('dari') }}">
+                            <input type="hidden" name="sampai" id="pb_filter_sampai" value="{{ request('sampai') }}">
+
+                            <button type="button" class="btn btn-sm btn-outline-secondary bg-white text-dark w-100 d-flex align-items-center justify-content-between py-1 px-2 rounded-3 shadow-none border"
+                                    id="pb-btn-date-trigger" style="min-height: 31px;">
+                                <span id="pb-date-range-label" class="small text-truncate">
+                                    <i class="bi bi-calendar3 me-1 text-primary"></i>
+                                    <span id="pb-text-date-display">Semua Tanggal</span>
+                                </span>
+                                <i class="bi bi-chevron-down small text-muted ms-1"></i>
+                            </button>
+
+                            {{-- POPOVER DATE RANGE --}}
+                            <div id="pb-date-range-popover" class="card border-0 shadow-lg rounded-4 p-3 position-absolute"
+                                 style="display:none; z-index:1060; width:680px; max-width:90vw; top:105%; right:0; background:#fff; border:1px solid #e2e8f0 !important;">
+                                <div class="d-flex gap-3">
+                                    {{-- Presets --}}
+                                    <div class="d-flex flex-column gap-1 flex-shrink-0" style="width:130px;">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="today">Hari Ini</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="yesterday">Kemarin</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="this_week">Minggu Ini</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="last_week">Minggu Lalu</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="this_month">Bulan Ini</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="last_month">Bulan Lalu</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="this_year">Tahun Ini</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary text-start fw-medium pb-btn-preset py-1 px-2" style="font-size:.78rem;" data-preset="last_year">Tahun Lalu</button>
+                                    </div>
+
+                                    {{-- Calendar --}}
+                                    <div class="flex-grow-1 px-2 border-start border-end">
+                                        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                                            <button type="button" class="btn btn-xs btn-light border rounded-circle p-1" id="pb-cal-prev" title="Bulan Sebelumnya">
+                                                <i class="bi bi-chevron-left"></i>
+                                            </button>
+                                            <div class="fw-bold text-dark font-monospace" id="pb-cal-title" style="font-size:.9rem;"></div>
+                                            <button type="button" class="btn btn-xs btn-light border rounded-circle p-1" id="pb-cal-next" title="Bulan Selanjutnya">
+                                                <i class="bi bi-chevron-right"></i>
+                                            </button>
+                                        </div>
+                                        <div class="d-grid mb-1 text-center fw-bold text-muted" style="grid-template-columns:repeat(7,1fr);font-size:.7rem;">
+                                            <div>MIN</div><div>SEN</div><div>SEL</div><div>RAB</div><div>KAM</div><div>JUM</div><div>SAB</div>
+                                        </div>
+                                        <div class="d-grid text-center" id="pb-cal-days" style="grid-template-columns:repeat(7,1fr);gap:2px;"></div>
+                                    </div>
+
+                                    {{-- Summary & Actions --}}
+                                    <div class="d-flex flex-column justify-content-between flex-shrink-0" style="width:140px;">
+                                        <div>
+                                            <div class="mb-2">
+                                                <label class="form-label text-muted small mb-1" style="font-size:.72rem;">Mulai</label>
+                                                <input type="text" id="pb-display-start" class="form-control form-control-sm text-center bg-light fw-bold" style="font-size:.75rem;" readonly placeholder="dd/mm/yyyy">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label text-muted small mb-1" style="font-size:.72rem;">Selesai</label>
+                                                <input type="text" id="pb-display-end" class="form-control form-control-sm text-center bg-light fw-bold" style="font-size:.75rem;" readonly placeholder="dd/mm/yyyy">
+                                            </div>
+                                        </div>
+                                        <div class="d-grid gap-1">
+                                            <button type="button" class="btn btn-primary btn-sm fw-bold shadow-sm py-1" id="pb-btn-apply-date">Apply</button>
+                                            <button type="button" class="btn btn-light btn-sm text-muted py-1" id="pb-btn-reset-date" style="font-size:.75rem;">Reset</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- TOMBOL FILTER & RESET --}}
+                        <div class="col-lg-1 col-md-4 d-flex gap-1">
+                            <button type="submit" class="btn btn-sm fw-semibold flex-fill text-white" style="background-color:#DE8958;" title="Terapkan Filter">
+                                <i class="bi bi-funnel-fill"></i> Filter
+                            </button>
+                            @if(request('search') || (request('sort') && request('sort') !== 'terbaru') || request('status_pembayaran') || request('status_penerimaan') || request('dari') || request('sampai'))
+                                <a href="{{ route('pembelian-kejingga.index') }}" class="btn btn-sm btn-secondary" title="Reset Filter">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </a>
+                            @endif
+                        </div>
+
+                    </div>
+                </form>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -1979,5 +2102,170 @@
 
         new bootstrap.Modal(document.getElementById('modalEdit')).show();
     }
+    </script>
+
+    {{-- ══════════════════ DATE RANGE PICKER — FILTER PEMBELIAN ══════════════════ --}}
+    <script>
+    (function () {
+        const btnTrigger   = document.getElementById('pb-btn-date-trigger');
+        const popover      = document.getElementById('pb-date-range-popover');
+        const inputDari    = document.getElementById('pb_filter_dari');
+        const inputSampai  = document.getElementById('pb_filter_sampai');
+        const textDisplay  = document.getElementById('pb-text-date-display');
+        const displayStart = document.getElementById('pb-display-start');
+        const displayEnd   = document.getElementById('pb-display-end');
+        const calTitle     = document.getElementById('pb-cal-title');
+        const calDaysGrid  = document.getElementById('pb-cal-days');
+        const btnPrevMonth = document.getElementById('pb-cal-prev');
+        const btnNextMonth = document.getElementById('pb-cal-next');
+        const btnApply     = document.getElementById('pb-btn-apply-date');
+        const btnReset     = document.getElementById('pb-btn-reset-date');
+
+        const monthNames = ['JANUARI','FEBRUARI','MARET','APRIL','MEI','JUNI','JULI','AGUSTUS','SEPTEMBER','OKTOBER','NOVEMBER','DESEMBER'];
+
+        let activeYear  = new Date().getFullYear();
+        let activeMonth = new Date().getMonth();
+        let selStart    = inputDari  ? inputDari.value  : '';
+        let selEnd      = inputSampai ? inputSampai.value : '';
+
+        function fmtYMD(d) {
+            if (!d) return '';
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        }
+        function fmtDMY(ymd) {
+            if (!ymd) return '';
+            let p = ymd.split('-');
+            return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : ymd;
+        }
+
+        function updateTriggerDisplay() {
+            let d = inputDari  ? inputDari.value  : '';
+            let s = inputSampai ? inputSampai.value : '';
+            if (d && s) {
+                textDisplay.innerText = d === s ? fmtDMY(d) : `${fmtDMY(d)} - ${fmtDMY(s)}`;
+            } else if (d) {
+                textDisplay.innerText = `Dari ${fmtDMY(d)}`;
+            } else {
+                textDisplay.innerText = 'Semua Tanggal';
+            }
+        }
+
+        function updateSummaryInputs() {
+            if (displayStart) displayStart.value = fmtDMY(selStart);
+            if (displayEnd)   displayEnd.value   = fmtDMY(selEnd || selStart);
+        }
+
+        function renderCalendar() {
+            if (!calTitle || !calDaysGrid) return;
+            calTitle.innerText = `${monthNames[activeMonth]} ${activeYear}`;
+            calDaysGrid.innerHTML = '';
+
+            let firstDay   = new Date(activeYear, activeMonth, 1).getDay();
+            let totalDays  = new Date(activeYear, activeMonth + 1, 0).getDate();
+            let prevTotal  = new Date(activeYear, activeMonth, 0).getDate();
+
+            for (let x = firstDay; x > 0; x--) {
+                let el = document.createElement('div');
+                el.className = 'py-1 text-muted opacity-25 small';
+                el.innerText = prevTotal - x + 1;
+                calDaysGrid.appendChild(el);
+            }
+
+            for (let i = 1; i <= totalDays; i++) {
+                let ymd = `${activeYear}-${String(activeMonth+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
+                let el  = document.createElement('div');
+                el.className = 'py-1 rounded-2 small fw-semibold';
+                el.innerText = i;
+                el.style.cursor = 'pointer';
+
+                let isStart  = (ymd === selStart);
+                let isEnd    = (ymd === (selEnd || selStart));
+                let inRange  = selStart && selEnd && ymd > selStart && ymd < selEnd;
+
+                if (isStart || isEnd) {
+                    el.classList.add('bg-primary','text-white','shadow-sm');
+                } else if (inRange) {
+                    el.classList.add('bg-primary-subtle','text-primary-emphasis');
+                } else {
+                    el.classList.add('text-dark');
+                    el.addEventListener('mouseenter', () => el.classList.add('bg-light'));
+                    el.addEventListener('mouseleave', () => el.classList.remove('bg-light'));
+                }
+
+                el.addEventListener('click', function () {
+                    if (!selStart || (selStart && selEnd)) {
+                        selStart = ymd; selEnd = '';
+                    } else {
+                        if (ymd < selStart) { selEnd = selStart; selStart = ymd; }
+                        else                 { selEnd = ymd; }
+                    }
+                    updateSummaryInputs();
+                    renderCalendar();
+                });
+                calDaysGrid.appendChild(el);
+            }
+        }
+
+        function applyPreset(key) {
+            let now = new Date(), y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+            let dow = now.getDay(), s, e;
+            switch (key) {
+                case 'today':      s = e = new Date(y,m,d); break;
+                case 'yesterday':  s = e = new Date(y,m,d-1); break;
+                case 'this_week':  let dm = d-(dow===0?6:dow-1); s=new Date(y,m,dm); e=new Date(y,m,dm+6); break;
+                case 'last_week':  let dlm = d-(dow===0?6:dow-1)-7; s=new Date(y,m,dlm); e=new Date(y,m,dlm+6); break;
+                case 'this_month': s=new Date(y,m,1); e=new Date(y,m+1,0); break;
+                case 'last_month': s=new Date(y,m-1,1); e=new Date(y,m,0); break;
+                case 'this_year':  s=new Date(y,0,1); e=new Date(y,11,31); break;
+                case 'last_year':  s=new Date(y-1,0,1); e=new Date(y-1,11,31); break;
+                default: return;
+            }
+            selStart = fmtYMD(s); selEnd = fmtYMD(e);
+            activeYear = s.getFullYear(); activeMonth = s.getMonth();
+            document.querySelectorAll('.pb-btn-preset').forEach(b => { b.classList.remove('btn-primary','text-white'); b.classList.add('btn-outline-secondary'); });
+            let ab = document.querySelector(`.pb-btn-preset[data-preset="${key}"]`);
+            if (ab) { ab.classList.remove('btn-outline-secondary'); ab.classList.add('btn-primary','text-white'); }
+            updateSummaryInputs(); renderCalendar();
+        }
+
+        if (btnTrigger) {
+            btnTrigger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                let showing = popover.style.display === 'block';
+                popover.style.display = showing ? 'none' : 'block';
+                if (!showing) { updateSummaryInputs(); renderCalendar(); }
+            });
+        }
+        if (btnPrevMonth) { btnPrevMonth.addEventListener('click', function(e) { e.stopPropagation(); activeMonth--; if (activeMonth<0){activeMonth=11;activeYear--;} renderCalendar(); }); }
+        if (btnNextMonth) { btnNextMonth.addEventListener('click', function(e) { e.stopPropagation(); activeMonth++; if (activeMonth>11){activeMonth=0;activeYear++;} renderCalendar(); }); }
+
+        document.querySelectorAll('.pb-btn-preset').forEach(btn => {
+            btn.addEventListener('click', function(e) { e.stopPropagation(); applyPreset(this.dataset.preset); });
+        });
+
+        if (btnApply) {
+            btnApply.addEventListener('click', function() {
+                if (inputDari)   inputDari.value   = selStart;
+                if (inputSampai) inputSampai.value = selEnd || selStart;
+                updateTriggerDisplay();
+                popover.style.display = 'none';
+                document.getElementById('form-filter-pembelian').submit();
+            });
+        }
+        if (btnReset) {
+            btnReset.addEventListener('click', function() {
+                selStart = ''; selEnd = '';
+                if (inputDari)   inputDari.value   = '';
+                if (inputSampai) inputSampai.value = '';
+                updateSummaryInputs(); updateTriggerDisplay();
+                popover.style.display = 'none';
+                document.getElementById('form-filter-pembelian').submit();
+            });
+        }
+        if (popover) { popover.addEventListener('click', e => e.stopPropagation()); }
+        document.addEventListener('click', function() { if (popover && popover.style.display==='block') popover.style.display='none'; });
+
+        updateTriggerDisplay();
+    })();
     </script>
 </x-app-layout>

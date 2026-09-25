@@ -87,8 +87,8 @@ return new class extends Migration
             $table->foreignId('gudang_id')->constrained('master_gudang');
             $table->foreignId('supplier_id')->constrained('suppliers');
             $table->foreignId('barang_id')->constrained('master_barang');
-            $table->foreignId('pembelian_id')->constrained('pembelian');
-            $table->foreignId('pembelian_detail_id')->constrained('pembelian_detail');
+            $table->foreignId('pembelian_id')->nullable()->constrained('pembelian');
+            $table->foreignId('pembelian_detail_id')->nullable()->constrained('pembelian_detail');
             $table->string('batch_number');
             $table->decimal('qty_masuk', 15, 2);
             $table->decimal('qty_keluar', 15, 2)->default(0.00);

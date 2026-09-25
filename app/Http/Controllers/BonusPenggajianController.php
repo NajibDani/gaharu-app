@@ -29,47 +29,55 @@ class BonusPenggajianController extends Controller
     }
 
     /**
-     * Tampilan daftar periode untuk modul Bonus & Lembur
+     * Ambil daftar periode bulan-tahun yang tersedia untuk outlet
      */
-    public function index(Request $request): View
+    public function getAvailablePeriodes(string $selectedOutlet, ?string $currentPeriode = null): array
     {
-        $search = $request->query('search');
-        $selectedOutlet = $this->getOutlet($request);
-
-        $periodsQuery = Penggajian::select('periode_bulan_tahun')
-            ->where(function ($q) use ($selectedOutlet) {
+        $periodes = Penggajian::where(function ($q) use ($selectedOutlet) {
                 $q->where('outlet', $selectedOutlet)
                   ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
                       $kq->where('outlet', $selectedOutlet);
                   });
             })
+            ->select('periode_bulan_tahun')
             ->groupBy('periode_bulan_tahun')
-            ->orderBy('periode_bulan_tahun', 'desc');
+            ->orderBy('periode_bulan_tahun', 'desc')
+            ->pluck('periode_bulan_tahun')
+            ->toArray();
 
-        if ($search) {
-            $periodsQuery->where(function($q) use ($search) {
-                $q->where('periode_bulan_tahun', 'like', '%' . $search . '%')
-                  ->orWhereHas('karyawan', function($kq) use ($search) {
-                      $kq->where('nama_karyawan', 'like', '%' . $search . '%');
-                  });
-            });
+        $keterlambatanPeriodes = \App\Models\Keterlambatan::selectRaw("DATE_FORMAT(tanggal, '%Y-%m') as periode")
+            ->groupBy('periode')
+            ->orderBy('periode', 'desc')
+            ->pluck('periode')
+            ->toArray();
+
+        $all = array_values(array_unique(array_merge($periodes, $keterlambatanPeriodes)));
+        rsort($all);
+
+        if ($currentPeriode && !in_array($currentPeriode, $all)) {
+            array_unshift($all, $currentPeriode);
+        }
+        $now = date('Y-m');
+        if (!in_array($now, $all)) {
+            array_unshift($all, $now);
         }
 
-        $periods = $periodsQuery->paginate(10)->withQueryString();
-        $periodNames = $periods->pluck('periode_bulan_tahun')->toArray();
+        return $all;
+    }
 
-        $payrolls = Penggajian::with('karyawan')
-            ->where(function ($q) use ($selectedOutlet) {
-                $q->where('outlet', $selectedOutlet)
-                  ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
-                      $kq->where('outlet', $selectedOutlet);
-                  });
-            })
-            ->whereIn('periode_bulan_tahun', $periodNames)
-            ->orderBy('periode_bulan_tahun', 'desc')
-            ->get();
+    /**
+     * Tampilan utama modul Bonus & Lembur: Langsung arahkan ke halaman kelola bonus periode aktif
+     */
+    public function index(Request $request): RedirectResponse
+    {
+        $selectedOutlet = $this->getOutlet($request);
+        $periodes = $this->getAvailablePeriodes($selectedOutlet);
+        $targetPeriode = $request->query('periode') ?? ($periodes[0] ?? date('Y-m'));
 
-        return view('penggajian.bonus.index', compact('payrolls', 'periods', 'selectedOutlet'));
+        return redirect()->route('penggajian.bonus.periode', [
+            'periode' => $targetPeriode,
+            'outlet'  => $selectedOutlet,
+        ]);
     }
 
     /**
@@ -77,8 +85,9 @@ class BonusPenggajianController extends Controller
      */
     public function showPeriode(Request $request, $periode = null): View
     {
-        $targetPeriode = $periode ?? $request->query('periode');
         $selectedOutlet = $this->getOutlet($request);
+        $periodes = $this->getAvailablePeriodes($selectedOutlet, $periode ?? $request->query('periode'));
+        $targetPeriode = $periode ?? $request->query('periode') ?? ($periodes[0] ?? date('Y-m'));
 
         $rawPayrolls = Penggajian::with('karyawan')
             ->where('periode_bulan_tahun', $targetPeriode)
@@ -166,7 +175,7 @@ class BonusPenggajianController extends Controller
 
         $currentStatus = $payrolls->isEmpty() ? 'draft' : $payrolls->first()->status;
 
-        return view('penggajian.bonus.show-periode', compact('payrolls', 'targetPeriode', 'selectedOutlet', 'currentStatus'));
+        return view('penggajian.bonus.show-periode', compact('payrolls', 'targetPeriode', 'periodes', 'selectedOutlet', 'currentStatus'));
     }
 
     /**

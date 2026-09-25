@@ -33,51 +33,55 @@ class PenggajianController extends Controller
     }
 
     /**
-     * TAMPILAN UTAMA: Mengirimkan data penggajian yang sudah di-group berdasarkan periode dan outlet.
+     * Ambil daftar periode bulan-tahun yang tersedia untuk outlet
+     */
+    public function getAvailablePeriodes(string $selectedOutlet, ?string $currentPeriode = null): array
+    {
+        $periodes = Penggajian::where(function ($q) use ($selectedOutlet) {
+                $q->where('outlet', $selectedOutlet)
+                  ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
+                      $kq->where('outlet', $selectedOutlet);
+                  });
+            })
+            ->select('periode_bulan_tahun')
+            ->groupBy('periode_bulan_tahun')
+            ->orderBy('periode_bulan_tahun', 'desc')
+            ->pluck('periode_bulan_tahun')
+            ->toArray();
+
+        $keterlambatanPeriodes = \App\Models\Keterlambatan::selectRaw("DATE_FORMAT(tanggal, '%Y-%m') as periode")
+            ->groupBy('periode')
+            ->orderBy('periode', 'desc')
+            ->pluck('periode')
+            ->toArray();
+
+        $all = array_values(array_unique(array_merge($periodes, $keterlambatanPeriodes)));
+        rsort($all);
+
+        if ($currentPeriode && !in_array($currentPeriode, $all)) {
+            array_unshift($all, $currentPeriode);
+        }
+        $now = date('Y-m');
+        if (!in_array($now, $all)) {
+            array_unshift($all, $now);
+        }
+
+        return $all;
+    }
+
+    /**
+     * TAMPILAN UTAMA: Langsung arahkan ke halaman kelola gaji pokok periode aktif
      */
     public function index(Request $request)
     {
-        $search = $request->query('search');
         $selectedOutlet = $this->getOutlet($request);
+        $periodes = $this->getAvailablePeriodes($selectedOutlet);
+        $periode = $request->query('periode') ?? ($periodes[0] ?? date('Y-m'));
 
-        // Paginate by unique periods filtered by outlet
-        $periodsQuery = Penggajian::select('periode_bulan_tahun')
-            ->where(function ($q) use ($selectedOutlet) {
-                $q->where('outlet', $selectedOutlet)
-                  ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
-                      $kq->where('outlet', $selectedOutlet);
-                  });
-            })
-            ->groupBy('periode_bulan_tahun')
-            ->orderBy('periode_bulan_tahun', 'desc');
-
-        if ($search) {
-            $periodsQuery->where(function($q) use ($search) {
-                $q->where('periode_bulan_tahun', 'like', '%' . $search . '%')
-                  ->orWhereHas('karyawan', function($kq) use ($search) {
-                      $kq->where('nama_karyawan', 'like', '%' . $search . '%');
-                  });
-            });
-        }
-
-        $periods = $periodsQuery->paginate(10)->withQueryString();
-        $periodNames = $periods->pluck('periode_bulan_tahun')->toArray();
-
-        // Get all payrolls for the paginated periods and selected outlet
-        $payrolls = Penggajian::with('karyawan')
-            ->where(function ($q) use ($selectedOutlet) {
-                $q->where('outlet', $selectedOutlet)
-                  ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
-                      $kq->where('outlet', $selectedOutlet);
-                  });
-            })
-            ->whereIn('periode_bulan_tahun', $periodNames)
-            ->orderBy('periode_bulan_tahun', 'desc')
-            ->get();
-
-        $karyawans = Karyawan::where('outlet', $selectedOutlet)->get();
-
-        return view('penggajian.index', compact('payrolls', 'periods', 'karyawans', 'selectedOutlet'));
+        return redirect()->route('penggajian.show-periode', [
+            'periode' => $periode,
+            'outlet'  => $selectedOutlet,
+        ]);
     }
 
     public function create(Request $request): View
@@ -316,8 +320,9 @@ class PenggajianController extends Controller
      */
     public function periodeDetail(Request $request)
     {
-        $periode = $request->query('periode');
         $selectedOutlet = $this->getOutlet($request);
+        $periodes = $this->getAvailablePeriodes($selectedOutlet, $request->query('periode'));
+        $periode = $request->query('periode') ?? ($periodes[0] ?? date('Y-m'));
 
         // Ambil semua data karyawan yang ada di periode & outlet ini
         $rawPayrolls = Penggajian::with('karyawan')
@@ -486,8 +491,9 @@ class PenggajianController extends Controller
             return $k;
         });
         $availableKaryawans = $allKaryawans;
+        $periodes = $this->getAvailablePeriodes($selectedOutlet, $periode);
 
-        return view('penggajian.show-periode', compact('payrolls', 'periode', 'currentStatus', 'selectedOutlet', 'availableKaryawans', 'allKaryawans'));
+        return view('penggajian.show-periode', compact('payrolls', 'periode', 'periodes', 'currentStatus', 'selectedOutlet', 'availableKaryawans', 'allKaryawans'));
     }
 
     /**
@@ -1562,6 +1568,7 @@ class PenggajianController extends Controller
                 $pengembalianDeposit  = (float) ($payroll->pengembalian_deposit ?? 0);
                 $bonusDll             = (float) ($payroll->bonus_dll ?? 0);
 
+                $totalEarnings   = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
                 $totalDeductions = floatval($payroll->potongan_terlambat ?? 0) + floatval($payroll->potongan_inventaris ?? 0) + floatval($payroll->potongan_kasbon ?? 0) + floatval($payroll->potongan_deposit ?? 0) + floatval($payroll->potongan_dll ?? 0);
                 $totalGajiBersih = $totalEarnings - $totalDeductions;
 
@@ -1575,6 +1582,7 @@ class PenggajianController extends Controller
                     'tarif_harian_total' => $tarifHarianTotal,
                     'gaji_utama'         => $gajiUtama,
                     'total_earnings'     => $totalEarnings,
+                    'total_deductions'   => $totalDeductions,
                     'total_gaji_bersih'  => $totalGajiBersih,
                 ]);
             } else {

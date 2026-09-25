@@ -14,29 +14,31 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // 1. Modifikasi kolom di stok_gudang_batch agar nullable (bukan pembelian langsung)
-        DB::statement("ALTER TABLE stok_gudang_batch MODIFY pembelian_id bigint(20) unsigned NULL");
-        DB::statement("ALTER TABLE stok_gudang_batch MODIFY pembelian_detail_id bigint(20) unsigned NULL");
-        DB::statement("ALTER TABLE stok_gudang_batch MODIFY supplier_id bigint(20) unsigned NULL");
+        // 1. Modify columns in stok_gudang_batch to be nullable (not direct purchase)
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE stok_gudang_batch MODIFY pembelian_id bigint(20) unsigned NULL");
+            DB::statement("ALTER TABLE stok_gudang_batch MODIFY pembelian_detail_id bigint(20) unsigned NULL");
+            DB::statement("ALTER TABLE stok_gudang_batch MODIFY supplier_id bigint(20) unsigned NULL");
+        }
 
-        // 2. Putuskan relasi palsu pembelian_detail_id = 1 pada batch Saldo Awal (SA-*)
+        // 2. Break fake relation pembelian_detail_id = 1 on Saldo Awal batches (SA-*)
         DB::table('stok_gudang_batch')
             ->where('batch_number', 'like', 'SA-%')
             ->update([
-                'pembelian_id'        => null,
+                'pembelian_id' => null,
                 'pembelian_detail_id' => null,
             ]);
 
-        // 3. Pulihkan kuantitas dan harga_per_qty seluruh batch Saldo Awal (SA-*) dari persediaan_awal_detail
+        // 3. Restore quantity and price_per_qty for all Saldo Awal batches from persediaan_awal_detail
         MasterBarang::autoHealSaldoAwalBatches();
 
-        // 4. Pulihkan kuantitas dan harga_per_qty batch mutasi (*-MUT) yang sempat terdistorsi
+        // 4. Restore quantity and price_per_qty for mutation batches (*-MUT) that were distorted
         MasterBarang::autoHealMutasiBatches();
 
-        // 5. Jalankan perbaikan batch pembelian asli yang benar-benar belum terkonversi
+        // 5. Fix original purchase batches that were never converted
         MasterBarang::autoHealUnconvertedPembelianBatches();
 
-        // 6. Sinkronisasi ulang HPP referensi seluruh master_barang sesuai batch FIFO aktif
+        // 6. Resync HPP references for all master_barang according to active FIFO batches
         try {
             app(FifoService::class)->syncAllBarangHpp();
         } catch (\Throwable $e) {

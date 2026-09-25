@@ -5,36 +5,51 @@
             <x-outlet-selector :selectedOutlet="$selectedOutlet" />
 
             {{-- PAGE HEADER --}}
+            @php
+                $totalBonusPeriode = $payrolls->sum('total_bonus');
+            @endphp
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 mb-3">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                    {{-- Left Title & Info --}}
                     <div class="flex items-center gap-3 flex-wrap">
-                        <a href="{{ route('penggajian.bonus.index', ['outlet' => $selectedOutlet]) }}"
-                           style="background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-weight: 800; font-size: 12px; padding: 6px 12px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; transition: background .15s;"
-                           onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'"
-                           title="Kembali">
-                            <span>&larr;</span> Kembali
-                        </a>
                         <div>
-                            <h1 class="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight leading-tight inline">
-                                Kelola Bonus &amp; Lembur
-                            </h1>
-                            <span class="text-xs text-slate-600 font-semibold ms-2">
-                                Periode <strong class="text-slate-900">{{ \App\Models\Penggajian::formatPeriode($targetPeriode) }}</strong>
-                                &middot; Outlet <strong class="text-slate-900">{{ $selectedOutlet }}</strong>
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight m-0">
+                                    Kelola Bonus &amp; Lembur
+                                </h1>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200/70">
+                                    Outlet {{ $selectedOutlet }}
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-500 font-medium m-0 mt-0.5">
+                                Periode: <strong class="text-slate-800">{{ \Carbon\Carbon::parse($targetPeriode . '-01')->translatedFormat('F Y') }}</strong>
+                            </p>
+                        </div>
+
+                        {{-- Total Bonus Badge --}}
+                        <div class="flex items-center gap-2 ms-0 sm:ms-2">
+                            <div id="headerTotalBonusBadgeContainer"
+                                 style="background: linear-gradient(135deg, #fffbf5 0%, #fef3c7 100%); border: 1.5px solid #fcd34d; color: #78350f; padding: 6px 14px; border-radius: 10px; box-shadow: 0 1px 3px rgba(120, 53, 15, 0.08);"
+                                 class="flex items-center gap-2">
+                                <span style="font-size: 16px;">⭐</span>
+                                <div class="text-left">
+                                    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #92400e; line-height: 1;">Total Bonus &amp; Lembur</div>
+                                    <div style="font-size: 14px; font-weight: 900; color: #78350f; line-height: 1.2;" id="headerTotalBonusBadge">
+                                        Rp {{ number_format($totalBonusPeriode, 0, ',', '.') }}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="flex items-center gap-2 shrink-0">
-                        <span id="headerTotalBonusBadge" style="font-size: 12px; font-weight: 800; background-color: #fffbf5; border: 1.5px solid #fcd34d; padding: 6px 14px; border-radius: 8px; color: #78350f; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                            Total Bonus: Rp {{ number_format($payrolls->sum('total_bonus'), 0, ',', '.') }}
-                        </span>
+                    {{-- Right Action Buttons --}}
+                    <div class="flex items-center gap-2 flex-wrap shrink-0">
                         @if(($currentStatus ?? 'draft') !== 'approved' && $payrolls->isNotEmpty())
                         <button type="button" onclick="submitBatchBonus(this)" id="btnBatchSaveBonus"
-                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 6px 16px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s;"
+                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
                                 title="Simpan seluruh perubahan input bonus & lembur di halaman ini sekaligus">
-                            <span>&#128190;</span> Simpan Semua Bonus
+                            <span>💾</span> Simpan Semua Bonus
                         </button>
                         @endif
                     </div>
@@ -61,6 +76,17 @@
             {{-- TOOLBAR FILTER & PENCARIAN --}}
             <div class="flex justify-between items-center gap-2.5 mb-3 flex-wrap">
                 <div class="flex items-center gap-2 flex-wrap flex-1">
+                    {{-- Pilihan Bulan / Periode (sama seperti Keterlambatan) --}}
+                    <select class="form-select form-select-sm" style="width: auto; min-width: 155px; padding: 6px 28px 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;"
+                            onchange="window.location.href='{{ route('penggajian.bonus.periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
+                        @foreach($periodes as $p)
+                            @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
+                            <option value="{{ $p }}" {{ $targetPeriode == $p ? 'selected' : '' }}>
+                                {{ $carbonP->translatedFormat('F Y') }}
+                            </option>
+                        @endforeach
+                    </select>
+
                     {{-- Search Input --}}
                     <div class="relative">
                         <input type="text" id="searchKaryawan" onkeyup="filterKaryawanTable()"

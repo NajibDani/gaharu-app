@@ -16,6 +16,7 @@
     <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
     @vite([
     'resources/css/app.css',
@@ -195,13 +196,16 @@
 
         /* link submenu */
         .submenu-content a {
-            display: block;
-            padding: 9px 20px 9px 44px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px 8px 44px;
             text-decoration: none;
             color: #e0e0e0;
             font-size: 13.5px;
             font-weight: 400;
             transition: color .2s, background .2s;
+            position: relative;
         }
 
         .submenu-content a:hover {
@@ -217,11 +221,73 @@
             padding-left: 41px;
         }
 
+        .submenu-content a .menu-item-text {
+            display: inline-flex;
+            align-items: center;
+            flex-grow: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sidebar-drag-handle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: grab;
+            cursor: -webkit-grab;
+            color: rgba(255, 255, 255, 0.28);
+            padding: 2px 4px;
+            border-radius: 4px;
+            margin-left: 6px;
+            font-size: 13px;
+            line-height: 1;
+            transition: all 0.15s ease;
+            touch-action: none;
+            flex-shrink: 0;
+            opacity: 0.55;
+            user-select: none;
+        }
+
+        .submenu-content a:hover .sidebar-drag-handle {
+            opacity: 1;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        .sidebar-drag-handle:hover {
+            color: #de8958 !important;
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .sidebar-drag-handle:active {
+            cursor: grabbing;
+            cursor: -webkit-grabbing;
+        }
+
+        .sidebar-sortable-ghost {
+            opacity: 0.35 !important;
+            background-color: rgba(222, 137, 88, 0.25) !important;
+            border-left: 3px dashed #de8958 !important;
+        }
+
+        .sidebar-sortable-chosen {
+            background-color: #484848 !important;
+        }
+
+        .sidebar-sortable-drag {
+            background-color: #383838 !important;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+            border-radius: 4px;
+            opacity: 0.95 !important;
+        }
+
         /* ── STEP FLOW items (B2B, CK) ── */
         .submenu-content a.submenu-step {
             display: flex;
             align-items: center;
-            padding: 8px 20px 8px 40px;
+            justify-content: space-between;
+            padding: 8px 12px 8px 40px;
         }
 
         .submenu-content a.submenu-step.active {

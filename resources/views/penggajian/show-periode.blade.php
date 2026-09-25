@@ -5,33 +5,51 @@
             <x-outlet-selector :selectedOutlet="$selectedOutlet" />
 
             {{-- PAGE HEADER --}}
+            @php
+                $totalGajiNettPeriode = $payrolls->sum('take_home_pay');
+            @endphp
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 mb-3">
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                    {{-- Left Title & Info --}}
                     <div class="flex items-center gap-3 flex-wrap">
-                        <a href="{{ route('penggajian.index', ['outlet' => $selectedOutlet]) }}"
-                           style="background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-weight: 800; font-size: 12px; padding: 6px 12px; border-radius: 8px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; transition: background .15s;"
-                           onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'"
-                           title="Kembali">
-                            <span>&larr;</span> Kembali
-                        </a>
                         <div>
-                            <h1 class="text-sm sm:text-base font-extrabold text-slate-900 tracking-tight leading-tight inline">
-                                Hitung Gaji Pokok
-                            </h1>
-                            <span class="text-xs text-slate-600 font-semibold ms-2">
-                                Periode <strong class="text-slate-900">{{ \App\Models\Penggajian::formatPeriode($periode) }}</strong>
-                                &middot; Outlet <strong class="text-slate-900">{{ $selectedOutlet }}</strong>
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight m-0">
+                                    Hitung Gaji Pokok
+                                </h1>
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200/70">
+                                    Outlet {{ $selectedOutlet }}
+                                </span>
+                            </div>
+                            <p class="text-xs text-slate-500 font-medium m-0 mt-0.5">
+                                Periode: <strong class="text-slate-800">{{ \Carbon\Carbon::parse($periode . '-01')->translatedFormat('F Y') }}</strong>
+                            </p>
+                        </div>
+
+                        {{-- Total Gaji Bersih / Nett Badge --}}
+                        <div class="flex items-center gap-2 ms-0 sm:ms-2">
+                            <div id="headerTotalGajiNettBadge"
+                                 style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1.5px solid #86efac; color: #166534; padding: 6px 14px; border-radius: 10px; box-shadow: 0 1px 3px rgba(22, 101, 52, 0.08);"
+                                 class="flex items-center gap-2">
+                                <span style="font-size: 16px;">💰</span>
+                                <div class="text-left">
+                                    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #15803d; line-height: 1;">Total Gaji Bersih (Nett)</div>
+                                    <div style="font-size: 14px; font-weight: 900; color: #14532d; line-height: 1.2;" id="headerTotalGajiNettValue">
+                                        Rp {{ number_format($totalGajiNettPeriode, 0, ',', '.') }}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
+                    {{-- Right Action Buttons --}}
                     <div class="flex items-center gap-2 flex-wrap shrink-0">
                         @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
                         <button type="button" onclick="submitBatchGajiPokok(this)" id="btnBatchSaveGajiPokok"
-                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s; white-space: nowrap;"
+                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
                                 title="Simpan seluruh perubahan hari kerja / waktu kerja di halaman ini sekaligus">
-                            <span>&#128190;</span> Simpan Semua Gaji Pokok
+                            <span>💾</span> Simpan Semua Gaji Pokok
                         </button>
 
                         <form action="{{ route('penggajian.auto-fill') }}" method="POST" class="inline m-0 p-0">
@@ -40,15 +58,15 @@
                             <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                             <button type="submit"
                                     onclick="return confirm('Tambahkan seluruh karyawan aktif Outlet {{ $selectedOutlet }} yang belum terdaftar ke periode {{ \App\Models\Penggajian::formatPeriode($periode) }} secara otomatis?')"
-                                    style="background-color: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; padding: 6px 13px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
+                                    style="background-color: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; padding: 7px 13px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
                                     onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#ffffff'"
                                     title="Tambahkan otomatis semua karyawan aktif yang belum terdaftar di periode ini">
-                                <span>&#9889;</span> Auto-Fill
+                                <span>⚡</span> Auto-Fill
                             </button>
                         </form>
 
                         <button type="button" @click="openCreateModal()"
-                                style="background-color: #ffffff; color: #334155; border: 1.5px solid #cbd5e1; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
+                                style="background-color: #ffffff; color: #334155; border: 1.5px solid #cbd5e1; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#ffffff'"
                                 title="Input slip gaji baru secara manual via pop-up">
                             <span style="font-size: 14px; line-height: 1;">+</span> Input Gaji
@@ -59,18 +77,18 @@
                               onsubmit="return confirm('Proses pembayaran dan jurnal untuk SELURUH karyawan di periode {{ \App\Models\Penggajian::formatPeriode($periode) }}?')">
                             @csrf
                             <button type="submit"
-                                    style="background-color: #059669; color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(5,150,105,0.25); transition: background .15s; white-space: nowrap;"
+                                    style="background-color: #059669; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(5,150,105,0.25); transition: background .15s; white-space: nowrap;"
                                     onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">
-                                <span>&#128179;</span> Bayar Semua
+                                <span>💳</span> Bayar Semua
                             </button>
                         </form>
 
                         {{-- EXPORT EXCEL BUTTON --}}
                         <a href="{{ route('penggajian.export-excel', ['periode' => $periode, 'outlet' => $selectedOutlet]) }}"
-                           style="background-color: #166534; color: #ffffff; border: none; padding: 6px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(22,101,52,0.25); transition: background .15s; white-space: nowrap; text-decoration: none;"
+                           style="background-color: #166534; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(22,101,52,0.25); transition: background .15s; white-space: nowrap; text-decoration: none;"
                            onmouseover="this.style.background='#14532d'" onmouseout="this.style.background='#166534'"
                            title="Unduh data transfer gaji ke rekening (format Excel payroll bank)">
-                            <span>&#128196;</span> Export Excel
+                            <span>📄</span> Export Excel
                         </a>
                     </div>
                 </div>
@@ -104,6 +122,17 @@
             {{-- TOOLBAR FILTER & PENCARIAN --}}
             <div class="flex justify-between items-center gap-2.5 mb-3 flex-wrap">
                 <div class="flex items-center gap-2 flex-wrap flex-1">
+                    {{-- Pilihan Bulan / Periode (sama seperti Keterlambatan) --}}
+                    <select class="form-select form-select-sm" style="width: auto; min-width: 155px; padding: 6px 28px 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;"
+                            onchange="window.location.href='{{ route('penggajian.show-periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
+                        @foreach($periodes as $p)
+                            @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
+                            <option value="{{ $p }}" {{ $periode == $p ? 'selected' : '' }}>
+                                {{ $carbonP->translatedFormat('F Y') }}
+                            </option>
+                        @endforeach
+                    </select>
+
                     {{-- Search Input --}}
                     <div class="relative">
                         <input type="text" id="searchKaryawan" onkeyup="filterKaryawanTable()"
@@ -379,6 +408,7 @@
                                 data-tarif="{{ (float)$tarifHarian }}"
                                 data-bonus-total="{{ (float)$totalBonus }}"
                                 data-deductions-total="{{ (float)$totalPotongan }}"
+                                data-take-home-pay="{{ (float)$payroll->take_home_pay }}"
                                 data-has-multiple="{{ $hasMultiplePeriods ? '1' : '0' }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
@@ -1463,6 +1493,17 @@
         // =========================================================================
         // BATCH EDIT GAJI POKOK (INLINE HARI KERJA)
         // =========================================================================
+        function recalculateHeaderTotalNett() {
+            let total = 0;
+            document.querySelectorAll('.payroll-row').forEach(row => {
+                total += parseFloat(row.getAttribute('data-take-home-pay')) || 0;
+            });
+            const badgeEl = document.getElementById('headerTotalGajiNettValue');
+            if (badgeEl) {
+                badgeEl.textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
+            }
+        }
+
         function onGajiPokokRowInput(el) {
             const row = el.closest('.payroll-row');
             if (!row) return;
@@ -1476,11 +1517,15 @@
             let gajiPokok = (satuan === 'Bulanan') ? tarif : (hk * tarif);
             let takeHomePay = gajiPokok + totalBonus - totalDeductions;
 
+            row.setAttribute('data-take-home-pay', takeHomePay);
+
             const pokokEl = row.querySelector('.row-gaji-pokok-cell');
             const thpEl = row.querySelector('.row-take-home-pay-cell');
 
             if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(gajiPokok).toLocaleString('id-ID');
             if (thpEl) thpEl.textContent = 'Rp ' + Math.round(takeHomePay).toLocaleString('id-ID');
+
+            recalculateHeaderTotalNett();
         }
 
         async function submitBatchGajiPokok(btn) {

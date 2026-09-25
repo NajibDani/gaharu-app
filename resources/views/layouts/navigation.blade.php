@@ -78,7 +78,7 @@
                     </div>
                     <i class="bi {{ $dashboardActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="dashboard">
                     <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') && !request()->routeIs('dashboard.keuangan') && !request()->routeIs('laporan.produksi.dashboard') ? 'active' : '' }}">
                         <i class="bi bi-speedometer me-2" style="font-size:12px;"></i>Dashboard Utama
                     </a>
@@ -108,7 +108,7 @@
                     <i class="bi {{ $masterActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
 
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="master">
                     @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Kepala Gudang']))
                         <div class="submenu-divider">BARANG &amp; KATEGORI</div>
                         <a href="{{ route('kategori.index') }}" class="{{ request()->routeIs('kategori.*') ? 'active' : '' }}">
@@ -159,7 +159,7 @@
                     <i class="bi {{ $hrdActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
 
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="hrd">
                     <div class="submenu-divider">MASTER</div>
                     <a href="{{ route('karyawan.index') }}" class="{{ request()->routeIs('karyawan.*') ? 'active' : '' }}">
                         <i class="bi bi-person-badge me-2" style="font-size:12px;"></i>Data Karyawan
@@ -197,7 +197,7 @@
                     </div>
                     <i class="bi {{ $stokActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="operasional">
                     <a href="{{ route('stok-gudang.index') }}" class="{{ request()->routeIs('stok-gudang.index') || request()->routeIs('stok-gudang.detail') || request()->routeIs('stok-gudang-batch.*') ? 'active' : '' }}">
                         <i class="bi bi-box-seam me-2" style="font-size:12px;"></i>Stok Gudang
                     </a>
@@ -239,7 +239,7 @@
                     </div>
                     <i class="bi {{ $penjualanActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="pos">
                     <a href="{{ route('penjualan_pos.index') }}" class="{{ request()->routeIs('penjualan_pos.index') ? 'active' : '' }}">
                         <i class="bi bi-receipt me-2" style="font-size:12px;"></i>Rekap Penjualan POS
                     </a>
@@ -264,7 +264,7 @@
                     </div>
                     <i class="bi {{ $produksiActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="produksi">
                     <a href="{{ route('pesanan.index') }}" class="{{ request()->routeIs('pesanan.*') ? 'active' : '' }}">
                         <i class="bi bi-briefcase me-2" style="font-size:12px;"></i>Permintaan Cold Kitchen
                     </a>
@@ -294,7 +294,7 @@
                     <i class="bi {{ $financeActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
 
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="keuangan">
                     <div class="submenu-divider">JURNAL TRANSAKSI</div>
                     <a href="{{ route('jurnal.index') }}" class="{{ request()->routeIs('jurnal.index') ? 'active' : '' }}">
                         <i class="bi bi-journal-check me-2" style="font-size:12px;"></i>Jurnal Umum
@@ -336,7 +336,7 @@
                     <i class="bi {{ $reportsActive ? 'bi-chevron-down' : 'bi-chevron-right' }} chevron-icon"></i>
                 </div>
 
-                <div class="submenu-content">
+                <div class="submenu-content" data-submenu-id="laporan">
                     @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
                         <div class="submenu-divider">PENJUALAN</div>
                         @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga', 'Management', 'Direktur Keuangan']))
@@ -419,7 +419,10 @@
         </div>
     </div>
 
-    <div style="padding:20px 0; border-top:1px solid rgba(255, 255, 255, 0.08);">
+    <div style="padding:14px 16px; border-top:1px solid rgba(255, 255, 255, 0.08);" class="d-flex flex-column gap-2">
+        <button type="button" id="resetSidebarOrderBtn" class="btn btn-sm text-white-50 text-decoration-none d-flex align-items-center justify-content-center py-1 px-2 border-0 bg-transparent" style="font-size:11px; opacity:0.65; transition: opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.65'" title="Kembalikan urutan menu sidebar ke posisi awal">
+            <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Urutan Menu
+        </button>
         <form method="POST" action="{{ route('logout') }}">
             @csrf
             <button type="submit" class="logout-btn d-flex align-items-center justify-content-center">
@@ -430,8 +433,15 @@
     </div>
 </div>
 
+{{-- Toast Notifikasi Reorder Menu Sidebar --}}
+<div id="sidebarReorderToast" style="display: none; position: fixed; bottom: 28px; right: 28px; z-index: 99999; background: #0f172a; color: #ffffff; padding: 12px 20px; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); font-size: 13px; font-weight: 700; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.15); transition: opacity 0.2s ease;">
+    <span id="sidebarReorderToastIcon" style="font-size: 15px;">⏳</span>
+    <span id="sidebarReorderToastMsg">Menyimpan urutan posisi menu...</span>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // 1. Accordion Toggle
         document.querySelectorAll('.toggle-accordion').forEach(button => {
             button.addEventListener('click', () => {
                 const group = button.parentElement;
@@ -441,5 +451,184 @@
                 chevron.classList.toggle('bi-chevron-down', group.classList.contains('open'));
             });
         });
+
+        // 2. Drag & Drop Reorder Menu Sidebar
+        (function() {
+            const currentUserId = "{{ auth()->id() ?? 'guest' }}";
+            const storageKey = 'gaharu_sidebar_order_u_' + currentUserId;
+
+            function getItemKey(child) {
+                if (!child) return null;
+                if (child.tagName === 'A') {
+                    const url = child.getAttribute('href') || '';
+                    try {
+                        const parsed = new URL(url, window.location.origin);
+                        return 'a:' + parsed.pathname;
+                    } catch (e) {
+                        return 'a:' + url;
+                    }
+                } else if (child.classList && child.classList.contains('submenu-divider')) {
+                    return 'div:' + child.textContent.trim();
+                }
+                return null;
+            }
+
+            function getSavedOrders() {
+                try {
+                    return JSON.parse(localStorage.getItem(storageKey) || '{}');
+                } catch (e) {
+                    return {};
+                }
+            }
+
+            function restoreSubmenuOrder(submenu, submenuId) {
+                const allOrders = getSavedOrders();
+                const savedOrder = allOrders[submenuId];
+                if (!Array.isArray(savedOrder) || savedOrder.length === 0) return;
+
+                const childMap = new Map();
+                Array.from(submenu.children).forEach(child => {
+                    const key = getItemKey(child);
+                    if (key) childMap.set(key, child);
+                });
+
+                savedOrder.forEach(key => {
+                    if (childMap.has(key)) {
+                        submenu.appendChild(childMap.get(key));
+                        childMap.delete(key);
+                    }
+                });
+
+                // Item yang belum ada di savedOrder tetap berada di urutan berikutnya
+                childMap.forEach(child => {
+                    submenu.appendChild(child);
+                });
+            }
+
+            let sidebarToastTimeout;
+            function showToast(msg, icon = '⏳', isError = false) {
+                const toast = document.getElementById('sidebarReorderToast');
+                const toastIcon = document.getElementById('sidebarReorderToastIcon');
+                const toastMsg = document.getElementById('sidebarReorderToastMsg');
+                if (!toast || !toastIcon || !toastMsg) return;
+
+                clearTimeout(sidebarToastTimeout);
+                toastIcon.textContent = icon;
+                toastMsg.textContent = msg;
+                toast.style.background = isError ? '#991b1b' : '#0f172a';
+                toast.style.display = 'inline-flex';
+
+                if (!isError && icon === '✓') {
+                    sidebarToastTimeout = setTimeout(() => {
+                        toast.style.display = 'none';
+                    }, 2500);
+                }
+            }
+
+            function saveSubmenuOrder(submenu, submenuId) {
+                showToast('Menyimpan urutan posisi...', '⏳');
+
+                const order = Array.from(submenu.children).map(getItemKey).filter(Boolean);
+                const allOrders = getSavedOrders();
+                allOrders[submenuId] = order;
+
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(allOrders));
+                    setTimeout(() => {
+                        showToast('Urutan menu berhasil disimpan!', '✓');
+                    }, 250);
+                } catch (e) {
+                    console.error(e);
+                    showToast('Gagal menyimpan urutan menu.', '⚠', true);
+                }
+            }
+
+            function initSubmenuSortable(submenu, submenuId) {
+                // Restore urutan yang tersimpan
+                restoreSubmenuOrder(submenu, submenuId);
+
+                // Tambahkan drag handle pada setiap tag link menu
+                submenu.querySelectorAll(':scope > a').forEach(a => {
+                    if (!a.querySelector('.sidebar-drag-handle')) {
+                        if (!a.querySelector('.menu-item-text')) {
+                            const origHtml = a.innerHTML;
+                            a.innerHTML = `<span class="menu-item-text">${origHtml}</span>`;
+                        }
+                        const handle = document.createElement('span');
+                        handle.className = 'sidebar-drag-handle';
+                        handle.title = 'Tahan dan geser (drag & drop) untuk mengatur posisi menu';
+                        handle.innerHTML = '<i class="bi bi-grip-vertical"></i>';
+                        handle.addEventListener('click', (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                        });
+                        a.appendChild(handle);
+                    }
+                });
+
+                // Inisialisasi SortableJS atau fallback Drag & Drop HTML5
+                if (typeof Sortable !== 'undefined') {
+                    Sortable.create(submenu, {
+                        handle: '.sidebar-drag-handle',
+                        draggable: 'a, .submenu-divider',
+                        animation: 160,
+                        ghostClass: 'sidebar-sortable-ghost',
+                        chosenClass: 'sidebar-sortable-chosen',
+                        dragClass: 'sidebar-sortable-drag',
+                        onEnd: function() {
+                            saveSubmenuOrder(submenu, submenuId);
+                        }
+                    });
+                } else {
+                    // Fallback drag and drop native HTML5
+                    let draggedEl = null;
+                    submenu.querySelectorAll(':scope > a').forEach(a => {
+                        const handle = a.querySelector('.sidebar-drag-handle') || a;
+                        handle.setAttribute('draggable', 'true');
+                        handle.addEventListener('dragstart', (e) => {
+                            draggedEl = a;
+                            e.dataTransfer.effectAllowed = 'move';
+                            a.classList.add('opacity-50');
+                        });
+                        handle.addEventListener('dragend', () => {
+                            draggedEl = null;
+                            a.classList.remove('opacity-50');
+                            saveSubmenuOrder(submenu, submenuId);
+                        });
+                        a.addEventListener('dragover', (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            const target = e.target.closest('.submenu-content > a, .submenu-content > .submenu-divider');
+                            if (target && target !== draggedEl && target.parentElement === submenu) {
+                                const rect = target.getBoundingClientRect();
+                                const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+                                submenu.insertBefore(draggedEl, next ? target.nextSibling : target);
+                            }
+                        });
+                    });
+                }
+            }
+
+            const submenus = document.querySelectorAll('.submenu-content');
+            submenus.forEach((submenu, idx) => {
+                const submenuId = submenu.getAttribute('data-submenu-id') || ('sub_' + idx);
+                initSubmenuSortable(submenu, submenuId);
+            });
+
+            // Tombol Reset Urutan Menu
+            const resetBtn = document.getElementById('resetSidebarOrderBtn');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (confirm('Kembalikan urutan menu sidebar ke posisi bawaan?')) {
+                        localStorage.removeItem(storageKey);
+                        showToast('Urutan menu berhasil direset!', '✓');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 500);
+                    }
+                });
+            }
+        })();
     });
 </script>
