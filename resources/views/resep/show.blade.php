@@ -20,9 +20,14 @@
                 @endif
             @endif
         </h3>
-        <a href="{{ route('resep.index') }}" class="btn btn-secondary rounded-3">
-            Kembali
-        </a>
+        <div>
+            <a href="{{ route('resep.edit', $resep->id) }}" class="btn btn-warning rounded-3 me-2">
+                <i class="bi bi-pencil me-1"></i> Edit Resep
+            </a>
+            <a href="{{ route('resep.index') }}" class="btn btn-secondary rounded-3">
+                Kembali
+            </a>
+        </div>
     </div>
 
     {{-- INFO OUTPUT & BIAYA OPERASIONAL --}}
