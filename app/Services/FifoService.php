@@ -529,6 +529,7 @@ class FifoService
                         $totalBiayaResep += (floatval($subBahan->qty_bahan) * $subHarga);
                     }
                     if ($totalBiayaResep > 0) {
+                        $totalBiayaResep = $totalBiayaResep * 1.30; // Tambahkan 30% BTKL & BOP untuk produksi BSJ
                         $res = (float) ($totalBiayaResep / $outputQty);
                         if (true) {
                             self::$hargaTerakhirCache[$cacheKey] = $res;
