@@ -53,7 +53,9 @@ class PenjualanPosController extends Controller
                 $q->where('kategori', 'Operasional')
                   ->orWhere('nama', 'like', '%Gaharu%')
                   ->orWhere('nama', 'like', '%KeJingga%');
-            });
+            })->where('nama', 'not like', '%Utama%')
+              ->where('nama', 'not like', '%Central Kitchen%')
+              ->where('nama', 'not like', '%Cold Kitchen%');
         }
 
         $produk = $queryProduk->get();
@@ -363,7 +365,9 @@ class PenjualanPosController extends Controller
                 $q->where('kategori', 'Operasional')
                   ->orWhere('nama', 'like', '%Gaharu%')
                   ->orWhere('nama', 'like', '%KeJingga%');
-            });
+            })->where('nama', 'not like', '%Utama%')
+              ->where('nama', 'not like', '%Central Kitchen%')
+              ->where('nama', 'not like', '%Cold Kitchen%');
         }
 
         $produk = $queryProduk->get();
@@ -1268,6 +1272,10 @@ class PenjualanPosController extends Controller
             $gudangId = (int) $request->input('gudang_id');
             $gudangObj = \App\Models\MasterGudang::find($gudangId);
             $gudangNama = $gudangObj ? $gudangObj->nama : 'Outlet';
+            
+            if ($gudangObj && !$gudangObj->isOperasional() && (str_contains(strtolower($gudangObj->nama), 'utama') || str_contains(strtolower($gudangObj->nama), 'central kitchen') || str_contains(strtolower($gudangObj->nama), 'cold kitchen'))) {
+                return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.');
+            }
             
             $extension = strtolower($file->getClientOriginalExtension());
             $rows = [];
