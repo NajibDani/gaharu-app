@@ -204,6 +204,8 @@ class PenjualanPosController extends Controller
 
         $fifoService = app(\App\Services\FifoService::class);
         $gudangId = $penjualan->gudang_id;
+        $cacheBatchBeli = [];
+        $cacheSubResep = [];
 
         foreach ($penjualan->details as $d) {
             $hasResep = $d->produk ? $d->produk->hasResep() : false;
@@ -237,13 +239,19 @@ class PenjualanPosController extends Controller
                     if ($item->bahan) {
                         $subResep = $item->bahan->resepBtklBop;
                         if (!$subResep && $item->bahan->resep_id) {
-                            $subResep = \App\Models\ResepBtklBop::with('bahanbaku.bahan')->find($item->bahan->resep_id);
+                            if (!array_key_exists($item->bahan->resep_id, $cacheSubResep)) {
+                                $cacheSubResep[$item->bahan->resep_id] = \App\Models\ResepBtklBop::with('bahanbaku.bahan')->find($item->bahan->resep_id);
+                            }
+                            $subResep = $cacheSubResep[$item->bahan->resep_id];
                         }
                     }
 
                     // Cek ketersediaan batch fisik di gudang atau riwayat pembelian supplier
-                    $hasBatchOrBeli = DB::table('stok_gudang_batch')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists()
-                        || DB::table('pembelian_detail')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists();
+                    if (!isset($cacheBatchBeli[$item->bahan_id])) {
+                        $cacheBatchBeli[$item->bahan_id] = DB::table('stok_gudang_batch')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists()
+                            || DB::table('pembelian_detail')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists();
+                    }
+                    $hasBatchOrBeli = $cacheBatchBeli[$item->bahan_id];
 
                     $sumberHarga = 'Stok / Pembelian Gudang';
                     if ($subResep && !$hasBatchOrBeli) {

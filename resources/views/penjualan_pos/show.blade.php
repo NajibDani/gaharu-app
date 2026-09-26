@@ -326,6 +326,11 @@
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            @if(($penjualan->status ?? '') === 'SUKSES')
+            <div class="alert alert-info border-0 rounded-0 m-0 px-4 py-2" style="font-size: 0.8rem;">
+                <i class="bi bi-info-circle-fill me-1"></i> <strong>Informasi:</strong> Tabel bahan baku di bawah menampilkan estimasi harga <strong>saat ini (Live)</strong>. Total HPP pada kotak biru di bawah menggunakan <strong>harga aktual (Historis)</strong> saat stok FIFO dipotong pada waktu transaksi disetujui.
+            </div>
+            @endif
             <div class="modal-body p-4 bg-light">
                 <!-- INFO HEADER BOX -->
                 <div class="card border-0 shadow-sm mb-3 rounded-3">
@@ -384,7 +389,7 @@
                                     <td class="pe-3"></td>
                                 </tr>
                                 <tr class="table-warning table-opacity-25 border-top border-2">
-                                    <td colspan="4" class="text-end ps-3 fw-bold text-dark fs-6">Total HPP / Unit (BBB + BTKL/BOP):</td>
+                                    <td colspan="4" class="text-end ps-3 fw-bold text-dark fs-6">Estimasi HPP / Unit Saat Ini (BBB + BTKL/BOP):</td>
                                     <td class="text-end fw-bold text-success fs-6" id="mGrandTotalHppUnit">Rp 0</td>
                                     <td class="pe-3"></td>
                                 </tr>
@@ -618,7 +623,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const linkResep = document.getElementById('mBtnLinkResep');
                 if (rincian.resep_id) {
-                    linkResep.href = '/resep-bahan/' + rincian.resep_id;
+                    linkResep.href = '/resep/' + rincian.resep_id;
                     linkResep.classList.remove('d-none');
                 } else {
                     linkResep.classList.add('d-none');

@@ -324,7 +324,7 @@ class FifoService
         }
 
         $cacheKey = "{$barangId}_{$gudangId}";
-        if (empty($visited) && isset(self::$hargaTerakhirCache[$cacheKey])) {
+        if (isset(self::$hargaTerakhirCache[$cacheKey])) {
             return self::$hargaTerakhirCache[$cacheKey];
         }
 
@@ -343,7 +343,7 @@ class FifoService
 
             if ($activeGudangBatch && floatval($activeGudangBatch) > 0) {
                 $res = (float) $activeGudangBatch;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
@@ -370,7 +370,7 @@ class FifoService
 
             if ($activeUtamaBatch && floatval($activeUtamaBatch) > 0) {
                 $res = (float) $activeUtamaBatch;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
@@ -388,7 +388,7 @@ class FifoService
 
         if ($activeAnyBatch && floatval($activeAnyBatch) > 0) {
             $res = (float) $activeAnyBatch;
-            if (count($visited) === 1) {
+            if (true) {
                 self::$hargaTerakhirCache[$cacheKey] = $res;
             }
             return $res;
@@ -437,7 +437,7 @@ class FifoService
 
             if ($unitPriceDasar > 0) {
                 $res = (float) $unitPriceDasar;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
@@ -455,7 +455,7 @@ class FifoService
 
             if ($latestGudangBatch && floatval($latestGudangBatch) > 0) {
                 $res = (float) $latestGudangBatch;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
@@ -472,7 +472,7 @@ class FifoService
 
             if ($latestUtamaBatch && floatval($latestUtamaBatch) > 0) {
                 $res = (float) $latestUtamaBatch;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
@@ -487,7 +487,7 @@ class FifoService
 
         if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
             $res = (float) $latestBatchGlobal;
-            if (count($visited) === 1) {
+            if (true) {
                 self::$hargaTerakhirCache[$cacheKey] = $res;
             }
             return $res;
@@ -502,7 +502,7 @@ class FifoService
 
         if ($sa && floatval($sa) > 0) {
             $res = (float) $sa;
-            if (count($visited) === 1) {
+            if (true) {
                 self::$hargaTerakhirCache[$cacheKey] = $res;
             }
             return $res;
@@ -530,7 +530,7 @@ class FifoService
                     }
                     if ($totalBiayaResep > 0) {
                         $res = (float) ($totalBiayaResep / $outputQty);
-                        if (count($visited) === 1) {
+                        if (true) {
                             self::$hargaTerakhirCache[$cacheKey] = $res;
                         }
                         return $res;
@@ -541,28 +541,32 @@ class FifoService
             // 8. Fallback ke HPP referensi master barang / harga beli
             if (isset($barang->hpp_referensi) && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
             }
             if (isset($barang->harga_beli) && floatval($barang->harga_beli) > 0) {
                 $res = (float) $barang->harga_beli;
-                if (count($visited) === 1) {
+                $konversi = isset($barang->konversi_pembelian) ? (float)$barang->konversi_pembelian : 1;
+                if ($konversi > 1) {
+                    $res = $res / $konversi;
+                }
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
             }
             if (isset($barang->harga_satuan_terkecil) && floatval($barang->harga_satuan_terkecil) > 0) {
                 $res = (float) $barang->harga_satuan_terkecil;
-                if (count($visited) === 1) {
+                if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
                 return $res;
             }
         }
 
-        if (count($visited) === 1) {
+        if (true) {
             self::$hargaTerakhirCache[$cacheKey] = 0.0;
         }
         return 0.0;
