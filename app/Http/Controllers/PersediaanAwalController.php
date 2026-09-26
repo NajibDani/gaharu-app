@@ -255,45 +255,38 @@ class PersediaanAwalController extends Controller
             });
         }
 
-        // Filter bahan baku / bahan setengah jadi sesuai tagging divisi seperti Stock Opname
+        // HANYA memuat barang dengan jenis bahan baku dan bahan setengah jadi
+        $query->where(function($q_bahan) {
+            $q_bahan->where('is_bahan_baku', true)
+                    ->orWhere('is_bahan_setengah_jadi', true);
+        });
+
+        // Filter sesuai tagging divisi terkait
         if ($gudangId) {
             $query->where(function($q) use ($gudangId, $divisiId) {
-                // Barang selain bahan baku dan bahan setengah jadi tetap lolos (Barang Jadi, Operational)
-                $q->where(function($q_non) {
-                    $q_non->where('is_bahan_baku', false)
-                          ->where('is_bahan_setengah_jadi', false);
-                })
-                // Untuk bahan baku & bahan setengah jadi, terapkan logic tagging
-                ->orWhere(function($subQ) use ($gudangId, $divisiId) {
-                    $subQ->where(function($q_bahan) {
-                        $q_bahan->where('is_bahan_baku', true)
-                                ->orWhere('is_bahan_setengah_jadi', true);
+                if ($divisiId) {
+                    // Jika ada divisi: HANYA muncul jika tagging divisinya aktif (ON)
+                    $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
+                        $existsQuery->select(DB::raw(1))
+                            ->from('barang_minimum_stock')
+                            ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                            ->where('barang_minimum_stock.divisi_id', $divisiId)
+                            ->where('barang_minimum_stock.is_active', true);
+                        if ($gudangId) {
+                            $existsQuery->where('barang_minimum_stock.gudang_id', $gudangId);
+                        }
                     });
-                    
-                    if ($divisiId) {
-                        // Jika ada divisi: HANYA muncul jika tagging divisinya aktif (ON)
-                        $subQ->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
-                            $existsQuery->select(DB::raw(1))
-                                ->from('barang_minimum_stock')
-                                ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
-                                ->where('barang_minimum_stock.divisi_id', $divisiId)
-                                ->where('barang_minimum_stock.is_active', true);
-                            if ($gudangId) {
-                                $existsQuery->where('barang_minimum_stock.gudang_id', $gudangId);
-                            }
-                        });
-                    } else {
-                        // Jika tanpa divisi: Semua muncul KECUALI yang dinonaktifkan eksplisit
-                        $subQ->whereNotExists(function($notExistsQuery) use ($gudangId) {
-                            $notExistsQuery->select(DB::raw(1))
-                                ->from('barang_minimum_stock')
-                                ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
-                                ->where('barang_minimum_stock.gudang_id', $gudangId)
-                                ->where('barang_minimum_stock.is_active', false)
-                                ->whereNull('barang_minimum_stock.divisi_id');
-                        });
-                    }
-                });
+                } else {
+                    // Jika tanpa divisi: Semua muncul KECUALI yang dinonaktifkan eksplisit
+                    $q->whereNotExists(function($notExistsQuery) use ($gudangId) {
+                        $notExistsQuery->select(DB::raw(1))
+                            ->from('barang_minimum_stock')
+                            ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                            ->where('barang_minimum_stock.gudang_id', $gudangId)
+                            ->where('barang_minimum_stock.is_active', false)
+                            ->whereNull('barang_minimum_stock.divisi_id');
+                    });
+                }
             });
         }
 
