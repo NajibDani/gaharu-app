@@ -40,9 +40,9 @@ class PenjualanPosController extends Controller
         $queryProduk = MasterBarang::where('is_barang_jadi', 1)->where('is_active', true);
         $queryGudang = MasterGudang::query();
 
-        if ($user->gudang_id) {
-            $userGudang = MasterGudang::find($user->gudang_id);
-            if ($userGudang && str_contains(strtolower($userGudang->nama), 'kejingga')) {
+        $userGudang = $user->gudang_id ? MasterGudang::find($user->gudang_id) : null;
+        if ($userGudang && $userGudang->isOutlet()) {
+            if (str_contains(strtolower($userGudang->nama), 'kejingga')) {
                 $queryProduk->where('tipe_penjualan', 'POS Kejingga');
             } else {
                 $queryProduk->where('tipe_penjualan', 'POS Gaharu');
@@ -55,7 +55,8 @@ class PenjualanPosController extends Controller
                   ->orWhere('nama', 'like', '%KeJingga%');
             })->where('nama', 'not like', '%Utama%')
               ->where('nama', 'not like', '%Central Kitchen%')
-              ->where('nama', 'not like', '%Cold Kitchen%');
+              ->where('nama', 'not like', '%Cold Kitchen%')
+              ->where('nama', 'not like', '%Smoke%');
         }
 
         $produk = $queryProduk->get();
@@ -90,11 +91,12 @@ class PenjualanPosController extends Controller
 
         $user = auth()->user();
         $gudangPilihan = MasterGudang::find($request->gudang_id);
-        if ($gudangPilihan && !$gudangPilihan->isOperasional() && (str_contains(strtolower($gudangPilihan->nama), 'utama') || str_contains(strtolower($gudangPilihan->nama), 'central kitchen') || str_contains(strtolower($gudangPilihan->nama), 'cold kitchen'))) {
-            return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.')->withInput();
+        if (!$gudangPilihan || !$gudangPilihan->isOutlet()) {
+            return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, transaksi penjualan POS hanya diperbolehkan untuk gudang outlet (Gudang Gaharu / Gudang KeJingga).')->withInput();
         }
 
-        if ($user->gudang_id && $request->gudang_id != $user->gudang_id) {
+        $userGudang = $user->gudang_id ? MasterGudang::find($user->gudang_id) : null;
+        if ($userGudang && $userGudang->isOutlet() && $request->gudang_id != $user->gudang_id) {
             return back()->with('error', 'Anda tidak diizinkan membuat transaksi untuk gudang lain.')->withInput();
         }
 
@@ -360,9 +362,9 @@ class PenjualanPosController extends Controller
         $queryProduk = MasterBarang::where('is_barang_jadi', 1)->where('is_active', true);
         $queryGudang = MasterGudang::query();
 
-        if ($user->gudang_id && !$isSuperAdmin) {
-            $userGudang = MasterGudang::find($user->gudang_id);
-            if ($userGudang && str_contains(strtolower($userGudang->nama), 'kejingga')) {
+        $userGudang = ($user->gudang_id && !$isSuperAdmin) ? MasterGudang::find($user->gudang_id) : null;
+        if ($userGudang && $userGudang->isOutlet()) {
+            if (str_contains(strtolower($userGudang->nama), 'kejingga')) {
                 $queryProduk->where('tipe_penjualan', 'POS Kejingga');
             } else {
                 $queryProduk->where('tipe_penjualan', 'POS Gaharu');
@@ -375,7 +377,8 @@ class PenjualanPosController extends Controller
                   ->orWhere('nama', 'like', '%KeJingga%');
             })->where('nama', 'not like', '%Utama%')
               ->where('nama', 'not like', '%Central Kitchen%')
-              ->where('nama', 'not like', '%Cold Kitchen%');
+              ->where('nama', 'not like', '%Cold Kitchen%')
+              ->where('nama', 'not like', '%Smoke%');
         }
 
         $produk = $queryProduk->get();
@@ -409,11 +412,13 @@ class PenjualanPosController extends Controller
             return back()->with('error', 'Tanggal transaksi tidak boleh sebelum hari ini.')->withInput();
         }
 
-        if (in_array($request->gudang_id, [1, 2])) {
-            return back()->with('error', 'Gudang Utama dan Central Kitchen hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.')->withInput();
+        $gudangPilihan = MasterGudang::find($request->gudang_id);
+        if (!$gudangPilihan || !$gudangPilihan->isOutlet()) {
+            return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, transaksi penjualan POS hanya diperbolehkan untuk gudang outlet (Gudang Gaharu / Gudang KeJingga).')->withInput();
         }
 
-        if ($user->gudang_id && !$isSuperAdmin && $request->gudang_id != $user->gudang_id) {
+        $userGudang = ($user->gudang_id && !$isSuperAdmin) ? MasterGudang::find($user->gudang_id) : null;
+        if ($userGudang && $userGudang->isOutlet() && $request->gudang_id != $user->gudang_id) {
             return back()->with('error', 'Anda tidak diizinkan mengubah transaksi ke gudang lain.')->withInput();
         }
 
@@ -485,7 +490,11 @@ class PenjualanPosController extends Controller
                     DB::table('pengeluaran_bahan_baku_fifo')->where('pengeluaran_id', $oldPeng->id)->delete();
                     DB::table('pengeluaran_bahan_baku_detail')->where('pengeluaran_id', $oldPeng->id)->delete();
                     DB::table('pengeluaran_bahan_baku')->where('id', $oldPeng->id)->delete();
+                    DB::table('transaksi_stok')->where('source_type', 'penjualan_pos')->where('source_id', $oldPeng->id)->delete();
                 }
+
+                // Hapus mutasi stok POS dari transaksi_stok
+                DB::table('transaksi_stok')->where('source_type', 'penjualan_pos')->where('source_id', $penjualan->id)->delete();
 
                 // Hapus jurnal akuntansi lama terkait penjualan POS ini
                 $jurnalPosList = DB::table('jurnal_penjualan_pos')->where('source_type', 'penjualan_pos')->where('source_id', $penjualan->id)->get();
@@ -668,6 +677,13 @@ class PenjualanPosController extends Controller
             $tanggalTrans = $penjualan->tanggal;
             $gudangId = $penjualan->gudang_id;
 
+            // Pastikan gudang pemotongan stok adalah gudang outlet operasional, BUKAN Gudang Utama / Produksi!
+            $gudangObj = MasterGudang::find($gudangId);
+            if (!$gudangObj || !$gudangObj->isOutlet()) {
+                $gudangId = MasterGudang::resolveOutletId($kodePos);
+                $penjualan->update(['gudang_id' => $gudangId]);
+            }
+
             // Jika ada item yang belum memiliki resep, pisahkan ke transaksi Draft baru (tertinggal)
             $pendingPenjualan = null;
             $pendingCode = null;
@@ -688,7 +704,7 @@ class PenjualanPosController extends Controller
                 $pendingPenjualan = PenjualanPos::create([
                     'kode_transaksi' => $pendingCode,
                     'tanggal'        => $penjualan->tanggal,
-                    'gudang_id'      => $penjualan->gudang_id,
+                    'gudang_id'      => $gudangId,
                     'total'          => $totalPending,
                     'status'         => 'Draft',
                     'created_by'     => $penjualan->created_by ?? (auth()->id() ?? 1),
@@ -1113,7 +1129,11 @@ class PenjualanPosController extends Controller
                     DB::table('pengeluaran_bahan_baku_fifo')->where('pengeluaran_id', $peng->id)->delete();
                     DB::table('pengeluaran_bahan_baku_detail')->where('pengeluaran_id', $peng->id)->delete();
                     DB::table('pengeluaran_bahan_baku')->where('id', $peng->id)->delete();
+                    DB::table('transaksi_stok')->where('source_type', 'penjualan_pos')->where('source_id', $peng->id)->delete();
                 }
+
+                // Hapus mutasi stok POS dari transaksi_stok
+                DB::table('transaksi_stok')->where('source_type', 'penjualan_pos')->where('source_id', $penjualan->id)->delete();
 
                 // Hapus jurnal akuntansi POS
                 $jurnalList = DB::table('jurnal_penjualan_pos')->where('source_type', 'penjualan_pos')->where('source_id', $penjualan->id)->get();
@@ -1279,11 +1299,11 @@ class PenjualanPosController extends Controller
             $selectedDate = $request->input('tanggal_transaksi');
             $gudangId = (int) $request->input('gudang_id');
             $gudangObj = \App\Models\MasterGudang::find($gudangId);
-            $gudangNama = $gudangObj ? $gudangObj->nama : 'Outlet';
             
-            if ($gudangObj && !$gudangObj->isOperasional() && (str_contains(strtolower($gudangObj->nama), 'utama') || str_contains(strtolower($gudangObj->nama), 'central kitchen') || str_contains(strtolower($gudangObj->nama), 'cold kitchen'))) {
-                return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, tidak diizinkan untuk pemotongan stok transaksi penjualan POS.');
+            if (!$gudangObj || !$gudangObj->isOutlet()) {
+                return back()->with('error', 'Gudang Utama dan Divisi Produksi hanya melayani transfer/pengeluaran bahan, import POS hanya diperbolehkan untuk gudang outlet (Gudang Gaharu / Gudang KeJingga).');
             }
+            $gudangNama = $gudangObj->nama;
             
             $extension = strtolower($file->getClientOriginalExtension());
             $rows = [];

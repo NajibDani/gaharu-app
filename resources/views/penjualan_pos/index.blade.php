@@ -177,7 +177,7 @@
                         <select name="gudang_id" id="gudang_id" class="form-select" required>
                             <option value="">-- Pilih Outlet / Gudang --</option>
                             @foreach($gudangList as $g)
-                                @if(!str_contains(strtolower($g->nama), 'utama') && !str_contains(strtolower($g->nama), 'central kitchen') && !str_contains(strtolower($g->nama), 'cold kitchen'))
+                                @if($g->isOutlet())
                                 <option value="{{ $g->id }}" {{ (auth()->user()->gudang_id == $g->id) ? 'selected' : '' }}>
                                     {{ $g->nama }} ({{ $g->kategori ?? 'Outlet' }})
                                 </option>

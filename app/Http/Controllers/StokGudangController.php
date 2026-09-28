@@ -687,7 +687,15 @@ class StokGudangController extends Controller
             case 'penjualan_pos':
                 $pos = \App\Models\PenjualanPos::find($id);
                 if ($pos) {
-                    return "Penjualan POS: {$pos->kode_penjualan}";
+                    $kode = $pos->kode_transaksi ?? $pos->kode_penjualan ?? "ID: {$id}";
+                    $gudangNama = $pos->gudang->nama ?? '';
+                    return $gudangNama ? "Penjualan POS: {$kode} [{$gudangNama}]" : "Penjualan POS: {$kode}";
+                }
+                $pbk = \App\Models\PengeluaranBahanBaku::find($id);
+                if ($pbk) {
+                    $kode = $pbk->kode_pengeluaran ?? "ID: {$id}";
+                    $gudangNama = $pbk->gudang->nama ?? '';
+                    return $gudangNama ? "Penjualan POS: {$kode} [{$gudangNama}]" : "Penjualan POS: {$kode}";
                 }
                 return "Penjualan POS (ID: {$id})";
 
@@ -1193,80 +1201,142 @@ class StokGudangController extends Controller
             }
             $orphanBatchQuery->delete();
 
-            // 5. Auto-heal transaksi POS yang salah gudang (masuk ke Gudang Utama)
+            // 4b. Orphan Penjualan POS (transaksi_stok yang transaksi POS induknya sudah dihapus dari menu Penjualan POS)
+            $orphanPosQuery = DB::table('transaksi_stok')
+                ->where('source_type', 'penjualan_pos')
+                ->whereNotNull('source_id')
+                ->whereNotExists(function($q) {
+                    $q->select(DB::raw(1))
+                      ->from('penjualan_pos')
+                      ->whereColumn('penjualan_pos.id', 'transaksi_stok.source_id');
+                })
+                ->whereNotExists(function($q) {
+                    $q->select(DB::raw(1))
+                      ->from('pengeluaran_bahan_baku')
+                      ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id');
+                });
+            if ($barangId) {
+                $orphanPosQuery->where('barang_id', $barangId);
+            }
+            $orphanPosQuery->delete();
+
+            // 5. Auto-heal transaksi POS yang salah gudang (masuk ke Gudang Utama / bukan gudang outlet)
             $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+            $outletIds = \App\Models\MasterGudang::getOutletGudangIds();
+            $gudangGaharuId = \App\Models\MasterGudang::resolveOutletId('gaharu');
+            $gudangKejinggaId = \App\Models\MasterGudang::resolveOutletId('kejingga');
+
+            // 5a. Pastikan seluruh header PenjualanPos tersimpan di gudang outlet
+            $misplacedPosHeaders = \App\Models\PenjualanPos::whereNotIn('gudang_id', $outletIds)->get();
+            foreach ($misplacedPosHeaders as $posHeader) {
+                $targetOutletId = \App\Models\MasterGudang::resolveOutletId($posHeader->kode_transaksi);
+                $posHeader->update(['gudang_id' => $targetOutletId]);
+            }
+
+            // 5b. Kembalikan pengeluaran bahan baku AUTO_POS yang salah masuk ke Gudang Utama
             $misplacedPosOutputs = \App\Models\PengeluaranBahanBaku::where('keterangan', 'like', 'AUTO_POS%')
                 ->where('gudang_id', $gudangUtamaId)
                 ->with(['details'])
                 ->get();
 
-            if ($misplacedPosOutputs->isNotEmpty()) {
-                $gudangGaharu = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
-                $gudangGaharuId = $gudangGaharu ? $gudangGaharu->id : 3;
-                $gudangKejingga = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->first();
-                $gudangKejinggaId = $gudangKejingga ? $gudangKejingga->id : 5;
+            foreach ($misplacedPosOutputs as $pbk) {
+                $targetGudangId = \App\Models\MasterGudang::resolveOutletId($pbk->keterangan ?? $pbk->kode_pengeluaran);
 
-                foreach ($misplacedPosOutputs as $pbk) {
-                    $isKejingga = str_contains(strtolower($pbk->keterangan ?? ''), 'kj') || str_contains(strtolower($pbk->kode_pengeluaran ?? ''), 'kj');
-                    $targetGudangId = $isKejingga ? $gudangKejinggaId : $gudangGaharuId;
+                foreach ($pbk->details as $d) {
+                    $qty = (float) $d->qty;
+                    $bId = $d->barang_id;
 
-                    foreach ($pbk->details as $d) {
-                        $qty = (float) $d->qty;
-                        $bId = $d->barang_id;
+                    // Kembalikan stok Gudang Utama
+                    $stokUtama = \App\Models\StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $bId)->first();
+                    if ($stokUtama) {
+                        $stokUtama->increment('jumlah', $qty);
+                    }
 
-                        // Kembalikan stok Gudang Utama
-                        $stokUtama = \App\Models\StokGudang::where('gudang_id', $gudangUtamaId)->where('barang_id', $bId)->first();
-                        if ($stokUtama) {
-                            $stokUtama->increment('jumlah', $qty);
-                        }
+                    // Kembalikan sisa batch FIFO di Gudang Utama
+                    $fifoRecords = DB::table('pengeluaran_bahan_baku_fifo')
+                        ->where('pengeluaran_id', $pbk->id)
+                        ->where('detail_id', $d->id)
+                        ->get();
 
-                        // Kembalikan sisa batch FIFO di Gudang Utama
-                        $fifoRecords = DB::table('pengeluaran_bahan_baku_fifo')
-                            ->where('pengeluaran_id', $pbk->id)
-                            ->where('detail_id', $d->id)
-                            ->get();
-
-                        foreach ($fifoRecords as $fr) {
-                            if ($fr->batch_id) {
-                                $batch = \App\Models\StokGudangBatch::find($fr->batch_id);
-                                if ($batch && $batch->gudang_id == $gudangUtamaId) {
-                                    $batch->increment('qty_sisa', $fr->qty_keluar);
-                                    $batch->decrement('qty_keluar', $fr->qty_keluar);
-                                    $batch->update(['is_habis' => false]);
-                                }
+                    foreach ($fifoRecords as $fr) {
+                        if ($fr->batch_id) {
+                            $batch = \App\Models\StokGudangBatch::find($fr->batch_id);
+                            if ($batch && $batch->gudang_id == $gudangUtamaId) {
+                                $batch->increment('qty_sisa', $fr->qty_keluar);
+                                $batch->decrement('qty_keluar', $fr->qty_keluar);
+                                $batch->update(['is_habis' => false]);
                             }
-                        }
-
-                        // Kurangkan stok di Gudang Outlet yang sebenarnya
-                        $stokOutlet = \App\Models\StokGudang::firstOrCreate(
-                            ['gudang_id' => $targetGudangId, 'barang_id' => $bId],
-                            ['jumlah' => 0]
-                        );
-                        $stokOutlet->decrement('jumlah', $qty);
-
-                        // Catat ke TransaksiStok untuk Gudang Outlet jika belum ada
-                        $exists = DB::table('transaksi_stok')
-                            ->where('source_type', 'penjualan_pos')
-                            ->where('source_id', $pbk->id)
-                            ->where('barang_id', $bId)
-                            ->exists();
-
-                        if (!$exists) {
-                            DB::table('transaksi_stok')->insert([
-                                'tanggal'        => $pbk->tanggal ?? now(),
-                                'tipe'           => 'keluar',
-                                'source_type'    => 'penjualan_pos',
-                                'source_id'      => $pbk->id,
-                                'gudang_asal_id' => $targetGudangId,
-                                'barang_id'      => $bId,
-                                'qty'            => $qty,
-                                'total_harga'    => (float) $d->hpp_total,
-                                'created_by'     => $pbk->created_by ?? 1,
-                            ]);
                         }
                     }
 
-                    $pbk->update(['gudang_id' => $targetGudangId]);
+                    // Kurangkan stok di Gudang Outlet yang sebenarnya
+                    $stokOutlet = \App\Models\StokGudang::firstOrCreate(
+                        ['gudang_id' => $targetGudangId, 'barang_id' => $bId],
+                        ['jumlah' => 0]
+                    );
+                    $stokOutlet->decrement('jumlah', $qty);
+                }
+
+                $pbk->update(['gudang_id' => $targetGudangId]);
+            }
+
+            // 5c. Perbaiki mutasi TransaksiStok POS yang tercatat keluar dari Gudang Utama
+            $misplacedPosTxQuery = \App\Models\TransaksiStok::where('source_type', 'penjualan_pos')
+                ->where('gudang_asal_id', $gudangUtamaId);
+            if ($barangId) {
+                $misplacedPosTxQuery->where('barang_id', $barangId);
+            }
+            $misplacedPosTxs = $misplacedPosTxQuery->get();
+
+            foreach ($misplacedPosTxs as $tx) {
+                // Tentukan target outlet dari referensi penjualan_pos atau pengeluaran_bahan_baku
+                $targetOutletId = $gudangGaharuId;
+                $pos = \App\Models\PenjualanPos::find($tx->source_id);
+                if ($pos) {
+                    $targetOutletId = \App\Models\MasterGudang::resolveOutletId($pos->kode_transaksi);
+                } else {
+                    $pbk = \App\Models\PengeluaranBahanBaku::find($tx->source_id);
+                    if ($pbk) {
+                        $targetOutletId = \App\Models\MasterGudang::resolveOutletId($pbk->keterangan ?? $pbk->kode_pengeluaran);
+                    }
+                }
+
+                // Cek apakah sudah ada catatan TransaksiStok di Gudang Outlet untuk transaksi & barang ini
+                $alreadyAtOutlet = \App\Models\TransaksiStok::where('source_type', 'penjualan_pos')
+                    ->where('source_id', $tx->source_id)
+                    ->where('barang_id', $tx->barang_id)
+                    ->where('gudang_asal_id', $targetOutletId)
+                    ->exists();
+
+                if ($alreadyAtOutlet) {
+                    // Jika sudah ada catatan di outlet, hapus catatan duplikat yang nyangkut di Gudang Utama
+                    $tx->delete();
+                } else {
+                    // Pindahkan gudang asal ke Gudang Outlet yang semestinya
+                    $tx->update(['gudang_asal_id' => $targetOutletId]);
+                }
+            }
+
+            // 5d. Kembalikan sisa batch FIFO di Gudang Utama jika transaksi pengeluaran FIFO sudah tidak ada
+            $batchesUtama = DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangUtamaId);
+            if ($barangId) {
+                $batchesUtama->where('barang_id', $barangId);
+            }
+            $batchesUtamaList = $batchesUtama->get();
+
+            foreach ($batchesUtamaList as $b) {
+                $actualOut = (float) DB::table('pengeluaran_bahan_baku_fifo')
+                    ->where('batch_id', $b->id)
+                    ->sum('qty_keluar');
+
+                if ($b->qty_keluar > $actualOut) {
+                    $newSisa = max(0, (float)$b->qty_masuk - $actualOut);
+                    DB::table('stok_gudang_batch')->where('id', $b->id)->update([
+                        'qty_keluar' => $actualOut,
+                        'qty_sisa'   => $newSisa,
+                        'is_habis'   => ($newSisa <= 0),
+                    ]);
                 }
             }
         } catch (\Exception $e) {
@@ -1474,6 +1544,19 @@ class StokGudangController extends Controller
                             \App\Models\TransaksiStok::where('source_id', $sourceId)
                                 ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
                                 ->delete();
+                        }
+                    }
+                }
+                // Skenario 3: Penjualan POS
+                elseif ($sourceType === 'penjualan_pos') {
+                    $pos = \App\Models\PenjualanPos::find($sourceId);
+                    if ($pos) {
+                        $outletId = $pos->gudang_id;
+                        $stokOutlet = \App\Models\StokGudang::where('barang_id', $targetBarangId)
+                            ->where('gudang_id', $outletId)
+                            ->first();
+                        if ($stokOutlet) {
+                            $stokOutlet->increment('jumlah', (float)$tx->qty);
                         }
                     }
                 }
