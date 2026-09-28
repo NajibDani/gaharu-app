@@ -50,7 +50,7 @@
 {{-- SATUAN OUTPUT (AUTO) --}}
 <div class="mb-3">
 <label>Satuan Output</label>
-<input type="text" name="satuan_output" class="form-control satuan-output" readonly>
+<select name="satuan_output" class="form-control satuan-output"></select>
 </div>
 
 {{-- BTKL --}}
@@ -93,7 +93,7 @@
 </td>
 
 <td>
-<input type="text" name="satuan[]" class="form-control satuan-input" readonly>
+<select name="satuan[]" class="form-control satuan-input"></select>
 </td>
 
 <td>
@@ -122,8 +122,23 @@
 // =======================
 function setSatuan(row) {
     let select = row.querySelector('.bahan-select');
-    let satuan = select.options[select.selectedIndex].dataset.satuan;
-    row.querySelector('.satuan-input').value = satuan ?? '';
+    let opt = select.options[select.selectedIndex];
+    
+    let satuanSelect = row.querySelector('.satuan-input');
+    satuanSelect.innerHTML = '';
+    
+    if (opt) {
+        let satuan = opt.dataset.satuan;
+        let satuanKonv = opt.dataset.satuanKonversi;
+        let konvVal = parseFloat(opt.dataset.konversi || 1);
+        
+        if (satuan) {
+            satuanSelect.innerHTML += `<option value="${satuan}">${satuan}</option>`;
+        }
+        if (satuanKonv && konvVal > 1) {
+            satuanSelect.innerHTML += `<option value="${satuanKonv}">${satuanKonv}</option>`;
+        }
+    }
 }
 
 // =======================
@@ -184,8 +199,17 @@ document.addEventListener('change', function(e) {
         let select = e.target;
         let opt = select.options[select.selectedIndex];
         let satuan = opt ? opt.dataset.satuan : '';
-
-        document.querySelector('.satuan-output').value = satuan ?? '';
+        let satuanKonv = opt ? opt.dataset.satuanKonversi : '';
+        let konvVal = parseFloat(opt ? opt.dataset.konversi : 1);
+        
+        let satuanSelect = document.querySelector('.satuan-output');
+        satuanSelect.innerHTML = '';
+        if (satuan) {
+            satuanSelect.innerHTML += `<option value="${satuan}">${satuan}</option>`;
+        }
+        if (satuanKonv && konvVal > 1) {
+            satuanSelect.innerHTML += `<option value="${satuanKonv}">${satuanKonv}</option>`;
+        }
 
         let help = document.getElementById('konversi-help-create');
         if (help && opt && opt.dataset.satuanKonversi && parseFloat(opt.dataset.konversi || 1) > 1) {
@@ -200,9 +224,22 @@ document.addEventListener('change', function(e) {
 // set awal produk
 let produkSelect = document.querySelector('.produk-select');
 
-if (produkSelect && produkSelect.selectedIndex > 0) {
-    let satuan = produkSelect.options[produkSelect.selectedIndex].dataset.satuan;
-    document.querySelector('.satuan-output').value = satuan ?? '';
+if (produkSelect && produkSelect.selectedIndex >= 0) {
+    let opt = produkSelect.options[produkSelect.selectedIndex];
+    let satuan = opt ? opt.dataset.satuan : '';
+    let satuanKonv = opt ? opt.dataset.satuanKonversi : '';
+    let konvVal = parseFloat(opt ? opt.dataset.konversi : 1);
+    
+    let satuanSelect = document.querySelector('.satuan-output');
+    if (satuanSelect) {
+        satuanSelect.innerHTML = '';
+        if (satuan) {
+            satuanSelect.innerHTML += `<option value="${satuan}">${satuan}</option>`;
+        }
+        if (satuanKonv && konvVal > 1) {
+            satuanSelect.innerHTML += `<option value="${satuanKonv}">${satuanKonv}</option>`;
+        }
+    }
 }
 </script>
 

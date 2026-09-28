@@ -180,12 +180,22 @@ class ResepBtklBopController extends Controller
         }
 
         $produk = MasterBarang::find($request->produk_id);
-        $satuanOutput = ($produk && $produk->satuan) ? $produk->satuan : ($request->satuan_output ?? 'Batch');
+        
+        $satuanOutput = $request->satuan_output ?? ($produk->satuan ?? 'Batch');
+        $outputQty = floatval($request->output_qty);
+        
+        if ($produk && strtoupper(trim($satuanOutput)) === strtoupper(trim($produk->satuan_pembelian))) {
+            $konv = floatval($produk->konversi_pembelian ?? 1);
+            if ($konv > 1) {
+                $outputQty = $outputQty * $konv;
+                $satuanOutput = $produk->satuan;
+            }
+        }
 
         // 1. Simpan header resep
         $resep = ResepBtklBop::create([
             'produk_id' => $request->produk_id,
-            'output_qty' => $request->output_qty,
+            'output_qty' => $outputQty,
             'satuan_output' => $satuanOutput,
             'btkl_per_batch' => $request->btkl_per_batch ?? 0,
             'bop_per_batch' => $request->bop_per_batch ?? 0,
@@ -203,7 +213,16 @@ class ResepBtklBopController extends Controller
             // Bahan utama adalah item pertama (indeks 0)
             $primary_bahan_id = $item_bahan_ids[0];
             $bahan = MasterBarang::find($primary_bahan_id);
-            $satuanBahan = ($bahan && $bahan->satuan) ? $bahan->satuan : ($request->satuan[$i] ?? '-');
+            $satuanBahan = $request->satuan[$i] ?? ($bahan->satuan ?? '-');
+            
+            // Konversi ke gram jika satuan yang dipilih adalah satuan pembelian
+            if ($bahan && strtoupper(trim($satuanBahan)) === strtoupper(trim($bahan->satuan_pembelian))) {
+                $konv = floatval($bahan->konversi_pembelian ?? 1);
+                if ($konv > 1) {
+                    $qty = floatval($qty) * $konv;
+                    $satuanBahan = $bahan->satuan;
+                }
+            }
 
             $resepBahan = ResepBahanBaku::create([
                 'resep_id' => $resep->id,
@@ -264,12 +283,22 @@ class ResepBtklBopController extends Controller
         }
 
         $produk = MasterBarang::find($request->produk_id);
-        $satuanOutput = ($produk && $produk->satuan) ? $produk->satuan : ($request->satuan_output ?? $resep->satuan_output);
+        
+        $satuanOutput = $request->satuan_output ?? ($produk->satuan ?? ($resep->satuan_output ?? '-'));
+        $outputQty = floatval($request->output_qty);
+        
+        if ($produk && strtoupper(trim($satuanOutput)) === strtoupper(trim($produk->satuan_pembelian))) {
+            $konv = floatval($produk->konversi_pembelian ?? 1);
+            if ($konv > 1) {
+                $outputQty = $outputQty * $konv;
+                $satuanOutput = $produk->satuan;
+            }
+        }
 
         // 1. Update header
         $resep->update([
             'produk_id' => $request->produk_id,
-            'output_qty' => $request->output_qty,
+            'output_qty' => $outputQty,
             'satuan_output' => $satuanOutput,
             'btkl_per_batch' => $request->btkl_per_batch ?? 0,
             'bop_per_batch' => $request->bop_per_batch ?? 0,
@@ -289,7 +318,16 @@ class ResepBtklBopController extends Controller
             // Bahan utama adalah item pertama (indeks 0)
             $primary_bahan_id = $item_bahan_ids[0];
             $bahan = MasterBarang::find($primary_bahan_id);
-            $satuanBahan = ($bahan && $bahan->satuan) ? $bahan->satuan : ($request->satuan[$i] ?? '-');
+            $satuanBahan = $request->satuan[$i] ?? ($bahan->satuan ?? '-');
+            
+            // Konversi ke gram jika satuan yang dipilih adalah satuan pembelian
+            if ($bahan && strtoupper(trim($satuanBahan)) === strtoupper(trim($bahan->satuan_pembelian))) {
+                $konv = floatval($bahan->konversi_pembelian ?? 1);
+                if ($konv > 1) {
+                    $qty = floatval($qty) * $konv;
+                    $satuanBahan = $bahan->satuan;
+                }
+            }
 
             $resepBahan = ResepBahanBaku::create([
                 'resep_id' => $id,

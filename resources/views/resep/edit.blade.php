@@ -33,13 +33,9 @@ value="{{ (int) $data->output_qty }}" class="form-control">
 <div class="mb-3">
 <label>Satuan Output</label>
 
-<input type="text"
-value="{{ $data->produk->satuan ?? $data->satuan_output }}"
-class="form-control" readonly>
-
-<input type="hidden"
-name="satuan_output"
-value="{{ $data->produk->satuan ?? $data->satuan_output }}">
+<select name="satuan_output" class="form-control satuan-output">
+<option value="{{ $data->produk->satuan ?? $data->satuan_output }}">{{ $data->produk->satuan ?? $data->satuan_output }}</option>
+</select>
 </div>
 
 {{-- BTKL --}}
@@ -75,6 +71,8 @@ value="{{ (int) $data->bop_per_batch }}" class="form-control">
 @foreach($bahan as $bb)
 <option value="{{ $bb->id }}" 
         data-satuan="{{ $bb->satuan }}"
+        data-satuan-konversi="{{ $bb->satuan_pembelian }}"
+        data-konversi="{{ $bb->konversi_pembelian }}"
         {{ $b->bahan_id == $bb->id ? 'selected' : '' }}>
     {{ $bb->nama }}
 </option>
@@ -88,9 +86,9 @@ value="{{ (int) $b->qty_bahan }}" class="form-control">
 </td>
 
 <td>
-<input type="text" name="satuan[]" 
-value="{{ $b->bahan->satuan ?? $b->satuan }}" 
-class="form-control" readonly>
+<select name="satuan[]" class="form-control satuan-input">
+<option value="{{ $b->bahan->satuan ?? $b->satuan }}">{{ $b->bahan->satuan ?? $b->satuan }}</option>
+</select>
 </td>
 
 <td>
@@ -134,9 +132,30 @@ document.addEventListener('click', function(e) {
 //FUNCTION
 function setSatuan(row) {
     let select = row.querySelector('.bahan-select');
-    let satuan = select.options[select.selectedIndex].dataset.satuan;
-
-    row.querySelector('input[name="satuan[]"]').value = satuan ?? '';
+    let opt = select.options[select.selectedIndex];
+    
+    let satuanSelect = row.querySelector('.satuan-input');
+    if (satuanSelect && opt) {
+        let satuan = opt.dataset.satuan;
+        let satuanKonv = opt.dataset.satuanKonversi;
+        let konvVal = parseFloat(opt.dataset.konversi || 1);
+        
+        // Simpan nilai lama (jika ada)
+        let oldVal = satuanSelect.value;
+        satuanSelect.innerHTML = '';
+        
+        if (satuan) {
+            satuanSelect.innerHTML += `<option value="${satuan}">${satuan}</option>`;
+        }
+        if (satuanKonv && konvVal > 1) {
+            satuanSelect.innerHTML += `<option value="${satuanKonv}">${satuanKonv}</option>`;
+        }
+        
+        // Restore old value if exists
+        if (oldVal && Array.from(satuanSelect.options).some(o => o.value === oldVal)) {
+            satuanSelect.value = oldVal;
+        }
+    }
 }
 
 // saat pilih bahan

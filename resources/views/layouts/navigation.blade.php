@@ -412,6 +412,23 @@
                             <i class="bi bi-gear-wide-connected me-2" style="font-size:12px;"></i>Rekapitulasi Produksi
                         </a>
                     @endif
+
+                    <div class="submenu-divider">LAPORAN CUSTOM</div>
+                    <a href="{{ route('laporan.laporan-custom.pbk-kejingga') }}" class="{{ request()->routeIs('laporan.laporan-custom.pbk-kejingga') ? 'active' : '' }}">
+                        <i class="bi bi-file-earmark-text me-2" style="font-size:12px;"></i>PBK Gudang Utama - Kejingga
+                    </a>
+                    <a href="{{ route('laporan.laporan-custom.produksi-ck-kejingga') }}" class="{{ request()->routeIs('laporan.laporan-custom.produksi-ck-kejingga') ? 'active' : '' }}">
+                        <i class="bi bi-file-earmark-text me-2" style="font-size:12px;"></i>Produksi CK - Kejingga
+                    </a>
+                    <a href="{{ route('laporan.laporan-custom.produksi-cold-kejingga') }}" class="{{ request()->routeIs('laporan.laporan-custom.produksi-cold-kejingga') ? 'active' : '' }}">
+                        <i class="bi bi-file-earmark-text me-2" style="font-size:12px;"></i>Produksi Cold - Kejingga
+                    </a>
+                    <a href="{{ route('laporan.laporan-custom.pembelian-minus-permintaan') }}" class="{{ request()->routeIs('laporan.laporan-custom.pembelian-minus-permintaan') ? 'active' : '' }}">
+                        <i class="bi bi-file-earmark-text me-2" style="font-size:12px;"></i>Pembelian (Utama) - Permintaan
+                    </a>
+                    <a href="{{ route('laporan.laporan-custom.total-permintaan-divisi') }}" class="{{ request()->routeIs('laporan.laporan-custom.total-permintaan-divisi') ? 'active' : '' }}">
+                        <i class="bi bi-file-earmark-text me-2" style="font-size:12px;"></i>Total Permintaan per Divisi
+                    </a>
                 </div>
             </div>
             @endif
@@ -544,70 +561,11 @@
             }
 
             function initSubmenuSortable(submenu, submenuId) {
-                // Restore urutan yang tersimpan
+                // Restore urutan yang tersimpan (opsional jika ingin tetap mempertahankan state urutan terakhir, 
+                // tapi karena drag & drop sudah dimatikan, urutan tidak akan berubah dari bawaan/yang terakhir tersimpan).
                 restoreSubmenuOrder(submenu, submenuId);
-
-                // Tambahkan drag handle pada setiap tag link menu
-                submenu.querySelectorAll(':scope > a').forEach(a => {
-                    if (!a.querySelector('.sidebar-drag-handle')) {
-                        if (!a.querySelector('.menu-item-text')) {
-                            const origHtml = a.innerHTML;
-                            a.innerHTML = `<span class="menu-item-text">${origHtml}</span>`;
-                        }
-                        const handle = document.createElement('span');
-                        handle.className = 'sidebar-drag-handle';
-                        handle.title = 'Tahan dan geser (drag & drop) untuk mengatur posisi menu';
-                        handle.innerHTML = '<i class="bi bi-grip-vertical"></i>';
-                        handle.addEventListener('click', (e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                        });
-                        a.appendChild(handle);
-                    }
-                });
-
-                // Inisialisasi SortableJS atau fallback Drag & Drop HTML5
-                if (typeof Sortable !== 'undefined') {
-                    Sortable.create(submenu, {
-                        handle: '.sidebar-drag-handle',
-                        draggable: 'a, .submenu-divider',
-                        animation: 160,
-                        ghostClass: 'sidebar-sortable-ghost',
-                        chosenClass: 'sidebar-sortable-chosen',
-                        dragClass: 'sidebar-sortable-drag',
-                        onEnd: function() {
-                            saveSubmenuOrder(submenu, submenuId);
-                        }
-                    });
-                } else {
-                    // Fallback drag and drop native HTML5
-                    let draggedEl = null;
-                    submenu.querySelectorAll(':scope > a').forEach(a => {
-                        const handle = a.querySelector('.sidebar-drag-handle') || a;
-                        handle.setAttribute('draggable', 'true');
-                        handle.addEventListener('dragstart', (e) => {
-                            draggedEl = a;
-                            e.dataTransfer.effectAllowed = 'move';
-                            a.classList.add('opacity-50');
-                        });
-                        handle.addEventListener('dragend', () => {
-                            draggedEl = null;
-                            a.classList.remove('opacity-50');
-                            saveSubmenuOrder(submenu, submenuId);
-                        });
-                        a.addEventListener('dragover', (e) => {
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'move';
-                            const target = e.target.closest('.submenu-content > a, .submenu-content > .submenu-divider');
-                            if (target && target !== draggedEl && target.parentElement === submenu) {
-                                const rect = target.getBoundingClientRect();
-                                const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
-                                submenu.insertBefore(draggedEl, next ? target.nextSibling : target);
-                            }
-                        });
-                    });
-                }
             }
+
 
             const submenus = document.querySelectorAll('.submenu-content');
             submenus.forEach((submenu, idx) => {

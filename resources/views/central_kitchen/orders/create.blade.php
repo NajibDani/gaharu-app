@@ -149,6 +149,7 @@
                                     <select name="order_mode[]" class="form-select text-sm select-mode text-center fw-bold">
                                         <option value="resep">Resep</option>
                                         <option value="satuan">Satuan</option>
+                                        <option value="konversi">Konversi Beli</option>
                                     </select>
                                 </td>
                                 <td>

@@ -135,8 +135,8 @@
                     <table class="w-full min-w-[1100px] text-xs text-left divide-y divide-slate-200" id="tablePotongan">
                         <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100/90 border-b border-slate-200">
                             <tr>
-                                <th class="px-3.5 py-3 w-10 text-center whitespace-nowrap">#</th>
-                                <th class="px-4 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
+                                <th class="px-3.5 py-3 pr-6 w-12 text-center whitespace-nowrap">#</th>
+                                <th class="px-6 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
                                 <th class="px-4 py-3 text-right whitespace-nowrap min-w-[130px]">Denda Terlambat</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[135px]">Kerusakan Inventaris</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Kasbon</th>
@@ -158,21 +158,26 @@
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
-                                <td class="px-3.5 py-3 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
-                                <td class="px-4 py-3 min-w-[200px]">
-                                    <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-tight">
-                                        {{ $payroll->karyawan->nama_karyawan ?? '-' }}
-                                    </div>
-                                    <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
-                                        <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
-                                        @if($payroll->karyawan->departemen)
-                                            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 leading-normal">
-                                                {{ $payroll->karyawan->departemen }}
-                                            </span>
-                                        @endif
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 leading-normal">
-                                            {{ $satuanRow }}
-                                        </span>
+                                <td class="px-3.5 py-3 pr-6 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
+                                <td class="px-6 py-3 min-w-[200px]">
+                                    <div class="flex items-start gap-2">
+                                        <i class="bi bi-grip-vertical text-slate-400 cursor-move grip-handle mt-0.5" title="Geser baris"></i>
+                                        <div>
+                                            <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-tight flex items-center gap-1.5 flex-wrap">
+                                                <span>{{ $payroll->karyawan->nama_karyawan ?? '-' }}</span>
+                                            </div>
+                                            <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
+                                                <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
+                                                @if($payroll->karyawan->departemen)
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 leading-normal">
+                                                        {{ $payroll->karyawan->departemen }}
+                                                    </span>
+                                                @endif
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 leading-normal">
+                                                    {{ $satuanRow }}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </td>
                                 
@@ -719,6 +724,17 @@
             document.getElementById('filterDepartemen').value = '';
             document.getElementById('filterJabatan').value = '';
             filterKaryawanTable();
+        }
+        
+        if (typeof Sortable !== 'undefined') {
+            let tbody = document.getElementById('tbodyKaryawan');
+            if (tbody) {
+                Sortable.create(tbody, {
+                    handle: '.grip-handle',
+                    animation: 150,
+                    ghostClass: 'bg-slate-100',
+                });
+            }
         }
     </script>
 </x-app-layout>

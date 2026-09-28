@@ -198,7 +198,7 @@
         .submenu-content a {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-start;
             padding: 8px 12px 8px 44px;
             text-decoration: none;
             color: #e0e0e0;
@@ -286,7 +286,7 @@
         .submenu-content a.submenu-step {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-start;
             padding: 8px 12px 8px 40px;
         }
 

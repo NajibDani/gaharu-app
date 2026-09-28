@@ -392,8 +392,18 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::get('/stok-gudang', [LaporanPersediaanController::class, 'stokGudang'])->name('stok-gudang');
         Route::get('/pengeluaran-bahan-baku', [LaporanPersediaanController::class, 'pengeluaranBahanBaku'])->name('pengeluaran-bahan-baku');
         Route::get('/stock-opname', [LaporanPersediaanController::class, 'stockOpname'])->name('stock-opname');
-    });
+        // =========================================================================
+        // LAPORAN CUSTOM
+        // =========================================================================
+        Route::prefix('laporan-custom')->name('laporan-custom.')->group(function () {
+            Route::get('/pengeluaran-bahan-baku-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranBahanBakuGudangUtamaKejingga'])->name('pbk-kejingga');
+            Route::get('/pengeluaran-produksi-ck-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranProduksiCentralKitchenKejingga'])->name('produksi-ck-kejingga');
+            Route::get('/pengeluaran-produksi-cold-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranProduksiColdKitchenKejingga'])->name('produksi-cold-kejingga');
+            Route::get('/pembelian-gudang-utama-minus-permintaan', [\App\Http\Controllers\LaporanCustomController::class, 'pembelianGudangUtamaDikurangiPermintaan'])->name('pembelian-minus-permintaan');
+            Route::get('/total-permintaan-divisi', [\App\Http\Controllers\LaporanCustomController::class, 'totalPermintaanBahanBakuDivisi'])->name('total-permintaan-divisi');
+        });
 
+    });
 
     // =========================================================================
     // 6. GROUP HRD & PAYROLL
