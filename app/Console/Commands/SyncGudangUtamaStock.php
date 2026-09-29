@@ -97,9 +97,24 @@ class SyncGudangUtamaStock extends Command
             $countFixed++;
         }
 
-        // 3. Pindahkan mutasi TransaksiStok POS yang salah memotong Gudang Utama
-        $misplacedTxs = TransaksiStok::where('source_type', 'penjualan_pos')
-            ->where('gudang_asal_id', $gudangUtamaId)
+        // 3. Pindahkan mutasi TransaksiStok POS dan PBK-POS yang salah memotong Gudang Utama
+        $misplacedTxs = TransaksiStok::where('gudang_asal_id', $gudangUtamaId)
+            ->where(function($q) {
+                $q->where('source_type', 'penjualan_pos')
+                  ->orWhere(function($sub) {
+                      $sub->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                          ->whereExists(function($pSub) {
+                              $pSub->select(DB::raw(1))
+                                   ->from('pengeluaran_bahan_baku')
+                                   ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id')
+                                   ->where(function($ketQ) {
+                                       $ketQ->where('keterangan', 'like', 'AUTO_POS%')
+                                            ->orWhere('kode_pengeluaran', 'like', 'PBK-POS%')
+                                            ->orWhere('kode_pengeluaran', 'like', '%POS%');
+                                   });
+                          });
+                  });
+            })
             ->get();
 
         $countMovedTx = 0;
@@ -115,7 +130,7 @@ class SyncGudangUtamaStock extends Command
                 }
             }
 
-            $alreadyExists = TransaksiStok::where('source_type', 'penjualan_pos')
+            $alreadyExists = TransaksiStok::whereIn('source_type', ['penjualan_pos', 'pengeluaran_bahan_baku', 'pengeluaran_wasted'])
                 ->where('source_id', $tx->source_id)
                 ->where('barang_id', $tx->barang_id)
                 ->where('gudang_asal_id', $targetOutletId)
@@ -128,6 +143,10 @@ class SyncGudangUtamaStock extends Command
             }
             $countMovedTx++;
         }
+
+        // 3b. Bersihkan orphan mutasi transaksi_stok
+        \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations();
+        \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok();
 
         // 4. Pastikan seluruh transaksi AUTO_POS memiliki catatan di TransaksiStok
         $allPosOutputs = PengeluaranBahanBaku::where('keterangan', 'like', 'AUTO_POS%')

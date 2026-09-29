@@ -139,7 +139,10 @@ class PotonganPenggajianController extends Controller
                 'status'               => $primaryPayroll->status,
                 'is_paid'              => $items->every(fn($p) => $p->status_jurnal || $p->status === 'approved'),
             ];
-        })->values();
+        })->sortBy([
+            fn ($a, $b) => ($a->karyawan->urutan ?? 999999) <=> ($b->karyawan->urutan ?? 999999),
+            fn ($a, $b) => ($a->karyawan->id ?? 0) <=> ($b->karyawan->id ?? 0),
+        ])->values();
 
         $currentStatus = $payrolls->isEmpty() ? 'draft' : $payrolls->first()->status;
 

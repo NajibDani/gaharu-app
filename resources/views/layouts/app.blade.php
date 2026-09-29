@@ -64,6 +64,115 @@
             border: none;
         }
 
+        /* ── HR DATA ENTRY & TABLE UX ── */
+        /* Sembunyikan spinner / panah naik-turun pada input angka */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+        /* Drag Handle Grip */
+        .grip-handle {
+            cursor: grab !important;
+            font-size: 1.15rem;
+            color: #475569 !important; /* slate-600 */
+            padding: 4px 6px;
+            margin: -4px 0 -4px -4px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease-in-out;
+            user-select: none;
+        }
+        .grip-handle:hover {
+            color: #0f172a !important; /* slate-900 */
+            background-color: #f1f5f9;
+        }
+        .grip-handle:active,
+        .payroll-row.sortable-chosen .grip-handle {
+            cursor: grabbing !important;
+            color: #b45309 !important; /* amber-700 */
+        }
+        .sortable-ghost,
+        .payroll-row.sortable-ghost {
+            background-color: #f8fafc !important;
+            opacity: 0.45;
+            border: 2px dashed #cbd5e1 !important;
+        }
+        .sortable-chosen,
+        .payroll-row.sortable-chosen {
+            background-color: #fef3c7 !important; /* amber-100 highlight */
+            box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        /* HR Data Entry Cell & Inputs */
+        .hr-input-cell {
+            background-color: #fbfcfe;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .hr-data-input {
+            text-align: right !important;
+            font-weight: 700 !important;
+            background-color: #f8fafc !important; /* Abu-abu sangat muda */
+            border: 1.5px solid #cbd5e1 !important; /* Border tipis jelas */
+            border-radius: 6px !important;
+            color: #0f172a !important;
+            transition: all 0.15s ease-in-out;
+        }
+        .hr-data-input:hover {
+            background-color: #ffffff !important;
+            border-color: #94a3b8 !important;
+        }
+        .hr-data-input:focus {
+            background-color: #ffffff !important;
+            border-color: #f59e0b !important; /* Amber primary ring */
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18) !important;
+            outline: none !important;
+        }
+
+        /* HR Badges */
+        .hr-badge-jabatan {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 800;
+            color: #1e293b; /* Slate 800 */
+            background-color: #f1f5f9; /* Slate 100 */
+            border: 1px solid #cbd5e1;
+            letter-spacing: -0.01em;
+        }
+        .hr-badge-dept {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #334155; /* Slate 700 */
+            background-color: #e2e8f0; /* Slate 200 */
+            border: 1px solid #94a3b8;
+        }
+        .hr-badge-satuan {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 7px;
+            border-radius: 6px;
+            font-size: 10.5px;
+            font-weight: 800;
+            color: #92400e; /* Amber 800 */
+            background-color: #fef3c7; /* Amber 100 soft pastel */
+            border: 1px solid #fcd34d; /* Amber 300 */
+        }
+
+
         /* ── SELECT2 CUSTOM ── */
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted {
             background-color: var(--gaharu-primary) !important;

@@ -146,7 +146,7 @@
                                 <th class="px-3 py-3 text-center min-w-[90px] whitespace-nowrap">Aksi</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody class="divide-y divide-slate-100 bg-white" id="tbodyKaryawan">
                             @forelse($payrolls as $index => $payroll)
                             @php
                                 $isRowLocked = $payroll->is_paid || $payroll->status === 'approved';
@@ -158,22 +158,22 @@
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
-                                <td class="px-3.5 py-3 pr-6 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
+                                <td class="px-3.5 py-3 pr-6 text-center text-xs text-slate-400 font-bold whitespace-nowrap"><span class="row-index">{{ $index + 1 }}</span></td>
                                 <td class="px-6 py-3 min-w-[200px]">
-                                    <div class="flex items-start gap-2">
-                                        <i class="bi bi-grip-vertical text-slate-400 cursor-move grip-handle mt-0.5" title="Geser baris"></i>
+                                    <div class="flex items-start gap-2.5">
+                                        <i class="bi bi-grip-vertical grip-handle mt-0.5 select-none" title="Tahan dan geser (drag & drop) untuk mengatur urutan"></i>
                                         <div>
                                             <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-tight flex items-center gap-1.5 flex-wrap">
                                                 <span>{{ $payroll->karyawan->nama_karyawan ?? '-' }}</span>
                                             </div>
                                             <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
-                                                <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
+                                                <span class="hr-badge-jabatan">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                                 @if($payroll->karyawan->departemen)
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 leading-normal">
+                                                    <span class="hr-badge-dept">
                                                         {{ $payroll->karyawan->departemen }}
                                                     </span>
                                                 @endif
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 leading-normal">
+                                                <span class="hr-badge-satuan">
                                                     {{ $satuanRow }}
                                                 </span>
                                             </div>
@@ -193,10 +193,10 @@
                                 </td>
 
                                 {{-- KERUSAKAN INVENTARIS --}}
-                                <td class="px-2.5 py-2 text-right">
+                                <td class="px-2.5 py-2 text-right {{ !$isRowLocked ? 'hr-input-cell' : '' }}">
                                     @if(!$isRowLocked)
                                         <input type="text"
-                                               class="batch-input-rupiah batch-potongan-inventaris w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               class="batch-input-rupiah batch-potongan-inventaris hr-data-input w-full px-2.5 py-1 text-xs"
                                                value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
                                                placeholder="0"
                                                oninput="onPotonganRowInput(this)">
@@ -206,10 +206,10 @@
                                 </td>
 
                                 {{-- KASBON --}}
-                                <td class="px-2.5 py-2 text-right">
+                                <td class="px-2.5 py-2 text-right {{ !$isRowLocked ? 'hr-input-cell' : '' }}">
                                     @if(!$isRowLocked)
                                         <input type="text"
-                                               class="batch-input-rupiah batch-potongan-kasbon w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               class="batch-input-rupiah batch-potongan-kasbon hr-data-input w-full px-2.5 py-1 text-xs"
                                                value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
                                                placeholder="0"
                                                oninput="onPotonganRowInput(this)">
@@ -219,10 +219,10 @@
                                 </td>
 
                                 {{-- PENGURANGAN DEPOSIT (KARYAWAN BARU) --}}
-                                <td class="px-2.5 py-2 text-right">
+                                <td class="px-2.5 py-2 text-right {{ !$isRowLocked ? 'hr-input-cell' : '' }}">
                                     @if(!$isRowLocked)
                                         <input type="text"
-                                               class="batch-input-rupiah batch-potongan-deposit w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               class="batch-input-rupiah batch-potongan-deposit hr-data-input w-full px-2.5 py-1 text-xs"
                                                value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
                                                placeholder="0"
                                                title="Pengurangan deposit untuk karyawan baru"
@@ -233,15 +233,15 @@
                                 </td>
 
                                 {{-- POTONGAN LAIN & KETERANGAN --}}
-                                <td class="px-2.5 py-2 text-right">
+                                <td class="px-2.5 py-2 text-right {{ !$isRowLocked ? 'hr-input-cell' : '' }}">
                                     @if(!$isRowLocked)
                                         <input type="text"
-                                               class="batch-input-rupiah batch-potongan-dll w-full text-right bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                               class="batch-input-rupiah batch-potongan-dll hr-data-input w-full px-2.5 py-1 text-xs"
                                                value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
                                                placeholder="0"
                                                oninput="onPotonganRowInput(this)">
                                         <input type="text"
-                                               class="batch-catatan-potongan-dll w-full text-left bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 rounded-md px-2 py-0.5 text-[10.5px] font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-400 mt-1 placeholder:text-slate-300 placeholder:italic"
+                                               class="batch-catatan-potongan-dll w-full text-left bg-white border border-slate-300 rounded-md px-2 py-0.5 text-[10.5px] font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-400 mt-1 placeholder:text-slate-400 placeholder:italic"
                                                value="{{ $payroll->catatan_potongan_dll ?? '' }}"
                                                placeholder="Keterangan..."
                                                title="Keterangan / rincian potongan lain-lain">
@@ -283,8 +283,7 @@
                                                     'update_url' => route('penggajian.potongan.update', $payroll->id),
                                                     'keterlambatan_url' => route('keterlambatan.index', ['periode' => $targetPeriode]),
                                                 ]) }})"
-                                                style="background-color: #fff1f2; border: 1.5px solid #fecdd3; color: #9f1239; font-weight: 800; font-size: 11.5px; padding: 4px 10px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: background .15s;"
-                                                onmouseover="this.style.background='#ffe4e6'" onmouseout="this.style.background='#fff1f2'"
+                                                class="inline-flex items-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-900 text-xs font-black px-3 py-1.5 rounded-lg transition-all border-2 border-rose-300 hover:border-rose-400 shadow-sm cursor-pointer whitespace-nowrap"
                                                 title="Edit Komponen Potongan via Pop-up">
                                             <span>&#9999;</span> Detail
                                         </button>
@@ -725,16 +724,123 @@
             document.getElementById('filterJabatan').value = '';
             filterKaryawanTable();
         }
-        
-        if (typeof Sortable !== 'undefined') {
-            let tbody = document.getElementById('tbodyKaryawan');
-            if (tbody) {
-                Sortable.create(tbody, {
-                    handle: '.grip-handle',
-                    animation: 150,
-                    ghostClass: 'bg-slate-100',
+    </script>
+
+    <!-- Reorder Notification Toast -->
+    <div id="reorderToast" style="display: none; position: fixed; bottom: 28px; right: 28px; z-index: 99999; background: #0f172a; color: #ffffff; padding: 12px 20px; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); font-size: 13px; font-weight: 700; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.15); transition: opacity 0.2s ease;">
+        <span id="reorderToastIcon" style="font-size: 15px;">⏳</span>
+        <span id="reorderToastMsg">Menyimpan urutan...</span>
+    </div>
+
+    <!-- SortableJS CDN with Fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const tbody = document.getElementById('tbodyKaryawan');
+            const toast = document.getElementById('reorderToast');
+            const toastIcon = document.getElementById('reorderToastIcon');
+            const toastMsg = document.getElementById('reorderToastMsg');
+            let toastTimeout;
+
+            function showToast(msg, icon = '⏳', isError = false) {
+                if (!toast) return;
+                clearTimeout(toastTimeout);
+                toastIcon.textContent = icon;
+                toastMsg.textContent = msg;
+                toast.style.background = isError ? '#991b1b' : '#0f172a';
+                toast.style.display = 'inline-flex';
+                if (!isError && icon === '✓') {
+                    toastTimeout = setTimeout(() => {
+                        toast.style.display = 'none';
+                    }, 2500);
+                }
+            }
+
+            function updateRowIndexes() {
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('.payroll-row');
+                rows.forEach((row, idx) => {
+                    const idxSpan = row.querySelector('.row-index');
+                    if (idxSpan) idxSpan.textContent = idx + 1;
                 });
             }
-        }
+
+            function saveOrder() {
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('.payroll-row');
+                const ids = Array.from(rows).map(r => r.getAttribute('data-karyawan-id')).filter(Boolean);
+
+                if (ids.length === 0) return;
+
+                showToast('Menyimpan urutan posisi...', '⏳');
+
+                fetch('{{ route("karyawan.reorder") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ ids: ids })
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP error ' + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        showToast('Urutan posisi berhasil disimpan!', '✓');
+                    } else {
+                        showToast(data.message || 'Gagal menyimpan urutan.', '⚠', true);
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    showToast('Gagal terhubung ke server untuk simpan urutan.', '⚠', true);
+                });
+            }
+
+            if (tbody && typeof Sortable !== 'undefined') {
+                Sortable.create(tbody, {
+                    handle: '.grip-handle',
+                    animation: 180,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    onEnd: function () {
+                        updateRowIndexes();
+                        saveOrder();
+                    }
+                });
+            } else if (tbody) {
+                // Native HTML5 Drag and Drop fallback
+                let draggedRow = null;
+                const rows = tbody.querySelectorAll('.payroll-row');
+                rows.forEach(row => {
+                    const handle = row.querySelector('.grip-handle') || row;
+                    handle.setAttribute('draggable', 'true');
+                    handle.addEventListener('dragstart', (e) => {
+                        draggedRow = row;
+                        e.dataTransfer.effectAllowed = 'move';
+                        row.classList.add('opacity-50');
+                    });
+                    handle.addEventListener('dragend', () => {
+                        draggedRow = null;
+                        row.classList.remove('opacity-50');
+                        updateRowIndexes();
+                        saveOrder();
+                    });
+                    row.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        const targetRow = e.target.closest('.payroll-row');
+                        if (targetRow && targetRow !== draggedRow) {
+                            const rect = targetRow.getBoundingClientRect();
+                            const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+                            tbody.insertBefore(draggedRow, next ? targetRow.nextSibling : targetRow);
+                        }
+                    });
+                });
+            }
+        });
     </script>
 </x-app-layout>

@@ -92,6 +92,9 @@
                         <button type="button" class="btn btn-outline-success fw-semibold px-3 min-hitbox d-inline-flex align-items-center justify-content-center shadow-sm" id="btnSyncAllPage" style="border-radius: 8px;">
                             <i class="bi bi-arrow-repeat me-1"></i> Sinkronkan & Refresh
                         </button>
+                        <button type="button" class="btn btn-outline-info text-dark fw-semibold px-3 min-hitbox d-inline-flex align-items-center justify-content-center shadow-sm" id="btnNetralisirMinusAll" style="border-radius: 8px;">
+                            <i class="bi bi-shield-check me-1 text-info"></i> Netralisir Stok Minus
+                        </button>
                         <a href="{{ route('stok-gudang.buku-pembantu.index') }}" class="btn btn-light border fw-semibold px-4 min-hitbox d-inline-flex align-items-center justify-content-center" style="border-radius: 8px;">
                             <i class="bi bi-arrow-counterclockwise me-1"></i> Reset
                         </a>
@@ -207,6 +210,9 @@
                         <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-inline-flex align-items-center" id="btnRefreshMutasiModal" style="font-size: 11px;">
                             <i class="bi bi-arrow-clockwise me-1"></i> Refresh Data
                         </button>
+                        <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-none d-md-inline-flex align-items-center" onclick="document.getElementById('btnNetralisirMinusModal').click();" style="font-size: 11px;">
+                            <i class="bi bi-shield-check me-1 text-info-emphasis bg-white rounded-circle p-0.5"></i> Netralisir Stok Minus
+                        </button>
                         <button type="button" class="btn btn-outline-light btn-sm text-white fw-semibold d-none d-md-inline-flex align-items-center" onclick="document.getElementById('btnResetPembelianModal').click();" style="font-size: 11px;">
                             <i class="bi bi-trash3 me-1 text-danger-emphasis bg-white rounded-circle p-0.5"></i> Hapus Pembelian
                         </button>
@@ -289,6 +295,9 @@
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                         <button type="button" class="btn btn-outline-success btn-sm fw-semibold shadow-sm px-3" id="btnRefreshMutasiModalFooter" style="border-radius: 8px;">
                             <i class="bi bi-arrow-clockwise me-1"></i> Refresh Data Mutasi
+                        </button>
+                        <button type="button" class="btn btn-outline-info text-dark btn-sm fw-semibold shadow-sm px-3" id="btnNetralisirMinusModal" style="border-radius: 8px;">
+                            <i class="bi bi-shield-check me-1 text-info"></i> Netralisir Stok Minus
                         </button>
                         <button type="button" class="btn btn-outline-danger btn-sm fw-semibold shadow-sm px-3" id="btnResetPembelianModal" style="border-radius: 8px;">
                             <i class="bi bi-trash3-fill me-1"></i> Hapus Semua Pembelian
@@ -802,6 +811,107 @@
                             window.location.reload();
                         } else {
                             alert('Gagal: ' + (data.message || 'Terjadi kesalahan sistem.'));
+                        }
+                    })
+                    .catch(err => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        alert('Terjadi kesalahan jaringan: ' + err.message);
+                    });
+                });
+            }
+
+            // NETRALISIR STOK MINUS UNTUK ITEM AKTIF DI MODAL
+            const btnNetralisirMinus = document.getElementById('btnNetralisirMinusModal');
+            if (btnNetralisirMinus) {
+                btnNetralisirMinus.addEventListener('click', function() {
+                    if (!activeBarangId) return;
+
+                    const form = document.getElementById('formFilter');
+                    const gudangSelect = form.querySelector('[name="gudang_id"]');
+                    const divisiSelect = form.querySelector('[name="divisi_id"]');
+                    const gudangId = gudangSelect ? gudangSelect.value : '';
+                    const divisiId = divisiSelect ? divisiSelect.value : '';
+
+                    const msg = `Apakah Anda yakin ingin MENETRALISIR STOK MINUS / DEFISIT untuk item:\n\n"${activeBarangNama}"?\n\nTindakan ini akan:\n- Membersihkan transaksi orphan dan mutasi salah gudang\n- Menetralkan saldo defisit minus historis\n- Menyelaraskan stok agar kuantitas tersedia kembali sesuai dengan transaksi riil\n\nLanjutkan?`;
+
+                    if (!confirm(msg)) return;
+
+                    const originalText = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menetralkan...';
+
+                    fetch("{{ route('stok-gudang.buku-pembantu.netralisir-minus') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            barang_id: activeBarangId,
+                            gudang_id: gudangId,
+                            divisi_id: divisiId
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(resData => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        if (resData.success) {
+                            alert(resData.message || 'Stok minus berhasil dinetralisir.');
+                            loadMutasiData(false);
+                        } else {
+                            alert('Gagal: ' + (resData.message || 'Terjadi kesalahan sistem.'));
+                        }
+                    })
+                    .catch(err => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        alert('Terjadi kesalahan jaringan: ' + err.message);
+                    });
+                });
+            }
+
+            // NETRALISIR STOK MINUS UNTUK SELURUH ITEM DI HALAMAN UTAMA
+            const btnNetralisirMinusAll = document.getElementById('btnNetralisirMinusAll');
+            if (btnNetralisirMinusAll) {
+                btnNetralisirMinusAll.addEventListener('click', function() {
+                    const form = document.getElementById('formFilter');
+                    const gudangSelect = form.querySelector('[name="gudang_id"]');
+                    const divisiSelect = form.querySelector('[name="divisi_id"]');
+                    const gudangId = gudangSelect ? gudangSelect.value : '';
+                    const divisiId = divisiSelect ? divisiSelect.value : '';
+
+                    const msg = `Apakah Anda yakin ingin MENETRALISIR SEMUA STOK MINUS / DEFISIT pada gudang yang dipilih?\n\nTindakan ini akan:\n- Membersihkan transaksi orphan dan mutasi salah gudang\n- Menetralkan defisit saldo minus pada seluruh item bahan baku\n- Menyelaraskan stok agar kuantitas kembali sesuai transaksi riil\n\nLanjutkan?`;
+
+                    if (!confirm(msg)) return;
+
+                    const originalText = this.innerHTML;
+                    this.disabled = true;
+                    this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menetralkan...';
+
+                    fetch("{{ route('stok-gudang.buku-pembantu.netralisir-minus') }}", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            gudang_id: gudangId,
+                            divisi_id: divisiId
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(resData => {
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        if (resData.success) {
+                            alert(resData.message || 'Seluruh stok minus berhasil dinetralisir.');
+                            window.location.reload();
+                        } else {
+                            alert('Gagal: ' + (resData.message || 'Terjadi kesalahan sistem.'));
                         }
                     })
                     .catch(err => {

@@ -111,8 +111,14 @@ class StokGudangController extends Controller
         | BULK PRE-FETCH HARGA FIFO & FALLBACK (Hanya pada 20 items halaman aktif)
         |--------------------------------------------------------------------------
         */
-        $itemIds   = $stokGudang->pluck('id')->toArray();
+        $itemIds   = $stokGudang->pluck('id')->unique()->toArray();
         $gudangIds = $stokGudang->pluck('gudang_id')->unique()->toArray();
+
+        // Rekonsiliasi mutasi orphan dan ringkasan stok untuk 20 item pada halaman aktif
+        foreach ($itemIds as $bId) {
+            self::autoCleanOrphanMutations($bId);
+            \App\Models\StokGudang::reconcileStockSummary($bId);
+        }
 
         // 1. Ambil harga rata-rata dari batch aktif
         $batchPrices = DB::table('stok_gudang_batch')
@@ -146,6 +152,17 @@ class StokGudangController extends Controller
         |--------------------------------------------------------------------------
         */
         $stokGudang->getCollection()->transform(function ($row) use ($batchPrices, $historicalPrices, $hppReferences) {
+            // Ambil kuantitas stok yang telah terekonsiliasi dari buku pembantu / stok_gudang
+            $reconciledJumlah = DB::table('stok_gudang')
+                ->where('barang_id', $row->id)
+                ->where('gudang_id', $row->gudang_id)
+                ->when($row->divisi_id, fn($q) => $q->where('divisi_id', $row->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                ->value('jumlah');
+
+            if ($reconciledJumlah !== null) {
+                $row->qty = (float) $reconciledJumlah;
+            }
+
             $row->status = $row->qty > 0 ? 'tersedia' : 'habis';
 
             $key = $row->id . '-' . $row->gudang_id . '-' . ($row->divisi_id ?? '0');
@@ -230,6 +247,10 @@ class StokGudangController extends Controller
         // Hitung stok akhir untuk 20 barang pada halaman aktif secara bulk dalam 1 query agregat
         $itemIds = $items->pluck('id')->toArray();
         if (!empty($itemIds)) {
+            foreach ($itemIds as $bId) {
+                self::autoCleanOrphanMutations($bId);
+                self::autoHealMissingDivisiInTransaksiStok($bId);
+            }
             $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($itemIds, $gudangId, $divisiId, $endDate);
             foreach ($items as $item) {
                 $item->stok_akhir = (float) ($bulkStok[$item->id] ?? 0);
@@ -699,6 +720,9 @@ class StokGudangController extends Controller
                 }
                 return "Penjualan POS (ID: {$id})";
 
+            case 'penyesuaian_stok':
+                return "Penyesuaian Stok: Netralisir Defisit Saldo";
+
             default:
                 return ucfirst(str_replace('_', ' ', $type)) . " (ID: {$id})";
         }
@@ -1112,13 +1136,16 @@ class StokGudangController extends Controller
 
     /**
      * Bersihkan secara otomatis seluruh data transaksi yatim (orphan) di tabel transaksi_stok
+    /**
+     * Bersihkan secara otomatis seluruh data transaksi yatim (orphan) di tabel transaksi_stok
      * yang dokumen induknya (Pembelian, Pengeluaran, Penerimaan) sudah dihapus atau tidak valid.
      */
     public static function autoCleanOrphanMutations($barangId = null)
     {
         try {
-            // 1. Orphan Pembelian / Pembelian Batal (source_id tidak ada di tabel pembelian ATAU pembelian dibatalkan/dihapus)
             $hasIsDeletedCol = \Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'is_deleted');
+
+            // 1. Orphan Pembelian / Pembelian Batal (source_id tidak ada di tabel pembelian, dibatalkan/dihapus, ATAU detail item sudah dihapus)
             $orphanPembelianQuery = DB::table('transaksi_stok')
                 ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
                 ->whereNotNull('source_id')
@@ -1139,6 +1166,11 @@ class StokGudangController extends Controller
                                   $batalSub->orWhere('is_deleted', true);
                               }
                           });
+                    })->orWhereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('pembelian_detail')
+                          ->whereColumn('pembelian_detail.pembelian_id', 'transaksi_stok.source_id')
+                          ->whereColumn('pembelian_detail.barang_id', 'transaksi_stok.barang_id');
                     });
                 });
             if ($barangId) {
@@ -1146,33 +1178,82 @@ class StokGudangController extends Controller
             }
             $orphanPembelianQuery->delete();
 
-            // 2. Orphan Penerimaan Pembelian (source_id tidak ada di tabel penerimaan_pembelian)
+            // 2. Orphan Penerimaan Pembelian (source_id tidak ada di tabel penerimaan_pembelian ATAU detail item sudah tidak ada)
             $orphanRcvQuery = DB::table('transaksi_stok')
                 ->where('source_type', 'penerimaan_pembelian')
                 ->whereNotNull('source_id')
-                ->whereNotExists(function($q) {
-                    $q->select(DB::raw(1))
-                      ->from('penerimaan_pembelian')
-                      ->whereColumn('penerimaan_pembelian.id', 'transaksi_stok.source_id');
+                ->where(function($q) {
+                    $q->whereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('penerimaan_pembelian')
+                          ->whereColumn('penerimaan_pembelian.id', 'transaksi_stok.source_id');
+                    })->orWhereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('penerimaan_pembelian_detail')
+                          ->whereColumn('penerimaan_pembelian_detail.penerimaan_pembelian_id', 'transaksi_stok.source_id')
+                          ->whereColumn('penerimaan_pembelian_detail.barang_id', 'transaksi_stok.barang_id');
+                    });
                 });
             if ($barangId) {
                 $orphanRcvQuery->where('barang_id', $barangId);
             }
             $orphanRcvQuery->delete();
 
-            // 3. Orphan Pengeluaran Bahan Baku / Wasted (source_id tidak ada di tabel pengeluaran_bahan_baku)
+            // 3. Orphan Pengeluaran Bahan Baku / Wasted:
+            // - Header tidak ada, ATAU
+            // - Status bukan 'approved' / 'disetujui' (misal masih draft, batal, ditolak), ATAU
+            // - Detail item barang_id sudah dihapus dari dokumen pengeluaran
             $orphanPbkQuery = DB::table('transaksi_stok')
                 ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
                 ->whereNotNull('source_id')
-                ->whereNotExists(function($q) {
-                    $q->select(DB::raw(1))
-                      ->from('pengeluaran_bahan_baku')
-                      ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id');
+                ->where(function($q) {
+                    $q->whereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('pengeluaran_bahan_baku')
+                          ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id');
+                    })->orWhereExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('pengeluaran_bahan_baku')
+                          ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id')
+                          ->whereNotIn(DB::raw('LOWER(pengeluaran_bahan_baku.status)'), ['approved', 'disetujui']);
+                    })->orWhereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('pengeluaran_bahan_baku_detail')
+                          ->whereColumn('pengeluaran_bahan_baku_detail.pengeluaran_id', 'transaksi_stok.source_id')
+                          ->whereColumn('pengeluaran_bahan_baku_detail.barang_id', 'transaksi_stok.barang_id');
+                    });
                 });
             if ($barangId) {
                 $orphanPbkQuery->where('barang_id', $barangId);
             }
             $orphanPbkQuery->delete();
+
+            // 3b. Orphan Stock Opname:
+            // - Header tidak ada, atau status bukan 'approved', atau detail barang_id tidak ada
+            $orphanSoQuery = DB::table('transaksi_stok')
+                ->where('source_type', 'stock_opname')
+                ->whereNotNull('source_id')
+                ->where(function($q) {
+                    $q->whereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('stock_opname')
+                          ->whereColumn('stock_opname.id', 'transaksi_stok.source_id');
+                    })->orWhereExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('stock_opname')
+                          ->whereColumn('stock_opname.id', 'transaksi_stok.source_id')
+                          ->whereNotIn(DB::raw('LOWER(stock_opname.status)'), ['approved', 'disetujui']);
+                    })->orWhereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('stock_opname_detail')
+                          ->whereColumn('stock_opname_detail.stock_opname_id', 'transaksi_stok.source_id')
+                          ->whereColumn('stock_opname_detail.barang_id', 'transaksi_stok.barang_id');
+                    });
+                });
+            if ($barangId) {
+                $orphanSoQuery->where('barang_id', $barangId);
+            }
+            $orphanSoQuery->delete();
 
             // 4. Orphan Stok Gudang Batch yang pembelian_id-nya sudah tidak ada di tabel pembelian atau pembelian dibatalkan/dihapus
             $orphanBatchQuery = DB::table('stok_gudang_batch')
@@ -1280,16 +1361,30 @@ class StokGudangController extends Controller
                 $pbk->update(['gudang_id' => $targetGudangId]);
             }
 
-            // 5c. Perbaiki mutasi TransaksiStok POS yang tercatat keluar dari Gudang Utama
-            $misplacedPosTxQuery = \App\Models\TransaksiStok::where('source_type', 'penjualan_pos')
-                ->where('gudang_asal_id', $gudangUtamaId);
+            // 5c. Perbaiki mutasi TransaksiStok POS dan PBK-POS yang tercatat memotong Gudang Utama
+            $misplacedPosTxQuery = \App\Models\TransaksiStok::where('gudang_asal_id', $gudangUtamaId)
+                ->where(function($q) {
+                    $q->where('source_type', 'penjualan_pos')
+                      ->orWhere(function($sub) {
+                          $sub->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted'])
+                              ->whereExists(function($pSub) {
+                                  $pSub->select(DB::raw(1))
+                                       ->from('pengeluaran_bahan_baku')
+                                       ->whereColumn('pengeluaran_bahan_baku.id', 'transaksi_stok.source_id')
+                                       ->where(function($ketQ) {
+                                           $ketQ->where('keterangan', 'like', 'AUTO_POS%')
+                                                ->orWhere('kode_pengeluaran', 'like', 'PBK-POS%')
+                                                ->orWhere('kode_pengeluaran', 'like', '%POS%');
+                                       });
+                              });
+                      });
+                });
             if ($barangId) {
                 $misplacedPosTxQuery->where('barang_id', $barangId);
             }
             $misplacedPosTxs = $misplacedPosTxQuery->get();
 
             foreach ($misplacedPosTxs as $tx) {
-                // Tentukan target outlet dari referensi penjualan_pos atau pengeluaran_bahan_baku
                 $targetOutletId = $gudangGaharuId;
                 $pos = \App\Models\PenjualanPos::find($tx->source_id);
                 if ($pos) {
@@ -1301,18 +1396,15 @@ class StokGudangController extends Controller
                     }
                 }
 
-                // Cek apakah sudah ada catatan TransaksiStok di Gudang Outlet untuk transaksi & barang ini
-                $alreadyAtOutlet = \App\Models\TransaksiStok::where('source_type', 'penjualan_pos')
+                $alreadyAtOutlet = \App\Models\TransaksiStok::whereIn('source_type', ['penjualan_pos', 'pengeluaran_bahan_baku', 'pengeluaran_wasted'])
                     ->where('source_id', $tx->source_id)
                     ->where('barang_id', $tx->barang_id)
                     ->where('gudang_asal_id', $targetOutletId)
                     ->exists();
 
                 if ($alreadyAtOutlet) {
-                    // Jika sudah ada catatan di outlet, hapus catatan duplikat yang nyangkut di Gudang Utama
                     $tx->delete();
                 } else {
-                    // Pindahkan gudang asal ke Gudang Outlet yang semestinya
                     $tx->update(['gudang_asal_id' => $targetOutletId]);
                 }
             }
@@ -1446,8 +1538,6 @@ class StokGudangController extends Controller
                         }
                         \App\Models\Pembayaran::where('pembelian_id', $pembelian->id)->delete();
 
-                        // Tandai pembelian sebagai Dihapus / Dibatalkan agar tetap tercatat di menu pembelian
-                        // Menggunakan catatan_pembayaran dengan format [DELETED] sehingga bekerja tanpa migrasi DB
                         $deletedNote = '[DELETED] Dihapus pada ' . now()->format('d/m/Y H:i') . ' melalui Buku Pembantu Persediaan oleh ' . (auth()->user()->nama ?? auth()->user()->name ?? 'Pengguna');
                         $updateData = [
                             'catatan_pembayaran' => $deletedNote,
@@ -1585,6 +1675,145 @@ class StokGudangController extends Controller
     }
 
     /**
+     * Endpoint untuk menetralkan stok minus / defisit historis item barang.
+     */
+    public function netralisirStokMinus(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || (!$user->isSuperAdmin() && !$user->isGudang())) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki hak akses untuk menetralkan stok minus.'
+            ], 403);
+        }
+
+        $barangId = $request->barang_id;
+        $gudangId = $request->gudang_id ?: \App\Models\MasterGudang::getGudangUtamaId();
+        $divisiId = $request->divisi_id;
+
+        try {
+            $barangList = [];
+            if ($barangId) {
+                $barangList = MasterBarang::withoutGlobalScopes()->where('id', $barangId)->get();
+            } else {
+                $allBarangs = MasterBarang::withoutGlobalScopes()->get();
+                foreach ($allBarangs as $b) {
+                    $stk = \App\Models\StokGudang::getStokBukuPembantu($b->id, $gudangId, $divisiId);
+                    if ($stk < -0.0001) {
+                        $barangList[] = $b;
+                    }
+                }
+            }
+
+            $countNeutralized = 0;
+
+            DB::transaction(function () use ($barangList, $gudangId, $divisiId, &$countNeutralized) {
+                foreach ($barangList as $barang) {
+                    $bId = $barang->id;
+
+                    // 1. Bersihkan transaksi orphan terlebih dahulu
+                    self::autoCleanOrphanMutations($bId);
+                    self::autoHealMissingDivisiInTransaksiStok($bId);
+
+                    // 2. Ambil seluruh transaksi stok untuk barang ini di gudang terkait
+                    $txs = DB::table('transaksi_stok')
+                        ->where('barang_id', $bId)
+                        ->where(function ($q) use ($gudangId, $divisiId) {
+                            if ($gudangId && $divisiId) {
+                                $q->where(fn($s) => $s->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId))
+                                  ->orWhere(fn($s) => $s->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId));
+                            } elseif ($gudangId) {
+                                $q->where('gudang_asal_id', $gudangId)
+                                  ->orWhere('gudang_tujuan_id', $gudangId);
+                            }
+                        })
+                        ->orderBy('tanggal', 'asc')
+                        ->orderBy('id', 'asc')
+                        ->get();
+
+                    $running = 0;
+                    $minBalance = 0;
+                    $firstTxDate = now();
+                    if ($txs->isNotEmpty()) {
+                        $firstTxDate = $txs->first()->tanggal;
+                        foreach ($txs as $tx) {
+                            $isMasuk = ($gudangId && $tx->gudang_tujuan_id == $gudangId && (!$divisiId || $tx->divisi_tujuan_id == $divisiId))
+                                || (!$gudangId && $tx->tipe === 'masuk');
+                            $isKeluar = ($gudangId && $tx->gudang_asal_id == $gudangId && (!$divisiId || $tx->divisi_asal_id == $divisiId))
+                                || (!$gudangId && $tx->tipe === 'keluar');
+
+                            if ($isMasuk) $running += (float) $tx->qty;
+                            elseif ($isKeluar) $running -= (float) $tx->qty;
+
+                            if ($running < $minBalance) {
+                                $minBalance = $running;
+                            }
+                        }
+                    }
+
+                    $currentStock = \App\Models\StokGudang::getStokBukuPembantu($bId, $gudangId, $divisiId);
+
+                    $deficitToHeal = 0;
+                    if ($minBalance < -0.0001) {
+                        $deficitToHeal = abs($minBalance);
+                    } elseif ($currentStock < -0.0001) {
+                        $deficitToHeal = abs($currentStock);
+                    }
+
+                    if ($deficitToHeal > 0.0001) {
+                        $fifoService = app(\App\Services\FifoService::class);
+                        $unitPrice = $fifoService->getHargaTerakhirBahan($bId, $gudangId);
+                        if ($unitPrice <= 0) {
+                            $unitPrice = (float) ($barang->hpp_referensi ?? 0);
+                        }
+
+                        $adjustDate = date('Y-m-d H:i:s', strtotime($firstTxDate . ' - 1 minute'));
+
+                        \App\Models\TransaksiStok::create([
+                            'tanggal'          => $adjustDate,
+                            'tipe'             => 'masuk',
+                            'source_type'      => 'penyesuaian_stok',
+                            'source_id'        => null,
+                            'gudang_asal_id'   => null,
+                            'divisi_asal_id'   => null,
+                            'gudang_tujuan_id' => $gudangId,
+                            'divisi_tujuan_id' => $divisiId,
+                            'barang_id'        => $bId,
+                            'qty'              => $deficitToHeal,
+                            'total_harga'      => round($deficitToHeal * $unitPrice, 2),
+                            'created_by'       => auth()->id(),
+                        ]);
+
+                        $countNeutralized++;
+                    }
+
+                    \App\Models\StokGudang::reconcileStockSummary($bId, $gudangId, $divisiId);
+                    app(\App\Services\FifoService::class)->syncBarangHpp((int)$bId);
+                }
+            });
+
+            if ($barangId && !empty($barangList)) {
+                $barang = $barangList->first();
+                $finalStock = \App\Models\StokGudang::getStokBukuPembantu($barangId, $gudangId, $divisiId);
+                return response()->json([
+                    'success' => true,
+                    'message' => "Stok minus untuk {$barang->nama} berhasil dinetralisir. Stok terkini: " . number_format($finalStock, 2, ',', '.') . " {$barang->satuan}."
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Berhasil menetralkan stok minus untuk {$countNeutralized} item barang."
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menetralkan stok minus: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Endpoint untuk melakukan sinkronisasi dan refresh menyeluruh pada Buku Pembantu Persediaan.
      */
     public function syncRefreshBukuPembantu(Request $request)
@@ -1597,10 +1826,13 @@ class StokGudangController extends Controller
             // 1. Auto-clean orphaned transactions
             self::autoCleanOrphanMutations($barangId);
 
-            // 2. Auto-heal SO prematur
+            // 2. Auto-heal missing divisi in transaksi_stok
+            self::autoHealMissingDivisiInTransaksiStok($barangId);
+
+            // 3. Auto-heal SO prematur
             $this->autoHealPrematureDraftSoMutations($barangId);
 
-            // 3. Reconcile stok gudang
+            // 4. Reconcile stok gudang
             if ($barangId) {
                 MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
                 \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);

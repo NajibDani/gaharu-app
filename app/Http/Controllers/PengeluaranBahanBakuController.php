@@ -625,6 +625,8 @@ class PengeluaranBahanBakuController extends Controller
 
         FifoService::clearHargaCache();
         foreach ($pengeluaran->details as $dItem) {
+            \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
+            \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
             MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
             if ($pengeluaran->gudang_id) {
                 StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
@@ -736,6 +738,8 @@ class PengeluaranBahanBakuController extends Controller
         FifoService::clearHargaCache();
         // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
         foreach ($pengeluaran->details as $dItem) {
+            \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
+            \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
             MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
             if ($pengeluaran->gudang_id) {
                 StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
@@ -1885,6 +1889,12 @@ class PengeluaranBahanBakuController extends Controller
                     $gudangAsalId = MasterGudang::getGudangUtamaId();
 
                     foreach ($data->details as $detail) {
+                        \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($detail->barang_id);
+                        \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($detail->barang_id);
+                        if ($gudangAsalId) {
+                            StokGudang::reconcileStockSummary($detail->barang_id, $gudangAsalId);
+                        }
+
                         $stokTersedia = (float) (StokGudang::where('barang_id', $detail->barang_id)
                             ->where('gudang_id', $gudangAsalId)
                             ->whereNull('divisi_id')

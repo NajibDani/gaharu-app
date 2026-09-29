@@ -417,12 +417,12 @@
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
-                                <td class="px-3 py-3 pr-6 text-center text-xs text-slate-400 font-bold whitespace-nowrap">{{ $index + 1 }}</td>
+                                <td class="px-3 py-3 pr-6 text-center text-xs text-slate-400 font-bold whitespace-nowrap"><span class="row-index">{{ $index + 1 }}</span></td>
 
                                 {{-- KARYAWAN --}}
                                 <td class="px-6 py-3 min-w-[200px]">
-                                    <div class="flex items-start gap-2">
-                                        <i class="bi bi-grip-vertical text-slate-400 cursor-move grip-handle mt-0.5" title="Geser baris"></i>
+                                    <div class="flex items-start gap-2.5">
+                                        <i class="bi bi-grip-vertical grip-handle mt-0.5 select-none" title="Tahan dan geser (drag & drop) untuk mengatur urutan"></i>
                                         <div>
                                             <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug flex items-center gap-1.5 flex-wrap">
                                                 <span>{{ $payroll->karyawan->nama_karyawan ?? '-' }}</span>
@@ -433,18 +433,18 @@
                                                 @endif
                                             </div>
                                             <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
-                                                <span class="font-bold text-slate-700">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
+                                                <span class="hr-badge-jabatan">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
                                                 @if($payroll->karyawan->departemen)
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 leading-normal">{{ $payroll->karyawan->departemen }}</span>
+                                                    <span class="hr-badge-dept">{{ $payroll->karyawan->departemen }}</span>
                                                 @endif
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 leading-normal">{{ $badgeSatuanText }}</span>
+                                                <span class="hr-badge-satuan">{{ $badgeSatuanText }}</span>
                                             </div>
                                         </div>
                                     </div>
                                 </td>
 
                                 {{-- 1. HARI KERJA (BISA DIISI LANGSUNG) --}}
-                                <td class="px-3 py-3 text-center whitespace-nowrap">
+                                <td class="px-3 py-3 text-center whitespace-nowrap {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') && !$hasMultiplePeriods ? 'hr-input-cell' : '' }}">
                                     @if($hasMultiplePeriods)
                                         <div class="inline-flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
                                             <span class="text-xs font-black text-slate-900">{{ $waktuDisplay }}</span>
@@ -458,7 +458,7 @@
                                         @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
                                             <div class="inline-flex items-center gap-1.5 justify-center whitespace-nowrap">
                                                 <input type="number" step="0.5" min="0"
-                                                       class="batch-hari-kerja w-16 text-center bg-slate-50/80 hover:bg-white border border-slate-200 hover:border-slate-300 focus:bg-white rounded-md px-2 py-1 text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all placeholder:text-slate-300 placeholder:font-normal"
+                                                       class="batch-hari-kerja hr-data-input w-16 px-2 py-1 text-xs"
                                                        value="{{ ($payroll->hari_kerja && $payroll->hari_kerja > 0) ? (float)$payroll->hari_kerja : '' }}"
                                                        placeholder="0"
                                                        oninput="onGajiPokokRowInput(this)">
@@ -550,7 +550,7 @@
                                         {{-- TOMBOL DETAIL POPUP --}}
                                         <button type="button"
                                                 @click="activeDetail = {{ json_encode($detailPayload) }}; openDetailModal = true;"
-                                                class="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-2.5 py-1.5 rounded-lg transition-colors border border-slate-300 cursor-pointer whitespace-nowrap"
+                                                class="inline-flex items-center gap-1.5 bg-white hover:bg-slate-100 text-slate-800 text-xs font-black px-3 py-1.5 rounded-lg transition-all border-2 border-slate-300 hover:border-slate-400 shadow-sm cursor-pointer whitespace-nowrap"
                                                 title="Lihat rincian lengkap gaji bersih">
                                             &#128065; Detail
                                         </button>
@@ -1604,16 +1604,123 @@
                 btn.innerHTML = origContent;
             }
         }
+    </script>
 
-        if (typeof Sortable !== 'undefined') {
-            let tbody = document.getElementById('tbodyKaryawan');
-            if (tbody) {
-                Sortable.create(tbody, {
-                    handle: '.grip-handle',
-                    animation: 150,
-                    ghostClass: 'bg-slate-100',
+    <!-- Reorder Notification Toast -->
+    <div id="reorderToast" style="display: none; position: fixed; bottom: 28px; right: 28px; z-index: 99999; background: #0f172a; color: #ffffff; padding: 12px 20px; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); font-size: 13px; font-weight: 700; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.15); transition: opacity 0.2s ease;">
+        <span id="reorderToastIcon" style="font-size: 15px;">⏳</span>
+        <span id="reorderToastMsg">Menyimpan urutan...</span>
+    </div>
+
+    <!-- SortableJS CDN with Fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const tbody = document.getElementById('tbodyKaryawan');
+            const toast = document.getElementById('reorderToast');
+            const toastIcon = document.getElementById('reorderToastIcon');
+            const toastMsg = document.getElementById('reorderToastMsg');
+            let toastTimeout;
+
+            function showToast(msg, icon = '⏳', isError = false) {
+                if (!toast) return;
+                clearTimeout(toastTimeout);
+                toastIcon.textContent = icon;
+                toastMsg.textContent = msg;
+                toast.style.background = isError ? '#991b1b' : '#0f172a';
+                toast.style.display = 'inline-flex';
+                if (!isError && icon === '✓') {
+                    toastTimeout = setTimeout(() => {
+                        toast.style.display = 'none';
+                    }, 2500);
+                }
+            }
+
+            function updateRowIndexes() {
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('.payroll-row');
+                rows.forEach((row, idx) => {
+                    const idxSpan = row.querySelector('.row-index');
+                    if (idxSpan) idxSpan.textContent = idx + 1;
                 });
             }
-        }
+
+            function saveOrder() {
+                if (!tbody) return;
+                const rows = tbody.querySelectorAll('.payroll-row');
+                const ids = Array.from(rows).map(r => r.getAttribute('data-karyawan-id')).filter(Boolean);
+
+                if (ids.length === 0) return;
+
+                showToast('Menyimpan urutan posisi...', '⏳');
+
+                fetch('{{ route("karyawan.reorder") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ ids: ids })
+                })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP error ' + res.status);
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        showToast('Urutan posisi berhasil disimpan!', '✓');
+                    } else {
+                        showToast(data.message || 'Gagal menyimpan urutan.', '⚠', true);
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    showToast('Gagal terhubung ke server untuk simpan urutan.', '⚠', true);
+                });
+            }
+
+            if (tbody && typeof Sortable !== 'undefined') {
+                Sortable.create(tbody, {
+                    handle: '.grip-handle',
+                    animation: 180,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    onEnd: function () {
+                        updateRowIndexes();
+                        saveOrder();
+                    }
+                });
+            } else if (tbody) {
+                // Native HTML5 Drag and Drop fallback
+                let draggedRow = null;
+                const rows = tbody.querySelectorAll('.payroll-row');
+                rows.forEach(row => {
+                    const handle = row.querySelector('.grip-handle') || row;
+                    handle.setAttribute('draggable', 'true');
+                    handle.addEventListener('dragstart', (e) => {
+                        draggedRow = row;
+                        e.dataTransfer.effectAllowed = 'move';
+                        row.classList.add('opacity-50');
+                    });
+                    handle.addEventListener('dragend', () => {
+                        draggedRow = null;
+                        row.classList.remove('opacity-50');
+                        updateRowIndexes();
+                        saveOrder();
+                    });
+                    row.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        const targetRow = e.target.closest('.payroll-row');
+                        if (targetRow && targetRow !== draggedRow) {
+                            const rect = targetRow.getBoundingClientRect();
+                            const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+                            tbody.insertBefore(draggedRow, next ? targetRow.nextSibling : targetRow);
+                        }
+                    });
+                });
+            }
+        });
     </script>
 </x-app-layout>

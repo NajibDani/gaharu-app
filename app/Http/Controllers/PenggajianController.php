@@ -477,7 +477,10 @@ class PenggajianController extends Controller
                 'satuan_gaji_2'           => $primaryPayroll->satuan_gaji_2,
                 'pilihan_periode'         => $primaryPayroll->pilihan_periode ?? 1,
             ];
-        })->values();
+        })->sortBy([
+            fn ($a, $b) => ($a->karyawan->urutan ?? 999999) <=> ($b->karyawan->urutan ?? 999999),
+            fn ($a, $b) => ($a->karyawan->id ?? 0) <=> ($b->karyawan->id ?? 0),
+        ])->values();
 
         if ($payrolls->isEmpty()) {
             $currentStatus = 'draft';
