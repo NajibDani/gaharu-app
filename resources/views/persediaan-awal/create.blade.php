@@ -3,6 +3,10 @@
         Input Persediaan Awal
     </x-slot>
 
+    @php
+        $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+    @endphp
+
     <div class="card shadow-sm border-0 rounded-3 mb-4">
         <div class="card-header bg-white py-3">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -114,9 +118,11 @@
                                 <th class="text-start py-2" style="min-width: 140px;">Nama Barang</th>
                                 <th class="py-2" style="width: 90px;">Kategori</th>
                                 <th class="py-2" style="width: 110px;">Satuan & Konversi</th>
+                                @if($isSuperAdmin)
                                 <th class="py-2" style="width: 85px;">Stok Saat Ini</th>
+                                @endif
                                 <th class="py-2" style="width: 90px;">Qty Input <span class="text-danger">*</span></th>
-                                <th class="py-2" style="width: 115px;">Satuan Input <span class="text-danger">*</span></th>
+                                <th class="py-2" style="width: 140px;">Satuan Input <span class="text-danger">*</span></th>
                                 <th class="py-2" style="min-width: 145px;">Harga per Satuan (Rp) <span class="text-danger">*</span></th>
                                 <th class="py-2" style="width: 125px;">Masuk Stok Utama</th>
                                 <th class="text-end py-2" style="min-width: 120px;">Subtotal Nilai (Rp)</th>
@@ -125,7 +131,7 @@
                         </thead>
                         <tbody id="tbodyBarang">
                             <tr id="rowEmpty">
-                                <td colspan="11" class="text-center py-5 text-muted">
+                                <td colspan="{{ $isSuperAdmin ? 12 : 11 }}" class="text-center py-5 text-muted">
                                     <i class="bi bi-box-seam fs-1 d-block mb-2 text-secondary"></i>
                                     Klik tombol <strong>"Muat Semua Barang Master"</strong> di atas untuk memuat daftar seluruh item barang.
                                 </td>
@@ -178,6 +184,20 @@
         }
         .input-qty:focus, .input-harga:focus {
             background-color: #fff9f5;
+        }
+        .input-satuan {
+            min-width: 120px !important;
+            border: 1.5px solid #94a3b8 !important;
+            background-color: #f8fafc !important;
+            color: #1e293b !important;
+            font-size: 12px !important;
+            padding: 5px 28px 5px 8px !important;
+            white-space: nowrap;
+        }
+        .input-satuan:focus {
+            border-color: #d88656 !important;
+            box-shadow: 0 0 0 3px rgba(216, 134, 86, 0.15) !important;
+            background-color: #fff !important;
         }
     </style>
 
@@ -381,12 +401,14 @@
                     </td>
                     <td><span class="badge bg-light text-dark border">${item.kategori_nama}</span></td>
                     <td>${satuanBadge}</td>
+                    @if($isSuperAdmin)
                     <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
+                    @endif
                     <td>
                         <input type="number" class="form-control form-control-sm text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
-                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px; min-width: 120px; padding: 4px 28px 4px 8px; white-space: nowrap; overflow: visible;">
                             ${unitOptionsHtml}
                         </select>
                     </td>
