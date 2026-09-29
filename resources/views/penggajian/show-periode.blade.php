@@ -1109,7 +1109,7 @@
                                                        placeholder="0"
                                                        oninput="onPayrollUnifiedRowInput(this)">
                                             </div>
-                                            <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target }}">
+                                            <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target ?? '' }}">
                                         @endif
                                     @else
                                         <div class="accounting-cell font-bold text-slate-800 text-xs">
@@ -1119,7 +1119,7 @@
                                         @if($satuanRow === 'Harian')
                                             <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_target }}x target</div>
                                         @else
-                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ $payroll->catatan_bonus_target ?: 'Manual' }}</div>
+                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_target) ? $payroll->catatan_bonus_target : 'Manual' }}</div>
                                         @endif
                                     @endif
                                 </td>
@@ -1149,7 +1149,7 @@
                                                        placeholder="0"
                                                        oninput="onPayrollUnifiedRowInput(this)">
                                             </div>
-                                            <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah }}">
+                                            <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah ?? '' }}">
                                         @endif
                                     @else
                                         <div class="accounting-cell font-bold text-slate-800 text-xs">
@@ -1159,7 +1159,7 @@
                                         @if($satuanRow === 'Harian')
                                             <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_tanggal_merah }}x hadir</div>
                                         @else
-                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ $payroll->catatan_bonus_tanggal_merah ?: 'Manual' }}</div>
+                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_tanggal_merah) ? $payroll->catatan_bonus_tanggal_merah : 'Manual' }}</div>
                                         @endif
                                     @endif
                                 </td>
