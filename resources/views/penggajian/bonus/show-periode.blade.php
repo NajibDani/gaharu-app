@@ -151,10 +151,15 @@
                             @forelse($payrolls as $index => $payroll)
                             @php
                                 $isRowLocked = $payroll->is_paid || $payroll->status === 'approved';
-                                $satuanRow = $payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian';
-                                $tarifHarian = $payroll->tarif_harian_total > 0
+                                $kw = $payroll->karyawan;
+                                $satuanRow = $payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian';
+                                $kwGp = (float)($kw->gaji_pokok ?? 0);
+                                $kwUm = (float)($kw->uang_makan ?? 0);
+                                $kwUt = (float)($kw->uang_transport ?? 0);
+
+                                $tarifHarian = (float)($payroll->tarif_harian_total > 0
                                     ? $payroll->tarif_harian_total
-                                    : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+                                    : ((($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0)) ?: ($kwGp + $kwUm + $kwUt)));
                             @endphp
                             <tr class="payroll-row hover:bg-slate-50/80 transition-colors"
                                 data-id="{{ $payroll->id }}"
@@ -969,6 +974,12 @@
                     input.value = input.value.replace(/[^0-9]/g, '') || '0';
                 });
             });
+
+            // Initial calculation for all rows and grand total
+            document.querySelectorAll('.payroll-row').forEach(row => {
+                recalcRowBonus(row);
+            });
+            recalcGrandTotalBonus();
         });
 
         function filterKaryawanTable() {

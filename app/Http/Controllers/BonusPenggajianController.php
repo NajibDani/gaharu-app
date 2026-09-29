@@ -136,9 +136,19 @@ class BonusPenggajianController extends Controller
 
             $totalBonusKeseluruhan = $totalLembur + $totalBonusTarget + $totalBonusMerah + $totalBonusBirthday + $totalPengembalianDeposit + $totalBonusDll;
 
+            $kw = $first->karyawan;
+            $pilihanP = $primaryPayroll->pilihan_periode ?? 1;
+            $satuanGaji = ($pilihanP == 2 && ($primaryPayroll->satuan_gaji_2 || ($kw->satuan_gaji_2 ?? null)))
+                ? ($primaryPayroll->satuan_gaji_2 ?? $kw->satuan_gaji_2 ?? $primaryPayroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian')
+                : ($primaryPayroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian');
+
+            $kwGp = ($pilihanP == 2 && ($kw->gaji_pokok_2 ?? null) !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
+            $kwUm = ($pilihanP == 2 && ($kw->uang_makan_2 ?? null) !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
+            $kwUt = ($pilihanP == 2 && ($kw->uang_transport_2 ?? null) !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+
             $tarifHarian = $primaryPayroll->tarif_harian_total > 0
-                ? $primaryPayroll->tarif_harian_total
-                : (($primaryPayroll->gaji_pokok ?? 0) + ($primaryPayroll->tunjangan_makan ?? 0) + ($primaryPayroll->tunjangan_transport ?? 0));
+                ? (float)$primaryPayroll->tarif_harian_total
+                : ((($primaryPayroll->gaji_pokok ?? 0) + ($primaryPayroll->tunjangan_makan ?? 0) + ($primaryPayroll->tunjangan_transport ?? 0)) ?: ($kwGp + $kwUm + $kwUt));
 
             $potDeposit = (float) ($allPotonganDeposit[$first->karyawan_id] ?? 0);
             $retOther = (float) ($allReturnedOther[$first->karyawan_id] ?? 0);
@@ -150,7 +160,7 @@ class BonusPenggajianController extends Controller
                 'karyawan_id'                 => $first->karyawan_id,
                 'karyawan'                    => $first->karyawan,
                 'outlet'                      => $first->outlet,
-                'satuan_gaji'                 => $primaryPayroll->satuan_gaji ?? $first->karyawan->satuan_gaji ?? 'Harian',
+                'satuan_gaji'                 => $satuanGaji,
                 'periode_bulan_tahun'         => $first->periode_bulan_tahun,
                 'hari_kerja'                  => $items->sum('hari_kerja') ?: ($primaryPayroll->hari_kerja ?? 0),
                 'tarif_harian_total'          => $tarifHarian,
@@ -235,9 +245,14 @@ class BonusPenggajianController extends Controller
             return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', $value));
         };
 
+        $kw = $payroll->karyawan;
+        $kwGp = (float)($kw->gaji_pokok ?? 0);
+        $kwUm = (float)($kw->uang_makan ?? 0);
+        $kwUt = (float)($kw->uang_transport ?? 0);
+
         $tarifHarian = $payroll->tarif_harian_total > 0
-            ? $payroll->tarif_harian_total
-            : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+            ? (float)$payroll->tarif_harian_total
+            : ((($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0)) ?: ($kwGp + $kwUm + $kwUt));
 
         $jamLembur             = floatval($request->jam_lembur ?? 0);
         $banyakTarget          = intval($request->banyak_target ?? 0);
@@ -320,9 +335,14 @@ class BonusPenggajianController extends Controller
             if (!$payroll || $payroll->status === 'approved') continue;
 
             $satuanGaji = $payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian';
+            $kw = $payroll->karyawan;
+            $kwGp = (float)($kw->gaji_pokok ?? 0);
+            $kwUm = (float)($kw->uang_makan ?? 0);
+            $kwUt = (float)($kw->uang_transport ?? 0);
+
             $tarifHarian = $payroll->tarif_harian_total > 0
-                ? $payroll->tarif_harian_total
-                : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+                ? (float)$payroll->tarif_harian_total
+                : ((($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0)) ?: ($kwGp + $kwUm + $kwUt));
 
             $jamLembur             = floatval($item['jam_lembur'] ?? $payroll->jam_lembur ?? 0);
             $banyakTarget          = intval($item['banyak_target'] ?? $payroll->banyak_target ?? 0);
