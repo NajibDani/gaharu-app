@@ -73,6 +73,8 @@
         'periode' => $publicSlipParam,
         'token' => \App\Models\Penggajian::generateSlipToken($payroll->id, $publicSlipParam)
     ]);
+    $cleanEmployeeName = $k->nama_karyawan ?? 'Karyawan';
+    $pdfFileName = 'Slip_Gaji_' . preg_replace('/[^A-Za-z0-9_-]/', '_', $cleanEmployeeName) . '_' . str_replace(' ', '_', $periodeLabel) . '_' . ($isCombined ? 'Gabungan' : ('P' . ($payroll->pilihan_periode ?? 1))) . '.pdf';
     $brandName = (strtolower($payroll->outlet ?? $k->outlet ?? $currentOutlet ?? 'Gaharu') === 'kejingga') ? 'Kejingga' : 'Gaharu';
     $nominalFmt = number_format($takeHomePay, 0, ',', '.');
     $waMessage = "Halo, {$cleanEmployeeName}! \n\n" .

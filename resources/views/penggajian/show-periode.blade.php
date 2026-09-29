@@ -444,18 +444,29 @@
                                 </td>
 
                                 {{-- 1. HARI KERJA (BISA DIISI LANGSUNG) --}}
-                                <td class="px-3 py-3 text-center whitespace-nowrap {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') && !$hasMultiplePeriods ? 'hr-input-cell' : '' }}">
-                                    @if($hasMultiplePeriods)
-                                        <div class="inline-flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
-                                            <span class="text-xs font-black text-slate-900">{{ $waktuDisplay }}</span>
-                                            <div class="flex items-center justify-center gap-1 text-[10px] text-indigo-700 font-semibold flex-wrap">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <span class="bg-indigo-50 border border-indigo-200/80 px-1 py-0.2 rounded text-[9.5px]">P{{ $ib['periode'] }}: {{ $ib['hari_kerja'] }}{{ $ib['suffix'] }}</span>
-                                                @endforeach
+                                <td class="px-3 py-3 text-center whitespace-nowrap {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col items-center justify-center gap-1.5 whitespace-nowrap">
+                                                <div class="flex items-center justify-center gap-2 flex-wrap">
+                                                    @foreach($itemBreakdowns as $ib)
+                                                        <div class="inline-flex items-center gap-1 bg-white/90 border border-indigo-200/90 rounded-md px-1.5 py-0.5 shadow-2xs">
+                                                            <span class="text-[9.5px] font-black text-indigo-700 bg-indigo-50 px-1 rounded">P{{ $ib['periode'] }}</span>
+                                                            <input type="number" step="0.5" min="0"
+                                                                   class="batch-hari-kerja batch-sub-item hr-data-input w-13 px-1.5 py-0.5 text-xs !bg-white"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   data-satuan="{{ $ib['satuan'] }}"
+                                                                   data-tarif="{{ (float)$ib['tarif'] }}"
+                                                                   value="{{ ($ib['hari_kerja'] && $ib['hari_kerja'] > 0) ? (float)$ib['hari_kerja'] : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onGajiPokokMultiRowInput(this)">
+                                                            <span class="text-[10px] text-slate-500 font-bold">{{ $ib['suffix'] }}</span>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
                                             </div>
-                                        </div>
-                                    @else
-                                        @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        @else
                                             <div class="inline-flex items-center gap-1.5 justify-center whitespace-nowrap">
                                                 <input type="number" step="0.5" min="0"
                                                        class="batch-hari-kerja hr-data-input w-16 px-2 py-1 text-xs"
@@ -465,6 +476,17 @@
                                                 <span class="text-[11px] text-slate-600 font-bold whitespace-nowrap">
                                                     {{ $satuanRow === 'Per Jam' ? 'jam' : ($satuanRow === 'Bulanan' ? 'bln' : 'hr') }}
                                                 </span>
+                                            </div>
+                                        @endif
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
+                                                <span class="text-xs font-black text-slate-900">{{ $waktuDisplay }}</span>
+                                                <div class="flex items-center justify-center gap-1 text-[10px] text-indigo-700 font-semibold flex-wrap">
+                                                    @foreach($itemBreakdowns as $ib)
+                                                        <span class="bg-indigo-50 border border-indigo-200/80 px-1 py-0.2 rounded text-[9.5px]">P{{ $ib['periode'] }}: {{ $ib['hari_kerja'] }}{{ $ib['suffix'] }}</span>
+                                                    @endforeach
+                                                </div>
                                             </div>
                                         @else
                                             <div class="whitespace-nowrap">
@@ -506,7 +528,7 @@
                                     @if($hasMultiplePeriods)
                                         <div class="flex flex-col items-end gap-0.5 mt-0.5">
                                             @foreach($itemBreakdowns as $ib)
-                                                <span class="text-[10px] text-indigo-700 font-semibold whitespace-nowrap">P{{ $ib['periode'] }}: Rp&nbsp;{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span>
+                                                <span class="text-[10px] text-indigo-700 font-semibold whitespace-nowrap">P{{ $ib['periode'] }}: <span class="sub-gp-item-{{ $ib['id'] }}">Rp&nbsp;{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span></span>
                                             @endforeach
                                         </div>
                                     @endif
@@ -1537,6 +1559,43 @@
             recalculateHeaderTotalNett();
         }
 
+        function onGajiPokokMultiRowInput(el) {
+            const row = el.closest('.payroll-row');
+            if (!row) return;
+
+            const subInputs = row.querySelectorAll('.batch-sub-item');
+            let totalGajiPokok = 0;
+
+            subInputs.forEach(input => {
+                const hk = parseFloat(input.value) || 0;
+                const satuan = input.getAttribute('data-satuan') || 'Harian';
+                const tarif = parseFloat(input.getAttribute('data-tarif')) || 0;
+                const itemId = input.getAttribute('data-item-id');
+                const subGp = (satuan === 'Bulanan') ? tarif : (hk * tarif);
+                totalGajiPokok += subGp;
+
+                // Update sub display if available
+                const subDisplayEl = row.querySelector('.sub-gp-item-' + itemId);
+                if (subDisplayEl) {
+                    subDisplayEl.textContent = 'Rp ' + Math.round(subGp).toLocaleString('id-ID');
+                }
+            });
+
+            const totalBonus = parseFloat(row.getAttribute('data-bonus-total')) || 0;
+            const totalDeductions = parseFloat(row.getAttribute('data-deductions-total')) || 0;
+            let takeHomePay = totalGajiPokok + totalBonus - totalDeductions;
+
+            row.setAttribute('data-take-home-pay', takeHomePay);
+
+            const pokokEl = row.querySelector('.row-gaji-pokok-cell');
+            const thpEl = row.querySelector('.row-take-home-pay-cell');
+
+            if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(totalGajiPokok).toLocaleString('id-ID');
+            if (thpEl) thpEl.textContent = 'Rp ' + Math.round(takeHomePay).toLocaleString('id-ID');
+
+            recalculateHeaderTotalNett();
+        }
+
         async function submitBatchGajiPokok(btn) {
             const rows = document.querySelectorAll('.payroll-row');
             if (!rows.length) return;
@@ -1545,14 +1604,28 @@
             rows.forEach(row => {
                 const id = row.getAttribute('data-id');
                 const karyawanId = row.getAttribute('data-karyawan-id');
-                const hkInput = row.querySelector('.batch-hari-kerja');
+                const subInputs = row.querySelectorAll('.batch-sub-item');
 
-                if (hkInput) {
-                    items.push({
-                        id: id,
-                        karyawan_id: karyawanId,
-                        hari_kerja: parseFloat(hkInput.value) || 0,
+                if (subInputs.length > 0) {
+                    subInputs.forEach(subInput => {
+                        const itemId = subInput.getAttribute('data-item-id');
+                        const pNum = subInput.getAttribute('data-periode');
+                        items.push({
+                            id: itemId,
+                            karyawan_id: karyawanId,
+                            pilihan_periode: pNum,
+                            hari_kerja: parseFloat(subInput.value) || 0,
+                        });
                     });
+                } else {
+                    const hkInput = row.querySelector('.batch-hari-kerja');
+                    if (hkInput) {
+                        items.push({
+                            id: id,
+                            karyawan_id: karyawanId,
+                            hari_kerja: parseFloat(hkInput.value) || 0,
+                        });
+                    }
                 }
             });
 
