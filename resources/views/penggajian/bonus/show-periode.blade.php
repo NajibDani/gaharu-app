@@ -826,9 +826,12 @@
                             text: res.message || 'Seluruh data bonus & lembur berhasil diperbarui.',
                             timer: 2000,
                             showConfirmButton: false
+                        }).then(() => {
+                            window.location.reload();
                         });
                     } else {
                         alert(res.message || 'Seluruh data bonus & lembur berhasil disimpan!');
+                        window.location.reload();
                     }
                 } else {
                     alert('Gagal menyimpan: ' + (res.message || 'Terjadi kesalahan sistem.'));

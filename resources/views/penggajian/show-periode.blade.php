@@ -208,37 +208,196 @@
                                     ? ($payroll->satuan_gaji_2 ?? $payroll->karyawan->satuan_gaji_2 ?? 'Harian')
                                     : ($payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian');
 
-                                $hasMultiplePeriods = ($payroll->items && $payroll->items->count() > 1);
+                                $hasMasterMultiplePeriods = !is_null($payroll->karyawan->gaji_pokok_2 ?? null);
+                                $hasMultiplePeriods = ($payroll->items && $payroll->items->count() > 1) || $hasMasterMultiplePeriods;
 
                                 // Rincian per periode (satuan, unit suffix, tarif, dsb)
-                                $itemBreakdowns = ($hasMultiplePeriods ? $payroll->items->sortBy('pilihan_periode') : collect([$payroll]))->map(function($it) use ($payroll) {
-                                    $pNum = $it->pilihan_periode ?? 1;
-                                    $sat = ($pNum == 2 && ($it->satuan_gaji_2 || ($payroll->karyawan->satuan_gaji_2 ?? null)))
-                                        ? ($it->satuan_gaji_2 ?? $it->satuan_gaji ?? $payroll->karyawan->satuan_gaji_2 ?? $payroll->karyawan->satuan_gaji ?? 'Harian')
-                                        : ($it->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian');
+                                if ($hasMultiplePeriods) {
+                                    $existingItemsByPeriode = $payroll->items ? $payroll->items->keyBy(function($item) {
+                                        return (int)($item->pilihan_periode ?? 1);
+                                    }) : collect();
 
+                                    // Filter periode berdasarkan tanggal berlaku vs bulan penggajian
+                                    $kw = $payroll->karyawan;
+                                    $periodeMonthStart = \Carbon\Carbon::parse($periode . '-01');
+                                    $periodeMonthEnd   = $periodeMonthStart->copy()->endOfMonth();
+
+                                    $candidatePeriodes = [];
+
+                                    // Cek P1: overlap jika tanggal_mulai..tanggal_selesai beririsan dengan bulan ini
+                                    $p1Mulai   = $kw->tanggal_mulai ? \Carbon\Carbon::parse($kw->tanggal_mulai) : null;
+                                    $p1Selesai = $kw->tanggal_selesai ? \Carbon\Carbon::parse($kw->tanggal_selesai) : null;
+                                    $p1Active  = true; // default aktif jika tidak ada tanggal
+                                    if ($p1Mulai && $p1Selesai) {
+                                        // P1 aktif jika rentang P1 beririsan dengan bulan penggajian
+                                        $p1Active = $p1Mulai->lte($periodeMonthEnd) && $p1Selesai->gte($periodeMonthStart);
+                                    } elseif ($p1Mulai) {
+                                        $p1Active = $p1Mulai->lte($periodeMonthEnd);
+                                    } elseif ($p1Selesai) {
+                                        $p1Active = $p1Selesai->gte($periodeMonthStart);
+                                    }
+                                    if ($p1Active) $candidatePeriodes[] = 1;
+
+                                    // Cek P2: overlap jika tanggal_mulai_2..tanggal_selesai_2 beririsan dengan bulan ini
+                                    $p2Mulai   = $kw->tanggal_mulai_2 ? \Carbon\Carbon::parse($kw->tanggal_mulai_2) : null;
+                                    $p2Selesai = $kw->tanggal_selesai_2 ? \Carbon\Carbon::parse($kw->tanggal_selesai_2) : null;
+                                    $p2Active  = false; // default tidak aktif jika tidak ada tanggal P2
+                                    if ($p2Mulai && $p2Selesai) {
+                                        $p2Active = $p2Mulai->lte($periodeMonthEnd) && $p2Selesai->gte($periodeMonthStart);
+                                    } elseif ($p2Mulai) {
+                                        $p2Active = $p2Mulai->lte($periodeMonthEnd);
+                                    } elseif ($kw->gaji_pokok_2 !== null) {
+                                        $p2Active = true; // P2 punya tarif tapi tanpa tanggal, anggap aktif
+                                    }
+                                    if ($p2Active) $candidatePeriodes[] = 2;
+
+                                    // Hanya tampilkan periode yang tanggal berlakunya beririsan dengan bulan penggajian ini.
+                                    // Jika karyawan memiliki tanggal di master, filter secara ketat.
+                                    $hasConfiguredDates = ($p1Mulai || $p1Selesai || $p2Mulai || $p2Selesai);
+                                    if ($hasConfiguredDates) {
+                                        // Jangan masukkan periode kadaluarsa meskipun ada di items DB
+                                        // Jika ada item di DB yang periode-nya aktif, pastikan masuk
+                                    } else {
+                                        // Jika tidak ada konfigurasi tanggal sama sekali di master data, tampilkan periode default yang ada
+                                        if (empty($candidatePeriodes)) {
+                                            $candidatePeriodes = [1, 2];
+                                        }
+                                        if ($payroll->items) {
+                                            foreach ($payroll->items as $it) {
+                                                $pNum = (int)($it->pilihan_periode ?? 1);
+                                                if (!in_array($pNum, $candidatePeriodes)) {
+                                                    $candidatePeriodes[] = $pNum;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    sort($candidatePeriodes);
+                                    if (empty($candidatePeriodes)) {
+                                        $candidatePeriodes = [1];
+                                    }
+
+                                    // Jika setelah filter hanya 1 periode aktif, perlakukan sebagai single-period
+                                    $targetPeriodes = $candidatePeriodes;
+                                    if (count($targetPeriodes) <= 1) {
+                                        $hasMultiplePeriods = false;
+                                        // Tentukan periode tunggal yang aktif
+                                        $activePNum = $targetPeriodes[0] ?? 1;
+                                        $activeItem = $existingItemsByPeriode->get($activePNum);
+
+                                        // Update satuanRow dan tarifHarian sesuai periode aktif
+                                        if ($activePNum === 2) {
+                                            $satuanRow = $kw->satuan_gaji_2 ?? $kw->satuan_gaji ?? 'Harian';
+                                            $gpActive = ($kw->gaji_pokok_2 !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
+                                            $umActive = ($kw->uang_makan_2 !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
+                                            $utActive = ($kw->uang_transport_2 !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+                                        } else {
+                                            $satuanRow = $kw->satuan_gaji ?? 'Harian';
+                                            $gpActive = (float)($kw->gaji_pokok ?? 0);
+                                            $umActive = (float)($kw->uang_makan ?? 0);
+                                            $utActive = (float)($kw->uang_transport ?? 0);
+                                        }
+                                        $tarActive = ($activeItem && $activeItem->tarif_harian_total > 0)
+                                            ? (float)$activeItem->tarif_harian_total
+                                            : ($gpActive + $umActive + $utActive);
+                                        $tarifHarian = $tarActive;
+
+                                        $sat = $satuanRow;
+                                        $suffix = $sat === 'Per Jam' ? 'jam' : ($sat === 'Bulanan' ? 'bln' : 'hr');
+                                        $fullUnit = $sat === 'Per Jam' ? 'Jam' : ($sat === 'Bulanan' ? 'Bulan' : 'Hari');
+                                        $perLabel = $sat === 'Per Jam' ? '/jam' : ($sat === 'Bulanan' ? '/bln' : '/hari');
+
+                                        $activeHk = $activeItem ? $activeItem->hari_kerja : ($payroll->hari_kerja ?? null);
+                                        $activeGu = $activeItem ? (float)$activeItem->gaji_utama : (float)($payroll->gaji_utama ?? 0);
+
+                                        // Jika ada activeItem khusus (misal P2), sesuaikan tampilan single-period agar tidak menampilkan data gabungan periode kadaluarsa
+                                        if ($activeItem) {
+                                            $payroll->hari_kerja = $activeHk;
+                                            $gajiPokok = $activeGu;
+                                            $earnings = (float)($activeItem->total_earnings > 0 ? $activeItem->total_earnings : ($gajiPokok + $totalBonus));
+                                            $payroll->take_home_pay = $earnings - $totalPotongan;
+                                        }
+
+                                        $itemBreakdowns = collect([[
+                                            'id' => $activeItem ? $activeItem->id : ($payroll->id ?? ''),
+                                            'periode' => $activePNum,
+                                            'hari_kerja' => $activeHk,
+                                            'satuan' => $sat,
+                                            'suffix' => $suffix,
+                                            'full_unit' => $fullUnit,
+                                            'per_label' => $perLabel,
+                                            'tarif' => $tarActive,
+                                            'gaji_utama' => $activeGu,
+                                            'tanggal_mulai' => $activeItem->tanggal_mulai ?? $payroll->tanggal_mulai ?? null,
+                                            'tanggal_selesai' => $activeItem->tanggal_selesai ?? $payroll->tanggal_selesai ?? null,
+                                        ]]);
+                                    } else {
+
+                                    $itemBreakdowns = collect($targetPeriodes)->map(function($pNum) use ($existingItemsByPeriode, $payroll) {
+                                        $kw = $payroll->karyawan;
+                                        $it = $existingItemsByPeriode->get($pNum);
+
+                                        if ($pNum === 2) {
+                                            $sat = $it->satuan_gaji_2 ?? $it->satuan_gaji ?? $kw->satuan_gaji_2 ?? $kw->satuan_gaji ?? 'Harian';
+                                            $gp = ($kw->gaji_pokok_2 !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
+                                            $um = ($kw->uang_makan_2 !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
+                                            $ut = ($kw->uang_transport_2 !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+                                        } else {
+                                            $sat = $it->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian';
+                                            $gp = (float)($kw->gaji_pokok ?? 0);
+                                            $um = (float)($kw->uang_makan ?? 0);
+                                            $ut = (float)($kw->uang_transport ?? 0);
+                                        }
+
+                                        $tar = ($it && $it->tarif_harian_total > 0)
+                                            ? (float)$it->tarif_harian_total
+                                            : ($gp + $um + $ut);
+
+                                        $hk = $it ? $it->hari_kerja : null;
+                                        $gu = $it ? (float)$it->gaji_utama : 0;
+                                        $itemId = $it ? $it->id : '';
+
+                                        $suffix = $sat === 'Per Jam' ? 'jam' : ($sat === 'Bulanan' ? 'bln' : 'hr');
+                                        $fullUnit = $sat === 'Per Jam' ? 'Jam' : ($sat === 'Bulanan' ? 'Bulan' : 'Hari');
+                                        $perLabel = $sat === 'Per Jam' ? '/jam' : ($sat === 'Bulanan' ? '/bln' : '/hari');
+
+                                        return [
+                                            'id' => $itemId,
+                                            'periode' => $pNum,
+                                            'hari_kerja' => $hk,
+                                            'satuan' => $sat,
+                                            'suffix' => $suffix,
+                                            'full_unit' => $fullUnit,
+                                            'per_label' => $perLabel,
+                                            'tarif' => $tar,
+                                            'gaji_utama' => $gu,
+                                            'tanggal_mulai' => $it->tanggal_mulai ?? null,
+                                            'tanggal_selesai' => $it->tanggal_selesai ?? null,
+                                        ];
+                                    });
+                                    } // end multi-period branch
+                                } else {
+                                    $tar = $payroll->tarif_harian_total > 0
+                                        ? $payroll->tarif_harian_total
+                                        : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
+                                    $sat = $satuanRow;
                                     $suffix = $sat === 'Per Jam' ? 'jam' : ($sat === 'Bulanan' ? 'bln' : 'hr');
                                     $fullUnit = $sat === 'Per Jam' ? 'Jam' : ($sat === 'Bulanan' ? 'Bulan' : 'Hari');
                                     $perLabel = $sat === 'Per Jam' ? '/jam' : ($sat === 'Bulanan' ? '/bln' : '/hari');
 
-                                    $tar = $it->tarif_harian_total > 0
-                                        ? $it->tarif_harian_total
-                                        : (($it->gaji_pokok ?? 0) + ($it->tunjangan_makan ?? 0) + ($it->tunjangan_transport ?? 0));
-
-                                    return [
-                                        'id' => $it->id,
-                                        'periode' => $pNum,
-                                        'hari_kerja' => $it->hari_kerja,
+                                    $itemBreakdowns = collect([[
+                                        'id' => $payroll->id,
+                                        'periode' => $payroll->pilihan_periode ?? 1,
+                                        'hari_kerja' => $payroll->hari_kerja,
                                         'satuan' => $sat,
                                         'suffix' => $suffix,
                                         'full_unit' => $fullUnit,
                                         'per_label' => $perLabel,
                                         'tarif' => $tar,
-                                        'gaji_utama' => $it->gaji_utama,
-                                        'tanggal_mulai' => $it->tanggal_mulai,
-                                        'tanggal_selesai' => $it->tanggal_selesai,
-                                    ];
-                                })->values();
+                                        'gaji_utama' => $payroll->gaji_utama,
+                                        'tanggal_mulai' => $payroll->tanggal_mulai,
+                                        'tanggal_selesai' => $payroll->tanggal_selesai,
+                                    ]]);
+                                }
 
                                 $allUnits = $itemBreakdowns->pluck('satuan')->unique();
                                 $isSameUnit = $allUnits->count() <= 1;
@@ -414,6 +573,8 @@
                                 data-deductions-total="{{ (float)$totalPotongan }}"
                                 data-take-home-pay="{{ (float)$payroll->take_home_pay }}"
                                 data-has-multiple="{{ $hasMultiplePeriods ? '1' : '0' }}"
+                                data-active-periode="{{ $itemBreakdowns->first()['periode'] ?? ($payroll->pilihan_periode ?? 1) }}"
+                                data-active-item-id="{{ $itemBreakdowns->first()['id'] ?? $payroll->id }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
@@ -428,7 +589,7 @@
                                                 <span>{{ $payroll->karyawan->nama_karyawan ?? '-' }}</span>
                                                 @if($hasMultiplePeriods)
                                                     <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap" title="Akumulasi seluruh periode dalam bulan ini">
-                                                        &#10003; {{ $payroll->items->count() }} Periode
+                                                        &#10003; {{ $itemBreakdowns->count() }} Periode
                                                     </span>
                                                 @endif
                                             </div>
@@ -528,7 +689,7 @@
                                     @if($hasMultiplePeriods)
                                         <div class="flex flex-col items-end gap-0.5 mt-0.5">
                                             @foreach($itemBreakdowns as $ib)
-                                                <span class="text-[10px] text-indigo-700 font-semibold whitespace-nowrap">P{{ $ib['periode'] }}: <span class="sub-gp-item-{{ $ib['id'] }}">Rp&nbsp;{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span></span>
+                                                <span class="text-[10px] text-indigo-700 font-semibold whitespace-nowrap">P{{ $ib['periode'] }}: <span class="sub-gp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-gp-item-' . $ib['id'] : '' }}">Rp&nbsp;{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span></span>
                                             @endforeach
                                         </div>
                                     @endif
@@ -1571,11 +1732,18 @@
                 const satuan = input.getAttribute('data-satuan') || 'Harian';
                 const tarif = parseFloat(input.getAttribute('data-tarif')) || 0;
                 const itemId = input.getAttribute('data-item-id');
+                const pNum = input.getAttribute('data-periode');
                 const subGp = (satuan === 'Bulanan') ? tarif : (hk * tarif);
                 totalGajiPokok += subGp;
 
                 // Update sub display if available
-                const subDisplayEl = row.querySelector('.sub-gp-item-' + itemId);
+                let subDisplayEl = null;
+                if (itemId) {
+                    subDisplayEl = row.querySelector('.sub-gp-item-' + itemId);
+                }
+                if (!subDisplayEl && pNum) {
+                    subDisplayEl = row.querySelector('.sub-gp-p-' + pNum);
+                }
                 if (subDisplayEl) {
                     subDisplayEl.textContent = 'Rp ' + Math.round(subGp).toLocaleString('id-ID');
                 }
@@ -1620,9 +1788,12 @@
                 } else {
                     const hkInput = row.querySelector('.batch-hari-kerja');
                     if (hkInput) {
+                        const activeItemId = row.getAttribute('data-active-item-id') || id;
+                        const activePeriode = row.getAttribute('data-active-periode') || 1;
                         items.push({
-                            id: id,
+                            id: activeItemId,
                             karyawan_id: karyawanId,
+                            pilihan_periode: activePeriode,
                             hari_kerja: parseFloat(hkInput.value) || 0,
                         });
                     }
@@ -1662,9 +1833,12 @@
                             text: res.message || 'Waktu kerja & gaji pokok berhasil diperbarui.',
                             timer: 2000,
                             showConfirmButton: false
+                        }).then(() => {
+                            window.location.reload();
                         });
                     } else {
                         alert(res.message || 'Waktu kerja & gaji pokok berhasil disimpan!');
+                        window.location.reload();
                     }
                 } else {
                     alert('Gagal menyimpan: ' + (res.message || 'Terjadi kesalahan sistem.'));

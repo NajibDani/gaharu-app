@@ -99,6 +99,23 @@ class BonusPenggajianController extends Controller
             })
             ->get();
 
+        // Bersihkan duplikat otomatis di database: jika ada karyawan yang punya slip aktif (hari_kerja > 0)
+        // dan juga punya slip kosong (hari_kerja == 0 & draft), gabungkan potongan terlambat ke slip aktif dan hapus slip kosong
+        $groupedByKaryawan = $rawPayrolls->groupBy('karyawan_id');
+        foreach ($groupedByKaryawan as $empId => $items) {
+            if ($items->count() > 1) {
+                $activeItem = $items->where('hari_kerja', '>', 0)->sortByDesc('id')->first();
+                $zeroItems = $items->where('hari_kerja', '<=', 0)->where('status', 'draft')->where('status_jurnal', false);
+                if ($activeItem && $zeroItems->isNotEmpty()) {
+                    $extraLate = $zeroItems->sum('potongan_terlambat');
+                    $zeroItemsIds = $zeroItems->pluck('id')->toArray();
+                    Penggajian::whereIn('id', $zeroItemsIds)->delete();
+                    
+                    $rawPayrolls = $rawPayrolls->reject(fn($p) => in_array($p->id, $zeroItemsIds));
+                }
+            }
+        }
+
         $karyawanIds = $rawPayrolls->pluck('karyawan_id')->unique();
 
         $hasPotDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'potongan_deposit');
@@ -225,7 +242,11 @@ class BonusPenggajianController extends Controller
             return redirect()->back()->with('error', 'Perubahan ditolak karena periode sudah disetujui (Approved).');
         }
 
-        $satuanGaji = $payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian';
+        $pilihanP = $payroll->pilihan_periode ?? 1;
+        $kw = $payroll->karyawan;
+        $satuanGaji = ($pilihanP == 2 && ($payroll->satuan_gaji_2 || ($kw->satuan_gaji_2 ?? null)))
+            ? ($payroll->satuan_gaji_2 ?? $kw->satuan_gaji_2 ?? $payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian')
+            : ($payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian');
 
         $request->validate([
             'jam_lembur'                  => 'nullable|numeric|min:0',
@@ -245,10 +266,9 @@ class BonusPenggajianController extends Controller
             return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', $value));
         };
 
-        $kw = $payroll->karyawan;
-        $kwGp = (float)($kw->gaji_pokok ?? 0);
-        $kwUm = (float)($kw->uang_makan ?? 0);
-        $kwUt = (float)($kw->uang_transport ?? 0);
+        $kwGp = ($pilihanP == 2 && ($kw->gaji_pokok_2 ?? null) !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
+        $kwUm = ($pilihanP == 2 && ($kw->uang_makan_2 ?? null) !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
+        $kwUt = ($pilihanP == 2 && ($kw->uang_transport_2 ?? null) !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
 
         $tarifHarian = $payroll->tarif_harian_total > 0
             ? (float)$payroll->tarif_harian_total
@@ -300,6 +320,36 @@ class BonusPenggajianController extends Controller
             'total_gaji_bersih'           => $totalGajiBersih,
         ]);
 
+        // Jika karyawan memiliki baris penggajian lain di periode yang sama (selain baris utama ini),
+        // reset komponen bonus baris lainnya menjadi 0 agar tidak terakumulasi ganda saat grouping
+        $otherSlips = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+            ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+            ->where('id', '!=', $payroll->id)
+            ->where('status', '!=', 'approved')
+            ->get();
+
+        foreach ($otherSlips as $other) {
+            $otherGajiUtama = floatval($other->gaji_utama ?? 0);
+            $otherEarnings = $otherGajiUtama;
+            $otherDeductions = floatval($other->total_deductions ?? 0);
+            $other->update([
+                'jam_lembur'                  => 0,
+                'lembur'                      => 0,
+                'banyak_target'               => 0,
+                'bonus_target'                => 0,
+                'catatan_bonus_target'        => null,
+                'banyak_tanggal_merah'        => 0,
+                'bonus_tanggal_merah'         => 0,
+                'catatan_bonus_tanggal_merah' => null,
+                'banyak_birthday_service'     => 0,
+                'bonus_birthday'              => 0,
+                'pengembalian_deposit'        => 0,
+                'bonus_dll'                   => 0,
+                'total_earnings'              => $otherEarnings,
+                'total_gaji_bersih'           => $otherEarnings - $otherDeductions,
+            ]);
+        }
+
         return redirect()->route('penggajian.bonus.periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $payroll->outlet ?? 'Gaharu'])
             ->with('success', "Data bonus & lembur karyawan {$payroll->karyawan->nama_karyawan} berhasil diperbarui.");
     }
@@ -334,22 +384,26 @@ class BonusPenggajianController extends Controller
             $payroll = Penggajian::find($payrollId);
             if (!$payroll || $payroll->status === 'approved') continue;
 
-            $satuanGaji = $payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian';
+            $pilihanP = $payroll->pilihan_periode ?? 1;
             $kw = $payroll->karyawan;
-            $kwGp = (float)($kw->gaji_pokok ?? 0);
-            $kwUm = (float)($kw->uang_makan ?? 0);
-            $kwUt = (float)($kw->uang_transport ?? 0);
+            $satuanGaji = ($pilihanP == 2 && ($payroll->satuan_gaji_2 || ($kw->satuan_gaji_2 ?? null)))
+                ? ($payroll->satuan_gaji_2 ?? $kw->satuan_gaji_2 ?? $payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian')
+                : ($payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian');
+
+            $kwGp = ($pilihanP == 2 && ($kw->gaji_pokok_2 ?? null) !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
+            $kwUm = ($pilihanP == 2 && ($kw->uang_makan_2 ?? null) !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
+            $kwUt = ($pilihanP == 2 && ($kw->uang_transport_2 ?? null) !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
 
             $tarifHarian = $payroll->tarif_harian_total > 0
                 ? (float)$payroll->tarif_harian_total
                 : ((($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0)) ?: ($kwGp + $kwUm + $kwUt));
 
-            $jamLembur             = floatval($item['jam_lembur'] ?? $payroll->jam_lembur ?? 0);
-            $banyakTarget          = intval($item['banyak_target'] ?? $payroll->banyak_target ?? 0);
-            $banyakTanggalMerah    = intval($item['banyak_tanggal_merah'] ?? $payroll->banyak_tanggal_merah ?? 0);
-            $banyakBirthdayService = intval($item['banyak_birthday_service'] ?? $payroll->banyak_birthday_service ?? 0);
-            $pengembalianDeposit   = isset($item['pengembalian_deposit']) ? $cleanRupiah($item['pengembalian_deposit']) : (float)$payroll->pengembalian_deposit;
-            $bonusDll              = isset($item['bonus_dll']) ? $cleanRupiah($item['bonus_dll']) : (float)$payroll->bonus_dll;
+            $jamLembur             = array_key_exists('jam_lembur', $item) ? floatval($item['jam_lembur']) : floatval($payroll->jam_lembur ?? 0);
+            $banyakTarget          = array_key_exists('banyak_target', $item) ? intval($item['banyak_target']) : intval($payroll->banyak_target ?? 0);
+            $banyakTanggalMerah    = array_key_exists('banyak_tanggal_merah', $item) ? intval($item['banyak_tanggal_merah']) : intval($payroll->banyak_tanggal_merah ?? 0);
+            $banyakBirthdayService = array_key_exists('banyak_birthday_service', $item) ? intval($item['banyak_birthday_service']) : intval($payroll->banyak_birthday_service ?? 0);
+            $pengembalianDeposit   = array_key_exists('pengembalian_deposit', $item) ? $cleanRupiah($item['pengembalian_deposit']) : (float)$payroll->pengembalian_deposit;
+            $bonusDll              = array_key_exists('bonus_dll', $item) ? $cleanRupiah($item['bonus_dll']) : (float)$payroll->bonus_dll;
 
             $lembur               = $jamLembur * 10000;
             $bonusBirthdayService = $banyakBirthdayService * 5000;
@@ -360,10 +414,10 @@ class BonusPenggajianController extends Controller
                 $catatanTarget       = null;
                 $catatanTanggalMerah = null;
             } else {
-                $bonusTarget         = isset($item['bonus_target']) ? $cleanRupiah($item['bonus_target']) : ($banyakTarget > 0 ? $banyakTarget * $tarifHarian : (float)$payroll->bonus_target);
-                $bonusTanggalMerah   = isset($item['bonus_tanggal_merah']) ? $cleanRupiah($item['bonus_tanggal_merah']) : ($banyakTanggalMerah > 0 ? $banyakTanggalMerah * $tarifHarian : (float)$payroll->bonus_tanggal_merah);
-                $catatanTarget       = $item['catatan_bonus_target'] ?? $payroll->catatan_bonus_target;
-                $catatanTanggalMerah = $item['catatan_bonus_tanggal_merah'] ?? $payroll->catatan_bonus_tanggal_merah;
+                $bonusTarget         = array_key_exists('bonus_target', $item) ? $cleanRupiah($item['bonus_target']) : ($banyakTarget > 0 ? $banyakTarget * $tarifHarian : (float)$payroll->bonus_target);
+                $bonusTanggalMerah   = array_key_exists('bonus_tanggal_merah', $item) ? $cleanRupiah($item['bonus_tanggal_merah']) : ($banyakTanggalMerah > 0 ? $banyakTanggalMerah * $tarifHarian : (float)$payroll->bonus_tanggal_merah);
+                $catatanTarget       = array_key_exists('catatan_bonus_target', $item) ? $item['catatan_bonus_target'] : $payroll->catatan_bonus_target;
+                $catatanTanggalMerah = array_key_exists('catatan_bonus_tanggal_merah', $item) ? $item['catatan_bonus_tanggal_merah'] : $payroll->catatan_bonus_tanggal_merah;
             }
 
             $gajiUtama = floatval($payroll->gaji_utama ?? 0);
@@ -388,6 +442,35 @@ class BonusPenggajianController extends Controller
                 'total_earnings'              => $totalEarnings,
                 'total_gaji_bersih'           => $totalGajiBersih,
             ]);
+
+            // Bersihkan/sinkronkan juga slip lain karyawan yang sama di periode yang sama
+            $otherSlips = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+                ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+                ->where('id', '!=', $payroll->id)
+                ->where('status', '!=', 'approved')
+                ->get();
+
+            foreach ($otherSlips as $other) {
+                $otherGajiUtama = floatval($other->gaji_utama ?? 0);
+                $otherEarnings = $otherGajiUtama;
+                $otherDeductions = floatval($other->total_deductions ?? 0);
+                $other->update([
+                    'jam_lembur'                  => 0,
+                    'lembur'                      => 0,
+                    'banyak_target'               => 0,
+                    'bonus_target'                => 0,
+                    'catatan_bonus_target'        => null,
+                    'banyak_tanggal_merah'        => 0,
+                    'bonus_tanggal_merah'         => 0,
+                    'catatan_bonus_tanggal_merah' => null,
+                    'banyak_birthday_service'     => 0,
+                    'bonus_birthday'              => 0,
+                    'pengembalian_deposit'        => 0,
+                    'bonus_dll'                   => 0,
+                    'total_earnings'              => $otherEarnings,
+                    'total_gaji_bersih'           => $otherEarnings - $otherDeductions,
+                ]);
+            }
 
             $updatedCount++;
         }

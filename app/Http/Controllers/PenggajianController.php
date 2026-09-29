@@ -1538,6 +1538,7 @@ class PenggajianController extends Controller
             } elseif ($karyawanId && $periode) {
                 $payroll = Penggajian::where('karyawan_id', $karyawanId)
                     ->where('periode_bulan_tahun', $periode)
+                    ->where('pilihan_periode', $item['pilihan_periode'] ?? 1)
                     ->first();
             }
 

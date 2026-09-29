@@ -101,6 +101,23 @@ class PotonganPenggajianController extends Controller
             })
             ->get();
 
+        // Bersihkan duplikat otomatis di database: jika ada karyawan yang punya slip aktif (hari_kerja > 0)
+        // dan juga punya slip kosong (hari_kerja == 0 & draft), gabungkan potongan terlambat ke slip aktif dan hapus slip kosong
+        $groupedByKaryawan = $rawPayrolls->groupBy('karyawan_id');
+        foreach ($groupedByKaryawan as $empId => $items) {
+            if ($items->count() > 1) {
+                $activeItem = $items->where('hari_kerja', '>', 0)->sortByDesc('id')->first();
+                $zeroItems = $items->where('hari_kerja', '<=', 0)->where('status', 'draft')->where('status_jurnal', false);
+                if ($activeItem && $zeroItems->isNotEmpty()) {
+                    $extraLate = $zeroItems->sum('potongan_terlambat');
+                    $zeroItemsIds = $zeroItems->pluck('id')->toArray();
+                    Penggajian::whereIn('id', $zeroItemsIds)->delete();
+                    
+                    $rawPayrolls = $rawPayrolls->reject(fn($p) => in_array($p->id, $zeroItemsIds));
+                }
+            }
+        }
+
         $karyawanIds = $rawPayrolls->pluck('karyawan_id')->unique();
         $terlambatMap = Keterlambatan::whereIn('karyawan_id', $karyawanIds)
             ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$targetPeriode])
@@ -218,6 +235,27 @@ class PotonganPenggajianController extends Controller
             'total_gaji_bersih'    => $totalGajiBersih,
         ]);
 
+        // Sinkronkan slip lain karyawan yang sama di periode yang sama
+        $otherSlips = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+            ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+            ->where('id', '!=', $payroll->id)
+            ->where('status', '!=', 'approved')
+            ->get();
+
+        foreach ($otherSlips as $other) {
+            $otherEarnings = floatval($other->total_earnings ?? 0);
+            $other->update([
+                'potongan_terlambat'   => 0,
+                'potongan_inventaris'  => 0,
+                'potongan_kasbon'      => 0,
+                'potongan_deposit'     => 0,
+                'potongan_dll'         => 0,
+                'catatan_potongan_dll' => null,
+                'total_deductions'     => 0,
+                'total_gaji_bersih'    => $otherEarnings,
+            ]);
+        }
+
         return redirect()->route('penggajian.potongan.periode', ['periode' => $payroll->periode_bulan_tahun, 'outlet' => $payroll->outlet ?? 'Gaharu'])
             ->with('success', "Data potongan karyawan {$payroll->karyawan->nama_karyawan} berhasil diperbarui.");
     }
@@ -263,11 +301,11 @@ class PotonganPenggajianController extends Controller
             $karyawan = $payroll ? $payroll->karyawan : ($karyawanId ? Karyawan::find($karyawanId) : null);
             if (!$karyawan && !$payroll) continue;
 
-            $potonganTerlambat  = isset($item['potongan_terlambat']) ? $cleanRupiah($item['potongan_terlambat']) : (float)($payroll->potongan_terlambat ?? 0);
-            $potonganInventaris = isset($item['potongan_inventaris']) ? $cleanRupiah($item['potongan_inventaris']) : (float)($payroll->potongan_inventaris ?? 0);
-            $potonganKasbon     = isset($item['potongan_kasbon']) ? $cleanRupiah($item['potongan_kasbon']) : (float)($payroll->potongan_kasbon ?? 0);
-            $potonganDeposit    = isset($item['potongan_deposit']) ? $cleanRupiah($item['potongan_deposit']) : (float)($payroll->potongan_deposit ?? 0);
-            $potonganDll        = isset($item['potongan_dll']) ? $cleanRupiah($item['potongan_dll']) : (float)($payroll->potongan_dll ?? 0);
+            $potonganTerlambat  = array_key_exists('potongan_terlambat', $item) ? $cleanRupiah($item['potongan_terlambat']) : (float)($payroll->potongan_terlambat ?? 0);
+            $potonganInventaris = array_key_exists('potongan_inventaris', $item) ? $cleanRupiah($item['potongan_inventaris']) : (float)($payroll->potongan_inventaris ?? 0);
+            $potonganKasbon     = array_key_exists('potongan_kasbon', $item) ? $cleanRupiah($item['potongan_kasbon']) : (float)($payroll->potongan_kasbon ?? 0);
+            $potonganDeposit    = array_key_exists('potongan_deposit', $item) ? $cleanRupiah($item['potongan_deposit']) : (float)($payroll->potongan_deposit ?? 0);
+            $potonganDll        = array_key_exists('potongan_dll', $item) ? $cleanRupiah($item['potongan_dll']) : (float)($payroll->potongan_dll ?? 0);
             $catatanPotonganDll = array_key_exists('catatan_potongan_dll', $item) ? $item['catatan_potongan_dll'] : ($payroll->catatan_potongan_dll ?? null);
 
             $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
@@ -290,6 +328,27 @@ class PotonganPenggajianController extends Controller
                     'total_deductions'     => $totalDeductions,
                     'total_gaji_bersih'    => $totalGajiBersih,
                 ]);
+
+                // Sinkronkan slip lain karyawan yang sama di periode yang sama
+                $otherSlips = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+                    ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+                    ->where('id', '!=', $payroll->id)
+                    ->where('status', '!=', 'approved')
+                    ->get();
+
+                foreach ($otherSlips as $other) {
+                    $otherEarnings = floatval($other->total_earnings ?? 0);
+                    $other->update([
+                        'potongan_terlambat'   => 0,
+                        'potongan_inventaris'  => 0,
+                        'potongan_kasbon'      => 0,
+                        'potongan_deposit'     => 0,
+                        'potongan_dll'         => 0,
+                        'catatan_potongan_dll' => null,
+                        'total_deductions'     => 0,
+                        'total_gaji_bersih'    => $otherEarnings,
+                    ]);
+                }
             } else {
                 $satuanGaji = $karyawan->satuan_gaji ?? 'Harian';
                 $gajiPokok = floatval($karyawan->gaji_pokok ?? 0);
