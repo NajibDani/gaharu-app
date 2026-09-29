@@ -5,51 +5,43 @@
             <x-outlet-selector :selectedOutlet="$selectedOutlet" />
 
             {{-- PAGE HEADER --}}
+            {{-- PAGE HEADER --}}
             @php
                 $totalGajiNettPeriode = $payrolls->sum('take_home_pay');
+                $totalGajiPokokPeriode = $payrolls->sum('gaji_utama');
+                $totalBonusPeriode = $payrolls->sum(function($p) {
+                    return (float)(($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->pengembalian_deposit ?? 0) + ($p->bonus_dll ?? 0));
+                });
+                $totalPotonganPeriode = $payrolls->sum(function($p) {
+                    return (float)($p->total_deductions ?? (($p->potongan_terlambat ?? 0) + ($p->potongan_inventaris ?? 0) + ($p->potongan_kasbon ?? 0) + ($p->potongan_deposit ?? 0) + ($p->potongan_dll ?? 0)));
+                });
             @endphp
-            <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-3 mb-3">
-                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-                    {{-- Left Title & Info --}}
-                    <div class="flex items-center gap-3 flex-wrap">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-tight m-0">
-                                    Hitung Gaji Pokok
-                                </h1>
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-900 border border-amber-200/70">
-                                    Outlet {{ $selectedOutlet }}
-                                </span>
-                            </div>
-                            <p class="text-xs text-slate-500 font-medium m-0 mt-0.5">
-                                Periode: <strong class="text-slate-800">{{ \Carbon\Carbon::parse($periode . '-01')->translatedFormat('F Y') }}</strong>
-                            </p>
+            {{-- PAGE HEADER & TOOLBAR --}}
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-2.5 sm:py-3 mb-2.5">
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-2.5">
+                    {{-- Left Title & Outlet --}}
+                    <div>
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug m-0">
+                                Formulir Hitung Gaji Karyawan
+                            </h1>
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300">
+                                🏢 Outlet {{ $selectedOutlet }}
+                            </span>
                         </div>
-
-                        {{-- Total Gaji Bersih / Nett Badge --}}
-                        <div class="flex items-center gap-2 ms-0 sm:ms-2">
-                            <div id="headerTotalGajiNettBadge"
-                                 style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 1.5px solid #86efac; color: #166534; padding: 6px 14px; border-radius: 10px; box-shadow: 0 1px 3px rgba(22, 101, 52, 0.08);"
-                                 class="flex items-center gap-2">
-                                <span style="font-size: 16px;">💰</span>
-                                <div class="text-left">
-                                    <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #15803d; line-height: 1;">Total Gaji Bersih (Nett)</div>
-                                    <div style="font-size: 14px; font-weight: 900; color: #14532d; line-height: 1.2;" id="headerTotalGajiNettValue">
-                                        Rp {{ number_format($totalGajiNettPeriode, 0, ',', '.') }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        <p class="text-xs text-slate-500 font-medium m-0 mt-1 flex items-center gap-1.5">
+                            <span>📅 Periode:</span> <strong class="text-slate-800 font-bold">{{ \Carbon\Carbon::parse($periode . '-01')->translatedFormat('F Y') }}</strong>
+                        </p>
                     </div>
 
                     {{-- Right Action Buttons --}}
-                    <div class="flex items-center gap-2 flex-wrap shrink-0">
+                    <div class="flex items-center gap-1.5 flex-wrap shrink-0">
                         @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
-                        <button type="button" onclick="submitBatchGajiPokok(this)" id="btnBatchSaveGajiPokok"
-                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(122,69,23,0.25); transition: background .15s; white-space: nowrap;"
+                        <button type="button" onclick="submitBatchUnifiedPayroll(this)" id="btnBatchSaveUnifiedPayroll"
+                                style="background-color: #7A4517; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(122,69,23,0.2); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
-                                title="Simpan seluruh perubahan hari kerja / waktu kerja di halaman ini sekaligus">
-                            <span>💾</span> Simpan Semua Gaji Pokok
+                                title="Simpan seluruh formulir gaji pokok, bonus & lembur, dan potongan di halaman ini sekaligus">
+                            <span>💾</span> Simpan Formulir Gaji
                         </button>
 
                         <form action="{{ route('penggajian.auto-fill') }}" method="POST" class="inline m-0 p-0">
@@ -58,7 +50,7 @@
                             <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                             <button type="submit"
                                     onclick="return confirm('Tambahkan seluruh karyawan aktif Outlet {{ $selectedOutlet }} yang belum terdaftar ke periode {{ \App\Models\Penggajian::formatPeriode($periode) }} secara otomatis?')"
-                                    style="background-color: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; padding: 7px 13px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
+                                    style="background-color: #ffffff; color: #0f172a; border: 1.5px solid #cbd5e1; padding: 5px 11px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: background .15s; white-space: nowrap;"
                                     onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#ffffff'"
                                     title="Tambahkan otomatis semua karyawan aktif yang belum terdaftar di periode ini">
                                 <span>⚡</span> Auto-Fill
@@ -66,10 +58,10 @@
                         </form>
 
                         <button type="button" @click="openCreateModal()"
-                                style="background-color: #ffffff; color: #334155; border: 1.5px solid #cbd5e1; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background .15s; white-space: nowrap;"
+                                style="background-color: #ffffff; color: #334155; border: 1.5px solid #cbd5e1; padding: 5px 11px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#ffffff'"
                                 title="Input slip gaji baru secara manual via pop-up">
-                            <span style="font-size: 14px; line-height: 1;">+</span> Input Gaji
+                            <span style="font-size: 13px; line-height: 1;">+</span> Input Gaji
                         </button>
                         @endif
 
@@ -77,7 +69,7 @@
                               onsubmit="return confirm('Proses pembayaran dan jurnal untuk SELURUH karyawan di periode {{ \App\Models\Penggajian::formatPeriode($periode) }}?')">
                             @csrf
                             <button type="submit"
-                                    style="background-color: #059669; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(5,150,105,0.25); transition: background .15s; white-space: nowrap;"
+                                    style="background-color: #059669; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(5,150,105,0.2); transition: background .15s; white-space: nowrap;"
                                     onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">
                                 <span>💳</span> Bayar Semua
                             </button>
@@ -85,28 +77,98 @@
 
                         {{-- EXPORT EXCEL BUTTON --}}
                         <a href="{{ route('penggajian.export-excel', ['periode' => $periode, 'outlet' => $selectedOutlet]) }}"
-                           style="background-color: #166534; color: #ffffff; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 4px rgba(22,101,52,0.25); transition: background .15s; white-space: nowrap; text-decoration: none;"
+                           style="background-color: #166534; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(22,101,52,0.2); transition: background .15s; white-space: nowrap; text-decoration: none;"
                            onmouseover="this.style.background='#14532d'" onmouseout="this.style.background='#166534'"
                            title="Unduh data transfer gaji ke rekening (format Excel payroll bank)">
                             <span>📄</span> Export Excel
                         </a>
+
+                        {{-- MAXIMIZE / FULLSCREEN BUTTON --}}
+                        <button type="button" id="btnToggleMaximizePayroll" onclick="toggleMaximizePayroll()"
+                                style="background-color: #0f172a; color: #ffffff; border: 1.5px solid #334155; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(15,23,42,0.25); transition: all .15s; white-space: nowrap;"
+                                onmouseover="if(!document.body.classList.contains('payroll-maximized')) this.style.background='#334155'"
+                                onmouseout="if(!document.body.classList.contains('payroll-maximized')) this.style.background='#0f172a'"
+                                title="Layar Penuh: Sembunyikan sidebar dan maksimalkan ruang kerja tabel hitung gaji (Tekan ESC untuk keluar)">
+                            <span id="maximizeIcon" style="font-size: 13px;">⛶</span>
+                            <span id="maximizeText">Maximize</span>
+                        </button>
+                    </div>
+                </div>
+
+                {{-- 4 KARTU RINGKASAN: COMPACT & TIPIS, 1 BARIS MENYAMPING DARI KIRI KE KANAN --}}
+                <div class="summary-cards-row" style="display: flex !important; flex-direction: row !important; align-items: stretch !important; gap: 8px !important; width: 100% !important; margin-top: 8px !important; padding-top: 8px !important; border-top: 1px solid #f1f5f9 !important; box-sizing: border-box !important;">
+                    {{-- 1. Gaji Pokok Badge --}}
+                    <div style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                         title="Total Gaji Pokok Seluruh Karyawan">
+                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #475569; flex-shrink: 0;">
+                            💼
+                        </div>
+                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                            <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Pokok</div>
+                            <div style="font-size: 13px; font-weight: 900; color: #0f172a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiPokokValue">
+                                Rp {{ number_format($totalGajiPokokPeriode, 0, ',', '.') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- 2. Bonus & Lembur Badge --}}
+                    <div style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                         title="Total Bonus & Lembur Seluruh Karyawan">
+                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fefce8; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #ca8a04; flex-shrink: 0;">
+                            ⭐
+                        </div>
+                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                            <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bonus</div>
+                            <div style="font-size: 13px; font-weight: 900; color: #d97706; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBonusValue">
+                                Rp {{ number_format($totalBonusPeriode, 0, ',', '.') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- 3. Potongan Badge --}}
+                    <div style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                         title="Total Pengurangan & Potongan Seluruh Karyawan">
+                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fff1f2; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #e11d48; flex-shrink: 0;">
+                            ✂️
+                        </div>
+                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                            <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Potongan</div>
+                            <div style="font-size: 13px; font-weight: 900; color: #e11d48; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalPotonganValue">
+                                Rp {{ number_format($totalPotonganPeriode, 0, ',', '.') }}
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- 4. Total Gaji Bersih / Nett Badge --}}
+                    <div id="headerTotalGajiNettBadge"
+                         style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #cbd5e1 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                         title="Total Take Home Pay Seluruh Karyawan">
+                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #059669; flex-shrink: 0;">
+                            💰
+                        </div>
+                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                            <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #475569; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bersih (THP)</div>
+                            <div style="font-size: 13px; font-weight: 900; color: #16a34a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiNettValue">
+                                Rp {{ number_format($totalGajiNettPeriode, 0, ',', '.') }}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             @if(session('success'))
-            <div class="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-2.5 rounded-xl mb-3 text-xs font-bold flex items-center gap-2 shadow-sm">
+            <div class="bg-emerald-50 border border-emerald-300 text-emerald-900 px-3.5 py-1.5 rounded-lg mb-2 text-xs font-bold flex items-center gap-2 shadow-2xs">
                 <span class="text-emerald-600 text-sm">&#10003;</span> {{ session('success') }}
             </div>
             @endif
             @if(session('info'))
-            <div class="bg-blue-50 border border-blue-300 text-blue-900 px-4 py-2.5 rounded-xl mb-3 text-xs font-bold flex items-center gap-2 shadow-sm">
+            <div class="bg-blue-50 border border-blue-300 text-blue-900 px-3.5 py-1.5 rounded-lg mb-2 text-xs font-bold flex items-center gap-2 shadow-2xs">
                 <span class="text-blue-600 text-sm">&#9432;</span> {{ session('info') }}
             </div>
             @endif
             @if($errors->any())
-            <div class="bg-rose-50 border border-rose-300 text-rose-900 px-4 py-2.5 rounded-xl mb-3 text-xs font-bold shadow-sm">
-                <ul class="list-disc pl-5 space-y-1">
+            <div class="bg-rose-50 border border-rose-300 text-rose-900 px-3.5 py-1.5 rounded-lg mb-2 text-xs font-bold shadow-2xs">
+                <ul class="list-disc pl-5 m-0 space-y-0.5">
                     @foreach($errors->all() as $error)
                         <li>{{ $error }}</li>
                     @endforeach
@@ -119,13 +181,13 @@
                 $jbtns = $payrolls->pluck('karyawan.jabatan')->filter()->unique()->sort();
             @endphp
 
-            {{-- TOOLBAR FILTER & PENCARIAN --}}
-            <div class="flex justify-between items-center gap-2.5 mb-3 flex-wrap">
-                <div class="flex items-center gap-2 flex-wrap flex-1">
+            {{-- TOOLBAR FILTER & PENCARIAN (COMPACT) --}}
+            <div class="flex justify-between items-center gap-2 mb-2 flex-wrap">
+                <div class="flex items-center gap-1.5 flex-wrap flex-1">
                     {{-- Pilihan Bulan / Periode --}}
                     <div class="relative">
-                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; z-index: 1;">📅</span>
-                        <select style="padding: 6px 36px 6px 32px; border: 1.5px solid #7A4517; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #fffaf7; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; min-width: 175px; box-shadow: 0 1px 3px rgba(122,69,23,0.1);"
+                        <span style="position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 13px; pointer-events: none; z-index: 1;">📅</span>
+                        <select style="padding: 4.5px 30px 4.5px 28px; border: 1.5px solid #7A4517; border-radius: 7px; font-size: 11.5px; font-weight: 700; color: #0f172a; background: #fffaf7; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; min-width: 160px; box-shadow: 0 1px 2px rgba(122,69,23,0.08);"
                                 onchange="window.location.href='{{ route('penggajian.show-periode') }}?periode=' + this.value + '&outlet={{ $selectedOutlet }}'">
                             @foreach($periodes as $p)
                                 @php $carbonP = \Carbon\Carbon::parse($p . '-01'); @endphp
@@ -134,19 +196,19 @@
                                 </option>
                             @endforeach
                         </select>
-                        <svg style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #7A4517;" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+                        <svg style="position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #7A4517;" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
                     </div>
 
                     {{-- Search Input --}}
                     <div class="relative">
                         <input type="text" id="searchKaryawan" onkeyup="filterKaryawanTable()"
-                               placeholder="&#128269; Cari nama karyawan..."
-                               style="width: 220px; padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none;">
+                               placeholder="&#128269; Cari nama..."
+                               style="width: 200px; padding: 4.5px 10px; border: 1.5px solid #cbd5e1; border-radius: 7px; font-size: 11.5px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none;">
                     </div>
 
                     {{-- Filter Departemen --}}
                     <select id="filterDepartemen" onchange="filterKaryawanTable()"
-                            style="padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;">
+                            style="padding: 4.5px 10px; border: 1.5px solid #cbd5e1; border-radius: 7px; font-size: 11.5px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;">
                         <option value="">Semua Departemen</option>
                         @foreach($depts as $dept)
                             <option value="{{ strtolower($dept) }}">{{ $dept }}</option>
@@ -155,7 +217,7 @@
 
                     {{-- Filter Jabatan --}}
                     <select id="filterJabatan" onchange="filterKaryawanTable()"
-                            style="padding: 6px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;">
+                            style="padding: 4.5px 10px; border: 1.5px solid #cbd5e1; border-radius: 7px; font-size: 11.5px; font-weight: 700; color: #0f172a; background: #ffffff; outline: none; cursor: pointer;">
                         <option value="">Semua Jabatan</option>
                         @foreach($jbtns as $jbtn)
                             <option value="{{ strtolower($jbtn) }}">{{ $jbtn }}</option>
@@ -163,31 +225,328 @@
                     </select>
 
                     <button type="button" onclick="resetTableFilter()"
-                            style="padding: 6px 14px; background-color: #f1f5f9; color: #334155; font-weight: 800; border-radius: 8px; font-size: 12px; border: 1.5px solid #cbd5e1; cursor: pointer; transition: background .15s;"
+                            style="padding: 4.5px 11px; background-color: #f1f5f9; color: #334155; font-weight: 800; border-radius: 7px; font-size: 11.5px; border: 1.5px solid #cbd5e1; cursor: pointer; transition: background .15s;"
                             onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'">
                         Reset
                     </button>
                 </div>
 
-                <div class="text-xs text-slate-700 font-bold bg-white border border-slate-200 shadow-sm px-3 py-1.5 rounded-lg">
+                <div class="text-[11.5px] text-slate-700 font-bold bg-white border border-slate-200 shadow-2xs px-2.5 py-1 rounded-md">
                     <strong class="text-slate-900 font-black" id="visibleCount">{{ count($payrolls) }}</strong> karyawan terdaftar
                 </div>
             </div>
 
+            <style>
+                /* Sticky Freeze Columns */
+                .sticky-col-num {
+                    position: sticky !important;
+                    left: 0px !important;
+                    width: 48px !important;
+                    min-width: 48px !important;
+                    max-width: 48px !important;
+                    z-index: 25 !important;
+                    background-color: #ffffff !important; /* Solid putih netral */
+                    color: #334155 !important;
+                    border-right: 1px solid #e2e8f0 !important;
+                }
+                .sticky-col-karyawan {
+                    position: sticky !important;
+                    left: 48px !important;
+                    width: 245px !important;
+                    min-width: 245px !important;
+                    max-width: 245px !important;
+                    z-index: 25 !important;
+                    background-color: #ffffff !important; /* Solid putih netral */
+                    color: #0f172a !important;
+                    border-right: 2px solid #cbd5e1 !important; /* Garis batas tegas kanan identitas */
+                    box-shadow: 4px 0 10px -2px rgba(15, 23, 42, 0.12) !important;
+                }
+                thead th.sticky-col-num {
+                    position: sticky !important;
+                    left: 0px !important;
+                    z-index: 55 !important;
+                    background-color: #f1f5f9 !important; /* Header abu sangat terang */
+                    color: #0f172a !important;
+                    border-right: 1px solid #cbd5e1 !important;
+                }
+                thead th.sticky-col-karyawan {
+                    position: sticky !important;
+                    left: 48px !important;
+                    z-index: 55 !important;
+                    background-color: #f1f5f9 !important; /* Header abu sangat terang */
+                    color: #0f172a !important;
+                    border-right: 2px solid #cbd5e1 !important;
+                    box-shadow: 4px 0 10px -2px rgba(15, 23, 42, 0.12) !important;
+                }
+
+                /* 1. SKEMA WARNA HEADER TABEL: PASTEL EKSKLUSIF PADA HEADER KATEGORI UTAMA (TIER 1) */
+                thead th {
+                    background-color: #f8fafc !important; /* Abu-Abu Terang Seragam untuk Tier 2 */
+                    color: #334155 !important;           /* Abu-Abu Gelap Kehitaman Maksimal Keterbacaan */
+                    border-color: #cbd5e1 !important;
+                }
+
+                /* Header Pastel Eksklusif Kategori Utama (Tier 1) */
+                thead th.th-cat-pokok {
+                    background-color: #dcfce7 !important; /* Hijau Muda Pastel */
+                    color: #1e293b !important;           /* Teks Abu-Abu Gelap */
+                }
+                thead th.th-cat-bonus {
+                    background-color: #fef3c7 !important; /* Kuning Muda Pastel */
+                    color: #1e293b !important;           /* Teks Abu-Abu Gelap */
+                }
+                thead th.th-cat-potongan {
+                    background-color: #ffe4e6 !important; /* Merah Muda / Rose Pastel */
+                    color: #1e293b !important;           /* Teks Abu-Abu Gelap */
+                }
+                thead th.th-cat-nett {
+                    background-color: #f1f5f9 !important; /* Netral Abu Terang */
+                    color: #1e293b !important;
+                }
+
+                /* 2. SELURUH ISI DATA (td) DI DALAM tbody BERSIH NETRAL DENGAN ZEBRA-STRIPING */
+                tbody tr.payroll-row td {
+                    background-color: transparent;
+                }
+                tbody tr.payroll-row:nth-child(even) td:not(.sticky-col-num):not(.sticky-col-karyawan) {
+                    background-color: #ffffff !important; /* Putih Bersih */
+                }
+                tbody tr.payroll-row:nth-child(odd) td:not(.sticky-col-num):not(.sticky-col-karyawan) {
+                    background-color: #f8fafc !important; /* Abu-Abu Sangat Terang / Muda */
+                }
+                tbody tr.payroll-row:hover td:not(.sticky-col-num):not(.sticky-col-karyawan) {
+                    background-color: #f1f5f9 !important; /* Hover abu lembut */
+                }
+
+                /* Freeze column identitas karyawan putih netral dengan zebra-striping halus */
+                tbody tr.payroll-row:nth-child(even) .sticky-col-num,
+                tbody tr.payroll-row:nth-child(even) .sticky-col-karyawan {
+                    background-color: #ffffff !important;
+                }
+                tbody tr.payroll-row:nth-child(odd) .sticky-col-num,
+                tbody tr.payroll-row:nth-child(odd) .sticky-col-karyawan {
+                    background-color: #fbfcfe !important;
+                }
+                tbody tr.payroll-row:hover .sticky-col-num,
+                tbody tr.payroll-row:hover .sticky-col-karyawan {
+                    background-color: #f1f5f9 !important;
+                }
+
+                /* Subtotal kolom tetap netral */
+                .col-cat-pokok, .col-cat-pokok-subtotal,
+                .col-cat-bonus, .col-cat-bonus-subtotal,
+                .col-cat-potongan, .col-cat-potongan-subtotal,
+                .col-cat-nett {
+                    background-color: transparent !important;
+                }
+
+                /* 3. GARIS PEMBATAS VERTIKAL TEGAS ABU-ABU TUA SERAGAM KE BAWAH */
+                .cat-divider-pokok,
+                .cat-divider-bonus,
+                .cat-divider-potongan,
+                .cat-divider-nett {
+                    border-right: 2px solid #64748b !important; /* Abu-abu tua seragam (#64748b) */
+                }
+                thead th.cat-divider-pokok,
+                thead th.cat-divider-bonus,
+                thead th.cat-divider-potongan,
+                thead th.cat-divider-nett {
+                    border-right: 2px solid #64748b !important;
+                }
+                thead th.sticky-col-karyawan,
+                tbody td.sticky-col-karyawan {
+                    border-right: 2px solid #64748b !important;
+                }
+
+                /* Format Akuntansi: Rp rata kiri, Angka rata kanan */
+                .accounting-cell {
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: space-between !important;
+                    width: 100% !important;
+                    gap: 6px !important;
+                    white-space: nowrap !important;
+                }
+                .accounting-cell .ac-curr {
+                    text-align: left !important;
+                    font-weight: 700 !important;
+                    color: inherit !important;
+                    opacity: 0.85 !important;
+                    user-select: none !important;
+                    flex-shrink: 0 !important;
+                }
+                .accounting-cell .ac-val {
+                    text-align: right !important;
+                    font-weight: inherit !important;
+                    color: inherit !important;
+                    flex-grow: 1 !important;
+                    font-variant-numeric: tabular-nums !important;
+                }
+                .accounting-input-wrap {
+                    display: flex !important;
+                    align-items: center !important;
+                    background-color: #ffffff !important;
+                    border: 1.5px solid #cbd5e1 !important;
+                    border-radius: 6px !important;
+                    padding: 2px 6px !important;
+                    width: 100% !important;
+                    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+                }
+                .accounting-input-wrap:focus-within {
+                    border-color: #6366f1 !important;
+                    outline: 2px solid rgba(99, 102, 241, 0.2) !important;
+                }
+                .accounting-input-wrap .ac-input-prefix {
+                    font-size: 11px !important;
+                    font-weight: 700 !important;
+                    color: #64748b !important;
+                    user-select: none !important;
+                    margin-right: 4px !important;
+                    flex-shrink: 0 !important;
+                }
+                .accounting-input-wrap input {
+                    border: none !important;
+                    outline: none !important;
+                    background: transparent !important;
+                    width: 100% !important;
+                    text-align: right !important;
+                    font-size: 12px !important;
+                    font-weight: 700 !important;
+                    color: #1e293b !important;
+                    padding: 0 !important;
+                    box-shadow: none !important;
+                }
+                thead th {
+                    position: sticky !important;
+                    z-index: 30 !important;
+                }
+                thead tr.thead-tier-1 th {
+                    top: 0 !important;
+                    height: 34px;
+                }
+                thead tr.thead-tier-2 th {
+                    top: 34px !important;
+                    height: 32px;
+                }
+                thead th.sticky-col-num,
+                thead th.sticky-col-karyawan {
+                    z-index: 55 !important;
+                    top: 0 !important;
+                }
+
+                /* ========================================================================= */
+                /* MODE MAXIMIZE / FULLSCREEN KHUSUS FORM HITUNG GAJI                        */
+                /* ========================================================================= */
+                body.payroll-maximized {
+                    overflow-x: hidden !important;
+                }
+
+                /* Sembunyikan sidebar, backdrop, topbar, page-header, dan selector outlet */
+                body.payroll-maximized .sidebar,
+                body.payroll-maximized .sidebar-backdrop,
+                body.payroll-maximized .topbar,
+                body.payroll-maximized .page-header-container,
+                body.payroll-maximized .outlet-selector-card {
+                    display: none !important;
+                }
+
+                /* Lebarkan container utama ke seluruh layar (100vw) tanpa margin sisa */
+                body.payroll-maximized .content-wrapper {
+                    width: 100vw !important;
+                    max-width: 100vw !important;
+                    min-width: 100vw !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    flex: 1 1 100% !important;
+                }
+
+                body.payroll-maximized main {
+                    padding: 10px 16px 14px 16px !important;
+                    max-width: 100vw !important;
+                    width: 100vw !important;
+                    margin: 0 !important;
+                }
+
+                body.payroll-maximized .py-4 {
+                    padding-top: 0 !important;
+                    padding-bottom: 0 !important;
+                }
+
+                body.payroll-maximized .max-w-7xl {
+                    max-width: 100% !important;
+                    width: 100% !important;
+                    padding-left: 0 !important;
+                    padding-right: 0 !important;
+                }
+
+                /* Maksimalkan tinggi container scroll tabel hitung gaji */
+                body.payroll-maximized .payroll-table-container {
+                    max-height: calc(100vh - 142px) !important;
+                    height: calc(100vh - 142px) !important;
+                }
+            </style>
+
             <div class="bg-white rounded-xl border border-slate-200 shadow-sm" style="overflow: visible;">
-                <div class="overflow-x-auto pb-8" style="overflow-y: visible; min-height: 220px;">
-                    <table class="w-full min-w-[1060px] text-xs text-left divide-y divide-slate-200" id="tableKaryawan">
-                        <thead class="text-[11px] font-bold text-slate-700 uppercase tracking-wider bg-slate-100/90 border-b border-slate-200">
-                            <tr>
-                                <th class="px-3 py-3 pr-6 w-12 text-center whitespace-nowrap">#</th>
-                                <th class="px-6 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
-                                <th class="px-3 py-3 text-center whitespace-nowrap min-w-[115px]">Hari Kerja</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[130px]">Tarif Satuan</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Gaji Pokok</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[125px]">Total Bonus</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[135px]">Total Pengurangan</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[140px]">Gaji Bersih</th>
-                                <th class="px-4 py-3 text-center min-w-[170px] whitespace-nowrap">Aksi</th>
+                <div id="payrollTableScrollContainer" class="overflow-x-auto pb-8 payroll-table-container" style="overflow-y: auto; max-height: 75vh; min-height: 260px; max-width: 100%;">
+                    <table class="w-full text-xs text-left divide-y divide-slate-200 border-separate border-spacing-0" id="tableKaryawan" style="min-width: 2280px;">
+                        <thead class="text-[11px] font-bold uppercase tracking-wider">
+                            {{-- TIER 1: KATEGORI UTAMA DENGAN WARNA LATAR PASTEL EKSKLUSIF & PEMBATAS TEGAS --}}
+                            <tr class="thead-tier-1 divide-x divide-slate-200 border-b border-slate-300">
+                                {{-- 1 & 2. PROFIL KARYAWAN (FREEZE - ROWSPAN 2) --}}
+                                <th rowspan="2" class="sticky-col-num px-3 py-2 text-center whitespace-nowrap border-b-2 border-slate-300">#</th>
+                                <th rowspan="2" class="sticky-col-karyawan px-4 py-2 text-center whitespace-nowrap border-b-2 border-slate-300">
+                                    <div class="text-[9.5px] text-slate-500 font-extrabold tracking-wider">IDENTITAS</div>
+                                    <div class="text-xs font-black text-slate-800">NAMA &amp; JABATAN</div>
+                                </th>
+
+                                {{-- GAJI POKOK (3 KOLOM: Hari Kerja, Tarif Satuan, Subtotal Pokok) --}}
+                                <th colspan="3" class="th-cat-pokok cat-divider-pokok text-center py-2 px-3 font-black tracking-wider border-b border-slate-300">
+                                    GAJI POKOK
+                                </th>
+
+                                {{-- BONUS (7 KOLOM: Jam Lembur, Target, Tgl Merah, Birthday, Deposit Balik, Bonus Lain, Total Bonus) --}}
+                                <th colspan="7" class="th-cat-bonus cat-divider-bonus text-center py-2 px-3 font-black tracking-wider border-b border-slate-300">
+                                    BONUS
+                                </th>
+
+                                {{-- POTONGAN (6 KOLOM: Terlambat, Inventaris, Kasbon, Pot. Deposit, Potongan Lain, Total Potongan) --}}
+                                <th colspan="6" class="th-cat-potongan cat-divider-potongan text-center py-2 px-3 font-black tracking-wider border-b border-slate-300">
+                                    POTONGAN
+                                </th>
+
+                                {{-- GAJI BERSIH & AKSI (2 KOLOM: Gaji Bersih (THP), Aksi) --}}
+                                <th colspan="2" class="th-cat-nett text-center py-2 px-3 font-black tracking-wider border-b border-slate-300">
+                                    GAJI BERSIH &amp; AKSI
+                                </th>
+                            </tr>
+
+                            {{-- TIER 2: RINCIAN DETAIL SEL / KOLOM TEKNIS --}}
+                            <tr class="thead-tier-2 border-b-2 border-slate-300 text-[10px] text-slate-700">
+                                {{-- Under GAJI POKOK --}}
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[125px] border-b border-slate-200">Hari Kerja</th>
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[130px] border-b border-slate-200">Tarif Satuan</th>
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[140px] border-b border-slate-200 font-extrabold cat-divider-pokok">Subtotal Pokok</th>
+
+                                {{-- Under BONUS --}}
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[110px] border-b border-slate-200" title="10.000 / Jam">Jam Lembur</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[125px] border-b border-slate-200" title="Harian: Target x Tarif | Bulanan: Nominal">Target</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200" title="Harian: Hadir x Tarif | Bulanan: Nominal">Tgl Merah</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[110px] border-b border-slate-200" title="5.000 / Service">Birthday</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[125px] border-b border-slate-200">Deposit Balik</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Bonus Lain</th>
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[130px] border-b border-slate-200 font-extrabold cat-divider-bonus">Total Bonus</th>
+
+                                {{-- Under POTONGAN --}}
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[125px] border-b border-slate-200">Terlambat</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Inventaris</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Kasbon</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Pot. Deposit</th>
+                                <th class="px-2 py-2 text-center whitespace-nowrap min-w-[130px] border-b border-slate-200">Potongan Lain</th>
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[130px] border-b border-slate-200 font-extrabold cat-divider-potongan">Total Potongan</th>
+
+                                {{-- Under GAJI BERSIH & AKSI --}}
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[145px] border-b border-slate-200 font-black">Gaji Bersih (THP)</th>
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[155px] border-b border-slate-300 font-bold">Aksi</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white" id="tbodyKaryawan">
@@ -569,6 +928,7 @@
                                 data-karyawan-id="{{ $payroll->karyawan_id }}"
                                 data-satuan="{{ $satuanRow }}"
                                 data-tarif="{{ (float)$tarifHarian }}"
+                                data-gaji-pokok="{{ (float)$gajiPokok }}"
                                 data-bonus-total="{{ (float)$totalBonus }}"
                                 data-deductions-total="{{ (float)$totalPotongan }}"
                                 data-take-home-pay="{{ (float)$payroll->take_home_pay }}"
@@ -578,54 +938,48 @@
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
                                 data-departemen="{{ strtolower($payroll->karyawan->departemen ?? '') }}"
                                 data-jabatan="{{ strtolower($payroll->karyawan->jabatan ?? '') }}">
-                                <td class="px-3 py-3 pr-6 text-center text-xs text-slate-400 font-bold whitespace-nowrap"><span class="row-index">{{ $index + 1 }}</span></td>
+                                
+                                {{-- 1. NO (FREEZE - ABU MUDA) --}}
+                                <td class="sticky-col-num px-3 py-3 text-center text-xs font-bold whitespace-nowrap border-b border-slate-200">
+                                    <span class="row-index text-slate-700 font-extrabold">{{ $index + 1 }}</span>
+                                </td>
 
-                                {{-- KARYAWAN --}}
-                                <td class="px-6 py-3 min-w-[200px]">
-                                    <div class="flex items-start gap-2.5">
-                                        <i class="bi bi-grip-vertical grip-handle mt-0.5 select-none" title="Tahan dan geser (drag & drop) untuk mengatur urutan"></i>
-                                        <div>
-                                            <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-snug flex items-center gap-1.5 flex-wrap">
-                                                <span>{{ $payroll->karyawan->nama_karyawan ?? '-' }}</span>
-                                                @if($hasMultiplePeriods)
-                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200 whitespace-nowrap" title="Akumulasi seluruh periode dalam bulan ini">
-                                                        &#10003; {{ $itemBreakdowns->count() }} Periode
-                                                    </span>
-                                                @endif
+                                {{-- 2. KARYAWAN (FREEZE - HANYA NAMA & JABATAN) --}}
+                                <td class="sticky-col-karyawan px-3.5 py-2.5 border-b border-slate-200">
+                                    <div class="flex items-center gap-2">
+                                        <i class="bi bi-grip-vertical grip-handle select-none text-slate-400 hover:text-slate-800 cursor-grab shrink-0" title="Tahan dan geser (drag & drop) untuk mengatur urutan"></i>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-tight truncate" title="{{ $payroll->karyawan->nama_karyawan ?? '-' }}">
+                                                {{ $payroll->karyawan->nama_karyawan ?? '-' }}
                                             </div>
-                                            <div class="text-[11px] font-medium mt-1 flex items-center gap-1.5 flex-wrap">
-                                                <span class="hr-badge-jabatan">{{ $payroll->karyawan->jabatan ?? '-' }}</span>
-                                                @if($payroll->karyawan->departemen)
-                                                    <span class="hr-badge-dept">{{ $payroll->karyawan->departemen }}</span>
-                                                @endif
-                                                <span class="hr-badge-satuan">{{ $badgeSatuanText }}</span>
+                                            <div class="text-[11.5px] text-slate-500 font-semibold mt-1 leading-tight truncate" title="{{ $payroll->karyawan->jabatan ?? '-' }}">
+                                                {{ $payroll->karyawan->jabatan ?? '-' }}
                                             </div>
                                         </div>
                                     </div>
                                 </td>
 
-                                {{-- 1. HARI KERJA (BISA DIISI LANGSUNG) --}}
-                                <td class="px-3 py-3 text-center whitespace-nowrap {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                {{-- 3. HARI KERJA (POKOK - INPUT TERPADU DENGAN P1/P2 BERTUMPUK) --}}
+                                <td class="col-cat-pokok px-3 py-3 text-center whitespace-nowrap border-b border-emerald-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
                                         @if($hasMultiplePeriods)
-                                            <div class="flex flex-col items-center justify-center gap-1.5 whitespace-nowrap">
-                                                <div class="flex items-center justify-center gap-2 flex-wrap">
-                                                    @foreach($itemBreakdowns as $ib)
-                                                        <div class="inline-flex items-center gap-1 bg-white/90 border border-indigo-200/90 rounded-md px-1.5 py-0.5 shadow-2xs">
-                                                            <span class="text-[9.5px] font-black text-indigo-700 bg-indigo-50 px-1 rounded">P{{ $ib['periode'] }}</span>
-                                                            <input type="number" step="0.5" min="0"
-                                                                   class="batch-hari-kerja batch-sub-item hr-data-input w-13 px-1.5 py-0.5 text-xs !bg-white"
-                                                                   data-item-id="{{ $ib['id'] }}"
-                                                                   data-periode="{{ $ib['periode'] }}"
-                                                                   data-satuan="{{ $ib['satuan'] }}"
-                                                                   data-tarif="{{ (float)$ib['tarif'] }}"
-                                                                   value="{{ ($ib['hari_kerja'] && $ib['hari_kerja'] > 0) ? (float)$ib['hari_kerja'] : '' }}"
-                                                                   placeholder="0"
-                                                                   oninput="onGajiPokokMultiRowInput(this)">
-                                                            <span class="text-[10px] text-slate-500 font-bold">{{ $ib['suffix'] }}</span>
-                                                        </div>
-                                                    @endforeach
-                                                </div>
+                                            {{-- RINCIAN P1 DAN P2 DITAMPILKAN LANGSUNG 2 BARIS BERTUMPUK DI DALAM SEL --}}
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="flex items-center gap-1 justify-center">
+                                                        <span class="px-1 py-0.5 rounded text-[9px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800' }} border border-slate-200">P{{ $ib['periode'] }}</span>
+                                                        <input type="number" step="0.5" min="0"
+                                                               class="batch-hari-kerja batch-sub-item input-hk-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-hk-item-' . $ib['id'] : '' }} hr-data-input w-14 px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               data-satuan="{{ $ib['satuan'] }}"
+                                                               data-tarif="{{ (float)$ib['tarif'] }}"
+                                                               value="{{ ($ib['hari_kerja'] && $ib['hari_kerja'] > 0) ? (float)$ib['hari_kerja'] : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                        <span class="text-[10px] text-slate-600 font-bold whitespace-nowrap">{{ $ib['suffix'] }}</span>
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
                                             <div class="inline-flex items-center gap-1.5 justify-center whitespace-nowrap">
@@ -633,21 +987,22 @@
                                                        class="batch-hari-kerja hr-data-input w-16 px-2 py-1 text-xs"
                                                        value="{{ ($payroll->hari_kerja && $payroll->hari_kerja > 0) ? (float)$payroll->hari_kerja : '' }}"
                                                        placeholder="0"
-                                                       oninput="onGajiPokokRowInput(this)">
+                                                       oninput="onPayrollUnifiedRowInput(this)">
                                                 <span class="text-[11px] text-slate-600 font-bold whitespace-nowrap">
-                                                    {{ $satuanRow === 'Per Jam' ? 'jam' : ($satuanRow === 'Bulanan' ? 'bln' : 'hr') }}
+                                                     {{ $satuanRow === 'Per Jam' ? 'jam' : ($satuanRow === 'Bulanan' ? 'bln' : 'hr') }}
                                                 </span>
                                             </div>
                                         @endif
                                     @else
                                         @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col items-center justify-center gap-0.5 whitespace-nowrap">
-                                                <span class="text-xs font-black text-slate-900">{{ $waktuDisplay }}</span>
-                                                <div class="flex items-center justify-center gap-1 text-[10px] text-indigo-700 font-semibold flex-wrap">
-                                                    @foreach($itemBreakdowns as $ib)
-                                                        <span class="bg-indigo-50 border border-indigo-200/80 px-1 py-0.2 rounded text-[9.5px]">P{{ $ib['periode'] }}: {{ $ib['hari_kerja'] }}{{ $ib['suffix'] }}</span>
-                                                    @endforeach
-                                                </div>
+                                            <div class="inline-flex flex-col gap-1 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="flex items-center gap-1.5 justify-center text-xs">
+                                                        <span class="px-1 py-0.5 rounded text-[9px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-50 text-indigo-700' : 'bg-purple-50 text-purple-700' }} border border-slate-200">P{{ $ib['periode'] }}</span>
+                                                        <span class="font-extrabold text-slate-900">{{ (float)$ib['hari_kerja'] }}</span>
+                                                        <span class="text-[10.5px] text-slate-500 font-medium">{{ $ib['suffix'] }}</span>
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
                                             <div class="whitespace-nowrap">
@@ -660,74 +1015,384 @@
                                     @endif
                                 </td>
 
-                                {{-- 2. REKAP TARIF SATUAN --}}
-                                <td class="px-4 py-3 text-right whitespace-nowrap">
-                                    @if($hasMultiplePeriods && ($itemBreakdowns->pluck('tarif')->unique()->count() > 1 || !$isSameUnit))
-                                        <div class="flex flex-col items-end gap-1">
+                                {{-- 4. TARIF SATUAN (POKOK - ACCOUNTING STYLE - BERTUMPUK JIKA MULTI-PERIODE) --}}
+                                <td class="col-cat-pokok px-3 py-3 border-b border-emerald-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="flex flex-col gap-1.5 w-full">
                                             @foreach($itemBreakdowns as $ib)
-                                                <span class="inline-flex items-center gap-1 text-[10.5px] whitespace-nowrap">
-                                                    <span class="text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-1 py-0.2 rounded">P{{ $ib['periode'] }}</span>
-                                                    <span class="font-bold text-slate-800 whitespace-nowrap">Rp&nbsp;{{ number_format($ib['tarif'], 0, ',', '.') }}</span><span class="text-[10px] text-slate-500 font-normal">{{ $ib['per_label'] }}</span>
-                                                </span>
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <div class="accounting-cell text-[11px] font-bold text-slate-800">
+                                                        <span class="ac-curr">
+                                                            <span class="px-1 py-0.2 rounded text-[8.5px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-50 text-indigo-700' : 'bg-purple-50 text-purple-700' }} border border-slate-200 mr-1">P{{ $ib['periode'] }}</span>Rp
+                                                        </span>
+                                                        <span class="ac-val">{{ number_format($ib['tarif'], 0, ',', '.') }}</span>
+                                                    </div>
+                                                    <div class="text-[9px] text-slate-400 font-medium text-right">{{ $ib['per_label'] }}</div>
+                                                </div>
                                             @endforeach
                                         </div>
                                     @else
-                                        <div class="whitespace-nowrap">
-                                            <span class="text-xs text-slate-800 font-bold whitespace-nowrap">Rp&nbsp;{{ number_format($tarifHarian, 0, ',', '.') }}</span>
-                                            <span class="text-[10px] text-slate-500 font-medium block whitespace-nowrap">
-                                                {{ $satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari') }}
-                                            </span>
+                                        <div class="accounting-cell text-xs font-bold text-slate-800">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format($tarifHarian, 0, ',', '.') }}</span>
+                                        </div>
+                                        <div class="text-[9.5px] text-slate-500 font-medium text-right mt-0.5">
+                                            {{ $satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari') }}
                                         </div>
                                     @endif
                                 </td>
 
-                                {{-- 3. REKAP GAJI POKOK --}}
-                                <td class="px-4 py-3 text-right whitespace-nowrap">
-                                    <div class="whitespace-nowrap">
-                                        <span class="text-xs font-extrabold text-slate-900 row-gaji-pokok-cell whitespace-nowrap">Rp&nbsp;{{ number_format($gajiPokok, 0, ',', '.') }}</span>
+                                {{-- 5. SUBTOTAL POKOK (POKOK SUBTOTAL - CAT DIVIDER POKOK + RINCIAN P1/P2 BERTUMPUK) --}}
+                                <td class="col-cat-pokok-subtotal px-3 py-3 border-b border-emerald-200 cat-divider-pokok">
+                                    <div class="accounting-cell text-xs font-extrabold text-emerald-950 row-gaji-pokok-cell">
+                                        <span class="ac-curr">Rp</span>
+                                        <span class="ac-val">{{ number_format($gajiPokok, 0, ',', '.') }}</span>
                                     </div>
                                     @if($hasMultiplePeriods)
-                                        <div class="flex flex-col items-end gap-0.5 mt-0.5">
+                                        <div class="flex flex-col gap-0.5 mt-1 pt-1 border-t border-emerald-100/70">
                                             @foreach($itemBreakdowns as $ib)
-                                                <span class="text-[10px] text-indigo-700 font-semibold whitespace-nowrap">P{{ $ib['periode'] }}: <span class="sub-gp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-gp-item-' . $ib['id'] : '' }}">Rp&nbsp;{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span></span>
+                                                <div class="accounting-cell text-[10px] text-slate-600 font-bold">
+                                                    <span class="ac-curr">P{{ $ib['periode'] }}: Rp</span>
+                                                    <span class="ac-val sub-gp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-gp-item-' . $ib['id'] : '' }}">{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span>
+                                                </div>
                                             @endforeach
                                         </div>
                                     @endif
                                 </td>
 
-                                {{-- 4. REKAP TOTAL BONUS (DARI MENU BONUS & LEMBUR) --}}
-                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                {{-- 6. JAM LEMBUR (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="flex items-center gap-1 justify-center">
+                                            <input type="number" step="0.5" min="0"
+                                                   class="batch-jam-lembur hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                   value="{{ ($payroll->jam_lembur && $payroll->jam_lembur > 0) ? (float)$payroll->jam_lembur : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                            <span class="text-[10px] text-amber-900 font-bold">jam</span>
+                                        </div>
+                                        <div class="sub-lembur-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->jam_lembur ?? 0) > 0 ? '' : 'hidden' }}">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format(($payroll->jam_lembur ?? 0) * 10000, 0, ',', '.') }}</span>
+                                        </div>
+                                    @else
+                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format($payroll->lembur, 0, ',', '.') }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->jam_lembur }} jam</div>
+                                    @endif
+                                </td>
+
+                                {{-- 7. BONUS TARGET (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        @if($satuanRow === 'Harian')
+                                            <div class="flex items-center gap-1 justify-center">
+                                                <input type="number" step="1" min="0"
+                                                       class="batch-banyak-target hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                       value="{{ ($payroll->banyak_target && $payroll->banyak_target > 0) ? (int)$payroll->banyak_target : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                <span class="text-[10px] text-amber-900 font-bold">kali</span>
+                                            </div>
+                                            <div class="sub-target-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_target ?? 0) > 0 ? '' : 'hidden' }}">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format(($payroll->banyak_target ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-bonus-target hr-data-input"
+                                                       value="{{ $payroll->bonus_target > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                            <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target }}">
+                                        @endif
+                                    @else
+                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format($payroll->bonus_target, 0, ',', '.') }}</span>
+                                        </div>
+                                        @if($satuanRow === 'Harian')
+                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_target }}x target</div>
+                                        @else
+                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ $payroll->catatan_bonus_target ?: 'Manual' }}</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 8. TANGGAL MERAH (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        @if($satuanRow === 'Harian')
+                                            <div class="flex items-center gap-1 justify-center">
+                                                <input type="number" step="1" min="0"
+                                                       class="batch-banyak-merah hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                       value="{{ ($payroll->banyak_tanggal_merah && $payroll->banyak_tanggal_merah > 0) ? (int)$payroll->banyak_tanggal_merah : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                <span class="text-[10px] text-amber-900 font-bold">hari</span>
+                                            </div>
+                                            <div class="sub-merah-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_tanggal_merah ?? 0) > 0 ? '' : 'hidden' }}">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format(($payroll->banyak_tanggal_merah ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-bonus-merah hr-data-input"
+                                                       value="{{ $payroll->bonus_tanggal_merah > 0 ? number_format($payroll->bonus_tanggal_merah, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                            <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah }}">
+                                        @endif
+                                    @else
+                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format($payroll->bonus_tanggal_merah, 0, ',', '.') }}</span>
+                                        </div>
+                                        @if($satuanRow === 'Harian')
+                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_tanggal_merah }}x hadir</div>
+                                        @else
+                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ $payroll->catatan_bonus_tanggal_merah ?: 'Manual' }}</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 9. BIRTHDAY SERVICE (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="flex items-center gap-1 justify-center">
+                                            <input type="number" step="1" min="0"
+                                                   class="batch-banyak-birthday hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                   value="{{ ($payroll->banyak_birthday_service && $payroll->banyak_birthday_service > 0) ? (int)$payroll->banyak_birthday_service : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                            <span class="text-[10px] text-amber-900 font-bold">srv</span>
+                                        </div>
+                                        <div class="sub-birthday-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_birthday_service ?? 0) > 0 ? '' : 'hidden' }}">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format(($payroll->banyak_birthday_service ?? 0) * 5000, 0, ',', '.') }}</span>
+                                        </div>
+                                    @else
+                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format($payroll->bonus_birthday, 0, ',', '.') }}</span>
+                                        </div>
+                                        <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_birthday_service }}x</div>
+                                    @endif
+                                </td>
+
+                                {{-- 10. PENGEMBALIAN DEPOSIT (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-pengembalian-deposit hr-data-input !text-emerald-800"
+                                                   value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                        @if(($payroll->saldo_deposit ?? 0) > 0)
+                                            <button type="button"
+                                                    onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
+                                                    class="mt-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                    title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
+                                                <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                            </button>
+                                        @endif
+                                    @else
+                                        @if($payroll->pengembalian_deposit > 0)
+                                            <div class="accounting-cell font-bold text-emerald-800 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->pengembalian_deposit, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 11. BONUS LAIN (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-bonus-dll hr-data-input"
+                                                   value="{{ $payroll->bonus_dll > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                    @else
+                                        @if($payroll->bonus_dll > 0)
+                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->bonus_dll, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 12. SUBTOTAL BONUS (BONUS SUBTOTAL - KUNING PENEGAS + BATAS TEGAS + ACCOUNTING STYLE) --}}
+                                <td class="col-cat-bonus-subtotal px-3 py-3 font-black text-amber-900 text-xs row-total-bonus-cell border-b border-amber-200 cat-divider-bonus">
                                     @if($totalBonus > 0)
-                                        <div class="whitespace-nowrap">
-                                            <span class="text-xs font-bold text-amber-700 whitespace-nowrap">+&nbsp;Rp&nbsp;{{ number_format($totalBonus, 0, ',', '.') }}</span>
+                                        <div class="accounting-cell">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format($totalBonus, 0, ',', '.') }}</span>
                                         </div>
                                     @else
-                                        <span class="text-slate-400 font-semibold text-xs whitespace-nowrap">-</span>
+                                        <div class="text-center font-bold text-amber-700/60 text-xs">-</div>
                                     @endif
                                 </td>
 
-                                {{-- 5. REKAP TOTAL PENGURANGAN (DARI MENU POTONGAN) --}}
-                                <td class="px-4 py-3 text-right whitespace-nowrap">
+                                {{-- 13. KETERLAMBATAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-potongan px-3 py-3 border-b border-rose-100">
+                                    <input type="hidden" class="potongan-terlambat-raw" value="{{ (float)$payroll->potongan_terlambat }}">
+                                    @if($payroll->potongan_terlambat > 0)
+                                        <div class="accounting-cell font-bold text-rose-700 text-xs">
+                                            <span class="ac-curr">- Rp</span>
+                                            <span class="ac-val">{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</span>
+                                        </div>
+                                        <div class="text-[9px] text-slate-500 font-semibold mt-0.5 text-right">Otomatis Absensi</div>
+                                    @else
+                                        <div class="text-center text-slate-400 font-bold text-xs">-</div>
+                                    @endif
+                                </td>
+
+                                {{-- 14. KERUSAKAN INVENTARIS (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-inventaris hr-data-input"
+                                                   value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                    @else
+                                        @if($payroll->potongan_inventaris > 0)
+                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 15. KASBON / PINJAMAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-kasbon hr-data-input"
+                                                   value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                    @else
+                                        @if($payroll->potongan_kasbon > 0)
+                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 16. POTONGAN DEPOSIT (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-deposit hr-data-input"
+                                                   value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   title="Potongan deposit untuk karyawan baru"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                    @else
+                                        @if($payroll->potongan_deposit > 0)
+                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 17. POTONGAN LAIN & KETERANGAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
+                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
+                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-dll hr-data-input"
+                                                   value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                        <input type="text"
+                                               class="batch-catatan-potongan-dll w-full text-left bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-400 mt-1 placeholder:text-slate-400 placeholder:italic"
+                                               value="{{ $payroll->catatan_potongan_dll ?? '' }}"
+                                               placeholder="Keterangan..."
+                                               title="Keterangan / rincian potongan lain-lain">
+                                    @else
+                                        @if($payroll->potongan_dll > 0)
+                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->potongan_dll, 0, ',', '.') }}</span>
+                                            </div>
+                                        @else
+                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                        @endif
+                                        @if($payroll->catatan_potongan_dll)
+                                            <div class="text-[9.5px] text-slate-500 font-medium truncate max-w-[110px] ml-auto text-right">{{ $payroll->catatan_potongan_dll }}</div>
+                                        @endif
+                                    @endif
+                                </td>
+
+                                {{-- 18. SUBTOTAL POTONGAN (POTONGAN SUBTOTAL - MERAH PENEGAS + BATAS TEGAS + ACCOUNTING STYLE) --}}
+                                <td class="col-cat-potongan-subtotal px-3 py-3 font-black text-rose-900 text-xs row-total-deductions-cell border-b border-rose-200 cat-divider-potongan">
                                     @if($totalPotongan > 0)
-                                        <div class="whitespace-nowrap">
-                                            <span class="text-xs font-bold text-rose-700 whitespace-nowrap">-&nbsp;Rp&nbsp;{{ number_format($totalPotongan, 0, ',', '.') }}</span>
+                                        <div class="accounting-cell">
+                                            <span class="ac-curr">- Rp</span>
+                                            <span class="ac-val">{{ number_format($totalPotongan, 0, ',', '.') }}</span>
                                         </div>
                                     @else
-                                        <span class="text-slate-400 font-semibold text-xs whitespace-nowrap">-</span>
+                                        <div class="text-center font-bold text-rose-700/60 text-xs">-</div>
                                     @endif
                                 </td>
 
-                                {{-- 6. GAJI BERSIH (TAKE HOME PAY) --}}
-                                <td class="px-4 py-3 text-right whitespace-nowrap">
-                                    <div class="whitespace-nowrap">
-                                        <span class="text-sm font-black text-slate-900 row-take-home-pay-cell whitespace-nowrap">Rp&nbsp;{{ number_format($payroll->take_home_pay, 0, ',', '.') }}</span>
+                                {{-- 19. GAJI BERSIH (TAKE HOME PAY - MINT/EMERALD + ACCOUNTING STYLE) --}}
+                                <td class="col-cat-nett px-3 py-3 border-b border-slate-100">
+                                    <div class="accounting-cell text-sm font-black text-slate-900 row-take-home-pay-cell">
+                                        <span class="ac-curr">Rp</span>
+                                        <span class="ac-val">{{ number_format($payroll->take_home_pay, 0, ',', '.') }}</span>
                                     </div>
                                     @if($hasMultiplePeriods)
-                                        <span class="block text-[9.5px] font-bold text-indigo-600 mt-0.5 whitespace-nowrap">Semua Periode</span>
+                                        <span class="block text-[9.5px] font-bold text-teal-800 mt-0.5 text-right">Semua Periode</span>
                                     @endif
                                 </td>
 
-                                <td class="px-4 py-3 text-center whitespace-nowrap">
+                                <td class="px-3 py-3 text-center whitespace-nowrap border-b border-slate-100">
                                     <div class="flex items-center justify-center gap-1.5 whitespace-nowrap">
 
                                         {{-- TOMBOL DETAIL POPUP --}}
@@ -892,7 +1557,7 @@
                             </tr>
                             @empty
                             <tr>
-                                <td colspan="8" class="px-6 py-16 text-center">
+                                <td colspan="20" class="px-6 py-16 text-center">
                                     <div class="text-3xl mb-2">&#128203;</div>
                                     <div class="font-bold text-slate-700 text-xs">Belum ada data karyawan</div>
                                     <div class="text-[11px] text-slate-500 mt-1 font-medium">Klik "Auto-Fill Karyawan" atau "+ Input Gaji Manual" di atas.</div>
@@ -909,21 +1574,22 @@
         {{-- ========================================================================= --}}
         {{-- POPUP MODAL 1: INPUT & EDIT GAJI POKOK (MODAL POP-UP) --}}
         {{-- ========================================================================= --}}
-        <div x-show="openGajiPokokModal" style="display: none;"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0">
-            
-            {{-- OVERLAY LATAR BELAKANG GELAP (Opacity 50% + Blur) --}}
-            <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 99998;"
-                 @click="openGajiPokokModal = false"></div>
+        <template x-if="openGajiPokokModal">
+            <div x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99998; display: flex; align-items: center; justify-content: center; padding: 16px;">
+                
+                {{-- OVERLAY LATAR BELAKANG GELAP (Opacity 50% + Blur) --}}
+                <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); cursor: pointer;"
+                     @click="openGajiPokokModal = false"></div>
 
-            {{-- MODAL CONTAINER CENTERED --}}
-            <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none;">
-                <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 620px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; pointer-events: auto; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+                {{-- MODAL BOX CENTERED --}}
+                <div style="position: relative; background: #ffffff; border-radius: 16px; width: 100%; max-width: 620px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; z-index: 99999; max-height: 100%; display: flex; flex-direction: column; overflow: hidden;"
+                     @click.stop>
                     
                     {{-- MODAL HEADER --}}
                     <div style="background: #f8fafc; padding: 14px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
@@ -1144,27 +1810,28 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </template>
 
 
         {{-- ========================================================================= --}}
         {{-- POPUP MODAL 2: DETAIL RINCIAN GAJI BERSIH KARYAWAN --}}
         {{-- ========================================================================= --}}
-        <div x-show="openDetailModal" style="display: none;"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="opacity-0"
-             x-transition:enter-end="opacity-100"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="opacity-100"
-             x-transition:leave-end="opacity-0">
-            
-            {{-- OVERLAY LATAR BELAKANG GELAP (Opacity 50% + Blur) --}}
-            <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 99998;"
-                 @click="openDetailModal = false"></div>
+        <template x-if="openDetailModal">
+            <div x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 x-transition:leave="transition ease-in duration-150"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0"
+                 style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99998; display: flex; align-items: center; justify-content: center; padding: 16px;">
+                
+                {{-- OVERLAY LATAR BELAKANG GELAP (Opacity 50% + Blur) --}}
+                <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); cursor: pointer;"
+                     @click="openDetailModal = false"></div>
 
-            {{-- MODAL CONTAINER CENTERED --}}
-            <div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; overflow-y: auto; display: flex; align-items: center; justify-content: center; padding: 16px; pointer-events: none;">
-                <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; pointer-events: auto; overflow: hidden; transform: translateY(0);">
+                {{-- MODAL BOX CENTERED --}}
+                <div style="position: relative; background: #ffffff; border-radius: 16px; width: 100%; max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; overflow-y: auto; max-height: 100%; z-index: 99999;" 
+                     @click.stop>
                     <template x-if="activeDetail">
                         <div>
                             {{-- MODAL HEADER --}}
@@ -1349,7 +2016,7 @@
                     </template>
                 </div>
             </div>
-        </div>
+        </template>
     </div>
 
     <script>
@@ -1683,88 +2350,223 @@
         }
 
         // =========================================================================
-        // BATCH EDIT GAJI POKOK (INLINE HARI KERJA)
+        // FORMULIR GAJI TERPADU (LIVE CALCULATION & BATCH SAVE)
         // =========================================================================
-        function recalculateHeaderTotalNett() {
-            let total = 0;
-            document.querySelectorAll('.payroll-row').forEach(row => {
-                total += parseFloat(row.getAttribute('data-take-home-pay')) || 0;
-            });
-            const badgeEl = document.getElementById('headerTotalGajiNettValue');
-            if (badgeEl) {
-                badgeEl.textContent = 'Rp ' + Math.round(total).toLocaleString('id-ID');
+        function cleanNumber(val) {
+            if (val === null || val === undefined) return 0;
+            if (typeof val === 'number') return val;
+            const clean = String(val).replace(/[^0-9]/g, '');
+            return parseFloat(clean) || 0;
+        }
+
+        function isiDepositOtomatis(btn, saldo) {
+            const row = btn.closest('.payroll-row');
+            if (!row) return;
+            const depInput = row.querySelector('.batch-pengembalian-deposit');
+            if (depInput) {
+                depInput.value = Math.round(saldo).toLocaleString('id-ID');
+                onPayrollUnifiedRowInput(depInput);
             }
         }
 
-        function onGajiPokokRowInput(el) {
+        function onPayrollUnifiedRowInput(el) {
             const row = el.closest('.payroll-row');
             if (!row) return;
 
-            const hk = parseFloat(el.value) || 0;
+            // Auto format Rupiah dengan pemisah ribuan
+            if (el.classList.contains('batch-input-rupiah')) {
+                let numOnly = el.value.replace(/\D/g, '');
+                if (numOnly) {
+                    el.value = parseInt(numOnly, 10).toLocaleString('id-ID');
+                } else {
+                    el.value = '';
+                }
+            }
+
             const satuan = row.getAttribute('data-satuan') || 'Harian';
             const tarif = parseFloat(row.getAttribute('data-tarif')) || 0;
-            const totalBonus = parseFloat(row.getAttribute('data-bonus-total')) || 0;
-            const totalDeductions = parseFloat(row.getAttribute('data-deductions-total')) || 0;
 
-            let gajiPokok = (satuan === 'Bulanan') ? tarif : (hk * tarif);
-            let takeHomePay = gajiPokok + totalBonus - totalDeductions;
+            // 1. GAJI POKOK UTAMA
+            let totalGajiPokok = 0;
+            const subInputs = row.querySelectorAll('.batch-sub-item');
+            if (subInputs.length > 0) {
+                subInputs.forEach(input => {
+                    const hk = parseFloat(input.value) || 0;
+                    const subSat = input.getAttribute('data-satuan') || 'Harian';
+                    const subTar = parseFloat(input.getAttribute('data-tarif')) || 0;
+                    const itemId = input.getAttribute('data-item-id');
+                    const pNum = input.getAttribute('data-periode');
+                    const subGp = (subSat === 'Bulanan') ? subTar : (hk * subTar);
+                    totalGajiPokok += subGp;
 
+                    let subDisplayEl = itemId ? row.querySelector('.sub-gp-item-' + itemId) : null;
+                    if (!subDisplayEl && pNum) subDisplayEl = row.querySelector('.sub-gp-p-' + pNum);
+                    if (subDisplayEl) subDisplayEl.textContent = Math.round(subGp).toLocaleString('id-ID');
+                });
+                let sumHk = 0;
+                subInputs.forEach(inp => sumHk += (parseFloat(inp.value) || 0));
+                const displayHkEl = row.querySelector('.display-total-hk');
+                if (displayHkEl) displayHkEl.textContent = sumHk;
+            } else {
+                const hkInput = row.querySelector('.batch-hari-kerja');
+                const hk = hkInput ? (parseFloat(hkInput.value) || 0) : 0;
+                totalGajiPokok = (satuan === 'Bulanan') ? tarif : (hk * tarif);
+            }
+            row.setAttribute('data-gaji-pokok', totalGajiPokok);
+            const pokokCell = row.querySelector('.row-gaji-pokok-cell');
+            if (pokokCell) {
+                const valEl = pokokCell.querySelector('.ac-val');
+                if (valEl) {
+                    valEl.textContent = Math.round(totalGajiPokok).toLocaleString('id-ID');
+                } else {
+                    pokokCell.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(totalGajiPokok).toLocaleString('id-ID') + '</span>';
+                }
+            }
+
+            // 2. BONUS & LEMBUR
+            const jamLemburInput = row.querySelector('.batch-jam-lembur');
+            const jamLembur = jamLemburInput ? (parseFloat(jamLemburInput.value) || 0) : 0;
+            const upahLembur = jamLembur * 10000;
+            const subLemburText = row.querySelector('.sub-lembur-text');
+            if (subLemburText) {
+                const valEl = subLemburText.querySelector('.ac-val');
+                if (valEl) valEl.textContent = Math.round(upahLembur).toLocaleString('id-ID');
+                else subLemburText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahLembur).toLocaleString('id-ID') + '</span>';
+                subLemburText.classList.toggle('hidden', jamLembur <= 0);
+            }
+
+            let upahTarget = 0;
+            const banyakTargetInput = row.querySelector('.batch-banyak-target');
+            const bonusTargetInput = row.querySelector('.batch-bonus-target');
+            if (banyakTargetInput) {
+                const banyakTarget = parseFloat(banyakTargetInput.value) || 0;
+                upahTarget = banyakTarget * tarif;
+                const subTargetText = row.querySelector('.sub-target-text');
+                if (subTargetText) {
+                    const valEl = subTargetText.querySelector('.ac-val');
+                    if (valEl) valEl.textContent = Math.round(upahTarget).toLocaleString('id-ID');
+                    else subTargetText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahTarget).toLocaleString('id-ID') + '</span>';
+                    subTargetText.classList.toggle('hidden', banyakTarget <= 0);
+                }
+            } else if (bonusTargetInput) {
+                upahTarget = cleanNumber(bonusTargetInput.value);
+            }
+
+            let upahMerah = 0;
+            const banyakMerahInput = row.querySelector('.batch-banyak-merah');
+            const bonusMerahInput = row.querySelector('.batch-bonus-merah');
+            if (banyakMerahInput) {
+                const banyakMerah = parseFloat(banyakMerahInput.value) || 0;
+                upahMerah = banyakMerah * tarif;
+                const subMerahText = row.querySelector('.sub-merah-text');
+                if (subMerahText) {
+                    const valEl = subMerahText.querySelector('.ac-val');
+                    if (valEl) valEl.textContent = Math.round(upahMerah).toLocaleString('id-ID');
+                    else subMerahText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahMerah).toLocaleString('id-ID') + '</span>';
+                    subMerahText.classList.toggle('hidden', banyakMerah <= 0);
+                }
+            } else if (bonusMerahInput) {
+                upahMerah = cleanNumber(bonusMerahInput.value);
+            }
+
+            const banyakBirthdayInput = row.querySelector('.batch-banyak-birthday');
+            const banyakBirthday = banyakBirthdayInput ? (parseFloat(banyakBirthdayInput.value) || 0) : 0;
+            const upahBirthday = banyakBirthday * 5000;
+            const subBirthdayText = row.querySelector('.sub-birthday-text');
+            if (subBirthdayText) {
+                const valEl = subBirthdayText.querySelector('.ac-val');
+                if (valEl) valEl.textContent = Math.round(upahBirthday).toLocaleString('id-ID');
+                else subBirthdayText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahBirthday).toLocaleString('id-ID') + '</span>';
+                subBirthdayText.classList.toggle('hidden', banyakBirthday <= 0);
+            }
+
+            const depKembaliInput = row.querySelector('.batch-pengembalian-deposit');
+            const depKembali = depKembaliInput ? cleanNumber(depKembaliInput.value) : 0;
+
+            const bonusDllInput = row.querySelector('.batch-bonus-dll');
+            const bonusDll = bonusDllInput ? cleanNumber(bonusDllInput.value) : 0;
+
+            const totalBonus = upahLembur + upahTarget + upahMerah + upahBirthday + depKembali + bonusDll;
+            row.setAttribute('data-bonus-total', totalBonus);
+            const bonusCell = row.querySelector('.row-total-bonus-cell');
+            if (bonusCell) {
+                if (totalBonus > 0) {
+                    bonusCell.innerHTML = '<div class="accounting-cell"><span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(totalBonus).toLocaleString('id-ID') + '</span></div>';
+                } else {
+                    bonusCell.innerHTML = '<div class="text-center font-bold text-amber-700/60 text-xs">-</div>';
+                }
+            }
+
+            // 3. POTONGAN & PENGURANGAN
+            const potTerlambatRaw = row.querySelector('.potongan-terlambat-raw');
+            const potTerlambat = potTerlambatRaw ? (parseFloat(potTerlambatRaw.value) || 0) : 0;
+
+            const potInvInput = row.querySelector('.batch-potongan-inventaris');
+            const potInv = potInvInput ? cleanNumber(potInvInput.value) : 0;
+
+            const potKasbonInput = row.querySelector('.batch-potongan-kasbon');
+            const potKasbon = potKasbonInput ? cleanNumber(potKasbonInput.value) : 0;
+
+            const potDepositInput = row.querySelector('.batch-potongan-deposit');
+            const potDeposit = potDepositInput ? cleanNumber(potDepositInput.value) : 0;
+
+            const potDllInput = row.querySelector('.batch-potongan-dll');
+            const potDll = potDllInput ? cleanNumber(potDllInput.value) : 0;
+
+            const totalPotongan = potTerlambat + potInv + potKasbon + potDeposit + potDll;
+            row.setAttribute('data-deductions-total', totalPotongan);
+            const potCell = row.querySelector('.row-total-deductions-cell');
+            if (potCell) {
+                if (totalPotongan > 0) {
+                    potCell.innerHTML = '<div class="accounting-cell"><span class="ac-curr">- Rp</span><span class="ac-val">' + Math.round(totalPotongan).toLocaleString('id-ID') + '</span></div>';
+                } else {
+                    potCell.innerHTML = '<div class="text-center font-bold text-rose-700/60 text-xs">-</div>';
+                }
+            }
+
+            // 4. TAKE HOME PAY (GAJI BERSIH)
+            const takeHomePay = totalGajiPokok + totalBonus - totalPotongan;
             row.setAttribute('data-take-home-pay', takeHomePay);
+            const thpCell = row.querySelector('.row-take-home-pay-cell');
+            if (thpCell) {
+                const valEl = thpCell.querySelector('.ac-val');
+                if (valEl) {
+                    valEl.textContent = Math.round(takeHomePay).toLocaleString('id-ID');
+                } else {
+                    thpCell.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(takeHomePay).toLocaleString('id-ID') + '</span>';
+                }
+            }
 
-            const pokokEl = row.querySelector('.row-gaji-pokok-cell');
-            const thpEl = row.querySelector('.row-take-home-pay-cell');
-
-            if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(gajiPokok).toLocaleString('id-ID');
-            if (thpEl) thpEl.textContent = 'Rp ' + Math.round(takeHomePay).toLocaleString('id-ID');
-
-            recalculateHeaderTotalNett();
+            recalculateAllHeaderTotals();
         }
 
-        function onGajiPokokMultiRowInput(el) {
-            const row = el.closest('.payroll-row');
-            if (!row) return;
+        function recalculateAllHeaderTotals() {
+            let grandNett = 0;
+            let grandPokok = 0;
+            let grandBonus = 0;
+            let grandPotongan = 0;
 
-            const subInputs = row.querySelectorAll('.batch-sub-item');
-            let totalGajiPokok = 0;
-
-            subInputs.forEach(input => {
-                const hk = parseFloat(input.value) || 0;
-                const satuan = input.getAttribute('data-satuan') || 'Harian';
-                const tarif = parseFloat(input.getAttribute('data-tarif')) || 0;
-                const itemId = input.getAttribute('data-item-id');
-                const pNum = input.getAttribute('data-periode');
-                const subGp = (satuan === 'Bulanan') ? tarif : (hk * tarif);
-                totalGajiPokok += subGp;
-
-                // Update sub display if available
-                let subDisplayEl = null;
-                if (itemId) {
-                    subDisplayEl = row.querySelector('.sub-gp-item-' + itemId);
-                }
-                if (!subDisplayEl && pNum) {
-                    subDisplayEl = row.querySelector('.sub-gp-p-' + pNum);
-                }
-                if (subDisplayEl) {
-                    subDisplayEl.textContent = 'Rp ' + Math.round(subGp).toLocaleString('id-ID');
-                }
+            document.querySelectorAll('.payroll-row').forEach(row => {
+                grandNett += parseFloat(row.getAttribute('data-take-home-pay')) || 0;
+                grandPokok += parseFloat(row.getAttribute('data-gaji-pokok')) || 0;
+                grandBonus += parseFloat(row.getAttribute('data-bonus-total')) || 0;
+                grandPotongan += parseFloat(row.getAttribute('data-deductions-total')) || 0;
             });
 
-            const totalBonus = parseFloat(row.getAttribute('data-bonus-total')) || 0;
-            const totalDeductions = parseFloat(row.getAttribute('data-deductions-total')) || 0;
-            let takeHomePay = totalGajiPokok + totalBonus - totalDeductions;
+            const nettEl = document.getElementById('headerTotalGajiNettValue');
+            if (nettEl) nettEl.textContent = 'Rp ' + Math.round(grandNett).toLocaleString('id-ID');
 
-            row.setAttribute('data-take-home-pay', takeHomePay);
+            const pokokEl = document.getElementById('headerTotalGajiPokokValue');
+            if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(grandPokok).toLocaleString('id-ID');
 
-            const pokokEl = row.querySelector('.row-gaji-pokok-cell');
-            const thpEl = row.querySelector('.row-take-home-pay-cell');
+            const bonusEl = document.getElementById('headerTotalBonusValue');
+            if (bonusEl) bonusEl.textContent = 'Rp ' + Math.round(grandBonus).toLocaleString('id-ID');
 
-            if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(totalGajiPokok).toLocaleString('id-ID');
-            if (thpEl) thpEl.textContent = 'Rp ' + Math.round(takeHomePay).toLocaleString('id-ID');
-
-            recalculateHeaderTotalNett();
+            const potEl = document.getElementById('headerTotalPotonganValue');
+            if (potEl) potEl.textContent = 'Rp ' + Math.round(grandPotongan).toLocaleString('id-ID');
         }
 
-        async function submitBatchGajiPokok(btn) {
+        async function submitBatchUnifiedPayroll(btn) {
             const rows = document.querySelectorAll('.payroll-row');
             if (!rows.length) return;
 
@@ -1774,40 +2576,105 @@
                 const karyawanId = row.getAttribute('data-karyawan-id');
                 const subInputs = row.querySelectorAll('.batch-sub-item');
 
+                const jamLembur = row.querySelector('.batch-jam-lembur') ? (parseFloat(row.querySelector('.batch-jam-lembur').value) || 0) : 0;
+                
+                const banyakTargetInput = row.querySelector('.batch-banyak-target');
+                const bonusTargetInput = row.querySelector('.batch-bonus-target');
+                const banyakTarget = banyakTargetInput ? (parseFloat(banyakTargetInput.value) || 0) : 0;
+                const bonusTarget = bonusTargetInput ? cleanNumber(bonusTargetInput.value) : 0;
+                const catatanTarget = row.querySelector('.batch-catatan-target') ? row.querySelector('.batch-catatan-target').value : null;
+
+                const banyakMerahInput = row.querySelector('.batch-banyak-merah');
+                const bonusMerahInput = row.querySelector('.batch-bonus-merah');
+                const banyakMerah = banyakMerahInput ? (parseFloat(banyakMerahInput.value) || 0) : 0;
+                const bonusMerah = bonusMerahInput ? cleanNumber(bonusMerahInput.value) : 0;
+                const catatanMerah = row.querySelector('.batch-catatan-merah') ? row.querySelector('.batch-catatan-merah').value : null;
+
+                const banyakBirthday = row.querySelector('.batch-banyak-birthday') ? (parseFloat(row.querySelector('.batch-banyak-birthday').value) || 0) : 0;
+                const depKembali = row.querySelector('.batch-pengembalian-deposit') ? cleanNumber(row.querySelector('.batch-pengembalian-deposit').value) : 0;
+                const bonusDll = row.querySelector('.batch-bonus-dll') ? cleanNumber(row.querySelector('.batch-bonus-dll').value) : 0;
+
+                const potInv = row.querySelector('.batch-potongan-inventaris') ? cleanNumber(row.querySelector('.batch-potongan-inventaris').value) : 0;
+                const potKasbon = row.querySelector('.batch-potongan-kasbon') ? cleanNumber(row.querySelector('.batch-potongan-kasbon').value) : 0;
+                const potDeposit = row.querySelector('.batch-potongan-deposit') ? cleanNumber(row.querySelector('.batch-potongan-deposit').value) : 0;
+                const potDll = row.querySelector('.batch-potongan-dll') ? cleanNumber(row.querySelector('.batch-potongan-dll').value) : 0;
+                const catPotDll = row.querySelector('.batch-catatan-potongan-dll') ? row.querySelector('.batch-catatan-potongan-dll').value : '';
+
                 if (subInputs.length > 0) {
-                    subInputs.forEach(subInput => {
+                    subInputs.forEach((subInput, sIdx) => {
                         const itemId = subInput.getAttribute('data-item-id');
                         const pNum = subInput.getAttribute('data-periode');
-                        items.push({
-                            id: itemId,
-                            karyawan_id: karyawanId,
-                            pilihan_periode: pNum,
-                            hari_kerja: parseFloat(subInput.value) || 0,
-                        });
+                        const hkVal = parseFloat(subInput.value) || 0;
+
+                        if (sIdx === 0) {
+                            items.push({
+                                id: itemId,
+                                karyawan_id: karyawanId,
+                                pilihan_periode: pNum,
+                                hari_kerja: hkVal,
+                                jam_lembur: jamLembur,
+                                banyak_target: banyakTarget,
+                                bonus_target: bonusTarget,
+                                catatan_bonus_target: catatanTarget,
+                                banyak_tanggal_merah: banyakMerah,
+                                bonus_tanggal_merah: bonusMerah,
+                                catatan_bonus_tanggal_merah: catatanMerah,
+                                banyak_birthday_service: banyakBirthday,
+                                pengembalian_deposit: depKembali,
+                                bonus_dll: bonusDll,
+                                potongan_inventaris: potInv,
+                                potongan_kasbon: potKasbon,
+                                potongan_deposit: potDeposit,
+                                potongan_dll: potDll,
+                                catatan_potongan_dll: catPotDll,
+                            });
+                        } else {
+                            items.push({
+                                id: itemId,
+                                karyawan_id: karyawanId,
+                                pilihan_periode: pNum,
+                                hari_kerja: hkVal,
+                            });
+                        }
                     });
                 } else {
                     const hkInput = row.querySelector('.batch-hari-kerja');
-                    if (hkInput) {
-                        const activeItemId = row.getAttribute('data-active-item-id') || id;
-                        const activePeriode = row.getAttribute('data-active-periode') || 1;
-                        items.push({
-                            id: activeItemId,
-                            karyawan_id: karyawanId,
-                            pilihan_periode: activePeriode,
-                            hari_kerja: parseFloat(hkInput.value) || 0,
-                        });
-                    }
+                    const activeItemId = row.getAttribute('data-active-item-id') || id;
+                    const activePeriode = row.getAttribute('data-active-periode') || 1;
+                    const hkVal = hkInput ? (parseFloat(hkInput.value) || 0) : 0;
+
+                    items.push({
+                        id: activeItemId,
+                        karyawan_id: karyawanId,
+                        pilihan_periode: activePeriode,
+                        hari_kerja: hkVal,
+                        jam_lembur: jamLembur,
+                        banyak_target: banyakTarget,
+                        bonus_target: bonusTarget,
+                        catatan_bonus_target: catatanTarget,
+                        banyak_tanggal_merah: banyakMerah,
+                        bonus_tanggal_merah: bonusMerah,
+                        catatan_bonus_tanggal_merah: catatanMerah,
+                        banyak_birthday_service: banyakBirthday,
+                        pengembalian_deposit: depKembali,
+                        bonus_dll: bonusDll,
+                        potongan_inventaris: potInv,
+                        potongan_kasbon: potKasbon,
+                        potongan_deposit: potDeposit,
+                        potongan_dll: potDll,
+                        catatan_potongan_dll: catPotDll,
+                    });
                 }
             });
 
             if (!items.length) {
-                alert('Tidak ada input waktu kerja yang dapat diedit langsung.');
+                alert('Tidak ada input data gaji yang dapat diedit langsung.');
                 return;
             }
 
             const origContent = btn.innerHTML;
             btn.disabled = true;
-            btn.innerHTML = '<span>&#8987;</span> Menyimpan...';
+            btn.innerHTML = '<span>⏳</span> Menyimpan Formulir Gaji...';
 
             try {
                 const response = await fetch("{{ route('penggajian.periode.batch-update') }}", {
@@ -1830,14 +2697,14 @@
                         Swal.fire({
                             icon: 'success',
                             title: 'Tersimpan!',
-                            text: res.message || 'Waktu kerja & gaji pokok berhasil diperbarui.',
+                            text: res.message || 'Seluruh formulir gaji berhasil disimpan.',
                             timer: 2000,
                             showConfirmButton: false
                         }).then(() => {
                             window.location.reload();
                         });
                     } else {
-                        alert(res.message || 'Waktu kerja & gaji pokok berhasil disimpan!');
+                        alert(res.message || 'Seluruh formulir gaji berhasil disimpan!');
                         window.location.reload();
                     }
                 } else {
@@ -1851,6 +2718,76 @@
                 btn.innerHTML = origContent;
             }
         }
+
+        // Aliases for compatibility
+        const submitBatchGajiPokok = submitBatchUnifiedPayroll;
+        const onGajiPokokRowInput = onPayrollUnifiedRowInput;
+        const onGajiPokokMultiRowInput = onPayrollUnifiedRowInput;
+        const recalculateHeaderTotalNett = recalculateAllHeaderTotals;
+
+        // =========================================================================
+        // FITUR MAXIMIZE / FULLSCREEN KHUSUS FORM HITUNG GAJI
+        // =========================================================================
+        function toggleMaximizePayroll(forceState = null) {
+            const isCurrentlyMax = document.body.classList.contains('payroll-maximized');
+            const targetState = (forceState !== null) ? forceState : !isCurrentlyMax;
+
+            const btn = document.getElementById('btnToggleMaximizePayroll');
+            const icon = document.getElementById('maximizeIcon');
+            const text = document.getElementById('maximizeText');
+
+            if (targetState) {
+                document.body.classList.add('payroll-maximized');
+                if (icon) icon.textContent = '🗗';
+                if (text) text.textContent = 'Keluar Maximize';
+                if (btn) {
+                    btn.style.backgroundColor = '#334155';
+                    btn.style.borderColor = '#64748b';
+                    btn.title = 'Kembalikan tampilan normal dengan sidebar (atau tekan tombol ESC)';
+                }
+                sessionStorage.setItem('payroll_maximized', '1');
+
+                // Opsional: Coba masuk ke browser fullscreen jika diizinkan browser
+                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                }
+            } else {
+                document.body.classList.remove('payroll-maximized');
+                if (icon) icon.textContent = '⛶';
+                if (text) text.textContent = 'Maximize';
+                if (btn) {
+                    btn.style.backgroundColor = '#0f172a';
+                    btn.style.borderColor = '#334155';
+                    btn.title = 'Layar Penuh: Sembunyikan sidebar dan maksimalkan ruang kerja tabel hitung gaji (Tekan ESC untuk keluar)';
+                }
+                sessionStorage.removeItem('payroll_maximized');
+
+                if (document.exitFullscreen && document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => {});
+                }
+            }
+        }
+
+        // Sinkronisasi jika keluar via tombol ESC browser
+        document.addEventListener('fullscreenchange', function() {
+            if (!document.fullscreenElement && document.body.classList.contains('payroll-maximized')) {
+                toggleMaximizePayroll(false);
+            }
+        });
+
+        // Dukungan tombol keyboard ESC
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.body.classList.contains('payroll-maximized')) {
+                toggleMaximizePayroll(false);
+            }
+        });
+
+        // Pulihkan status maximize jika sebelumnya aktif dalam sesi ini
+        document.addEventListener('DOMContentLoaded', function() {
+            if (sessionStorage.getItem('payroll_maximized') === '1') {
+                toggleMaximizePayroll(true);
+            }
+        });
     </script>
 
     <!-- Reorder Notification Toast -->

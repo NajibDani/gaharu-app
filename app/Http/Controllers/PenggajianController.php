@@ -393,8 +393,27 @@ class PenggajianController extends Controller
             }
         }
 
+        $karyawanIds = $rawPayrolls->pluck('karyawan_id')->unique();
+        $hasPotDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'potongan_deposit');
+        $hasRetDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'pengembalian_deposit');
+
+        $allPotonganDeposit = $hasPotDeposit
+            ? Penggajian::whereIn('karyawan_id', $karyawanIds)
+                ->groupBy('karyawan_id')
+                ->selectRaw('karyawan_id, SUM(potongan_deposit) as total_pot_deposit')
+                ->pluck('total_pot_deposit', 'karyawan_id')
+            : collect();
+
+        $allReturnedOther = $hasRetDeposit
+            ? Penggajian::whereIn('karyawan_id', $karyawanIds)
+                ->where('periode_bulan_tahun', '!=', $periode)
+                ->groupBy('karyawan_id')
+                ->selectRaw('karyawan_id, SUM(pengembalian_deposit) as total_ret_deposit')
+                ->pluck('total_ret_deposit', 'karyawan_id')
+            : collect();
+
         // Grouping: 1 BARIS PER KARYAWAN
-        $payrolls = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) {
+        $payrolls = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) use ($allPotonganDeposit, $allReturnedOther) {
             $first = $items->first();
             $primaryPayroll = $items->sortByDesc('hari_kerja')->first() ?? $first;
             
@@ -410,6 +429,8 @@ class PenggajianController extends Controller
             $totalBanyakBirthday = $items->sum('banyak_birthday_service');
             $totalPengembalianDeposit = $items->sum('pengembalian_deposit');
             $totalBonusDll = $items->sum('bonus_dll');
+
+            $saldoDeposit = max(0, floatval($allPotonganDeposit->get($first->karyawan_id, 0)) - floatval($allReturnedOther->get($first->karyawan_id, 0)));
 
             $totalEarnings = $items->sum(function($p) {
                 return $p->total_earnings > 0 ? (float)$p->total_earnings : (
@@ -457,6 +478,7 @@ class PenggajianController extends Controller
                 'banyak_birthday_service' => $totalBanyakBirthday,
                 'bonus_birthday'          => $totalBirthday,
                 'pengembalian_deposit'    => $totalPengembalianDeposit,
+                'saldo_deposit'           => $saldoDeposit,
                 'bonus_dll'               => $totalBonusDll,
                 'potongan_terlambat'      => $totalPotonganTerlambat,
                 'potongan_inventaris'     => $totalPotonganInventaris,
@@ -1564,59 +1586,125 @@ class PenggajianController extends Controller
             $tarifHarianTotal = $gajiPokokHarian + $uangMakan + $uangTransport;
             $gajiUtama = ($satuanGaji === 'Bulanan') ? $tarifHarianTotal : ($hariKerja * $tarifHarianTotal);
 
-            if ($payroll) {
-                $lembur               = (float) ($payroll->lembur ?? 0);
-                $bonusTarget          = (float) ($payroll->bonus_target ?? 0);
-                $bonusTanggalMerah    = (float) ($payroll->bonus_tanggal_merah ?? 0);
-                $bonusBirthdayService = (float) ($payroll->bonus_birthday ?? 0);
-                $pengembalianDeposit  = (float) ($payroll->pengembalian_deposit ?? 0);
-                $bonusDll             = (float) ($payroll->bonus_dll ?? 0);
+            // Helper pembersih rupiah
+            $cleanRupiah = function ($value) {
+                if (is_numeric($value)) return (float)$value;
+                if (empty($value)) return 0.0;
+                return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', (string)$value));
+            };
 
+            // 1. Perhitungan Bonus & Lembur (jika dikirim dari formulir gabungan)
+            $jamLembur             = array_key_exists('jam_lembur', $item) ? floatval($item['jam_lembur']) : floatval($payroll->jam_lembur ?? 0);
+            $lembur                = $jamLembur * 10000;
+            $banyakBirthdayService = array_key_exists('banyak_birthday_service', $item) ? intval($item['banyak_birthday_service']) : intval($payroll->banyak_birthday_service ?? 0);
+            $bonusBirthdayService  = $banyakBirthdayService * 5000;
+            $pengembalianDeposit   = array_key_exists('pengembalian_deposit', $item) ? $cleanRupiah($item['pengembalian_deposit']) : (float)($payroll->pengembalian_deposit ?? 0);
+            $bonusDll              = array_key_exists('bonus_dll', $item) ? $cleanRupiah($item['bonus_dll']) : (float)($payroll->bonus_dll ?? 0);
+
+            if ($satuanGaji === 'Harian') {
+                $banyakTarget        = array_key_exists('banyak_target', $item) ? intval($item['banyak_target']) : intval($payroll->banyak_target ?? 0);
+                $banyakTanggalMerah  = array_key_exists('banyak_tanggal_merah', $item) ? intval($item['banyak_tanggal_merah']) : intval($payroll->banyak_tanggal_merah ?? 0);
+                $bonusTarget         = $banyakTarget * $tarifHarianTotal;
+                $bonusTanggalMerah   = $banyakTanggalMerah * $tarifHarianTotal;
+                $catatanTarget       = null;
+                $catatanTanggalMerah = null;
+            } else {
+                $banyakTarget        = 0;
+                $banyakTanggalMerah  = 0;
+                $bonusTarget         = array_key_exists('bonus_target', $item) ? $cleanRupiah($item['bonus_target']) : (float)($payroll->bonus_target ?? 0);
+                $bonusTanggalMerah   = array_key_exists('bonus_tanggal_merah', $item) ? $cleanRupiah($item['bonus_tanggal_merah']) : (float)($payroll->bonus_tanggal_merah ?? 0);
+                $catatanTarget       = array_key_exists('catatan_bonus_target', $item) ? $item['catatan_bonus_target'] : ($payroll->catatan_bonus_target ?? null);
+                $catatanTanggalMerah = array_key_exists('catatan_bonus_tanggal_merah', $item) ? $item['catatan_bonus_tanggal_merah'] : ($payroll->catatan_bonus_tanggal_merah ?? null);
+            }
+
+            // 2. Perhitungan Potongan & Pengurangan (jika dikirim dari formulir gabungan)
+            $potonganInventaris = array_key_exists('potongan_inventaris', $item) ? $cleanRupiah($item['potongan_inventaris']) : (float)($payroll->potongan_inventaris ?? 0);
+            $potonganKasbon     = array_key_exists('potongan_kasbon', $item) ? $cleanRupiah($item['potongan_kasbon']) : (float)($payroll->potongan_kasbon ?? 0);
+            $potonganDeposit    = array_key_exists('potongan_deposit', $item) ? $cleanRupiah($item['potongan_deposit']) : (float)($payroll->potongan_deposit ?? 0);
+            $potonganDll        = array_key_exists('potongan_dll', $item) ? $cleanRupiah($item['potongan_dll']) : (float)($payroll->potongan_dll ?? 0);
+            $catatanPotonganDll = array_key_exists('catatan_potongan_dll', $item) ? $item['catatan_potongan_dll'] : ($payroll->catatan_potongan_dll ?? null);
+
+            if ($payroll) {
+                $potonganTerlambat = floatval($payroll->potongan_terlambat ?? 0);
                 $totalEarnings   = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
-                $totalDeductions = floatval($payroll->potongan_terlambat ?? 0) + floatval($payroll->potongan_inventaris ?? 0) + floatval($payroll->potongan_kasbon ?? 0) + floatval($payroll->potongan_deposit ?? 0) + floatval($payroll->potongan_dll ?? 0);
+                $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
                 $totalGajiBersih = $totalEarnings - $totalDeductions;
 
                 $payroll->update([
-                    'hari_kerja'         => $hariKerja,
-                    'pilihan_periode'    => $pilihanPeriode,
-                    'satuan_gaji'        => $satuanGaji,
-                    'gaji_pokok'         => $gajiPokokHarian,
-                    'tunjangan_makan'    => $uangMakan,
-                    'tunjangan_transport'=> $uangTransport,
-                    'tarif_harian_total' => $tarifHarianTotal,
-                    'gaji_utama'         => $gajiUtama,
-                    'total_earnings'     => $totalEarnings,
-                    'total_deductions'   => $totalDeductions,
-                    'total_gaji_bersih'  => $totalGajiBersih,
+                    'hari_kerja'                  => $hariKerja,
+                    'pilihan_periode'             => $pilihanPeriode,
+                    'satuan_gaji'                 => $satuanGaji,
+                    'gaji_pokok'                  => $gajiPokokHarian,
+                    'tunjangan_makan'             => $uangMakan,
+                    'tunjangan_transport'         => $uangTransport,
+                    'tarif_harian_total'          => $tarifHarianTotal,
+                    'gaji_utama'                  => $gajiUtama,
+                    'jam_lembur'                  => $jamLembur,
+                    'lembur'                      => $lembur,
+                    'banyak_target'               => $banyakTarget,
+                    'bonus_target'                => $bonusTarget,
+                    'catatan_bonus_target'        => $catatanTarget,
+                    'banyak_tanggal_merah'        => $banyakTanggalMerah,
+                    'bonus_tanggal_merah'         => $bonusTanggalMerah,
+                    'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
+                    'banyak_birthday_service'     => $banyakBirthdayService,
+                    'bonus_birthday'              => $bonusBirthdayService,
+                    'pengembalian_deposit'        => $pengembalianDeposit,
+                    'bonus_dll'                   => $bonusDll,
+                    'potongan_inventaris'         => $potonganInventaris,
+                    'potongan_kasbon'             => $potonganKasbon,
+                    'potongan_deposit'            => $potonganDeposit,
+                    'potongan_dll'                => $potonganDll,
+                    'catatan_potongan_dll'        => $catatanPotonganDll,
+                    'total_earnings'              => $totalEarnings,
+                    'total_deductions'            => $totalDeductions,
+                    'total_gaji_bersih'           => $totalGajiBersih,
                 ]);
             } else {
                 // Buat record baru jika belum ada
                 $qLate = Keterlambatan::where('karyawan_id', $karyawan->id)
                     ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
                 $potonganTerlambat = floatval($qLate->sum('potongan'));
-                $totalDeductions = $potonganTerlambat;
-                $totalEarnings = $gajiUtama;
+                $totalEarnings   = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
+                $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
                 $totalGajiBersih = $totalEarnings - $totalDeductions;
 
                 Penggajian::create([
-                    'karyawan_id'         => $karyawan->id,
-                    'outlet'              => $karyawan->outlet ?? $outlet,
-                    'satuan_gaji'         => $satuanGaji,
-                    'satuan_gaji_2'       => $karyawan->satuan_gaji_2 ?? $satuanGaji,
-                    'pilihan_periode'     => $pilihanPeriode,
-                    'periode_bulan_tahun' => $periode,
-                    'hari_kerja'          => $hariKerja,
-                    'tarif_harian_total'  => $tarifHarianTotal,
-                    'gaji_utama'          => $gajiUtama,
-                    'gaji_pokok'          => $gajiPokokHarian,
-                    'tunjangan_transport' => $uangTransport,
-                    'tunjangan_makan'     => $uangMakan,
-                    'potongan_terlambat'  => $potonganTerlambat,
-                    'total_earnings'      => $totalEarnings,
-                    'total_deductions'    => $totalDeductions,
-                    'total_gaji_bersih'   => $totalGajiBersih,
-                    'status'              => 'draft',
-                    'status_jurnal'       => false
+                    'karyawan_id'                 => $karyawan->id,
+                    'outlet'                      => $karyawan->outlet ?? $outlet,
+                    'satuan_gaji'                 => $satuanGaji,
+                    'satuan_gaji_2'               => $karyawan->satuan_gaji_2 ?? $satuanGaji,
+                    'pilihan_periode'             => $pilihanPeriode,
+                    'periode_bulan_tahun'         => $periode,
+                    'hari_kerja'                  => $hariKerja,
+                    'tarif_harian_total'          => $tarifHarianTotal,
+                    'gaji_utama'                  => $gajiUtama,
+                    'gaji_pokok'                  => $gajiPokokHarian,
+                    'tunjangan_transport'         => $uangTransport,
+                    'tunjangan_makan'             => $uangMakan,
+                    'jam_lembur'                  => $jamLembur,
+                    'lembur'                      => $lembur,
+                    'banyak_target'               => $banyakTarget,
+                    'bonus_target'                => $bonusTarget,
+                    'catatan_bonus_target'        => $catatanTarget,
+                    'banyak_tanggal_merah'        => $banyakTanggalMerah,
+                    'bonus_tanggal_merah'         => $bonusTanggalMerah,
+                    'catatan_bonus_tanggal_merah' => $catatanTanggalMerah,
+                    'banyak_birthday_service'     => $banyakBirthdayService,
+                    'bonus_birthday'              => $bonusBirthdayService,
+                    'pengembalian_deposit'        => $pengembalianDeposit,
+                    'bonus_dll'                   => $bonusDll,
+                    'potongan_terlambat'          => $potonganTerlambat,
+                    'potongan_inventaris'         => $potonganInventaris,
+                    'potongan_kasbon'             => $potonganKasbon,
+                    'potongan_deposit'            => $potonganDeposit,
+                    'potongan_dll'                => $potonganDll,
+                    'catatan_potongan_dll'        => $catatanPotonganDll,
+                    'total_earnings'              => $totalEarnings,
+                    'total_deductions'            => $totalDeductions,
+                    'total_gaji_bersih'           => $totalGajiBersih,
+                    'status'                      => 'draft',
+                    'status_jurnal'               => false
                 ]);
             }
 

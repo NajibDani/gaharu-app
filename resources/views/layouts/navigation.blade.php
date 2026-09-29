@@ -169,14 +169,8 @@
                             <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Pengaturan Gaji
                         </a>
                         <div class="submenu-divider">TRANSAKSI</div>
-                        <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') && !request()->routeIs('penggajian.bonus.*') && !request()->routeIs('penggajian.potongan.*') ? 'active' : '' }}">
-                            <i class="bi bi-cash-stack me-2" style="font-size:12px;"></i>Hitung Gaji Pokok
-                        </a>
-                        <a href="{{ route('penggajian.bonus.index') }}" class="{{ request()->routeIs('penggajian.bonus.*') ? 'active' : '' }}">
-                            <i class="bi bi-star me-2" style="font-size:12px;"></i>Bonus &amp; Lembur
-                        </a>
-                        <a href="{{ route('penggajian.potongan.index') }}" class="{{ request()->routeIs('penggajian.potongan.*') ? 'active' : '' }}">
-                            <i class="bi bi-scissors me-2" style="font-size:12px;"></i>Potongan &amp; Pengurangan
+                        <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') ? 'active' : '' }}">
+                            <i class="bi bi-calculator me-2" style="font-size:12px;"></i>Hitung Gaji (Formulir)
                         </a>
                         <a href="{{ route('keterlambatan.index') }}" class="{{ request()->routeIs('keterlambatan.*') ? 'active' : '' }}">
                             <i class="bi bi-clock-history me-2" style="font-size:12px;"></i>Data Keterlambatan
