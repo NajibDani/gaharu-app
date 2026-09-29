@@ -36,12 +36,20 @@
 
                     {{-- Right Action Buttons --}}
                     <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                        {{-- TOMBOL SINKRONISASI / REFRESH DATA DARI SERVER --}}
+                        <button type="button" onclick="refreshPayrollData(this)" id="btnRefreshPayrollData"
+                                style="background-color: #f1f5f9; color: #334155; border: 1.5px solid #cbd5e1; padding: 5px 10px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: all .15s; white-space: nowrap;"
+                                onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'"
+                                title="Muat ulang data terbaru dari database (berguna jika ada user lain yang baru menginput)">
+                            <span id="refreshIcon">🔄</span> Sinkronkan Data
+                        </button>
+
                         @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
                         <button type="button" onclick="submitBatchUnifiedPayroll(this)" id="btnBatchSaveUnifiedPayroll"
                                 style="background-color: #7A4517; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(122,69,23,0.2); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
-                                title="Simpan seluruh formulir gaji pokok, bonus & lembur, dan potongan di halaman ini sekaligus">
-                            <span>💾</span> Simpan Formulir Gaji
+                                title="Simpan formulir gaji ke database">
+                            <span>💾</span> <span id="btnBatchSaveText">Simpan Formulir Gaji</span>
                         </button>
 
                         <form action="{{ route('penggajian.auto-fill') }}" method="POST" class="inline m-0 p-0">
@@ -432,6 +440,27 @@
                 thead th.sticky-col-karyawan {
                     z-index: 55 !important;
                     top: 0 !important;
+                }
+
+                /* Highlight baris yang sedang diedit tapi belum disimpan */
+                tr.payroll-row.row-modified {
+                    background-color: #fffbeb !important;
+                    box-shadow: inset 4px 0 0 #f59e0b;
+                }
+                tr.payroll-row.row-modified td {
+                    background-color: #fffbeb !important;
+                }
+                tr.payroll-row.row-modified td.sticky-col-karyawan {
+                    background-color: #fef3c7 !important;
+                }
+
+                @keyframes spin-sync {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                .animate-spin {
+                    display: inline-block;
+                    animation: spin-sync 0.8s linear infinite;
                 }
 
                 /* ========================================================================= */
@@ -2537,7 +2566,54 @@
                 }
             }
 
+            // Tandai baris ini sebagai modified / dirty (mencegah overwrite data user lain saat batch save)
+            row.setAttribute('data-dirty', 'true');
+            row.classList.add('row-modified');
+            updateDirtyCounter();
+
             recalculateAllHeaderTotals();
+        }
+
+        // Hitung berapa baris yang telah diedit oleh user ini
+        function updateDirtyCounter() {
+            const dirtyCount = document.querySelectorAll('.payroll-row[data-dirty="true"]').length;
+            const btnSave = document.getElementById('btnBatchSaveUnifiedPayroll');
+            const txtSave = document.getElementById('btnBatchSaveText');
+            if (!btnSave) return;
+
+            if (dirtyCount > 0) {
+                btnSave.style.backgroundColor = '#b45309'; // Warna amber tua lebih tegas
+                if (txtSave) txtSave.textContent = `Simpan (${dirtyCount} diubah)`;
+                btnSave.title = `Ada ${dirtyCount} baris yang diubah dan belum disimpan ke database`;
+            } else {
+                btnSave.style.backgroundColor = '#7A4517';
+                if (txtSave) txtSave.textContent = 'Simpan Formulir Gaji';
+                btnSave.title = 'Simpan formulir gaji ke database';
+            }
+        }
+
+        // Peringatan jika user meninggalkan halaman saat ada perubahan yang belum disimpan
+        window.addEventListener('beforeunload', function (e) {
+            const dirtyCount = document.querySelectorAll('.payroll-row[data-dirty="true"]').length;
+            if (dirtyCount > 0) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // Muat ulang data terbaru dari database
+        function refreshPayrollData(btn) {
+            const dirtyCount = document.querySelectorAll('.payroll-row[data-dirty="true"]').length;
+            if (dirtyCount > 0) {
+                if (!confirm(`Ada ${dirtyCount} baris data yang belum Anda simpan. Jika disinkronkan sekarang, perubahan Anda akan hilang. Tetap muat ulang data dari server?`)) {
+                    return;
+                }
+            }
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="inline-block animate-spin">🔄</span> Memuat...';
+            }
+            window.location.reload();
         }
 
         function recalculateAllHeaderTotals() {
@@ -2567,11 +2643,15 @@
         }
 
         async function submitBatchUnifiedPayroll(btn) {
-            const rows = document.querySelectorAll('.payroll-row');
-            if (!rows.length) return;
+            const allRows = document.querySelectorAll('.payroll-row');
+            if (!allRows.length) return;
+
+            // OPTIMASI: Simpan HANYA baris yang diedit (dirty) agar tidak menimpa editan user lain!
+            const dirtyRows = document.querySelectorAll('.payroll-row[data-dirty="true"]');
+            const rowsToProcess = (dirtyRows.length > 0) ? dirtyRows : allRows;
 
             const items = [];
-            rows.forEach(row => {
+            rowsToProcess.forEach(row => {
                 const id = row.getAttribute('data-id');
                 const karyawanId = row.getAttribute('data-karyawan-id');
                 const subInputs = row.querySelectorAll('.batch-sub-item');
@@ -2668,13 +2748,13 @@
             });
 
             if (!items.length) {
-                alert('Tidak ada input data gaji yang dapat diedit langsung.');
+                alert('Tidak ada data gaji yang dapat disimpan.');
                 return;
             }
 
             const origContent = btn.innerHTML;
             btn.disabled = true;
-            btn.innerHTML = '<span>⏳</span> Menyimpan Formulir Gaji...';
+            btn.innerHTML = `<span>⏳</span> Menyimpan (${items.length} baris)...`;
 
             try {
                 const response = await fetch("{{ route('penggajian.periode.batch-update') }}", {
@@ -2693,18 +2773,25 @@
 
                 const res = await response.json();
                 if (response.ok && res.success) {
+                    // Bersihkan tanda dirty karena sudah tersimpan ke server
+                    document.querySelectorAll('.payroll-row[data-dirty="true"]').forEach(r => {
+                        r.removeAttribute('data-dirty');
+                        r.classList.remove('row-modified');
+                    });
+                    updateDirtyCounter();
+
                     if (typeof Swal !== 'undefined') {
                         Swal.fire({
                             icon: 'success',
                             title: 'Tersimpan!',
-                            text: res.message || 'Seluruh formulir gaji berhasil disimpan.',
-                            timer: 2000,
+                            text: res.message || `${items.length} baris data berhasil disimpan ke server.`,
+                            timer: 1500,
                             showConfirmButton: false
                         }).then(() => {
                             window.location.reload();
                         });
                     } else {
-                        alert(res.message || 'Seluruh formulir gaji berhasil disimpan!');
+                        alert(res.message || `${items.length} baris data berhasil disimpan ke server.`);
                         window.location.reload();
                     }
                 } else {
