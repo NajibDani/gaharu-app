@@ -353,9 +353,27 @@ class PenggajianController extends Controller
             }
         }
 
-        // Otomatis sinkronkan potongan keterlambatan untuk slip draft / waiting approval di periode ini
+        // Otomatis sinkronkan komponen gaji master dan potongan keterlambatan untuk slip draft / waiting approval di periode ini
         foreach ($rawPayrolls as $payroll) {
-            if ($payroll->status !== 'approved') {
+            if ($payroll->status !== 'approved' && !$payroll->status_jurnal && $payroll->karyawan) {
+                $kw = $payroll->karyawan;
+                $pNum = (int)($payroll->pilihan_periode ?? 1);
+                if ($pNum === 2 && $kw->gaji_pokok_2 !== null) {
+                    $masterGp = floatval($kw->gaji_pokok_2);
+                    $masterUm = floatval($kw->uang_makan_2);
+                    $masterUt = floatval($kw->uang_transport_2);
+                    $masterSat = $kw->satuan_gaji_2 ?? $kw->satuan_gaji ?? 'Harian';
+                } else {
+                    $masterGp = floatval($kw->gaji_pokok);
+                    $masterUm = floatval($kw->uang_makan);
+                    $masterUt = floatval($kw->uang_transport);
+                    $masterSat = $kw->satuan_gaji ?? 'Harian';
+                }
+                $masterTarif = $masterGp + $masterUm + $masterUt;
+
+                $hk = floatval($payroll->hari_kerja ?? 0);
+                $gajiUtama = ($masterSat === 'Bulanan') ? $masterTarif : ($hk * $masterTarif);
+
                 $pMulai = $payroll->tanggal_mulai ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : null;
                 $pSelesai = $payroll->tanggal_selesai ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : null;
 
@@ -367,10 +385,18 @@ class PenggajianController extends Controller
                 }
                 $potonganTerlambat = (float) $qLate->sum('potongan');
 
-                $earnings = (float) ($payroll->total_earnings > 0 ? $payroll->total_earnings : (
-                    ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-                    ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
-                ));
+                $bTarget = intval($payroll->banyak_target ?? 0);
+                $bMerah = intval($payroll->banyak_tanggal_merah ?? 0);
+                $bonusTarget = ($masterSat === 'Harian' && $bTarget > 0) ? ($bTarget * $masterTarif) : floatval($payroll->bonus_target ?? 0);
+                $bonusTanggalMerah = ($masterSat === 'Harian' && $bMerah > 0) ? ($bMerah * $masterTarif) : floatval($payroll->bonus_tanggal_merah ?? 0);
+
+                $lembur = floatval($payroll->lembur ?? 0);
+                $bonusBday = floatval($payroll->bonus_birthday ?? 0);
+                $depKembali = floatval($payroll->pengembalian_deposit ?? 0);
+                $bonusDll = floatval($payroll->bonus_dll ?? 0);
+                $totalBonus = $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBday + $depKembali + $bonusDll;
+
+                $earnings = $gajiUtama + $totalBonus;
 
                 $deductions = $potonganTerlambat +
                               floatval($payroll->potongan_inventaris ?? 0) +
@@ -380,12 +406,44 @@ class PenggajianController extends Controller
 
                 $thp = $earnings - $deductions;
 
-                if ($payroll->potongan_terlambat != $potonganTerlambat || $payroll->total_deductions != $deductions || $payroll->total_gaji_bersih != $thp) {
+                $needSync = (
+                    abs((float)$payroll->tarif_harian_total - $masterTarif) > 0.01 ||
+                    abs((float)$payroll->gaji_pokok - $masterGp) > 0.01 ||
+                    abs((float)$payroll->tunjangan_makan - $masterUm) > 0.01 ||
+                    abs((float)$payroll->tunjangan_transport - $masterUt) > 0.01 ||
+                    $payroll->satuan_gaji !== $masterSat ||
+                    abs((float)$payroll->gaji_utama - $gajiUtama) > 0.01 ||
+                    abs((float)$payroll->potongan_terlambat - $potonganTerlambat) > 0.01 ||
+                    abs((float)$payroll->total_deductions - $deductions) > 0.01 ||
+                    abs((float)$payroll->total_gaji_bersih - $thp) > 0.01
+                );
+
+                if ($needSync) {
                     $payroll->update([
+                        'satuan_gaji'        => $masterSat,
+                        'satuan_gaji_2'      => $kw->satuan_gaji_2 ?? $masterSat,
+                        'gaji_pokok'         => $masterGp,
+                        'tunjangan_makan'    => $masterUm,
+                        'tunjangan_transport'=> $masterUt,
+                        'tarif_harian_total' => $masterTarif,
+                        'gaji_utama'         => $gajiUtama,
+                        'bonus_target'       => $bonusTarget,
+                        'bonus_tanggal_merah'=> $bonusTanggalMerah,
+                        'total_earnings'     => $earnings,
                         'potongan_terlambat' => $potonganTerlambat,
                         'total_deductions'   => $deductions,
                         'total_gaji_bersih'  => $thp,
                     ]);
+                    $payroll->satuan_gaji = $masterSat;
+                    $payroll->satuan_gaji_2 = $kw->satuan_gaji_2 ?? $masterSat;
+                    $payroll->gaji_pokok = $masterGp;
+                    $payroll->tunjangan_makan = $masterUm;
+                    $payroll->tunjangan_transport = $masterUt;
+                    $payroll->tarif_harian_total = $masterTarif;
+                    $payroll->gaji_utama = $gajiUtama;
+                    $payroll->bonus_target = $bonusTarget;
+                    $payroll->bonus_tanggal_merah = $bonusTanggalMerah;
+                    $payroll->total_earnings = $earnings;
                     $payroll->potongan_terlambat = $potonganTerlambat;
                     $payroll->total_deductions = $deductions;
                     $payroll->total_gaji_bersih = $thp;
@@ -480,6 +538,7 @@ class PenggajianController extends Controller
                 'pengembalian_deposit'    => $totalPengembalianDeposit,
                 'saldo_deposit'           => $saldoDeposit,
                 'bonus_dll'               => $totalBonusDll,
+                'catatan_bonus_dll'       => $primaryPayroll->catatan_bonus_dll ?? '',
                 'potongan_terlambat'      => $totalPotonganTerlambat,
                 'potongan_inventaris'     => $totalPotonganInventaris,
                 'potongan_kasbon'         => $totalPotonganKasbon,
@@ -1602,6 +1661,7 @@ class PenggajianController extends Controller
             $bonusBirthdayService  = $banyakBirthdayService * 5000;
             $pengembalianDeposit   = array_key_exists('pengembalian_deposit', $item) ? $cleanRupiah($item['pengembalian_deposit']) : (float)($payroll->pengembalian_deposit ?? 0);
             $bonusDll              = array_key_exists('bonus_dll', $item) ? $cleanRupiah($item['bonus_dll']) : (float)($payroll->bonus_dll ?? 0);
+            $catatanBonusDll       = array_key_exists('catatan_bonus_dll', $item) ? $item['catatan_bonus_dll'] : ($payroll->catatan_bonus_dll ?? null);
 
             if ($satuanGaji === 'Harian') {
                 $banyakTarget        = array_key_exists('banyak_target', $item) ? intval($item['banyak_target']) : intval($payroll->banyak_target ?? 0);
@@ -1653,6 +1713,7 @@ class PenggajianController extends Controller
                     'bonus_birthday'              => $bonusBirthdayService,
                     'pengembalian_deposit'        => $pengembalianDeposit,
                     'bonus_dll'                   => $bonusDll,
+                    'catatan_bonus_dll'           => $catatanBonusDll,
                     'potongan_inventaris'         => $potonganInventaris,
                     'potongan_kasbon'             => $potonganKasbon,
                     'potongan_deposit'            => $potonganDeposit,
@@ -1696,6 +1757,7 @@ class PenggajianController extends Controller
                     'bonus_birthday'              => $bonusBirthdayService,
                     'pengembalian_deposit'        => $pengembalianDeposit,
                     'bonus_dll'                   => $bonusDll,
+                    'catatan_bonus_dll'           => $catatanBonusDll,
                     'potongan_terlambat'          => $potonganTerlambat,
                     'potongan_inventaris'         => $potonganInventaris,
                     'potongan_kasbon'             => $potonganKasbon,

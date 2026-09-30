@@ -86,6 +86,63 @@ class PengaturanGajiController extends Controller
             'tanggal_selesai_2'  => $request->tanggal_selesai_2,
         ]);
 
+        // Otomatis sinkronkan data penggajian yang berstatus draft/belum approved untuk karyawan ini
+        $draftPayrolls = \App\Models\Penggajian::where('karyawan_id', $karyawan->id)
+            ->where('status', '!=', 'approved')
+            ->where('status_jurnal', false)
+            ->get();
+
+        foreach ($draftPayrolls as $dp) {
+            $pNum = (int)($dp->pilihan_periode ?? 1);
+            if ($pNum === 2 && $karyawan->gaji_pokok_2 !== null) {
+                $gp = floatval($karyawan->gaji_pokok_2);
+                $um = floatval($karyawan->uang_makan_2);
+                $ut = floatval($karyawan->uang_transport_2);
+                $sat = $karyawan->satuan_gaji_2 ?? $karyawan->satuan_gaji ?? 'Harian';
+            } else {
+                $gp = floatval($karyawan->gaji_pokok);
+                $um = floatval($karyawan->uang_makan);
+                $ut = floatval($karyawan->uang_transport);
+                $sat = $karyawan->satuan_gaji ?? 'Harian';
+            }
+            $tar = $gp + $um + $ut;
+            $hk = floatval($dp->hari_kerja ?? 0);
+            $gu = ($sat === 'Bulanan') ? $tar : ($hk * $tar);
+
+            $bTarget = intval($dp->banyak_target ?? 0);
+            $bMerah = intval($dp->banyak_tanggal_merah ?? 0);
+            $bonusTarget = ($sat === 'Harian' && $bTarget > 0) ? ($bTarget * $tar) : floatval($dp->bonus_target ?? 0);
+            $bonusMerah = ($sat === 'Harian' && $bMerah > 0) ? ($bMerah * $tar) : floatval($dp->bonus_tanggal_merah ?? 0);
+
+            $lembur = floatval($dp->lembur ?? 0);
+            $bonusBday = floatval($dp->bonus_birthday ?? 0);
+            $depKembali = floatval($dp->pengembalian_deposit ?? 0);
+            $bonusDll = floatval($dp->bonus_dll ?? 0);
+            $totalBonus = $lembur + $bonusTarget + $bonusMerah + $bonusBday + $depKembali + $bonusDll;
+
+            $totalEarnings = $gu + $totalBonus;
+            $totalDeductions = floatval($dp->total_deductions ?? (
+                floatval($dp->potongan_terlambat ?? 0) + floatval($dp->potongan_inventaris ?? 0) + 
+                floatval($dp->potongan_kasbon ?? 0) + floatval($dp->potongan_deposit ?? 0) + floatval($dp->potongan_dll ?? 0)
+            ));
+            $thp = $totalEarnings - $totalDeductions;
+
+            $dp->update([
+                'satuan_gaji'        => $sat,
+                'satuan_gaji_2'      => $karyawan->satuan_gaji_2 ?? $sat,
+                'gaji_pokok'         => $gp,
+                'tunjangan_makan'    => $um,
+                'tunjangan_transport'=> $ut,
+                'tarif_harian_total' => $tar,
+                'gaji_utama'         => $gu,
+                'bonus_target'       => $bonusTarget,
+                'bonus_tanggal_merah'=> $bonusMerah,
+                'total_earnings'     => $totalEarnings,
+                'total_deductions'   => $totalDeductions,
+                'total_gaji_bersih'  => $thp,
+            ]);
+        }
+
         return redirect()->route('pengaturan-gaji.index', ['outlet' => $karyawan->outlet])
             ->with('success', "Pengaturan gaji ({$karyawan->satuan_gaji}) untuk {$karyawan->nama_karyawan} berhasil diperbarui.");
     }

@@ -83,19 +83,20 @@
 
             <div class="row mb-4">
                 <div class="col-md-4">
-                    <label class="form-label fw-bold">Tanggal Permintaan / PBK <span class="text-danger">*</span></label>
+                    <label class="form-label fw-bold">Tanggal Permintaan / Pengiriman PBK <span class="text-danger">*</span></label>
                     <input type="date" name="tanggal" class="form-control @error('tanggal') is-invalid @enderror"
                            value="{{ old('tanggal', date('Y-m-d', strtotime($pengeluaran->tanggal))) }}"
-                           {{ !($isSuperAdmin ?? false) ? 'readonly max=' . date('Y-m-d') : '' }} required>
+                           {{ !($isSuperAdmin ?? false) ? 'min=' . min(date('Y-m-d', strtotime($pengeluaran->tanggal)), date('Y-m-d')) : '' }} required>
                     @error('tanggal')
                         <div class="invalid-feedback">{{ $message }}</div>
                     @enderror
                     <small class="text-muted d-block mt-1" style="font-size:0.75rem;">
                         @if($isSuperAdmin ?? false)
                             <span class="badge bg-warning text-dark me-1"><i class="bi bi-shield-lock me-1"></i>Super Admin</span>
-                            Anda dapat memilih tanggal sebelum hari ini (backdate).
+                            Anda dapat memilih tanggal sebelum hari ini (backdate) maupun tanggal mendatang.
                         @else
-                            Tanggal dokumen pengeluaran bahan baku.
+                            <span class="badge bg-info-subtle text-info-emphasis border me-1"><i class="bi bi-calendar-check me-1"></i>Tanggal Pengiriman</span>
+                            Untuk permintaan akhir bulan (setelah Stock Opname), pilih tanggal <strong>1 bulan berikutnya</strong> agar stok dipotong pada periode baru.
                         @endif
                     </small>
                 </div>

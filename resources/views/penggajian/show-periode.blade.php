@@ -7,7 +7,35 @@
             {{-- PAGE HEADER --}}
             {{-- PAGE HEADER --}}
             @php
-                $totalGajiNettPeriode = $payrolls->sum('take_home_pay');
+                $totalGajiNettP1 = 0;
+                $totalGajiNettP2 = 0;
+                foreach ($payrolls as $p) {
+                    if ($p->items && $p->items->count() > 1) {
+                        foreach ($p->items as $it) {
+                            $itEarnings = $it->total_earnings > 0 ? (float)$it->total_earnings : (
+                                (float)($it->gaji_utama ?? 0) + (float)($it->lembur ?? 0) + (float)($it->bonus_target ?? 0) +
+                                (float)($it->bonus_tanggal_merah ?? 0) + (float)($it->bonus_birthday ?? 0) + (float)($it->pengembalian_deposit ?? 0) + (float)($it->bonus_dll ?? 0)
+                            );
+                            $itDeductions = $it->total_deductions > 0 ? (float)$it->total_deductions : (
+                                (float)($it->potongan_terlambat ?? 0) + (float)($it->potongan_inventaris ?? 0) + (float)($it->potongan_kasbon ?? 0) + (float)($it->potongan_deposit ?? 0) + (float)($it->potongan_dll ?? 0)
+                            );
+                            $itNett = $itEarnings - $itDeductions;
+                            if (($it->pilihan_periode ?? 1) == 2) {
+                                $totalGajiNettP2 += $itNett;
+                            } else {
+                                $totalGajiNettP1 += $itNett;
+                            }
+                        }
+                    } else {
+                        $pPilihan = (int)($p->pilihan_periode ?? 1);
+                        if ($pPilihan === 2) {
+                            $totalGajiNettP2 += (float)$p->take_home_pay;
+                        } else {
+                            $totalGajiNettP1 += (float)$p->take_home_pay;
+                        }
+                    }
+                }
+                $totalGajiNettPeriode = $totalGajiNettP1 + $totalGajiNettP2;
                 $totalGajiPokokPeriode = $payrolls->sum('gaji_utama');
                 $totalBonusPeriode = $payrolls->sum(function($p) {
                     return (float)(($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->pengembalian_deposit ?? 0) + ($p->bonus_dll ?? 0));
@@ -106,58 +134,71 @@
                 {{-- 4 KARTU RINGKASAN: COMPACT & TIPIS, 1 BARIS MENYAMPING DARI KIRI KE KANAN --}}
                 <div class="summary-cards-row" style="display: flex !important; flex-direction: row !important; align-items: stretch !important; gap: 8px !important; width: 100% !important; margin-top: 8px !important; padding-top: 8px !important; border-top: 1px solid #f1f5f9 !important; box-sizing: border-box !important;">
                     {{-- 1. Gaji Pokok Badge --}}
-                    <div style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                    <div style="flex: 0.95 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
                          title="Total Gaji Pokok Seluruh Karyawan">
                         <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #475569; flex-shrink: 0;">
                             💼
                         </div>
                         <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
                             <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Pokok</div>
-                            <div style="font-size: 13px; font-weight: 900; color: #0f172a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiPokokValue">
+                            <div style="font-size: 12.5px; font-weight: 900; color: #0f172a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiPokokValue">
                                 Rp {{ number_format($totalGajiPokokPeriode, 0, ',', '.') }}
                             </div>
                         </div>
                     </div>
 
                     {{-- 2. Bonus & Lembur Badge --}}
-                    <div style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                    <div style="flex: 0.95 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
                          title="Total Bonus & Lembur Seluruh Karyawan">
                         <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fefce8; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #ca8a04; flex-shrink: 0;">
                             ⭐
                         </div>
                         <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
                             <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bonus</div>
-                            <div style="font-size: 13px; font-weight: 900; color: #d97706; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBonusValue">
+                            <div style="font-size: 12.5px; font-weight: 900; color: #d97706; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBonusValue">
                                 Rp {{ number_format($totalBonusPeriode, 0, ',', '.') }}
                             </div>
                         </div>
                     </div>
 
                     {{-- 3. Potongan Badge --}}
-                    <div style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                    <div style="flex: 0.95 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
                          title="Total Pengurangan & Potongan Seluruh Karyawan">
                         <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fff1f2; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #e11d48; flex-shrink: 0;">
                             ✂️
                         </div>
                         <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
                             <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Potongan</div>
-                            <div style="font-size: 13px; font-weight: 900; color: #e11d48; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalPotonganValue">
+                            <div style="font-size: 12.5px; font-weight: 900; color: #e11d48; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalPotonganValue">
                                 Rp {{ number_format($totalPotonganPeriode, 0, ',', '.') }}
                             </div>
                         </div>
                     </div>
 
-                    {{-- 4. Total Gaji Bersih / Nett Badge --}}
+                    {{-- 4. Total Gaji Bersih / Nett Badge (P1, P2, Total) --}}
                     <div id="headerTotalGajiNettBadge"
-                         style="flex: 1 1 0% !important; width: 25% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #cbd5e1 !important; padding: 5px 10px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
-                         title="Total Take Home Pay Seluruh Karyawan">
-                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #059669; flex-shrink: 0;">
+                         style="flex: 1.15 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #a7f3d0 !important; padding: 4px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(16, 185, 129, 0.08) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
+                         title="Total Take Home Pay Seluruh Karyawan (P1, P2, dan Total Seluruh Periode)">
+                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #059669; flex-shrink: 0; border: 1px solid #d1fae5;">
                             💰
                         </div>
                         <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                            <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #475569; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bersih (THP)</div>
-                            <div style="font-size: 13px; font-weight: 900; color: #16a34a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiNettValue">
-                                Rp {{ number_format($totalGajiNettPeriode, 0, ',', '.') }}
+                            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 4px;">
+                                <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #475569; line-height: 1; white-space: nowrap;">Total THP</span>
+                                <span style="font-size: 12.5px; font-weight: 900; color: #16a34a; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;" id="headerTotalGajiNettValue">
+                                    Rp {{ number_format($totalGajiNettPeriode, 0, ',', '.') }}
+                                </span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 9px; font-weight: 700; color: #64748b; line-height: 1; flex-wrap: nowrap; overflow: hidden;">
+                                <span style="display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;">
+                                    <span style="padding: 0.5px 3.5px; border-radius: 3px; font-size: 7.5px; font-weight: 900; background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe;">P1</span>
+                                    <span id="headerTotalGajiNettP1Value" style="color: #1e293b; font-weight: 800;">Rp {{ number_format($totalGajiNettP1, 0, ',', '.') }}</span>
+                                </span>
+                                <span style="color: #cbd5e1; font-size: 8px;">|</span>
+                                <span style="display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;">
+                                    <span style="padding: 0.5px 3.5px; border-radius: 3px; font-size: 7.5px; font-weight: 900; background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff;">P2</span>
+                                    <span id="headerTotalGajiNettP2Value" style="color: #1e293b; font-weight: 800;">Rp {{ number_format($totalGajiNettP2, 0, ',', '.') }}</span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -715,6 +756,29 @@
                                             'per_label' => $perLabel,
                                             'tarif' => $tarActive,
                                             'gaji_utama' => $activeGu,
+                                            'jam_lembur' => $activeItem ? (float)($activeItem->jam_lembur ?? 0) : (float)($payroll->jam_lembur ?? 0),
+                                            'lembur' => $activeItem ? (float)($activeItem->lembur ?? 0) : (float)($payroll->lembur ?? 0),
+                                            'banyak_target' => $activeItem ? (int)($activeItem->banyak_target ?? 0) : (int)($payroll->banyak_target ?? 0),
+                                            'bonus_target' => $activeItem ? (float)($activeItem->bonus_target ?? 0) : (float)($payroll->bonus_target ?? 0),
+                                            'catatan_bonus_target' => $activeItem ? ($activeItem->catatan_bonus_target ?? '') : ($payroll->catatan_bonus_target ?? ''),
+                                            'banyak_tanggal_merah' => $activeItem ? (int)($activeItem->banyak_tanggal_merah ?? 0) : (int)($payroll->banyak_tanggal_merah ?? 0),
+                                            'bonus_tanggal_merah' => $activeItem ? (float)($activeItem->bonus_tanggal_merah ?? 0) : (float)($payroll->bonus_tanggal_merah ?? 0),
+                                            'catatan_bonus_tanggal_merah' => $activeItem ? ($activeItem->catatan_bonus_tanggal_merah ?? '') : ($payroll->catatan_bonus_tanggal_merah ?? ''),
+                                            'banyak_birthday_service' => $activeItem ? (int)($activeItem->banyak_birthday_service ?? 0) : (int)($payroll->banyak_birthday_service ?? 0),
+                                            'bonus_birthday' => $activeItem ? (float)($activeItem->bonus_birthday ?? 0) : (float)($payroll->bonus_birthday ?? 0),
+                                            'pengembalian_deposit' => $activeItem ? (float)($activeItem->pengembalian_deposit ?? 0) : (float)($payroll->pengembalian_deposit ?? 0),
+                                            'bonus_dll' => $activeItem ? (float)($activeItem->bonus_dll ?? 0) : (float)($payroll->bonus_dll ?? 0),
+                                            'catatan_bonus_dll' => $activeItem ? ($activeItem->catatan_bonus_dll ?? '') : ($payroll->catatan_bonus_dll ?? ''),
+                                            'total_bonus' => (float)$totalBonus,
+                                            'potongan_terlambat' => $activeItem ? (float)($activeItem->potongan_terlambat ?? 0) : (float)($payroll->potongan_terlambat ?? 0),
+                                            'potongan_inventaris' => $activeItem ? (float)($activeItem->potongan_inventaris ?? 0) : (float)($payroll->potongan_inventaris ?? 0),
+                                            'potongan_kasbon' => $activeItem ? (float)($activeItem->potongan_kasbon ?? 0) : (float)($payroll->potongan_kasbon ?? 0),
+                                            'potongan_deposit' => $activeItem ? (float)($activeItem->potongan_deposit ?? 0) : (float)($payroll->potongan_deposit ?? 0),
+                                            'potongan_dll' => $activeItem ? (float)($activeItem->potongan_dll ?? 0) : (float)($payroll->potongan_dll ?? 0),
+                                            'catatan_potongan_dll' => $activeItem ? ($activeItem->catatan_potongan_dll ?? '') : ($payroll->catatan_potongan_dll ?? ''),
+                                            'total_deductions' => (float)$totalPotongan,
+                                            'total_earnings' => (float)$earnings,
+                                            'total_gaji_bersih' => (float)$payroll->take_home_pay,
                                             'tanggal_mulai' => $activeItem->tanggal_mulai ?? $payroll->tanggal_mulai ?? null,
                                             'tanggal_selesai' => $activeItem->tanggal_selesai ?? $payroll->tanggal_selesai ?? null,
                                         ]]);
@@ -748,6 +812,25 @@
                                         $fullUnit = $sat === 'Per Jam' ? 'Jam' : ($sat === 'Bulanan' ? 'Bulan' : 'Hari');
                                         $perLabel = $sat === 'Per Jam' ? '/jam' : ($sat === 'Bulanan' ? '/bln' : '/hari');
 
+                                        $itLembur = $it ? (float)($it->lembur ?? (($it->jam_lembur ?? 0) * 10000)) : 0;
+                                        $itTarget = $it ? (float)($it->bonus_target ?? 0) : 0;
+                                        $itMerah = $it ? (float)($it->bonus_tanggal_merah ?? 0) : 0;
+                                        $itBday = $it ? (float)($it->bonus_birthday ?? (($it->banyak_birthday_service ?? 0) * 5000)) : 0;
+                                        $itDepKembali = $it ? (float)($it->pengembalian_deposit ?? 0) : 0;
+                                        $itBonusDll = $it ? (float)($it->bonus_dll ?? 0) : 0;
+                                        $itCatatanBonusDll = $it ? ($it->catatan_bonus_dll ?? '') : '';
+                                        $itTotalBonus = $itLembur + $itTarget + $itMerah + $itBday + $itDepKembali + $itBonusDll;
+
+                                        $itLate = $it ? (float)($it->potongan_terlambat ?? 0) : 0;
+                                        $itInv = $it ? (float)($it->potongan_inventaris ?? 0) : 0;
+                                        $itKasbon = $it ? (float)($it->potongan_kasbon ?? 0) : 0;
+                                        $itDepPot = $it ? (float)($it->potongan_deposit ?? 0) : 0;
+                                        $itPotDll = $it ? (float)($it->potongan_dll ?? 0) : 0;
+                                        $itTotalPotongan = $itLate + $itInv + $itKasbon + $itDepPot + $itPotDll;
+
+                                        $itEarnings = $gu + $itTotalBonus;
+                                        $itNett = $itEarnings - $itTotalPotongan;
+
                                         return [
                                             'id' => $itemId,
                                             'periode' => $pNum,
@@ -758,8 +841,31 @@
                                             'per_label' => $perLabel,
                                             'tarif' => $tar,
                                             'gaji_utama' => $gu,
-                                            'tanggal_mulai' => $it->tanggal_mulai ?? null,
-                                            'tanggal_selesai' => $it->tanggal_selesai ?? null,
+                                            'jam_lembur' => $it ? (float)($it->jam_lembur ?? 0) : 0,
+                                            'lembur' => $itLembur,
+                                            'banyak_target' => $it ? (int)($it->banyak_target ?? 0) : 0,
+                                            'bonus_target' => $itTarget,
+                                            'catatan_bonus_target' => $it ? ($it->catatan_bonus_target ?? '') : '',
+                                            'banyak_tanggal_merah' => $it ? (int)($it->banyak_tanggal_merah ?? 0) : 0,
+                                            'bonus_tanggal_merah' => $itMerah,
+                                            'catatan_bonus_tanggal_merah' => $it ? ($it->catatan_bonus_tanggal_merah ?? '') : '',
+                                            'banyak_birthday_service' => $it ? (int)($it->banyak_birthday_service ?? 0) : 0,
+                                            'bonus_birthday' => $itBday,
+                                            'pengembalian_deposit' => $itDepKembali,
+                                            'bonus_dll' => $itBonusDll,
+                                            'catatan_bonus_dll' => $itCatatanBonusDll,
+                                            'total_bonus' => $itTotalBonus,
+                                            'potongan_terlambat' => $itLate,
+                                            'potongan_inventaris' => $itInv,
+                                            'potongan_kasbon' => $itKasbon,
+                                            'potongan_deposit' => $itDepPot,
+                                            'potongan_dll' => $itPotDll,
+                                            'catatan_potongan_dll' => $it ? ($it->catatan_potongan_dll ?? '') : '',
+                                            'total_deductions' => $itTotalPotongan,
+                                            'total_earnings' => $itEarnings,
+                                            'total_gaji_bersih' => $itNett,
+                                            'tanggal_mulai' => ($it && $it->tanggal_mulai) ? $it->tanggal_mulai : (($pNum === 2) ? ($kw->tanggal_mulai_2 ?? $kw->tanggal_mulai) : ($kw->tanggal_mulai ?? $payroll->tanggal_mulai)),
+                                            'tanggal_selesai' => ($it && $it->tanggal_selesai) ? $it->tanggal_selesai : (($pNum === 2) ? ($kw->tanggal_selesai_2 ?? $kw->tanggal_selesai) : ($kw->tanggal_selesai ?? $payroll->tanggal_selesai)),
                                         ];
                                     });
                                     } // end multi-period branch
@@ -782,6 +888,29 @@
                                         'per_label' => $perLabel,
                                         'tarif' => $tar,
                                         'gaji_utama' => $payroll->gaji_utama,
+                                        'jam_lembur' => (float)($payroll->jam_lembur ?? 0),
+                                        'lembur' => (float)($payroll->lembur ?? 0),
+                                        'banyak_target' => (int)($payroll->banyak_target ?? 0),
+                                        'bonus_target' => (float)($payroll->bonus_target ?? 0),
+                                        'catatan_bonus_target' => $payroll->catatan_bonus_target ?? '',
+                                        'banyak_tanggal_merah' => (int)($payroll->banyak_tanggal_merah ?? 0),
+                                        'bonus_tanggal_merah' => (float)($payroll->bonus_tanggal_merah ?? 0),
+                                        'catatan_bonus_tanggal_merah' => $payroll->catatan_bonus_tanggal_merah ?? '',
+                                        'banyak_birthday_service' => (int)($payroll->banyak_birthday_service ?? 0),
+                                        'bonus_birthday' => (float)($payroll->bonus_birthday ?? 0),
+                                        'pengembalian_deposit' => (float)($payroll->pengembalian_deposit ?? 0),
+                                        'bonus_dll' => (float)($payroll->bonus_dll ?? 0),
+                                        'catatan_bonus_dll' => $payroll->catatan_bonus_dll ?? '',
+                                        'total_bonus' => (float)$totalBonus,
+                                        'potongan_terlambat' => (float)($payroll->potongan_terlambat ?? 0),
+                                        'potongan_inventaris' => (float)($payroll->potongan_inventaris ?? 0),
+                                        'potongan_kasbon' => (float)($payroll->potongan_kasbon ?? 0),
+                                        'potongan_deposit' => (float)($payroll->potongan_deposit ?? 0),
+                                        'potongan_dll' => (float)($payroll->potongan_dll ?? 0),
+                                        'catatan_potongan_dll' => $payroll->catatan_potongan_dll ?? '',
+                                        'total_deductions' => (float)$totalPotongan,
+                                        'total_earnings' => (float)$earnings,
+                                        'total_gaji_bersih' => (float)$payroll->take_home_pay,
                                         'tanggal_mulai' => $payroll->tanggal_mulai,
                                         'tanggal_selesai' => $payroll->tanggal_selesai,
                                     ]]);
@@ -973,17 +1102,35 @@
                                     <span class="row-index text-slate-700 font-extrabold">{{ $index + 1 }}</span>
                                 </td>
 
-                                {{-- 2. KARYAWAN (FREEZE - HANYA NAMA & JABATAN) --}}
+                                {{-- 2. KARYAWAN (FREEZE - NAMA, JABATAN & PERIODE P1/P2) --}}
                                 <td class="sticky-col-karyawan px-3.5 py-2.5 border-b border-slate-200">
-                                    <div class="flex items-center gap-2">
-                                        <i class="bi bi-grip-vertical grip-handle select-none text-slate-400 hover:text-slate-800 cursor-grab shrink-0" title="Tahan dan geser (drag & drop) untuk mengatur urutan"></i>
+                                    <div class="flex items-start gap-2">
+                                        <i class="bi bi-grip-vertical grip-handle select-none text-slate-400 hover:text-slate-800 cursor-grab shrink-0 mt-0.5" title="Tahan dan geser (drag & drop) untuk mengatur urutan"></i>
                                         <div class="min-w-0 flex-1">
                                             <div class="font-extrabold text-slate-900 text-sm nama-karyawan leading-tight truncate" title="{{ $payroll->karyawan->nama_karyawan ?? '-' }}">
                                                 {{ $payroll->karyawan->nama_karyawan ?? '-' }}
                                             </div>
-                                            <div class="text-[11.5px] text-slate-500 font-semibold mt-1 leading-tight truncate" title="{{ $payroll->karyawan->jabatan ?? '-' }}">
+                                            <div class="text-[11px] text-slate-500 font-semibold mt-0.5 leading-tight truncate" title="{{ $payroll->karyawan->jabatan ?? '-' }}">
                                                 {{ $payroll->karyawan->jabatan ?? '-' }}
                                             </div>
+                                            @if($hasMultiplePeriods)
+                                                <div class="mt-2 pt-1.5 border-t border-slate-200/80 flex flex-col gap-1.5">
+                                                    @foreach($itemBreakdowns as $ib)
+                                                        <div class="flex items-center gap-1.5 text-[10px] font-bold {{ $ib['periode'] == 1 ? 'text-indigo-800' : 'text-purple-800' }} h-6">
+                                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-purple-100 text-purple-800 border border-purple-200' }}">
+                                                                P{{ $ib['periode'] }}
+                                                            </span>
+                                                            <span class="truncate text-slate-600 font-medium text-[9.5px]">
+                                                                @if(!empty($ib['tanggal_mulai']) && !empty($ib['tanggal_selesai']))
+                                                                    {{ \Carbon\Carbon::parse($ib['tanggal_mulai'])->format('d M') }} - {{ \Carbon\Carbon::parse($ib['tanggal_selesai'])->format('d M') }}
+                                                                @else
+                                                                    Periode {{ $ib['periode'] }}
+                                                                @endif
+                                                            </span>
+                                                        </div>
+                                                    @endforeach
+                                                </div>
+                                            @endif
                                         </div>
                                     </div>
                                 </td>
@@ -992,13 +1139,11 @@
                                 <td class="col-cat-pokok px-3 py-3 text-center whitespace-nowrap border-b border-emerald-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
                                         @if($hasMultiplePeriods)
-                                            {{-- RINCIAN P1 DAN P2 DITAMPILKAN LANGSUNG 2 BARIS BERTUMPUK DI DALAM SEL --}}
                                             <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
                                                 @foreach($itemBreakdowns as $ib)
-                                                    <div class="flex items-center gap-1 justify-center">
-                                                        <span class="px-1 py-0.5 rounded text-[9px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800' }} border border-slate-200">P{{ $ib['periode'] }}</span>
+                                                    <div class="flex items-center gap-1 justify-center {{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
                                                         <input type="number" step="0.5" min="0"
-                                                               class="batch-hari-kerja batch-sub-item input-hk-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-hk-item-' . $ib['id'] : '' }} hr-data-input w-14 px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                               class="batch-hari-kerja batch-sub-item input-hk-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-hk-item-' . $ib['id'] : '' }} hr-data-input w-full px-2 py-0.5 text-xs text-center !bg-white"
                                                                data-item-id="{{ $ib['id'] }}"
                                                                data-periode="{{ $ib['periode'] }}"
                                                                data-satuan="{{ $ib['satuan'] }}"
@@ -1026,8 +1171,7 @@
                                         @if($hasMultiplePeriods)
                                             <div class="inline-flex flex-col gap-1 justify-center whitespace-nowrap w-full">
                                                 @foreach($itemBreakdowns as $ib)
-                                                    <div class="flex items-center gap-1.5 justify-center text-xs">
-                                                        <span class="px-1 py-0.5 rounded text-[9px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-50 text-indigo-700' : 'bg-purple-50 text-purple-700' }} border border-slate-200">P{{ $ib['periode'] }}</span>
+                                                    <div class="flex items-center gap-1.5 justify-center text-xs {{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
                                                         <span class="font-extrabold text-slate-900">{{ (float)$ib['hari_kerja'] }}</span>
                                                         <span class="text-[10.5px] text-slate-500 font-medium">{{ $ib['suffix'] }}</span>
                                                     </div>
@@ -1045,28 +1189,22 @@
                                 </td>
 
                                 {{-- 4. TARIF SATUAN (POKOK - ACCOUNTING STYLE - BERTUMPUK JIKA MULTI-PERIODE) --}}
-                                <td class="col-cat-pokok px-3 py-3 border-b border-emerald-100">
+                                <td class="col-cat-pokok px-3 py-3 border-b border-emerald-100 whitespace-nowrap">
                                     @if($hasMultiplePeriods)
                                         <div class="flex flex-col gap-1.5 w-full">
                                             @foreach($itemBreakdowns as $ib)
                                                 <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
                                                     <div class="accounting-cell text-[11px] font-bold text-slate-800">
-                                                        <span class="ac-curr">
-                                                            <span class="px-1 py-0.2 rounded text-[8.5px] font-black {{ $ib['periode'] == 1 ? 'bg-indigo-50 text-indigo-700' : 'bg-purple-50 text-purple-700' }} border border-slate-200 mr-1">P{{ $ib['periode'] }}</span>Rp
-                                                        </span>
-                                                        <span class="ac-val">{{ number_format($ib['tarif'], 0, ',', '.') }}</span>
+                                                        <span class="ac-curr">Rp</span>
+                                                        <span class="ac-val">{{ number_format($ib['tarif'], 0, ',', '.') }}<span class="text-[10px] text-slate-500 font-medium ml-0.5">{{ $ib['per_label'] }}</span></span>
                                                     </div>
-                                                    <div class="text-[9px] text-slate-400 font-medium text-right">{{ $ib['per_label'] }}</div>
                                                 </div>
                                             @endforeach
                                         </div>
                                     @else
                                         <div class="accounting-cell text-xs font-bold text-slate-800">
                                             <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format($tarifHarian, 0, ',', '.') }}</span>
-                                        </div>
-                                        <div class="text-[9.5px] text-slate-500 font-medium text-right mt-0.5">
-                                            {{ $satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari') }}
+                                            <span class="ac-val">{{ number_format($tarifHarian, 0, ',', '.') }}<span class="text-[10px] text-slate-500 font-medium ml-0.5">{{ $satuanRow === 'Per Jam' ? '/jam' : ($satuanRow === 'Bulanan' ? '/bln' : '/hari') }}</span></span>
                                         </div>
                                     @endif
                                 </td>
@@ -1080,8 +1218,8 @@
                                     @if($hasMultiplePeriods)
                                         <div class="flex flex-col gap-0.5 mt-1 pt-1 border-t border-emerald-100/70">
                                             @foreach($itemBreakdowns as $ib)
-                                                <div class="accounting-cell text-[10px] text-slate-600 font-bold">
-                                                    <span class="ac-curr">P{{ $ib['periode'] }}: Rp</span>
+                                                <div class="accounting-cell text-[10px] text-slate-600 font-bold {{ !$loop->first ? 'pt-0.5' : '' }}">
+                                                    <span class="ac-curr">Rp</span>
                                                     <span class="ac-val sub-gp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-gp-item-' . $ib['id'] : '' }}">{{ number_format($ib['gaji_utama'], 0, ',', '.') }}</span>
                                                 </div>
                                             @endforeach
@@ -1092,63 +1230,154 @@
                                 {{-- 6. JAM LEMBUR (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="flex items-center gap-1 justify-center">
-                                            <input type="number" step="0.5" min="0"
-                                                   class="batch-jam-lembur hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                   value="{{ ($payroll->jam_lembur && $payroll->jam_lembur > 0) ? (float)$payroll->jam_lembur : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                            <span class="text-[10px] text-amber-900 font-bold">jam</span>
-                                        </div>
-                                        <div class="sub-lembur-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->jam_lembur ?? 0) > 0 ? '' : 'hidden' }}">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format(($payroll->jam_lembur ?? 0) * 10000, 0, ',', '.') }}</span>
-                                        </div>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="flex items-center gap-1 justify-center">
+                                                            <input type="number" step="0.5" min="0"
+                                                                   class="batch-jam-lembur batch-sub-item-lembur input-lembur-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-lembur-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   value="{{ ($ib['jam_lembur'] && $ib['jam_lembur'] > 0) ? (float)$ib['jam_lembur'] : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                                            <span class="text-[9.5px] text-amber-900 font-bold">jam</span>
+                                                        </div>
+                                                        <div class="sub-lembur-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['jam_lembur'] ?? 0) > 0 ? '' : 'hidden' }}">
+                                                            <span class="ac-curr">Rp</span>
+                                                            <span class="ac-val">{{ number_format(($ib['jam_lembur'] ?? 0) * 10000, 0, ',', '.') }}</span>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <div class="flex items-center gap-1 justify-center">
+                                                <input type="number" step="0.5" min="0"
+                                                       class="batch-jam-lembur hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                       value="{{ ($payroll->jam_lembur && $payroll->jam_lembur > 0) ? (float)$payroll->jam_lembur : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                <span class="text-[10px] text-amber-900 font-bold">jam</span>
+                                            </div>
+                                            <div class="sub-lembur-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->jam_lembur ?? 0) > 0 ? '' : 'hidden' }}">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format(($payroll->jam_lembur ?? 0) * 10000, 0, ',', '.') }}</span>
+                                            </div>
+                                        @endif
                                     @else
-                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format($payroll->lembur, 0, ',', '.') }}</span>
-                                        </div>
-                                        <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->jam_lembur }} jam</div>
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
+                                                            <span class="ac-curr">Rp</span>
+                                                            <span class="ac-val">{{ number_format($ib['lembur'], 0, ',', '.') }}</span>
+                                                        </div>
+                                                        <div class="text-[9px] text-slate-500 font-medium text-right">{{ (float)$ib['jam_lembur'] }} jam</div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->lembur, 0, ',', '.') }}</span>
+                                            </div>
+                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->jam_lembur }} jam</div>
+                                        @endif
                                     @endif
                                 </td>
 
                                 {{-- 7. BONUS TARGET (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($satuanRow === 'Harian')
-                                            <div class="flex items-center gap-1 justify-center">
-                                                <input type="number" step="1" min="0"
-                                                       class="batch-banyak-target hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                       value="{{ ($payroll->banyak_target && $payroll->banyak_target > 0) ? (int)$payroll->banyak_target : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                <span class="text-[10px] text-amber-900 font-bold">kali</span>
-                                            </div>
-                                            <div class="sub-target-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_target ?? 0) > 0 ? '' : 'hidden' }}">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format(($payroll->banyak_target ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['satuan'] === 'Harian')
+                                                            <div class="flex items-center gap-1 justify-center">
+                                                                <input type="number" step="1" min="0"
+                                                                       class="batch-banyak-target batch-sub-item-target input-target-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-target-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                                       data-item-id="{{ $ib['id'] }}"
+                                                                       data-periode="{{ $ib['periode'] }}"
+                                                                       data-tarif="{{ (float)$ib['tarif'] }}"
+                                                                       value="{{ ($ib['banyak_target'] && $ib['banyak_target'] > 0) ? (int)$ib['banyak_target'] : '' }}"
+                                                                       placeholder="0"
+                                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                                <span class="text-[9.5px] text-amber-900 font-bold">kali</span>
+                                                            </div>
+                                                            <div class="sub-target-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_target'] ?? 0) > 0 ? '' : 'hidden' }}">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format(($ib['banyak_target'] ?? 0) * (float)$ib['tarif'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="accounting-input-wrap flex-1">
+                                                                <span class="ac-input-prefix">Rp</span>
+                                                                <input type="text"
+                                                                       class="batch-input-rupiah batch-bonus-target batch-sub-item-target-rp input-target-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-target-item-' . $ib['id'] : '' }} hr-data-input"
+                                                                       data-item-id="{{ $ib['id'] }}"
+                                                                       data-periode="{{ $ib['periode'] }}"
+                                                                       value="{{ $ib['bonus_target'] > 0 ? number_format($ib['bonus_target'], 0, ',', '.') : '' }}"
+                                                                       placeholder="0"
+                                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                            </div>
+                                                            <input type="hidden" class="batch-catatan-target batch-sub-catatan-target input-catatan-target-p-{{ $ib['periode'] }}" data-item-id="{{ $ib['id'] }}" data-periode="{{ $ib['periode'] }}" value="{{ $ib['catatan_bonus_target'] ?? '' }}">
+                                                        @endif
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-bonus-target hr-data-input"
-                                                       value="{{ $payroll->bonus_target > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                            <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target ?? '' }}">
+                                            @if($satuanRow === 'Harian')
+                                                <div class="flex items-center gap-1 justify-center">
+                                                    <input type="number" step="1" min="0"
+                                                           class="batch-banyak-target hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                           value="{{ ($payroll->banyak_target && $payroll->banyak_target > 0) ? (int)$payroll->banyak_target : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
+                                                    <span class="text-[10px] text-amber-900 font-bold">kali</span>
+                                                </div>
+                                                <div class="sub-target-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_target ?? 0) > 0 ? '' : 'hidden' }}">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format(($payroll->banyak_target ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="accounting-input-wrap">
+                                                    <span class="ac-input-prefix">Rp</span>
+                                                    <input type="text"
+                                                           class="batch-input-rupiah batch-bonus-target hr-data-input"
+                                                           value="{{ $payroll->bonus_target > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
+                                                </div>
+                                                <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target ?? '' }}">
+                                            @endif
                                         @endif
                                     @else
-                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format($payroll->bonus_target, 0, ',', '.') }}</span>
-                                        </div>
-                                        @if($satuanRow === 'Harian')
-                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_target }}x target</div>
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
+                                                            <span class="ac-curr">Rp</span>
+                                                            <span class="ac-val">{{ number_format($ib['bonus_target'], 0, ',', '.') }}</span>
+                                                        </div>
+                                                        <div class="text-[9px] text-slate-500 font-medium text-right">
+                                                            {{ $ib['satuan'] === 'Harian' ? $ib['banyak_target'] . 'x target' : (!empty($ib['catatan_bonus_target']) ? $ib['catatan_bonus_target'] : 'Manual') }}
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
                                         @else
-                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_target) ? $payroll->catatan_bonus_target : 'Manual' }}</div>
+                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->bonus_target, 0, ',', '.') }}</span>
+                                            </div>
+                                            @if($satuanRow === 'Harian')
+                                                <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_target }}x target</div>
+                                            @else
+                                                <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_target) ? $payroll->catatan_bonus_target : 'Manual' }}</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
@@ -1156,39 +1385,93 @@
                                 {{-- 8. TANGGAL MERAH (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($satuanRow === 'Harian')
-                                            <div class="flex items-center gap-1 justify-center">
-                                                <input type="number" step="1" min="0"
-                                                       class="batch-banyak-merah hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                       value="{{ ($payroll->banyak_tanggal_merah && $payroll->banyak_tanggal_merah > 0) ? (int)$payroll->banyak_tanggal_merah : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                <span class="text-[10px] text-amber-900 font-bold">hari</span>
-                                            </div>
-                                            <div class="sub-merah-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_tanggal_merah ?? 0) > 0 ? '' : 'hidden' }}">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format(($payroll->banyak_tanggal_merah ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['satuan'] === 'Harian')
+                                                            <div class="flex items-center gap-1 justify-center">
+                                                                <input type="number" step="1" min="0"
+                                                                       class="batch-banyak-merah batch-sub-item-merah input-merah-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-merah-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                                       data-item-id="{{ $ib['id'] }}"
+                                                                       data-periode="{{ $ib['periode'] }}"
+                                                                       data-tarif="{{ (float)$ib['tarif'] }}"
+                                                                       value="{{ ($ib['banyak_tanggal_merah'] && $ib['banyak_tanggal_merah'] > 0) ? (int)$ib['banyak_tanggal_merah'] : '' }}"
+                                                                       placeholder="0"
+                                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                                <span class="text-[9.5px] text-amber-900 font-bold">hari</span>
+                                                            </div>
+                                                            <div class="sub-merah-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_tanggal_merah'] ?? 0) > 0 ? '' : 'hidden' }}">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format(($ib['banyak_tanggal_merah'] ?? 0) * (float)$ib['tarif'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="accounting-input-wrap flex-1">
+                                                                <span class="ac-input-prefix">Rp</span>
+                                                                <input type="text"
+                                                                       class="batch-input-rupiah batch-bonus-merah batch-sub-item-merah-rp input-merah-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-merah-item-' . $ib['id'] : '' }} hr-data-input"
+                                                                       data-item-id="{{ $ib['id'] }}"
+                                                                       data-periode="{{ $ib['periode'] }}"
+                                                                       value="{{ $ib['bonus_tanggal_merah'] > 0 ? number_format($ib['bonus_tanggal_merah'], 0, ',', '.') : '' }}"
+                                                                       placeholder="0"
+                                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                            </div>
+                                                            <input type="hidden" class="batch-catatan-merah batch-sub-catatan-merah input-catatan-merah-p-{{ $ib['periode'] }}" data-item-id="{{ $ib['id'] }}" data-periode="{{ $ib['periode'] }}" value="{{ $ib['catatan_bonus_tanggal_merah'] ?? '' }}">
+                                                        @endif
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-bonus-merah hr-data-input"
-                                                       value="{{ $payroll->bonus_tanggal_merah > 0 ? number_format($payroll->bonus_tanggal_merah, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                            <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah ?? '' }}">
+                                            @if($satuanRow === 'Harian')
+                                                <div class="flex items-center gap-1 justify-center">
+                                                    <input type="number" step="1" min="0"
+                                                           class="batch-banyak-merah hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                           value="{{ ($payroll->banyak_tanggal_merah && $payroll->banyak_tanggal_merah > 0) ? (int)$payroll->banyak_tanggal_merah : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
+                                                    <span class="text-[10px] text-amber-900 font-bold">hari</span>
+                                                </div>
+                                                <div class="sub-merah-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_tanggal_merah ?? 0) > 0 ? '' : 'hidden' }}">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format(($payroll->banyak_tanggal_merah ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="accounting-input-wrap">
+                                                    <span class="ac-input-prefix">Rp</span>
+                                                    <input type="text"
+                                                           class="batch-input-rupiah batch-bonus-merah hr-data-input"
+                                                           value="{{ $payroll->bonus_tanggal_merah > 0 ? number_format($payroll->bonus_tanggal_merah, 0, ',', '.') : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
+                                                </div>
+                                                <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah ?? '' }}">
+                                            @endif
                                         @endif
                                     @else
-                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format($payroll->bonus_tanggal_merah, 0, ',', '.') }}</span>
-                                        </div>
-                                        @if($satuanRow === 'Harian')
-                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_tanggal_merah }}x hadir</div>
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
+                                                            <span class="ac-curr">Rp</span>
+                                                            <span class="ac-val">{{ number_format($ib['bonus_tanggal_merah'], 0, ',', '.') }}</span>
+                                                        </div>
+                                                        <div class="text-[9px] text-slate-500 font-medium text-right">
+                                                            {{ $ib['satuan'] === 'Harian' ? $ib['banyak_tanggal_merah'] . 'x hadir' : (!empty($ib['catatan_bonus_tanggal_merah']) ? $ib['catatan_bonus_tanggal_merah'] : 'Manual') }}
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
                                         @else
-                                            <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_tanggal_merah) ? $payroll->catatan_bonus_tanggal_merah : 'Manual' }}</div>
+                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->bonus_tanggal_merah, 0, ',', '.') }}</span>
+                                            </div>
+                                            @if($satuanRow === 'Harian')
+                                                <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_tanggal_merah }}x hadir</div>
+                                            @else
+                                                <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_tanggal_merah) ? $payroll->catatan_bonus_tanggal_merah : 'Manual' }}</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
@@ -1196,54 +1479,133 @@
                                 {{-- 9. BIRTHDAY SERVICE (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="flex items-center gap-1 justify-center">
-                                            <input type="number" step="1" min="0"
-                                                   class="batch-banyak-birthday hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                   value="{{ ($payroll->banyak_birthday_service && $payroll->banyak_birthday_service > 0) ? (int)$payroll->banyak_birthday_service : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                            <span class="text-[10px] text-amber-900 font-bold">srv</span>
-                                        </div>
-                                        <div class="sub-birthday-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_birthday_service ?? 0) > 0 ? '' : 'hidden' }}">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format(($payroll->banyak_birthday_service ?? 0) * 5000, 0, ',', '.') }}</span>
-                                        </div>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="flex items-center gap-1 justify-center">
+                                                            <input type="number" step="1" min="0"
+                                                                   class="batch-banyak-birthday batch-sub-item-birthday input-birthday-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-birthday-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   value="{{ ($ib['banyak_birthday_service'] && $ib['banyak_birthday_service'] > 0) ? (int)$ib['banyak_birthday_service'] : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                                            <span class="text-[9.5px] text-amber-900 font-bold">srv</span>
+                                                        </div>
+                                                        <div class="sub-birthday-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_birthday_service'] ?? 0) > 0 ? '' : 'hidden' }}">
+                                                            <span class="ac-curr">Rp</span>
+                                                            <span class="ac-val">{{ number_format(($ib['banyak_birthday_service'] ?? 0) * 5000, 0, ',', '.') }}</span>
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <div class="flex items-center gap-1 justify-center">
+                                                <input type="number" step="1" min="0"
+                                                       class="batch-banyak-birthday hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                       value="{{ ($payroll->banyak_birthday_service && $payroll->banyak_birthday_service > 0) ? (int)$payroll->banyak_birthday_service : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                <span class="text-[10px] text-amber-900 font-bold">srv</span>
+                                            </div>
+                                            <div class="sub-birthday-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_birthday_service ?? 0) > 0 ? '' : 'hidden' }}">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format(($payroll->banyak_birthday_service ?? 0) * 5000, 0, ',', '.') }}</span>
+                                            </div>
+                                        @endif
                                     @else
-                                        <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format($payroll->bonus_birthday, 0, ',', '.') }}</span>
-                                        </div>
-                                        <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_birthday_service }}x</div>
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
+                                                            <span class="ac-curr">Rp</span>
+                                                            <span class="ac-val">{{ number_format($ib['bonus_birthday'], 0, ',', '.') }}</span>
+                                                        </div>
+                                                        <div class="text-[9px] text-slate-500 font-medium text-right">{{ (int)$ib['banyak_birthday_service'] }}x</div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->bonus_birthday, 0, ',', '.') }}</span>
+                                            </div>
+                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_birthday_service }}x</div>
+                                        @endif
                                     @endif
                                 </td>
 
                                 {{-- 10. PENGEMBALIAN DEPOSIT (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="accounting-input-wrap">
-                                            <span class="ac-input-prefix">Rp</span>
-                                            <input type="text"
-                                                   class="batch-input-rupiah batch-pengembalian-deposit hr-data-input !text-emerald-800"
-                                                   value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                        </div>
-                                        @if(($payroll->saldo_deposit ?? 0) > 0)
-                                            <button type="button"
-                                                    onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
-                                                    class="mt-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
-                                                    title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
-                                                <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
-                                            </button>
-                                        @endif
-                                    @else
-                                        @if($payroll->pengembalian_deposit > 0)
-                                            <div class="accounting-cell font-bold text-emerald-800 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->pengembalian_deposit, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                        <span class="ac-input-prefix">Rp</span>
+                                                        <input type="text"
+                                                               class="batch-input-rupiah batch-pengembalian-deposit batch-sub-item-dep-kembali input-deposit-kembali-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-deposit-kembali-item-' . $ib['id'] : '' }} hr-data-input !text-emerald-800"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ $ib['pengembalian_deposit'] > 0 ? number_format($ib['pengembalian_deposit'], 0, ',', '.') : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                    </div>
+                                                @endforeach
+                                                @if(($payroll->saldo_deposit ?? 0) > 0)
+                                                    <button type="button"
+                                                            onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
+                                                            class="mt-0.5 text-[8.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                            title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
+                                                        <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                                    </button>
+                                                @endif
                                             </div>
                                         @else
-                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-pengembalian-deposit hr-data-input !text-emerald-800"
+                                                       value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                            @if(($payroll->saldo_deposit ?? 0) > 0)
+                                                <button type="button"
+                                                        onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
+                                                        class="mt-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                        title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
+                                                    <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                                </button>
+                                            @endif
+                                        @endif
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['pengembalian_deposit'] > 0)
+                                                            <div class="accounting-cell font-bold text-emerald-800 text-[11px]">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format($ib['pengembalian_deposit'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            @if($payroll->pengembalian_deposit > 0)
+                                                <div class="accounting-cell font-bold text-emerald-800 text-xs">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format($payroll->pengembalian_deposit, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
@@ -1251,71 +1613,184 @@
                                 {{-- 11. BONUS LAIN (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="accounting-input-wrap">
-                                            <span class="ac-input-prefix">Rp</span>
-                                            <input type="text"
-                                                   class="batch-input-rupiah batch-bonus-dll hr-data-input"
-                                                   value="{{ $payroll->bonus_dll > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                        </div>
-                                    @else
-                                        @if($payroll->bonus_dll > 0)
-                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->bonus_dll, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="accounting-input-wrap">
+                                                            <span class="ac-input-prefix">Rp</span>
+                                                            <input type="text"
+                                                                   class="batch-input-rupiah batch-bonus-dll batch-sub-item-bonus-dll input-bonus-dll-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-bonus-dll-item-' . $ib['id'] : '' }} hr-data-input"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   value="{{ $ib['bonus_dll'] > 0 ? number_format($ib['bonus_dll'], 0, ',', '.') : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                                        </div>
+                                                        <input type="text"
+                                                               class="batch-catatan-bonus-dll batch-sub-cat-bonus-dll input-cat-bonus-dll-p-{{ $ib['periode'] }} w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 rounded px-1 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300/40 mt-0.5 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ $ib['catatan_bonus_dll'] ?? '' }}"
+                                                               placeholder="Ket..."
+                                                               title="Keterangan bonus lain-lain P{{ $ib['periode'] }}">
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-bonus-dll hr-data-input"
+                                                       value="{{ $payroll->bonus_dll > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                            <input type="text"
+                                                   class="batch-catatan-bonus-dll w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 rounded px-1.5 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300/40 mt-1 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                   value="{{ $payroll->catatan_bonus_dll ?? '' }}"
+                                                   placeholder="Ket..."
+                                                   title="Keterangan bonus lain-lain">
+                                        @endif
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['bonus_dll'] > 0)
+                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format($ib['bonus_dll'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
+                                                        @endif
+                                                        @if(!empty($ib['catatan_bonus_dll']))
+                                                            <div class="text-[9px] text-amber-700 font-medium truncate max-w-[110px] ml-auto text-right" title="{{ $ib['catatan_bonus_dll'] }}">{{ $ib['catatan_bonus_dll'] }}</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            @if($payroll->bonus_dll > 0)
+                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format($payroll->bonus_dll, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            @endif
+                                            @if(!empty($payroll->catatan_bonus_dll))
+                                                <div class="text-[9px] text-amber-700 font-medium truncate max-w-[110px] ml-auto text-right mt-0.5" title="{{ $payroll->catatan_bonus_dll }}">{{ $payroll->catatan_bonus_dll }}</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
 
                                 {{-- 12. SUBTOTAL BONUS (BONUS SUBTOTAL - KUNING PENEGAS + BATAS TEGAS + ACCOUNTING STYLE) --}}
                                 <td class="col-cat-bonus-subtotal px-3 py-3 font-black text-amber-900 text-xs row-total-bonus-cell border-b border-amber-200 cat-divider-bonus">
-                                    @if($totalBonus > 0)
-                                        <div class="accounting-cell">
-                                            <span class="ac-curr">Rp</span>
-                                            <span class="ac-val">{{ number_format($totalBonus, 0, ',', '.') }}</span>
+                                    <div class="accounting-cell">
+                                        <span class="ac-curr">Rp</span>
+                                        <span class="ac-val main-bonus-val">{{ number_format($totalBonus, 0, ',', '.') }}</span>
+                                    </div>
+                                    @if($hasMultiplePeriods)
+                                        <div class="flex flex-col gap-0.5 mt-1 pt-1 border-t border-amber-200/70">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-cell text-[10px] text-amber-800 font-bold {{ !$loop->first ? 'pt-0.5' : '' }}">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val sub-bonus-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-bonus-item-' . $ib['id'] : '' }}">{{ number_format($ib['total_bonus'], 0, ',', '.') }}</span>
+                                                </div>
+                                            @endforeach
                                         </div>
-                                    @else
-                                        <div class="text-center font-bold text-amber-700/60 text-xs">-</div>
                                     @endif
                                 </td>
 
                                 {{-- 13. KETERLAMBATAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-potongan px-3 py-3 border-b border-rose-100">
-                                    <input type="hidden" class="potongan-terlambat-raw" value="{{ (float)$payroll->potongan_terlambat }}">
-                                    @if($payroll->potongan_terlambat > 0)
-                                        <div class="accounting-cell font-bold text-rose-700 text-xs">
-                                            <span class="ac-curr">- Rp</span>
-                                            <span class="ac-val">{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</span>
+                                    @if($hasMultiplePeriods)
+                                        <div class="flex flex-col gap-1 w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <input type="hidden" class="potongan-terlambat-raw-p-{{ $ib['periode'] }}" data-item-id="{{ $ib['id'] }}" data-periode="{{ $ib['periode'] }}" value="{{ (float)$ib['potongan_terlambat'] }}">
+                                                    @if($ib['potongan_terlambat'] > 0)
+                                                        <div class="accounting-cell font-bold text-rose-700 text-[11px]">
+                                                            <span class="ac-curr">- Rp</span>
+                                                            <span class="ac-val">{{ number_format($ib['potongan_terlambat'], 0, ',', '.') }}</span>
+                                                        </div>
+                                                    @else
+                                                        <div class="text-right text-slate-400 font-bold text-[10px]">-</div>
+                                                    @endif
+                                                </div>
+                                            @endforeach
                                         </div>
                                         <div class="text-[9px] text-slate-500 font-semibold mt-0.5 text-right">Otomatis Absensi</div>
                                     @else
-                                        <div class="text-center text-slate-400 font-bold text-xs">-</div>
+                                        <input type="hidden" class="potongan-terlambat-raw" value="{{ (float)$payroll->potongan_terlambat }}">
+                                        @if($payroll->potongan_terlambat > 0)
+                                            <div class="accounting-cell font-bold text-rose-700 text-xs">
+                                                <span class="ac-curr">- Rp</span>
+                                                <span class="ac-val">{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</span>
+                                            </div>
+                                            <div class="text-[9px] text-slate-500 font-semibold mt-0.5 text-right">Otomatis Absensi</div>
+                                        @else
+                                            <div class="text-center text-slate-400 font-bold text-xs">-</div>
+                                        @endif
                                     @endif
                                 </td>
 
                                 {{-- 14. KERUSAKAN INVENTARIS (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="accounting-input-wrap">
-                                            <span class="ac-input-prefix">Rp</span>
-                                            <input type="text"
-                                                   class="batch-input-rupiah batch-potongan-inventaris hr-data-input"
-                                                   value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                        </div>
-                                    @else
-                                        @if($payroll->potongan_inventaris > 0)
-                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                        <span class="ac-input-prefix">Rp</span>
+                                                        <input type="text"
+                                                               class="batch-input-rupiah batch-potongan-inventaris batch-sub-item-pot-inv input-pot-inv-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-inv-item-' . $ib['id'] : '' }} hr-data-input"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ $ib['potongan_inventaris'] > 0 ? number_format($ib['potongan_inventaris'], 0, ',', '.') : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-potongan-inventaris hr-data-input"
+                                                       value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                        @endif
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['potongan_inventaris'] > 0)
+                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format($ib['potongan_inventaris'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            @if($payroll->potongan_inventaris > 0)
+                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
@@ -1323,22 +1798,56 @@
                                 {{-- 15. KASBON / PINJAMAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="accounting-input-wrap">
-                                            <span class="ac-input-prefix">Rp</span>
-                                            <input type="text"
-                                                   class="batch-input-rupiah batch-potongan-kasbon hr-data-input"
-                                                   value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                        </div>
-                                    @else
-                                        @if($payroll->potongan_kasbon > 0)
-                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                        <span class="ac-input-prefix">Rp</span>
+                                                        <input type="text"
+                                                               class="batch-input-rupiah batch-potongan-kasbon batch-sub-item-pot-kasbon input-pot-kasbon-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-kasbon-item-' . $ib['id'] : '' }} hr-data-input"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ $ib['potongan_kasbon'] > 0 ? number_format($ib['potongan_kasbon'], 0, ',', '.') : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-potongan-kasbon hr-data-input"
+                                                       value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                        @endif
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['potongan_kasbon'] > 0)
+                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format($ib['potongan_kasbon'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            @if($payroll->potongan_kasbon > 0)
+                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
@@ -1346,23 +1855,58 @@
                                 {{-- 16. POTONGAN DEPOSIT (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="accounting-input-wrap">
-                                            <span class="ac-input-prefix">Rp</span>
-                                            <input type="text"
-                                                   class="batch-input-rupiah batch-potongan-deposit hr-data-input"
-                                                   value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
-                                                   placeholder="0"
-                                                   title="Potongan deposit untuk karyawan baru"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                        </div>
-                                    @else
-                                        @if($payroll->potongan_deposit > 0)
-                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                        <span class="ac-input-prefix">Rp</span>
+                                                        <input type="text"
+                                                               class="batch-input-rupiah batch-potongan-deposit batch-sub-item-pot-deposit input-pot-deposit-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-deposit-item-' . $ib['id'] : '' }} hr-data-input"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ $ib['potongan_deposit'] > 0 ? number_format($ib['potongan_deposit'], 0, ',', '.') : '' }}"
+                                                               placeholder="0"
+                                                               title="Potongan deposit untuk karyawan baru"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-potongan-deposit hr-data-input"
+                                                       value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       title="Potongan deposit untuk karyawan baru"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                        @endif
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['potongan_deposit'] > 0)
+                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format($ib['potongan_deposit'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            @if($payroll->potongan_deposit > 0)
+                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
@@ -1370,43 +1914,95 @@
                                 {{-- 17. POTONGAN LAIN & KETERANGAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
                                 <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
                                     @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        <div class="accounting-input-wrap">
-                                            <span class="ac-input-prefix">Rp</span>
-                                            <input type="text"
-                                                   class="batch-input-rupiah batch-potongan-dll hr-data-input"
-                                                   value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
-                                                   placeholder="0"
-                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                        </div>
-                                        <input type="text"
-                                               class="batch-catatan-potongan-dll w-full text-left bg-white border border-slate-300 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-400 mt-1 placeholder:text-slate-400 placeholder:italic"
-                                               value="{{ $payroll->catatan_potongan_dll ?? '' }}"
-                                               placeholder="Keterangan..."
-                                               title="Keterangan / rincian potongan lain-lain">
-                                    @else
-                                        @if($payroll->potongan_dll > 0)
-                                            <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->potongan_dll, 0, ',', '.') }}</span>
+                                        @if($hasMultiplePeriods)
+                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        <div class="accounting-input-wrap">
+                                                            <span class="ac-input-prefix">Rp</span>
+                                                            <input type="text"
+                                                                   class="batch-input-rupiah batch-potongan-dll batch-sub-item-pot-dll input-pot-dll-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-dll-item-' . $ib['id'] : '' }} hr-data-input"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   value="{{ $ib['potongan_dll'] > 0 ? number_format($ib['potongan_dll'], 0, ',', '.') : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                                        </div>
+                                                        <input type="text"
+                                                               class="batch-catatan-potongan-dll batch-sub-cat-pot-dll input-cat-pot-dll-p-{{ $ib['periode'] }} w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded px-1 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-300/40 mt-0.5 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ $ib['catatan_potongan_dll'] ?? '' }}"
+                                                               placeholder="Ket..."
+                                                               title="Keterangan / rincian potongan lain-lain P{{ $ib['periode'] }}">
+                                                    </div>
+                                                @endforeach
                                             </div>
                                         @else
-                                            <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-potongan-dll hr-data-input"
+                                                       value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                            </div>
+                                            <input type="text"
+                                                   class="batch-catatan-potongan-dll w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded px-1.5 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-300/40 mt-1 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                   value="{{ $payroll->catatan_potongan_dll ?? '' }}"
+                                                   placeholder="Ket..."
+                                                   title="Keterangan / rincian potongan lain-lain">
                                         @endif
-                                        @if($payroll->catatan_potongan_dll)
-                                            <div class="text-[9.5px] text-slate-500 font-medium truncate max-w-[110px] ml-auto text-right">{{ $payroll->catatan_potongan_dll }}</div>
+                                    @else
+                                        @if($hasMultiplePeriods)
+                                            <div class="flex flex-col gap-1 w-full">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                        @if($ib['potongan_dll'] > 0)
+                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
+                                                                <span class="ac-curr">Rp</span>
+                                                                <span class="ac-val">{{ number_format($ib['potongan_dll'], 0, ',', '.') }}</span>
+                                                            </div>
+                                                        @else
+                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
+                                                        @endif
+                                                        @if($ib['catatan_potongan_dll'])
+                                                            <div class="text-[9px] text-slate-500 font-medium truncate max-w-[110px] ml-auto text-right">{{ $ib['catatan_potongan_dll'] }}</div>
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            @if($payroll->potongan_dll > 0)
+                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val">{{ number_format($payroll->potongan_dll, 0, ',', '.') }}</span>
+                                                </div>
+                                            @else
+                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
+                                            @endif
+                                            @if($payroll->catatan_potongan_dll)
+                                                <div class="text-[9.5px] text-slate-500 font-medium truncate max-w-[110px] ml-auto text-right">{{ $payroll->catatan_potongan_dll }}</div>
+                                            @endif
                                         @endif
                                     @endif
                                 </td>
 
                                 {{-- 18. SUBTOTAL POTONGAN (POTONGAN SUBTOTAL - MERAH PENEGAS + BATAS TEGAS + ACCOUNTING STYLE) --}}
                                 <td class="col-cat-potongan-subtotal px-3 py-3 font-black text-rose-900 text-xs row-total-deductions-cell border-b border-rose-200 cat-divider-potongan">
-                                    @if($totalPotongan > 0)
-                                        <div class="accounting-cell">
-                                            <span class="ac-curr">- Rp</span>
-                                            <span class="ac-val">{{ number_format($totalPotongan, 0, ',', '.') }}</span>
+                                    <div class="accounting-cell">
+                                        <span class="ac-curr">- Rp</span>
+                                        <span class="ac-val main-deductions-val">{{ number_format($totalPotongan, 0, ',', '.') }}</span>
+                                    </div>
+                                    @if($hasMultiplePeriods)
+                                        <div class="flex flex-col gap-0.5 mt-1 pt-1 border-t border-rose-200/70">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-cell text-[10px] text-rose-800 font-bold {{ !$loop->first ? 'pt-0.5' : '' }}">
+                                                    <span class="ac-curr">- Rp</span>
+                                                    <span class="ac-val sub-potongan-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-potongan-item-' . $ib['id'] : '' }}">{{ number_format($ib['total_deductions'], 0, ',', '.') }}</span>
+                                                </div>
+                                            @endforeach
                                         </div>
-                                    @else
-                                        <div class="text-center font-bold text-rose-700/60 text-xs">-</div>
                                     @endif
                                 </td>
 
@@ -1414,10 +2010,17 @@
                                 <td class="col-cat-nett px-3 py-3 border-b border-slate-100">
                                     <div class="accounting-cell text-sm font-black text-slate-900 row-take-home-pay-cell">
                                         <span class="ac-curr">Rp</span>
-                                        <span class="ac-val">{{ number_format($payroll->take_home_pay, 0, ',', '.') }}</span>
+                                        <span class="ac-val main-thp-val">{{ number_format($payroll->take_home_pay, 0, ',', '.') }}</span>
                                     </div>
                                     @if($hasMultiplePeriods)
-                                        <span class="block text-[9.5px] font-bold text-teal-800 mt-0.5 text-right">Semua Periode</span>
+                                        <div class="flex flex-col gap-0.5 mt-1 pt-1 border-t border-slate-200">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-cell text-[10px] text-teal-900 font-extrabold {{ !$loop->first ? 'pt-0.5' : '' }}">
+                                                    <span class="ac-curr">Rp</span>
+                                                    <span class="ac-val sub-thp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-thp-item-' . $ib['id'] : '' }}">{{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }}</span>
+                                                </div>
+                                            @endforeach
+                                        </div>
                                     @endif
                                 </td>
 
@@ -2391,10 +2994,10 @@
         function isiDepositOtomatis(btn, saldo) {
             const row = btn.closest('.payroll-row');
             if (!row) return;
-            const depInput = row.querySelector('.batch-pengembalian-deposit');
-            if (depInput) {
-                depInput.value = Math.round(saldo).toLocaleString('id-ID');
-                onPayrollUnifiedRowInput(depInput);
+            const depInputs = row.querySelectorAll('.batch-pengembalian-deposit');
+            if (depInputs.length > 0) {
+                depInputs[0].value = Math.round(saldo).toLocaleString('id-ID');
+                onPayrollUnifiedRowInput(depInputs[0]);
             }
         }
 
@@ -2414,155 +3017,311 @@
 
             const satuan = row.getAttribute('data-satuan') || 'Harian';
             const tarif = parseFloat(row.getAttribute('data-tarif')) || 0;
-
-            // 1. GAJI POKOK UTAMA
-            let totalGajiPokok = 0;
             const subInputs = row.querySelectorAll('.batch-sub-item');
-            if (subInputs.length > 0) {
+            const hasMultiple = (row.getAttribute('data-has-multiple') === '1') || (subInputs.length > 0);
+
+            let totalGajiPokok = 0;
+            let totalBonus = 0;
+            let totalPotongan = 0;
+            let totalTakeHomePay = 0;
+
+            if (hasMultiple && subInputs.length > 0) {
+                // MULTI-PERIOD CALCULATION (P1, P2)
+                let sumHk = 0;
                 subInputs.forEach(input => {
                     const hk = parseFloat(input.value) || 0;
+                    sumHk += hk;
                     const subSat = input.getAttribute('data-satuan') || 'Harian';
                     const subTar = parseFloat(input.getAttribute('data-tarif')) || 0;
                     const itemId = input.getAttribute('data-item-id');
                     const pNum = input.getAttribute('data-periode');
+                    
+                    // 1. Gaji Pokok
                     const subGp = (subSat === 'Bulanan') ? subTar : (hk * subTar);
                     totalGajiPokok += subGp;
 
                     let subDisplayEl = itemId ? row.querySelector('.sub-gp-item-' + itemId) : null;
                     if (!subDisplayEl && pNum) subDisplayEl = row.querySelector('.sub-gp-p-' + pNum);
                     if (subDisplayEl) subDisplayEl.textContent = Math.round(subGp).toLocaleString('id-ID');
+
+                    // 2. Lembur P[pNum]
+                    const lemburInp = row.querySelector('.input-lembur-p-' + pNum);
+                    const jamLembur = lemburInp ? (parseFloat(lemburInp.value) || 0) : 0;
+                    const upahLembur = jamLembur * 10000;
+                    const subLemburText = row.querySelector('.sub-lembur-text-p-' + pNum);
+                    if (subLemburText) {
+                        const valEl = subLemburText.querySelector('.ac-val');
+                        if (valEl) valEl.textContent = Math.round(upahLembur).toLocaleString('id-ID');
+                        else subLemburText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahLembur).toLocaleString('id-ID') + '</span>';
+                        subLemburText.classList.toggle('hidden', jamLembur <= 0);
+                    }
+
+                    // 3. Target P[pNum]
+                    let upahTarget = 0;
+                    const targetInp = row.querySelector('.input-target-p-' + pNum);
+                    if (targetInp) {
+                        if (targetInp.classList.contains('batch-banyak-target')) {
+                            const banyakTarget = parseFloat(targetInp.value) || 0;
+                            upahTarget = banyakTarget * subTar;
+                            const subTargetText = row.querySelector('.sub-target-text-p-' + pNum);
+                            if (subTargetText) {
+                                const valEl = subTargetText.querySelector('.ac-val');
+                                if (valEl) valEl.textContent = Math.round(upahTarget).toLocaleString('id-ID');
+                                else subTargetText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahTarget).toLocaleString('id-ID') + '</span>';
+                                subTargetText.classList.toggle('hidden', banyakTarget <= 0);
+                            }
+                        } else {
+                            upahTarget = cleanNumber(targetInp.value);
+                        }
+                    }
+
+                    // 4. Tanggal Merah P[pNum]
+                    let upahMerah = 0;
+                    const merahInp = row.querySelector('.input-merah-p-' + pNum);
+                    if (merahInp) {
+                        if (merahInp.classList.contains('batch-banyak-merah')) {
+                            const banyakMerah = parseFloat(merahInp.value) || 0;
+                            upahMerah = banyakMerah * subTar;
+                            const subMerahText = row.querySelector('.sub-merah-text-p-' + pNum);
+                            if (subMerahText) {
+                                const valEl = subMerahText.querySelector('.ac-val');
+                                if (valEl) valEl.textContent = Math.round(upahMerah).toLocaleString('id-ID');
+                                else subMerahText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahMerah).toLocaleString('id-ID') + '</span>';
+                                subMerahText.classList.toggle('hidden', banyakMerah <= 0);
+                            }
+                        } else {
+                            upahMerah = cleanNumber(merahInp.value);
+                        }
+                    }
+
+                    // 5. Birthday Service P[pNum]
+                    const bdayInp = row.querySelector('.input-birthday-p-' + pNum);
+                    const banyakBirthday = bdayInp ? (parseFloat(bdayInp.value) || 0) : 0;
+                    const upahBirthday = banyakBirthday * 5000;
+                    const subBdayText = row.querySelector('.sub-birthday-text-p-' + pNum);
+                    if (subBdayText) {
+                        const valEl = subBdayText.querySelector('.ac-val');
+                        if (valEl) valEl.textContent = Math.round(upahBirthday).toLocaleString('id-ID');
+                        else subBdayText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahBirthday).toLocaleString('id-ID') + '</span>';
+                        subBdayText.classList.toggle('hidden', banyakBirthday <= 0);
+                    }
+
+                    // 6. Pengembalian Deposit P[pNum]
+                    const depInp = row.querySelector('.input-deposit-kembali-p-' + pNum);
+                    const depKembali = depInp ? cleanNumber(depInp.value) : 0;
+
+                    // 7. Bonus Dll P[pNum]
+                    const bDllInp = row.querySelector('.input-bonus-dll-p-' + pNum);
+                    const bonusDll = bDllInp ? cleanNumber(bDllInp.value) : 0;
+
+                    // Period Bonus Subtotal
+                    const subBonus = upahLembur + upahTarget + upahMerah + upahBirthday + depKembali + bonusDll;
+                    totalBonus += subBonus;
+                    const subBonusEl = row.querySelector('.sub-bonus-p-' + pNum);
+                    if (subBonusEl) subBonusEl.textContent = Math.round(subBonus).toLocaleString('id-ID');
+
+                    // 8. Potongan Terlambat P[pNum]
+                    const potTerlambatInp = row.querySelector('.potongan-terlambat-raw-p-' + pNum);
+                    const potTerlambat = potTerlambatInp ? (parseFloat(potTerlambatInp.value) || 0) : 0;
+
+                    // 9. Potongan Inventaris P[pNum]
+                    const potInvInp = row.querySelector('.input-pot-inv-p-' + pNum);
+                    const potInv = potInvInp ? cleanNumber(potInvInp.value) : 0;
+
+                    // 10. Potongan Kasbon P[pNum]
+                    const potKasbonInp = row.querySelector('.input-pot-kasbon-p-' + pNum);
+                    const potKasbon = potKasbonInp ? cleanNumber(potKasbonInp.value) : 0;
+
+                    // 11. Potongan Deposit P[pNum]
+                    const potDepInp = row.querySelector('.input-pot-deposit-p-' + pNum);
+                    const potDeposit = potDepInp ? cleanNumber(potDepInp.value) : 0;
+
+                    // 12. Potongan Dll P[pNum]
+                    const potDllInp = row.querySelector('.input-pot-dll-p-' + pNum);
+                    const potDll = potDllInp ? cleanNumber(potDllInp.value) : 0;
+
+                    // Period Deductions Subtotal
+                    const subPotongan = potTerlambat + potInv + potKasbon + potDeposit + potDll;
+                    totalPotongan += subPotongan;
+                    const subPotEl = row.querySelector('.sub-potongan-p-' + pNum);
+                    if (subPotEl) subPotEl.textContent = Math.round(subPotongan).toLocaleString('id-ID');
+
+                    // Period THP Subtotal
+                    const subThp = subGp + subBonus - subPotongan;
+                    const subThpEl = row.querySelector('.sub-thp-p-' + pNum);
+                    if (subThpEl) subThpEl.textContent = Math.round(subThp).toLocaleString('id-ID');
                 });
-                let sumHk = 0;
-                subInputs.forEach(inp => sumHk += (parseFloat(inp.value) || 0));
+
                 const displayHkEl = row.querySelector('.display-total-hk');
                 if (displayHkEl) displayHkEl.textContent = sumHk;
+
+                totalTakeHomePay = totalGajiPokok + totalBonus - totalPotongan;
+
+                // Update Main / Header cells in this row
+                row.setAttribute('data-gaji-pokok', totalGajiPokok);
+                const pokokCell = row.querySelector('.row-gaji-pokok-cell');
+                if (pokokCell) {
+                    const valEl = pokokCell.querySelector('.ac-val');
+                    if (valEl) valEl.textContent = Math.round(totalGajiPokok).toLocaleString('id-ID');
+                }
+
+                row.setAttribute('data-bonus-total', totalBonus);
+                const bonusCell = row.querySelector('.row-total-bonus-cell');
+                if (bonusCell) {
+                    const valEl = bonusCell.querySelector('.main-bonus-val');
+                    if (valEl) valEl.textContent = Math.round(totalBonus).toLocaleString('id-ID');
+                }
+
+                row.setAttribute('data-deductions-total', totalPotongan);
+                const potCell = row.querySelector('.row-total-deductions-cell');
+                if (potCell) {
+                    const valEl = potCell.querySelector('.main-deductions-val');
+                    if (valEl) valEl.textContent = Math.round(totalPotongan).toLocaleString('id-ID');
+                }
+
+                row.setAttribute('data-take-home-pay', totalTakeHomePay);
+                const thpCell = row.querySelector('.row-take-home-pay-cell');
+                if (thpCell) {
+                    const valEl = thpCell.querySelector('.main-thp-val') || thpCell.querySelector('.ac-val');
+                    if (valEl) valEl.textContent = Math.round(totalTakeHomePay).toLocaleString('id-ID');
+                }
+
             } else {
+                // SINGLE PERIOD CALCULATION
                 const hkInput = row.querySelector('.batch-hari-kerja');
                 const hk = hkInput ? (parseFloat(hkInput.value) || 0) : 0;
                 totalGajiPokok = (satuan === 'Bulanan') ? tarif : (hk * tarif);
-            }
-            row.setAttribute('data-gaji-pokok', totalGajiPokok);
-            const pokokCell = row.querySelector('.row-gaji-pokok-cell');
-            if (pokokCell) {
-                const valEl = pokokCell.querySelector('.ac-val');
-                if (valEl) {
-                    valEl.textContent = Math.round(totalGajiPokok).toLocaleString('id-ID');
-                } else {
-                    pokokCell.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(totalGajiPokok).toLocaleString('id-ID') + '</span>';
+
+                row.setAttribute('data-gaji-pokok', totalGajiPokok);
+                const pokokCell = row.querySelector('.row-gaji-pokok-cell');
+                if (pokokCell) {
+                    const valEl = pokokCell.querySelector('.ac-val');
+                    if (valEl) {
+                        valEl.textContent = Math.round(totalGajiPokok).toLocaleString('id-ID');
+                    } else {
+                        pokokCell.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(totalGajiPokok).toLocaleString('id-ID') + '</span>';
+                    }
                 }
-            }
 
-            // 2. BONUS & LEMBUR
-            const jamLemburInput = row.querySelector('.batch-jam-lembur');
-            const jamLembur = jamLemburInput ? (parseFloat(jamLemburInput.value) || 0) : 0;
-            const upahLembur = jamLembur * 10000;
-            const subLemburText = row.querySelector('.sub-lembur-text');
-            if (subLemburText) {
-                const valEl = subLemburText.querySelector('.ac-val');
-                if (valEl) valEl.textContent = Math.round(upahLembur).toLocaleString('id-ID');
-                else subLemburText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahLembur).toLocaleString('id-ID') + '</span>';
-                subLemburText.classList.toggle('hidden', jamLembur <= 0);
-            }
-
-            let upahTarget = 0;
-            const banyakTargetInput = row.querySelector('.batch-banyak-target');
-            const bonusTargetInput = row.querySelector('.batch-bonus-target');
-            if (banyakTargetInput) {
-                const banyakTarget = parseFloat(banyakTargetInput.value) || 0;
-                upahTarget = banyakTarget * tarif;
-                const subTargetText = row.querySelector('.sub-target-text');
-                if (subTargetText) {
-                    const valEl = subTargetText.querySelector('.ac-val');
-                    if (valEl) valEl.textContent = Math.round(upahTarget).toLocaleString('id-ID');
-                    else subTargetText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahTarget).toLocaleString('id-ID') + '</span>';
-                    subTargetText.classList.toggle('hidden', banyakTarget <= 0);
+                const jamLemburInput = row.querySelector('.batch-jam-lembur');
+                const jamLembur = jamLemburInput ? (parseFloat(jamLemburInput.value) || 0) : 0;
+                const upahLembur = jamLembur * 10000;
+                const subLemburText = row.querySelector('.sub-lembur-text');
+                if (subLemburText) {
+                    const valEl = subLemburText.querySelector('.ac-val');
+                    if (valEl) valEl.textContent = Math.round(upahLembur).toLocaleString('id-ID');
+                    else subLemburText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahLembur).toLocaleString('id-ID') + '</span>';
+                    subLemburText.classList.toggle('hidden', jamLembur <= 0);
                 }
-            } else if (bonusTargetInput) {
-                upahTarget = cleanNumber(bonusTargetInput.value);
-            }
 
-            let upahMerah = 0;
-            const banyakMerahInput = row.querySelector('.batch-banyak-merah');
-            const bonusMerahInput = row.querySelector('.batch-bonus-merah');
-            if (banyakMerahInput) {
-                const banyakMerah = parseFloat(banyakMerahInput.value) || 0;
-                upahMerah = banyakMerah * tarif;
-                const subMerahText = row.querySelector('.sub-merah-text');
-                if (subMerahText) {
-                    const valEl = subMerahText.querySelector('.ac-val');
-                    if (valEl) valEl.textContent = Math.round(upahMerah).toLocaleString('id-ID');
-                    else subMerahText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahMerah).toLocaleString('id-ID') + '</span>';
-                    subMerahText.classList.toggle('hidden', banyakMerah <= 0);
+                let upahTarget = 0;
+                const banyakTargetInput = row.querySelector('.batch-banyak-target');
+                const bonusTargetInput = row.querySelector('.batch-bonus-target');
+                if (banyakTargetInput) {
+                    const banyakTarget = parseFloat(banyakTargetInput.value) || 0;
+                    upahTarget = banyakTarget * tarif;
+                    const subTargetText = row.querySelector('.sub-target-text');
+                    if (subTargetText) {
+                        const valEl = subTargetText.querySelector('.ac-val');
+                        if (valEl) valEl.textContent = Math.round(upahTarget).toLocaleString('id-ID');
+                        else subTargetText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahTarget).toLocaleString('id-ID') + '</span>';
+                        subTargetText.classList.toggle('hidden', banyakTarget <= 0);
+                    }
+                } else if (bonusTargetInput) {
+                    upahTarget = cleanNumber(bonusTargetInput.value);
                 }
-            } else if (bonusMerahInput) {
-                upahMerah = cleanNumber(bonusMerahInput.value);
-            }
 
-            const banyakBirthdayInput = row.querySelector('.batch-banyak-birthday');
-            const banyakBirthday = banyakBirthdayInput ? (parseFloat(banyakBirthdayInput.value) || 0) : 0;
-            const upahBirthday = banyakBirthday * 5000;
-            const subBirthdayText = row.querySelector('.sub-birthday-text');
-            if (subBirthdayText) {
-                const valEl = subBirthdayText.querySelector('.ac-val');
-                if (valEl) valEl.textContent = Math.round(upahBirthday).toLocaleString('id-ID');
-                else subBirthdayText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahBirthday).toLocaleString('id-ID') + '</span>';
-                subBirthdayText.classList.toggle('hidden', banyakBirthday <= 0);
-            }
-
-            const depKembaliInput = row.querySelector('.batch-pengembalian-deposit');
-            const depKembali = depKembaliInput ? cleanNumber(depKembaliInput.value) : 0;
-
-            const bonusDllInput = row.querySelector('.batch-bonus-dll');
-            const bonusDll = bonusDllInput ? cleanNumber(bonusDllInput.value) : 0;
-
-            const totalBonus = upahLembur + upahTarget + upahMerah + upahBirthday + depKembali + bonusDll;
-            row.setAttribute('data-bonus-total', totalBonus);
-            const bonusCell = row.querySelector('.row-total-bonus-cell');
-            if (bonusCell) {
-                if (totalBonus > 0) {
-                    bonusCell.innerHTML = '<div class="accounting-cell"><span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(totalBonus).toLocaleString('id-ID') + '</span></div>';
-                } else {
-                    bonusCell.innerHTML = '<div class="text-center font-bold text-amber-700/60 text-xs">-</div>';
+                let upahMerah = 0;
+                const banyakMerahInput = row.querySelector('.batch-banyak-merah');
+                const bonusMerahInput = row.querySelector('.batch-bonus-merah');
+                if (banyakMerahInput) {
+                    const banyakMerah = parseFloat(banyakMerahInput.value) || 0;
+                    upahMerah = banyakMerah * tarif;
+                    const subMerahText = row.querySelector('.sub-merah-text');
+                    if (subMerahText) {
+                        const valEl = subMerahText.querySelector('.ac-val');
+                        if (valEl) valEl.textContent = Math.round(upahMerah).toLocaleString('id-ID');
+                        else subMerahText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahMerah).toLocaleString('id-ID') + '</span>';
+                        subMerahText.classList.toggle('hidden', banyakMerah <= 0);
+                    }
+                } else if (bonusMerahInput) {
+                    upahMerah = cleanNumber(bonusMerahInput.value);
                 }
-            }
 
-            // 3. POTONGAN & PENGURANGAN
-            const potTerlambatRaw = row.querySelector('.potongan-terlambat-raw');
-            const potTerlambat = potTerlambatRaw ? (parseFloat(potTerlambatRaw.value) || 0) : 0;
-
-            const potInvInput = row.querySelector('.batch-potongan-inventaris');
-            const potInv = potInvInput ? cleanNumber(potInvInput.value) : 0;
-
-            const potKasbonInput = row.querySelector('.batch-potongan-kasbon');
-            const potKasbon = potKasbonInput ? cleanNumber(potKasbonInput.value) : 0;
-
-            const potDepositInput = row.querySelector('.batch-potongan-deposit');
-            const potDeposit = potDepositInput ? cleanNumber(potDepositInput.value) : 0;
-
-            const potDllInput = row.querySelector('.batch-potongan-dll');
-            const potDll = potDllInput ? cleanNumber(potDllInput.value) : 0;
-
-            const totalPotongan = potTerlambat + potInv + potKasbon + potDeposit + potDll;
-            row.setAttribute('data-deductions-total', totalPotongan);
-            const potCell = row.querySelector('.row-total-deductions-cell');
-            if (potCell) {
-                if (totalPotongan > 0) {
-                    potCell.innerHTML = '<div class="accounting-cell"><span class="ac-curr">- Rp</span><span class="ac-val">' + Math.round(totalPotongan).toLocaleString('id-ID') + '</span></div>';
-                } else {
-                    potCell.innerHTML = '<div class="text-center font-bold text-rose-700/60 text-xs">-</div>';
+                const banyakBirthdayInput = row.querySelector('.batch-banyak-birthday');
+                const banyakBirthday = banyakBirthdayInput ? (parseFloat(banyakBirthdayInput.value) || 0) : 0;
+                const upahBirthday = banyakBirthday * 5000;
+                const subBirthdayText = row.querySelector('.sub-birthday-text');
+                if (subBirthdayText) {
+                    const valEl = subBirthdayText.querySelector('.ac-val');
+                    if (valEl) valEl.textContent = Math.round(upahBirthday).toLocaleString('id-ID');
+                    else subBirthdayText.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(upahBirthday).toLocaleString('id-ID') + '</span>';
+                    subBirthdayText.classList.toggle('hidden', banyakBirthday <= 0);
                 }
-            }
 
-            // 4. TAKE HOME PAY (GAJI BERSIH)
-            const takeHomePay = totalGajiPokok + totalBonus - totalPotongan;
-            row.setAttribute('data-take-home-pay', takeHomePay);
-            const thpCell = row.querySelector('.row-take-home-pay-cell');
-            if (thpCell) {
-                const valEl = thpCell.querySelector('.ac-val');
-                if (valEl) {
-                    valEl.textContent = Math.round(takeHomePay).toLocaleString('id-ID');
-                } else {
-                    thpCell.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val">' + Math.round(takeHomePay).toLocaleString('id-ID') + '</span>';
+                const depKembaliInput = row.querySelector('.batch-pengembalian-deposit');
+                const depKembali = depKembaliInput ? cleanNumber(depKembaliInput.value) : 0;
+
+                const bonusDllInput = row.querySelector('.batch-bonus-dll');
+                const bonusDll = bonusDllInput ? cleanNumber(bonusDllInput.value) : 0;
+
+                totalBonus = upahLembur + upahTarget + upahMerah + upahBirthday + depKembali + bonusDll;
+                row.setAttribute('data-bonus-total', totalBonus);
+                const bonusCell = row.querySelector('.row-total-bonus-cell');
+                if (bonusCell) {
+                    const valEl = bonusCell.querySelector('.main-bonus-val');
+                    if (valEl) {
+                        valEl.textContent = Math.round(totalBonus).toLocaleString('id-ID');
+                    } else {
+                        if (totalBonus > 0) {
+                            bonusCell.innerHTML = '<div class="accounting-cell"><span class="ac-curr">Rp</span><span class="ac-val main-bonus-val">' + Math.round(totalBonus).toLocaleString('id-ID') + '</span></div>';
+                        } else {
+                            bonusCell.innerHTML = '<div class="text-center font-bold text-amber-700/60 text-xs main-bonus-val">-</div>';
+                        }
+                    }
+                }
+
+                const potTerlambatRaw = row.querySelector('.potongan-terlambat-raw');
+                const potTerlambat = potTerlambatRaw ? (parseFloat(potTerlambatRaw.value) || 0) : 0;
+
+                const potInvInput = row.querySelector('.batch-potongan-inventaris');
+                const potInv = potInvInput ? cleanNumber(potInvInput.value) : 0;
+
+                const potKasbonInput = row.querySelector('.batch-potongan-kasbon');
+                const potKasbon = potKasbonInput ? cleanNumber(potKasbonInput.value) : 0;
+
+                const potDepositInput = row.querySelector('.batch-potongan-deposit');
+                const potDeposit = potDepositInput ? cleanNumber(potDepositInput.value) : 0;
+
+                const potDllInput = row.querySelector('.batch-potongan-dll');
+                const potDll = potDllInput ? cleanNumber(potDllInput.value) : 0;
+
+                totalPotongan = potTerlambat + potInv + potKasbon + potDeposit + potDll;
+                row.setAttribute('data-deductions-total', totalPotongan);
+                const potCell = row.querySelector('.row-total-deductions-cell');
+                if (potCell) {
+                    const valEl = potCell.querySelector('.main-deductions-val');
+                    if (valEl) {
+                        valEl.textContent = Math.round(totalPotongan).toLocaleString('id-ID');
+                    } else {
+                        if (totalPotongan > 0) {
+                            potCell.innerHTML = '<div class="accounting-cell"><span class="ac-curr">- Rp</span><span class="ac-val main-deductions-val">' + Math.round(totalPotongan).toLocaleString('id-ID') + '</span></div>';
+                        } else {
+                            potCell.innerHTML = '<div class="text-center font-bold text-rose-700/60 text-xs main-deductions-val">-</div>';
+                        }
+                    }
+                }
+
+                totalTakeHomePay = totalGajiPokok + totalBonus - totalPotongan;
+                row.setAttribute('data-take-home-pay', totalTakeHomePay);
+                const thpCell = row.querySelector('.row-take-home-pay-cell');
+                if (thpCell) {
+                    const valEl = thpCell.querySelector('.main-thp-val') || thpCell.querySelector('.ac-val');
+                    if (valEl) {
+                        valEl.textContent = Math.round(totalTakeHomePay).toLocaleString('id-ID');
+                    } else {
+                        thpCell.innerHTML = '<span class="ac-curr">Rp</span><span class="ac-val main-thp-val">' + Math.round(totalTakeHomePay).toLocaleString('id-ID') + '</span>';
+                    }
                 }
             }
 
@@ -2618,19 +3377,47 @@
 
         function recalculateAllHeaderTotals() {
             let grandNett = 0;
+            let grandNettP1 = 0;
+            let grandNettP2 = 0;
             let grandPokok = 0;
             let grandBonus = 0;
             let grandPotongan = 0;
 
             document.querySelectorAll('.payroll-row').forEach(row => {
-                grandNett += parseFloat(row.getAttribute('data-take-home-pay')) || 0;
+                const rowNett = parseFloat(row.getAttribute('data-take-home-pay')) || 0;
+                grandNett += rowNett;
                 grandPokok += parseFloat(row.getAttribute('data-gaji-pokok')) || 0;
                 grandBonus += parseFloat(row.getAttribute('data-bonus-total')) || 0;
                 grandPotongan += parseFloat(row.getAttribute('data-deductions-total')) || 0;
+
+                const isMultiple = row.getAttribute('data-has-multiple') === '1';
+                if (isMultiple) {
+                    const p1El = row.querySelector('.sub-thp-p-1');
+                    const p2El = row.querySelector('.sub-thp-p-2');
+                    if (p1El) {
+                        grandNettP1 += cleanNumber(p1El.textContent) || 0;
+                    }
+                    if (p2El) {
+                        grandNettP2 += cleanNumber(p2El.textContent) || 0;
+                    }
+                } else {
+                    const actPeriode = parseInt(row.getAttribute('data-active-periode') || '1', 10);
+                    if (actPeriode === 2) {
+                        grandNettP2 += rowNett;
+                    } else {
+                        grandNettP1 += rowNett;
+                    }
+                }
             });
 
             const nettEl = document.getElementById('headerTotalGajiNettValue');
             if (nettEl) nettEl.textContent = 'Rp ' + Math.round(grandNett).toLocaleString('id-ID');
+
+            const nettP1El = document.getElementById('headerTotalGajiNettP1Value');
+            if (nettP1El) nettP1El.textContent = 'Rp ' + Math.round(grandNettP1).toLocaleString('id-ID');
+
+            const nettP2El = document.getElementById('headerTotalGajiNettP2Value');
+            if (nettP2El) nettP2El.textContent = 'Rp ' + Math.round(grandNettP2).toLocaleString('id-ID');
 
             const pokokEl = document.getElementById('headerTotalGajiPokokValue');
             if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(grandPokok).toLocaleString('id-ID');
@@ -2655,73 +3442,120 @@
                 const id = row.getAttribute('data-id');
                 const karyawanId = row.getAttribute('data-karyawan-id');
                 const subInputs = row.querySelectorAll('.batch-sub-item');
+                const hasMultiple = (row.getAttribute('data-has-multiple') === '1') || (subInputs.length > 0);
 
-                const jamLembur = row.querySelector('.batch-jam-lembur') ? (parseFloat(row.querySelector('.batch-jam-lembur').value) || 0) : 0;
-                
-                const banyakTargetInput = row.querySelector('.batch-banyak-target');
-                const bonusTargetInput = row.querySelector('.batch-bonus-target');
-                const banyakTarget = banyakTargetInput ? (parseFloat(banyakTargetInput.value) || 0) : 0;
-                const bonusTarget = bonusTargetInput ? cleanNumber(bonusTargetInput.value) : 0;
-                const catatanTarget = row.querySelector('.batch-catatan-target') ? row.querySelector('.batch-catatan-target').value : null;
-
-                const banyakMerahInput = row.querySelector('.batch-banyak-merah');
-                const bonusMerahInput = row.querySelector('.batch-bonus-merah');
-                const banyakMerah = banyakMerahInput ? (parseFloat(banyakMerahInput.value) || 0) : 0;
-                const bonusMerah = bonusMerahInput ? cleanNumber(bonusMerahInput.value) : 0;
-                const catatanMerah = row.querySelector('.batch-catatan-merah') ? row.querySelector('.batch-catatan-merah').value : null;
-
-                const banyakBirthday = row.querySelector('.batch-banyak-birthday') ? (parseFloat(row.querySelector('.batch-banyak-birthday').value) || 0) : 0;
-                const depKembali = row.querySelector('.batch-pengembalian-deposit') ? cleanNumber(row.querySelector('.batch-pengembalian-deposit').value) : 0;
-                const bonusDll = row.querySelector('.batch-bonus-dll') ? cleanNumber(row.querySelector('.batch-bonus-dll').value) : 0;
-
-                const potInv = row.querySelector('.batch-potongan-inventaris') ? cleanNumber(row.querySelector('.batch-potongan-inventaris').value) : 0;
-                const potKasbon = row.querySelector('.batch-potongan-kasbon') ? cleanNumber(row.querySelector('.batch-potongan-kasbon').value) : 0;
-                const potDeposit = row.querySelector('.batch-potongan-deposit') ? cleanNumber(row.querySelector('.batch-potongan-deposit').value) : 0;
-                const potDll = row.querySelector('.batch-potongan-dll') ? cleanNumber(row.querySelector('.batch-potongan-dll').value) : 0;
-                const catPotDll = row.querySelector('.batch-catatan-potongan-dll') ? row.querySelector('.batch-catatan-potongan-dll').value : '';
-
-                if (subInputs.length > 0) {
-                    subInputs.forEach((subInput, sIdx) => {
+                if (hasMultiple && subInputs.length > 0) {
+                    subInputs.forEach((subInput) => {
                         const itemId = subInput.getAttribute('data-item-id');
                         const pNum = subInput.getAttribute('data-periode');
                         const hkVal = parseFloat(subInput.value) || 0;
 
-                        if (sIdx === 0) {
-                            items.push({
-                                id: itemId,
-                                karyawan_id: karyawanId,
-                                pilihan_periode: pNum,
-                                hari_kerja: hkVal,
-                                jam_lembur: jamLembur,
-                                banyak_target: banyakTarget,
-                                bonus_target: bonusTarget,
-                                catatan_bonus_target: catatanTarget,
-                                banyak_tanggal_merah: banyakMerah,
-                                bonus_tanggal_merah: bonusMerah,
-                                catatan_bonus_tanggal_merah: catatanMerah,
-                                banyak_birthday_service: banyakBirthday,
-                                pengembalian_deposit: depKembali,
-                                bonus_dll: bonusDll,
-                                potongan_inventaris: potInv,
-                                potongan_kasbon: potKasbon,
-                                potongan_deposit: potDeposit,
-                                potongan_dll: potDll,
-                                catatan_potongan_dll: catPotDll,
-                            });
-                        } else {
-                            items.push({
-                                id: itemId,
-                                karyawan_id: karyawanId,
-                                pilihan_periode: pNum,
-                                hari_kerja: hkVal,
-                            });
+                        const jamLemburInp = row.querySelector('.input-lembur-p-' + pNum);
+                        const jamLembur = jamLemburInp ? (parseFloat(jamLemburInp.value) || 0) : 0;
+
+                        const targetInp = row.querySelector('.input-target-p-' + pNum);
+                        let banyakTarget = 0, bonusTarget = 0;
+                        if (targetInp) {
+                            if (targetInp.classList.contains('batch-banyak-target')) {
+                                banyakTarget = parseFloat(targetInp.value) || 0;
+                            } else {
+                                bonusTarget = cleanNumber(targetInp.value);
+                            }
                         }
+                        const catTargetInp = row.querySelector('.input-catatan-target-p-' + pNum);
+                        const catatanTarget = catTargetInp ? catTargetInp.value : null;
+
+                        const merahInp = row.querySelector('.input-merah-p-' + pNum);
+                        let banyakMerah = 0, bonusMerah = 0;
+                        if (merahInp) {
+                            if (merahInp.classList.contains('batch-banyak-merah')) {
+                                banyakMerah = parseFloat(merahInp.value) || 0;
+                            } else {
+                                bonusMerah = cleanNumber(merahInp.value);
+                            }
+                        }
+                        const catMerahInp = row.querySelector('.input-catatan-merah-p-' + pNum);
+                        const catatanMerah = catMerahInp ? catMerahInp.value : null;
+
+                        const bdayInp = row.querySelector('.input-birthday-p-' + pNum);
+                        const banyakBirthday = bdayInp ? (parseFloat(bdayInp.value) || 0) : 0;
+
+                        const depInp = row.querySelector('.input-deposit-kembali-p-' + pNum);
+                        const depKembali = depInp ? cleanNumber(depInp.value) : 0;
+
+                        const bDllInp = row.querySelector('.input-bonus-dll-p-' + pNum);
+                        const bonusDll = bDllInp ? cleanNumber(bDllInp.value) : 0;
+                        const catBDllInp = row.querySelector('.input-cat-bonus-dll-p-' + pNum);
+                        const catBonusDll = catBDllInp ? catBDllInp.value : '';
+
+                        const potInvInp = row.querySelector('.input-pot-inv-p-' + pNum);
+                        const potInv = potInvInp ? cleanNumber(potInvInp.value) : 0;
+
+                        const potKasbonInp = row.querySelector('.input-pot-kasbon-p-' + pNum);
+                        const potKasbon = potKasbonInp ? cleanNumber(potKasbonInp.value) : 0;
+
+                        const potDepInp = row.querySelector('.input-pot-deposit-p-' + pNum);
+                        const potDeposit = potDepInp ? cleanNumber(potDepInp.value) : 0;
+
+                        const potDllInp = row.querySelector('.input-pot-dll-p-' + pNum);
+                        const potDll = potDllInp ? cleanNumber(potDllInp.value) : 0;
+
+                        const catPotDllInp = row.querySelector('.input-cat-pot-dll-p-' + pNum);
+                        const catPotDll = catPotDllInp ? catPotDllInp.value : '';
+
+                        items.push({
+                            id: itemId,
+                            karyawan_id: karyawanId,
+                            pilihan_periode: pNum,
+                            hari_kerja: hkVal,
+                            jam_lembur: jamLembur,
+                            banyak_target: banyakTarget,
+                            bonus_target: bonusTarget,
+                            catatan_bonus_target: catatanTarget,
+                            banyak_tanggal_merah: banyakMerah,
+                            bonus_tanggal_merah: bonusMerah,
+                            catatan_bonus_tanggal_merah: catatanMerah,
+                            banyak_birthday_service: banyakBirthday,
+                            pengembalian_deposit: depKembali,
+                            bonus_dll: bonusDll,
+                            catatan_bonus_dll: catBonusDll,
+                            potongan_inventaris: potInv,
+                            potongan_kasbon: potKasbon,
+                            potongan_deposit: potDeposit,
+                            potongan_dll: potDll,
+                            catatan_potongan_dll: catPotDll,
+                        });
                     });
                 } else {
                     const hkInput = row.querySelector('.batch-hari-kerja');
                     const activeItemId = row.getAttribute('data-active-item-id') || id;
                     const activePeriode = row.getAttribute('data-active-periode') || 1;
                     const hkVal = hkInput ? (parseFloat(hkInput.value) || 0) : 0;
+
+                    const jamLembur = row.querySelector('.batch-jam-lembur') ? (parseFloat(row.querySelector('.batch-jam-lembur').value) || 0) : 0;
+                    
+                    const banyakTargetInput = row.querySelector('.batch-banyak-target');
+                    const bonusTargetInput = row.querySelector('.batch-bonus-target');
+                    const banyakTarget = banyakTargetInput ? (parseFloat(banyakTargetInput.value) || 0) : 0;
+                    const bonusTarget = bonusTargetInput ? cleanNumber(bonusTargetInput.value) : 0;
+                    const catatanTarget = row.querySelector('.batch-catatan-target') ? row.querySelector('.batch-catatan-target').value : null;
+
+                    const banyakMerahInput = row.querySelector('.batch-banyak-merah');
+                    const bonusMerahInput = row.querySelector('.batch-bonus-merah');
+                    const banyakMerah = banyakMerahInput ? (parseFloat(banyakMerahInput.value) || 0) : 0;
+                    const bonusMerah = bonusMerahInput ? cleanNumber(bonusMerahInput.value) : 0;
+                    const catatanMerah = row.querySelector('.batch-catatan-merah') ? row.querySelector('.batch-catatan-merah').value : null;
+
+                    const banyakBirthday = row.querySelector('.batch-banyak-birthday') ? (parseFloat(row.querySelector('.batch-banyak-birthday').value) || 0) : 0;
+                    const depKembali = row.querySelector('.batch-pengembalian-deposit') ? cleanNumber(row.querySelector('.batch-pengembalian-deposit').value) : 0;
+                    const bonusDll = row.querySelector('.batch-bonus-dll') ? cleanNumber(row.querySelector('.batch-bonus-dll').value) : 0;
+                    const catBonusDll = row.querySelector('.batch-catatan-bonus-dll') ? row.querySelector('.batch-catatan-bonus-dll').value : '';
+
+                    const potInv = row.querySelector('.batch-potongan-inventaris') ? cleanNumber(row.querySelector('.batch-potongan-inventaris').value) : 0;
+                    const potKasbon = row.querySelector('.batch-potongan-kasbon') ? cleanNumber(row.querySelector('.batch-potongan-kasbon').value) : 0;
+                    const potDeposit = row.querySelector('.batch-potongan-deposit') ? cleanNumber(row.querySelector('.batch-potongan-deposit').value) : 0;
+                    const potDll = row.querySelector('.batch-potongan-dll') ? cleanNumber(row.querySelector('.batch-potongan-dll').value) : 0;
+                    const catPotDll = row.querySelector('.batch-catatan-potongan-dll') ? row.querySelector('.batch-catatan-potongan-dll').value : '';
 
                     items.push({
                         id: activeItemId,
@@ -2738,6 +3572,7 @@
                         banyak_birthday_service: banyakBirthday,
                         pengembalian_deposit: depKembali,
                         bonus_dll: bonusDll,
+                        catatan_bonus_dll: catBonusDll,
                         potongan_inventaris: potInv,
                         potongan_kasbon: potKasbon,
                         potongan_deposit: potDeposit,
