@@ -457,7 +457,7 @@ class PersediaanAwalController extends Controller
                 $satuanStok = $barang->satuan ?: 'pcs';
                 $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
                 $satuanTipe = $request->satuan_tipe[$index] ?? 'pembelian';
-                $isPembelian = ($satuanTipe === 'pembelian');
+                $isPembelian = ($satuanTipe === 'pembelian' && $satuanBeli !== $satuanStok && $konversi > 1);
 
                 $multiplier = $isPembelian ? $konversi : 1.00;
                 $qtyStok = $qtyInput * $multiplier;
@@ -478,9 +478,12 @@ class PersediaanAwalController extends Controller
                     'barang'             => $barang,
                     'qty_input'          => $qtyInput,
                     'harga_input'        => max(0, $hargaInput),
+                    'is_pembelian'       => $isPembelian,
                     'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
-                    'satuan_pembelian'   => $satuanBeli,
+                    'satuan_pembelian'   => $isPembelian ? $satuanBeli : null,
                     'konversi_pembelian' => $konversi,
+                    'qty_pembelian'      => $isPembelian ? $qtyInput : null,
+                    'harga_pembelian'    => $isPembelian ? max(0, $hargaInput) : null,
                     'qty_stok'           => $qtyStok,
                     'harga_stok'         => $hargaStok,
                     'total_nilai'        => $totalNilai,
@@ -548,8 +551,8 @@ class PersediaanAwalController extends Controller
                     'satuan'             => $satuanStok,
                     'satuan_pembelian'   => $item['satuan_pembelian'],
                     'konversi_pembelian' => $item['konversi_pembelian'],
-                    'qty_pembelian'      => $item['qty_input'],
-                    'harga_pembelian'    => $item['harga_input'],
+                    'qty_pembelian'      => $item['qty_pembelian'],
+                    'harga_pembelian'    => $item['harga_pembelian'],
                     'harga_satuan'       => $item['harga_stok'],
                     'total_nilai'        => $item['total_nilai'],
                     'batch_number'       => $batchNumber,
@@ -753,9 +756,28 @@ class PersediaanAwalController extends Controller
 
             $hasKonv = $satBeli && $konv > 1 && ($satBeli !== $satStok);
 
-            $qtyInput = $d->qty_pembelian !== null ? (float)$d->qty_pembelian : ($hasKonv ? round((float)$d->qty / $konv, 2) : (float)$d->qty);
-            $hargaInput = $d->harga_pembelian !== null ? (float)$d->harga_pembelian : ($hasKonv ? round((float)$d->harga_satuan * $konv, 2) : (float)$d->harga_satuan);
-            $satuanTipe = ($hasKonv && $d->qty_pembelian !== null) ? 'pembelian' : 'utama';
+            // Deteksi apakah item ini tersimpan dalam satuan pembelian atau satuan stok utama
+            $isSavedInPembelian = false;
+            if ($hasKonv && $d->qty_pembelian !== null && $d->satuan_pembelian && ($d->satuan_pembelian !== $satStok)) {
+                if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.01) {
+                    $isSavedInPembelian = true;
+                } elseif (abs((float)$d->qty_pembelian - (float)$d->qty) < 0.0001 && $konv > 1) {
+                    // Jika qty_pembelian sama dengan qty stok padahal konversi > 1, itu diinput sebagai satuan utama
+                    $isSavedInPembelian = false;
+                } else {
+                    $isSavedInPembelian = true;
+                }
+            }
+
+            if ($isSavedInPembelian) {
+                $satuanTipe = 'pembelian';
+                $qtyInput = (float)$d->qty_pembelian;
+                $hargaInput = $d->harga_pembelian !== null ? (float)$d->harga_pembelian : round((float)$d->harga_satuan * $konv, 2);
+            } else {
+                $satuanTipe = 'utama';
+                $qtyInput = (float)$d->qty;
+                $hargaInput = (float)$d->harga_satuan;
+            }
 
             $hrgStokUtama = (float)($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
             $hrgBeliUtama = $hrgStokUtama * $konv;
@@ -978,70 +1000,42 @@ class PersediaanAwalController extends Controller
 
                 $satuanStok = $barang->satuan ?: 'pcs';
                 $satuanBeli = $barang->satuan_pembelian ?: $satuanStok;
-                $satuanTipe = $sub['satuan_tipe'];
-                $isPembelian = ($satuanTipe === 'pembelian');
+                $satuanTipe = $sub['satuan_tipe'] ?? 'pembelian';
+                $isPembelian = ($satuanTipe === 'pembelian' && $satuanBeli !== $satuanStok && $konversi > 1);
 
-                // Cek apakah item ini tidak diubah nilainya oleh user dibanding detail lama
-                $isUnchanged = false;
-                if ($oldDetail) {
-                    $hasKonvOld = $oldDetail->satuan_pembelian && ($oldDetail->konversi_pembelian ?: $konversi) > 1 && ($oldDetail->satuan_pembelian !== $oldDetail->satuan);
-                    $oldQtyInput = $oldDetail->qty_pembelian !== null ? (float)$oldDetail->qty_pembelian : ($hasKonvOld ? round((float)$oldDetail->qty / ($oldDetail->konversi_pembelian ?: $konversi), 2) : (float)$oldDetail->qty);
-                    $oldHargaInput = $oldDetail->harga_pembelian !== null ? (float)$oldDetail->harga_pembelian : ($hasKonvOld ? round((float)$oldDetail->harga_satuan * ($oldDetail->konversi_pembelian ?: $konversi), 2) : (float)$oldDetail->harga_satuan);
-                    $oldSatuanTipe = ($hasKonvOld && $oldDetail->qty_pembelian !== null) ? 'pembelian' : 'utama';
+                $multiplier = $isPembelian ? $konversi : 1.00;
+                $qtyStok = $qtyInput * $multiplier;
 
-                    if (
-                        abs($qtyInput - $oldQtyInput) < 0.0001 &&
-                        abs($sub['harga_input'] - $oldHargaInput) < 0.01 &&
-                        $satuanTipe === $oldSatuanTipe
-                    ) {
-                        $isUnchanged = true;
-                    }
-                }
-
-                if ($isUnchanged && $oldDetail) {
-                    // JIKA TIDAK DIEDIT: Pertahankan nilai asli 100% tanpa pembulatan ulang / recalculate
-                    $qtyStok   = (float)$oldDetail->qty;
-                    $hargaStok = (float)$oldDetail->harga_satuan;
-                    $hargaInput = $oldDetail->harga_pembelian !== null ? (float)$oldDetail->harga_pembelian : $oldHargaInput;
-                    $totalNilai = (float)$oldDetail->total_nilai;
-                    $satuanDipilih = $oldDetail->satuan_pembelian ?: $satuanStok;
-                    $konversiDipakai = (float)($oldDetail->konversi_pembelian ?: $konversi);
+                if ($isGudangUtama) {
+                    $hargaInput = $sub['harga_input'];
+                    $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
                 } else {
-                    // JIKA DIEDIT ATAU ITEM BARU: Hitung nilai baru
-                    $multiplier = $isPembelian ? $konversi : 1.00;
-                    $qtyStok = $qtyInput * $multiplier;
-
-                    if ($isGudangUtama) {
+                    // Jika ada input harga dari form > 0, gunakan input harga tersebut, jika tidak gunakan harga utama
+                    if ($sub['harga_input'] > 0) {
                         $hargaInput = $sub['harga_input'];
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
                     } else {
-                        // Jika ada input harga dari form > 0, gunakan input harga tersebut, jika tidak gunakan harga utama
-                        if ($sub['harga_input'] > 0) {
-                            $hargaInput = $sub['harga_input'];
-                            $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
-                        } else {
-                            $hargaStok = (float) ($hargaUtamaMap[$bId] ?? ($barang->hpp_referensi ?? 0));
-                            $hargaInput = $hargaStok * $multiplier;
-                        }
+                        $hargaStok = (float) ($hargaUtamaMap[$bId] ?? ($barang->hpp_referensi ?? 0));
+                        $hargaInput = $hargaStok * $multiplier;
                     }
-
-                    $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
-                    $satuanDipilih = $isPembelian ? $satuanBeli : $satuanStok;
-                    $konversiDipakai = $konversi;
                 }
+
+                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
 
                 $validItems[] = [
                     'barang_id'          => $bId,
                     'barang'             => $barang,
                     'qty_input'          => $qtyInput,
                     'harga_input'        => max(0, $hargaInput),
-                    'satuan_dipilih'     => $satuanDipilih,
-                    'satuan_pembelian'   => $satuanBeli,
-                    'konversi_pembelian' => $konversiDipakai,
+                    'is_pembelian'       => $isPembelian,
+                    'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
+                    'satuan_pembelian'   => $isPembelian ? $satuanBeli : null,
+                    'konversi_pembelian' => $konversi,
+                    'qty_pembelian'      => $isPembelian ? $qtyInput : null,
+                    'harga_pembelian'    => $isPembelian ? max(0, $hargaInput) : null,
                     'qty_stok'           => $qtyStok,
                     'harga_stok'         => $hargaStok,
                     'total_nilai'        => $totalNilai,
-                    'is_unchanged'       => $isUnchanged,
                 ];
             }
         }
@@ -1102,8 +1096,8 @@ class PersediaanAwalController extends Controller
                     'satuan'             => $satuanStok,
                     'satuan_pembelian'   => $item['satuan_pembelian'],
                     'konversi_pembelian' => $item['konversi_pembelian'],
-                    'qty_pembelian'      => $item['qty_input'],
-                    'harga_pembelian'    => $item['harga_input'],
+                    'qty_pembelian'      => $item['qty_pembelian'],
+                    'harga_pembelian'    => $item['harga_pembelian'],
                     'harga_satuan'       => $item['harga_stok'],
                     'total_nilai'        => $item['total_nilai'],
                     'batch_number'       => $batchNumber,
@@ -1780,17 +1774,22 @@ class PersediaanAwalController extends Controller
                     $satuanBeli = $barang->satuan_pembelian ?: ($barang->satuan ?: 'PCS');
                     $satuanStok = $barang->satuan ?: 'PCS';
 
-                    // Tentukan pengali berdasarkan satuan di Excel
+                    // Tentukan pengali & status pembelian berdasarkan satuan di Excel
+                    $isPembelian = false;
                     if (!empty($satuanRaw)) {
                         if (strcasecmp($satuanRaw, $satuanStok) === 0) {
                             $multiplier = 1.00;
+                            $isPembelian = false;
                         } elseif (strcasecmp($satuanRaw, $satuanBeli) === 0) {
                             $multiplier = $konversi;
+                            $isPembelian = ($konversi > 1 && strcasecmp($satuanBeli, $satuanStok) !== 0);
                         } else {
                             $multiplier = 1.00;
+                            $isPembelian = false;
                         }
                     } else {
                         $multiplier = ($colKode !== null && $colSatuan === null) ? $konversi : 1.00;
+                        $isPembelian = ($multiplier > 1.00 && strcasecmp($satuanBeli, $satuanStok) !== 0);
                     }
 
                     $qtyStok = $qtyInput * $multiplier;
@@ -1811,9 +1810,12 @@ class PersediaanAwalController extends Controller
                         'barang'             => $barang,
                         'qty_input'          => $qtyInput,
                         'harga_input'        => max(0, $hargaInput),
-                        'satuan_dipilih'     => !empty($satuanRaw) ? $satuanRaw : $satuanStok,
-                        'satuan_pembelian'   => $satuanBeli,
+                        'is_pembelian'       => $isPembelian,
+                        'satuan_dipilih'     => !empty($satuanRaw) ? $satuanRaw : ($isPembelian ? $satuanBeli : $satuanStok),
+                        'satuan_pembelian'   => $isPembelian ? $satuanBeli : null,
                         'konversi_pembelian' => $konversi,
+                        'qty_pembelian'      => $isPembelian ? $qtyInput : null,
+                        'harga_pembelian'    => $isPembelian ? max(0, $hargaInput) : null,
                         'qty_stok'           => $qtyStok,
                         'harga_stok'         => $hargaStok,
                         'total_nilai'        => $totalNilai,
@@ -1896,8 +1898,8 @@ class PersediaanAwalController extends Controller
                     'satuan'             => $satuanStok,
                     'satuan_pembelian'   => $item['satuan_pembelian'],
                     'konversi_pembelian' => $item['konversi_pembelian'],
-                    'qty_pembelian'      => $item['qty_input'],
-                    'harga_pembelian'    => $item['harga_input'],
+                    'qty_pembelian'      => $item['qty_pembelian'],
+                    'harga_pembelian'    => $item['harga_pembelian'],
                     'harga_satuan'       => $item['harga_stok'],
                     'total_nilai'        => $item['total_nilai'],
                     'batch_number'       => $batchNumber,

@@ -175,6 +175,7 @@
                                     data-satuan-stok="{{ $item['satuan'] }}"
                                     data-satuan-beli="{{ $item['satuan_pembelian'] }}"
                                     data-konversi="{{ $konversi }}"
+                                    data-current-unit="{{ $selectedUnit }}"
                                     data-harga-stok-utama="{{ $item['harga_stok_utama'] }}"
                                     data-harga-beli-utama="{{ $item['harga_beli_utama'] }}"
                                     class="{{ $item['qty_input'] > 0 ? 'table-success bg-opacity-10' : '' }}">
@@ -369,6 +370,7 @@
                 tr.setAttribute('data-konversi', konversi);
                 tr.setAttribute('data-harga-stok-utama', hrgStok);
                 tr.setAttribute('data-harga-beli-utama', hrgBeli);
+                tr.setAttribute('data-current-unit', defaultUnit);
 
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">0</td>
@@ -463,7 +465,25 @@
 
             if (qtyInputEl)   qtyInputEl.addEventListener('input', calcRow);
             if (hargaInputEl) hargaInputEl.addEventListener('input', calcRow);
-            if (satuanSelectEl) satuanSelectEl.addEventListener('change', calcRow);
+            if (satuanSelectEl) {
+                satuanSelectEl.addEventListener('change', function () {
+                    const prevUnit = row.getAttribute('data-current-unit') || 'utama';
+                    const newUnit = this.value;
+                    const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+                    const currentHarga = parseFloat(hargaInputEl.value) || 0;
+
+                    if (konversi > 1 && currentHarga > 0 && prevUnit !== newUnit) {
+                        if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                            hargaInputEl.value = Math.round((currentHarga / konversi) * 100) / 100;
+                        } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                            hargaInputEl.value = Math.round((currentHarga * konversi) * 100) / 100;
+                        }
+                    }
+
+                    row.setAttribute('data-current-unit', newUnit);
+                    calcRow();
+                });
+            }
 
             if (btnRemove) {
                 btnRemove.addEventListener('click', function () {
