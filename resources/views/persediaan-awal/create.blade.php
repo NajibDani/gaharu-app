@@ -353,18 +353,6 @@
             }
 
             items.forEach((item, idx) => {
-                const tr = document.createElement('tr');
-                tr.setAttribute('data-id', item.id);
-                tr.setAttribute('data-kategori-id', item.kategori_id);
-                tr.setAttribute('data-nama', item.nama.toLowerCase());
-                tr.setAttribute('data-kode', item.kode_barang.toLowerCase());
-                tr.setAttribute('data-satuan-stok', item.satuan || 'pcs');
-                tr.setAttribute('data-satuan-beli', item.satuan_pembelian || item.satuan || 'pcs');
-                tr.setAttribute('data-konversi', item.konversi_pembelian || 1.00);
-                tr.setAttribute('data-harga-stok-utama', item.hpp_satuan_utama || (item.hpp_referensi || 0));
-                tr.setAttribute('data-harga-beli-utama', item.harga_beli_utama || 0);
-                tr.setAttribute('data-current-unit', defaultUnit);
-
                 const konversi = parseFloat(item.konversi_pembelian) || 1.00;
                 const satuanStok = item.satuan || 'pcs';
                 const satuanBeli = item.satuan_pembelian || satuanStok;
@@ -375,6 +363,18 @@
                 const defaultHargaInput = hasKonversi 
                     ? Number(item.harga_beli_utama || 0)
                     : Number(item.hpp_satuan_utama || (item.hpp_referensi || 0));
+
+                const tr = document.createElement('tr');
+                tr.setAttribute('data-id', item.id);
+                tr.setAttribute('data-kategori-id', item.kategori_id);
+                tr.setAttribute('data-nama', item.nama.toLowerCase());
+                tr.setAttribute('data-kode', item.kode_barang.toLowerCase());
+                tr.setAttribute('data-satuan-stok', satuanStok);
+                tr.setAttribute('data-satuan-beli', satuanBeli);
+                tr.setAttribute('data-konversi', konversi);
+                tr.setAttribute('data-harga-stok-utama', item.hpp_satuan_utama || (item.hpp_referensi || 0));
+                tr.setAttribute('data-harga-beli-utama', item.harga_beli_utama || 0);
+                tr.setAttribute('data-current-unit', defaultUnit);
 
                 const satuanBadge = hasKonversi
                     ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satuanBeli}</span></div>
