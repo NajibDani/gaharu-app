@@ -167,6 +167,11 @@
                                     $hasKonversi = $item['satuan_pembelian'] && $konversi > 1 && ($item['satuan_pembelian'] !== $item['satuan']);
                                     $selectedUnit = $item['satuan_tipe'] ?? ($hasKonversi ? 'pembelian' : 'utama');
                                     $subtotal = $item['qty_input'] * $item['harga_input'];
+                                    $isReadonlyHarga = !$isGudangUtama;
+                                    $hargaInputAttr = $isReadonlyHarga
+                                        ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga otomatis mengikuti Gudang Utama"'
+                                        : '';
+                                    $lockIcon = $isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
                                 @endphp
                                 <tr data-id="{{ $item['barang_id'] }}"
                                     data-kategori-id="{{ $item['kategori_id'] ?? '' }}"
@@ -206,9 +211,15 @@
                                     </td>
                                     <td>
                                         <div class="input-group input-group-sm">
-                                            <span class="input-group-text bg-light text-muted small">Rp</span>
-                                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="{{ $item['harga_input'] }}" placeholder="0">
+                                            <span class="input-group-text bg-light text-muted small">{!! $lockIcon !!}Rp</span>
+                                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="{{ $item['harga_input'] }}" placeholder="0" {!! $hargaInputAttr !!}>
                                         </div>
+                                        @if($isReadonlyHarga)
+                                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                                                <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
+                                                <strong class="text-dark font-monospace ref-price-subtext">Rp {{ number_format($item['harga_input'], 0, ',', '.') }}</strong>
+                                            </div>
+                                        @endif
                                     </td>
                                     <td class="conversion-cell text-center">
                                         @if($item['qty_input'] > 0)
@@ -469,23 +480,42 @@
                 satuanSelectEl.addEventListener('change', function () {
                     const prevUnit = row.getAttribute('data-current-unit') || 'utama';
                     const newUnit = this.value;
+                    const isReadonly = hargaInputEl.hasAttribute('readonly');
                     const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
-                    const currentHarga = parseFloat(hargaInputEl.value) || 0;
+                    const hargaStokUtama = parseFloat(row.getAttribute('data-harga-stok-utama')) || 0;
+                    const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
                     const currentQty = parseFloat(qtyInputEl.value) || 0;
 
-                    if (konversi > 1 && prevUnit !== newUnit) {
-                        if (currentHarga > 0) {
-                            if (prevUnit === 'pembelian' && newUnit === 'utama') {
-                                hargaInputEl.value = Math.round((currentHarga / konversi) * 100) / 100;
-                            } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
-                                hargaInputEl.value = Math.round((currentHarga * konversi) * 100) / 100;
-                            }
+                    if (isReadonly) {
+                        const newPrice = newUnit === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                        hargaInputEl.value = newPrice > 0 ? newPrice : '';
+                        const refSubtext = row.querySelector('.ref-price-subtext');
+                        if (refSubtext) {
+                            refSubtext.textContent = 'Rp ' + Number(newPrice).toLocaleString('id-ID');
                         }
-                        if (currentQty > 0) {
+                        if (konversi > 1 && prevUnit !== newUnit && currentQty > 0) {
                             if (prevUnit === 'pembelian' && newUnit === 'utama') {
                                 qtyInputEl.value = Math.round((currentQty * konversi) * 100) / 100;
                             } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
                                 qtyInputEl.value = Math.round((currentQty / konversi) * 100) / 100;
+                            }
+                        }
+                    } else {
+                        const currentHarga = parseFloat(hargaInputEl.value) || 0;
+                        if (konversi > 1 && prevUnit !== newUnit) {
+                            if (currentHarga > 0) {
+                                if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                                    hargaInputEl.value = Math.round((currentHarga / konversi) * 100) / 100;
+                                } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                                    hargaInputEl.value = Math.round((currentHarga * konversi) * 100) / 100;
+                                }
+                            }
+                            if (currentQty > 0) {
+                                if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                                    qtyInputEl.value = Math.round((currentQty * konversi) * 100) / 100;
+                                } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                                    qtyInputEl.value = Math.round((currentQty / konversi) * 100) / 100;
+                                }
                             }
                         }
                     }
