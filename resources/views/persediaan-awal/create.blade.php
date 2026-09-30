@@ -110,22 +110,22 @@
 
                 <!-- SECTION 3: TABEL DAFTAR BARANG -->
                 <div class="table-responsive border rounded-3 mb-4" style="max-height: 540px; overflow-y: auto; font-size: 0.85rem;">
-                    <table class="table table-sm table-hover align-middle mb-0 text-center" id="tableBarang">
+                    <table class="table table-sm table-hover align-middle mb-0 text-center" id="tableBarang" style="min-width: 1300px;">
                         <thead class="table-light sticky-top" style="z-index: 2;">
                             <tr>
                                 <th class="py-2" style="width: 35px;">No</th>
-                                <th class="text-start py-2" style="width: 80px;">Kode</th>
-                                <th class="text-start py-2" style="min-width: 140px;">Nama Barang</th>
-                                <th class="py-2" style="width: 90px;">Kategori</th>
-                                <th class="py-2" style="width: 110px;">Satuan & Konversi</th>
+                                <th class="text-start py-2" style="width: 75px;">Kode</th>
+                                <th class="text-start py-2" style="min-width: 170px;">Nama Barang</th>
+                                <th class="py-2" style="width: 85px;">Kategori</th>
+                                <th class="py-2" style="width: 145px;">Satuan & Konversi</th>
                                 @if($isSuperAdmin)
                                 <th class="py-2" style="width: 85px;">Stok Saat Ini</th>
                                 @endif
-                                <th class="py-2" style="width: 90px;">Qty Input <span class="text-danger">*</span></th>
-                                <th class="py-2" style="width: 140px;">Satuan Input <span class="text-danger">*</span></th>
-                                <th class="py-2" style="min-width: 145px;">Harga per Satuan (Rp) <span class="text-danger">*</span></th>
-                                <th class="py-2" style="width: 125px;">Masuk Stok Utama</th>
-                                <th class="text-end py-2" style="min-width: 120px;">Subtotal Nilai (Rp)</th>
+                                <th class="py-2" style="width: 115px;">Qty Input <span class="text-danger">*</span></th>
+                                <th class="py-2" style="width: 165px;">Satuan Input <span class="text-danger">*</span></th>
+                                <th class="py-2" style="min-width: 185px;">Harga per Satuan (Rp) <span class="text-danger">*</span></th>
+                                <th class="py-2" style="width: 145px;">Masuk Stok Utama</th>
+                                <th class="text-end py-2" style="width: 135px;">Subtotal Nilai (Rp)</th>
                                 <th class="py-2" style="width: 40px;">Aksi</th>
                             </tr>
                         </thead>
@@ -186,7 +186,7 @@
             background-color: #fff9f5;
         }
         .input-satuan {
-            min-width: 120px !important;
+            min-width: 145px !important;
             border: 1.5px solid #94a3b8 !important;
             background-color: #f8fafc !important;
             color: #1e293b !important;
@@ -395,12 +395,12 @@
 
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">${idx + 1}</td>
-                    <td class="text-start font-monospace fw-bold">${item.kode_barang}</td>
+                    <td class="text-start font-monospace fw-bold small">${item.kode_barang}</td>
                     <td class="text-start">
                         <div class="fw-semibold text-dark">${item.nama}</div>
                         <small class="text-muted">${item.jenis}</small>
                     </td>
-                    <td><span class="badge bg-light text-dark border">${item.kategori_nama}</span></td>
+                    <td><span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">${item.kategori_nama}</span></td>
                     <td>${satuanBadge}</td>
                     @if($isSuperAdmin)
                     <td><span class="badge bg-secondary-subtle text-secondary">${Number(item.stok_sekarang).toLocaleString('id-ID')} ${satuanStok}</span></td>
@@ -409,7 +409,7 @@
                         <input type="number" class="form-control form-control-sm text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
-                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px; min-width: 120px; padding: 4px 28px 4px 8px; white-space: nowrap; overflow: visible;">
+                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px; min-width: 145px; padding: 4px 28px 4px 8px; white-space: nowrap; overflow: visible;">
                             ${unitOptionsHtml}
                         </select>
                     </td>

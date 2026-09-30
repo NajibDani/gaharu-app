@@ -143,19 +143,19 @@
 
                 <!-- SECTION 3: TABEL DAFTAR BARANG YANG DIEDIT -->
                 <div class="table-responsive border rounded-3 mb-4" style="max-height: 560px; overflow-y: auto;">
-                    <table class="table table-hover align-middle mb-0 text-center" id="tableBarang">
+                    <table class="table table-hover align-middle mb-0 text-center" id="tableBarang" style="min-width: 1300px;">
                         <thead class="table-light sticky-top" style="z-index: 2;">
                             <tr>
-                                <th style="width: 45px;">No</th>
-                                <th class="text-start" style="width: 110px;">Kode</th>
-                                <th class="text-start" style="min-width: 160px;">Nama Barang</th>
-                                <th style="width: 110px;">Kategori</th>
-                                <th style="width: 130px;">Satuan & Konversi</th>
-                                <th style="width: 130px;">Qty Input <span class="text-danger">*</span></th>
-                                <th style="width: 135px;">Satuan Input <span class="text-danger">*</span></th>
-                                <th style="width: 165px;">Harga per Satuan Input (Rp) <span class="text-danger">*</span></th>
-                                <th style="width: 155px;">Masuk ke Stok Utama</th>
-                                <th class="text-end" style="width: 140px;">Subtotal Nilai (Rp)</th>
+                                <th style="width: 40px;">No</th>
+                                <th class="text-start" style="width: 75px;">Kode</th>
+                                <th class="text-start" style="min-width: 170px;">Nama Barang</th>
+                                <th style="width: 85px;">Kategori</th>
+                                <th style="width: 145px;">Satuan & Konversi</th>
+                                <th style="width: 115px;">Qty Input <span class="text-danger">*</span></th>
+                                <th style="width: 165px;">Satuan Input <span class="text-danger">*</span></th>
+                                <th style="min-width: 185px;">Harga per Satuan Input (Rp) <span class="text-danger">*</span></th>
+                                <th style="width: 145px;">Masuk ke Stok Utama</th>
+                                <th class="text-end" style="width: 135px;">Subtotal Nilai (Rp)</th>
                                 <th style="width: 45px;">Aksi</th>
                             </tr>
                         </thead>
@@ -185,11 +185,11 @@
                                     data-harga-beli-utama="{{ $item['harga_beli_utama'] }}"
                                     class="{{ $item['qty_input'] > 0 ? 'table-success bg-opacity-10' : '' }}">
                                     <td class="text-center text-muted row-number">{{ $idx + 1 }}</td>
-                                    <td class="text-start font-monospace fw-bold">{{ $item['kode_barang'] }}</td>
+                                    <td class="text-start font-monospace fw-bold small">{{ $item['kode_barang'] }}</td>
                                      <td class="text-start">
                                         <div class="fw-semibold text-dark">{{ $item['nama'] }}</div>
                                     </td>
-                                    <td><span class="badge bg-light text-dark border">{{ $item['kategori_nama'] }}</span></td>
+                                    <td><span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">{{ $item['kategori_nama'] }}</span></td>
                                     <td>
                                         @if($hasKonversi)
                                             <div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">{{ $item['satuan_pembelian'] }}</span></div>
@@ -202,7 +202,7 @@
                                         <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="{{ $item['qty_input'] }}" placeholder="0">
                                     </td>
                                     <td>
-                                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                                        <select class="form-select form-select-sm input-satuan fw-semibold">
                                             @if($hasKonversi)
                                                 <option value="pembelian" {{ $selectedUnit === 'pembelian' ? 'selected' : '' }}>{{ $item['satuan_pembelian'] }} ({{ number_format($konversi, 0, ',', '.') }} {{ $item['satuan'] }})</option>
                                             @endif
@@ -299,6 +299,20 @@
         .input-qty:focus, .input-harga:focus {
             background-color: #fff9f5;
         }
+        .input-satuan {
+            min-width: 145px !important;
+            border: 1.5px solid #94a3b8 !important;
+            background-color: #f8fafc !important;
+            color: #1e293b !important;
+            font-size: 12px !important;
+            padding: 5px 28px 5px 8px !important;
+            white-space: nowrap;
+        }
+        .input-satuan:focus {
+            border-color: #d88656 !important;
+            box-shadow: 0 0 0 3px rgba(216, 134, 86, 0.15) !important;
+            background-color: #fff !important;
+        }
     </style>
 
     @push('scripts')
@@ -385,17 +399,17 @@
 
                 tr.innerHTML = `
                     <td class="text-center text-muted row-number">0</td>
-                    <td class="text-start font-monospace fw-bold">${kode}</td>
+                    <td class="text-start font-monospace fw-bold small">${kode}</td>
                     <td class="text-start">
                         <div class="fw-semibold text-dark">${nama}</div>
                     </td>
-                    <td><span class="badge bg-light text-dark border">${kat}</span></td>
+                    <td><span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">${kat}</span></td>
                     <td>${satuanBadge}</td>
                     <td>
                         <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
                     </td>
                     <td>
-                        <select class="form-select form-select-sm input-satuan fw-semibold" style="border-radius: 6px; font-size: 12px;">
+                        <select class="form-select form-select-sm input-satuan fw-semibold">
                             ${unitOptionsHtml}
                         </select>
                     </td>
