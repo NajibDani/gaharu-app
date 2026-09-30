@@ -758,26 +758,36 @@ class PersediaanAwalController extends Controller
 
             // Deteksi apakah item ini tersimpan dalam satuan pembelian atau satuan stok utama
             $isSavedInPembelian = false;
-            if ($hasKonv && $d->qty_pembelian !== null && $d->satuan_pembelian && ($d->satuan_pembelian !== $satStok)) {
-                if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.01) {
+            $qtyInput = (float)$d->qty;
+            $hargaInput = (float)$d->harga_satuan;
+
+            if ($hasKonv) {
+                if ($d->qty_pembelian !== null) {
                     $isSavedInPembelian = true;
-                } elseif (abs((float)$d->qty_pembelian - (float)$d->qty) < 0.0001 && $konv > 1) {
-                    // Jika qty_pembelian sama dengan qty stok padahal konversi > 1, itu diinput sebagai satuan utama
-                    $isSavedInPembelian = false;
+                    $qtyInput = (float)$d->qty_pembelian;
+                    if ($d->harga_pembelian !== null) {
+                        $hargaInput = (float)$d->harga_pembelian;
+                    } elseif ($d->harga_satuan !== null) {
+                        if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.01) {
+                            $hargaInput = round((float)$d->harga_satuan * $konv, 2);
+                        } else {
+                            $hargaInput = (float)$d->harga_satuan;
+                        }
+                    }
                 } else {
-                    $isSavedInPembelian = true;
+                    // Record lama / import yang belum memiliki qty_pembelian terpisah
+                    $totalNilai = (float)$d->total_nilai;
+                    if ($totalNilai > 0 && abs(((float)$d->qty * (float)$d->harga_satuan) - $totalNilai) < 1.0) {
+                        if ((float)$d->qty < $konv && (float)$d->harga_satuan >= 100) {
+                            $isSavedInPembelian = true;
+                            $qtyInput = (float)$d->qty;
+                            $hargaInput = (float)$d->harga_satuan;
+                        }
+                    }
                 }
             }
 
-            if ($isSavedInPembelian) {
-                $satuanTipe = 'pembelian';
-                $qtyInput = (float)$d->qty_pembelian;
-                $hargaInput = $d->harga_pembelian !== null ? (float)$d->harga_pembelian : round((float)$d->harga_satuan * $konv, 2);
-            } else {
-                $satuanTipe = 'utama';
-                $qtyInput = (float)$d->qty;
-                $hargaInput = (float)$d->harga_satuan;
-            }
+            $satuanTipe = $isSavedInPembelian ? 'pembelian' : 'utama';
 
             $hrgStokUtama = (float)($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
             $hrgBeliUtama = $hrgStokUtama * $konv;

@@ -363,6 +363,7 @@
                 tr.setAttribute('data-konversi', item.konversi_pembelian || 1.00);
                 tr.setAttribute('data-harga-stok-utama', item.hpp_satuan_utama || (item.hpp_referensi || 0));
                 tr.setAttribute('data-harga-beli-utama', item.harga_beli_utama || 0);
+                tr.setAttribute('data-current-unit', defaultUnit);
 
                 const konversi = parseFloat(item.konversi_pembelian) || 1.00;
                 const satuanStok = item.satuan || 'pcs';
@@ -504,19 +505,41 @@
                     // Switch satuan -> auto recalculate & update reference price if locked
                     if (satuanSelectEl) {
                         satuanSelectEl.addEventListener('change', function () {
+                            const prevUnit = row.getAttribute('data-current-unit') || 'utama';
+                            const newUnit = this.value;
                             const isReadonly = hargaInputEl.hasAttribute('readonly');
                             const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
                             const hargaStokUtama = parseFloat(row.getAttribute('data-harga-stok-utama')) || 0;
                             const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
 
                             if (isReadonly) {
-                                const newPrice = this.value === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                                const newPrice = newUnit === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
                                 hargaInputEl.value = newPrice > 0 ? newPrice : '';
                                 const refSubtext = row.querySelector('.ref-price-subtext');
                                 if (refSubtext) {
                                     refSubtext.textContent = 'Rp ' + Number(newPrice).toLocaleString('id-ID');
                                 }
+                            } else {
+                                const currentHarga = parseFloat(hargaInputEl.value) || 0;
+                                const currentQty = parseFloat(qtyInputEl.value) || 0;
+                                if (konversi > 1 && prevUnit !== newUnit) {
+                                    if (currentHarga > 0) {
+                                        if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                                            hargaInputEl.value = Math.round((currentHarga / konversi) * 100) / 100;
+                                        } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                                            hargaInputEl.value = Math.round((currentHarga * konversi) * 100) / 100;
+                                        }
+                                    }
+                                    if (currentQty > 0) {
+                                        if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                                            qtyInputEl.value = Math.round((currentQty * konversi) * 100) / 100;
+                                        } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                                            qtyInputEl.value = Math.round((currentQty / konversi) * 100) / 100;
+                                        }
+                                    }
+                                }
                             }
+                            row.setAttribute('data-current-unit', newUnit);
                             calcRow();
                         });
                     }

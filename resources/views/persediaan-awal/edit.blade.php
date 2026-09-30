@@ -471,12 +471,22 @@
                     const newUnit = this.value;
                     const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
                     const currentHarga = parseFloat(hargaInputEl.value) || 0;
+                    const currentQty = parseFloat(qtyInputEl.value) || 0;
 
-                    if (konversi > 1 && currentHarga > 0 && prevUnit !== newUnit) {
-                        if (prevUnit === 'pembelian' && newUnit === 'utama') {
-                            hargaInputEl.value = Math.round((currentHarga / konversi) * 100) / 100;
-                        } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
-                            hargaInputEl.value = Math.round((currentHarga * konversi) * 100) / 100;
+                    if (konversi > 1 && prevUnit !== newUnit) {
+                        if (currentHarga > 0) {
+                            if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                                hargaInputEl.value = Math.round((currentHarga / konversi) * 100) / 100;
+                            } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                                hargaInputEl.value = Math.round((currentHarga * konversi) * 100) / 100;
+                            }
+                        }
+                        if (currentQty > 0) {
+                            if (prevUnit === 'pembelian' && newUnit === 'utama') {
+                                qtyInputEl.value = Math.round((currentQty * konversi) * 100) / 100;
+                            } else if (prevUnit === 'utama' && newUnit === 'pembelian') {
+                                qtyInputEl.value = Math.round((currentQty / konversi) * 100) / 100;
+                            }
                         }
                     }
 
