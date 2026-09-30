@@ -335,10 +335,24 @@ class PenggajianController extends Controller
             })
             ->get();
 
-        // Bersihkan duplikat otomatis di database: jika ada karyawan yang punya slip aktif (hari_kerja > 0)
-        // dan juga punya slip kosong (hari_kerja == 0 & draft), gabungkan potongan terlambat ke slip aktif dan hapus slip kosong
+        // Bersihkan duplikat otomatis di database & bersihkan slip draft periode 2 jika di master data periode 2 gajinya 0/null
         $groupedByKaryawan = $rawPayrolls->groupBy('karyawan_id');
         foreach ($groupedByKaryawan as $empId => $items) {
+            $kw = $items->first()->karyawan;
+            if ($kw) {
+                $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
+                $hasP2Master = ($kw->gaji_pokok_2 !== null && $p2Total > 0);
+                if (!$hasP2Master) {
+                    $p2Drafts = $items->where('pilihan_periode', 2)->where('status', '!=', 'approved')->where('status_jurnal', false);
+                    if ($p2Drafts->isNotEmpty()) {
+                        $p2DraftIds = $p2Drafts->pluck('id')->toArray();
+                        Penggajian::whereIn('id', $p2DraftIds)->delete();
+                        $rawPayrolls = $rawPayrolls->reject(fn($p) => in_array($p->id, $p2DraftIds));
+                        $items = $items->reject(fn($p) => in_array($p->id, $p2DraftIds));
+                    }
+                }
+            }
+
             if ($items->count() > 1) {
                 $activeItem = $items->where('hari_kerja', '>', 0)->sortByDesc('id')->first();
                 $zeroItems = $items->where('hari_kerja', '<=', 0)->where('status', 'draft')->where('status_jurnal', false);
@@ -358,7 +372,9 @@ class PenggajianController extends Controller
             if ($payroll->status !== 'approved' && !$payroll->status_jurnal && $payroll->karyawan) {
                 $kw = $payroll->karyawan;
                 $pNum = (int)($payroll->pilihan_periode ?? 1);
-                if ($pNum === 2 && $kw->gaji_pokok_2 !== null) {
+                $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
+                $hasP2Master = ($kw->gaji_pokok_2 !== null && $p2Total > 0);
+                if ($pNum === 2 && $hasP2Master) {
                     $masterGp = floatval($kw->gaji_pokok_2);
                     $masterUm = floatval($kw->uang_makan_2);
                     $masterUt = floatval($kw->uang_transport_2);
@@ -1507,11 +1523,11 @@ class PenggajianController extends Controller
         $ut1 = floatval($karyawan->uang_transport ?? 0);
         $tarif1 = $gp1 + $um1 + $ut1;
 
-        $hasP2 = ($karyawan->gaji_pokok_2 !== null);
         $gp2 = floatval($karyawan->gaji_pokok_2 ?? 0);
         $um2 = floatval($karyawan->uang_makan_2 ?? 0);
         $ut2 = floatval($karyawan->uang_transport_2 ?? 0);
         $tarif2 = $gp2 + $um2 + $ut2;
+        $hasP2 = ($karyawan->gaji_pokok_2 !== null && $tarif2 > 0);
 
         $satuanGaji1 = $karyawan->satuan_gaji ?? 'Harian';
         $satuanGaji2 = $karyawan->satuan_gaji_2 ?? $satuanGaji1;

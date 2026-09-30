@@ -143,7 +143,7 @@ class Karyawan extends Model
     {
         $pInfo = $this->getPeriodeGajiLabelForDate($tanggal);
         if ($pInfo['key'] === 'P2') {
-            return (float) ($this->gaji_pokok_2 ?? $this->gaji_pokok ?? 0);
+            return (float) ($this->gaji_pokok_2 ?? 0);
         }
         return (float) ($this->gaji_pokok ?? 0);
     }
@@ -160,7 +160,8 @@ class Karyawan extends Model
         $p2M = $this->tanggal_mulai_2 ? $this->tanggal_mulai_2->format('Y-m-d') : null;
         $p2S = $this->tanggal_selesai_2 ? $this->tanggal_selesai_2->format('Y-m-d') : null;
 
-        if ($p2M && $tgl >= $p2M && (!$p2S || $tgl <= $p2S)) {
+        $hasP2 = ($this->gaji_pokok_2 !== null && $this->tarif_harian_total_2 > 0);
+        if ($hasP2 && $p2M && $tgl >= $p2M && (!$p2S || $tgl <= $p2S)) {
             $datesStr = ($p2M ? \Carbon\Carbon::parse($p2M)->format('d/m') : '') . ($p2S ? '–' . \Carbon\Carbon::parse($p2S)->format('d/m') : '');
             return [
                 'key'         => 'P2',

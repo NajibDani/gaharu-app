@@ -167,7 +167,8 @@
                                     </div>
 
                                     {{-- Periode 2 --}}
-                                    @if($k->tanggal_mulai_2 || $k->gaji_pokok_2 !== null)
+                                    @php $hasP2 = ($k->gaji_pokok_2 !== null && $k->tarif_harian_total_2 > 0); @endphp
+                                    @if($hasP2)
                                     <div class="mt-1">
                                         <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size:10px;">P2</span>
                                         <span style="font-size:11.5px;">{{ $k->tanggal_mulai_2 ? $k->tanggal_mulai_2->format('d/m/y') : '-' }} - {{ $k->tanggal_selesai_2 ? $k->tanggal_selesai_2->format('d/m/y') : 'Seterusnya' }}</span>
@@ -185,25 +186,25 @@
                                 </td>
                                 <td class="text-end fw-semibold">
                                     <div>Rp {{ number_format($k->gaji_pokok, 0, ',', '.') }}</div>
-                                    @if($k->gaji_pokok_2 !== null)
+                                    @if($hasP2)
                                         <small class="text-muted d-block">P2: Rp {{ number_format($k->gaji_pokok_2, 0, ',', '.') }}</small>
                                     @endif
                                 </td>
                                 <td class="text-end fw-semibold">
                                     <div>Rp {{ number_format($k->uang_makan, 0, ',', '.') }}</div>
-                                    @if($k->uang_makan_2 !== null)
+                                    @if($hasP2)
                                         <small class="text-muted d-block">P2: Rp {{ number_format($k->uang_makan_2, 0, ',', '.') }}</small>
                                     @endif
                                 </td>
                                 <td class="text-end fw-semibold">
                                     <div>Rp {{ number_format($k->uang_transport, 0, ',', '.') }}</div>
-                                    @if($k->uang_transport_2 !== null)
+                                    @if($hasP2)
                                         <small class="text-muted d-block">P2: Rp {{ number_format($k->uang_transport_2, 0, ',', '.') }}</small>
                                     @endif
                                 </td>
                                 <td class="text-end fw-bold text-success" style="font-size: 0.95rem;">
                                     <div>Rp {{ number_format($k->tarif_harian_total, 0, ',', '.') }} <small class="text-muted fw-normal" style="font-size:11px;">{{ $suffix1 }}</small></div>
-                                    @if($k->gaji_pokok_2 !== null)
+                                    @if($hasP2)
                                         <small class="text-muted d-block fw-semibold">P2: Rp {{ number_format($k->tarif_harian_total_2, 0, ',', '.') }} {{ $suffix2 }}</small>
                                     @endif
                                 </td>

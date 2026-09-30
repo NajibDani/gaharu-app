@@ -70,6 +70,19 @@ class PengaturanGajiController extends Controller
             'tanggal_selesai_2'  => 'nullable|date|after_or_equal:tanggal_mulai_2',
         ]);
 
+        $gp1 = floatval($request->gaji_pokok ?? 0);
+        $um1 = floatval($request->uang_makan ?? 0);
+        $ut1 = floatval($request->uang_transport ?? 0);
+        $totalP1 = $gp1 + $um1 + $ut1;
+
+        $gp2 = $request->filled('gaji_pokok_2') ? floatval($request->gaji_pokok_2) : 0;
+        $um2 = $request->filled('uang_makan_2') ? floatval($request->uang_makan_2) : 0;
+        $ut2 = $request->filled('uang_transport_2') ? floatval($request->uang_transport_2) : 0;
+        $totalP2 = $gp2 + $um2 + $ut2;
+
+        // Periode 2 hanya aktif jika gajinya lebih dari 0
+        $hasP2 = ($request->filled('gaji_pokok_2') && $totalP2 > 0);
+
         $karyawan = Karyawan::findOrFail($id);
         $karyawan->update([
             'satuan_gaji'        => $request->satuan_gaji ?? 'Harian',
@@ -78,13 +91,22 @@ class PengaturanGajiController extends Controller
             'uang_transport'     => $request->uang_transport,
             'tanggal_mulai'      => $request->tanggal_mulai,
             'tanggal_selesai'    => $request->tanggal_selesai,
-            'satuan_gaji_2'      => $request->satuan_gaji_2 ?? ($request->satuan_gaji ?? 'Harian'),
-            'gaji_pokok_2'       => $request->gaji_pokok_2,
-            'uang_makan_2'       => $request->uang_makan_2,
-            'uang_transport_2'   => $request->uang_transport_2,
-            'tanggal_mulai_2'    => $request->tanggal_mulai_2,
-            'tanggal_selesai_2'  => $request->tanggal_selesai_2,
+            'satuan_gaji_2'      => $hasP2 ? ($request->satuan_gaji_2 ?? 'Harian') : null,
+            'gaji_pokok_2'       => $hasP2 ? $request->gaji_pokok_2 : null,
+            'uang_makan_2'       => $hasP2 ? $request->uang_makan_2 : null,
+            'uang_transport_2'   => $hasP2 ? $request->uang_transport_2 : null,
+            'tanggal_mulai_2'    => $hasP2 ? $request->tanggal_mulai_2 : null,
+            'tanggal_selesai_2'  => $hasP2 ? $request->tanggal_selesai_2 : null,
         ]);
+
+        // Jika Periode 2 dinonaktifkan (gajinya 0 atau null), hapus slip penggajian draft periode 2 yang belum approved
+        if (!$hasP2) {
+            \App\Models\Penggajian::where('karyawan_id', $karyawan->id)
+                ->where('pilihan_periode', 2)
+                ->where('status', '!=', 'approved')
+                ->where('status_jurnal', false)
+                ->delete();
+        }
 
         // Otomatis sinkronkan data penggajian yang berstatus draft/belum approved untuk karyawan ini
         $draftPayrolls = \App\Models\Penggajian::where('karyawan_id', $karyawan->id)
@@ -94,7 +116,7 @@ class PengaturanGajiController extends Controller
 
         foreach ($draftPayrolls as $dp) {
             $pNum = (int)($dp->pilihan_periode ?? 1);
-            if ($pNum === 2 && $karyawan->gaji_pokok_2 !== null) {
+            if ($pNum === 2 && $hasP2) {
                 $gp = floatval($karyawan->gaji_pokok_2);
                 $um = floatval($karyawan->uang_makan_2);
                 $ut = floatval($karyawan->uang_transport_2);

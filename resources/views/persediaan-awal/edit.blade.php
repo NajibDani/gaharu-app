@@ -99,9 +99,13 @@
                 <!-- SECTION 2: TOOLBAR & TAMBAH BARANG -->
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <button type="button" class="btn btn-sm text-white rounded-2 px-3 fw-semibold shadow-sm" style="background-color: #d88656; border: none;" id="btnLoadAllBarang">
+                            <i class="bi bi-cloud-arrow-down-fill me-1"></i> Muat Semua Barang Master
+                        </button>
+
                         <div class="dropdown">
-                            <button class="btn btn-sm text-white dropdown-toggle rounded-2 px-3" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="background-color: #d88656; border: none;">
-                                <i class="bi bi-plus-circle me-1"></i> Tambah Item Barang Lain
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle rounded-2 px-3 bg-white" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi bi-plus-circle me-1"></i> Tambah Item Tertentu
                             </button>
                             <div class="dropdown-menu p-3 shadow-lg" style="width: 320px; max-height: 380px; overflow-y: auto;">
                                 <h6 class="dropdown-header px-0 fw-bold text-dark">Pilih Barang Master:</h6>
@@ -329,6 +333,150 @@
         const summaryTotalQty    = document.getElementById('summaryTotalQty');
         const summaryTotalNilai  = document.getElementById('summaryTotalNilai');
 
+        const btnLoadAllBarang  = document.getElementById('btnLoadAllBarang');
+        const isGudangUtama     = {{ $isGudangUtama ? 'true' : 'false' }};
+        const gudangId          = {{ $persediaanAwal->gudang_id }};
+        const divisiId          = {{ $persediaanAwal->divisi_id ? $persediaanAwal->divisi_id : 'null' }};
+
+        // Helper untuk membuat elemen baris baru dari objek item master barang
+        function createRowElement(item) {
+            const konversi = parseFloat(item.konversi_pembelian) || 1.00;
+            const satuanStok = item.satuan || 'pcs';
+            const satuanBeli = item.satuan_pembelian || satuanStok;
+            const hasKonversi = satuanBeli && konversi > 1 && (satuanBeli !== satuanStok || konversi !== 1);
+
+            const defaultUnit = hasKonversi ? 'pembelian' : 'utama';
+            const defaultHargaInput = hasKonversi 
+                ? Number(item.harga_beli_utama || 0)
+                : Number(item.hpp_satuan_utama || (item.hpp_referensi || 0));
+
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-id', item.id);
+            tr.setAttribute('data-kategori-id', item.kategori_id || '');
+            tr.setAttribute('data-nama', (item.nama || '').toLowerCase());
+            tr.setAttribute('data-kode', (item.kode_barang || '').toLowerCase());
+            tr.setAttribute('data-satuan-stok', satuanStok);
+            tr.setAttribute('data-satuan-beli', satuanBeli);
+            tr.setAttribute('data-konversi', konversi);
+            tr.setAttribute('data-harga-stok-utama', item.hpp_satuan_utama || (item.hpp_referensi || 0));
+            tr.setAttribute('data-harga-beli-utama', item.harga_beli_utama || 0);
+            tr.setAttribute('data-current-unit', defaultUnit);
+
+            const satuanBadge = hasKonversi
+                ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satuanBeli}</span></div>
+                   <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
+                : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
+
+            const isReadonlyHarga = !isGudangUtama;
+            const hargaInputAttr = isReadonlyHarga
+                ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga otomatis mengikuti Gudang Utama"'
+                : '';
+
+            const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
+
+            let unitOptionsHtml = `<option value="utama" ${defaultUnit === 'utama' ? 'selected' : ''}>${satuanStok}</option>`;
+            if (hasKonversi) {
+                unitOptionsHtml = `<option value="pembelian" ${defaultUnit === 'pembelian' ? 'selected' : ''}>${satuanBeli} (${Number(konversi).toLocaleString('id-ID')} ${satuanStok})</option>` + unitOptionsHtml;
+            }
+
+            tr.innerHTML = `
+                <td class="text-center text-muted row-number">0</td>
+                <td class="text-start font-monospace fw-bold small">${item.kode_barang}</td>
+                <td class="text-start">
+                    <div class="fw-semibold text-dark">${item.nama}</div>
+                </td>
+                <td><span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">${item.kategori_nama || '-'}</span></td>
+                <td>${satuanBadge}</td>
+                <td>
+                    <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
+                </td>
+                <td>
+                    <select class="form-select form-select-sm input-satuan fw-semibold">
+                        ${unitOptionsHtml}
+                    </select>
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
+                        <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput > 0 ? defaultHargaInput : ''}" placeholder="0" ${hargaInputAttr}>
+                    </div>
+                    ${isReadonlyHarga ? `
+                        <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                            <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
+                            <strong class="text-dark font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
+                        </div>
+                    ` : ''}
+                </td>
+                <td class="conversion-cell text-center">
+                    <span class="text-muted small">-</span>
+                </td>
+                <td class="text-end fw-bold text-success subtotal-cell">
+                    Rp 0
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger p-1 border-0 btn-remove-row" title="Hapus baris ini">
+                        <i class="bi bi-x-circle fs-5"></i>
+                    </button>
+                </td>
+            `;
+            return tr;
+        }
+
+        // Muat semua master barang untuk transaksi ini tanpa mereset baris yang sudah ada/diisi
+        if (btnLoadAllBarang) {
+            btnLoadAllBarang.addEventListener('click', function () {
+                btnLoadAllBarang.disabled = true;
+                btnLoadAllBarang.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Memuat...';
+
+                fetch("{{ route('persediaan-awal.load-barang') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                    },
+                    body: JSON.stringify({
+                        gudang_id: gudangId,
+                        divisi_id: divisiId
+                    })
+                })
+                .then(res => res.json())
+                .then(response => {
+                    btnLoadAllBarang.disabled = false;
+                    btnLoadAllBarang.innerHTML = '<i class="bi bi-cloud-arrow-down-fill me-1"></i> Muat Semua Barang Master';
+
+                    if (response.status === 'success' && response.data) {
+                        const existingRows = tbodyBarang.querySelectorAll('tr:not(#rowEmpty)');
+                        const existingIds = new Set();
+                        existingRows.forEach(r => {
+                            const bId = r.getAttribute('data-id');
+                            if (bId) existingIds.add(String(bId));
+                        });
+
+                        const rowEmpty = document.getElementById('rowEmpty');
+                        if (rowEmpty) rowEmpty.remove();
+
+                        response.data.forEach(item => {
+                            // JANGAN timpa baris yang sudah ada di tabel agar data yang sudah diisi user TIDAK ter-refresh atau 0 kembali
+                            if (!existingIds.has(String(item.id))) {
+                                const tr = createRowElement(item);
+                                tbodyBarang.appendChild(tr);
+                                bindRowEvents(tr);
+                                existingIds.add(String(item.id));
+                            }
+                        });
+
+                        renumberRows();
+                        updateSummary();
+                    }
+                })
+                .catch(err => {
+                    btnLoadAllBarang.disabled = false;
+                    btnLoadAllBarang.innerHTML = '<i class="bi bi-cloud-arrow-down-fill me-1"></i> Muat Semua Barang Master';
+                    alert('Gagal memuat master barang: ' + err.message);
+                });
+            });
+        }
+
         // Search in dropdown barang master
         if (searchDropdown) {
             searchDropdown.addEventListener('input', function () {
@@ -371,67 +519,21 @@
                 const rowEmpty = document.getElementById('rowEmpty');
                 if (rowEmpty) rowEmpty.remove();
 
-                const hasKonversi = satBeli && konversi > 1 && (satBeli !== satStok);
-                const defaultUnit = hasKonversi ? 'pembelian' : 'utama';
-                const defaultHarga = hasKonversi ? hrgBeli : hrgStok;
+                const itemObj = {
+                    id: id,
+                    kode_barang: kode,
+                    nama: nama,
+                    kategori_id: katId,
+                    kategori_nama: kat,
+                    satuan: satStok,
+                    satuan_pembelian: satBeli,
+                    konversi_pembelian: konversi,
+                    hpp_satuan_utama: hrgStok,
+                    harga_beli_utama: hrgBeli,
+                    hpp_referensi: hrgStok
+                };
 
-                let unitOptionsHtml = `<option value="utama" ${defaultUnit === 'utama' ? 'selected' : ''}>${satStok}</option>`;
-                if (hasKonversi) {
-                    unitOptionsHtml = `<option value="pembelian" ${defaultUnit === 'pembelian' ? 'selected' : ''}>${satBeli} (${Number(konversi).toLocaleString('id-ID')} ${satStok})</option>` + unitOptionsHtml;
-                }
-
-                const satuanBadge = hasKonversi
-                    ? `<div><span class="badge bg-primary-subtle text-primary border border-primary-subtle fw-semibold mb-1">${satBeli}</span></div>
-                       <small class="text-muted d-block" style="font-size: 11px;">1 ${satBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satStok}</small>`
-                    : `<span class="badge bg-light text-dark border">${satStok}</span>`;
-
-                const tr = document.createElement('tr');
-                tr.setAttribute('data-id', id);
-                tr.setAttribute('data-kategori-id', katId);
-                tr.setAttribute('data-nama', nama.toLowerCase());
-                tr.setAttribute('data-kode', kode.toLowerCase());
-                tr.setAttribute('data-satuan-stok', satStok);
-                tr.setAttribute('data-satuan-beli', satBeli);
-                tr.setAttribute('data-konversi', konversi);
-                tr.setAttribute('data-harga-stok-utama', hrgStok);
-                tr.setAttribute('data-harga-beli-utama', hrgBeli);
-                tr.setAttribute('data-current-unit', defaultUnit);
-
-                tr.innerHTML = `
-                    <td class="text-center text-muted row-number">0</td>
-                    <td class="text-start font-monospace fw-bold small">${kode}</td>
-                    <td class="text-start">
-                        <div class="fw-semibold text-dark">${nama}</div>
-                    </td>
-                    <td><span class="badge bg-light text-muted border px-1.5 py-0.5" style="font-size: 10px;">${kat}</span></td>
-                    <td>${satuanBadge}</td>
-                    <td>
-                        <input type="number" class="form-control text-center input-qty fw-bold" step="any" min="0" value="0" placeholder="0">
-                    </td>
-                    <td>
-                        <select class="form-select form-select-sm input-satuan fw-semibold">
-                            ${unitOptionsHtml}
-                        </select>
-                    </td>
-                    <td>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light text-muted small">Rp</span>
-                            <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHarga}" placeholder="0">
-                        </div>
-                    </td>
-                    <td class="conversion-cell text-center">
-                        <span class="text-muted small">-</span>
-                    </td>
-                    <td class="text-end fw-bold text-success subtotal-cell">
-                        Rp 0
-                    </td>
-                    <td>
-                        <button type="button" class="btn btn-sm btn-outline-danger p-1 border-0 btn-remove-row" title="Hapus baris ini">
-                            <i class="bi bi-x-circle fs-5"></i>
-                        </button>
-                    </td>
-                `;
-
+                const tr = createRowElement(itemObj);
                 tbodyBarang.appendChild(tr);
                 bindRowEvents(tr);
                 renumberRows();

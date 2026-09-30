@@ -159,9 +159,9 @@ class BonusPenggajianController extends Controller
                 ? ($primaryPayroll->satuan_gaji_2 ?? $kw->satuan_gaji_2 ?? $primaryPayroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian')
                 : ($primaryPayroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian');
 
-            $kwGp = ($pilihanP == 2 && ($kw->gaji_pokok_2 ?? null) !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
-            $kwUm = ($pilihanP == 2 && ($kw->uang_makan_2 ?? null) !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
-            $kwUt = ($pilihanP == 2 && ($kw->uang_transport_2 ?? null) !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+            $kwGp = ($pilihanP == 2) ? (float)($kw->gaji_pokok_2 ?? 0) : (float)($kw->gaji_pokok ?? 0);
+            $kwUm = ($pilihanP == 2) ? (float)($kw->uang_makan_2 ?? 0) : (float)($kw->uang_makan ?? 0);
+            $kwUt = ($pilihanP == 2) ? (float)($kw->uang_transport_2 ?? 0) : (float)($kw->uang_transport ?? 0);
 
             $tarifHarian = $primaryPayroll->tarif_harian_total > 0
                 ? (float)$primaryPayroll->tarif_harian_total
@@ -266,9 +266,9 @@ class BonusPenggajianController extends Controller
             return (float) preg_replace('/[^0-9.]/', '', str_replace(',', '.', $value));
         };
 
-        $kwGp = ($pilihanP == 2 && ($kw->gaji_pokok_2 ?? null) !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
-        $kwUm = ($pilihanP == 2 && ($kw->uang_makan_2 ?? null) !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
-        $kwUt = ($pilihanP == 2 && ($kw->uang_transport_2 ?? null) !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+        $kwGp = ($pilihanP == 2) ? (float)($kw->gaji_pokok_2 ?? 0) : (float)($kw->gaji_pokok ?? 0);
+        $kwUm = ($pilihanP == 2) ? (float)($kw->uang_makan_2 ?? 0) : (float)($kw->uang_makan ?? 0);
+        $kwUt = ($pilihanP == 2) ? (float)($kw->uang_transport_2 ?? 0) : (float)($kw->uang_transport ?? 0);
 
         $tarifHarian = $payroll->tarif_harian_total > 0
             ? (float)$payroll->tarif_harian_total
@@ -390,9 +390,9 @@ class BonusPenggajianController extends Controller
                 ? ($payroll->satuan_gaji_2 ?? $kw->satuan_gaji_2 ?? $payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian')
                 : ($payroll->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian');
 
-            $kwGp = ($pilihanP == 2 && ($kw->gaji_pokok_2 ?? null) !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
-            $kwUm = ($pilihanP == 2 && ($kw->uang_makan_2 ?? null) !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
-            $kwUt = ($pilihanP == 2 && ($kw->uang_transport_2 ?? null) !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+            $kwGp = ($pilihanP == 2) ? (float)($kw->gaji_pokok_2 ?? 0) : (float)($kw->gaji_pokok ?? 0);
+            $kwUm = ($pilihanP == 2) ? (float)($kw->uang_makan_2 ?? 0) : (float)($kw->uang_makan ?? 0);
+            $kwUt = ($pilihanP == 2) ? (float)($kw->uang_transport_2 ?? 0) : (float)($kw->uang_transport ?? 0);
 
             $tarifHarian = $payroll->tarif_harian_total > 0
                 ? (float)$payroll->tarif_harian_total

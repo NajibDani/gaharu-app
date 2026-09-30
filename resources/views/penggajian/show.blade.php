@@ -22,9 +22,9 @@
     $satuan = ($pilihanPeriode == 2 && $k->satuan_gaji_2) ? ($k->satuan_gaji_2 ?? 'Harian') : ($k->satuan_gaji ?? 'Harian');
 
     // Tariff rates (from the chosen period)
-    $gpRate  = ($pilihanPeriode == 2 && $k->gaji_pokok_2  !== null) ? $k->gaji_pokok_2  : ($k->gaji_pokok  ?? 0);
-    $umRate  = ($pilihanPeriode == 2 && $k->uang_makan_2  !== null) ? $k->uang_makan_2  : ($k->uang_makan  ?? 0);
-    $utRate  = ($pilihanPeriode == 2 && $k->uang_transport_2 !== null) ? $k->uang_transport_2 : ($k->uang_transport ?? 0);
+    $gpRate  = ($pilihanPeriode == 2) ? (float)($k->gaji_pokok_2 ?? 0) : (float)($k->gaji_pokok ?? 0);
+    $umRate  = ($pilihanPeriode == 2) ? (float)($k->uang_makan_2 ?? 0) : (float)($k->uang_makan ?? 0);
+    $utRate  = ($pilihanPeriode == 2) ? (float)($k->uang_transport_2 ?? 0) : (float)($k->uang_transport ?? 0);
     $tarifTotal = $gpRate + $umRate + $utRate;
 
     // Earnings
@@ -340,9 +340,9 @@
                     @php
                         $pNum = $ent->pilihan_periode ?? 1;
                         $sat = ($pNum == 2 && $k->satuan_gaji_2) ? ($k->satuan_gaji_2 ?? 'Harian') : ($k->satuan_gaji ?? 'Harian');
-                        $gp = ($pNum == 2 && $k->gaji_pokok_2 !== null) ? $k->gaji_pokok_2 : ($k->gaji_pokok ?? 0);
-                        $um = ($pNum == 2 && $k->uang_makan_2 !== null) ? $k->uang_makan_2 : ($k->uang_makan ?? 0);
-                        $ut = ($pNum == 2 && $k->uang_transport_2 !== null) ? $k->uang_transport_2 : ($k->uang_transport ?? 0);
+                        $gp = ($pNum == 2) ? (float)($k->gaji_pokok_2 ?? 0) : (float)($k->gaji_pokok ?? 0);
+                        $um = ($pNum == 2) ? (float)($k->uang_makan_2 ?? 0) : (float)($k->uang_makan ?? 0);
+                        $ut = ($pNum == 2) ? (float)($k->uang_transport_2 ?? 0) : (float)($k->uang_transport ?? 0);
                         $tar = $gp + $um + $ut;
                         $hkUnit = $sat == 'Per Jam' ? ' jam' : ($sat == 'Bulanan' ? ' bln' : ' hari');
                     @endphp

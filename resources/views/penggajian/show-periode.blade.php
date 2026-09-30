@@ -637,8 +637,11 @@
                                     ? ($payroll->satuan_gaji_2 ?? $payroll->karyawan->satuan_gaji_2 ?? 'Harian')
                                     : ($payroll->satuan_gaji ?? $payroll->karyawan->satuan_gaji ?? 'Harian');
 
-                                $hasMasterMultiplePeriods = !is_null($payroll->karyawan->gaji_pokok_2 ?? null);
-                                $hasMultiplePeriods = ($payroll->items && $payroll->items->count() > 1) || $hasMasterMultiplePeriods;
+                                $kw = $payroll->karyawan;
+                                $p1TotalMaster = (float)($kw->gaji_pokok ?? 0) + (float)($kw->uang_makan ?? 0) + (float)($kw->uang_transport ?? 0);
+                                $p2TotalMaster = (float)($kw->gaji_pokok_2 ?? 0) + (float)($kw->uang_makan_2 ?? 0) + (float)($kw->uang_transport_2 ?? 0);
+                                $hasMasterMultiplePeriods = ($kw->gaji_pokok_2 !== null && $p2TotalMaster > 0);
+                                $hasMultiplePeriods = ($payroll->items && $payroll->items->where('pilihan_periode', 2)->count() > 0 && $p2TotalMaster > 0) || $hasMasterMultiplePeriods;
 
                                 // Rincian per periode (satuan, unit suffix, tarif, dsb)
                                 if ($hasMultiplePeriods) {
@@ -647,7 +650,6 @@
                                     }) : collect();
 
                                     // Filter periode berdasarkan tanggal berlaku vs bulan penggajian
-                                    $kw = $payroll->karyawan;
                                     $periodeMonthStart = \Carbon\Carbon::parse($periode . '-01');
                                     $periodeMonthEnd   = $periodeMonthStart->copy()->endOfMonth();
 
@@ -667,18 +669,22 @@
                                     }
                                     if ($p1Active) $candidatePeriodes[] = 1;
 
-                                    // Cek P2: overlap jika tanggal_mulai_2..tanggal_selesai_2 beririsan dengan bulan ini
+                                    // Cek P2: overlap jika tanggal_mulai_2..tanggal_selesai_2 beririsan dengan bulan ini DAN gaji P2 > 0
                                     $p2Mulai   = $kw->tanggal_mulai_2 ? \Carbon\Carbon::parse($kw->tanggal_mulai_2) : null;
                                     $p2Selesai = $kw->tanggal_selesai_2 ? \Carbon\Carbon::parse($kw->tanggal_selesai_2) : null;
-                                    $p2Active  = false; // default tidak aktif jika tidak ada tanggal P2
-                                    if ($p2Mulai && $p2Selesai) {
-                                        $p2Active = $p2Mulai->lte($periodeMonthEnd) && $p2Selesai->gte($periodeMonthStart);
-                                    } elseif ($p2Mulai) {
-                                        $p2Active = $p2Mulai->lte($periodeMonthEnd);
-                                    } elseif ($kw->gaji_pokok_2 !== null) {
-                                        $p2Active = true; // P2 punya tarif tapi tanpa tanggal, anggap aktif
+                                    $p2Active  = false;
+                                    if ($p2TotalMaster > 0 && $kw->gaji_pokok_2 !== null) {
+                                        if ($p2Mulai && $p2Selesai) {
+                                            $p2Active = $p2Mulai->lte($periodeMonthEnd) && $p2Selesai->gte($periodeMonthStart);
+                                        } elseif ($p2Mulai) {
+                                            $p2Active = $p2Mulai->lte($periodeMonthEnd);
+                                        } elseif ($p2Selesai) {
+                                            $p2Active = $p2Selesai->gte($periodeMonthStart);
+                                        } else {
+                                            $p2Active = true;
+                                        }
                                     }
-                                    if ($p2Active) $candidatePeriodes[] = 2;
+                                    if ($p2Active && $p2TotalMaster > 0) $candidatePeriodes[] = 2;
 
                                     // Hanya tampilkan periode yang tanggal berlakunya beririsan dengan bulan penggajian ini.
                                     // Jika karyawan memiliki tanggal di master, filter secara ketat.
@@ -716,9 +722,9 @@
                                         // Update satuanRow dan tarifHarian sesuai periode aktif
                                         if ($activePNum === 2) {
                                             $satuanRow = $kw->satuan_gaji_2 ?? $kw->satuan_gaji ?? 'Harian';
-                                            $gpActive = ($kw->gaji_pokok_2 !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
-                                            $umActive = ($kw->uang_makan_2 !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
-                                            $utActive = ($kw->uang_transport_2 !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+                                            $gpActive = (float)($kw->gaji_pokok_2 ?? 0);
+                                            $umActive = (float)($kw->uang_makan_2 ?? 0);
+                                            $utActive = (float)($kw->uang_transport_2 ?? 0);
                                         } else {
                                             $satuanRow = $kw->satuan_gaji ?? 'Harian';
                                             $gpActive = (float)($kw->gaji_pokok ?? 0);
@@ -790,9 +796,9 @@
 
                                         if ($pNum === 2) {
                                             $sat = $it->satuan_gaji_2 ?? $it->satuan_gaji ?? $kw->satuan_gaji_2 ?? $kw->satuan_gaji ?? 'Harian';
-                                            $gp = ($kw->gaji_pokok_2 !== null) ? (float)$kw->gaji_pokok_2 : (float)($kw->gaji_pokok ?? 0);
-                                            $um = ($kw->uang_makan_2 !== null) ? (float)$kw->uang_makan_2 : (float)($kw->uang_makan ?? 0);
-                                            $ut = ($kw->uang_transport_2 !== null) ? (float)$kw->uang_transport_2 : (float)($kw->uang_transport ?? 0);
+                                            $gp = (float)($kw->gaji_pokok_2 ?? 0);
+                                            $um = (float)($kw->uang_makan_2 ?? 0);
+                                            $ut = (float)($kw->uang_transport_2 ?? 0);
                                         } else {
                                             $sat = $it->satuan_gaji ?? $kw->satuan_gaji ?? 'Harian';
                                             $gp = (float)($kw->gaji_pokok ?? 0);
