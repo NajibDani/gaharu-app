@@ -10,10 +10,24 @@
                     <a href="{{ route('persediaan-awal.index') }}" class="btn btn-sm btn-outline-secondary rounded-2 px-2">
                         <i class="bi bi-arrow-left"></i>
                     </a>
+                    @php
+                        $isApproved = ($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted');
+                        $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+                        $canEdit = !$isApproved || $isSuperAdmin;
+                        $canApprove = !$isApproved && $isSuperAdmin;
+                    @endphp
                     <div>
                         <h5 class="mb-0 fw-bold text-dark">
                             {{ $persediaanAwal->kode_transaksi }}
-                            <span class="badge bg-success-subtle text-success fs-6 ms-2">Tercatat di Stok & FIFO</span>
+                            @if($isApproved)
+                                <span class="badge bg-success-subtle text-success fs-6 ms-2">
+                                    <i class="bi bi-check-circle-fill me-1"></i> Approved
+                                </span>
+                            @else
+                                <span class="badge bg-warning-subtle text-warning fs-6 ms-2">
+                                    <i class="bi bi-clock-fill me-1"></i> Draft (Menunggu Approval)
+                                </span>
+                            @endif
                         </h5>
                         <small class="text-muted">Transaksi input saldo awal persediaan master barang</small>
                     </div>
@@ -22,9 +36,14 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary rounded-2 px-3" onclick="window.print()">
                         <i class="bi bi-printer me-1"></i> Cetak / Print
                     </button>
-                    @if(auth()->user() && auth()->user()->isSuperAdmin())
+                    @if($canApprove)
+                        <button type="button" class="btn btn-sm btn-success rounded-2 px-3" data-bs-toggle="modal" data-bs-target="#modalApproveShow">
+                            <i class="bi bi-check-lg me-1"></i> Setujui / Approve
+                        </button>
+                    @endif
+                    @if($canEdit)
                         <a href="{{ route('persediaan-awal.edit', $persediaanAwal->id) }}" class="btn btn-sm btn-warning text-white rounded-2 px-3">
-                            <i class="bi bi-pencil-square me-1"></i> Edit Transaksi
+                            <i class="bi bi-pencil-square me-1"></i> Edit Transaksi {{ $isApproved ? '(Super Admin)' : '' }}
                         </a>
                     @endif
                     <a href="{{ route('persediaan-awal.create') }}" class="btn btn-sm text-white rounded-2 px-3" style="background-color: #d88656; border: none;">
@@ -301,4 +320,36 @@
             @endif
         </div>
     </div>
+
+    @if($canApprove)
+        <!-- Modal Konfirmasi Approve Show -->
+        <div class="modal fade" id="modalApproveShow" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content text-start border-0 shadow">
+                    <div class="modal-header border-0 pb-0 pt-4 px-4">
+                        <h5 class="modal-title fw-bold text-success">
+                            <i class="bi bi-check-circle-fill me-1"></i> Konfirmasi Persetujuan
+                        </h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form action="{{ route('persediaan-awal.approve', $persediaanAwal->id) }}" method="POST">
+                        @csrf
+                        <div class="modal-body px-4 py-3">
+                            <p class="mb-0 text-secondary">
+                                Apakah Anda yakin ingin menyetujui (Approve) transaksi persediaan awal <strong>{{ $persediaanAwal->kode_transaksi }}</strong> untuk <strong>{{ $persediaanAwal->gudang->nama ?? '-' }} {{ $persediaanAwal->divisi ? '('.$persediaanAwal->divisi->nama.')' : '' }}</strong>?
+                                <br><br>
+                                <span class="text-muted small">
+                                    <i class="bi bi-info-circle me-1"></i> Setelah disetujui, user divisi tidak dapat lagi mengubah transaksi ini.
+                                </span>
+                            </p>
+                        </div>
+                        <div class="modal-footer border-0 px-4 pb-4 pt-0">
+                            <button type="button" class="btn btn-light border px-3" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-success px-3">Ya, Setujui (Approve)</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endif
 </x-app-layout>

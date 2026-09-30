@@ -41,6 +41,7 @@ class PersediaanAwalController extends Controller
         $divisiId  = $request->query('divisi_id');
         $startDate = $request->query('start_date');
         $endDate   = $request->query('end_date');
+        $status    = $request->query('status');
         $search    = $request->query('search');
 
         // Filter otomatis sesuai hak akses role jika bukan Super Admin / Direktur Keuangan
@@ -72,6 +73,15 @@ class PersediaanAwalController extends Controller
             $query->whereDate('tanggal', '<=', $endDate);
         }
 
+        if ($status === 'draft') {
+            $query->where(function($q) {
+                $q->where('status', 'draft')
+                  ->orWhereNull('status');
+            });
+        } elseif ($status === 'approved') {
+            $query->whereIn('status', ['approved', 'posted']);
+        }
+
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('kode_transaksi', 'like', "%{$search}%")
@@ -87,6 +97,14 @@ class PersediaanAwalController extends Controller
         if ($divisiId) $summaryQuery->where('divisi_id', $divisiId);
         if ($startDate) $summaryQuery->whereDate('tanggal', '>=', $startDate);
         if ($endDate) $summaryQuery->whereDate('tanggal', '<=', $endDate);
+        if ($status === 'draft') {
+            $summaryQuery->where(function($q) {
+                $q->where('status', 'draft')
+                  ->orWhereNull('status');
+            });
+        } elseif ($status === 'approved') {
+            $summaryQuery->whereIn('status', ['approved', 'posted']);
+        }
 
         $totalTransaksi = $summaryQuery->count();
         $totalNilai     = $summaryQuery->sum('total_nilai');
@@ -105,7 +123,7 @@ class PersediaanAwalController extends Controller
 
         return view('persediaan-awal.index', compact(
             'data', 'gudangs', 'gudangId', 'divisiId',
-            'startDate', 'endDate', 'search',
+            'startDate', 'endDate', 'status', 'search',
             'totalTransaksi', 'totalNilai', 'totalQty'
         ));
     }
@@ -255,38 +273,50 @@ class PersediaanAwalController extends Controller
             });
         }
 
-        // HANYA memuat barang dengan jenis bahan baku dan bahan setengah jadi
-        $query->where(function($q_bahan) {
-            $q_bahan->where('is_bahan_baku', true)
-                    ->orWhere('is_bahan_setengah_jadi', true);
-        });
-
-        // Filter sesuai tagging divisi terkait
+        // Filter barang sesuai gudang & tagging divisi
         if ($gudangId) {
-            $query->where(function($q) use ($gudangId, $divisiId) {
-                if ($divisiId) {
-                    // Jika ada divisi: HANYA muncul jika tagging divisinya aktif (ON)
-                    $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
-                        $existsQuery->select(DB::raw(1))
-                            ->from('barang_minimum_stock')
-                            ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
-                            ->where('barang_minimum_stock.divisi_id', $divisiId)
-                            ->where('barang_minimum_stock.is_active', true);
-                        if ($gudangId) {
-                            $existsQuery->where('barang_minimum_stock.gudang_id', $gudangId);
-                        }
-                    });
-                } else {
-                    // Jika tanpa divisi: Semua muncul KECUALI yang dinonaktifkan eksplisit
-                    $q->whereNotExists(function($notExistsQuery) use ($gudangId) {
-                        $notExistsQuery->select(DB::raw(1))
-                            ->from('barang_minimum_stock')
-                            ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
-                            ->where('barang_minimum_stock.gudang_id', $gudangId)
-                            ->where('barang_minimum_stock.is_active', false)
-                            ->whereNull('barang_minimum_stock.divisi_id');
-                    });
-                }
+            if ($isGudangUtama) {
+                // Khusus Gudang Utama: Reload SEMUA bahan baku tanpa filter tagging
+                $query->where('is_bahan_baku', true);
+            } else {
+                // HANYA memuat barang dengan jenis bahan baku dan bahan setengah jadi
+                $query->where(function($q_bahan) {
+                    $q_bahan->where('is_bahan_baku', true)
+                            ->orWhere('is_bahan_setengah_jadi', true);
+                });
+
+                // Filter sesuai tagging divisi/lokasi terkait
+                $query->where(function($q) use ($gudangId, $divisiId) {
+                    if ($divisiId) {
+                        // Jika ada divisi: HANYA muncul jika tagging divisinya aktif (ON)
+                        $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
+                            $existsQuery->select(DB::raw(1))
+                                ->from('barang_minimum_stock')
+                                ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                                ->where('barang_minimum_stock.divisi_id', $divisiId)
+                                ->where('barang_minimum_stock.is_active', true);
+                            if ($gudangId) {
+                                $existsQuery->where('barang_minimum_stock.gudang_id', $gudangId);
+                            }
+                        });
+                    } else {
+                        // Jika gudang tanpa divisi (Central Kitchen, Cold Kitchen, dll):
+                        // HANYA muncul jika dicentang/ditagging aktif untuk gudang tersebut
+                        $q->whereExists(function($existsQuery) use ($gudangId) {
+                            $existsQuery->select(DB::raw(1))
+                                ->from('barang_minimum_stock')
+                                ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                                ->where('barang_minimum_stock.gudang_id', $gudangId)
+                                ->where('barang_minimum_stock.is_active', true)
+                                ->whereNull('barang_minimum_stock.divisi_id');
+                        });
+                    }
+                });
+            }
+        } else {
+            $query->where(function($q_bahan) {
+                $q_bahan->where('is_bahan_baku', true)
+                        ->orWhere('is_bahan_setengah_jadi', true);
             });
         }
 
@@ -494,7 +524,7 @@ class PersediaanAwalController extends Controller
                 'total_qty'      => $totalQty,
                 'total_nilai'    => $totalNilai,
                 'keterangan'     => $request->keterangan ?? 'Persediaan Awal / Saldo Awal Barang',
-                'status'         => 'posted',
+                'status'         => 'draft',
                 'created_by'     => Auth::id() ?? 1,
             ]);
 
@@ -665,14 +695,14 @@ class PersediaanAwalController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | EDIT: Form Koreksi Persediaan Awal (Khusus Super Admin)
+    | EDIT: Form Koreksi Persediaan Awal (Bisa diedit divisi sebelum approved)
     |--------------------------------------------------------------------------
     */
     public function edit(string $id)
     {
         $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            abort(403, 'Akses terbatas. Hanya Super Admin yang diizinkan mengedit transaksi persediaan awal.');
+        if (!$user) {
+            abort(403);
         }
 
         $persediaanAwal = PersediaanAwal::with([
@@ -680,6 +710,27 @@ class PersediaanAwalController extends Controller
             'divisi',
             'details.barang.kategori',
         ])->findOrFail($id);
+
+        $isSuperAdmin = $user->isSuperAdmin();
+
+        // Jika transaksi sudah approved, hanya Super Admin yang boleh mengedit
+        if (($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted') && !$isSuperAdmin) {
+            return redirect()
+                ->route('persediaan-awal.show', $persediaanAwal->id)
+                ->with('error', 'Persediaan Awal yang sudah disetujui (Approved) oleh Super Admin tidak dapat diedit lagi.');
+        }
+
+        // Validasi hak akses gudang/outlet jika bukan Super Admin
+        $roleName = $user->role->nama ?? '';
+        if (!$isSuperAdmin) {
+            if ($roleName === 'Kepala Outlet Kejingga' && $persediaanAwal->gudang_id != 4) {
+                abort(403, 'Akses terbatas. Anda hanya dapat mengedit persediaan awal outlet Kejingga.');
+            } elseif ($roleName === 'Kepala Outlet Gaharu' && $persediaanAwal->gudang_id != 2) {
+                abort(403, 'Akses terbatas. Anda hanya dapat mengedit persediaan awal outlet Gaharu.');
+            } elseif ($roleName === 'Kepala Gudang' && $persediaanAwal->gudang_id != 1) {
+                abort(403, 'Akses terbatas. Anda hanya dapat mengedit persediaan awal Gudang Utama.');
+            }
+        }
 
         if (Journal::isPeriodClosed($persediaanAwal->tanggal->format('Y-m-d'))) {
             return redirect()
@@ -728,6 +779,10 @@ class PersediaanAwalController extends Controller
 
         $allBarang = MasterBarang::with('kategori')
             ->where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true);
+            })
             ->orderBy('nama', 'asc')
             ->get();
 
@@ -741,17 +796,37 @@ class PersediaanAwalController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | UPDATE: Simpan Perubahan Persediaan Awal (Khusus Super Admin)
+    | UPDATE: Simpan Perubahan Persediaan Awal (Divisi / Super Admin)
     |--------------------------------------------------------------------------
     */
     public function update(Request $request, string $id)
     {
         $user = auth()->user();
-        if (!$user || !$user->isSuperAdmin()) {
-            abort(403, 'Akses terbatas. Hanya Super Admin yang diizinkan mengedit transaksi persediaan awal.');
+        if (!$user) {
+            abort(403);
         }
 
         $persediaanAwal = PersediaanAwal::with('details')->findOrFail($id);
+        $isSuperAdmin = $user->isSuperAdmin();
+
+        // Jika transaksi sudah approved, hanya Super Admin yang boleh mengubah
+        if (($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted') && !$isSuperAdmin) {
+            return redirect()
+                ->route('persediaan-awal.show', $persediaanAwal->id)
+                ->with('error', 'Persediaan Awal yang sudah disetujui (Approved) oleh Super Admin tidak dapat diubah lagi.');
+        }
+
+        // Validasi hak akses gudang/outlet jika bukan Super Admin
+        $roleName = $user->role->nama ?? '';
+        if (!$isSuperAdmin) {
+            if ($roleName === 'Kepala Outlet Kejingga' && $persediaanAwal->gudang_id != 4) {
+                abort(403, 'Akses terbatas. Anda hanya dapat mengubah persediaan awal outlet Kejingga.');
+            } elseif ($roleName === 'Kepala Outlet Gaharu' && $persediaanAwal->gudang_id != 2) {
+                abort(403, 'Akses terbatas. Anda hanya dapat mengubah persediaan awal outlet Gaharu.');
+            } elseif ($roleName === 'Kepala Gudang' && $persediaanAwal->gudang_id != 1) {
+                abort(403, 'Akses terbatas. Anda hanya dapat mengubah persediaan awal Gudang Utama.');
+            }
+        }
 
         if (Journal::isPeriodClosed($persediaanAwal->tanggal->format('Y-m-d'))) {
             return back()->with('error', 'Periode akuntansi tanggal transaksi lama sudah ditutup buku. Tidak dapat diubah.');
@@ -1271,6 +1346,33 @@ class PersediaanAwalController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | APPROVE: Persetujuan Persediaan Awal (Khusus Super Admin)
+    |--------------------------------------------------------------------------
+    */
+    public function approve(string $id)
+    {
+        $user = auth()->user();
+        if (!$user || !$user->isSuperAdmin()) {
+            return back()->with('error', 'Akses ditolak! Hanya Super Admin yang memiliki hak akses untuk menyetujui (approve) persediaan awal.');
+        }
+
+        $persediaanAwal = PersediaanAwal::findOrFail($id);
+
+        if ($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted') {
+            return back()->with('error', 'Persediaan Awal sudah disetujui sebelumnya.');
+        }
+
+        $persediaanAwal->update([
+            'status' => 'approved',
+        ]);
+
+        return redirect()
+            ->route('persediaan-awal.show', $persediaanAwal->id)
+            ->with('success', 'Persediaan Awal (' . $persediaanAwal->kode_transaksi . ') berhasil disetujui (Approved) oleh Super Admin.');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | DOWNLOAD TEMPLATE EXCEL
     |--------------------------------------------------------------------------
     */
@@ -1291,8 +1393,12 @@ class PersediaanAwalController extends Controller
                 ->setFillType(Fill::FILL_SOLID)
                 ->getStartColor()->setRGB('D88656');
 
-            // Isi master barang aktif yang sudah ada sebagai referensi
+            // Isi master barang aktif (hanya bahan baku dan bahan setengah jadi) sebagai referensi
             $barangs = MasterBarang::where('is_active', true)
+                ->where(function($q) {
+                    $q->where('is_bahan_baku', true)
+                      ->orWhere('is_bahan_setengah_jadi', true);
+                })
                 ->orderBy('nama', 'asc')
                 ->get();
 
@@ -1313,7 +1419,7 @@ class PersediaanAwalController extends Controller
             $guideSheet->setTitle('Panduan');
             $guideSheet->fromArray([
                 ['Kolom', 'Wajib?', 'Keterangan'],
-                ['nama_barang', 'Ya', 'Nama barang/bahan (bisa juga memakai header "nama").'],
+                ['nama_barang', 'Ya', 'Nama bahan baku / setengah jadi (bisa juga memakai header "nama").'],
                 ['satuan', 'Ya', 'Satuan barang (misal: kg, gr, pcs, pack, liter, botol, dus, dll).'],
                 ['qty', 'Ya', 'Jumlah kuantitas saldo awal fisik persediaan di gudang.'],
             ], null, 'A1');
@@ -1347,9 +1453,13 @@ class PersediaanAwalController extends Controller
 
         $hargaUtamaMap = $this->getHargaGudangUtamaMap();
 
-        // Isi semua data master barang aktif sebagai referensi / template langsung isi
+        // Isi semua data master barang aktif (hanya bahan baku dan bahan setengah jadi) sebagai referensi
         $barangs = MasterBarang::with('kategori')
             ->where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true);
+            })
             ->orderBy('kode_barang', 'asc')
             ->get();
 
@@ -1652,6 +1762,16 @@ class PersediaanAwalController extends Controller
                         continue;
                     }
 
+                    // Hanya izinkan bahan baku dan bahan setengah jadi masuk ke persediaan awal
+                    if ($barang->is_barang_jadi) {
+                        $failedRows[] = [
+                            'baris'  => $rowNum,
+                            'item'   => $itemLabel,
+                            'alasan' => 'Barang Jadi tidak diizinkan masuk ke Persediaan Awal (hanya Bahan Baku dan Bahan Setengah Jadi).',
+                        ];
+                        continue;
+                    }
+
                     // Baca konversi dari Excel terlebih dahulu, fallback ke database
                     $excelKonversi = $num($get($row, $colKonversi));
                     $konversi = $excelKonversi > 0 ? $excelKonversi : (float) ($barang->konversi_pembelian ?: 1.00);
@@ -1753,7 +1873,7 @@ class PersediaanAwalController extends Controller
                 'total_qty'      => $totalQty,
                 'total_nilai'    => $totalNilai,
                 'keterangan'     => $request->keterangan ?? ('Import Excel Persediaan Awal: ' . $request->file('file_excel')->getClientOriginalName()),
-                'status'         => 'posted',
+                'status'         => 'draft',
                 'created_by'     => Auth::id() ?? 1,
             ]);
 
@@ -1934,7 +2054,26 @@ class PersediaanAwalController extends Controller
     */
     public function destroy(string $id)
     {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
         $persediaanAwal = PersediaanAwal::with('details')->findOrFail($id);
+
+        if (($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted') && !$isSuperAdmin) {
+            return back()->with('error', 'Persediaan Awal yang sudah disetujui (Approved) hanya dapat dihapus oleh Super Admin.');
+        }
+
+        // Validasi hak akses gudang jika bukan Super Admin
+        if (!$isSuperAdmin && $user) {
+            $roleName = $user->role->nama ?? '';
+            if ($roleName === 'Kepala Outlet Kejingga' && $persediaanAwal->gudang_id != 4) {
+                abort(403, 'Akses terbatas.');
+            } elseif ($roleName === 'Kepala Outlet Gaharu' && $persediaanAwal->gudang_id != 2) {
+                abort(403, 'Akses terbatas.');
+            } elseif ($roleName === 'Kepala Gudang' && $persediaanAwal->gudang_id != 1) {
+                abort(403, 'Akses terbatas.');
+            }
+        }
 
         if (Journal::isPeriodClosed($persediaanAwal->tanggal->format('Y-m-d'))) {
             return back()->with('error', 'Periode akuntansi sudah ditutup buku. Data tidak dapat dihapus.');

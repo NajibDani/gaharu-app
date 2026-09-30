@@ -176,6 +176,14 @@
                     </select>
                 </div>
                 <div class="col-12 col-md-2">
+                    <label class="form-label small text-muted mb-1">Status</label>
+                    <select name="status" class="form-select form-select-sm rounded-2">
+                        <option value="">-- Semua Status --</option>
+                        <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>Draft (Menunggu Approval)</option>
+                        <option value="approved" {{ request('status') == 'approved' ? 'selected' : '' }}>Approved</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
                     <label class="form-label small text-muted mb-1">Dari Tanggal</label>
                     <input type="date" name="start_date" class="form-control form-control-sm rounded-2" value="{{ request('start_date') }}">
                 </div>
@@ -183,17 +191,17 @@
                     <label class="form-label small text-muted mb-1">Sampai Tanggal</label>
                     <input type="date" name="end_date" class="form-control form-control-sm rounded-2" value="{{ request('end_date') }}">
                 </div>
-                <div class="col-12 col-md-3">
+                <div class="col-12 col-md-2">
                     <label class="form-label small text-muted mb-1">Pencarian</label>
-                    <input type="text" name="search" class="form-control form-control-sm rounded-2" placeholder="Kode transaksi / keterangan..." value="{{ request('search') }}">
+                    <input type="text" name="search" class="form-control form-control-sm rounded-2" placeholder="Kode transaksi..." value="{{ request('search') }}">
                 </div>
-                <div class="col-12 col-md-2 d-flex align-items-end gap-1">
-                    <button type="submit" class="btn btn-sm text-white flex-grow-1 rounded-2 min-hitbox" style="background-color: #DE8958; border: none;">
-                        <i class="bi bi-search me-1"></i> Filter
+                <div class="col-12 col-md-1 d-flex align-items-end gap-1">
+                    <button type="submit" class="btn btn-sm text-white flex-grow-1 rounded-2 min-hitbox" style="background-color: #DE8958; border: none;" title="Cari">
+                        <i class="bi bi-search"></i>
                     </button>
-                    @if(request()->hasAny(['gudang_id', 'divisi_id', 'start_date', 'end_date', 'search']))
-                        <a href="{{ route('persediaan-awal.index') }}" class="btn btn-sm btn-secondary rounded-2">
-                            Reset
+                    @if(request()->hasAny(['gudang_id', 'divisi_id', 'status', 'start_date', 'end_date', 'search']))
+                        <a href="{{ route('persediaan-awal.index') }}" class="btn btn-sm btn-secondary rounded-2" title="Reset Filter">
+                            <i class="bi bi-arrow-counterclockwise"></i>
                         </a>
                     @endif
                 </div>
@@ -228,13 +236,21 @@
                             <th class="text-white">Total Item</th>
                             <th class="text-white">Total Qty</th>
                             <th class="text-end text-white">Total Nilai (Rp)</th>
+                            <th class="text-center text-white" style="width: 120px;">Status</th>
                             <th class="text-start text-white">Keterangan</th>
                             <th class="text-white">Petugas</th>
-                            <th class="text-white" style="width: 120px;">Aksi</th>
+                            <th class="text-white" style="width: 140px;">Aksi</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse($data as $index => $item)
+                            @php
+                                $isApproved = ($item->status === 'approved' || $item->status === 'posted');
+                                $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+                                $canEdit = !$isApproved || $isSuperAdmin;
+                                $canDelete = !$isApproved || $isSuperAdmin;
+                                $canApprove = !$isApproved && $isSuperAdmin;
+                            @endphp
                             <tr>
                                 <td class="text-center text-muted">{{ $data->firstItem() + $index }}</td>
                                 <td class="text-start">
@@ -258,7 +274,18 @@
                                 <td class="text-end fw-bold text-success">
                                     Rp {{ number_format($item->total_nilai, 0, ',', '.') }}
                                 </td>
-                                <td class="text-start small text-muted text-truncate" style="max-width: 200px;" title="{{ $item->keterangan }}">
+                                <td class="text-center">
+                                    @if($isApproved)
+                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                            <i class="bi bi-check-circle-fill me-1"></i> Approved
+                                        </span>
+                                    @else
+                                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">
+                                            <i class="bi bi-clock-fill me-1"></i> Draft
+                                        </span>
+                                    @endif
+                                </td>
+                                <td class="text-start small text-muted text-truncate" style="max-width: 180px;" title="{{ $item->keterangan }}">
                                     {{ $item->keterangan ?? '-' }}
                                 </td>
                                 <td class="small">{{ $item->user->nama_karyawan ?? $item->user->name ?? '-' }}</td>
@@ -267,15 +294,54 @@
                                         <a href="{{ route('persediaan-awal.show', $item->id) }}" class="btn btn-sm btn-info text-white rounded-2 px-2 py-1" title="Lihat Rincian">
                                             <i class="bi bi-eye"></i>
                                         </a>
-                                        @if(auth()->user() && auth()->user()->isSuperAdmin())
-                                            <a href="{{ route('persediaan-awal.edit', $item->id) }}" class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1" title="Edit Transaksi (Super Admin)">
+                                        @if($canEdit)
+                                            <a href="{{ route('persediaan-awal.edit', $item->id) }}" class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1" title="Edit Transaksi {{ $isApproved ? '(Super Admin)' : '' }}">
                                                 <i class="bi bi-pencil-square"></i>
                                             </a>
                                         @endif
-                                        <button type="button" class="btn btn-sm btn-danger rounded-2 px-2 py-1" title="Hapus Transaksi" data-bs-toggle="modal" data-bs-target="#modalHapus{{ $item->id }}">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
+                                        @if($canApprove)
+                                            <button type="button" class="btn btn-sm btn-success rounded-2 px-2 py-1" title="Setujui / Approve (Super Admin)" data-bs-toggle="modal" data-bs-target="#modalApprove{{ $item->id }}">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                        @endif
+                                        @if($canDelete)
+                                            <button type="button" class="btn btn-sm btn-danger rounded-2 px-2 py-1" title="Hapus Transaksi" data-bs-toggle="modal" data-bs-target="#modalHapus{{ $item->id }}">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        @endif
                                     </div>
+
+                                    @if($canApprove)
+                                        <!-- Modal Konfirmasi Approve -->
+                                        <div class="modal fade" id="modalApprove{{ $item->id }}" tabindex="-1" aria-hidden="true">
+                                            <div class="modal-dialog modal-dialog-centered">
+                                                <div class="modal-content text-start border-0 shadow">
+                                                    <div class="modal-header border-0 pb-0 pt-4 px-4">
+                                                        <h5 class="modal-title fw-bold text-success">
+                                                            <i class="bi bi-check-circle-fill me-1"></i> Konfirmasi Persetujuan
+                                                        </h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                                    </div>
+                                                    <form action="{{ route('persediaan-awal.approve', $item->id) }}" method="POST">
+                                                        @csrf
+                                                        <div class="modal-body px-4 py-3">
+                                                            <p class="mb-0 text-secondary">
+                                                                Apakah Anda yakin ingin menyetujui (Approve) transaksi persediaan awal <strong>{{ $item->kode_transaksi }}</strong> untuk <strong>{{ $item->gudang->nama ?? '-' }} {{ $item->divisi ? '('.$item->divisi->nama.')' : '' }}</strong>?
+                                                                <br><br>
+                                                                <span class="text-muted small">
+                                                                    <i class="bi bi-info-circle me-1"></i> Setelah disetujui, user divisi tidak dapat lagi mengubah transaksi ini.
+                                                                </span>
+                                                            </p>
+                                                        </div>
+                                                        <div class="modal-footer border-0 px-4 pb-4 pt-0">
+                                                            <button type="button" class="btn btn-light border px-3" data-bs-dismiss="modal">Batal</button>
+                                                            <button type="submit" class="btn btn-success px-3">Ya, Setujui (Approve)</button>
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    @endif
 
                                     <!-- Modal Konfirmasi Hapus -->
                                     <div class="modal fade" id="modalHapus{{ $item->id }}" tabindex="-1" aria-hidden="true">
@@ -309,7 +375,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="10" class="text-center py-5 text-muted">
+                                <td colspan="11" class="text-center py-5 text-muted">
                                     <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary"></i>
                                     Belum ada data transaksi persediaan awal.
                                     <div class="mt-2">

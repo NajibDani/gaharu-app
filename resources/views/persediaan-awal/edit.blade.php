@@ -9,8 +9,13 @@
                 <div>
                     <h5 class="mb-0 fw-bold text-dark">
                         <i class="bi bi-pencil-square text-warning me-2"></i>Edit Transaksi: {{ $persediaanAwal->kode_transaksi }}
+                        @if($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted')
+                            <span class="badge bg-success-subtle text-success fs-6 ms-2">Approved</span>
+                        @else
+                            <span class="badge bg-warning-subtle text-warning fs-6 ms-2">Draft (Menunggu Approval)</span>
+                        @endif
                     </h5>
-                    <small class="text-muted">Koreksi kuantitas dan harga saldo awal persediaan barang (Khusus Super Admin)</small>
+                    <small class="text-muted">Koreksi kuantitas dan harga saldo awal persediaan barang</small>
                 </div>
                 <div class="d-flex align-items-center gap-2">
                     <a href="{{ route('persediaan-awal.show', $persediaanAwal->id) }}" class="btn btn-sm btn-outline-secondary rounded-2 px-3">
@@ -46,12 +51,21 @@
                     </div>
                 @endif
 
-                <div class="alert alert-warning py-2 px-3 mb-4 rounded-3 small d-flex align-items-center">
-                    <i class="bi bi-shield-lock-fill text-warning me-2 fs-5"></i>
-                    <div>
-                        <strong>Mode Koreksi Super Admin:</strong> Anda dapat mengubah Qty dan Harga Satuan. Setelah disimpan, sistem akan secara otomatis menyesuaikan kembali posisi fisik stok gudang, batch FIFO, dan jurnal penyesuaian terkait.
+                @if($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted')
+                    <div class="alert alert-warning py-2 px-3 mb-4 rounded-3 small d-flex align-items-center">
+                        <i class="bi bi-shield-lock-fill text-warning me-2 fs-5"></i>
+                        <div>
+                            <strong>Mode Koreksi Super Admin:</strong> Anda sedang mengedit data Persediaan Awal yang sudah disetujui (Approved). Setelah disimpan, sistem akan secara otomatis menyesuaikan kembali posisi fisik stok gudang, batch FIFO, dan jurnal penyesuaian terkait.
+                        </div>
                     </div>
-                </div>
+                @else
+                    <div class="alert alert-info py-2 px-3 mb-4 rounded-3 small d-flex align-items-center" style="background-color: #f0f7ff; border-left: 4px solid #0d6efd !important;">
+                        <i class="bi bi-info-circle-fill text-primary me-2 fs-5"></i>
+                        <div>
+                            <strong>Status Draft (Menunggu Approval):</strong> Anda dapat mengubah kuantitas dan harga saldo awal barang divisi sebelum transaksi ini disetujui (Approved) oleh Super Admin.
+                        </div>
+                    </div>
+                @endif
 
                 <!-- SECTION 1: HEADER TRANSAKSI -->
                 <div class="p-3 bg-light rounded-3 border mb-4">

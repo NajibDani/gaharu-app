@@ -105,6 +105,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/persediaan-awal/template', [PersediaanAwalController::class, 'importTemplate'])->name('persediaan-awal.template');
     Route::post('/persediaan-awal/import', [PersediaanAwalController::class, 'importExcel'])->name('persediaan-awal.import');
     Route::post('/persediaan-awal/load-barang', [PersediaanAwalController::class, 'loadBarang'])->name('persediaan-awal.load-barang');
+    Route::post('/persediaan-awal/{id}/approve', [PersediaanAwalController::class, 'approve'])->name('persediaan-awal.approve');
     Route::resource('persediaan-awal', PersediaanAwalController::class)->names('persediaan-awal');
 
     // Pembelian Mandiri Kejingga (Super Admin & User Kejingga)
