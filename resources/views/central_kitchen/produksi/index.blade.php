@@ -1498,15 +1498,21 @@
 
                                                             <div class="p-3 mb-3 bg-light rounded-3 border-start border-4 border-primary">
                                                                 <div class="row g-2 small">
-                                                                    <div class="col-md-4">
+                                                                    <div class="col-md-3">
                                                                         <span class="text-muted d-block">Outlet Tujuan:</span>
                                                                         <strong class="text-dark">{{ $prod->pesanan->customer->nama ?? '-' }}</strong>
                                                                     </div>
-                                                                    <div class="col-md-4">
+                                                                    <div class="col-md-3">
+                                                                        <span class="text-muted d-block">Tanggal Permintaan:</span>
+                                                                        <strong class="text-dark">
+                                                                            {{ $prod->pesanan->tanggal ? date('d M Y', strtotime($prod->pesanan->tanggal)) : '-' }}
+                                                                        </strong>
+                                                                    </div>
+                                                                    <div class="col-md-3">
                                                                         <span class="text-muted d-block">Tanggal Produksi:</span>
                                                                         <strong class="text-dark">{{ date('d M Y', strtotime($prod->tanggal_mulai)) }}</strong>
                                                                     </div>
-                                                                    <div class="col-md-4">
+                                                                    <div class="col-md-3">
                                                                         <span class="text-muted d-block">Status:</span>
                                                                         <span class="badge bg-{{ strtolower($prod->status_produksi) == 'selesai' ? 'success' : 'warning text-dark' }}">
                                                                             {{ $prod->status_produksi }}
