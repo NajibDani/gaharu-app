@@ -50,7 +50,8 @@ class Penggajian extends Model
         'total_gaji_bersih',
         'status',
         'status_jurnal',
-        'journal_id'
+        'journal_id',
+        'tipe_pembayaran'
     ];
 
     /**
@@ -94,6 +95,7 @@ class Penggajian extends Model
                 'catatan_potongan_dll'        => fn($t) => $t->string('catatan_potongan_dll', 255)->nullable(),
                 'total_earnings'              => fn($t) => $t->decimal('total_earnings', 15, 2)->default(0),
                 'total_deductions'            => fn($t) => $t->decimal('total_deductions', 15, 2)->default(0),
+                'tipe_pembayaran'             => fn($t) => $t->string('tipe_pembayaran', 30)->nullable(),
             ];
 
             $toAdd = [];

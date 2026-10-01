@@ -907,11 +907,11 @@
                         </tr>
                         @endif
 
-                        @if(($payroll->bonus_dll ?? 0) > 0)
+                        @if(($payroll->bonus_dll ?? 0) > 0 || !empty($payroll->catatan_bonus_dll))
                         <tr>
                             <td>
                                 <div class="item-name">Bonus Lain-lain</div>
-                                <div class="item-sub">Insentif / Tambahan khusus</div>
+                                <div class="item-sub">{{ !empty($payroll->catatan_bonus_dll) ? $payroll->catatan_bonus_dll : 'Insentif / Tambahan khusus' }}</div>
                             </td>
                             <td class="item-amount">Rp {{ number_format($payroll->bonus_dll ?? 0, 0, ',', '.') }}</td>
                         </tr>
@@ -973,11 +973,11 @@
                         </tr>
                         @endif
 
-                        @if(($payroll->potongan_dll ?? 0) > 0)
+                        @if(($payroll->potongan_dll ?? 0) > 0 || !empty($payroll->catatan_potongan_dll))
                         <tr>
                             <td>
                                 <div class="item-name">Potongan Lain-lain</div>
-                                <div class="item-sub">{{ $payroll->catatan_potongan_dll ?? 'Kewajiban lainnya' }}</div>
+                                <div class="item-sub">{{ !empty($payroll->catatan_potongan_dll) ? $payroll->catatan_potongan_dll : 'Kewajiban lainnya' }}</div>
                             </td>
                             <td class="item-amount">- Rp {{ number_format($payroll->potongan_dll ?? 0, 0, ',', '.') }}</td>
                         </tr>

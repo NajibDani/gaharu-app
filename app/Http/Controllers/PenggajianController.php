@@ -567,7 +567,7 @@ class PenggajianController extends Controller
             $totalDeductions = $totalPotonganTerlambat + $totalPotonganInventaris + $totalPotonganKasbon + $totalPotonganDeposit + $totalPotonganDll;
 
             $takeHomePay = $totalEarnings - $totalDeductions;
-            $isPaid = $items->every(fn($p) => $p->status_jurnal || $p->status === 'approved');
+            $isPaid = $items->every(fn($p) => (bool)$p->status_jurnal);
 
             // Hitung tarif harian representatif
             $tarifHarian = $primaryPayroll->tarif_harian_total > 0
@@ -620,6 +620,7 @@ class PenggajianController extends Controller
                 'satuan_gaji'             => $primaryPayroll->satuan_gaji,
                 'satuan_gaji_2'           => $primaryPayroll->satuan_gaji_2,
                 'pilihan_periode'         => $primaryPayroll->pilihan_periode ?? 1,
+                'tipe_pembayaran'         => $primaryPayroll->tipe_pembayaran ?? $first->tipe_pembayaran ?? null,
             ];
         })->sortBy([
             fn ($a, $b) => ($a->karyawan->urutan ?? 999999) <=> ($b->karyawan->urutan ?? 999999),
@@ -1229,12 +1230,14 @@ class PenggajianController extends Controller
             $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
             $payroll->pengembalian_deposit = $allEntries->sum('pengembalian_deposit');
             $payroll->bonus_dll = $allEntries->sum('bonus_dll');
+            $payroll->catatan_bonus_dll = $allEntries->pluck('catatan_bonus_dll')->filter()->unique()->implode(', ');
 
             $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
             $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
             $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
             $payroll->potongan_deposit = $allEntries->sum('potongan_deposit');
             $payroll->potongan_dll = $allEntries->sum('potongan_dll');
+            $payroll->catatan_potongan_dll = $allEntries->pluck('catatan_potongan_dll')->filter()->unique()->implode(', ');
 
             $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
                 $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->pengembalian_deposit + $payroll->bonus_dll;
@@ -1327,18 +1330,19 @@ class PenggajianController extends Controller
             $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
             $payroll->pengembalian_deposit = $allEntries->sum('pengembalian_deposit');
             $payroll->bonus_dll = $allEntries->sum('bonus_dll');
+            $payroll->catatan_bonus_dll = $allEntries->pluck('catatan_bonus_dll')->filter()->unique()->implode(', ');
 
             $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
             $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
             $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
             $payroll->potongan_deposit = $allEntries->sum('potongan_deposit');
             $payroll->potongan_dll = $allEntries->sum('potongan_dll');
+            $payroll->catatan_potongan_dll = $allEntries->pluck('catatan_potongan_dll')->filter()->unique()->implode(', ');
 
             $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
                 $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->pengembalian_deposit + $payroll->bonus_dll;
             $payroll->total_deductions = $payroll->potongan_terlambat + $payroll->potongan_inventaris +
                 $payroll->potongan_kasbon + $payroll->potongan_deposit + $payroll->potongan_dll;
-            $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
             $payroll->total_gaji_bersih = $payroll->total_earnings - $payroll->total_deductions;
 
             $minDate = $allEntries->min('tanggal_mulai');
@@ -1442,12 +1446,14 @@ class PenggajianController extends Controller
             $payroll->banyak_birthday_service = $allEntries->sum('banyak_birthday_service');
             $payroll->pengembalian_deposit = $allEntries->sum('pengembalian_deposit');
             $payroll->bonus_dll = $allEntries->sum('bonus_dll');
+            $payroll->catatan_bonus_dll = $allEntries->pluck('catatan_bonus_dll')->filter()->unique()->implode(', ');
 
             $payroll->potongan_terlambat = $allEntries->sum('potongan_terlambat');
             $payroll->potongan_inventaris = $allEntries->sum('potongan_inventaris');
             $payroll->potongan_kasbon = $allEntries->sum('potongan_kasbon');
             $payroll->potongan_deposit = $allEntries->sum('potongan_deposit');
             $payroll->potongan_dll = $allEntries->sum('potongan_dll');
+            $payroll->catatan_potongan_dll = $allEntries->pluck('catatan_potongan_dll')->filter()->unique()->implode(', ');
 
             $payroll->total_earnings = $payroll->gaji_utama + $payroll->lembur + $payroll->bonus_target +
                 $payroll->bonus_tanggal_merah + $payroll->bonus_birthday + $payroll->pengembalian_deposit + $payroll->bonus_dll;
@@ -1526,13 +1532,16 @@ class PenggajianController extends Controller
     /**
      * PROSES BAYAR GAJI KARYAWAN TUNGGAL (BAYAR + OTOMATIS BUAT JURNAL)
      */
-    public function bayarKaryawan($id): RedirectResponse
+    public function bayarKaryawan(Request $request, $id): RedirectResponse
     {
         $payroll = Penggajian::with('karyawan')->findOrFail($id);
 
-        if ($payroll->status_jurnal || $payroll->status === 'approved') {
+        if ($payroll->status_jurnal) {
             return redirect()->back()->with('info', 'Slip gaji karyawan ini sudah dibayar dan dijurnal.');
         }
+
+        $tipe = $request->input('tipe') ?? $request->query('tipe');
+        $tipePembayaran = ($tipe === 'tengah_bulan' || $tipe === 'p1') ? 'tengah_bulan' : 'akhir_bulan';
 
         $akunBebanGaji = \App\Models\ChartOfAccount::where('kode', '6101')->first()
             ?? \App\Models\ChartOfAccount::where('kode', '6100')->first()
@@ -1546,19 +1555,27 @@ class PenggajianController extends Controller
             return redirect()->back()->with('error', 'Gagal memposting. Akun Beban Gaji atau Kas tidak ditemukan di Chart of Accounts.');
         }
 
-        $tanggalJurnal = $payroll->tanggal_selesai 
-            ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->toDateString() 
-            : now()->toDateString();
+        if ($tipePembayaran === 'tengah_bulan') {
+            $tanggalJurnal = $payroll->tanggal_selesai 
+                ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->toDateString() 
+                : \Carbon\Carbon::parse($payroll->periode_bulan_tahun . '-15')->toDateString();
+            $labelTipe = "tengah bulan";
+        } else {
+            $tanggalJurnal = $payroll->tanggal_selesai 
+                ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->toDateString() 
+                : \Carbon\Carbon::parse($payroll->periode_bulan_tahun . '-01')->endOfMonth()->toDateString();
+            $labelTipe = "akhir bulan";
+        }
 
         $namaKaryawan = $payroll->karyawan->nama_karyawan ?? 'Karyawan';
         $rentangKet = ($payroll->tanggal_mulai && $payroll->tanggal_selesai)
             ? " (" . \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('d/m/Y') . " - " . \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('d/m/Y') . ")"
             : "";
 
-        DB::transaction(function () use ($payroll, $akunBebanGaji, $akunKas, $tanggalJurnal, $namaKaryawan, $rentangKet) {
+        DB::transaction(function () use ($payroll, $akunBebanGaji, $akunKas, $tanggalJurnal, $namaKaryawan, $rentangKet, $tipePembayaran, $labelTipe) {
             $journal = Journal::create([
                 'tanggal'     => $tanggalJurnal,
-                'deskripsi'   => "Pembayaran gaji karyawan {$namaKaryawan}{$rentangKet}",
+                'deskripsi'   => "Pembayaran gaji {$labelTipe} karyawan {$namaKaryawan}{$rentangKet}",
                 'no_ref'      => 'PY-' . $payroll->id . '-' . rand(100, 999),
                 'source_type' => 'jurnal_umum',
                 'source_id'   => $payroll->id,
@@ -1583,13 +1600,14 @@ class PenggajianController extends Controller
             ]);
 
             $payroll->update([
-                'status'        => 'approved',
-                'status_jurnal' => true,
-                'journal_id'    => $journal->id,
+                'status'          => 'approved',
+                'status_jurnal'   => true,
+                'journal_id'      => $journal->id,
+                'tipe_pembayaran' => $tipePembayaran,
             ]);
         });
 
-        return redirect()->back()->with('success', "Gaji {$namaKaryawan}{$rentangKet} sebesar Rp " . number_format($payroll->total_gaji_bersih, 0, ',', '.') . " berhasil dibayar & dijurnal!");
+        return redirect()->back()->with('success', "Gaji {$labelTipe} {$namaKaryawan}{$rentangKet} sebesar Rp " . number_format($payroll->total_gaji_bersih, 0, ',', '.') . " berhasil dibayar & dijurnal!");
     }
 
     /**
@@ -1597,13 +1615,55 @@ class PenggajianController extends Controller
      */
     public function bayarSemuaPeriode(Request $request, $periode): RedirectResponse
     {
-        $payrolls = Penggajian::with('karyawan')
+        $tipe = $request->input('tipe') ?? $request->query('tipe') ?? 'all';
+        $selectedOutlet = $this->getOutlet($request);
+
+        $query = Penggajian::with('karyawan')
             ->where('periode_bulan_tahun', $periode)
             ->where('status_jurnal', false)
-            ->get();
+            ->where(function ($q) use ($selectedOutlet) {
+                $q->where('outlet', $selectedOutlet)
+                  ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
+                      $kq->where('outlet', $selectedOutlet);
+                  });
+            });
+
+        $allPayrolls = $query->get();
+
+        if ($tipe === 'tengah_bulan' || $tipe === 'p1') {
+            // Filter hanya slip P1 untuk karyawan yang memiliki 2 periode
+            $payrolls = $allPayrolls->filter(function($p) {
+                $kw = $p->karyawan;
+                if (!$kw) return false;
+                $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
+                $hasP2 = ($kw->gaji_pokok_2 !== null && $p2Total > 0);
+                return (int)($p->pilihan_periode ?? 1) === 1 && $hasP2;
+            });
+            $tipeLabel = "Gaji Tengah Bulan (P1)";
+            $setTipe = 'tengah_bulan';
+        } elseif ($tipe === 'akhir_bulan' || $tipe === 'p2') {
+            // Filter slip P2 untuk karyawan 2 periode ATAU slip karyawan single period / bulanan
+            $payrolls = $allPayrolls->filter(function($p) {
+                $kw = $p->karyawan;
+                if (!$kw) return true;
+                $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
+                $hasP2 = ($kw->gaji_pokok_2 !== null && $p2Total > 0);
+                if ($hasP2) {
+                    return (int)($p->pilihan_periode ?? 1) === 2;
+                } else {
+                    return true;
+                }
+            });
+            $tipeLabel = "Gaji Akhir Bulan (P2 & Bulanan)";
+            $setTipe = 'akhir_bulan';
+        } else {
+            $payrolls = $allPayrolls;
+            $tipeLabel = "Seluruh Gaji";
+            $setTipe = 'akhir_bulan';
+        }
 
         if ($payrolls->isEmpty()) {
-            return redirect()->back()->with('info', "Seluruh data gaji periode {$periode} sudah terbayar dan dijurnal.");
+            return redirect()->back()->with('info', "Tidak ada data {$tipeLabel} yang belum terbayar di periode {$periode}.");
         }
 
         $akunBebanGaji = \App\Models\ChartOfAccount::where('kode', '6101')->first()
@@ -1618,14 +1678,22 @@ class PenggajianController extends Controller
             return redirect()->back()->with('error', 'Gagal memposting. Akun Beban Gaji atau Kas tidak ditemukan di Chart of Accounts.');
         }
 
-        $totalGaji = $payrolls->sum('total_gaji_bersih');
-        $tanggalJurnal = \Carbon\Carbon::parse($periode . '-01')->endOfMonth()->toDateString();
+        $totalGaji = $payrolls->sum(function($p) {
+            if ($p->total_gaji_bersih > 0) return (float)$p->total_gaji_bersih;
+            $earn = (float)($p->total_earnings > 0 ? $p->total_earnings : ($p->gaji_utama + $p->lembur + $p->bonus_target + $p->bonus_tanggal_merah + $p->bonus_birthday + $p->pengembalian_deposit + $p->bonus_dll));
+            $ded = (float)($p->total_deductions > 0 ? $p->total_deductions : ($p->potongan_terlambat + $p->potongan_inventaris + $p->potongan_kasbon + $p->potongan_deposit + $p->potongan_dll));
+            return max(0, $earn - $ded);
+        });
 
-        DB::transaction(function () use ($payrolls, $periode, $totalGaji, $akunBebanGaji, $akunKas, $tanggalJurnal) {
+        $tanggalJurnal = ($tipe === 'tengah_bulan' || $tipe === 'p1')
+            ? \Carbon\Carbon::parse($periode . '-15')->toDateString()
+            : \Carbon\Carbon::parse($periode . '-01')->endOfMonth()->toDateString();
+
+        DB::transaction(function () use ($payrolls, $periode, $totalGaji, $akunBebanGaji, $akunKas, $tanggalJurnal, $tipeLabel, $setTipe) {
             $journal = Journal::create([
                 'tanggal'     => $tanggalJurnal,
-                'deskripsi'   => "Pencatatan pembayaran gaji massal periode {$periode}",
-                'no_ref'      => 'PY-ALL-' . strtoupper(str_replace('-', '', $periode)) . '-' . rand(100, 999),
+                'deskripsi'   => "Pencatatan pembayaran {$tipeLabel} periode {$periode}",
+                'no_ref'      => 'PY-' . strtoupper(substr(preg_replace('/[^a-zA-Z]/', '', $tipeLabel), 0, 4)) . '-' . strtoupper(str_replace('-', '', $periode)) . '-' . rand(100, 999),
                 'source_type' => 'jurnal_umum',
                 'source_id'   => 0,
                 'created_by'  => auth()->id() ?? 1,
@@ -1650,14 +1718,15 @@ class PenggajianController extends Controller
 
             foreach ($payrolls as $p) {
                 $p->update([
-                    'status'        => 'approved',
-                    'status_jurnal' => true,
-                    'journal_id'    => $journal->id,
+                    'status'          => 'approved',
+                    'status_jurnal'   => true,
+                    'journal_id'      => $journal->id,
+                    'tipe_pembayaran' => $setTipe,
                 ]);
             }
         });
 
-        return redirect()->back()->with('success', "Seluruh gaji periode {$periode} (Total Rp " . number_format($totalGaji, 0, ',', '.') . ") berhasil dibayar & diposting ke Jurnal Umum!");
+        return redirect()->back()->with('success', "Pembayaran {$tipeLabel} periode {$periode} (Total Rp " . number_format($totalGaji, 0, ',', '.') . ") berhasil diproses & diposting ke Jurnal Umum!");
     }
 
     /**

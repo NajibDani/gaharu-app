@@ -530,12 +530,18 @@
                 @endif
 
                 {{-- Bonus Lain --}}
-                @if(($payroll->bonus_dll ?? 0) > 0)
+                @if(($payroll->bonus_dll ?? 0) > 0 || !empty($payroll->catatan_bonus_dll))
                 <div class="sp-section-hd sub" style="font-size: 9.5px; font-weight: 700; padding: 4px 14px;">BONUS LAIN-LAIN</div>
                 <table class="sp-tbl">
+                    @if(!empty($payroll->catatan_bonus_dll))
+                    <tr>
+                        <td class="lbl">Keterangan</td>
+                        <td class="val" style="font-weight: 600; color: #475569; font-size: 10.5px;">{{ $payroll->catatan_bonus_dll }}</td>
+                    </tr>
+                    @endif
                     <tr class="subtotal">
                         <td>Total Bonus Lain</td>
-                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->bonus_dll, 0, ',', '.') }}</td>
+                        <td class="val" style="color: #059669;">Rp {{ number_format($payroll->bonus_dll ?? 0, 0, ',', '.') }}</td>
                     </tr>
                 </table>
                 @endif

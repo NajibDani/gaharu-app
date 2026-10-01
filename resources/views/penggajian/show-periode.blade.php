@@ -11,8 +11,9 @@
                 $totalBonusPeriode = 0;
                 $totalPotonganNonKasbon = 0;
                 $totalKasbonPeriode = 0;
-                $totalThpAkhirBulan = 0; // P1 karyawan single + P2 karyawan multi
-                $totalThpPertengahanBulan = 0; // P1 karyawan multi saja
+                $totalThpPeriodeKeseluruhan = 0;
+                $totalThpAkhirBulan = 0; // Total nominal THP yang SUDAH DIBAYAR di akhir bulan
+                $totalThpPertengahanBulan = 0; // Total nominal THP yang SUDAH DIBAYAR di tengah bulan
 
                 foreach ($payrolls as $p) {
                     $kw = $p->karyawan;
@@ -42,12 +43,18 @@
                             $totalBonusPeriode += $bn;
                             $totalPotonganNonKasbon += $potNonKasbon;
                             $totalKasbonPeriode += $kasbon;
+                            $totalThpPeriodeKeseluruhan += $itNett;
 
+                            $isItemPaid = (bool)($it->status_jurnal);
                             $pNum = (int)($it->pilihan_periode ?? 1);
-                            if ($pNum === 2) {
-                                $totalThpAkhirBulan += $itNett;
-                            } else {
-                                $totalThpPertengahanBulan += $itNett;
+                            $itTipe = $it->tipe_pembayaran ?? '';
+
+                            if ($isItemPaid) {
+                                if ($itTipe === 'tengah_bulan' || ($pNum === 1 && empty($itTipe))) {
+                                    $totalThpPertengahanBulan += $itNett;
+                                } else {
+                                    $totalThpAkhirBulan += $itNett;
+                                }
                             }
                         }
                     } else {
@@ -67,43 +74,56 @@
                         $totalBonusPeriode += $bn;
                         $totalPotonganNonKasbon += $potNonKasbon;
                         $totalKasbonPeriode += $kasbon;
+                        $totalThpPeriodeKeseluruhan += $nett;
 
-                        // Gaji karyawan 1 periode masuk ke THP Akhir Bulan
-                        $totalThpAkhirBulan += $nett;
+                        $isSinglePaid = (bool)($p->status_jurnal || $p->is_paid);
+                        $singleTipe = $p->tipe_pembayaran ?? '';
+
+                        if ($isSinglePaid) {
+                            if ($singleTipe === 'tengah_bulan') {
+                                $totalThpPertengahanBulan += $nett;
+                            } else {
+                                $totalThpAkhirBulan += $nett;
+                            }
+                        }
                     }
                 }
 
-                $totalBebanGajiKeseluruhan = $totalThpAkhirBulan + $totalThpPertengahanBulan + $totalKasbonPeriode;
+                $totalBebanGajiKeseluruhan = $totalThpPeriodeKeseluruhan + $totalKasbonPeriode;
             @endphp
-            {{-- PAGE HEADER & TOOLBAR --}}
+            {{-- PAGE HEADER & TOOLBAR (SESUAI DESAIN ASLI DI SCREENSHOT) --}}
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-2.5 sm:py-3 mb-2.5">
-                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-2.5">
+                <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3">
                     {{-- Left Title & Outlet --}}
-                    <div>
-                        <div class="flex items-center gap-2.5 flex-wrap">
-                            <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug m-0">
-                                Formulir Hitung Gaji Karyawan
-                            </h1>
-                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300">
+                    <div class="shrink-0">
+                        <h1 class="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-none whitespace-nowrap m-0">
+                            Formulir Hitung Gaji Karyawan
+                        </h1>
+                        <div class="flex items-center gap-2 flex-wrap mt-1.5">
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-50 text-amber-900 border border-amber-300 whitespace-nowrap">
                                 🏢 Outlet {{ $selectedOutlet }}
                             </span>
+                            <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-slate-100 text-slate-700 border border-slate-300 whitespace-nowrap">
+                                📅 Periode: <strong class="text-slate-800 font-bold">{{ \Carbon\Carbon::parse($periode . '-01')->translatedFormat('F Y') }}</strong>
+                            </span>
+                            @if(!empty($currentStatus))
+                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider {{ $currentStatus == 'paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : ($currentStatus == 'approved' ? 'bg-blue-100 text-blue-800 border border-blue-300' : 'bg-slate-100 text-slate-700 border border-slate-300') }} whitespace-nowrap">
+                                    ● {{ $currentStatus }}
+                                </span>
+                            @endif
                         </div>
-                        <p class="text-xs text-slate-500 font-medium m-0 mt-1 flex items-center gap-1.5">
-                            <span>📅 Periode:</span> <strong class="text-slate-800 font-bold">{{ \Carbon\Carbon::parse($periode . '-01')->translatedFormat('F Y') }}</strong>
-                        </p>
                     </div>
 
                     {{-- Right Action Buttons --}}
-                    <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
                         {{-- TOMBOL SINKRONISASI / REFRESH DATA DARI SERVER --}}
                         <button type="button" onclick="refreshPayrollData(this)" id="btnRefreshPayrollData"
                                 style="background-color: #f1f5f9; color: #334155; border: 1.5px solid #cbd5e1; padding: 5px 10px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: all .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f5f9'"
-                                title="Muat ulang data terbaru dari database (berguna jika ada user lain yang baru menginput)">
+                                title="Muat ulang data terbaru dari database">
                             <span id="refreshIcon">🔄</span> Sinkronkan Data
                         </button>
 
-                        @if($currentStatus == 'draft' || $currentStatus == 'waiting approval')
                         <button type="button" onclick="submitBatchUnifiedPayroll(this)" id="btnBatchSaveUnifiedPayroll"
                                 style="background-color: #7A4517; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 1px 3px rgba(122,69,23,0.2); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#5a3416'" onmouseout="this.style.background='#7A4517'"
@@ -130,19 +150,32 @@
                                 title="Input slip gaji baru secara manual via pop-up">
                             <span style="font-size: 13px; line-height: 1;">+</span> Input Gaji
                         </button>
-                        @endif
 
-                        <form action="{{ route('penggajian.bayar-semua', $periode) }}" method="POST" class="inline m-0 p-0"
-                              onsubmit="return confirm('Proses pembayaran dan jurnal untuk SELURUH karyawan di periode {{ \App\Models\Penggajian::formatPeriode($periode) }}?')">
+                        {{-- TOMBOL BAYAR TENGAH BULAN (P1) --}}
+                        <form action="{{ route('penggajian.bayar-semua', ['periode' => $periode, 'tipe' => 'tengah_bulan', 'outlet' => $selectedOutlet]) }}" method="POST" class="inline m-0 p-0"
+                              onsubmit="return confirm('Proses pembayaran dan jurnal untuk SELURUH gaji TENGAH BULAN (P1 Karyawan 2 Periode) di periode {{ \App\Models\Penggajian::formatPeriode($periode) }}?')">
                             @csrf
                             <button type="submit"
-                                    style="background-color: #059669; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(5,150,105,0.2); transition: background .15s; white-space: nowrap;"
-                                    onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'">
+                                    style="background-color: #0284c7; color: #ffffff; border: none; padding: 5px 11px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(2,132,199,0.25); transition: background .15s; white-space: nowrap;"
+                                    onmouseover="this.style.background='#0369a1'" onmouseout="this.style.background='#0284c7'"
+                                    title="Bayar & buat jurnal massal untuk seluruh slip Periode 1 (Tengah Bulan) milik karyawan 2 periode">
+                                <span>🗓️</span> Bayar Tengah
+                            </button>
+                        </form>
+
+                        {{-- TOMBOL BAYAR SEMUA / MASAL AKHIR BULAN --}}
+                        <form action="{{ route('penggajian.bayar-semua', ['periode' => $periode, 'tipe' => 'akhir_bulan', 'outlet' => $selectedOutlet]) }}" method="POST" class="inline m-0 p-0"
+                              onsubmit="return confirm('Proses pembayaran dan jurnal untuk SELURUH gaji MASAL AKHIR BULAN di periode {{ \App\Models\Penggajian::formatPeriode($periode) }}?')">
+                            @csrf
+                            <button type="submit"
+                                    style="background-color: #059669; color: #ffffff; border: none; padding: 5px 11px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(5,150,105,0.25); transition: background .15s; white-space: nowrap;"
+                                    onmouseover="this.style.background='#047857'" onmouseout="this.style.background='#059669'"
+                                    title="Bayar & buat jurnal massal untuk seluruh gaji akhir bulan">
                                 <span>💳</span> Bayar Semua
                             </button>
                         </form>
 
-                        {{-- EXPORT EXCEL BUTTON (OPENS SELECTION MODAL) --}}
+                        {{-- EXPORT EXCEL BUTTON --}}
                         <button type="button" onclick="openExportPayrollModal()"
                                 style="background-color: #166534; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(22,101,52,0.2); transition: background .15s; white-space: nowrap;"
                                 onmouseover="this.style.background='#14532d'" onmouseout="this.style.background='#166534'"
@@ -162,7 +195,7 @@
                     </div>
                 </div>
 
-                {{-- 7 KARTU RINGKASAN REVISI (2 BARIS RAPI & INFORMATIF) --}}
+                {{-- 7 KARTU RINGKASAN REVISI (2 BARIS RAPI & INFORMATIF SEPERTI SCREENSHOT) --}}
                 <div style="display: flex; flex-direction: column; gap: 7px; width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; box-sizing: border-box;">
                     
                     {{-- BARIS 1: 4 KOMPONEN GAJI & POTONGAN --}}
@@ -174,7 +207,7 @@
                                 💼
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Pokok</div>
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">TOTAL POKOK</div>
                                 <div style="font-size: 12px; font-weight: 900; color: #0f172a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiPokokValue">
                                     Rp {{ number_format($totalGajiPokokPeriode, 0, ',', '.') }}
                                 </div>
@@ -188,7 +221,7 @@
                                 ⭐
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bonus</div>
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">TOTAL BONUS</div>
                                 <div style="font-size: 12px; font-weight: 900; color: #d97706; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBonusValue">
                                     Rp {{ number_format($totalBonusPeriode, 0, ',', '.') }}
                                 </div>
@@ -202,7 +235,7 @@
                                 ✂️
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Potongan (Non-Kasbon)</div>
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">POTONGAN (NON-KASBON)</div>
                                 <div style="font-size: 12px; font-weight: 900; color: #e11d48; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalPotonganNonKasbonValue">
                                     Rp {{ number_format($totalPotonganNonKasbon, 0, ',', '.') }}
                                 </div>
@@ -216,7 +249,7 @@
                                 🏷️
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Kasbon</div>
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">TOTAL KASBON</div>
                                 <div style="font-size: 12px; font-weight: 900; color: #7c3aed; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalKasbonValue">
                                     Rp {{ number_format($totalKasbonPeriode, 0, ',', '.') }}
                                 </div>
@@ -234,7 +267,7 @@
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #065f46; line-height: 1; white-space: nowrap;">THP Akhir Bulan</span>
+                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #065f46; line-height: 1; white-space: nowrap;">THP AKHIR BULAN</span>
                                     <span style="font-size: 7.5px; font-weight: 800; background: #d1fae5; color: #065f46; border-radius: 3px; padding: 1px 4px; line-height: 1;">Transfer Now</span>
                                 </div>
                                 <div style="font-size: 12.5px; font-weight: 900; color: #059669; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalThpAkhirBulanValue">
@@ -251,7 +284,7 @@
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #0369a1; line-height: 1; white-space: nowrap;">Total Beban Gaji</span>
+                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #0369a1; line-height: 1; white-space: nowrap;">TOTAL BEBAN GAJI</span>
                                     <span style="font-size: 7.5px; font-weight: 800; background: #e0f2fe; color: #0369a1; border-radius: 3px; padding: 1px 4px; line-height: 1;">THP + Kasbon</span>
                                 </div>
                                 <div style="font-size: 12.5px; font-weight: 900; color: #0284c7; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBebanGajiValue">
@@ -268,7 +301,7 @@
                             </div>
                             <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
                                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #9a3412; line-height: 1; white-space: nowrap;">THP Pertengahan (P1)</span>
+                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #9a3412; line-height: 1; white-space: nowrap;">THP PERTENGAHAN (P1)</span>
                                     <span style="font-size: 7.5px; font-weight: 800; background: #ffedd5; color: #9a3412; border-radius: 3px; padding: 1px 4px; line-height: 1;">Transfer Lalu</span>
                                 </div>
                                 <div style="font-size: 12.5px; font-weight: 900; color: #ea580c; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalThpPertengahanValue">
@@ -949,6 +982,10 @@
                                             'total_deductions' => $itTotalPotongan,
                                             'total_earnings' => $itEarnings,
                                             'total_gaji_bersih' => $itNett,
+                                            'is_paid' => $it ? (bool)$it->status_jurnal : false,
+                                            'tipe_pembayaran' => $it ? ($it->tipe_pembayaran ?? '') : '',
+                                            'status_jurnal' => $it ? (bool)$it->status_jurnal : false,
+                                            'status' => $it ? $it->status : 'draft',
                                             'tanggal_mulai' => ($it && $it->tanggal_mulai) ? $it->tanggal_mulai : (($pNum === 2) ? ($kw->tanggal_mulai_2 ?? null) : ($kw->tanggal_mulai ?? $payroll->tanggal_mulai ?? null)),
                                             'tanggal_selesai' => ($it && $it->tanggal_selesai) ? $it->tanggal_selesai : (($pNum === 2) ? ($kw->tanggal_selesai_2 ?? null) : ($kw->tanggal_selesai ?? $payroll->tanggal_selesai ?? null)),
                                         ];
@@ -1043,6 +1080,7 @@
                                                 'periode_label' => $hasMultiplePeriods ? ('Periode ' . ($ibItem['periode'] ?? 1)) : ($satuanRow === 'Bulanan' ? 'Bulanan' : '1 Periode'),
                                                 'is_multi' => $hasMultiplePeriods,
                                                 'thp' => max(0, (float)($ibItem['total_gaji_bersih'] ?? 0)),
+                                                'tipe_pembayaran' => $payroll->tipe_pembayaran ?? '',
                                             ];
                                         }
                                     }
@@ -1145,6 +1183,7 @@
                                     'bonus_birthday' => number_format($payroll->bonus_birthday, 0, ',', '.'),
                                     'pengembalian_deposit' => number_format($payroll->pengembalian_deposit ?? 0, 0, ',', '.'),
                                     'bonus_dll' => number_format($payroll->bonus_dll, 0, ',', '.'),
+                                    'catatan_bonus_dll' => $hasMultiplePeriods ? $itemBreakdowns->pluck('catatan_bonus_dll')->filter()->unique()->implode(', ') : ($payroll->catatan_bonus_dll ?? ''),
                                     'total_bonus' => number_format($totalBonus, 0, ',', '.'),
                                     'total_earnings' => number_format($earnings, 0, ',', '.'),
                                     'potongan_terlambat' => number_format($payroll->potongan_terlambat, 0, ',', '.'),
@@ -1152,7 +1191,7 @@
                                     'potongan_kasbon' => number_format($payroll->potongan_kasbon, 0, ',', '.'),
                                     'potongan_deposit' => number_format($payroll->potongan_deposit ?? 0, 0, ',', '.'),
                                     'potongan_dll' => number_format($payroll->potongan_dll, 0, ',', '.'),
-                                    'catatan_potongan_dll' => $payroll->catatan_potongan_dll ?? '',
+                                    'catatan_potongan_dll' => $hasMultiplePeriods ? $itemBreakdowns->pluck('catatan_potongan_dll')->filter()->unique()->implode(', ') : ($payroll->catatan_potongan_dll ?? ''),
                                     'total_deductions' => number_format($totalPotongan, 0, ',', '.'),
                                     'take_home_pay' => number_format($payroll->take_home_pay, 0, ',', '.'),
                                     'is_paid' => $isPaid,
@@ -1201,6 +1240,8 @@
                                 data-kasbon-total="{{ (float)($payroll->potongan_kasbon ?? 0) }}"
                                 data-take-home-pay="{{ (float)$payroll->take_home_pay }}"
                                 data-has-multiple="{{ $hasMultiplePeriods ? '1' : '0' }}"
+                                data-is-paid="{{ $isPaid ? '1' : '0' }}"
+                                data-tipe-pembayaran="{{ $payroll->tipe_pembayaran ?? '' }}"
                                 data-active-periode="{{ $itemBreakdowns->first()['periode'] ?? ($payroll->pilihan_periode ?? 1) }}"
                                 data-active-item-id="{{ $itemBreakdowns->first()['id'] ?? $payroll->id }}"
                                 data-nama="{{ strtolower($payroll->karyawan->nama_karyawan ?? '') }}"
@@ -1246,55 +1287,35 @@
                                 </td>
 
                                 {{-- 3. HARI KERJA (POKOK - INPUT TERPADU DENGAN P1/P2 BERTUMPUK) --}}
-                                <td class="col-cat-pokok px-3 py-3 text-center whitespace-nowrap border-b border-emerald-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="flex items-center gap-1 justify-center {{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <input type="number" step="0.5" min="0"
-                                                               class="batch-hari-kerja batch-sub-item input-hk-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-hk-item-' . $ib['id'] : '' }} hr-data-input w-full px-2 py-0.5 text-xs text-center !bg-white"
-                                                               data-item-id="{{ $ib['id'] }}"
-                                                               data-periode="{{ $ib['periode'] }}"
-                                                               data-satuan="{{ $ib['satuan'] }}"
-                                                               data-tarif="{{ (float)$ib['tarif'] }}"
-                                                               value="{{ ($ib['hari_kerja'] && $ib['hari_kerja'] > 0) ? (float)$ib['hari_kerja'] : '' }}"
-                                                               placeholder="0"
-                                                               oninput="onPayrollUnifiedRowInput(this)">
-                                                        <span class="text-[10px] text-slate-600 font-bold whitespace-nowrap">{{ $ib['suffix'] }}</span>
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="inline-flex items-center gap-1.5 justify-center whitespace-nowrap">
-                                                <input type="number" step="0.5" min="0"
-                                                       class="batch-hari-kerja hr-data-input w-16 px-2 py-1 text-xs"
-                                                       value="{{ ($payroll->hari_kerja && $payroll->hari_kerja > 0) ? (float)$payroll->hari_kerja : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                <span class="text-[11px] text-slate-600 font-bold whitespace-nowrap">
-                                                     {{ $satuanRow === 'Per Jam' ? 'jam' : ($satuanRow === 'Bulanan' ? 'bln' : 'hr') }}
-                                                </span>
-                                            </div>
-                                        @endif
+                                <td class="col-cat-pokok hr-input-cell px-3 py-3 text-center whitespace-nowrap border-b border-emerald-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="flex items-center gap-1 justify-center {{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <input type="number" step="0.5" min="0"
+                                                           class="batch-hari-kerja batch-sub-item input-hk-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-hk-item-' . $ib['id'] : '' }} hr-data-input w-full px-2 py-0.5 text-xs text-center !bg-white"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           data-satuan="{{ $ib['satuan'] }}"
+                                                           data-tarif="{{ (float)$ib['tarif'] }}"
+                                                           value="{{ ($ib['hari_kerja'] && $ib['hari_kerja'] > 0) ? (float)$ib['hari_kerja'] : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
+                                                    <span class="text-[10px] text-slate-600 font-bold whitespace-nowrap">{{ $ib['suffix'] }}</span>
+                                                </div>
+                                            @endforeach
+                                        </div>
                                     @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="flex items-center gap-1.5 justify-center text-xs {{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <span class="font-extrabold text-slate-900">{{ (float)$ib['hari_kerja'] }}</span>
-                                                        <span class="text-[10.5px] text-slate-500 font-medium">{{ $ib['suffix'] }}</span>
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="whitespace-nowrap">
-                                                <span class="text-xs font-black text-slate-900">{{ $payroll->hari_kerja }}</span>
-                                                <span class="text-[11px] text-slate-600 font-semibold">
-                                                    {{ $satuanRow === 'Per Jam' ? ' jam' : ($satuanRow === ' Bulanan' ? ' bln' : ' hr') }}
-                                                </span>
-                                            </div>
-                                        @endif
+                                        <div class="inline-flex items-center gap-1.5 justify-center whitespace-nowrap">
+                                            <input type="number" step="0.5" min="0"
+                                                   class="batch-hari-kerja hr-data-input w-16 px-2 py-1 text-xs"
+                                                   value="{{ ($payroll->hari_kerja && $payroll->hari_kerja > 0) ? (float)$payroll->hari_kerja : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                            <span class="text-[11px] text-slate-600 font-bold whitespace-nowrap">
+                                                 {{ $satuanRow === 'Per Jam' ? 'jam' : ($satuanRow === 'Bulanan' ? 'bln' : 'hr') }}
+                                            </span>
+                                        </div>
                                     @endif
                                 </td>
 
@@ -1338,163 +1359,112 @@
                                 </td>
 
                                 {{-- 6. JAM LEMBUR (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="flex items-center gap-1 justify-center">
-                                                            <input type="number" step="0.5" min="0"
-                                                                   class="batch-jam-lembur batch-sub-item-lembur input-lembur-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-lembur-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
-                                                                   data-item-id="{{ $ib['id'] }}"
-                                                                   data-periode="{{ $ib['periode'] }}"
-                                                                   value="{{ ($ib['jam_lembur'] && $ib['jam_lembur'] > 0) ? (float)$ib['jam_lembur'] : '' }}"
-                                                                   placeholder="0"
-                                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                                            <span class="text-[9.5px] text-amber-900 font-bold">jam</span>
-                                                        </div>
-                                                        <div class="sub-lembur-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['jam_lembur'] ?? 0) > 0 ? '' : 'hidden' }}">
-                                                            <span class="ac-curr">Rp</span>
-                                                            <span class="ac-val">{{ number_format(($ib['jam_lembur'] ?? 0) * 10000, 0, ',', '.') }}</span>
-                                                        </div>
+                                <td class="col-cat-bonus hr-input-cell px-2 py-2 border-b border-amber-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <div class="flex items-center gap-1 justify-center">
+                                                        <input type="number" step="0.5" min="0"
+                                                               class="batch-jam-lembur batch-sub-item-lembur input-lembur-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-lembur-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ ($ib['jam_lembur'] && $ib['jam_lembur'] > 0) ? (float)$ib['jam_lembur'] : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                        <span class="text-[9.5px] text-amber-900 font-bold">jam</span>
                                                     </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="flex items-center gap-1 justify-center">
-                                                <input type="number" step="0.5" min="0"
-                                                       class="batch-jam-lembur hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                       value="{{ ($payroll->jam_lembur && $payroll->jam_lembur > 0) ? (float)$payroll->jam_lembur : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                <span class="text-[10px] text-amber-900 font-bold">jam</span>
-                                            </div>
-                                            <div class="sub-lembur-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->jam_lembur ?? 0) > 0 ? '' : 'hidden' }}">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format(($payroll->jam_lembur ?? 0) * 10000, 0, ',', '.') }}</span>
-                                            </div>
-                                        @endif
+                                                    <div class="sub-lembur-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['jam_lembur'] ?? 0) > 0 ? '' : 'hidden' }}">
+                                                        <span class="ac-curr">Rp</span>
+                                                        <span class="ac-val">{{ number_format(($ib['jam_lembur'] ?? 0) * 10000, 0, ',', '.') }}</span>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
                                     @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
-                                                            <span class="ac-curr">Rp</span>
-                                                            <span class="ac-val">{{ number_format($ib['lembur'], 0, ',', '.') }}</span>
-                                                        </div>
-                                                        <div class="text-[9px] text-slate-500 font-medium text-right">{{ (float)$ib['jam_lembur'] }} jam</div>
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->lembur, 0, ',', '.') }}</span>
-                                            </div>
-                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->jam_lembur }} jam</div>
-                                        @endif
+                                        <div class="flex items-center gap-1 justify-center">
+                                            <input type="number" step="0.5" min="0"
+                                                   class="batch-jam-lembur hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                   value="{{ ($payroll->jam_lembur && $payroll->jam_lembur > 0) ? (float)$payroll->jam_lembur : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                            <span class="text-[10px] text-amber-900 font-bold">jam</span>
+                                        </div>
+                                        <div class="sub-lembur-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->jam_lembur ?? 0) > 0 ? '' : 'hidden' }}">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format(($payroll->jam_lembur ?? 0) * 10000, 0, ',', '.') }}</span>
+                                        </div>
                                     @endif
                                 </td>
 
                                 {{-- 7. BONUS TARGET (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['satuan'] === 'Harian')
-                                                            <div class="flex items-center gap-1 justify-center">
-                                                                <input type="number" step="1" min="0"
-                                                                       class="batch-banyak-target batch-sub-item-target input-target-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-target-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
-                                                                       data-item-id="{{ $ib['id'] }}"
-                                                                       data-periode="{{ $ib['periode'] }}"
-                                                                       data-tarif="{{ (float)$ib['tarif'] }}"
-                                                                       value="{{ ($ib['banyak_target'] && $ib['banyak_target'] > 0) ? (int)$ib['banyak_target'] : '' }}"
-                                                                       placeholder="0"
-                                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                                <span class="text-[9.5px] text-amber-900 font-bold">kali</span>
-                                                            </div>
-                                                            <div class="sub-target-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_target'] ?? 0) > 0 ? '' : 'hidden' }}">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format(($ib['banyak_target'] ?? 0) * (float)$ib['tarif'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="accounting-input-wrap flex-1">
-                                                                <span class="ac-input-prefix">Rp</span>
-                                                                <input type="text"
-                                                                       class="batch-input-rupiah batch-bonus-target batch-sub-item-target-rp input-target-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-target-item-' . $ib['id'] : '' }} hr-data-input"
-                                                                       data-item-id="{{ $ib['id'] }}"
-                                                                       data-periode="{{ $ib['periode'] }}"
-                                                                       value="{{ $ib['bonus_target'] > 0 ? number_format($ib['bonus_target'], 0, ',', '.') : '' }}"
-                                                                       placeholder="0"
-                                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                            </div>
-                                                            <input type="hidden" class="batch-catatan-target batch-sub-catatan-target input-catatan-target-p-{{ $ib['periode'] }}" data-item-id="{{ $ib['id'] }}" data-periode="{{ $ib['periode'] }}" value="{{ $ib['catatan_bonus_target'] ?? '' }}">
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($satuanRow === 'Harian')
-                                                <div class="flex items-center gap-1 justify-center">
-                                                    <input type="number" step="1" min="0"
-                                                           class="batch-banyak-target hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                           value="{{ ($payroll->banyak_target && $payroll->banyak_target > 0) ? (int)$payroll->banyak_target : '' }}"
-                                                           placeholder="0"
-                                                           oninput="onPayrollUnifiedRowInput(this)">
-                                                    <span class="text-[10px] text-amber-900 font-bold">kali</span>
-                                                </div>
-                                                <div class="sub-target-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_target ?? 0) > 0 ? '' : 'hidden' }}">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format(($payroll->banyak_target ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
-                                                </div>
-                                            @else
-                                                <div class="accounting-input-wrap">
-                                                    <span class="ac-input-prefix">Rp</span>
-                                                    <input type="text"
-                                                           class="batch-input-rupiah batch-bonus-target hr-data-input"
-                                                           value="{{ $payroll->bonus_target > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '' }}"
-                                                           placeholder="0"
-                                                           oninput="onPayrollUnifiedRowInput(this)">
-                                                </div>
-                                                <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target ?? '' }}">
-                                            @endif
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
+                                <td class="col-cat-bonus hr-input-cell px-2 py-2 border-b border-amber-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    @if($ib['satuan'] === 'Harian')
+                                                        <div class="flex items-center gap-1 justify-center">
+                                                            <input type="number" step="1" min="0"
+                                                                   class="batch-banyak-target batch-sub-item-target input-target-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-target-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   data-tarif="{{ (float)$ib['tarif'] }}"
+                                                                   value="{{ ($ib['banyak_target'] && $ib['banyak_target'] > 0) ? (int)$ib['banyak_target'] : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                                            <span class="text-[9.5px] text-amber-900 font-bold">kali</span>
+                                                        </div>
+                                                        <div class="sub-target-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_target'] ?? 0) > 0 ? '' : 'hidden' }}">
                                                             <span class="ac-curr">Rp</span>
-                                                            <span class="ac-val">{{ number_format($ib['bonus_target'], 0, ',', '.') }}</span>
+                                                            <span class="ac-val">{{ number_format(($ib['banyak_target'] ?? 0) * (float)$ib['tarif'], 0, ',', '.') }}</span>
                                                         </div>
-                                                        <div class="text-[9px] text-slate-500 font-medium text-right">
-                                                            {{ $ib['satuan'] === 'Harian' ? $ib['banyak_target'] . 'x target' : (!empty($ib['catatan_bonus_target']) ? $ib['catatan_bonus_target'] : 'Manual') }}
+                                                    @else
+                                                        <div class="accounting-input-wrap flex-1">
+                                                            <span class="ac-input-prefix">Rp</span>
+                                                            <input type="text"
+                                                                   class="batch-input-rupiah batch-bonus-target batch-sub-item-target-rp input-target-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-target-item-' . $ib['id'] : '' }} hr-data-input"
+                                                                   data-item-id="{{ $ib['id'] }}"
+                                                                   data-periode="{{ $ib['periode'] }}"
+                                                                   value="{{ $ib['bonus_target'] > 0 ? number_format($ib['bonus_target'], 0, ',', '.') : '' }}"
+                                                                   placeholder="0"
+                                                                   oninput="onPayrollUnifiedRowInput(this)">
                                                         </div>
-                                                    </div>
-                                                @endforeach
+                                                        <input type="hidden" class="batch-catatan-target batch-sub-catatan-target input-catatan-target-p-{{ $ib['periode'] }}" data-item-id="{{ $ib['id'] }}" data-periode="{{ $ib['periode'] }}" value="{{ $ib['catatan_bonus_target'] ?? '' }}">
+                                                    @endif
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        @if($satuanRow === 'Harian')
+                                            <div class="flex items-center gap-1 justify-center">
+                                                <input type="number" step="1" min="0"
+                                                       class="batch-banyak-target hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                       value="{{ ($payroll->banyak_target && $payroll->banyak_target > 0) ? (int)$payroll->banyak_target : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
+                                                <span class="text-[10px] text-amber-900 font-bold">kali</span>
+                                            </div>
+                                            <div class="sub-target-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_target ?? 0) > 0 ? '' : 'hidden' }}">
+                                                <span class="ac-curr">Rp</span>
+                                                <span class="ac-val">{{ number_format(($payroll->banyak_target ?? 0) * $tarifHarian, 0, ',', '.') }}</span>
                                             </div>
                                         @else
-                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->bonus_target, 0, ',', '.') }}</span>
+                                            <div class="accounting-input-wrap">
+                                                <span class="ac-input-prefix">Rp</span>
+                                                <input type="text"
+                                                       class="batch-input-rupiah batch-bonus-target hr-data-input"
+                                                       value="{{ $payroll->bonus_target > 0 ? number_format($payroll->bonus_target, 0, ',', '.') : '' }}"
+                                                       placeholder="0"
+                                                       oninput="onPayrollUnifiedRowInput(this)">
                                             </div>
-                                            @if($satuanRow === 'Harian')
-                                                <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_target }}x target</div>
-                                            @else
-                                                <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_target) ? $payroll->catatan_bonus_target : 'Manual' }}</div>
-                                            @endif
+                                            <input type="hidden" class="batch-catatan-target" value="{{ $payroll->catatan_bonus_target ?? '' }}">
                                         @endif
                                     @endif
                                 </td>
 
                                 {{-- 8. TANGGAL MERAH (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
+                                <td class="col-cat-bonus hr-input-cell px-2 py-2 border-b border-amber-100">
                                         @if($hasMultiplePeriods)
                                             <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
                                                 @foreach($itemBreakdowns as $ib)
@@ -1557,243 +1527,132 @@
                                                 <input type="hidden" class="batch-catatan-merah" value="{{ $payroll->catatan_bonus_tanggal_merah ?? '' }}">
                                             @endif
                                         @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
-                                                            <span class="ac-curr">Rp</span>
-                                                            <span class="ac-val">{{ number_format($ib['bonus_tanggal_merah'], 0, ',', '.') }}</span>
-                                                        </div>
-                                                        <div class="text-[9px] text-slate-500 font-medium text-right">
-                                                            {{ $ib['satuan'] === 'Harian' ? $ib['banyak_tanggal_merah'] . 'x hadir' : (!empty($ib['catatan_bonus_tanggal_merah']) ? $ib['catatan_bonus_tanggal_merah'] : 'Manual') }}
-                                                        </div>
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->bonus_tanggal_merah, 0, ',', '.') }}</span>
-                                            </div>
-                                            @if($satuanRow === 'Harian')
-                                                <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_tanggal_merah }}x hadir</div>
-                                            @else
-                                                <div class="text-[10px] text-slate-500 font-medium truncate max-w-[100px] ml-auto text-right">{{ !empty($payroll->catatan_bonus_tanggal_merah) ? $payroll->catatan_bonus_tanggal_merah : 'Manual' }}</div>
-                                            @endif
-                                        @endif
-                                    @endif
                                 </td>
 
                                 {{-- 9. BIRTHDAY SERVICE (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="flex items-center gap-1 justify-center">
-                                                            <input type="number" step="1" min="0"
-                                                                   class="batch-banyak-birthday batch-sub-item-birthday input-birthday-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-birthday-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
-                                                                   data-item-id="{{ $ib['id'] }}"
-                                                                   data-periode="{{ $ib['periode'] }}"
-                                                                   value="{{ ($ib['banyak_birthday_service'] && $ib['banyak_birthday_service'] > 0) ? (int)$ib['banyak_birthday_service'] : '' }}"
-                                                                   placeholder="0"
-                                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                                            <span class="text-[9.5px] text-amber-900 font-bold">srv</span>
-                                                        </div>
-                                                        <div class="sub-birthday-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_birthday_service'] ?? 0) > 0 ? '' : 'hidden' }}">
-                                                            <span class="ac-curr">Rp</span>
-                                                            <span class="ac-val">{{ number_format(($ib['banyak_birthday_service'] ?? 0) * 5000, 0, ',', '.') }}</span>
-                                                        </div>
+                                <td class="col-cat-bonus hr-input-cell px-2 py-2 border-b border-amber-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <div class="flex items-center gap-1 justify-center">
+                                                        <input type="number" step="1" min="0"
+                                                               class="batch-banyak-birthday batch-sub-item-birthday input-birthday-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-birthday-item-' . $ib['id'] : '' }} hr-data-input w-full px-1.5 py-0.5 text-xs text-center !bg-white"
+                                                               data-item-id="{{ $ib['id'] }}"
+                                                               data-periode="{{ $ib['periode'] }}"
+                                                               value="{{ ($ib['banyak_birthday_service'] && $ib['banyak_birthday_service'] > 0) ? (int)$ib['banyak_birthday_service'] : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
+                                                        <span class="text-[9.5px] text-amber-900 font-bold">srv</span>
                                                     </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="flex items-center gap-1 justify-center">
-                                                <input type="number" step="1" min="0"
-                                                       class="batch-banyak-birthday hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
-                                                       value="{{ ($payroll->banyak_birthday_service && $payroll->banyak_birthday_service > 0) ? (int)$payroll->banyak_birthday_service : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                                <span class="text-[10px] text-amber-900 font-bold">srv</span>
-                                            </div>
-                                            <div class="sub-birthday-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_birthday_service ?? 0) > 0 ? '' : 'hidden' }}">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format(($payroll->banyak_birthday_service ?? 0) * 5000, 0, ',', '.') }}</span>
-                                            </div>
-                                        @endif
+                                                    <div class="sub-birthday-text-p-{{ $ib['periode'] }} accounting-cell text-[9px] text-amber-900 font-bold px-1 mt-0.5 {{ ($ib['banyak_birthday_service'] ?? 0) > 0 ? '' : 'hidden' }}">
+                                                        <span class="ac-curr">Rp</span>
+                                                        <span class="ac-val">{{ number_format(($ib['banyak_birthday_service'] ?? 0) * 5000, 0, ',', '.') }}</span>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
                                     @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="accounting-cell font-bold text-slate-800 text-[11px]">
-                                                            <span class="ac-curr">Rp</span>
-                                                            <span class="ac-val">{{ number_format($ib['bonus_birthday'], 0, ',', '.') }}</span>
-                                                        </div>
-                                                        <div class="text-[9px] text-slate-500 font-medium text-right">{{ (int)$ib['banyak_birthday_service'] }}x</div>
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-cell font-bold text-slate-800 text-xs">
-                                                <span class="ac-curr">Rp</span>
-                                                <span class="ac-val">{{ number_format($payroll->bonus_birthday, 0, ',', '.') }}</span>
-                                            </div>
-                                            <div class="text-[10px] text-slate-500 font-medium text-right">{{ $payroll->banyak_birthday_service }}x</div>
-                                        @endif
+                                        <div class="flex items-center gap-1 justify-center">
+                                            <input type="number" step="1" min="0"
+                                                   class="batch-banyak-birthday hr-data-input w-full px-2 py-1 text-xs text-center !bg-white"
+                                                   value="{{ ($payroll->banyak_birthday_service && $payroll->banyak_birthday_service > 0) ? (int)$payroll->banyak_birthday_service : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                            <span class="text-[10px] text-amber-900 font-bold">srv</span>
+                                        </div>
+                                        <div class="sub-birthday-text accounting-cell text-[10px] text-amber-900 font-bold mt-1 px-1 {{ ($payroll->banyak_birthday_service ?? 0) > 0 ? '' : 'hidden' }}">
+                                            <span class="ac-curr">Rp</span>
+                                            <span class="ac-val">{{ number_format(($payroll->banyak_birthday_service ?? 0) * 5000, 0, ',', '.') }}</span>
+                                        </div>
                                     @endif
                                 </td>
 
                                 {{-- 10. PENGEMBALIAN DEPOSIT (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
-                                                        <span class="ac-input-prefix">Rp</span>
-                                                        <input type="text"
-                                                               class="batch-input-rupiah batch-pengembalian-deposit batch-sub-item-dep-kembali input-deposit-kembali-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-deposit-kembali-item-' . $ib['id'] : '' }} hr-data-input !text-emerald-800"
-                                                               data-item-id="{{ $ib['id'] }}"
-                                                               data-periode="{{ $ib['periode'] }}"
-                                                               value="{{ $ib['pengembalian_deposit'] > 0 ? number_format($ib['pengembalian_deposit'], 0, ',', '.') : '' }}"
-                                                               placeholder="0"
-                                                               oninput="onPayrollUnifiedRowInput(this)">
-                                                    </div>
-                                                    @if(($ib['periode'] == 2 || ($loop->last && !collect($itemBreakdowns)->contains('periode', 2))) && ($payroll->saldo_deposit ?? 0) > 0)
-                                                        <button type="button"
-                                                                onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }}, {{ $ib['periode'] }})"
-                                                                class="mt-0.5 text-[8.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
-                                                                title="Klik untuk mengisi otomatis deposit ke periode {{ $ib['periode'] }}">
-                                                            <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
-                                                        </button>
-                                                    @endif
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-pengembalian-deposit hr-data-input !text-emerald-800"
-                                                       value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                            @if(($payroll->saldo_deposit ?? 0) > 0)
-                                                <button type="button"
-                                                        onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
-                                                        class="mt-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
-                                                        title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
-                                                    <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
-                                                </button>
-                                            @endif
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['pengembalian_deposit'] > 0)
-                                                            <div class="accounting-cell font-bold text-emerald-800 text-[11px]">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format($ib['pengembalian_deposit'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($payroll->pengembalian_deposit > 0)
-                                                <div class="accounting-cell font-bold text-emerald-800 text-xs">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format($payroll->pengembalian_deposit, 0, ',', '.') }}</span>
+                                <td class="col-cat-bonus hr-input-cell px-2 py-2 border-b border-amber-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                    <span class="ac-input-prefix">Rp</span>
+                                                    <input type="text"
+                                                           class="batch-input-rupiah batch-pengembalian-deposit batch-sub-item-dep-kembali input-deposit-kembali-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-deposit-kembali-item-' . $ib['id'] : '' }} hr-data-input !text-emerald-800"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           value="{{ $ib['pengembalian_deposit'] > 0 ? number_format($ib['pengembalian_deposit'], 0, ',', '.') : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
                                                 </div>
-                                            @else
-                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
-                                            @endif
+                                                @if(($ib['periode'] == 2 || ($loop->last && !collect($itemBreakdowns)->contains('periode', 2))) && ($payroll->saldo_deposit ?? 0) > 0)
+                                                    <button type="button"
+                                                            onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }}, {{ $ib['periode'] }})"
+                                                            class="mt-0.5 text-[8.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                            title="Klik untuk mengisi otomatis deposit ke periode {{ $ib['periode'] }}">
+                                                        <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                                    </button>
+                                                @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-pengembalian-deposit hr-data-input !text-emerald-800"
+                                                   value="{{ $payroll->pengembalian_deposit > 0 ? number_format($payroll->pengembalian_deposit, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                        @if(($payroll->saldo_deposit ?? 0) > 0)
+                                            <button type="button"
+                                                    onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
+                                                    class="mt-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                    title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
+                                                <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                            </button>
                                         @endif
                                     @endif
                                 </td>
 
                                 {{-- 11. BONUS LAIN (BONUS - KUNING MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-bonus px-2 py-2 border-b border-amber-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="accounting-input-wrap">
-                                                            <span class="ac-input-prefix">Rp</span>
-                                                            <input type="text"
-                                                                   class="batch-input-rupiah batch-bonus-dll batch-sub-item-bonus-dll input-bonus-dll-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-bonus-dll-item-' . $ib['id'] : '' }} hr-data-input"
-                                                                   data-item-id="{{ $ib['id'] }}"
-                                                                   data-periode="{{ $ib['periode'] }}"
-                                                                   value="{{ $ib['bonus_dll'] > 0 ? number_format($ib['bonus_dll'], 0, ',', '.') : '' }}"
-                                                                   placeholder="0"
-                                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                                        </div>
+                                <td class="col-cat-bonus hr-input-cell px-2 py-2 border-b border-amber-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <div class="accounting-input-wrap">
+                                                        <span class="ac-input-prefix">Rp</span>
                                                         <input type="text"
-                                                               class="batch-catatan-bonus-dll batch-sub-cat-bonus-dll input-cat-bonus-dll-p-{{ $ib['periode'] }} w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 rounded px-1 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300/40 mt-0.5 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                               class="batch-input-rupiah batch-bonus-dll batch-sub-item-bonus-dll input-bonus-dll-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-bonus-dll-item-' . $ib['id'] : '' }} hr-data-input"
                                                                data-item-id="{{ $ib['id'] }}"
                                                                data-periode="{{ $ib['periode'] }}"
-                                                               value="{{ $ib['catatan_bonus_dll'] ?? '' }}"
-                                                               placeholder="Ket..."
-                                                               title="Keterangan bonus lain-lain P{{ $ib['periode'] }}">
+                                                               value="{{ $ib['bonus_dll'] > 0 ? number_format($ib['bonus_dll'], 0, ',', '.') : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
                                                     </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-bonus-dll hr-data-input"
-                                                       value="{{ $payroll->bonus_dll > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                            <input type="text"
-                                                   class="batch-catatan-bonus-dll w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 rounded px-1.5 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300/40 mt-1 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
-                                                   value="{{ $payroll->catatan_bonus_dll ?? '' }}"
-                                                   placeholder="Ket..."
-                                                   title="Keterangan bonus lain-lain">
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['bonus_dll'] > 0)
-                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format($ib['bonus_dll'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
-                                                        @endif
-                                                        @if(!empty($ib['catatan_bonus_dll']))
-                                                            <div class="text-[9px] text-amber-700 font-medium truncate max-w-[110px] ml-auto text-right" title="{{ $ib['catatan_bonus_dll'] }}">{{ $ib['catatan_bonus_dll'] }}</div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($payroll->bonus_dll > 0)
-                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format($payroll->bonus_dll, 0, ',', '.') }}</span>
+                                                    <input type="text"
+                                                           class="batch-catatan-bonus-dll batch-sub-cat-bonus-dll input-cat-bonus-dll-p-{{ $ib['periode'] }} w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 rounded px-1 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300/40 mt-0.5 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           value="{{ $ib['catatan_bonus_dll'] ?? '' }}"
+                                                           placeholder="Ket..."
+                                                           title="Keterangan bonus lain-lain P{{ $ib['periode'] }}">
                                                 </div>
-                                            @else
-                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
-                                            @endif
-                                            @if(!empty($payroll->catatan_bonus_dll))
-                                                <div class="text-[9px] text-amber-700 font-medium truncate max-w-[110px] ml-auto text-right mt-0.5" title="{{ $payroll->catatan_bonus_dll }}">{{ $payroll->catatan_bonus_dll }}</div>
-                                            @endif
-                                        @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-bonus-dll hr-data-input"
+                                                   value="{{ $payroll->bonus_dll > 0 ? number_format($payroll->bonus_dll, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                        <input type="text"
+                                               class="batch-catatan-bonus-dll w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 rounded px-1.5 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300/40 mt-1 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                               value="{{ $payroll->catatan_bonus_dll ?? '' }}"
+                                               placeholder="Ket..."
+                                               title="Keterangan bonus lain-lain">
                                     @endif
                                 </td>
 
@@ -1849,252 +1708,134 @@
                                 </td>
 
                                 {{-- 14. KERUSAKAN INVENTARIS (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
-                                                        <span class="ac-input-prefix">Rp</span>
-                                                        <input type="text"
-                                                               class="batch-input-rupiah batch-potongan-inventaris batch-sub-item-pot-inv input-pot-inv-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-inv-item-' . $ib['id'] : '' }} hr-data-input"
-                                                               data-item-id="{{ $ib['id'] }}"
-                                                               data-periode="{{ $ib['periode'] }}"
-                                                               value="{{ $ib['potongan_inventaris'] > 0 ? number_format($ib['potongan_inventaris'], 0, ',', '.') : '' }}"
-                                                               placeholder="0"
-                                                               oninput="onPayrollUnifiedRowInput(this)">
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-potongan-inventaris hr-data-input"
-                                                       value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['potongan_inventaris'] > 0)
-                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format($ib['potongan_inventaris'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($payroll->potongan_inventaris > 0)
-                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format($payroll->potongan_inventaris, 0, ',', '.') }}</span>
+                                <td class="col-cat-potongan hr-input-cell px-2 py-2 border-b border-rose-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                    <span class="ac-input-prefix">Rp</span>
+                                                    <input type="text"
+                                                           class="batch-input-rupiah batch-potongan-inventaris batch-sub-item-pot-inv input-pot-inv-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-inv-item-' . $ib['id'] : '' }} hr-data-input"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           value="{{ $ib['potongan_inventaris'] > 0 ? number_format($ib['potongan_inventaris'], 0, ',', '.') : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
                                                 </div>
-                                            @else
-                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
-                                            @endif
-                                        @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-inventaris hr-data-input"
+                                                   value="{{ $payroll->potongan_inventaris > 0 ? number_format($payroll->potongan_inventaris, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
                                     @endif
                                 </td>
 
                                 {{-- 15. KASBON / PINJAMAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
-                                                        <span class="ac-input-prefix">Rp</span>
-                                                        <input type="text"
-                                                               class="batch-input-rupiah batch-potongan-kasbon batch-sub-item-pot-kasbon input-pot-kasbon-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-kasbon-item-' . $ib['id'] : '' }} hr-data-input"
-                                                               data-item-id="{{ $ib['id'] }}"
-                                                               data-periode="{{ $ib['periode'] }}"
-                                                               value="{{ $ib['potongan_kasbon'] > 0 ? number_format($ib['potongan_kasbon'], 0, ',', '.') : '' }}"
-                                                               placeholder="0"
-                                                               oninput="onPayrollUnifiedRowInput(this)">
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-potongan-kasbon hr-data-input"
-                                                       value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['potongan_kasbon'] > 0)
-                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format($ib['potongan_kasbon'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($payroll->potongan_kasbon > 0)
-                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format($payroll->potongan_kasbon, 0, ',', '.') }}</span>
+                                <td class="col-cat-potongan hr-input-cell px-2 py-2 border-b border-rose-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                    <span class="ac-input-prefix">Rp</span>
+                                                    <input type="text"
+                                                           class="batch-input-rupiah batch-potongan-kasbon batch-sub-item-pot-kasbon input-pot-kasbon-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-kasbon-item-' . $ib['id'] : '' }} hr-data-input"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           value="{{ $ib['potongan_kasbon'] > 0 ? number_format($ib['potongan_kasbon'], 0, ',', '.') : '' }}"
+                                                           placeholder="0"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
                                                 </div>
-                                            @else
-                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
-                                            @endif
-                                        @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-kasbon hr-data-input"
+                                                   value="{{ $payroll->potongan_kasbon > 0 ? number_format($payroll->potongan_kasbon, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
                                     @endif
                                 </td>
 
                                 {{-- 16. POTONGAN DEPOSIT (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
-                                                        <span class="ac-input-prefix">Rp</span>
-                                                        <input type="text"
-                                                               class="batch-input-rupiah batch-potongan-deposit batch-sub-item-pot-deposit input-pot-deposit-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-deposit-item-' . $ib['id'] : '' }} hr-data-input"
-                                                               data-item-id="{{ $ib['id'] }}"
-                                                               data-periode="{{ $ib['periode'] }}"
-                                                               value="{{ $ib['potongan_deposit'] > 0 ? number_format($ib['potongan_deposit'], 0, ',', '.') : '' }}"
-                                                               placeholder="0"
-                                                               title="Potongan deposit untuk karyawan baru"
-                                                               oninput="onPayrollUnifiedRowInput(this)">
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-potongan-deposit hr-data-input"
-                                                       value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       title="Potongan deposit untuk karyawan baru"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['potongan_deposit'] > 0)
-                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format($ib['potongan_deposit'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($payroll->potongan_deposit > 0)
-                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format($payroll->potongan_deposit, 0, ',', '.') }}</span>
+                                <td class="col-cat-potongan hr-input-cell px-2 py-2 border-b border-rose-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="accounting-input-wrap {{ !$loop->first ? 'mt-1' : '' }}">
+                                                    <span class="ac-input-prefix">Rp</span>
+                                                    <input type="text"
+                                                           class="batch-input-rupiah batch-potongan-deposit batch-sub-item-pot-deposit input-pot-deposit-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-deposit-item-' . $ib['id'] : '' }} hr-data-input"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           value="{{ $ib['potongan_deposit'] > 0 ? number_format($ib['potongan_deposit'], 0, ',', '.') : '' }}"
+                                                           placeholder="0"
+                                                           title="Potongan deposit untuk karyawan baru"
+                                                           oninput="onPayrollUnifiedRowInput(this)">
                                                 </div>
-                                            @else
-                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
-                                            @endif
-                                        @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-deposit hr-data-input"
+                                                   value="{{ $payroll->potongan_deposit > 0 ? number_format($payroll->potongan_deposit, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   title="Potongan deposit untuk karyawan baru"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
                                     @endif
                                 </td>
 
                                 {{-- 17. POTONGAN LAIN & KETERANGAN (POTONGAN - MERAH MUDA - ACCOUNTING STYLE) --}}
-                                <td class="col-cat-potongan px-2 py-2 border-b border-rose-100 {{ !$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval') ? 'hr-input-cell' : '' }}">
-                                    @if(!$isPaid && ($currentStatus == 'draft' || $currentStatus == 'waiting approval'))
-                                        @if($hasMultiplePeriods)
-                                            <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        <div class="accounting-input-wrap">
-                                                            <span class="ac-input-prefix">Rp</span>
-                                                            <input type="text"
-                                                                   class="batch-input-rupiah batch-potongan-dll batch-sub-item-pot-dll input-pot-dll-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-dll-item-' . $ib['id'] : '' }} hr-data-input"
-                                                                   data-item-id="{{ $ib['id'] }}"
-                                                                   data-periode="{{ $ib['periode'] }}"
-                                                                   value="{{ $ib['potongan_dll'] > 0 ? number_format($ib['potongan_dll'], 0, ',', '.') : '' }}"
-                                                                   placeholder="0"
-                                                                   oninput="onPayrollUnifiedRowInput(this)">
-                                                        </div>
+                                <td class="col-cat-potongan hr-input-cell px-2 py-2 border-b border-rose-100">
+                                    @if($hasMultiplePeriods)
+                                        <div class="inline-flex flex-col gap-1.5 justify-center whitespace-nowrap w-full">
+                                            @foreach($itemBreakdowns as $ib)
+                                                <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
+                                                    <div class="accounting-input-wrap">
+                                                        <span class="ac-input-prefix">Rp</span>
                                                         <input type="text"
-                                                               class="batch-catatan-potongan-dll batch-sub-cat-pot-dll input-cat-pot-dll-p-{{ $ib['periode'] }} w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded px-1 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-300/40 mt-0.5 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                               class="batch-input-rupiah batch-potongan-dll batch-sub-item-pot-dll input-pot-dll-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'input-pot-dll-item-' . $ib['id'] : '' }} hr-data-input"
                                                                data-item-id="{{ $ib['id'] }}"
                                                                data-periode="{{ $ib['periode'] }}"
-                                                               value="{{ $ib['catatan_potongan_dll'] ?? '' }}"
-                                                               placeholder="Ket..."
-                                                               title="Keterangan / rincian potongan lain-lain P{{ $ib['periode'] }}">
+                                                               value="{{ $ib['potongan_dll'] > 0 ? number_format($ib['potongan_dll'], 0, ',', '.') : '' }}"
+                                                               placeholder="0"
+                                                               oninput="onPayrollUnifiedRowInput(this)">
                                                     </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            <div class="accounting-input-wrap">
-                                                <span class="ac-input-prefix">Rp</span>
-                                                <input type="text"
-                                                       class="batch-input-rupiah batch-potongan-dll hr-data-input"
-                                                       value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
-                                                       placeholder="0"
-                                                       oninput="onPayrollUnifiedRowInput(this)">
-                                            </div>
-                                            <input type="text"
-                                                   class="batch-catatan-potongan-dll w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded px-1.5 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-300/40 mt-1 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
-                                                   value="{{ $payroll->catatan_potongan_dll ?? '' }}"
-                                                   placeholder="Ket..."
-                                                   title="Keterangan / rincian potongan lain-lain">
-                                        @endif
-                                    @else
-                                        @if($hasMultiplePeriods)
-                                            <div class="flex flex-col gap-1 w-full">
-                                                @foreach($itemBreakdowns as $ib)
-                                                    <div class="{{ !$loop->first ? 'pt-1 border-t border-slate-100' : '' }}">
-                                                        @if($ib['potongan_dll'] > 0)
-                                                            <div class="accounting-cell font-bold text-slate-700 text-[11px]">
-                                                                <span class="ac-curr">Rp</span>
-                                                                <span class="ac-val">{{ number_format($ib['potongan_dll'], 0, ',', '.') }}</span>
-                                                            </div>
-                                                        @else
-                                                            <div class="text-right font-bold text-slate-400 text-[10px]">-</div>
-                                                        @endif
-                                                        @if($ib['catatan_potongan_dll'])
-                                                            <div class="text-[9px] text-slate-500 font-medium truncate max-w-[110px] ml-auto text-right">{{ $ib['catatan_potongan_dll'] }}</div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        @else
-                                            @if($payroll->potongan_dll > 0)
-                                                <div class="accounting-cell font-bold text-slate-700 text-xs">
-                                                    <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val">{{ number_format($payroll->potongan_dll, 0, ',', '.') }}</span>
+                                                    <input type="text"
+                                                           class="batch-catatan-potongan-dll batch-sub-cat-pot-dll input-cat-pot-dll-p-{{ $ib['periode'] }} w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded px-1 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-300/40 mt-0.5 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                                           data-item-id="{{ $ib['id'] }}"
+                                                           data-periode="{{ $ib['periode'] }}"
+                                                           value="{{ $ib['catatan_potongan_dll'] ?? '' }}"
+                                                           placeholder="Ket..."
+                                                           title="Keterangan / rincian potongan lain-lain P{{ $ib['periode'] }}">
                                                 </div>
-                                            @else
-                                                <div class="text-center font-bold text-slate-400 text-xs">-</div>
-                                            @endif
-                                            @if($payroll->catatan_potongan_dll)
-                                                <div class="text-[9.5px] text-slate-500 font-medium truncate max-w-[110px] ml-auto text-right">{{ $payroll->catatan_potongan_dll }}</div>
-                                            @endif
-                                        @endif
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="accounting-input-wrap">
+                                            <span class="ac-input-prefix">Rp</span>
+                                            <input type="text"
+                                                   class="batch-input-rupiah batch-potongan-dll hr-data-input"
+                                                   value="{{ $payroll->potongan_dll > 0 ? number_format($payroll->potongan_dll, 0, ',', '.') : '' }}"
+                                                   placeholder="0"
+                                                   oninput="onPayrollUnifiedRowInput(this)">
+                                        </div>
+                                        <input type="text"
+                                               class="batch-catatan-potongan-dll w-full text-left bg-slate-50/70 hover:bg-white focus:bg-white border border-slate-200 focus:border-rose-400 rounded px-1.5 py-[1px] text-[7.5px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-300/40 mt-1 placeholder:text-slate-400 placeholder:text-[7px] placeholder:italic transition-all"
+                                               value="{{ $payroll->catatan_potongan_dll ?? '' }}"
+                                               placeholder="Ket..."
+                                               title="Keterangan / rincian potongan lain-lain">
                                     @endif
                                 </td>
 
@@ -2127,7 +1868,7 @@
                                             @foreach($itemBreakdowns as $ib)
                                                 <div class="accounting-cell text-[10px] text-teal-900 font-extrabold {{ !$loop->first ? 'pt-0.5' : '' }}">
                                                     <span class="ac-curr">Rp</span>
-                                                    <span class="ac-val sub-thp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-thp-item-' . $ib['id'] : '' }}">{{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }}</span>
+                                                    <span class="ac-val sub-thp-p-{{ $ib['periode'] }} {{ $ib['id'] ? 'sub-thp-item-' . $ib['id'] : '' }}" data-is-paid="{{ $ib['is_paid'] ? '1' : '0' }}" data-tipe-pembayaran="{{ $ib['tipe_pembayaran'] ?? '' }}">{{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }}</span>
                                                 </div>
                                             @endforeach
                                         </div>
@@ -2145,19 +1886,101 @@
                                             &#128065; Detail
                                         </button>
 
-                                        @if($isPaid)
-                                            <span class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap">
-                                                &#10003; Terbayar
-                                            </span>
+                                                                                @if($hasMultiplePeriods)
+                                            {{-- DUA TOMBOL BAYAR UNTUK KARYAWAN 2 PERIODE (P1 & P2 TERPISAH) --}}
+                                            <div class="flex items-center gap-1.5">
+                                                @foreach($itemBreakdowns as $ib)
+                                                    @php
+                                                        $ibId = $ib['id'];
+                                                        $ibPaid = $ib['is_paid'] ?? false;
+                                                        $ibPNum = $ib['periode'] ?? 1;
+                                                        $ibConfirmMsg = 'Proses pembayaran dan jurnal gaji Periode ' . $ibPNum . ' atas nama ' . ($payroll->karyawan->nama_karyawan ?? 'Karyawan') . ' (Rp ' . number_format($ib['total_gaji_bersih'], 0, ',', '.') . ')?';
+                                                    @endphp
+                                                    @if($ibPaid)
+                                                        {{-- TOMBOL DISABLED P1/P2 SUDAH DIBAYAR --}}
+                                                        <button type="button" disabled
+                                                                style="background-color: {{ $ibPNum == 1 ? '#e0f2fe' : '#ecfdf5' }}; color: {{ $ibPNum == 1 ? '#0369a1' : '#065f46' }}; border: 1px solid {{ $ibPNum == 1 ? '#bae6fd' : '#a7f3d0' }}; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.95; white-space: nowrap;"
+                                                                title="Gaji Periode {{ $ibPNum }} sudah dibayar dan dijurnal">
+                                                            <span>✓</span> P{{ $ibPNum }} Terbayar
+                                                        </button>
+                                                    @elseif($ibId)
+                                                        {{-- TOMBOL AKTIF BAYAR P1 (BIRU) / BAYAR P2 (HIJAU) --}}
+                                                        <form action="{{ route('penggajian.bayar', $ibId) }}" method="POST" class="inline m-0 p-0"
+                                                              onsubmit="return confirm('{{ addslashes($ibConfirmMsg) }}')">
+                                                            @csrf
+                                                            <input type="hidden" name="tipe" value="{{ $ibPNum == 1 ? 'tengah_bulan' : 'akhir_bulan' }}">
+                                                            <button type="submit"
+                                                                    style="background-color: {{ $ibPNum == 1 ? '#0284c7' : '#059669' }}; color: #ffffff; border: none; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); transition: background .15s; white-space: nowrap;"
+                                                                    onmouseover="this.style.background='{{ $ibPNum == 1 ? '#0369a1' : '#047857' }}'"
+                                                                    onmouseout="this.style.background='{{ $ibPNum == 1 ? '#0284c7' : '#059669' }}'"
+                                                                    title="Bayar gaji Periode {{ $ibPNum }} ({{ $ibPNum == 1 ? 'Tengah Bulan' : 'Akhir Bulan' }})">
+                                                                <span>{{ $ibPNum == 1 ? '🗓️' : '💳' }}</span> Bayar P{{ $ibPNum }}
+                                                            </button>
+                                                        </form>
+                                                    @endif
+                                                @endforeach
+                                            </div>
                                         @else
-                                            <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST"
-                                                  onsubmit="return confirm('{{ addslashes($confirmMsg) }}')">
-                                                @csrf
-                                                <button type="submit"
-                                                        class="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm transition-all whitespace-nowrap cursor-pointer">
-                                                    &#128179; Bayar
-                                                </button>
-                                            </form>
+                                            {{-- TOMBOL BAYAR UNTUK KARYAWAN 1 PERIODE (PILIHAN TENGAH BULAN / AKHIR BULAN) --}}
+                                            <div class="flex items-center gap-1.5">
+                                                @if($isPaid)
+                                                    @if(($payroll->tipe_pembayaran ?? '') === 'tengah_bulan')
+                                                        {{-- Bayar Tengah: DISABLED (TERBAYAR) --}}
+                                                        <button type="button" disabled
+                                                                style="background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.95; white-space: nowrap;"
+                                                                title="Gaji sudah dibayar di tengah bulan (Resign/Mangkir)">
+                                                            <span>✓</span> Tengah Terbayar
+                                                        </button>
+                                                        {{-- Bayar Akhir: DISABLED --}}
+                                                        <button type="button" disabled
+                                                                style="background-color: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.6; white-space: nowrap;"
+                                                                title="Karyawan telah dibayar di tengah bulan">
+                                                            <span>💳</span> Bayar Akhir
+                                                        </button>
+                                                    @else
+                                                        {{-- Bayar Tengah: DISABLED --}}
+                                                        <button type="button" disabled
+                                                                style="background-color: #f1f5f9; color: #94a3b8; border: 1px solid #e2e8f0; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.6; white-space: nowrap;"
+                                                                title="Gaji telah dibayar di akhir bulan">
+                                                            <span>🗓️</span> Bayar Tengah
+                                                        </button>
+                                                        {{-- Bayar Akhir: DISABLED (TERBAYAR) --}}
+                                                        <button type="button" disabled
+                                                                style="background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.95; white-space: nowrap;"
+                                                                title="Gaji sudah dibayar di akhir bulan">
+                                                            <span>✓</span> Terbayar
+                                                        </button>
+                                                    @endif
+                                                @else
+                                                    {{-- Bayar Tengah Bulan AKTIF --}}
+                                                    <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST" class="inline m-0 p-0"
+                                                          onsubmit="return confirm('Proses pembayaran TENGAH BULAN (karyawan keluar/mangkir) atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($payroll->take_home_pay ?: $payroll->total_gaji_bersih, 0, ',', '.') }})?')">
+                                                        @csrf
+                                                        <input type="hidden" name="tipe" value="tengah_bulan">
+                                                        <button type="submit"
+                                                                style="background-color: #0284c7; color: #ffffff; border: none; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(2,132,199,0.25); transition: background .15s; white-space: nowrap;"
+                                                                onmouseover="this.style.background='#0369a1'"
+                                                                onmouseout="this.style.background='#0284c7'"
+                                                                title="Bayar Gaji Tengah Bulan (misal: karyawan keluar atau mangkir di tengah bulan)">
+                                                            <span>🗓️</span> Bayar Tengah
+                                                        </button>
+                                                    </form>
+
+                                                    {{-- Bayar Akhir Bulan AKTIF --}}
+                                                    <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST" class="inline m-0 p-0"
+                                                          onsubmit="return confirm('Proses pembayaran AKHIR BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($payroll->take_home_pay ?: $payroll->total_gaji_bersih, 0, ',', '.') }})?')">
+                                                        @csrf
+                                                        <input type="hidden" name="tipe" value="akhir_bulan">
+                                                        <button type="submit"
+                                                                style="background-color: #059669; color: #ffffff; border: none; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(5,150,105,0.25); transition: background .15s; white-space: nowrap;"
+                                                                onmouseover="this.style.background='#047857'"
+                                                                onmouseout="this.style.background='#059669'"
+                                                                title="Bayar Gaji Akhir Bulan">
+                                                            <span>💳</span> Bayar Akhir
+                                                        </button>
+                                                    </form>
+                                                @endif
+                                            </div>
                                         @endif
 
                                         {{-- KEBAB DROPDOWN --}}
@@ -2655,7 +2478,10 @@
                                             <span style="font-weight: 700; color: #059669;" x-text="'Rp ' + activeDetail.pengembalian_deposit"></span>
                                         </div>
                                         <div style="display: flex; justify-content: space-between;" x-show="activeDetail.bonus_dll != '0'">
-                                            <span>Bonus Lain-lain</span>
+                                            <span>
+                                                Bonus Lain-lain
+                                                <span class="text-[10px] text-slate-500 italic font-normal block" x-show="activeDetail.catatan_bonus_dll" x-text="'(' + activeDetail.catatan_bonus_dll + ')'"></span>
+                                            </span>
                                             <span style="font-weight: 700; color: #0f172a;" x-text="'Rp ' + activeDetail.bonus_dll"></span>
                                         </div>
                                     </div>
@@ -2873,6 +2699,7 @@
                                         data-rekening="{{ $item['no_rekening'] }}"
                                         data-is-multi="{{ $item['is_multi'] ? '1' : '0' }}"
                                         data-periode-num="{{ $item['periode_num'] }}"
+                                        data-tipe-pembayaran="{{ $item['tipe_pembayaran'] ?? '' }}"
                                         data-has-rekening="{{ !empty($item['no_rekening']) ? '1' : '0' }}"
                                         style="border-bottom: 1px solid #f1f5f9; transition: background .1s;"
                                         onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
@@ -2885,6 +2712,7 @@
                                                    data-has-rekening="{{ !empty($item['no_rekening']) ? '1' : '0' }}"
                                                    data-is-multi="{{ $item['is_multi'] ? '1' : '0' }}"
                                                    data-periode-num="{{ $item['periode_num'] }}"
+                                                   data-tipe-pembayaran="{{ $item['tipe_pembayaran'] ?? '' }}"
                                                    onchange="onExportItemChange()"
                                                    style="cursor: pointer;">
                                         </td>
@@ -3778,8 +3606,9 @@
             let grandBonus = 0;
             let grandPotNonKasbon = 0;
             let grandKasbon = 0;
-            let grandThpAkhirBulan = 0;
-            let grandThpPertengahan = 0;
+            let grandThpTotalKeseluruhan = 0;
+            let grandThpAkhirBulan = 0; // Hanya yang SUDAH DIBAYAR akhir_bulan
+            let grandThpPertengahan = 0; // Hanya yang SUDAH DIBAYAR tengah_bulan
 
             document.querySelectorAll('.payroll-row').forEach(row => {
                 const isMultiple = row.getAttribute('data-has-multiple') === '1';
@@ -3788,25 +3617,37 @@
                 const rowPotNonKasbon = parseFloat(row.getAttribute('data-pot-non-kasbon')) || 0;
                 const rowKasbon = parseFloat(row.getAttribute('data-kasbon-total')) || 0;
                 const rowNett = parseFloat(row.getAttribute('data-take-home-pay')) || 0;
+                const isRowPaid = row.getAttribute('data-is-paid') === '1';
+                const paymentType = row.getAttribute('data-tipe-pembayaran') || '';
 
                 grandPokok += rowPokok;
                 grandBonus += rowBonus;
                 grandPotNonKasbon += rowPotNonKasbon;
                 grandKasbon += rowKasbon;
+                grandThpTotalKeseluruhan += rowNett;
 
                 if (isMultiple) {
                     const p1El = row.querySelector('.sub-thp-p-1');
                     const p2El = row.querySelector('.sub-thp-p-2');
                     const p1Val = p1El ? (cleanNumber(p1El.textContent) || 0) : 0;
                     const p2Val = p2El ? (cleanNumber(p2El.textContent) || 0) : 0;
-                    grandThpPertengahan += p1Val;
-                    grandThpAkhirBulan += p2Val;
+                    const p1Paid = p1El ? (p1El.getAttribute('data-is-paid') === '1') : false;
+                    const p2Paid = p2El ? (p2El.getAttribute('data-is-paid') === '1') : false;
+
+                    if (p1Paid) grandThpPertengahan += p1Val;
+                    if (p2Paid) grandThpAkhirBulan += p2Val;
                 } else {
-                    grandThpAkhirBulan += rowNett;
+                    if (isRowPaid) {
+                        if (paymentType === 'tengah_bulan') {
+                            grandThpPertengahan += rowNett;
+                        } else {
+                            grandThpAkhirBulan += rowNett;
+                        }
+                    }
                 }
             });
 
-            const grandBeban = grandThpAkhirBulan + grandThpPertengahan + grandKasbon;
+            const grandBeban = grandThpTotalKeseluruhan + grandKasbon;
 
             const pokokEl = document.getElementById('headerTotalGajiPokokValue');
             if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(grandPokok).toLocaleString('id-ID');
@@ -4278,11 +4119,13 @@
                 if (preset === 'all') {
                     cb.checked = true;
                 } else if (preset === 'p2_monthly') {
-                    // Jika multi periode: pilih P2 saja. Jika single periode: pilih (karena bulanan/single transfer di akhir periode)
-                    cb.checked = isMulti ? (pNum === 2) : true;
+                    // Jika multi periode: pilih P2 saja. Jika single periode: pilih yang bukan dibayar tengah bulan
+                    const tipePembayaran = cb.getAttribute('data-tipe-pembayaran') || '';
+                    cb.checked = isMulti ? (pNum === 2) : (tipePembayaran !== 'tengah_bulan');
                 } else if (preset === 'p1') {
-                    // Jika multi periode: pilih P1 saja. Jika single periode: jangan pilih
-                    cb.checked = isMulti ? (pNum === 1) : false;
+                    // Jika multi periode: pilih P1 saja. Jika single periode: pilih yang dibayar tengah bulan
+                    const tipePembayaran = cb.getAttribute('data-tipe-pembayaran') || '';
+                    cb.checked = isMulti ? (pNum === 1) : (tipePembayaran === 'tengah_bulan');
                 } else if (preset === 'clear') {
                     cb.checked = false;
                 }
