@@ -1,3 +1,11 @@
+@php
+    $user = auth()->user();
+    $isSuperAdmin = $user && $user->isSuperAdmin();
+    $isGudang = $user && $user->isGudang();
+    $canEditHarga = $isSuperAdmin || $isGudang;
+    $isApproved = ($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted');
+@endphp
+
 <x-app-layout>
     <x-slot name="header">
         Edit Persediaan Awal
@@ -9,7 +17,7 @@
                 <div>
                     <h5 class="mb-0 fw-bold text-dark">
                         <i class="bi bi-pencil-square text-warning me-2"></i>Edit Transaksi: {{ $persediaanAwal->kode_transaksi }}
-                        @if($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted')
+                        @if($isApproved)
                             <span class="badge bg-success-subtle text-success fs-6 ms-2">Approved</span>
                         @else
                             <span class="badge bg-warning-subtle text-warning fs-6 ms-2">Draft (Menunggu Approval)</span>
@@ -51,7 +59,7 @@
                     </div>
                 @endif
 
-                @if($persediaanAwal->status === 'approved' || $persediaanAwal->status === 'posted')
+                @if($isApproved)
                     <div class="alert alert-warning py-2 px-3 mb-4 rounded-3 small d-flex align-items-center">
                         <i class="bi bi-shield-lock-fill text-warning me-2 fs-5"></i>
                         <div>
@@ -62,7 +70,23 @@
                     <div class="alert alert-info py-2 px-3 mb-4 rounded-3 small d-flex align-items-center" style="background-color: #f0f7ff; border-left: 4px solid #0d6efd !important;">
                         <i class="bi bi-info-circle-fill text-primary me-2 fs-5"></i>
                         <div>
-                            <strong>Status Draft (Menunggu Approval):</strong> Anda dapat mengubah kuantitas dan harga saldo awal barang divisi sebelum transaksi ini disetujui (Approved) oleh Super Admin.
+                            <strong>Status Draft (Menunggu Approval):</strong> Pengguna dan Super Admin dapat mengubah kuantitas (Qty). Kolom harga satuan hanya dapat diubah oleh <strong>Super Admin</strong> dan <strong>Tim Gudang</strong>.
+                        </div>
+                    </div>
+                @endif
+
+                @if($canEditHarga)
+                    <div class="alert alert-success py-2 px-3 mb-4 rounded-3 small d-flex align-items-center" style="background-color: #f0fdf4; border-left: 4px solid #16a34a !important;">
+                        <i class="bi bi-shield-check text-success me-2 fs-5"></i>
+                        <div>
+                            <strong>Akses {{ $isSuperAdmin ? 'Super Admin' : 'Tim Gudang' }}:</strong> Anda memiliki hak akses penuh untuk <strong>mengubah Harga per Satuan Input secara langsung</strong> sesuai kebutuhan.
+                        </div>
+                    </div>
+                @else
+                    <div class="alert alert-warning py-2 px-3 mb-4 rounded-3 small d-flex align-items-center" style="background-color: #fffbeb; border-left: 4px solid #f59e0b !important;">
+                        <i class="bi bi-lock-fill text-warning me-2 fs-5"></i>
+                        <div>
+                            <strong>Harga Terkunci:</strong> Anda dapat mengubah kuantitas (Qty) saldo awal. Kolom harga satuan terkunci (hanya dapat diubah oleh <strong>Super Admin</strong> dan <strong>Tim Gudang</strong>) dan otomatis mengacu pada patokan Gudang Utama.
                         </div>
                     </div>
                 @endif
@@ -171,9 +195,9 @@
                                     $hasKonversi = $item['satuan_pembelian'] && $konversi > 1 && ($item['satuan_pembelian'] !== $item['satuan']);
                                     $selectedUnit = $item['satuan_tipe'] ?? ($hasKonversi ? 'pembelian' : 'utama');
                                     $subtotal = $item['qty_input'] * $item['harga_input'];
-                                    $isReadonlyHarga = !$isGudangUtama;
+                                    $isReadonlyHarga = !$canEditHarga;
                                     $hargaInputAttr = $isReadonlyHarga
-                                        ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga otomatis mengikuti Gudang Utama"'
+                                        ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci: hanya Super Admin dan Tim Gudang yang dapat mengubah harga"'
                                         : '';
                                     $lockIcon = $isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
                                 @endphp
@@ -222,6 +246,11 @@
                                             <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
                                                 <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
                                                 <strong class="text-dark font-monospace ref-price-subtext">Rp {{ number_format($item['harga_input'], 0, ',', '.') }}</strong>
+                                            </div>
+                                        @elseif(!$isGudangUtama && ($item['harga_beli_utama'] > 0 || $item['harga_stok_utama'] > 0))
+                                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                                                <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
+                                                <strong class="text-secondary font-monospace ref-price-subtext">Rp {{ number_format($selectedUnit === 'pembelian' ? $item['harga_beli_utama'] : $item['harga_stok_utama'], 0, ',', '.') }}</strong>
                                             </div>
                                         @endif
                                     </td>
@@ -367,9 +396,12 @@
                    <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
                 : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
 
-            const isReadonlyHarga = !isGudangUtama;
+            const isSuperAdmin = {{ $isSuperAdmin ? 'true' : 'false' }};
+            const isGudang = {{ $isGudang ? 'true' : 'false' }};
+            const canEditHarga = isSuperAdmin || isGudang;
+            const isReadonlyHarga = !canEditHarga;
             const hargaInputAttr = isReadonlyHarga
-                ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga otomatis mengikuti Gudang Utama"'
+                ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci: hanya Super Admin dan Tim Gudang yang dapat mengubah harga"'
                 : '';
 
             const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
@@ -405,7 +437,12 @@
                             <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
                             <strong class="text-dark font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
                         </div>
-                    ` : ''}
+                    ` : (!isGudangUtama && defaultHargaInput > 0 ? `
+                        <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                            <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
+                            <strong class="text-secondary font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
+                        </div>
+                    ` : '')}
                 </td>
                 <td class="conversion-cell text-center">
                     <span class="text-muted small">-</span>

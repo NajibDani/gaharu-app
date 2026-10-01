@@ -52,8 +52,6 @@
                             if ($isItemPaid) {
                                 if ($itTipe === 'tengah_bulan' || ($pNum === 1 && empty($itTipe))) {
                                     $totalThpPertengahanBulan += $itNett;
-                                } else {
-                                    $totalThpAkhirBulan += $itNett;
                                 }
                             }
                         }
@@ -82,14 +80,14 @@
                         if ($isSinglePaid) {
                             if ($singleTipe === 'tengah_bulan') {
                                 $totalThpPertengahanBulan += $nett;
-                            } else {
-                                $totalThpAkhirBulan += $nett;
                             }
                         }
                     }
                 }
 
                 $totalBebanGajiKeseluruhan = $totalThpPeriodeKeseluruhan + $totalKasbonPeriode;
+                // Total THP Akhir Bulan otomatis terisi dari: total beban gaji - total THP tengah - kasbon
+                $totalThpAkhirBulan = max(0, $totalBebanGajiKeseluruhan - $totalThpPertengahanBulan - $totalKasbonPeriode);
             @endphp
             {{-- PAGE HEADER & TOOLBAR (SESUAI DESAIN ASLI DI SCREENSHOT) --}}
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-2.5 sm:py-3 mb-2.5">
@@ -3607,7 +3605,7 @@
             let grandPotNonKasbon = 0;
             let grandKasbon = 0;
             let grandThpTotalKeseluruhan = 0;
-            let grandThpAkhirBulan = 0; // Hanya yang SUDAH DIBAYAR akhir_bulan
+            let grandThpAkhirBulan = 0;
             let grandThpPertengahan = 0; // Hanya yang SUDAH DIBAYAR tengah_bulan
 
             document.querySelectorAll('.payroll-row').forEach(row => {
@@ -3628,26 +3626,22 @@
 
                 if (isMultiple) {
                     const p1El = row.querySelector('.sub-thp-p-1');
-                    const p2El = row.querySelector('.sub-thp-p-2');
                     const p1Val = p1El ? (cleanNumber(p1El.textContent) || 0) : 0;
-                    const p2Val = p2El ? (cleanNumber(p2El.textContent) || 0) : 0;
                     const p1Paid = p1El ? (p1El.getAttribute('data-is-paid') === '1') : false;
-                    const p2Paid = p2El ? (p2El.getAttribute('data-is-paid') === '1') : false;
 
                     if (p1Paid) grandThpPertengahan += p1Val;
-                    if (p2Paid) grandThpAkhirBulan += p2Val;
                 } else {
                     if (isRowPaid) {
                         if (paymentType === 'tengah_bulan') {
                             grandThpPertengahan += rowNett;
-                        } else {
-                            grandThpAkhirBulan += rowNett;
                         }
                     }
                 }
             });
 
             const grandBeban = grandThpTotalKeseluruhan + grandKasbon;
+            // Total THP akhir bulan otomatis terisi dari: total beban gaji - total THP tengah - kasbon
+            grandThpAkhirBulan = Math.max(0, grandBeban - grandThpPertengahan - grandKasbon);
 
             const pokokEl = document.getElementById('headerTotalGajiPokokValue');
             if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(grandPokok).toLocaleString('id-ID');

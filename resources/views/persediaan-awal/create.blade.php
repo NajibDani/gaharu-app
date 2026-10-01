@@ -4,7 +4,10 @@
     </x-slot>
 
     @php
-        $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+        $isGudang = $user && $user->isGudang();
+        $canEditHarga = $isSuperAdmin || $isGudang;
     @endphp
 
     <div class="card shadow-sm border-0 rounded-3 mb-4">
@@ -316,6 +319,9 @@
             // Update mode alert banner if exists
             const selectedOpt = gudangSelect.options[gudangSelect.selectedIndex];
             const isGudangUtama = items.length > 0 ? (items[0].is_gudang_utama !== false) : true;
+            const isSuperAdmin = {{ $isSuperAdmin ? 'true' : 'false' }};
+            const isGudang = {{ $isGudang ? 'true' : 'false' }};
+            const canEditHarga = isSuperAdmin || isGudang;
 
             let bannerEl = document.getElementById('gudangModeBanner');
             if (!bannerEl) {
@@ -324,18 +330,25 @@
                 document.querySelector('.table-responsive').parentNode.insertBefore(bannerEl, document.querySelector('.table-responsive'));
             }
 
-            if (isGudangUtama) {
+            if (isGudangUtama && canEditHarga) {
                 bannerEl.innerHTML = `
                     <div class="alert alert-primary py-2 px-3 mb-3 rounded-3 small d-flex align-items-center">
                         <i class="bi bi-star-fill text-primary me-2"></i>
                         <div><strong>Mode Master Gudang Utama:</strong> Anda dapat menginput kuantitas stock dan menentukan <strong>Harga Beli Satuan</strong> yang menjadi acuan patokan harga HPP seluruh sistem.</div>
                     </div>
                 `;
+            } else if (canEditHarga) {
+                bannerEl.innerHTML = `
+                    <div class="alert alert-info py-2 px-3 mb-3 rounded-3 small d-flex align-items-center" style="background-color: #f0f7ff; border-left: 4px solid #0d6efd !important;">
+                        <i class="bi bi-shield-check text-primary me-2 fs-5"></i>
+                        <div><strong>Akses ${isSuperAdmin ? 'Super Admin' : 'Tim Gudang'}:</strong> Anda memiliki hak akses penuh untuk <strong>mengubah Harga per Satuan Input secara langsung</strong> di tiap divisi/outlet ini sesuai kebutuhan.</div>
+                    </div>
+                `;
             } else {
                 bannerEl.innerHTML = `
                     <div class="alert alert-warning py-2 px-3 mb-3 rounded-3 small d-flex align-items-center">
                         <i class="bi bi-lock-fill text-warning me-2 fs-6"></i>
-                        <div><strong>Mode Input Stok Gudang Cabang / Operasional:</strong> Cukup isi <strong>Qty Saldo Awal</strong>. Kolom harga beli otomatis <span class="badge bg-warning text-dark">Terkunci</span> dan mengacu langsung pada harga referensi pertama dari <strong>Gudang Utama</strong>.</div>
+                        <div><strong>Mode Input Stok Divisi / Outlet:</strong> Cukup isi <strong>Qty Saldo Awal</strong>. Kolom harga satuan <span class="badge bg-warning text-dark">Terkunci</span> (hanya dapat diubah oleh Super Admin dan Tim Gudang) dan otomatis mengacu langsung pada patokan <strong>Gudang Utama</strong>.</div>
                     </div>
                 `;
             }
@@ -381,9 +394,9 @@
                        <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
                     : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
 
-                const isReadonlyHarga = !isGudangUtama;
+                const isReadonlyHarga = !canEditHarga;
                 const hargaInputAttr = isReadonlyHarga
-                    ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci mengacu pada harga Gudang Utama"'
+                    ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci: hanya Super Admin dan Tim Gudang yang dapat mengubah harga"'
                     : '';
 
                 const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
@@ -423,7 +436,12 @@
                                 <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. HPP:</span>
                                 <strong class="text-dark font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
                             </div>
-                        ` : ''}
+                        ` : (!isGudangUtama && defaultHargaInput > 0 ? `
+                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                                <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
+                                <strong class="text-secondary font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
+                            </div>
+                        ` : '')}
                     </td>
                     <td class="conversion-cell text-center">
                         <span class="text-muted small">-</span>

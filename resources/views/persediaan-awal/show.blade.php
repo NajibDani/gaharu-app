@@ -268,8 +268,24 @@
                 </table>
             </div>
 
-            <!-- JURNAL PENYESUAIAN SECTION -->
-            @if($jurnal)
+            @if(!$isApproved)
+                <div class="alert alert-warning border-0 shadow-sm rounded-3 p-3 mb-0 d-flex align-items-center gap-3">
+                    <div class="rounded-circle p-2 d-flex align-items-center justify-content-center bg-warning text-white flex-shrink-0" style="width: 42px; height: 42px;">
+                        <i class="bi bi-clock-history fs-5"></i>
+                    </div>
+                    <div>
+                        <h6 class="fw-bold mb-1 text-dark">Stok Belum Masuk ke Persediaan (Status: Draft)</h6>
+                        <span class="text-secondary small">
+                            Transaksi ini masih berstatus <strong>Draft</strong>. Kuantitas fisik, kartu stok, batch FIFO, dan jurnal saldo awal <strong>belum dimasukkan</strong> ke sistem persediaan. 
+                            @if($canApprove)
+                                Silakan periksa rincian di atas dan klik tombol <strong>Setujui / Approve</strong> di atas untuk memposting stok ke persediaan.
+                            @else
+                                Stok baru akan masuk ke persediaan setelah disetujui (Approved) oleh <strong>Super Admin</strong>.
+                            @endif
+                        </span>
+                    </div>
+                </div>
+            @elseif($jurnal)
                 <div class="card border rounded-3 p-3 bg-light">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
@@ -347,8 +363,8 @@
                             <p class="mb-0 text-secondary">
                                 Apakah Anda yakin ingin menyetujui (Approve) transaksi persediaan awal <strong>{{ $persediaanAwal->kode_transaksi }}</strong> untuk <strong>{{ $persediaanAwal->gudang->nama ?? '-' }} {{ $persediaanAwal->divisi ? '('.$persediaanAwal->divisi->nama.')' : '' }}</strong>?
                                 <br><br>
-                                <span class="text-muted small">
-                                    <i class="bi bi-info-circle me-1"></i> Setelah disetujui, user divisi tidak dapat lagi mengubah transaksi ini.
+                                <span class="text-success small fw-semibold">
+                                    <i class="bi bi-check-circle me-1"></i> Setelah disetujui, seluruh kuantitas stok barang, batch FIFO, dan jurnal penyesuaian akan resmi masuk dan diposting ke persediaan.
                                 </span>
                             </p>
                         </div>

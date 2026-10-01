@@ -328,8 +328,8 @@
                                                             <p class="mb-0 text-secondary">
                                                                 Apakah Anda yakin ingin menyetujui (Approve) transaksi persediaan awal <strong>{{ $item->kode_transaksi }}</strong> untuk <strong>{{ $item->gudang->nama ?? '-' }} {{ $item->divisi ? '('.$item->divisi->nama.')' : '' }}</strong>?
                                                                 <br><br>
-                                                                <span class="text-muted small">
-                                                                    <i class="bi bi-info-circle me-1"></i> Setelah disetujui, user divisi tidak dapat lagi mengubah transaksi ini.
+                                                                <span class="text-success small fw-semibold">
+                                                                    <i class="bi bi-check-circle me-1"></i> Setelah disetujui, seluruh kuantitas stok barang, batch FIFO, dan jurnal penyesuaian akan resmi masuk ke persediaan.
                                                                 </span>
                                                             </p>
                                                         </div>
