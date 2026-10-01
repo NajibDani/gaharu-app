@@ -210,9 +210,18 @@
                                     <span class="badge bg-light text-dark border">{{ $detail->barang->kategori->nama ?? '-' }}</span>
                                 </td>
                                 <td>
-                                    @if($hasKonv && $detail->qty_pembelian)
-                                        <span class="fw-bold text-dark">{{ number_format($detail->qty_pembelian, 2, ',', '.') }}</span> {{ $detail->satuan_pembelian }}
-                                        <div class="text-muted small" style="font-size: 11px;">@ Rp {{ number_format($detail->harga_pembelian, 0, ',', '.') }}</div>
+                                    @if($hasKonv)
+                                        @php
+                                            $konv = (float)$detail->konversi_pembelian ?: 1;
+                                            $displayQtyBeli = $detail->qty_pembelian;
+                                            $displayHargaBeli = $detail->harga_pembelian;
+                                            if ($displayQtyBeli === null || abs(((float)$displayQtyBeli * $konv) - (float)$detail->qty) > 0.05) {
+                                                $displayQtyBeli = $konv > 0 ? ((float)$detail->qty / $konv) : (float)$detail->qty;
+                                                $displayHargaBeli = (float)$detail->harga_satuan * $konv;
+                                            }
+                                        @endphp
+                                        <span class="fw-bold text-dark">{{ number_format($displayQtyBeli, 2, ',', '.') }}</span> {{ $detail->satuan_pembelian }}
+                                        <div class="text-muted small" style="font-size: 11px;">@ Rp {{ number_format($displayHargaBeli, 0, ',', '.') }}</div>
                                     @else
                                         <span class="text-muted">-</span>
                                     @endif

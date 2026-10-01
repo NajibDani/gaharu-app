@@ -137,7 +137,10 @@
                             <tr>
                                 <th class="px-3.5 py-3 pr-6 w-12 text-center whitespace-nowrap">#</th>
                                 <th class="px-6 py-3 min-w-[200px] whitespace-nowrap">Karyawan</th>
-                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[130px]">Denda Terlambat</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap min-w-[130px]" title="Otomatis dari data absensi keterlambatan">
+                                    <div>Denda Terlambat</div>
+                                    <div class="text-[9px] font-normal text-slate-400 mt-0.5 lowercase">(otomatis absensi)</div>
+                                </th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[135px]">Kerusakan Inventaris</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[130px]">Kasbon</th>
                                 <th class="px-3 py-3 text-right whitespace-nowrap min-w-[135px]">Pengurangan Deposit</th>
@@ -186,7 +189,7 @@
                                     <input type="hidden" class="potongan-terlambat-raw" value="{{ (float)$payroll->potongan_terlambat }}">
                                     @if($payroll->potongan_terlambat > 0)
                                         <div class="font-bold text-rose-700 text-xs whitespace-nowrap">-&nbsp;Rp&nbsp;{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</div>
-                                        <div class="text-[9.5px] text-slate-500 font-semibold mt-0.5 whitespace-nowrap">Otomatis Absensi</div>
+                                        
                                     @else
                                         <span class="text-slate-400 font-bold text-xs whitespace-nowrap">-</span>
                                     @endif

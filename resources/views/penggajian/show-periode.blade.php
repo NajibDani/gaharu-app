@@ -607,7 +607,10 @@
                                 <th class="px-3 py-2 text-center whitespace-nowrap min-w-[130px] border-b border-slate-200 font-extrabold cat-divider-bonus">Total Bonus</th>
 
                                 {{-- Under POTONGAN --}}
-                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[125px] border-b border-slate-200">Terlambat</th>
+                                <th class="px-3 py-2 text-center whitespace-nowrap min-w-[125px] border-b border-slate-200" title="Otomatis dari data absensi keterlambatan">
+                                    <div>Terlambat</div>
+                                    <div class="text-[9px] font-normal text-slate-400 mt-0.5 lowercase">(otomatis absensi)</div>
+                                </th>
                                 <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Inventaris</th>
                                 <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Kasbon</th>
                                 <th class="px-2 py-2 text-center whitespace-nowrap min-w-[120px] border-b border-slate-200">Pot. Deposit</th>
@@ -1729,7 +1732,7 @@
                                                 </div>
                                             @endforeach
                                         </div>
-                                        <div class="text-[9px] text-slate-500 font-semibold mt-0.5 text-right">Otomatis Absensi</div>
+                                        
                                     @else
                                         <input type="hidden" class="potongan-terlambat-raw" value="{{ (float)$payroll->potongan_terlambat }}">
                                         @if($payroll->potongan_terlambat > 0)
@@ -1737,7 +1740,7 @@
                                                 <span class="ac-curr">- Rp</span>
                                                 <span class="ac-val">{{ number_format($payroll->potongan_terlambat, 0, ',', '.') }}</span>
                                             </div>
-                                            <div class="text-[9px] text-slate-500 font-semibold mt-0.5 text-right">Otomatis Absensi</div>
+                                            
                                         @else
                                             <div class="text-center text-slate-400 font-bold text-xs">-</div>
                                         @endif
@@ -2966,17 +2969,23 @@
                 m.style.top = '';
                 m.style.left = '';
                 m.style.bottom = '';
+                m.style.maxHeight = '';
+                m.style.overflowY = '';
+                m.style.visibility = '';
             });
 
             if (isHidden) {
-                const rect = btn.getBoundingClientRect();
-                const menuWidth = 185;
-                const menuHeight = 230; // estimasi tinggi menu
-                
-                // Gunakan position fixed agar tembus dari segala parent overflow
+                // Tampilkan sementara secara tersembunyi agar bisa diukur dimensi aslinya
+                menu.classList.remove('hidden');
                 menu.style.position = 'fixed';
                 menu.style.zIndex = '99999';
-                menu.style.width = menuWidth + 'px';
+                menu.style.width = '210px';
+                menu.style.overflowY = 'auto';
+                menu.style.visibility = 'hidden';
+
+                const rect = btn.getBoundingClientRect();
+                const menuWidth = 210;
+                const menuHeight = menu.scrollHeight || menu.offsetHeight || 380;
                 
                 // Posisikan horizontal: sejajar kanan tombol
                 let leftPos = rect.right - menuWidth;
@@ -2984,18 +2993,33 @@
                 menu.style.left = leftPos + 'px';
 
                 // Posisikan vertikal: cek ruang bawah vs atas
-                const spaceBelow = window.innerHeight - rect.bottom;
-                if (spaceBelow < menuHeight && rect.top > menuHeight) {
-                    // Muncul ke atas tombol
-                    menu.style.top = 'auto';
-                    menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
-                } else {
-                    // Muncul ke bawah tombol
+                const spaceBelow = window.innerHeight - rect.bottom - 12;
+                const spaceAbove = rect.top - 12;
+
+                if (spaceBelow >= menuHeight) {
+                    // Cukup ruang ke bawah
                     menu.style.bottom = 'auto';
                     menu.style.top = (rect.bottom + 4) + 'px';
+                    menu.style.maxHeight = spaceBelow + 'px';
+                } else if (spaceAbove >= menuHeight) {
+                    // Cukup ruang ke atas
+                    menu.style.top = 'auto';
+                    menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+                    menu.style.maxHeight = spaceAbove + 'px';
+                } else {
+                    // Jika kedua sisi kurang dari tinggi menu, pilih sisi dengan ruang terbesar dan batasi maxHeight dengan scroll internal
+                    if (spaceBelow >= spaceAbove) {
+                        menu.style.bottom = 'auto';
+                        menu.style.top = (rect.bottom + 4) + 'px';
+                        menu.style.maxHeight = Math.max(160, spaceBelow) + 'px';
+                    } else {
+                        menu.style.top = 'auto';
+                        menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+                        menu.style.maxHeight = Math.max(160, spaceAbove) + 'px';
+                    }
                 }
 
-                menu.classList.remove('hidden');
+                menu.style.visibility = 'visible';
             }
         }
 
@@ -3007,9 +3031,19 @@
                     m.style.top = '';
                     m.style.left = '';
                     m.style.bottom = '';
+                    m.style.maxHeight = '';
+                    m.style.overflowY = '';
+                    m.style.visibility = '';
                 });
             }
         });
+
+        // Tutup menu saat halaman di-scroll agar posisi fixed tidak melayang
+        window.addEventListener('scroll', function() {
+            document.querySelectorAll('.kebab-menu:not(.hidden)').forEach(m => {
+                m.classList.add('hidden');
+            });
+        }, true);
 
         // Kirim Slip ke WhatsApp: Langsung Buka Chat WhatsApp
         function sendSlipWa(pdfUrl, waUrl, fileName) {

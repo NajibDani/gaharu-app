@@ -472,7 +472,9 @@ class PersediaanAwalController extends Controller
                     $hargaInput = $hargaStok * $multiplier;
                 }
 
-                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+                $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
+                $qtyPembelian = $isPembelian ? $qtyInput : ($hasKonv && $konversi > 0 ? round($qtyStok / $konversi, 4) : null);
+                $hargaPembelian = $isPembelian ? max(0, $hargaInput) : ($hasKonv && $konversi > 0 ? round($hargaStok * $konversi, 2) : null);
 
                 $validItems[] = [
                     'barang_id'          => $barangId,
@@ -481,10 +483,10 @@ class PersediaanAwalController extends Controller
                     'harga_input'        => max(0, $hargaInput),
                     'is_pembelian'       => $isPembelian,
                     'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
-                    'satuan_pembelian'   => $isPembelian ? $satuanBeli : null,
+                    'satuan_pembelian'   => $hasKonv ? $satuanBeli : null,
                     'konversi_pembelian' => $konversi,
-                    'qty_pembelian'      => $isPembelian ? $qtyInput : null,
-                    'harga_pembelian'    => $isPembelian ? max(0, $hargaInput) : null,
+                    'qty_pembelian'      => $qtyPembelian,
+                    'harga_pembelian'    => $hargaPembelian,
                     'qty_stok'           => $qtyStok,
                     'harga_stok'         => $hargaStok,
                     'total_nilai'        => $totalNilai,
@@ -768,16 +770,14 @@ class PersediaanAwalController extends Controller
 
             if ($hasKonv) {
                 if ($d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
-                    $isSavedInPembelian = true;
-                    $qtyInput = (float)$d->qty_pembelian;
-                    if ($d->harga_pembelian !== null) {
-                        $hargaInput = (float)$d->harga_pembelian;
-                    } elseif ($d->harga_satuan !== null) {
-                        if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.01) {
-                            $hargaInput = round((float)$d->harga_satuan * $konv, 2);
-                        } else {
-                            $hargaInput = (float)$d->harga_satuan;
-                        }
+                    if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.05) {
+                        $isSavedInPembelian = true;
+                        $qtyInput = (float)$d->qty_pembelian;
+                        $hargaInput = (float)($d->harga_pembelian ?: round((float)$d->harga_satuan * $konv, 2));
+                    } else {
+                        $isSavedInPembelian = false;
+                        $qtyInput = (float)$d->qty;
+                        $hargaInput = (float)$d->harga_satuan;
                     }
                 }
             }
@@ -1031,7 +1031,9 @@ class PersediaanAwalController extends Controller
                     }
                 }
 
-                $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
+                $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
+                $qtyPembelian = $isPembelian ? $qtyInput : ($hasKonv && $konversi > 0 ? round($qtyStok / $konversi, 4) : null);
+                $hargaPembelian = $isPembelian ? max(0, $hargaInput) : ($hasKonv && $konversi > 0 ? round($hargaStok * $konversi, 2) : null);
 
                 $validItems[] = [
                     'barang_id'          => $bId,
@@ -1040,10 +1042,10 @@ class PersediaanAwalController extends Controller
                     'harga_input'        => max(0, $hargaInput),
                     'is_pembelian'       => $isPembelian,
                     'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
-                    'satuan_pembelian'   => $isPembelian ? $satuanBeli : null,
+                    'satuan_pembelian'   => $hasKonv ? $satuanBeli : null,
                     'konversi_pembelian' => $konversi,
-                    'qty_pembelian'      => $isPembelian ? $qtyInput : null,
-                    'harga_pembelian'    => $isPembelian ? max(0, $hargaInput) : null,
+                    'qty_pembelian'      => $qtyPembelian,
+                    'harga_pembelian'    => $hargaPembelian,
                     'qty_stok'           => $qtyStok,
                     'harga_stok'         => $hargaStok,
                     'total_nilai'        => $totalNilai,
@@ -2119,6 +2121,9 @@ class PersediaanAwalController extends Controller
 
                     $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
 
+                    $qtyPembelian = $isPembelian ? $qtyInput : ($hasKonv && $konversi > 0 ? round($qtyStok / $konversi, 4) : null);
+                    $hargaPembelian = $isPembelian ? max(0, $hargaInput) : ($hasKonv && $konversi > 0 ? round($hargaStok * $konversi, 2) : null);
+
                     $validItems[] = [
                         'barang_id'          => $barang->id,
                         'barang'             => $barang,
@@ -2126,10 +2131,10 @@ class PersediaanAwalController extends Controller
                         'harga_input'        => max(0, $hargaInput),
                         'is_pembelian'       => $isPembelian,
                         'satuan_dipilih'     => $isPembelian ? $satuanBeli : $satuanStok,
-                        'satuan_pembelian'   => $isPembelian ? $satuanBeli : null,
-                        'konversi_pembelian' => $isPembelian ? $konversi : null,
-                        'qty_pembelian'      => $isPembelian ? $qtyInput : null,
-                        'harga_pembelian'    => $isPembelian ? max(0, $hargaInput) : null,
+                        'satuan_pembelian'   => $hasKonv ? $satuanBeli : null,
+                        'konversi_pembelian' => $konversi,
+                        'qty_pembelian'      => $qtyPembelian,
+                        'harga_pembelian'    => $hargaPembelian,
                         'qty_stok'           => $qtyStok,
                         'harga_satuan'       => $hargaStok,
                         'total_nilai'        => $totalNilai,
