@@ -172,6 +172,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
     // Pesanan B2B / Cold Kitchen (Akses Operasional - Semua Role)
     Route::post('/pesanan/pembayaran-massal', [PesananController::class, 'pembayaranMassal'])->name('pesanan.pembayaran-massal');
+    Route::get('/pesanan/suggestions', [PesananController::class, 'suggestions'])->name('pesanan.suggestions');
     Route::post('/pesanan/{id}/update-harga-jual', [PesananController::class, 'updateHargaJual'])->name('pesanan.update-harga-jual');
     Route::post('/pesanan/{id}/update-harga', [PesananController::class, 'updateHargaJual'])->name('pesanan.update-harga');
     Route::get('/pesanan/{id}/cetak-pdf', [PesananController::class, 'cetakSoPdf'])->name('pesanan.cetak-pdf');

@@ -293,18 +293,40 @@ class KeterlambatanController extends Controller
         foreach ($payrolls as $payroll) {
             if ($payroll->status === 'approved') continue;
 
-            // Jika slip memiliki rentang tanggal_mulai dan tanggal_selesai
-            if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
-                $pMulai = Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d');
-                $pSelesai = Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d');
+            $kw = $payroll->karyawan;
+            $pNum = (int)($payroll->pilihan_periode ?? 1);
 
-                // Hitung total potongan keterlambatan HANYA yang berada dalam rentang slip ini
-                $potonganPeriode = Keterlambatan::where('karyawan_id', $karyawanId)
+            $pMulai = $payroll->tanggal_mulai ? Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : null;
+            $pSelesai = $payroll->tanggal_selesai ? Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : null;
+
+            if (!$pMulai && !$pSelesai && $kw) {
+                if ($pNum === 2) {
+                    $pMulai = $kw->tanggal_mulai_2 ? Carbon::parse($kw->tanggal_mulai_2)->format('Y-m-d') : null;
+                    $pSelesai = $kw->tanggal_selesai_2 ? Carbon::parse($kw->tanggal_selesai_2)->format('Y-m-d') : null;
+                } else {
+                    $pMulai = $kw->tanggal_mulai ? Carbon::parse($kw->tanggal_mulai)->format('Y-m-d') : null;
+                    $pSelesai = $kw->tanggal_selesai ? Carbon::parse($kw->tanggal_selesai)->format('Y-m-d') : null;
+                }
+            }
+
+            // Hitung total potongan keterlambatan HANYA yang berada dalam rentang slip ini
+            if ($pMulai && $pSelesai) {
+                $potonganPeriode = (float) Keterlambatan::where('karyawan_id', $karyawanId)
                     ->whereBetween('tanggal', [$pMulai, $pSelesai])
+                    ->sum('potongan');
+            } elseif ($pMulai) {
+                $potonganPeriode = (float) Keterlambatan::where('karyawan_id', $karyawanId)
+                    ->where('tanggal', '>=', $pMulai)
+                    ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periodeStr])
+                    ->sum('potongan');
+            } elseif ($pSelesai) {
+                $potonganPeriode = (float) Keterlambatan::where('karyawan_id', $karyawanId)
+                    ->where('tanggal', '<=', $pSelesai)
+                    ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periodeStr])
                     ->sum('potongan');
             } else {
                 // Jika tidak ada batasan tanggal spesifik, ambil sebulan penuh
-                $potonganPeriode = Keterlambatan::where('karyawan_id', $karyawanId)
+                $potonganPeriode = (float) Keterlambatan::where('karyawan_id', $karyawanId)
                     ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periodeStr])
                     ->sum('potongan');
             }
@@ -312,11 +334,12 @@ class KeterlambatanController extends Controller
             $totalDeductions = floatval($potonganPeriode) +
                                floatval($payroll->potongan_inventaris ?? 0) +
                                floatval($payroll->potongan_kasbon ?? 0) +
+                               floatval($payroll->potongan_deposit ?? 0) +
                                floatval($payroll->potongan_dll ?? 0);
 
             $totalEarnings = floatval($payroll->total_earnings ?? (
                 ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-                ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->bonus_dll ?? 0)
+                ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
             ));
 
             $totalGajiBersih = $totalEarnings - $totalDeductions;

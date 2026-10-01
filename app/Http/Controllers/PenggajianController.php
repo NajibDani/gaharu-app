@@ -237,9 +237,21 @@ class PenggajianController extends Controller
         if ($request->has('potongan_terlambat')) {
             $potonganTerlambat = $cleanRupiah($request->potongan_terlambat);
         } else {
+            $pMulai = $request->tanggal_mulai ?: (($pilihanPeriode === 2) ? ($karyawan->tanggal_mulai_2 ?? $karyawan->tanggal_mulai) : $karyawan->tanggal_mulai);
+            $pSelesai = $request->tanggal_selesai ?: (($pilihanPeriode === 2) ? ($karyawan->tanggal_selesai_2 ?? $karyawan->tanggal_selesai) : $karyawan->tanggal_selesai);
+            
             $qLate = Keterlambatan::where('karyawan_id', $karyawan->id);
-            if ($request->tanggal_mulai && $request->tanggal_selesai) {
-                $qLate->whereBetween('tanggal', [$request->tanggal_mulai, $request->tanggal_selesai]);
+            if ($pMulai && $pSelesai) {
+                $qLate->whereBetween('tanggal', [
+                    \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
+                    \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
+                ]);
+            } elseif ($pMulai) {
+                $qLate->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
+                      ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
+            } elseif ($pSelesai) {
+                $qLate->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
+                      ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
             } else {
                 $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
             }
@@ -309,6 +321,21 @@ class PenggajianController extends Controller
             'status'                      => $existingStatus,
             'status_jurnal'               => false
         ]);
+
+        // Sinkronkan juga rentang tanggal berlaku ke Master Data Karyawan (Pengaturan Gaji)
+        if ($request->has('tanggal_mulai') || $request->has('tanggal_selesai')) {
+            if ($pilihanPeriode === 2) {
+                $karyawan->update([
+                    'tanggal_mulai_2'   => $request->tanggal_mulai,
+                    'tanggal_selesai_2' => $request->tanggal_selesai,
+                ]);
+            } else {
+                $karyawan->update([
+                    'tanggal_mulai'   => $request->tanggal_mulai,
+                    'tanggal_selesai' => $request->tanggal_selesai,
+                ]);
+            }
+        }
 
         return redirect()->route('penggajian.show-periode', ['periode' => $request->periode, 'outlet' => $karyawan->outlet ?? 'Gaharu'])
             ->with('success', "Data gaji ({$satuanGaji} Periode {$pilihanPeriode}) untuk {$karyawan->nama_karyawan} berhasil ditambahkan ke periode.");
@@ -393,9 +420,23 @@ class PenggajianController extends Controller
                 $pMulai = $payroll->tanggal_mulai ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : null;
                 $pSelesai = $payroll->tanggal_selesai ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : null;
 
+                if (!$pMulai && !$pSelesai && $kw) {
+                    if ($pNum === 2) {
+                        $pMulai = $kw->tanggal_mulai_2 ? \Carbon\Carbon::parse($kw->tanggal_mulai_2)->format('Y-m-d') : null;
+                        $pSelesai = $kw->tanggal_selesai_2 ? \Carbon\Carbon::parse($kw->tanggal_selesai_2)->format('Y-m-d') : null;
+                    } else {
+                        $pMulai = $kw->tanggal_mulai ? \Carbon\Carbon::parse($kw->tanggal_mulai)->format('Y-m-d') : null;
+                        $pSelesai = $kw->tanggal_selesai ? \Carbon\Carbon::parse($kw->tanggal_selesai)->format('Y-m-d') : null;
+                    }
+                }
+
                 $qLate = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
                 if ($pMulai && $pSelesai) {
                     $qLate->whereBetween('tanggal', [$pMulai, $pSelesai]);
+                } elseif ($pMulai) {
+                    $qLate->where('tanggal', '>=', $pMulai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+                } elseif ($pSelesai) {
+                    $qLate->where('tanggal', '<=', $pSelesai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
                 } else {
                     $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
                 }
@@ -473,6 +514,7 @@ class PenggajianController extends Controller
 
         $allPotonganDeposit = $hasPotDeposit
             ? Penggajian::whereIn('karyawan_id', $karyawanIds)
+                ->where('periode_bulan_tahun', '<', $periode)
                 ->groupBy('karyawan_id')
                 ->selectRaw('karyawan_id, SUM(potongan_deposit) as total_pot_deposit')
                 ->pluck('total_pot_deposit', 'karyawan_id')
@@ -480,7 +522,7 @@ class PenggajianController extends Controller
 
         $allReturnedOther = $hasRetDeposit
             ? Penggajian::whereIn('karyawan_id', $karyawanIds)
-                ->where('periode_bulan_tahun', '!=', $periode)
+                ->where('periode_bulan_tahun', '<', $periode)
                 ->groupBy('karyawan_id')
                 ->selectRaw('karyawan_id, SUM(pengembalian_deposit) as total_ret_deposit')
                 ->pluck('total_ret_deposit', 'karyawan_id')
@@ -756,10 +798,21 @@ class PenggajianController extends Controller
             $uangTransport = floatval($k->uang_transport ?? 0);
             $tarifHarian = $gajiPokok + $uangMakan + $uangTransport;
 
-            // Otomatis hitung akumulasi denda keterlambatan bulan ini dari tabel Keterlambatan
-            $potonganTerlambat = Keterlambatan::where('karyawan_id', $k->id)
-                ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode])
-                ->sum('potongan');
+            // Otomatis hitung akumulasi denda keterlambatan bulan ini dari tabel Keterlambatan sesuai tanggal berlaku
+            $pMulai = $k->tanggal_mulai ? \Carbon\Carbon::parse($k->tanggal_mulai)->format('Y-m-d') : null;
+            $pSelesai = $k->tanggal_selesai ? \Carbon\Carbon::parse($k->tanggal_selesai)->format('Y-m-d') : null;
+
+            $qLate = Keterlambatan::where('karyawan_id', $k->id);
+            if ($pMulai && $pSelesai) {
+                $qLate->whereBetween('tanggal', [$pMulai, $pSelesai]);
+            } elseif ($pMulai) {
+                $qLate->where('tanggal', '>=', $pMulai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+            } elseif ($pSelesai) {
+                $qLate->where('tanggal', '<=', $pSelesai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+            } else {
+                $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+            }
+            $potonganTerlambat = (float) $qLate->sum('potongan');
 
             $totalDeductions = floatval($potonganTerlambat);
             $gajiUtama = ($satuanGaji === 'Bulanan') ? $tarifHarian : 0;
@@ -1100,6 +1153,21 @@ class PenggajianController extends Controller
             'total_gaji_bersih'           => $totalGajiBersih,
         ]);
 
+        // Sinkronkan juga rentang tanggal berlaku ke Master Data Karyawan (Pengaturan Gaji)
+        if ($request->has('tanggal_mulai') || $request->has('tanggal_selesai')) {
+            if ($pilihanPeriode === 2) {
+                $karyawan->update([
+                    'tanggal_mulai_2'   => $request->tanggal_mulai,
+                    'tanggal_selesai_2' => $request->tanggal_selesai,
+                ]);
+            } else {
+                $karyawan->update([
+                    'tanggal_mulai'   => $request->tanggal_mulai,
+                    'tanggal_selesai' => $request->tanggal_selesai,
+                ]);
+            }
+        }
+
         // Kembalikan ke halaman detail kelompok karyawan per periode dengan pesan sukses
         return redirect()->route('penggajian.show-periode', ['periode' => $payroll->periode_bulan_tahun])
             ->with('success', 'Data gaji ' . $payroll->karyawan->nama_karyawan . ' berhasil diperbarui.');
@@ -1169,12 +1237,31 @@ class PenggajianController extends Controller
         }
 
         // Ambil rincian keterlambatan karyawan pada rentang slip atau bulan periode ini
+        $pMulai = $payroll->tanggal_mulai;
+        $pSelesai = $payroll->tanggal_selesai;
+        if (!$pMulai && !$pSelesai && $payroll->karyawan && !$payroll->is_combined) {
+            $pNum = (int)($payroll->pilihan_periode ?? 1);
+            if ($pNum === 2) {
+                $pMulai = $payroll->karyawan->tanggal_mulai_2 ?? $payroll->karyawan->tanggal_mulai;
+                $pSelesai = $payroll->karyawan->tanggal_selesai_2 ?? $payroll->karyawan->tanggal_selesai;
+            } else {
+                $pMulai = $payroll->karyawan->tanggal_mulai;
+                $pSelesai = $payroll->karyawan->tanggal_selesai;
+            }
+        }
+
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
-        if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
+        if ($pMulai && $pSelesai) {
             $queryKeterlambatan->whereBetween('tanggal', [
-                \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d'),
-                \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d')
+                \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
+                \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
             ]);
+        } elseif ($pMulai) {
+            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
+                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+        } elseif ($pSelesai) {
+            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
+                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         } else {
             $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         }
@@ -1247,12 +1334,31 @@ class PenggajianController extends Controller
             $payroll->entries = $allEntries;
         }
 
+        $pMulai = $payroll->tanggal_mulai;
+        $pSelesai = $payroll->tanggal_selesai;
+        if (!$pMulai && !$pSelesai && $payroll->karyawan && !$payroll->is_combined) {
+            $pNum = (int)($payroll->pilihan_periode ?? 1);
+            if ($pNum === 2) {
+                $pMulai = $payroll->karyawan->tanggal_mulai_2 ?? $payroll->karyawan->tanggal_mulai;
+                $pSelesai = $payroll->karyawan->tanggal_selesai_2 ?? $payroll->karyawan->tanggal_selesai;
+            } else {
+                $pMulai = $payroll->karyawan->tanggal_mulai;
+                $pSelesai = $payroll->karyawan->tanggal_selesai;
+            }
+        }
+
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
-        if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
+        if ($pMulai && $pSelesai) {
             $queryKeterlambatan->whereBetween('tanggal', [
-                \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d'),
-                \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d')
+                \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
+                \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
             ]);
+        } elseif ($pMulai) {
+            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
+                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+        } elseif ($pSelesai) {
+            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
+                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         } else {
             $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         }
@@ -1342,12 +1448,31 @@ class PenggajianController extends Controller
             $payroll->entries = $allEntries;
         }
 
+        $pMulai = $payroll->tanggal_mulai;
+        $pSelesai = $payroll->tanggal_selesai;
+        if (!$pMulai && !$pSelesai && $payroll->karyawan && !$payroll->is_combined) {
+            $pNum = (int)($payroll->pilihan_periode ?? 1);
+            if ($pNum === 2) {
+                $pMulai = $payroll->karyawan->tanggal_mulai_2 ?? $payroll->karyawan->tanggal_mulai;
+                $pSelesai = $payroll->karyawan->tanggal_selesai_2 ?? $payroll->karyawan->tanggal_selesai;
+            } else {
+                $pMulai = $payroll->karyawan->tanggal_mulai;
+                $pSelesai = $payroll->karyawan->tanggal_selesai;
+            }
+        }
+
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
-        if ($payroll->tanggal_mulai && $payroll->tanggal_selesai) {
+        if ($pMulai && $pSelesai) {
             $queryKeterlambatan->whereBetween('tanggal', [
-                \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d'),
-                \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d')
+                \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
+                \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
             ]);
+        } elseif ($pMulai) {
+            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
+                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+        } elseif ($pSelesai) {
+            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
+                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         } else {
             $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         }
@@ -1741,8 +1866,24 @@ class PenggajianController extends Controller
                 ]);
             } else {
                 // Buat record baru jika belum ada
-                $qLate = Keterlambatan::where('karyawan_id', $karyawan->id)
-                    ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+                $pMulai = ($pilihanPeriode === 2) ? ($karyawan->tanggal_mulai_2 ?? $karyawan->tanggal_mulai) : $karyawan->tanggal_mulai;
+                $pSelesai = ($pilihanPeriode === 2) ? ($karyawan->tanggal_selesai_2 ?? $karyawan->tanggal_selesai) : $karyawan->tanggal_selesai;
+
+                $qLate = Keterlambatan::where('karyawan_id', $karyawan->id);
+                if ($pMulai && $pSelesai) {
+                    $qLate->whereBetween('tanggal', [
+                        \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
+                        \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
+                    ]);
+                } elseif ($pMulai) {
+                    $qLate->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
+                          ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+                } elseif ($pSelesai) {
+                    $qLate->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
+                          ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+                } else {
+                    $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
+                }
                 $potonganTerlambat = floatval($qLate->sum('potongan'));
                 $totalEarnings   = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
                 $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;

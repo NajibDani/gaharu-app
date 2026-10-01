@@ -133,6 +133,40 @@
             </div>
         </div>
 
+        {{-- ALERT STOK KRITIS OUTLET BANNER (JIKA ADA BAHAN SETENGAH JADI / BARANG JADI DI BAWAH MINIMUM) --}}
+        @if(!empty($outletSuggestionsSummary))
+            <div class="card border-0 shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%); border-left: 5px solid #f97316 !important;">
+                <div class="card-body p-3 p-md-4">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="rounded-circle bg-warning text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                                <i class="bi bi-shield-exclamation"></i>
+                            </div>
+                            <div>
+                                <h6 class="fw-bold text-dark mb-1">
+                                    Saran Restock Produk / Bahan Cold Kitchen di Outlet
+                                </h6>
+                                <p class="text-muted small mb-0">
+                                    Terdapat stok Bahan Setengah Jadi / Barang Jadi yang berada di bawah batas minimum stock. Klik tombol outlet untuk langsung membuat order restock:
+                                </p>
+                            </div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-2">
+                            @foreach($outletSuggestionsSummary as $sum)
+                                <button type="button" class="btn btn-sm btn-outline-dark bg-white fw-bold shadow-sm d-inline-flex align-items-center gap-2 btn-quick-suggest-order"
+                                        data-customer-id="{{ $sum['customer_id'] }}"
+                                        data-customer-name="{{ $sum['customer_nama'] }}">
+                                    <i class="bi bi-cart-plus-fill text-warning"></i>
+                                    <span>{{ $sum['customer_nama'] }}</span>
+                                    <span class="badge bg-danger text-white rounded-pill">{{ $sum['count'] }} item</span>
+                                </button>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         {{-- SUMMARY CARDS --}}
         <div class="row g-3 mb-4">
             <div class="col-12 col-sm-6 col-md-4">
@@ -929,6 +963,25 @@
                             </div>
                         </div>
 
+                        {{-- SUGGESTION RESTOCK BOX DI DALAM MODAL --}}
+                        <div id="modal-cold-suggestion-box" class="card p-3 mb-3 bg-light border-warning" style="display: none; border-left: 4px solid #f59e0b !important; border-radius: 10px;">
+                            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                                <div>
+                                    <strong class="text-dark small d-flex align-items-center">
+                                        <i class="bi bi-lightbulb-fill text-warning fs-6 me-1"></i>
+                                        Saran Restock Cold Kitchen (<span id="modal-cold-suggest-outlet-name"></span>)
+                                    </strong>
+                                    <span class="text-muted" style="font-size: 0.72rem;">Item di bawah batas minimum stock gudang outlet</span>
+                                </div>
+                                <button type="button" class="btn btn-xs btn-warning text-dark fw-bold shadow-sm py-1 px-2" id="modal-cold-btn-apply-all-suggestions" style="font-size: 0.75rem; border-radius: 6px;">
+                                    <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                                </button>
+                            </div>
+                            <div id="modal-cold-suggestion-list" class="d-flex flex-wrap gap-2 pt-1">
+                                <!-- Dynamic suggestion pills -->
+                            </div>
+                        </div>
+
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h6 class="fw-bold text-dark mb-0 small text-uppercase">Daftar Barang / Item Pesanan Cold Kitchen</h6>
                             <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="modal-btn-add-cold-item">
@@ -1311,179 +1364,392 @@
         // ==========================================
         // SCRIPT MODAL CREATE COLD KITCHEN ORDER
         // ==========================================
-        var tomSelectCustomerCold = null;
-        var coldItemTomSelects = [];
-
-        function initTomSelectColdCustomer() {
-            var el = document.getElementById('modal-select-customer-cold');
-            if (el && !tomSelectCustomerCold) {
-                tomSelectCustomerCold = new TomSelect(el, {
-                    placeholder: '-- Cari / Pilih Outlet / Konsumen --',
-                    allowEmptyOption: true,
-                    maxItems: 1
-                });
-            }
-        }
-
-        function initTomSelectColdItem(selectElement) {
-            if (!selectElement || selectElement.tomselect) return;
-            var ts = new TomSelect(selectElement, {
-                placeholder: '-- Cari BSJ / Barang Jadi --',
-                allowEmptyOption: true,
-                maxItems: 1,
-                onChange: function() {
-                    updateColdRowKonversiInfo(selectElement.closest('tr'));
-                }
-            });
-            coldItemTomSelects.push(ts);
-        }
-
-        function updateColdRowKonversiInfo(row) {
-            if (!row) return;
-            var select = row.querySelector('.modal-select-produk-cold');
-            var qtyInput = row.querySelector('.modal-input-cold-qty');
-            var modeSelect = row.querySelector('.modal-select-cold-mode');
-            var infoBox = row.querySelector('.modal-cold-konversi-info');
-
-            var val = select ? select.value : '';
-            var opt = select ? select.querySelector('option[value="' + val + '"]') : null;
-            var qty = parseFloat(qtyInput ? qtyInput.value : 0) || 0;
-            var mode = modeSelect ? modeSelect.value : 'resep';
-
-            if (!opt || !val) {
-                if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
-                return;
-            }
-
-            var baseSatuan = opt.getAttribute('data-satuan') || '';
-            var outQty = parseFloat(opt.getAttribute('data-output-qty')) || 0;
-            var outSatuan = opt.getAttribute('data-satuan-output') || baseSatuan;
-            var satuanKonv = opt.getAttribute('data-satuan-konversi') || '';
-            var konvVal = parseFloat(opt.getAttribute('data-konversi')) || 1;
-
-            var totalQtyTarget = qty;
-            var textInfo = '';
-
-            if (mode === 'resep') {
-                if (outQty > 0) {
-                    totalQtyTarget = qty * outQty;
-                    var totalQtyFmt = (totalQtyTarget % 1 === 0) ? totalQtyTarget.toLocaleString('id-ID') : totalQtyTarget.toFixed(2);
-                    textInfo = `<strong>${totalQtyFmt} ${outSatuan}</strong> <span class="text-muted">(${qty} Resep @ ${outQty.toLocaleString('id-ID')} ${outSatuan})</span>`;
-                } else {
-                    var totalQtyFmt = (qty % 1 === 0) ? qty.toLocaleString('id-ID') : qty.toFixed(2);
-                    textInfo = `<strong>${totalQtyFmt} ${baseSatuan}</strong> <span class="text-muted">(Non-Resep)</span>`;
-                }
-            } else if (mode === 'konversi') {
-                if (satuanKonv && konvVal > 1) {
-                    totalQtyTarget = qty * konvVal;
-                    var totalQtyFmt = (totalQtyTarget % 1 === 0) ? totalQtyTarget.toLocaleString('id-ID') : totalQtyTarget.toFixed(2);
-                    textInfo = `<strong>${totalQtyFmt} ${baseSatuan}</strong> <span class="text-muted">(${qty} ${satuanKonv} @ ${konvVal.toLocaleString('id-ID')} ${baseSatuan})</span>`;
-                } else {
-                    var totalQtyFmt = (qty % 1 === 0) ? qty.toLocaleString('id-ID') : qty.toFixed(2);
-                    textInfo = `<strong>${totalQtyFmt} ${baseSatuan}</strong>`;
-                }
-            } else {
-                var totalQtyFmt = (qty % 1 === 0) ? qty.toLocaleString('id-ID') : qty.toFixed(2);
-                textInfo = `<strong>${totalQtyFmt} ${baseSatuan}</strong>`;
-            }
-
-            if (infoBox) {
-                infoBox.innerHTML = textInfo;
-            }
-        }
-
         document.addEventListener('DOMContentLoaded', function() {
-            var modalCreate = document.getElementById('modalCreateColdOrder');
-            if (modalCreate) {
-                modalCreate.addEventListener('shown.bs.modal', function() {
-                    initTomSelectColdCustomer();
-                    document.querySelectorAll('.modal-select-produk-cold').forEach(function(sel) {
-                        initTomSelectColdItem(sel);
+            const tableBodyCold = document.getElementById('modal-cold-item-rows');
+            const btnAddCold = document.getElementById('modal-btn-add-cold-item');
+            const customerSelectCold = document.getElementById('modal-select-customer-cold');
+            const suggestionBoxCold = document.getElementById('modal-cold-suggestion-box');
+            const suggestionListCold = document.getElementById('modal-cold-suggestion-list');
+            const suggestionOutletNameCold = document.getElementById('modal-cold-suggest-outlet-name');
+            const btnApplyAllCold = document.getElementById('modal-cold-btn-apply-all-suggestions');
+
+            let currentSuggestionsCold = [];
+            const tomSelectColdInstances = new Map();
+            let tomSelectCustomerCold = null;
+
+            function initTomSelectColdCustomer() {
+                if (customerSelectCold && !tomSelectCustomerCold && typeof TomSelect !== 'undefined') {
+                    tomSelectCustomerCold = new TomSelect(customerSelectCold, {
+                        create: false,
+                        placeholder: '-- Cari / Pilih Outlet / Konsumen --',
+                        allowEmptyOption: true,
+                        dropdownParent: 'body'
                     });
+                }
+            }
+
+            function initTomSelectColdOnSelect(selectEl) {
+                if (!selectEl) return null;
+                if (tomSelectColdInstances.has(selectEl)) {
+                    return tomSelectColdInstances.get(selectEl);
+                }
+                if (typeof TomSelect === 'undefined') return null;
+
+                delete selectEl.tomselect;
+                selectEl.classList.remove('tomselected', 'ts-hidden-accessible');
+                selectEl.removeAttribute('id');
+                selectEl.removeAttribute('tabindex');
+                selectEl.removeAttribute('aria-hidden');
+                selectEl.style.display = '';
+
+                const ts = new TomSelect(selectEl, {
+                    create: false,
+                    placeholder: '-- Cari BSJ / Barang Jadi --',
+                    allowEmptyOption: true,
+                    dropdownParent: 'body',
+                    onChange: function() {
+                        const row = selectEl.closest('tr');
+                        updateColdModeOptions(row);
+                        updateColdKonversi(row);
+                    }
+                });
+                tomSelectColdInstances.set(selectEl, ts);
+                return ts;
+            }
+
+            function updateColdModeOptions(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.modal-select-produk-cold');
+                const modeEl = row.querySelector('.modal-select-cold-mode');
+                if (!selectEl || !modeEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
+                const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+                const satuanKonversi = (selected && selectEl.value) ? (selected.getAttribute('data-satuan-konversi') || '') : '';
+                const konversiVal = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-konversi') || 1) : 1;
+
+                const currentVal = modeEl.value;
+                modeEl.innerHTML = '';
+
+                if (satuanKonversi && konversiVal > 1) {
+                    const optKonversi = new Option(satuanKonversi + ' (' + konversiVal.toLocaleString('id-ID') + ' ' + satuanUtama + ')', 'konversi');
+                    modeEl.add(optKonversi);
+                }
+
+                if (outputQty > 0) {
+                    const optResep = new Option('Resep', 'resep');
+                    modeEl.add(optResep);
+                }
+
+                const optSatuan = new Option(satuanUtama.toUpperCase(), 'satuan');
+                modeEl.add(optSatuan);
+
+                if (currentVal === 'konversi' && satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (currentVal === 'resep' && outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else if (satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else {
+                    modeEl.value = 'satuan';
+                }
+            }
+
+            function updateColdKonversi(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.modal-select-produk-cold');
+                const modeEl = row.querySelector('.modal-select-cold-mode');
+                const qtyEl = row.querySelector('.modal-input-cold-qty');
+                const infoEl = row.querySelector('.modal-cold-konversi-info');
+
+                if (!selectEl || !modeEl || !qtyEl || !infoEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                if (!selected || !selectEl.value) {
+                    infoEl.innerHTML = '<span class="text-muted">-</span>';
+                    return;
+                }
+
+                const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
+                const outputSatuan = selected.getAttribute('data-satuan-output') || '';
+                const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const satuanKonversi = selected.getAttribute('data-satuan-konversi') || '';
+                const konversiVal = parseFloat(selected.getAttribute('data-konversi') || 1);
+                const mode = modeEl.value;
+                const qtyInput = parseFloat(qtyEl.value || 0);
+
+                if (mode === 'konversi' && konversiVal > 1) {
+                    const totalGramasi = qtyInput > 0 ? (qtyInput * konversiVal) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-primary" style="font-size: 0.85rem;">${totalGramasi.toLocaleString('id-ID')} ${satuanUtama}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 ${satuanKonversi} = ${konversiVal.toLocaleString('id-ID')} ${satuanUtama})</div>
+                    `;
+                } else if (mode === 'resep' && outputQty > 0) {
+                    const totalTarget = qtyInput > 0 ? (qtyInput * outputQty) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-success" style="font-size: 0.85rem;">${totalTarget.toLocaleString('id-ID')} ${outputSatuan}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 Resep = ${outputQty.toLocaleString('id-ID')} ${outputSatuan})</div>
+                    `;
+                } else {
+                    let helperText = '';
+                    if (satuanKonversi && konversiVal > 1 && qtyInput > 0) {
+                        const packEquivalent = qtyInput / konversiVal;
+                        const packFmt = (packEquivalent % 1 === 0) ? packEquivalent.toFixed(0) : packEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${packFmt} ${satuanKonversi})</div>`;
+                    } else if (outputQty > 0 && qtyInput > 0) {
+                        const resepEquivalent = qtyInput / outputQty;
+                        const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>`;
+                    }
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-dark" style="font-size: 0.85rem;">${qtyInput.toLocaleString('id-ID')} ${satuanUtama || '-'}</div>
+                        ${helperText}
+                    `;
+                }
+            }
+
+            // Delegasi Event untuk Hapus Baris & Update Dynamic Info
+            if (tableBodyCold) {
+                tableBodyCold.addEventListener('click', function(e) {
+                    const btnRemove = e.target.closest('.modal-btn-remove-cold-row');
+                    if (btnRemove && !btnRemove.disabled) {
+                        const row = btnRemove.closest('tr');
+                        if (row) {
+                            const selectEl = row.querySelector('.modal-select-produk-cold');
+                            if (selectEl && tomSelectColdInstances.has(selectEl)) {
+                                tomSelectColdInstances.get(selectEl).destroy();
+                                tomSelectColdInstances.delete(selectEl);
+                            }
+                            row.remove();
+                            checkColdRows();
+                        }
+                    }
+                });
+
+                tableBodyCold.addEventListener('change', function(e) {
+                    if (e.target.classList.contains('modal-select-produk-cold') || e.target.classList.contains('modal-select-cold-mode')) {
+                        updateColdKonversi(e.target.closest('tr'));
+                    }
+                });
+
+                tableBodyCold.addEventListener('input', function(e) {
+                    if (e.target.classList.contains('modal-input-cold-qty')) {
+                        updateColdKonversi(e.target.closest('tr'));
+                    }
                 });
             }
 
-            var tbody = document.getElementById('modal-cold-item-rows');
-            var btnAddRow = document.getElementById('modal-btn-add-cold-item');
+            function checkColdRows() {
+                if (!tableBodyCold) return;
+                const rows = tableBodyCold.querySelectorAll('tr');
+                rows.forEach(r => {
+                    const btnRemove = r.querySelector('.modal-btn-remove-cold-row');
+                    if (btnRemove) {
+                        btnRemove.disabled = (rows.length === 1);
+                    }
+                });
+            }
 
-            if (btnAddRow && tbody) {
-                btnAddRow.addEventListener('click', function() {
-                    var firstRow = tbody.querySelector('tr');
-                    if (!firstRow) return;
+            // Tambah baris item baru
+            function addColdItemRow(produkId = '', qty = '', satuan = '') {
+                if (!tableBodyCold) return;
+                const rows = tableBodyCold.querySelectorAll('tr');
+                let targetRow = null;
 
-                    var newRow = firstRow.cloneNode(true);
+                if (rows.length === 1) {
+                    const firstSelect = rows[0].querySelector('.modal-select-produk-cold');
+                    const firstQty = rows[0].querySelector('.modal-input-cold-qty');
+                    if (!firstSelect.value && !firstQty.value) {
+                        targetRow = rows[0];
+                    }
+                }
+
+                if (!targetRow) {
+                    const firstRow = rows[0];
+                    targetRow = firstRow.cloneNode(true);
                     
-                    // Reset inputs
-                    var qtyInp = newRow.querySelector('.modal-input-cold-qty');
-                    if (qtyInp) qtyInp.value = '';
+                    const tsWrapper = targetRow.querySelector('.ts-wrapper');
+                    if (tsWrapper) tsWrapper.remove();
+                    const oldSelect = targetRow.querySelector('select.modal-select-produk-cold');
+                    if (oldSelect) {
+                        delete oldSelect.tomselect;
+                        oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
+                        oldSelect.removeAttribute('id');
+                        oldSelect.removeAttribute('tabindex');
+                        oldSelect.removeAttribute('aria-hidden');
+                        oldSelect.style.display = '';
+                        oldSelect.value = '';
+                    }
 
-                    var infoBox = newRow.querySelector('.modal-cold-konversi-info');
+                    targetRow.querySelector('.modal-btn-remove-cold-row').removeAttribute('disabled');
+                    
+                    const modeSelect = targetRow.querySelector('.modal-select-cold-mode');
+                    if (modeSelect) modeSelect.value = 'resep';
+                    const qtyInput = targetRow.querySelector('.modal-input-cold-qty');
+                    if (qtyInput) qtyInput.value = '';
+                    const infoBox = targetRow.querySelector('.modal-cold-konversi-info');
                     if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
 
-                    // Bersihkan instance tomselect lama jika ter-clone
-                    var tsWrapper = newRow.querySelector('.ts-wrapper');
-                    if (tsWrapper) tsWrapper.remove();
+                    tableBodyCold.appendChild(targetRow);
+                }
 
-                    var origSelect = newRow.querySelector('select.modal-select-produk-cold');
-                    if (origSelect) {
-                        origSelect.classList.remove('tomselected', 'ts-hidden-accessible');
-                        origSelect.style.display = '';
-                        origSelect.value = '';
-                        origSelect.removeAttribute('id');
+                const select = targetRow.querySelector('.modal-select-produk-cold');
+                const inputQty = targetRow.querySelector('.modal-input-cold-qty');
+
+                if (inputQty && qty !== '') {
+                    inputQty.value = qty;
+                }
+
+                const ts = initTomSelectColdOnSelect(select);
+                if (ts) {
+                    if (produkId) {
+                        ts.setValue(produkId);
+                    } else {
+                        ts.setValue('', true);
                     }
+                } else if (select) {
+                    select.value = produkId || '';
+                }
+                updateColdModeOptions(targetRow);
+                updateColdKonversi(targetRow);
 
-                    var btnRemove = newRow.querySelector('.modal-btn-remove-cold-row');
-                    if (btnRemove) {
-                        btnRemove.disabled = false;
-                        btnRemove.addEventListener('click', function() {
-                            if (tbody.querySelectorAll('tr').length > 1) {
-                                newRow.remove();
+                checkColdRows();
+                return targetRow;
+            }
+
+            // Init TomSelect di modal customer dan produk saat modal dibuka
+            var modalCreateCold = document.getElementById('modalCreateColdOrder');
+            if (modalCreateCold) {
+                modalCreateCold.addEventListener('shown.bs.modal', function() {
+                    initTomSelectColdCustomer();
+                    document.querySelectorAll('.modal-select-produk-cold').forEach(select => {
+                        initTomSelectColdOnSelect(select);
+                    });
+                });
+            }
+
+            // Fetch suggestions saat customer dipilih
+            function fetchColdSuggestions(customerId, autoApply = false) {
+                if (!customerId || !suggestionBoxCold) {
+                    if (suggestionBoxCold) suggestionBoxCold.style.display = 'none';
+                    if (suggestionListCold) suggestionListCold.innerHTML = '';
+                    currentSuggestionsCold = [];
+                    return;
+                }
+
+                fetch("{{ route('pesanan.suggestions') }}?customer_id=" + customerId)
+                    .then(res => res.json())
+                    .then(data => {
+                        currentSuggestionsCold = data.suggestions || [];
+                        if (suggestionOutletNameCold) suggestionOutletNameCold.innerText = data.outlet_name || '';
+
+                        if (currentSuggestionsCold.length > 0) {
+                            suggestionBoxCold.style.display = 'block';
+                            suggestionListCold.innerHTML = '';
+
+                            currentSuggestionsCold.forEach(item => {
+                                const pill = document.createElement('div');
+                                pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                                pill.innerHTML = `
+                                    <div class="text-start">
+                                        <div class="fw-bold">${item.nama}</div>
+                                        <div class="text-muted" style="font-size: 0.72rem;">
+                                            Stok: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
+                                            <span class="text-success fw-bold ms-1">(Saran: ${item.suggested_qty} ${item.satuan})</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-single-suggest py-1 px-2" style="font-size: 0.75rem;" title="Tambah item ini">
+                                        <i class="bi bi-plus-circle-fill"></i> Tambah
+                                    </button>
+                                `;
+
+                                pill.querySelector('.btn-add-single-suggest').addEventListener('click', function() {
+                                    addColdItemRow(item.barang_id, item.suggested_qty, item.satuan);
+                                    pill.classList.remove('bg-white');
+                                    pill.classList.add('bg-warning-subtle');
+                                    this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                                    this.disabled = true;
+                                });
+
+                                suggestionListCold.appendChild(pill);
+                            });
+
+                            if (autoApply) {
+                                applyAllColdSuggestions();
                             }
-                        });
-                    }
-
-                    tbody.appendChild(newRow);
-
-                    // Re-init TomSelect pada row baru
-                    if (origSelect) {
-                        initTomSelectColdItem(origSelect);
-                    }
-
-                    // Attach event listener to new row elements
-                    attachColdRowEvents(newRow);
-                });
-            }
-
-            function attachColdRowEvents(row) {
-                var qtyInput = row.querySelector('.modal-input-cold-qty');
-                var modeSelect = row.querySelector('.modal-select-cold-mode');
-                var btnRemove = row.querySelector('.modal-btn-remove-cold-row');
-
-                if (qtyInput) {
-                    qtyInput.addEventListener('input', function() {
-                        updateColdRowKonversiInfo(row);
-                    });
-                }
-                if (modeSelect) {
-                    modeSelect.addEventListener('change', function() {
-                        updateColdRowKonversiInfo(row);
-                    });
-                }
-                if (btnRemove) {
-                    btnRemove.addEventListener('click', function() {
-                        if (tbody.querySelectorAll('tr').length > 1) {
-                            row.remove();
+                        } else {
+                            suggestionBoxCold.style.display = 'none';
+                            suggestionListCold.innerHTML = '';
                         }
+                    })
+                    .catch(() => {
+                        if (suggestionBoxCold) suggestionBoxCold.style.display = 'none';
+                    });
+            }
+
+            function applyAllColdSuggestions() {
+                if (!currentSuggestionsCold.length || !tableBodyCold) return;
+                
+                const rows = tableBodyCold.querySelectorAll('tr');
+                rows.forEach((r, idx) => {
+                    if (idx > 0) r.remove();
+                });
+                const firstRow = tableBodyCold.querySelector('tr');
+                const firstSelect = firstRow.querySelector('.modal-select-produk-cold');
+                if (tomSelectColdInstances.has(firstSelect)) {
+                    tomSelectColdInstances.get(firstSelect).setValue('');
+                } else {
+                    firstSelect.value = '';
+                }
+                firstRow.querySelector('.modal-input-cold-qty').value = '';
+
+                currentSuggestionsCold.forEach(item => {
+                    addColdItemRow(item.barang_id, item.suggested_qty, item.satuan);
+                });
+
+                if (suggestionListCold) {
+                    suggestionListCold.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
+                        btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                        btn.disabled = true;
                     });
                 }
             }
 
-            // Attach initial row events
-            if (tbody) {
-                tbody.querySelectorAll('tr').forEach(function(row) {
-                    attachColdRowEvents(row);
+            if (customerSelectCold) {
+                customerSelectCold.addEventListener('change', function() {
+                    fetchColdSuggestions(this.value);
                 });
             }
+
+            if (btnApplyAllCold) {
+                btnApplyAllCold.addEventListener('click', applyAllColdSuggestions);
+            }
+
+            if (btnAddCold) {
+                btnAddCold.addEventListener('click', function() {
+                    addColdItemRow();
+                });
+            }
+
+            // Handler tombol quick suggestion di banner atas
+            document.querySelectorAll('.btn-quick-suggest-order').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const custId = this.getAttribute('data-customer-id');
+                    if (customerSelectCold) {
+                        customerSelectCold.value = custId;
+                        if (tomSelectCustomerCold) tomSelectCustomerCold.setValue(custId);
+                    }
+                    const modalEl = document.getElementById('modalCreateColdOrder');
+                    if (modalEl) {
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+                        modalInstance.show();
+                    }
+                    fetchColdSuggestions(custId, true);
+                });
+            });
         });
     </script>
 </x-app-layout>

@@ -49,7 +49,7 @@
                             <option value="">-- Pilih Outlet / Pemesan --</option>
                             @foreach($customers as $c)
                                 <option value="{{ $c->id }}" {{ old('customer_id') == $c->id ? 'selected' : '' }}>
-                                    {{ $c->nama }}
+                                    {{ $c->nama }} ({{ $c->gudang_nama ?? $c->nama }})
                                 </option>
                             @endforeach
                         </select>
@@ -72,11 +72,37 @@
                 </div>
             </div>
 
+            {{-- TOMBOL TAMPILKAN SARAN RESTOCK --}}
+            <div id="toggle-suggestion-container" class="mb-3" style="display: none;">
+                <button type="button" class="btn btn-outline-warning text-dark fw-bold shadow-sm" id="btn-toggle-suggestions" style="border-radius: 8px;">
+                    <i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock
+                </button>
+            </div>
+
+            {{-- SUGGESTION RESTOCK BOX --}}
+            <div id="suggestion-box" class="card card-form p-3 mb-4 bg-light border-warning" style="display: none; border-left: 5px solid #f59e0b !important;">
+                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                    <div>
+                        <strong class="text-dark small d-flex align-items-center">
+                            <i class="bi bi-lightbulb-fill text-warning fs-6 me-2"></i>
+                            Saran Restock Bahan Cold Kitchen (<span id="suggest-outlet-name"></span>)
+                        </strong>
+                        <span class="text-muted small" style="font-size: 0.75rem;">Item di bawah batas minimum stock gudang outlet</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-warning text-dark fw-bold shadow-sm" id="btn-apply-all-suggestions">
+                        <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                    </button>
+                </div>
+                <div id="suggestion-list" class="d-flex flex-wrap gap-2 pt-1">
+                    <!-- Dynamic suggestion pills -->
+                </div>
+            </div>
+
             <div class="card card-form p-4 mb-4">
                 <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
                     <div>
                         <h6 class="fw-bold text-dark mb-0">Daftar Item Barang (Bahan Setengah Jadi &amp; Bahan Jadi)</h6>
-                        <small class="text-muted">Pilih produk dan masukkan kuantitas dalam satuan Resep, Konversi Box/Pack, atau Satuan standar</small>
+                        <small class="text-muted">Pilih produk dan masukkan kuantitas dalam satuan Resep, Konversi Box/Pack/Ember, atau Satuan standar</small>
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="btn-add-item">
                         <i class="bi bi-plus-circle me-1"></i> Tambah Item
@@ -89,7 +115,7 @@
                             <tr class="text-secondary small text-center">
                                 <th class="text-start" style="width: 32%;">Nama Barang / Produk</th>
                                 <th style="width: 15%;">Qty</th>
-                                <th style="width: 20%;">Mode Satuan</th>
+                                <th style="width: 20%;">Satuan / Mode</th>
                                 <th style="width: 28%;">Total Qty (Konversi)</th>
                                 <th style="width: 5%;">Aksi</th>
                             </tr>
@@ -163,7 +189,18 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            if (document.getElementById('select-customer')) {
+            const tableBody = document.getElementById('item-rows');
+            const btnAdd = document.getElementById('btn-add-item');
+            const customerSelect = document.getElementById('select-customer');
+            const suggestionBox = document.getElementById('suggestion-box');
+            const suggestionList = document.getElementById('suggestion-list');
+            const suggestionOutletName = document.getElementById('suggest-outlet-name');
+            const btnApplyAll = document.getElementById('btn-apply-all-suggestions');
+
+            let currentSuggestions = [];
+            const tomSelectInstances = new Map();
+
+            if (customerSelect) {
                 new TomSelect('#select-customer', {
                     create: false,
                     placeholder: '-- Pilih Outlet / Pemesan --',
@@ -171,148 +208,368 @@
                 });
             }
 
-            function initProductSelect(el) {
-                if (el.tomselect) return;
-                var ts = new TomSelect(el, {
+            function initTomSelectOnSelect(selectEl) {
+                if (!selectEl) return null;
+                if (tomSelectInstances.has(selectEl)) {
+                    return tomSelectInstances.get(selectEl);
+                }
+                if (typeof TomSelect === 'undefined') return null;
+
+                delete selectEl.tomselect;
+                selectEl.classList.remove('tomselected', 'ts-hidden-accessible');
+                selectEl.removeAttribute('id');
+                selectEl.removeAttribute('tabindex');
+                selectEl.removeAttribute('aria-hidden');
+                selectEl.style.display = '';
+
+                const ts = new TomSelect(selectEl, {
                     create: false,
                     placeholder: '-- Cari / Pilih Barang Cold Kitchen --',
                     allowEmptyOption: true,
+                    dropdownParent: 'body',
                     onChange: function() {
-                        var row = el.closest('tr');
-                        updateRowModeOptions(row);
-                        updateRowCalculation(row);
+                        const row = selectEl.closest('tr');
+                        updateModeOptions(row);
+                        updateKonversi(row);
                     }
                 });
-                el._tsInstance = ts;
+                tomSelectInstances.set(selectEl, ts);
+                return ts;
             }
 
-            function updateRowModeOptions(row) {
-                var selectMode = row.querySelector('.select-mode');
-                var selectProd = row.querySelector('.select-produk');
-                if (!selectProd || !selectMode) return;
+            function updateModeOptions(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.select-produk');
+                const modeEl = row.querySelector('.select-mode');
+                if (!selectEl || !modeEl) return;
 
-                var opt = selectProd.options[selectProd.selectedIndex];
-                if (!opt || !opt.value) {
-                    selectMode.innerHTML = '<option value="satuan">Satuan</option>';
-                    return;
+                const selected = selectEl.options[selectEl.selectedIndex];
+                const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
+                const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+                const satuanKonversi = (selected && selectEl.value) ? (selected.getAttribute('data-satuan-konversi') || '') : '';
+                const konversiVal = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-konversi') || 1) : 1;
+
+                const currentVal = modeEl.value;
+                modeEl.innerHTML = '';
+
+                if (satuanKonversi && konversiVal > 1) {
+                    const optKonversi = new Option(satuanKonversi + ' (' + konversiVal.toLocaleString('id-ID') + ' ' + satuanUtama + ')', 'konversi');
+                    modeEl.add(optKonversi);
                 }
 
-                var outQty = parseFloat(opt.getAttribute('data-output-qty')) || 0;
-                var outSat = opt.getAttribute('data-satuan-output') || '';
-                var satUtama = opt.getAttribute('data-satuan') || 'pcs';
-                var satKonv = opt.getAttribute('data-satuan-konversi') || '';
-                var konvVal = parseFloat(opt.getAttribute('data-konversi')) || 1;
-
-                var html = '';
-                if (outQty > 0) {
-                    html += `<option value="resep">Resep (@ ${outQty} ${outSat})</option>`;
-                }
-                if (satKonv && konvVal > 1) {
-                    html += `<option value="konversi">${satKonv} (@ ${konvVal} ${satUtama})</option>`;
-                }
-                html += `<option value="satuan">Satuan (${satUtama})</option>`;
-
-                selectMode.innerHTML = html;
-            }
-
-            function updateRowCalculation(row) {
-                var selectProd = row.querySelector('.select-produk');
-                var selectMode = row.querySelector('.select-mode');
-                var inputQty = row.querySelector('.input-qty');
-                var infoDiv = row.querySelector('.konversi-info');
-
-                if (!selectProd || !selectMode || !inputQty || !infoDiv) return;
-
-                var opt = selectProd.options[selectProd.selectedIndex];
-                var rawQty = parseFloat(inputQty.value) || 0;
-
-                if (!opt || !opt.value || rawQty <= 0) {
-                    infoDiv.innerHTML = '<span class="text-muted">-</span>';
-                    return;
+                if (outputQty > 0) {
+                    const optResep = new Option('Resep', 'resep');
+                    modeEl.add(optResep);
                 }
 
-                var satUtama = opt.getAttribute('data-satuan') || 'pcs';
-                var mode = selectMode.value;
-                var finalQty = rawQty;
-                var desc = '';
+                const optSatuan = new Option(satuanUtama.toUpperCase(), 'satuan');
+                modeEl.add(optSatuan);
 
-                if (mode === 'resep') {
-                    var outQty = parseFloat(opt.getAttribute('data-output-qty')) || 1;
-                    var outSat = opt.getAttribute('data-satuan-output') || satUtama;
-                    finalQty = rawQty * outQty;
-                    desc = `<strong>${finalQty.toLocaleString('id-ID')} ${outSat}</strong> (${rawQty} Resep &times; ${outQty} ${outSat})`;
-                } else if (mode === 'konversi') {
-                    var konvVal = parseFloat(opt.getAttribute('data-konversi')) || 1;
-                    var satKonv = opt.getAttribute('data-satuan-konversi') || '';
-                    finalQty = rawQty * konvVal;
-                    desc = `<strong>${finalQty.toLocaleString('id-ID')} ${satUtama}</strong> (${rawQty} ${satKonv} &times; ${konvVal} ${satUtama})`;
+                if (currentVal === 'konversi' && satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (currentVal === 'resep' && outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else if (satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
                 } else {
-                    desc = `<strong>${finalQty.toLocaleString('id-ID')} ${satUtama}</strong> (Satuan Langsung)`;
+                    modeEl.value = 'satuan';
                 }
-
-                infoDiv.innerHTML = `<span class="text-success">${desc}</span>`;
             }
 
-            document.querySelectorAll('.select-produk').forEach(function(el) {
-                initProductSelect(el);
+            function updateKonversi(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.select-produk');
+                const modeEl = row.querySelector('.select-mode');
+                const qtyEl = row.querySelector('.input-qty');
+                const infoEl = row.querySelector('.konversi-info');
+
+                if (!selectEl || !modeEl || !qtyEl || !infoEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                if (!selected || !selectEl.value) {
+                    infoEl.innerHTML = '<span class="text-muted">-</span>';
+                    return;
+                }
+
+                const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
+                const outputSatuan = selected.getAttribute('data-satuan-output') || '';
+                const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const satuanKonversi = selected.getAttribute('data-satuan-konversi') || '';
+                const konversiVal = parseFloat(selected.getAttribute('data-konversi') || 1);
+                const mode = modeEl.value;
+                const qtyInput = parseFloat(qtyEl.value || 0);
+
+                if (mode === 'konversi' && konversiVal > 1) {
+                    const totalGramasi = qtyInput > 0 ? (qtyInput * konversiVal) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-primary" style="font-size: 0.85rem;">${totalGramasi.toLocaleString('id-ID')} ${satuanUtama}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 ${satuanKonversi} = ${konversiVal.toLocaleString('id-ID')} ${satuanUtama})</div>
+                    `;
+                } else if (mode === 'resep' && outputQty > 0) {
+                    const totalTarget = qtyInput > 0 ? (qtyInput * outputQty) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-success" style="font-size: 0.85rem;">${totalTarget.toLocaleString('id-ID')} ${outputSatuan}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 Resep = ${outputQty.toLocaleString('id-ID')} ${outputSatuan})</div>
+                    `;
+                } else {
+                    let helperText = '';
+                    if (satuanKonversi && konversiVal > 1 && qtyInput > 0) {
+                        const packEquivalent = qtyInput / konversiVal;
+                        const packFmt = (packEquivalent % 1 === 0) ? packEquivalent.toFixed(0) : packEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${packFmt} ${satuanKonversi})</div>`;
+                    } else if (outputQty > 0 && qtyInput > 0) {
+                        const resepEquivalent = qtyInput / outputQty;
+                        const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>`;
+                    }
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-dark" style="font-size: 0.85rem;">${qtyInput.toLocaleString('id-ID')} ${satuanUtama || '-'}</div>
+                        ${helperText}
+                    `;
+                }
+            }
+
+            tableBody.addEventListener('click', function(e) {
+                const btnRemove = e.target.closest('.btn-remove-row');
+                if (btnRemove && !btnRemove.disabled) {
+                    const row = btnRemove.closest('tr');
+                    if (row) {
+                        const selectEl = row.querySelector('.select-produk');
+                        const barangId = selectEl ? selectEl.value : '';
+
+                        if (selectEl && tomSelectInstances.has(selectEl)) {
+                            tomSelectInstances.get(selectEl).destroy();
+                            tomSelectInstances.delete(selectEl);
+                        }
+
+                        row.remove();
+                        checkRows();
+
+                        if (barangId) {
+                            const pill = document.querySelector(`#suggestion-list [data-barang-id="${barangId}"]`);
+                            if (pill) {
+                                pill.classList.remove('bg-warning-subtle');
+                                pill.classList.add('bg-white');
+                                const btn = pill.querySelector('.btn-add-single-suggest');
+                                if (btn) {
+                                    btn.innerHTML = '<i class="bi bi-plus-circle-fill"></i> Tambah';
+                                    btn.disabled = false;
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
-            document.getElementById('table-items').addEventListener('input', function(e) {
+            tableBody.addEventListener('change', function(e) {
+                if (e.target.classList.contains('select-produk') || e.target.classList.contains('select-mode')) {
+                    updateKonversi(e.target.closest('tr'));
+                }
+            });
+
+            tableBody.addEventListener('input', function(e) {
                 if (e.target.classList.contains('input-qty')) {
-                    updateRowCalculation(e.target.closest('tr'));
+                    updateKonversi(e.target.closest('tr'));
                 }
             });
 
-            document.getElementById('table-items').addEventListener('change', function(e) {
-                if (e.target.classList.contains('select-mode')) {
-                    updateRowCalculation(e.target.closest('tr'));
-                }
-            });
-
-            document.getElementById('btn-add-item').addEventListener('click', function() {
-                var tbody = document.getElementById('item-rows');
-                var firstRow = tbody.querySelector('tr');
-                var newRow = firstRow.cloneNode(true);
-
-                // Clear input values
-                newRow.querySelector('.input-qty').value = '';
-                newRow.querySelector('.konversi-info').innerHTML = '<span class="text-muted">-</span>';
-
-                // Remove existing TomSelect container if present
-                var tsControl = newRow.querySelector('.ts-wrapper');
-                if (tsControl) tsControl.remove();
-
-                var selectProd = newRow.querySelector('.select-produk');
-                selectProd.style.display = '';
-                selectProd.classList.remove('tomselected', 'ts-hidden-accessible');
-                selectProd.selectedIndex = 0;
-
-                tbody.appendChild(newRow);
-                initProductSelect(selectProd);
-                updateRowModeOptions(newRow);
-
-                // Enable remove buttons if >1 rows
-                var rows = tbody.querySelectorAll('tr');
-                rows.forEach(function(r) {
-                    var btn = r.querySelector('.btn-remove-row');
-                    if (btn) btn.disabled = (rows.length === 1);
+            function checkRows() {
+                const rows = tableBody.querySelectorAll('tr');
+                rows.forEach((r) => {
+                    const btnDel = r.querySelector('.btn-remove-row');
+                    if (rows.length === 1) {
+                        btnDel.setAttribute('disabled', 'disabled');
+                    } else {
+                        btnDel.removeAttribute('disabled');
+                    }
                 });
+            }
+
+            function addItemRow(produkId = '', qty = '', satuan = '') {
+                const rows = tableBody.querySelectorAll('tr');
+                let targetRow = null;
+
+                if (rows.length === 1) {
+                    const firstSelect = rows[0].querySelector('.select-produk');
+                    const firstQty = rows[0].querySelector('.input-qty');
+                    if (!firstSelect.value && !firstQty.value) {
+                        targetRow = rows[0];
+                    }
+                }
+
+                if (!targetRow) {
+                    const firstRow = rows[0];
+                    targetRow = firstRow.cloneNode(true);
+                    
+                    const tsWrapper = targetRow.querySelector('.ts-wrapper');
+                    if (tsWrapper) tsWrapper.remove();
+                    const oldSelect = targetRow.querySelector('select.select-produk');
+                    if (oldSelect) {
+                        delete oldSelect.tomselect;
+                        oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
+                        oldSelect.removeAttribute('id');
+                        oldSelect.removeAttribute('tabindex');
+                        oldSelect.removeAttribute('aria-hidden');
+                        oldSelect.style.display = '';
+                        oldSelect.value = '';
+                    }
+
+                    targetRow.querySelector('.btn-remove-row').removeAttribute('disabled');
+                    
+                    const modeSelect = targetRow.querySelector('.select-mode');
+                    if (modeSelect) modeSelect.value = 'satuan';
+                    const qtyInput = targetRow.querySelector('.input-qty');
+                    if (qtyInput) qtyInput.value = '';
+                    const infoBox = targetRow.querySelector('.konversi-info');
+                    if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
+
+                    tableBody.appendChild(targetRow);
+                }
+
+                const select = targetRow.querySelector('.select-produk');
+                const inputQty = targetRow.querySelector('.input-qty');
+
+                if (inputQty && qty !== '') {
+                    inputQty.value = qty;
+                }
+
+                const ts = initTomSelectOnSelect(select);
+                if (ts) {
+                    if (produkId) {
+                        ts.setValue(produkId);
+                    } else {
+                        ts.setValue('', true);
+                    }
+                } else if (select) {
+                    select.value = produkId || '';
+                    updateModeOptions(targetRow);
+                    updateKonversi(targetRow);
+                }
+
+                checkRows();
+                return targetRow;
+            }
+
+            document.querySelectorAll('.select-produk').forEach(select => {
+                initTomSelectOnSelect(select);
             });
 
-            document.getElementById('table-items').addEventListener('click', function(e) {
-                var btn = e.target.closest('.btn-remove-row');
-                if (!btn) return;
-                var tbody = document.getElementById('item-rows');
-                var rows = tbody.querySelectorAll('tr');
-                if (rows.length > 1) {
-                    btn.closest('tr').remove();
-                    var remaining = tbody.querySelectorAll('tr');
-                    remaining.forEach(function(r) {
-                        var b = r.querySelector('.btn-remove-row');
-                        if (b) b.disabled = (remaining.length === 1);
+            function fetchSuggestions(customerId) {
+                const toggleContainer = document.getElementById('toggle-suggestion-container');
+                if (!customerId) {
+                    suggestionBox.style.display = 'none';
+                    toggleContainer.style.display = 'none';
+                    suggestionList.innerHTML = '';
+                    currentSuggestions = [];
+                    return;
+                }
+
+                fetch("{{ route('pesanan.suggestions') }}?customer_id=" + customerId)
+                    .then(res => res.json())
+                    .then(data => {
+                        currentSuggestions = data.suggestions || [];
+                        suggestionOutletName.innerText = data.outlet_name || '';
+
+                        if (currentSuggestions.length > 0) {
+                            toggleContainer.style.display = 'block';
+                            suggestionBox.style.display = 'none';
+                            suggestionList.innerHTML = '';
+
+                            currentSuggestions.forEach(item => {
+                                const pill = document.createElement('div');
+                                pill.className = 'badge bg-white text-dark border p-2 d-flex align-items-center gap-2 shadow-sm rounded-3';
+                                pill.dataset.barangId = item.barang_id;
+                                pill.innerHTML = `
+                                    <div class="text-start">
+                                        <div class="fw-bold">${item.nama}</div>
+                                        <div class="text-muted" style="font-size: 0.72rem;">
+                                            Stok: <span class="text-danger fw-bold">${item.current_stock}</span> / Min: <span class="fw-bold">${item.min_stock}</span> ${item.satuan}
+                                            <span class="text-success fw-bold ms-1">(Saran: ${item.suggested_qty} ${item.satuan})</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold btn-add-single-suggest py-1 px-2" style="font-size: 0.75rem;" title="Tambah item ini">
+                                        <i class="bi bi-plus-circle-fill"></i> Tambah
+                                    </button>
+                                `;
+
+                                pill.querySelector('.btn-add-single-suggest').addEventListener('click', function() {
+                                    addItemRow(item.barang_id, item.suggested_qty, item.satuan);
+                                    pill.classList.remove('bg-white');
+                                    pill.classList.add('bg-warning-subtle');
+                                    this.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                                    this.disabled = true;
+                                });
+
+                                suggestionList.appendChild(pill);
+                            });
+                        } else {
+                            toggleContainer.style.display = 'none';
+                            suggestionBox.style.display = 'none';
+                            suggestionList.innerHTML = '';
+                        }
+                    })
+                    .catch(() => {
+                        toggleContainer.style.display = 'none';
+                        suggestionBox.style.display = 'none';
                     });
+            }
+
+            document.getElementById('btn-toggle-suggestions').addEventListener('click', function () {
+                const box = document.getElementById('suggestion-box');
+                if (box.style.display === 'none') {
+                    box.style.display = 'block';
+                    this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Sembunyikan Saran Restock';
+                    this.classList.remove('btn-outline-warning');
+                    this.classList.add('btn-warning');
+                } else {
+                    box.style.display = 'none';
+                    this.innerHTML = '<i class="bi bi-lightbulb-fill text-warning me-1"></i> Tampilkan Saran Restock';
+                    this.classList.remove('btn-warning');
+                    this.classList.add('btn-outline-warning');
                 }
             });
+
+            function applyAllSuggestions() {
+                if (!currentSuggestions.length) return;
+                
+                const rows = tableBody.querySelectorAll('tr');
+                rows.forEach((r, idx) => {
+                    if (idx > 0) r.remove();
+                });
+                const firstRow = tableBody.querySelector('tr');
+                const firstSelect = firstRow.querySelector('.select-produk');
+                if (tomSelectInstances.has(firstSelect)) {
+                    tomSelectInstances.get(firstSelect).setValue('');
+                } else {
+                    firstSelect.value = '';
+                }
+                firstRow.querySelector('.input-qty').value = '';
+
+                currentSuggestions.forEach(item => {
+                    addItemRow(item.barang_id, item.suggested_qty, item.satuan);
+                });
+
+                suggestionList.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
+                    btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
+                    btn.disabled = true;
+                });
+            }
+
+            if (customerSelect) {
+                customerSelect.addEventListener('change', function() {
+                    fetchSuggestions(this.value);
+                });
+            }
+
+            btnApplyAll.addEventListener('click', applyAllSuggestions);
+
+            btnAdd.addEventListener('click', function() {
+                addItemRow();
+            });
+
+            if (customerSelect && customerSelect.value) {
+                fetchSuggestions(customerSelect.value);
+            }
         });
     </script>
     @endpush

@@ -70,7 +70,138 @@ class PesananController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
-        return view('pesanan.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'customerId', 'produk'));
+        // Hitung ringkasan saran restock Bahan Setengah Jadi / Barang Jadi per outlet (di bawah minimum stock)
+        $outletSuggestionsSummary = [];
+        foreach ($customers as $c) {
+            $g = null;
+            $mField = null;
+            $cName = strtolower($c->nama);
+            if (str_contains($cName, 'gaharu')) {
+                $g = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->where('kategori', 'Operasional')->first()
+                    ?? \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+                $mField = 'minimum_stock_gaharu';
+            } elseif (str_contains($cName, 'kejingga')) {
+                $g = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
+                $mField = 'minimum_stock_kejingga';
+            } else {
+                $g = \App\Models\MasterGudang::find($c->gudang_id ?? 0) ?? \App\Models\MasterGudang::where('nama', 'like', '%' . $c->nama . '%')->first();
+                $mField = 'minimum_stock';
+            }
+
+            if ($g && $mField) {
+                $deficitItems = [];
+                foreach ($produk as $it) {
+                    $mStok = (float)($it->{$mField} ?? 0);
+                    if ($mStok > 0) {
+                        $curStok = (float)(\App\Models\StokGudang::where('gudang_id', $g->id)->where('barang_id', $it->id)->value('jumlah') ?? 0);
+                        if ($curStok < $mStok) {
+                            $deficitItems[] = [
+                                'barang_id'     => $it->id,
+                                'kode_barang'   => $it->kode_barang,
+                                'nama'          => $it->nama,
+                                'satuan'        => $it->satuan,
+                                'current_stock' => $curStok,
+                                'min_stock'     => $mStok,
+                                'suggested_qty' => max(1, (float) ceil($mStok - $curStok)),
+                            ];
+                        }
+                    }
+                }
+                if (!empty($deficitItems)) {
+                    $outletSuggestionsSummary[] = [
+                        'customer_id'   => $c->id,
+                        'customer_nama' => $c->nama,
+                        'gudang_id'     => $g->id,
+                        'gudang_nama'   => $g->nama,
+                        'count'         => count($deficitItems),
+                        'items'         => $deficitItems,
+                    ];
+                }
+            }
+        }
+
+        return view('pesanan.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'customerId', 'produk', 'outletSuggestionsSummary'));
+    }
+
+    /**
+     * Mengambil saran Bahan Setengah Jadi / Barang Jadi di bawah batas minimum stock untuk Outlet tertentu (JSON)
+     */
+    public function suggestions(Request $request)
+    {
+        $customerId = $request->query('customer_id');
+        $gudangId = $request->query('gudang_id');
+
+        $customer = $customerId ? Customer::find($customerId) : null;
+        $gudang = null;
+        $minStockField = null;
+
+        if ($gudangId) {
+            $gudang = \App\Models\MasterGudang::find($gudangId);
+        }
+
+        if (!$gudang && $customer) {
+            $customerName = strtolower($customer->nama);
+            if (str_contains($customerName, 'gaharu')) {
+                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->where('kategori', 'Operasional')->first()
+                    ?? \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+            } elseif (str_contains($customerName, 'kejingga')) {
+                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
+            } else {
+                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%' . $customer->nama . '%')->first()
+                    ?? \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
+            }
+        }
+
+        if (!$gudang) {
+            $outletName = $customer ? $customer->nama : '';
+            return response()->json(['suggestions' => [], 'outlet_name' => $outletName]);
+        }
+
+        $gudangName = strtolower($gudang->nama);
+        if (str_contains($gudangName, 'gaharu')) {
+            $minStockField = 'minimum_stock_gaharu';
+        } elseif (str_contains($gudangName, 'kejingga')) {
+            $minStockField = 'minimum_stock_kejingga';
+        } else {
+            $minStockField = 'minimum_stock';
+        }
+
+        $coldItems = MasterBarang::where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_barang_jadi', true);
+            })
+            ->whereNotNull($minStockField)
+            ->where($minStockField, '>', 0)
+            ->get();
+
+        $suggestions = [];
+        foreach ($coldItems as $item) {
+            $currentStock = (float)(\App\Models\StokGudang::where('gudang_id', $gudang->id)->where('barang_id', $item->id)->value('jumlah') ?? 0);
+            $minStock = (float)$item->{$minStockField};
+
+            if ($currentStock < $minStock) {
+                $defisit = $minStock - $currentStock;
+                $suggestions[] = [
+                    'barang_id'     => $item->id,
+                    'kode_barang'   => $item->kode_barang,
+                    'nama'          => $item->nama,
+                    'satuan'        => $item->satuan,
+                    'current_stock' => $currentStock,
+                    'min_stock'     => $minStock,
+                    'suggested_qty' => max(1, (float) ceil($defisit)),
+                    'gudang_id'     => $gudang->id,
+                    'gudang_nama'   => $gudang->nama,
+                ];
+            }
+        }
+
+        return response()->json([
+            'suggestions' => $suggestions,
+            'outlet_name' => $customer ? $customer->nama : $gudang->nama,
+            'gudang_id'   => $gudang->id,
+            'gudang_nama' => $gudang->nama
+        ]);
     }
 
     /**

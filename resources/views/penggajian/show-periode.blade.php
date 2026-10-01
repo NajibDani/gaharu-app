@@ -1559,15 +1559,15 @@
                                                                placeholder="0"
                                                                oninput="onPayrollUnifiedRowInput(this)">
                                                     </div>
+                                                    @if(($ib['periode'] == 2 || ($loop->last && !collect($itemBreakdowns)->contains('periode', 2))) && ($payroll->saldo_deposit ?? 0) > 0)
+                                                        <button type="button"
+                                                                onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }}, {{ $ib['periode'] }})"
+                                                                class="mt-0.5 text-[8.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
+                                                                title="Klik untuk mengisi otomatis deposit ke periode {{ $ib['periode'] }}">
+                                                            <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
+                                                        </button>
+                                                    @endif
                                                 @endforeach
-                                                @if(($payroll->saldo_deposit ?? 0) > 0)
-                                                    <button type="button"
-                                                            onclick="isiDepositOtomatis(this, {{ (float)$payroll->saldo_deposit }})"
-                                                            class="mt-0.5 text-[8.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-1 py-0.5 rounded cursor-pointer transition-all inline-flex items-center gap-1 w-full justify-end"
-                                                            title="Klik untuk mengisi otomatis dari saldo deposit tersimpan">
-                                                        <span>&#8629; Saldo: {{ number_format($payroll->saldo_deposit, 0, ',', '.') }}</span>
-                                                    </button>
-                                                @endif
                                             </div>
                                         @else
                                             <div class="accounting-input-wrap">
@@ -2997,13 +2997,20 @@
             return parseFloat(clean) || 0;
         }
 
-        function isiDepositOtomatis(btn, saldo) {
+        function isiDepositOtomatis(btn, saldo, targetPeriode) {
             const row = btn.closest('.payroll-row');
             if (!row) return;
-            const depInputs = row.querySelectorAll('.batch-pengembalian-deposit');
-            if (depInputs.length > 0) {
-                depInputs[0].value = Math.round(saldo).toLocaleString('id-ID');
-                onPayrollUnifiedRowInput(depInputs[0]);
+            let targetInput = null;
+            if (targetPeriode) {
+                targetInput = row.querySelector('.input-deposit-kembali-p-' + targetPeriode);
+            }
+            if (!targetInput) {
+                const depInputs = row.querySelectorAll('.batch-pengembalian-deposit');
+                targetInput = depInputs.length > 1 ? depInputs[depInputs.length - 1] : depInputs[0];
+            }
+            if (targetInput) {
+                targetInput.value = Math.round(saldo).toLocaleString('id-ID');
+                onPayrollUnifiedRowInput(targetInput);
             }
         }
 

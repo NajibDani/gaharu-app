@@ -123,6 +123,7 @@ class BonusPenggajianController extends Controller
 
         $allPotonganDeposit = $hasPotDeposit
             ? Penggajian::whereIn('karyawan_id', $karyawanIds)
+                ->where('periode_bulan_tahun', '<', $targetPeriode)
                 ->groupBy('karyawan_id')
                 ->selectRaw('karyawan_id, SUM(potongan_deposit) as total_pot_deposit')
                 ->pluck('total_pot_deposit', 'karyawan_id')
@@ -130,7 +131,7 @@ class BonusPenggajianController extends Controller
 
         $allReturnedOther = $hasRetDeposit
             ? Penggajian::whereIn('karyawan_id', $karyawanIds)
-                ->where('periode_bulan_tahun', '!=', $targetPeriode)
+                ->where('periode_bulan_tahun', '<', $targetPeriode)
                 ->groupBy('karyawan_id')
                 ->selectRaw('karyawan_id, SUM(pengembalian_deposit) as total_ret_deposit')
                 ->pluck('total_ret_deposit', 'karyawan_id')
@@ -224,8 +225,8 @@ class BonusPenggajianController extends Controller
         $hasPotDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'potongan_deposit');
         $hasRetDeposit = \Illuminate\Support\Facades\Schema::hasColumn('penggajian', 'pengembalian_deposit');
 
-        $totalPotDeposit = $hasPotDeposit ? Penggajian::where('karyawan_id', $payroll->karyawan_id)->sum('potongan_deposit') : 0;
-        $totalRetOther = $hasRetDeposit ? Penggajian::where('karyawan_id', $payroll->karyawan_id)->where('id', '!=', $payroll->id)->sum('pengembalian_deposit') : 0;
+        $totalPotDeposit = $hasPotDeposit ? Penggajian::where('karyawan_id', $payroll->karyawan_id)->where('periode_bulan_tahun', '<', $payroll->periode_bulan_tahun)->sum('potongan_deposit') : 0;
+        $totalRetOther = $hasRetDeposit ? Penggajian::where('karyawan_id', $payroll->karyawan_id)->where('periode_bulan_tahun', '<', $payroll->periode_bulan_tahun)->sum('pengembalian_deposit') : 0;
         $saldoDeposit = max(0, $totalPotDeposit - $totalRetOther);
 
         return view('penggajian.bonus.edit', compact('payroll', 'targetPeriode', 'selectedOutlet', 'tarifHarian', 'saldoDeposit'));
