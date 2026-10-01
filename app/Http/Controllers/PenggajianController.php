@@ -380,16 +380,19 @@ class PenggajianController extends Controller
                 }
             }
 
-            if ($items->count() > 1) {
-                $activeItem = $items->where('hari_kerja', '>', 0)->sortByDesc('id')->first();
-                $zeroItems = $items->where('hari_kerja', '<=', 0)->where('status', 'draft')->where('status_jurnal', false);
-                if ($activeItem && $zeroItems->isNotEmpty()) {
-                    $extraLate = $zeroItems->sum('potongan_terlambat');
-                    $zeroItemsIds = $zeroItems->pluck('id')->toArray();
-                    Penggajian::whereIn('id', $zeroItemsIds)->delete();
-                    
-                    // Re-query needed if items deleted
-                    $rawPayrolls = $rawPayrolls->reject(fn($p) => in_array($p->id, $zeroItemsIds));
+            // Bersihkan duplikat item dengan pilihan_periode yang sama pada karyawan yang sama di bulan ini
+            $byPeriode = $items->groupBy(fn($p) => (int)($p->pilihan_periode ?? 1));
+            foreach ($byPeriode as $pNum => $pItems) {
+                if ($pItems->count() > 1) {
+                    $keepItem = $pItems->where('status', 'approved')->first()
+                        ?? $pItems->where('hari_kerja', '>', 0)->sortByDesc('id')->first()
+                        ?? $pItems->sortByDesc('id')->first();
+
+                    $deleteIds = $pItems->where('id', '!=', $keepItem->id)->where('status', '!=', 'approved')->where('status_jurnal', false)->pluck('id')->toArray();
+                    if (!empty($deleteIds)) {
+                        Penggajian::whereIn('id', $deleteIds)->delete();
+                        $rawPayrolls = $rawPayrolls->reject(fn($p) => in_array($p->id, $deleteIds));
+                    }
                 }
             }
         }
@@ -406,29 +409,23 @@ class PenggajianController extends Controller
                     $masterUm = floatval($kw->uang_makan_2);
                     $masterUt = floatval($kw->uang_transport_2);
                     $masterSat = $kw->satuan_gaji_2 ?? $kw->satuan_gaji ?? 'Harian';
+                    $masterMulai = $kw->tanggal_mulai_2 ? \Carbon\Carbon::parse($kw->tanggal_mulai_2)->format('Y-m-d') : null;
+                    $masterSelesai = $kw->tanggal_selesai_2 ? \Carbon\Carbon::parse($kw->tanggal_selesai_2)->format('Y-m-d') : null;
                 } else {
                     $masterGp = floatval($kw->gaji_pokok);
                     $masterUm = floatval($kw->uang_makan);
                     $masterUt = floatval($kw->uang_transport);
                     $masterSat = $kw->satuan_gaji ?? 'Harian';
+                    $masterMulai = $kw->tanggal_mulai ? \Carbon\Carbon::parse($kw->tanggal_mulai)->format('Y-m-d') : null;
+                    $masterSelesai = $kw->tanggal_selesai ? \Carbon\Carbon::parse($kw->tanggal_selesai)->format('Y-m-d') : null;
                 }
                 $masterTarif = $masterGp + $masterUm + $masterUt;
 
                 $hk = floatval($payroll->hari_kerja ?? 0);
                 $gajiUtama = ($masterSat === 'Bulanan') ? $masterTarif : ($hk * $masterTarif);
 
-                $pMulai = $payroll->tanggal_mulai ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : null;
-                $pSelesai = $payroll->tanggal_selesai ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : null;
-
-                if (!$pMulai && !$pSelesai && $kw) {
-                    if ($pNum === 2) {
-                        $pMulai = $kw->tanggal_mulai_2 ? \Carbon\Carbon::parse($kw->tanggal_mulai_2)->format('Y-m-d') : null;
-                        $pSelesai = $kw->tanggal_selesai_2 ? \Carbon\Carbon::parse($kw->tanggal_selesai_2)->format('Y-m-d') : null;
-                    } else {
-                        $pMulai = $kw->tanggal_mulai ? \Carbon\Carbon::parse($kw->tanggal_mulai)->format('Y-m-d') : null;
-                        $pSelesai = $kw->tanggal_selesai ? \Carbon\Carbon::parse($kw->tanggal_selesai)->format('Y-m-d') : null;
-                    }
-                }
+                $pMulai = $payroll->tanggal_mulai ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : $masterMulai;
+                $pSelesai = $payroll->tanggal_selesai ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : $masterSelesai;
 
                 $qLate = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
                 if ($pMulai && $pSelesai) {
@@ -472,7 +469,9 @@ class PenggajianController extends Controller
                     abs((float)$payroll->gaji_utama - $gajiUtama) > 0.01 ||
                     abs((float)$payroll->potongan_terlambat - $potonganTerlambat) > 0.01 ||
                     abs((float)$payroll->total_deductions - $deductions) > 0.01 ||
-                    abs((float)$payroll->total_gaji_bersih - $thp) > 0.01
+                    abs((float)$payroll->total_gaji_bersih - $thp) > 0.01 ||
+                    (!$payroll->tanggal_mulai && $masterMulai) ||
+                    (!$payroll->tanggal_selesai && $masterSelesai)
                 );
 
                 if ($needSync) {
@@ -484,6 +483,8 @@ class PenggajianController extends Controller
                         'tunjangan_transport'=> $masterUt,
                         'tarif_harian_total' => $masterTarif,
                         'gaji_utama'         => $gajiUtama,
+                        'tanggal_mulai'      => $pMulai,
+                        'tanggal_selesai'    => $pSelesai,
                         'bonus_target'       => $bonusTarget,
                         'bonus_tanggal_merah'=> $bonusTanggalMerah,
                         'total_earnings'     => $earnings,
@@ -498,6 +499,8 @@ class PenggajianController extends Controller
                     $payroll->tunjangan_transport = $masterUt;
                     $payroll->tarif_harian_total = $masterTarif;
                     $payroll->gaji_utama = $gajiUtama;
+                    $payroll->tanggal_mulai = $pMulai;
+                    $payroll->tanggal_selesai = $pSelesai;
                     $payroll->bonus_target = $bonusTarget;
                     $payroll->bonus_tanggal_merah = $bonusTanggalMerah;
                     $payroll->total_earnings = $earnings;

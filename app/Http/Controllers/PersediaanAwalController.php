@@ -767,7 +767,7 @@ class PersediaanAwalController extends Controller
             $hargaInput = (float)$d->harga_satuan;
 
             if ($hasKonv) {
-                if ($d->qty_pembelian !== null) {
+                if ($d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
                     $isSavedInPembelian = true;
                     $qtyInput = (float)$d->qty_pembelian;
                     if ($d->harga_pembelian !== null) {
@@ -776,16 +776,6 @@ class PersediaanAwalController extends Controller
                         if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.01) {
                             $hargaInput = round((float)$d->harga_satuan * $konv, 2);
                         } else {
-                            $hargaInput = (float)$d->harga_satuan;
-                        }
-                    }
-                } else {
-                    // Record lama / import yang belum memiliki qty_pembelian terpisah
-                    $totalNilai = (float)$d->total_nilai;
-                    if ($totalNilai > 0 && abs(((float)$d->qty * (float)$d->harga_satuan) - $totalNilai) < 1.0) {
-                        if ((float)$d->qty < $konv && (float)$d->harga_satuan >= 100) {
-                            $isSavedInPembelian = true;
-                            $qtyInput = (float)$d->qty;
                             $hargaInput = (float)$d->harga_satuan;
                         }
                     }

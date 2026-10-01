@@ -785,8 +785,8 @@
                                             'total_deductions' => (float)$totalPotongan,
                                             'total_earnings' => (float)$earnings,
                                             'total_gaji_bersih' => (float)$payroll->take_home_pay,
-                                            'tanggal_mulai' => $activeItem->tanggal_mulai ?? $payroll->tanggal_mulai ?? null,
-                                            'tanggal_selesai' => $activeItem->tanggal_selesai ?? $payroll->tanggal_selesai ?? null,
+                                            'tanggal_mulai' => ($activeItem && $activeItem->tanggal_mulai) ? $activeItem->tanggal_mulai : (($activePNum === 2) ? ($kw->tanggal_mulai_2 ?? null) : ($kw->tanggal_mulai ?? $payroll->tanggal_mulai ?? null)),
+                                            'tanggal_selesai' => ($activeItem && $activeItem->tanggal_selesai) ? $activeItem->tanggal_selesai : (($activePNum === 2) ? ($kw->tanggal_selesai_2 ?? null) : ($kw->tanggal_selesai ?? $payroll->tanggal_selesai ?? null)),
                                         ]]);
                                     } else {
 
@@ -870,8 +870,8 @@
                                             'total_deductions' => $itTotalPotongan,
                                             'total_earnings' => $itEarnings,
                                             'total_gaji_bersih' => $itNett,
-                                            'tanggal_mulai' => ($it && $it->tanggal_mulai) ? $it->tanggal_mulai : (($pNum === 2) ? ($kw->tanggal_mulai_2 ?? $kw->tanggal_mulai) : ($kw->tanggal_mulai ?? $payroll->tanggal_mulai)),
-                                            'tanggal_selesai' => ($it && $it->tanggal_selesai) ? $it->tanggal_selesai : (($pNum === 2) ? ($kw->tanggal_selesai_2 ?? $kw->tanggal_selesai) : ($kw->tanggal_selesai ?? $payroll->tanggal_selesai)),
+                                            'tanggal_mulai' => ($it && $it->tanggal_mulai) ? $it->tanggal_mulai : (($pNum === 2) ? ($kw->tanggal_mulai_2 ?? null) : ($kw->tanggal_mulai ?? $payroll->tanggal_mulai ?? null)),
+                                            'tanggal_selesai' => ($it && $it->tanggal_selesai) ? $it->tanggal_selesai : (($pNum === 2) ? ($kw->tanggal_selesai_2 ?? null) : ($kw->tanggal_selesai ?? $payroll->tanggal_selesai ?? null)),
                                         ];
                                     });
                                     } // end multi-period branch
@@ -2124,19 +2124,22 @@
                                                         </div>
                                                         @foreach($payroll->items->sortBy('pilihan_periode') as $pItem)
                                                             @php
+                                                                $pNum = (int)($pItem->pilihan_periode ?? 1);
+                                                                $pItemMulai = $pItem->tanggal_mulai ?: (($pNum === 2) ? ($payroll->karyawan->tanggal_mulai_2 ?? null) : ($payroll->karyawan->tanggal_mulai ?? null));
+                                                                $pItemSelesai = $pItem->tanggal_selesai ?: (($pNum === 2) ? ($payroll->karyawan->tanggal_selesai_2 ?? null) : ($payroll->karyawan->tanggal_selesai ?? null));
                                                                 $pItemPayload = [
                                                                     'id' => $pItem->id,
                                                                     'karyawan_id' => $pItem->karyawan_id,
                                                                     'karyawan' => $payroll->karyawan,
-                                                                    'tanggal_mulai' => $pItem->tanggal_mulai,
-                                                                    'tanggal_selesai' => $pItem->tanggal_selesai,
+                                                                    'tanggal_mulai' => $pItemMulai,
+                                                                    'tanggal_selesai' => $pItemSelesai,
                                                                     'hari_kerja' => $pItem->hari_kerja,
-                                                                    'pilihan_periode' => $pItem->pilihan_periode ?? 1,
+                                                                    'pilihan_periode' => $pNum,
                                                                 ];
                                                             @endphp
                                                             <button type="button" @click="openEditModal({{ json_encode($pItemPayload) }})"
                                                                     class="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-50 transition-colors text-left cursor-pointer pl-6">
-                                                                <span>&#128197;</span> Edit Periode {{ $pItem->pilihan_periode ?? 1 }}
+                                                                <span>&#128197;</span> Edit Periode {{ $pNum }}
                                                             </button>
                                                         @endforeach
                                                         <div class="border-t border-slate-100 my-1"></div>
@@ -2719,10 +2722,20 @@
                     this.modalTitle = 'Ubah Gaji Pokok & Presensi';
                     this.karyawanId = payroll.karyawan_id;
                     this.selectedKaryawanObj = payroll.karyawan;
-                    this.tanggalMulai = payroll.tanggal_mulai ? payroll.tanggal_mulai.substring(0, 10) : '';
-                    this.tanggalSelesai = payroll.tanggal_selesai ? payroll.tanggal_selesai.substring(0, 10) : '';
-                    this.hariKerja = payroll.hari_kerja || 0;
                     this.pilihanPeriode = payroll.pilihan_periode || 1;
+                    
+                    const k = payroll.karyawan;
+                    let tMulai = payroll.tanggal_mulai;
+                    let tSelesai = payroll.tanggal_selesai;
+                    if (!tMulai && k) {
+                        tMulai = (this.pilihanPeriode == 2) ? (k.tanggal_mulai_2 || '') : (k.tanggal_mulai || '');
+                    }
+                    if (!tSelesai && k) {
+                        tSelesai = (this.pilihanPeriode == 2) ? (k.tanggal_selesai_2 || '') : (k.tanggal_selesai || '');
+                    }
+                    this.tanggalMulai = tMulai ? tMulai.substring(0, 10) : '';
+                    this.tanggalSelesai = tSelesai ? tSelesai.substring(0, 10) : '';
+                    this.hariKerja = payroll.hari_kerja || 0;
                     this.setupTariffData();
                     this.applyPeriodeSelection();
                     this.openGajiPokokModal = true;
@@ -2731,15 +2744,23 @@
                 openCreateModalForKaryawan(karyawanId, defaultPeriode) {
                     this.isEditMode = false;
                     this.formAction = '{{ route("penggajian.store") }}';
-                    this.modalTitle = 'Tambah Gaji Periode ' + defaultPeriode;
+                    this.modalTitle = 'Tambah Gaji Periode ' + (defaultPeriode || 1);
                     this.karyawanId = String(karyawanId);
                     this.selectedKaryawanObj = this.allKaryawans.find(k => k.id == karyawanId) || null;
-                    this.tanggalMulai = '';
-                    this.tanggalSelesai = '';
-                    this.hariKerja = 0;
                     this.pilihanPeriode = defaultPeriode || 1;
+                    const k = this.selectedKaryawanObj;
+                    let tMulai = '';
+                    let tSelesai = '';
+                    if (k) {
+                        tMulai = (this.pilihanPeriode == 2) ? (k.tanggal_mulai_2 || '') : (k.tanggal_mulai || '');
+                        tSelesai = (this.pilihanPeriode == 2) ? (k.tanggal_selesai_2 || '') : (k.tanggal_selesai || '');
+                    }
+                    this.tanggalMulai = tMulai ? tMulai.substring(0, 10) : '';
+                    this.tanggalSelesai = tSelesai ? tSelesai.substring(0, 10) : '';
+                    this.hariKerja = 0;
                     this.setupTariffData();
                     this.applyPeriodeSelection();
+                    this.onDateChange();
                     this.openGajiPokokModal = true;
                 },
                 
@@ -2751,8 +2772,14 @@
                     }
                     this.selectedKaryawanObj = this.allKaryawans.find(k => k.id == this.karyawanId) || null;
                     this.pilihanPeriode = 1;
+                    const k = this.selectedKaryawanObj;
+                    if (k) {
+                        this.tanggalMulai = k.tanggal_mulai ? k.tanggal_mulai.substring(0, 10) : '';
+                        this.tanggalSelesai = k.tanggal_selesai ? k.tanggal_selesai.substring(0, 10) : '';
+                    }
                     this.setupTariffData();
                     this.applyPeriodeSelection();
+                    this.onDateChange();
                 },
                 
                 onDateChange() {
@@ -2810,6 +2837,14 @@
                 selectPeriode(p) {
                     if (p == 2 && !this.hasP2) return; // guard
                     this.pilihanPeriode = p;
+                    const k = this.selectedKaryawanObj;
+                    if (k) {
+                        const tMulai = (p == 2) ? (k.tanggal_mulai_2 || '') : (k.tanggal_mulai || '');
+                        const tSelesai = (p == 2) ? (k.tanggal_selesai_2 || '') : (k.tanggal_selesai || '');
+                        if (tMulai) this.tanggalMulai = tMulai.substring(0, 10);
+                        if (tSelesai) this.tanggalSelesai = tSelesai.substring(0, 10);
+                        this.onDateChange();
+                    }
                     this.applyPeriodeSelection();
                 },
                 

@@ -121,11 +121,15 @@ class PengaturanGajiController extends Controller
                 $um = floatval($karyawan->uang_makan_2);
                 $ut = floatval($karyawan->uang_transport_2);
                 $sat = $karyawan->satuan_gaji_2 ?? $karyawan->satuan_gaji ?? 'Harian';
+                $dpMulai = $karyawan->tanggal_mulai_2;
+                $dpSelesai = $karyawan->tanggal_selesai_2;
             } else {
                 $gp = floatval($karyawan->gaji_pokok);
                 $um = floatval($karyawan->uang_makan);
                 $ut = floatval($karyawan->uang_transport);
                 $sat = $karyawan->satuan_gaji ?? 'Harian';
+                $dpMulai = $karyawan->tanggal_mulai;
+                $dpSelesai = $karyawan->tanggal_selesai;
             }
             $tar = $gp + $um + $ut;
             $hk = floatval($dp->hari_kerja ?? 0);
@@ -157,6 +161,8 @@ class PengaturanGajiController extends Controller
                 'tunjangan_transport'=> $ut,
                 'tarif_harian_total' => $tar,
                 'gaji_utama'         => $gu,
+                'tanggal_mulai'      => $dpMulai,
+                'tanggal_selesai'    => $dpSelesai,
                 'bonus_target'       => $bonusTarget,
                 'bonus_tanggal_merah'=> $bonusMerah,
                 'total_earnings'     => $totalEarnings,
