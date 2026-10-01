@@ -457,11 +457,11 @@ class CentralKitchenProductionController extends Controller
         }
 
         if ($startDate) {
-            $queryProduksi->whereDate('tanggal_produksi', '>=', $startDate);
+            $queryProduksi->whereDate('tanggal_mulai', '>=', $startDate);
         }
 
         if ($endDate) {
-            $queryProduksi->whereDate('tanggal_produksi', '<=', $endDate);
+            $queryProduksi->whereDate('tanggal_mulai', '<=', $endDate);
         }
 
         switch ($sort) {
@@ -488,11 +488,11 @@ class CentralKitchenProductionController extends Controller
                 break;
 
             case 'tgl_terdekat':
-                $queryProduksi->orderBy('tanggal_produksi', 'asc')->orderBy('id', 'asc');
+                $queryProduksi->orderBy('tanggal_mulai', 'asc')->orderBy('id', 'asc');
                 break;
 
             case 'tgl_terjauh':
-                $queryProduksi->orderBy('tanggal_produksi', 'desc')->orderBy('id', 'desc');
+                $queryProduksi->orderBy('tanggal_mulai', 'desc')->orderBy('id', 'desc');
                 break;
 
             case 'oldest':
@@ -504,6 +504,12 @@ class CentralKitchenProductionController extends Controller
                 $queryProduksi->orderBy('id', 'desc');
                 break;
         }
+
+        // Hitung total HPP seluruh riwayat produksi sesuai filter yang aktif
+        $filteredProdIds = (clone $queryProduksi)->reorder()->pluck('produksi.id')->toArray();
+        $totalHppRiwayat = !empty($filteredProdIds)
+            ? (float) \App\Models\ProduksiDetail::whereIn('produksi_id', $filteredProdIds)->sum('hpp_total')
+            : 0.0;
 
         $riwayatProduksi = $queryProduksi->paginate(10, ['*'], 'prod_page')->withQueryString();
 
@@ -703,6 +709,7 @@ class CentralKitchenProductionController extends Controller
             'woList', 
             'pesananCkPending', 
             'riwayatProduksi', 
+            'totalHppRiwayat',
             'stokBsjCk', 
             'customers', 
             'customerId', 

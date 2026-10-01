@@ -394,12 +394,18 @@
                        <small class="text-muted d-block" style="font-size: 11px;">1 ${satuanBeli} = ${Number(konversi).toLocaleString('id-ID')} ${satuanStok}</small>`
                     : `<span class="badge bg-light text-dark border">${satuanStok}</span>`;
 
-                const isReadonlyHarga = !canEditHarga;
-                const hargaInputAttr = isReadonlyHarga
-                    ? 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci: hanya Super Admin dan Tim Gudang yang dapat mengubah harga"'
-                    : '';
-
-                const lockIcon = isReadonlyHarga ? '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>' : '';
+                const isReadonlyHarga = !canEditHarga || !!(item.is_bahan_setengah_jadi);
+                const bsjHarga = !!(item.is_bahan_setengah_jadi);
+                let hargaInputAttr = '';
+                let lockIcon = '';
+                let hargaTitle = '';
+                if (bsjHarga) {
+                    hargaInputAttr = 'readonly style="background-color: #f0f9ff; cursor: not-allowed; border-color: #38bdf8;" title="Harga otomatis mengikuti HPP Resep Central Kitchen. Tidak dapat diubah secara manual."';
+                    lockIcon = '<i class="bi bi-cpu-fill text-info me-1" style="font-size:10px;"></i>';
+                } else if (isReadonlyHarga) {
+                    hargaInputAttr = 'readonly style="background-color: #f1f5f9; cursor: not-allowed;" title="Harga terkunci: hanya Super Admin dan Tim Gudang yang dapat mengubah harga"';
+                    lockIcon = '<i class="bi bi-lock-fill text-muted me-1" style="font-size:10px;"></i>';
+                }
 
                 let unitOptionsHtml = `<option value="utama" ${defaultUnit === 'utama' ? 'selected' : ''}>${satuanStok}</option>`;
                 if (hasKonversi) {
@@ -428,10 +434,15 @@
                     </td>
                     <td>
                         <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light text-muted small">${lockIcon}Rp</span>
+                            <span class="input-group-text ${bsjHarga ? 'bg-info bg-opacity-10 text-info' : 'bg-light text-muted'} small">${lockIcon}Rp</span>
                             <input type="number" class="form-control text-end input-harga fw-bold" step="any" min="0" value="${defaultHargaInput > 0 ? defaultHargaInput : ''}" placeholder="0" ${hargaInputAttr}>
                         </div>
-                        ${isReadonlyHarga ? `
+                        ${bsjHarga ? `
+                            <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
+                                <span class="badge bg-info bg-opacity-10 text-info border border-info-subtle" style="font-size: 9px;"><i class="bi bi-cpu-fill me-1"></i>HPP Resep CK</span>
+                                <strong class="text-info font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
+                            </div>
+                        ` : (isReadonlyHarga ? `
                             <div class="d-flex justify-content-between align-items-center mt-1" style="font-size: 10px;">
                                 <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. HPP:</span>
                                 <strong class="text-dark font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
@@ -441,7 +452,7 @@
                                 <span class="text-muted"><i class="bi bi-info-circle me-0.5"></i> Ref. Gudang Utama:</span>
                                 <strong class="text-secondary font-monospace ref-price-subtext">Rp ${Number(defaultHargaInput).toLocaleString('id-ID')}</strong>
                             </div>
-                        ` : '')}
+                        ` : ''))}
                     </td>
                     <td class="conversion-cell text-center">
                         <span class="text-muted small">-</span>

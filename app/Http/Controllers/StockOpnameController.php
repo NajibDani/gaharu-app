@@ -17,6 +17,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
+use App\Services\FifoService;
 
 class StockOpnameController extends Controller
 {
@@ -1391,87 +1392,107 @@ class StockOpnameController extends Controller
             return [];
         }
 
-        // 1. Batch aktif terlama di gudang & divisi ini (order by id ASC)
-        $qActive = DB::table('stok_gudang_batch')
-            ->where('gudang_id', $gudangId)
-            ->whereIn('barang_id', $barangIds)
-            ->where('qty_sisa', '>', 0);
-        if ($divisiId) {
-            $qActive->where('divisi_id', $divisiId);
-        }
-        $activeBatches = $qActive->orderBy('id', 'asc')
-            ->select('barang_id', 'harga_per_qty')
-            ->get()
-            ->unique('barang_id')
-            ->pluck('harga_per_qty', 'barang_id')
+        // Identifikasi Bahan Setengah Jadi untuk override harga dengan HPP resep CK
+        $bsjIds = DB::table('master_barang')
+            ->whereIn('id', $barangIds)
+            ->where('is_bahan_setengah_jadi', true)
+            ->pluck('id')
             ->toArray();
 
+        // BSJ harganya dari HPP resep Central Kitchen — tidak pakai batch FIFO
+        $nonBsjIds = array_diff($barangIds, $bsjIds);
+
+        // 1. Batch aktif terlama di gudang & divisi ini (order by id ASC) — hanya untuk non-BSJ
         $result = [];
-        $missing = [];
-        foreach ($barangIds as $id) {
-            if (isset($activeBatches[$id])) {
-                $result[$id] = (float) $activeBatches[$id];
-            } else {
-                $missing[] = $id;
-            }
-        }
-
-        // Fallback 1: rata-rata semua batch historis di gudang/divisi ini
-        if (!empty($missing)) {
-            $fbQ = DB::table('stok_gudang_batch')
+        if (!empty($nonBsjIds)) {
+            $qActive = DB::table('stok_gudang_batch')
                 ->where('gudang_id', $gudangId)
-                ->whereIn('barang_id', $missing);
+                ->whereIn('barang_id', $nonBsjIds)
+                ->where('qty_sisa', '>',  0);
             if ($divisiId) {
-                $fbQ->where('divisi_id', $divisiId);
+                $qActive->where('divisi_id', $divisiId);
             }
-            $historicalAvgs = $fbQ->groupBy('barang_id')
-                ->select('barang_id', DB::raw('AVG(harga_per_qty) as avg_harga'))
-                ->pluck('avg_harga', 'barang_id')
-                ->toArray();
-
-            $nextMissing = [];
-            foreach ($missing as $id) {
-                if (isset($historicalAvgs[$id]) && $historicalAvgs[$id] !== null) {
-                    $result[$id] = (float) $historicalAvgs[$id];
-                } else {
-                    $nextMissing[] = $id;
-                }
-            }
-            $missing = $nextMissing;
-        }
-
-        // Fallback 2: batch aktif di gudang manapun (order by id DESC)
-        if (!empty($missing)) {
-            $globalActives = DB::table('stok_gudang_batch')
-                ->whereIn('barang_id', $missing)
-                ->where('qty_sisa', '>', 0)
-                ->orderBy('id', 'desc')
+            $activeBatches = $qActive->orderBy('id', 'asc')
                 ->select('barang_id', 'harga_per_qty')
                 ->get()
                 ->unique('barang_id')
                 ->pluck('harga_per_qty', 'barang_id')
                 ->toArray();
 
-            $nextMissing = [];
-            foreach ($missing as $id) {
-                if (isset($globalActives[$id])) {
-                    $result[$id] = (float) $globalActives[$id];
+            $missing = [];
+            foreach ($nonBsjIds as $id) {
+                if (isset($activeBatches[$id])) {
+                    $result[$id] = (float) $activeBatches[$id];
                 } else {
-                    $nextMissing[] = $id;
+                    $missing[] = $id;
                 }
             }
-            $missing = $nextMissing;
+
+            // Fallback 1: rata-rata semua batch historis di gudang/divisi ini
+            if (!empty($missing)) {
+                $fbQ = DB::table('stok_gudang_batch')
+                    ->where('gudang_id', $gudangId)
+                    ->whereIn('barang_id', $missing);
+                if ($divisiId) {
+                    $fbQ->where('divisi_id', $divisiId);
+                }
+                $historicalAvgs = $fbQ->groupBy('barang_id')
+                    ->select('barang_id', DB::raw('AVG(harga_per_qty) as avg_harga'))
+                    ->pluck('avg_harga', 'barang_id')
+                    ->toArray();
+
+                $nextMissing = [];
+                foreach ($missing as $id) {
+                    if (isset($historicalAvgs[$id]) && $historicalAvgs[$id] !== null) {
+                        $result[$id] = (float) $historicalAvgs[$id];
+                    } else {
+                        $nextMissing[] = $id;
+                    }
+                }
+                $missing = $nextMissing;
+            }
+
+            // Fallback 2: batch aktif di gudang manapun (order by id DESC)
+            if (!empty($missing)) {
+                $globalActives = DB::table('stok_gudang_batch')
+                    ->whereIn('barang_id', $missing)
+                    ->where('qty_sisa', '>', 0)
+                    ->orderBy('id', 'desc')
+                    ->select('barang_id', 'harga_per_qty')
+                    ->get()
+                    ->unique('barang_id')
+                    ->pluck('harga_per_qty', 'barang_id')
+                    ->toArray();
+
+                $nextMissing = [];
+                foreach ($missing as $id) {
+                    if (isset($globalActives[$id])) {
+                        $result[$id] = (float) $globalActives[$id];
+                    } else {
+                        $nextMissing[] = $id;
+                    }
+                }
+                $missing = $nextMissing;
+            }
+
+            // Fallback akhir: hpp_referensi di master barang
+            if (!empty($missing)) {
+                $hppRefs = DB::table('master_barang')
+                    ->whereIn('id', $missing)
+                    ->pluck('hpp_referensi', 'id')
+                    ->toArray();
+
+                foreach ($missing as $id) {
+                    $result[$id] = (float) ($hppRefs[$id] ?? 0);
+                }
+            }
         }
 
-        // Fallback akhir: hpp_referensi di master barang
-        if (!empty($missing)) {
-            $hppRefs = DB::table('master_barang')
-                ->whereIn('id', $missing)
-                ->pluck('hpp_referensi', 'id')
-                ->toArray();
-
-            foreach ($missing as $id) {
-                $result[$id] = (float) ($hppRefs[$id] ?? 0);
+        // Override BSJ: harga dari HPP resep Central Kitchen
+        if (!empty($bsjIds)) {
+            $fifoService = app(FifoService::class);
+            foreach ($bsjIds as $bsjId) {
+                $result[$bsjId] = $fifoService->getHppResepBsj((int) $bsjId);
             }
         }
 
@@ -1596,6 +1617,17 @@ class StockOpnameController extends Controller
     {
         if (abs($selisih) < 0.0001) {
             return 0.0;
+        }
+
+        // Cek apakah barang ini BSJ → gunakan HPP resep CK sebagai harga satuan
+        $isBsj = DB::table('master_barang')
+            ->where('id', $barangId)
+            ->value('is_bahan_setengah_jadi');
+
+        if ($isBsj) {
+            $fifoService = app(FifoService::class);
+            $hargaBsj    = $fifoService->getHppResepBsj((int) $barangId);
+            return round(abs($selisih) * $hargaBsj, 2);
         }
 
         if ($selisih < 0) {

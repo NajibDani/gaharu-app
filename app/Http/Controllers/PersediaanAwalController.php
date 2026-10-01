@@ -24,6 +24,7 @@ use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Services\FifoService;
 
 class PersediaanAwalController extends Controller
 {
@@ -349,25 +350,33 @@ class PersediaanAwalController extends Controller
             $konversi = (float) ($b->konversi_pembelian ?: 1.00);
             if ($konversi <= 0) $konversi = 1.00;
 
-            // Harga referensi stok Gudang Utama
-            $hargaStokUtama = (float) ($hargaUtamaMap[$b->id] ?? ($b->hpp_referensi ?? 0));
-            $hargaBeliUtama = $hargaStokUtama * $konversi;
+            // Untuk Bahan Setengah Jadi: harga dari HPP resep Central Kitchen
+            if ($b->is_bahan_setengah_jadi) {
+                $fifoService    = app(FifoService::class);
+                $hargaStokUtama = $fifoService->getHppResepBsj($b->id);
+                $hargaBeliUtama = $hargaStokUtama * $konversi;
+            } else {
+                // Harga referensi stok Gudang Utama
+                $hargaStokUtama = (float) ($hargaUtamaMap[$b->id] ?? ($b->hpp_referensi ?? 0));
+                $hargaBeliUtama = $hargaStokUtama * $konversi;
+            }
 
             return [
-                'id'                 => $b->id,
-                'kode_barang'        => $b->kode_barang,
-                'nama'               => $b->nama,
-                'kategori_id'        => $b->kategori_id,
-                'kategori_nama'      => $b->kategori->nama ?? '-',
-                'satuan'             => $b->satuan,
-                'satuan_pembelian'   => $b->satuan_pembelian ?: $b->satuan,
-                'konversi_pembelian' => $konversi,
-                'jenis'              => $jenis,
-                'is_gudang_utama'    => $isGudangUtama,
-                'hpp_referensi'      => (float) ($b->hpp_referensi ?? 0),
-                'hpp_satuan_utama'   => $hargaStokUtama,
-                'harga_beli_utama'   => $hargaBeliUtama,
-                'stok_sekarang'      => (float) ($stockMap[$b->id] ?? 0),
+                'id'                    => $b->id,
+                'kode_barang'           => $b->kode_barang,
+                'nama'                  => $b->nama,
+                'kategori_id'           => $b->kategori_id,
+                'kategori_nama'         => $b->kategori->nama ?? '-',
+                'satuan'                => $b->satuan,
+                'satuan_pembelian'      => $b->satuan_pembelian ?: $b->satuan,
+                'konversi_pembelian'    => $konversi,
+                'jenis'                 => $jenis,
+                'is_gudang_utama'       => $isGudangUtama,
+                'is_bahan_setengah_jadi'=> (bool) $b->is_bahan_setengah_jadi,
+                'hpp_referensi'         => (float) ($b->hpp_referensi ?? 0),
+                'hpp_satuan_utama'      => $hargaStokUtama,
+                'harga_beli_utama'      => $hargaBeliUtama,
+                'stok_sekarang'         => (float) ($stockMap[$b->id] ?? 0),
             ];
         });
 
@@ -469,7 +478,12 @@ class PersediaanAwalController extends Controller
                 $canEditHarga = $isSuperAdmin || $isGudang;
                 $rawHarga = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
 
-                if ($canEditHarga) {
+                // Bahan Setengah Jadi: harga SELALU dari HPP resep Central Kitchen (tidak bisa diubah siapapun)
+                if ($barang->is_bahan_setengah_jadi) {
+                    $fifoService = app(FifoService::class);
+                    $hargaStok   = $fifoService->getHppResepBsj($barang->id);
+                    $hargaInput  = $hargaStok * $multiplier;
+                } elseif ($canEditHarga) {
                     if ($rawHarga > 0) {
                         $hargaInput = $rawHarga;
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
@@ -689,28 +703,38 @@ class PersediaanAwalController extends Controller
 
             $satuanTipe = $isSavedInPembelian ? 'pembelian' : 'utama';
 
-            $hrgStokUtama = (float)($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
-            $hrgBeliUtama = $hrgStokUtama * $konv;
+            // Untuk Bahan Setengah Jadi: harga dari HPP resep Central Kitchen (override segalanya)
+            $isBsj = (bool) $barang->is_bahan_setengah_jadi;
+            if ($isBsj) {
+                $fifoService = app(FifoService::class);
+                $hrgStokUtama = $fifoService->getHppResepBsj($barang->id);
+                $hrgBeliUtama = $hrgStokUtama * $konv;
+                $hargaInput   = ($satuanTipe === 'pembelian') ? $hrgBeliUtama : $hrgStokUtama;
+            } else {
+                $hrgStokUtama = (float)($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
+                $hrgBeliUtama = $hrgStokUtama * $konv;
 
-            // Untuk Gudang non-Utama: otomatis gunakan harga referensi Gudang Utama
-            if (!$isGudangUtama && $hrgStokUtama > 0) {
-                $hargaInput = ($satuanTipe === 'pembelian') ? $hrgBeliUtama : $hrgStokUtama;
+                // Untuk Gudang non-Utama: otomatis gunakan harga referensi Gudang Utama
+                if (!$isGudangUtama && $hrgStokUtama > 0) {
+                    $hargaInput = ($satuanTipe === 'pembelian') ? $hrgBeliUtama : $hrgStokUtama;
+                }
             }
 
             $detailsData[] = [
-                'barang_id'          => $barang->id,
-                'kode_barang'        => $barang->kode_barang,
-                'nama'               => $barang->nama,
-                'kategori_id'        => $barang->kategori_id,
-                'kategori_nama'      => $barang->kategori->nama ?? '-',
-                'satuan'             => $satStok,
-                'satuan_pembelian'   => $satBeli,
-                'konversi_pembelian' => $konv,
-                'qty_input'          => $qtyInput,
-                'satuan_tipe'        => $satuanTipe,
-                'harga_input'        => $hargaInput,
-                'harga_stok_utama'   => $hrgStokUtama,
-                'harga_beli_utama'   => $hrgBeliUtama,
+                'barang_id'              => $barang->id,
+                'kode_barang'            => $barang->kode_barang,
+                'nama'                   => $barang->nama,
+                'kategori_id'            => $barang->kategori_id,
+                'kategori_nama'          => $barang->kategori->nama ?? '-',
+                'satuan'                 => $satStok,
+                'satuan_pembelian'       => $satBeli,
+                'konversi_pembelian'     => $konv,
+                'qty_input'              => $qtyInput,
+                'satuan_tipe'            => $satuanTipe,
+                'harga_input'            => $hargaInput,
+                'harga_stok_utama'       => $hrgStokUtama,
+                'harga_beli_utama'       => $hrgBeliUtama,
+                'is_bahan_setengah_jadi' => $isBsj,
             ];
         }
 
@@ -930,7 +954,12 @@ class PersediaanAwalController extends Controller
 
                 $canEditHarga = $user && ($user->isSuperAdmin() || $user->isGudang());
 
-                if ($canEditHarga) {
+                // Bahan Setengah Jadi: harga SELALU dari HPP resep Central Kitchen (tidak bisa diubah siapapun)
+                if ($barang->is_bahan_setengah_jadi) {
+                    $fifoService = app(FifoService::class);
+                    $hargaStok   = $fifoService->getHppResepBsj((int) $barang->id);
+                    $hargaInput  = $hargaStok * $multiplier;
+                } elseif ($canEditHarga) {
                     if ($sub['harga_input'] > 0) {
                         $hargaInput = $sub['harga_input'];
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);

@@ -1305,8 +1305,28 @@
             {{-- TAB 3: RIWAYAT PRODUKSI CK (DETAIL POPUP) --}}
             <div class="tab-pane fade {{ $activeTab === 'prod' ? 'show active' : '' }}" id="prod-history" role="tabpanel">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-                    <div class="card-header bg-white py-3 px-4">
-                        <h6 class="fw-bold mb-0 text-dark">Riwayat Produksi Central Kitchen</h6>
+                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <div>
+                                <h6 class="fw-bold mb-0 text-dark">Riwayat Produksi Central Kitchen</h6>
+                                <small class="text-muted" style="font-size: 11px;">Total {{ number_format($riwayatProduksi->total(), 0, ',', '.') }} transaksi produksi ditemukan</small>
+                            </div>
+                        </div>
+
+                        <!-- Kartu Total HPP Sebaris Judul -->
+                        <div class="card border rounded-3 px-3 py-2 shadow-xs d-flex flex-row align-items-center gap-3 bg-white" style="border-color: #E2E8F0 !important; border-left: 4px solid #DE8958 !important; min-width: 240px;">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width: 38px; height: 38px; background-color: #FDF5F0; color: #DE8958;">
+                                <i class="bi bi-wallet2 fs-5"></i>
+                            </div>
+                            <div>
+                                <div class="text-muted fw-bold text-uppercase text-nowrap" style="font-size: 10px; letter-spacing: 0.5px;">
+                                    Total HPP (Sesuai Filter)
+                                </div>
+                                <div class="fw-bold font-monospace text-danger text-nowrap" style="font-size: 1.1rem; line-height: 1.2;">
+                                    Rp {{ number_format($totalHppRiwayat ?? 0, 2, ',', '.') }}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">

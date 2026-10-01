@@ -634,6 +634,57 @@ class FifoService
     | Hasil kalkulasi langsung disimpan ke master_barang.hpp_referensi.
     |
     */
+    /**
+     * Hitung HPP Resep untuk Bahan Setengah Jadi (BSJ) berdasarkan harga bahan baku
+     * terbaru di Gudang Central Kitchen (kategori Produksi).
+     * Formula: (sum(qty_bahan * harga_CK) * 1.30 BOP/BTKL) / output_qty
+     * Fallback ke hpp_referensi jika resep tidak ditemukan.
+     */
+    public function getHppResepBsj(int $barangId): float
+    {
+        // Cari gudang Central Kitchen (kategori Produksi)
+        $gudangCk = DB::table('master_gudang')
+            ->where(function ($q) {
+                $q->where('kategori', 'Produksi')
+                  ->orWhere('nama', 'like', '%Central Kitchen%');
+            })
+            ->orderByRaw("CASE WHEN kategori = 'Produksi' THEN 0 ELSE 1 END")
+            ->first();
+        $gudangCkId = $gudangCk ? (int) $gudangCk->id : 1;
+
+        $barang = DB::table('master_barang')->where('id', $barangId)->first();
+        if (!$barang) {
+            return 0.0;
+        }
+
+        // Cari resep
+        $resep = null;
+        if (!empty($barang->resep_id)) {
+            $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+        }
+        if (!$resep) {
+            $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
+        }
+
+        if ($resep) {
+            $subBahanList = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
+            if ($subBahanList->count() > 0) {
+                $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
+                $totalBbb  = 0.0;
+                foreach ($subBahanList as $subBahan) {
+                    $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangCkId);
+                    $totalBbb  += floatval($subBahan->qty_bahan) * $hargaBahan;
+                }
+                if ($totalBbb > 0) {
+                    return round(($totalBbb * 1.30) / $outputQty, 4);
+                }
+            }
+        }
+
+        // Fallback: hpp_referensi master barang
+        return (float) ($barang->hpp_referensi ?? 0);
+    }
+
     public function syncBarangHpp(int $barangId): float
     {
         self::clearHargaCache();
