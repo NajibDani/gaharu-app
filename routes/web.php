@@ -431,7 +431,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::get('/penggajian/periode', [PenggajianController::class, 'periodeDetail'])->name('penggajian.show-periode');
         Route::post('/penggajian/auto-fill', [PenggajianController::class, 'autoFill'])->name('penggajian.auto-fill');
         Route::post('/penggajian/periode/batch-update', [PenggajianController::class, 'batchUpdateGajiPokok'])->name('penggajian.periode.batch-update');
-        Route::get('/penggajian/export-excel', [PenggajianController::class, 'exportPayrollExcel'])->name('penggajian.export-excel');
+        Route::match(['get', 'post'], '/penggajian/export-excel', [PenggajianController::class, 'exportPayrollExcel'])->name('penggajian.export-excel');
         Route::post('/penggajian/ajukan-approval', [PenggajianController::class, 'ajukanApproval'])->name('penggajian.ajukanApproval');
         Route::post('/penggajian/approve', [PenggajianController::class, 'approve'])->name('penggajian.approve');
         Route::post('/penggajian/kirim-jurnal', [PenggajianController::class, 'kirimJurnalUmum'])->name('penggajian.kirimJurnalUmum');

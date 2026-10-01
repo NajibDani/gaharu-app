@@ -650,28 +650,42 @@ class PenggajianController extends Controller
      */
     public function exportPayrollExcel(Request $request)
     {
-        $periode = $request->query('periode');
+        $periode = $request->input('periode') ?? $request->query('periode');
         $selectedOutlet = $this->getOutlet($request);
 
         if (!$periode) {
             return back()->with('error', 'Periode tidak valid.');
         }
 
-        // Ambil semua penggajian untuk periode & outlet ini
-        $rawPayrolls = Penggajian::with('karyawan')
+        // Ambil data penggajian untuk periode & outlet ini
+        $query = Penggajian::with('karyawan')
             ->where('periode_bulan_tahun', $periode)
             ->where(function ($q) use ($selectedOutlet) {
                 $q->where('outlet', $selectedOutlet)
                   ->orWhereHas('karyawan', function ($kq) use ($selectedOutlet) {
                       $kq->where('outlet', $selectedOutlet);
                   });
-            })
-            ->get();
+            });
 
-        // Group per karyawan, hitung take home pay total
+        // Filter by selected payroll IDs jika user memilih seleksi tertentu dari modal
+        $payrollIds = $request->input('payroll_ids') ?? $request->query('payroll_ids') ?? $request->input('selected_ids') ?? $request->query('selected_ids');
+        if (!empty($payrollIds)) {
+            if (is_string($payrollIds)) {
+                $payrollIds = explode(',', $payrollIds);
+            }
+            $payrollIds = array_filter(array_map('intval', (array)$payrollIds));
+            if (!empty($payrollIds)) {
+                $query->whereIn('id', $payrollIds);
+            }
+        }
+
+        $rawPayrolls = $query->get();
+
+        // Group per karyawan, hitung take home pay total dari item yang dipilih
         $rows = $rawPayrolls->groupBy('karyawan_id')->map(function ($items) {
             $first = $items->first();
             $karyawan = $first->karyawan;
+            if (!$karyawan) return null;
 
             $totalEarnings = $items->sum(function($p) {
                 return $p->total_earnings > 0 ? (float)$p->total_earnings : (
@@ -702,7 +716,11 @@ class PenggajianController extends Controller
                 'email'    => $karyawan->email ?? '',
                 'nama'     => $karyawan->nama_karyawan ?? '-',
             ];
-        })->values()->filter(fn($r) => $r['rekening'] !== '' && $r['nominal'] > 0);
+        })->filter(fn($r) => !empty($r) && $r['rekening'] !== '' && $r['nominal'] > 0)->values();
+
+        if ($rows->isEmpty()) {
+            return back()->with('error', 'Tidak ada data transfer gaji yang valid untuk diekspor (pastikan nomor rekening karyawan terisi dan nominal > 0).');
+        }
 
         // Build Excel
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
@@ -745,7 +763,8 @@ class PenggajianController extends Controller
 
         // Nama file: Transfer_Gaji_Outlet_Periode.xlsx
         $periodeFormatted = \App\Models\Penggajian::formatPeriode($periode);
-        $filename = 'Transfer_Gaji_' . $selectedOutlet . '_' . str_replace(' ', '_', $periodeFormatted) . '.xlsx';
+        $filterTag = $request->input('filter_label') ? '_' . preg_replace('/[^a-zA-Z0-9]/', '', $request->input('filter_label')) : '';
+        $filename = 'Transfer_Gaji' . $filterTag . '_' . $selectedOutlet . '_' . str_replace(' ', '_', $periodeFormatted) . '.xlsx';
 
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
 

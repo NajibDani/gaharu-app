@@ -7,42 +7,73 @@
             {{-- PAGE HEADER --}}
             {{-- PAGE HEADER --}}
             @php
-                $totalGajiNettP1 = 0;
-                $totalGajiNettP2 = 0;
+                $totalGajiPokokPeriode = 0;
+                $totalBonusPeriode = 0;
+                $totalPotonganNonKasbon = 0;
+                $totalKasbonPeriode = 0;
+                $totalThpAkhirBulan = 0; // P1 karyawan single + P2 karyawan multi
+                $totalThpPertengahanBulan = 0; // P1 karyawan multi saja
+
                 foreach ($payrolls as $p) {
-                    if ($p->items && $p->items->count() > 1) {
+                    $kw = $p->karyawan;
+                    $p2TotalMaster = (float)($kw->gaji_pokok_2 ?? 0) + (float)($kw->uang_makan_2 ?? 0) + (float)($kw->uang_transport_2 ?? 0);
+                    $hasMasterMultiple = ($kw && $kw->gaji_pokok_2 !== null && $p2TotalMaster > 0);
+                    $hasMulti = ($p->items && $p->items->where('pilihan_periode', 2)->count() > 0 && $p2TotalMaster > 0) || $hasMasterMultiple;
+
+                    if ($hasMulti && $p->items && $p->items->count() > 0) {
                         foreach ($p->items as $it) {
-                            $itEarnings = $it->total_earnings > 0 ? (float)$it->total_earnings : (
-                                (float)($it->gaji_utama ?? 0) + (float)($it->lembur ?? 0) + (float)($it->bonus_target ?? 0) +
-                                (float)($it->bonus_tanggal_merah ?? 0) + (float)($it->bonus_birthday ?? 0) + (float)($it->pengembalian_deposit ?? 0) + (float)($it->bonus_dll ?? 0)
-                            );
-                            $itDeductions = $it->total_deductions > 0 ? (float)$it->total_deductions : (
-                                (float)($it->potongan_terlambat ?? 0) + (float)($it->potongan_inventaris ?? 0) + (float)($it->potongan_kasbon ?? 0) + (float)($it->potongan_deposit ?? 0) + (float)($it->potongan_dll ?? 0)
-                            );
+                            $gu = (float)($it->gaji_utama ?? 0);
+                            $bn = (float)($it->lembur ?? (($it->jam_lembur ?? 0) * 10000)) +
+                                  (float)($it->bonus_target ?? 0) +
+                                  (float)($it->bonus_tanggal_merah ?? 0) +
+                                  (float)($it->bonus_birthday ?? (($it->banyak_birthday_service ?? 0) * 5000)) +
+                                  (float)($it->pengembalian_deposit ?? 0) +
+                                  (float)($it->bonus_dll ?? 0);
+                            $kasbon = (float)($it->potongan_kasbon ?? 0);
+                            $potNonKasbon = (float)($it->potongan_terlambat ?? 0) +
+                                            (float)($it->potongan_inventaris ?? 0) +
+                                            (float)($it->potongan_deposit ?? 0) +
+                                            (float)($it->potongan_dll ?? 0);
+                            $itEarnings = $it->total_earnings > 0 ? (float)$it->total_earnings : ($gu + $bn);
+                            $itDeductions = $it->total_deductions > 0 ? (float)$it->total_deductions : ($potNonKasbon + $kasbon);
                             $itNett = $itEarnings - $itDeductions;
-                            if (($it->pilihan_periode ?? 1) == 2) {
-                                $totalGajiNettP2 += $itNett;
+
+                            $totalGajiPokokPeriode += $gu;
+                            $totalBonusPeriode += $bn;
+                            $totalPotonganNonKasbon += $potNonKasbon;
+                            $totalKasbonPeriode += $kasbon;
+
+                            $pNum = (int)($it->pilihan_periode ?? 1);
+                            if ($pNum === 2) {
+                                $totalThpAkhirBulan += $itNett;
                             } else {
-                                $totalGajiNettP1 += $itNett;
+                                $totalThpPertengahanBulan += $itNett;
                             }
                         }
                     } else {
-                        $pPilihan = (int)($p->pilihan_periode ?? 1);
-                        if ($pPilihan === 2) {
-                            $totalGajiNettP2 += (float)$p->take_home_pay;
-                        } else {
-                            $totalGajiNettP1 += (float)$p->take_home_pay;
-                        }
+                        // Karyawan single period / bulanan
+                        $gu = (float)($p->gaji_utama ?? 0);
+                        $bn = (float)(($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->pengembalian_deposit ?? 0) + ($p->bonus_dll ?? 0));
+                        $kasbon = (float)($p->potongan_kasbon ?? 0);
+                        $potNonKasbon = (float)($p->potongan_terlambat ?? 0) +
+                                        (float)($p->potongan_inventaris ?? 0) +
+                                        (float)($p->potongan_deposit ?? 0) +
+                                        (float)($p->potongan_dll ?? 0);
+                        $earnings = (float)($p->total_earnings > 0 ? $p->total_earnings : ($gu + $bn));
+                        $deductions = (float)($p->total_deductions > 0 ? $p->total_deductions : ($potNonKasbon + $kasbon));
+                        $nett = (float)($p->take_home_pay > 0 ? $p->take_home_pay : ($earnings - $deductions));
+
+                        $totalGajiPokokPeriode += $gu;
+                        $totalBonusPeriode += $bn;
+                        $totalPotonganNonKasbon += $potNonKasbon;
+                        $totalKasbonPeriode += $kasbon;
+
+                        // Gaji karyawan 1 periode masuk ke THP Akhir Bulan
+                        $totalThpAkhirBulan += $nett;
                     }
                 }
-                $totalGajiNettPeriode = $totalGajiNettP1 + $totalGajiNettP2;
-                $totalGajiPokokPeriode = $payrolls->sum('gaji_utama');
-                $totalBonusPeriode = $payrolls->sum(function($p) {
-                    return (float)(($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->pengembalian_deposit ?? 0) + ($p->bonus_dll ?? 0));
-                });
-                $totalPotonganPeriode = $payrolls->sum(function($p) {
-                    return (float)($p->total_deductions ?? (($p->potongan_terlambat ?? 0) + ($p->potongan_inventaris ?? 0) + ($p->potongan_kasbon ?? 0) + ($p->potongan_deposit ?? 0) + ($p->potongan_dll ?? 0)));
-                });
+
+                $totalBebanGajiKeseluruhan = $totalThpAkhirBulan + $totalThpPertengahanBulan + $totalKasbonPeriode;
             @endphp
             {{-- PAGE HEADER & TOOLBAR --}}
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 px-4 py-2.5 sm:py-3 mb-2.5">
@@ -111,13 +142,13 @@
                             </button>
                         </form>
 
-                        {{-- EXPORT EXCEL BUTTON --}}
-                        <a href="{{ route('penggajian.export-excel', ['periode' => $periode, 'outlet' => $selectedOutlet]) }}"
-                           style="background-color: #166534; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(22,101,52,0.2); transition: background .15s; white-space: nowrap; text-decoration: none;"
-                           onmouseover="this.style.background='#14532d'" onmouseout="this.style.background='#166534'"
-                           title="Unduh data transfer gaji ke rekening (format Excel payroll bank)">
+                        {{-- EXPORT EXCEL BUTTON (OPENS SELECTION MODAL) --}}
+                        <button type="button" onclick="openExportPayrollModal()"
+                                style="background-color: #166534; color: #ffffff; border: none; padding: 5px 12px; border-radius: 7px; font-weight: 800; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(22,101,52,0.2); transition: background .15s; white-space: nowrap;"
+                                onmouseover="this.style.background='#14532d'" onmouseout="this.style.background='#166534'"
+                                title="Buka pilihan seleksi data transfer gaji ke rekening (format Excel payroll bank)">
                             <span>📄</span> Export Excel
-                        </a>
+                        </button>
 
                         {{-- MAXIMIZE / FULLSCREEN BUTTON --}}
                         <button type="button" id="btnToggleMaximizePayroll" onclick="toggleMaximizePayroll()"
@@ -131,81 +162,125 @@
                     </div>
                 </div>
 
-                {{-- 4 KARTU RINGKASAN: COMPACT & TIPIS, 1 BARIS MENYAMPING DARI KIRI KE KANAN --}}
-                <div class="summary-cards-row" style="display: flex !important; flex-direction: row !important; align-items: stretch !important; gap: 8px !important; width: 100% !important; margin-top: 8px !important; padding-top: 8px !important; border-top: 1px solid #f1f5f9 !important; box-sizing: border-box !important;">
-                    {{-- 1. Gaji Pokok Badge --}}
-                    <div style="flex: 0.95 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
-                         title="Total Gaji Pokok Seluruh Karyawan">
-                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #475569; flex-shrink: 0;">
-                            💼
+                {{-- 7 KARTU RINGKASAN REVISI (2 BARIS RAPI & INFORMATIF) --}}
+                <div style="display: flex; flex-direction: column; gap: 7px; width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9; box-sizing: border-box;">
+                    
+                    {{-- BARIS 1: 4 KOMPONEN GAJI & POTONGAN --}}
+                    <div class="summary-cards-row" style="display: flex !important; flex-direction: row !important; align-items: stretch !important; gap: 8px !important; width: 100% !important; box-sizing: border-box !important;">
+                        {{-- 1. Gaji Pokok Badge --}}
+                        <div style="flex: 1 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Gaji Pokok Seluruh Karyawan">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #f1f5f9; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #475569; flex-shrink: 0;">
+                                💼
+                            </div>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Pokok</div>
+                                <div style="font-size: 12px; font-weight: 900; color: #0f172a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiPokokValue">
+                                    Rp {{ number_format($totalGajiPokokPeriode, 0, ',', '.') }}
+                                </div>
+                            </div>
                         </div>
-                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                            <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Pokok</div>
-                            <div style="font-size: 12.5px; font-weight: 900; color: #0f172a; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalGajiPokokValue">
-                                Rp {{ number_format($totalGajiPokokPeriode, 0, ',', '.') }}
+
+                        {{-- 2. Bonus & Lembur Badge --}}
+                        <div style="flex: 1 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Bonus, Lembur, Target, Tanggal Merah, Birthday, Deposit Balik, dan Bonus Lainnya">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fefce8; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #ca8a04; flex-shrink: 0;">
+                                ⭐
+                            </div>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bonus</div>
+                                <div style="font-size: 12px; font-weight: 900; color: #d97706; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBonusValue">
+                                    Rp {{ number_format($totalBonusPeriode, 0, ',', '.') }}
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- 3. Potongan (Kecuali Kasbon) Badge --}}
+                        <div style="flex: 1 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Potongan Selain Kasbon (Keterlambatan, Kerusakan Inventaris, Potongan Deposit, Potongan Lain)">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fff1f2; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #e11d48; flex-shrink: 0;">
+                                ✂️
+                            </div>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Potongan (Non-Kasbon)</div>
+                                <div style="font-size: 12px; font-weight: 900; color: #e11d48; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalPotonganNonKasbonValue">
+                                    Rp {{ number_format($totalPotonganNonKasbon, 0, ',', '.') }}
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- 4. Total Kasbon Badge --}}
+                        <div style="flex: 1 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Pemotongan Kasbon Pinjaman Karyawan">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #f5f3ff; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #7c3aed; flex-shrink: 0;">
+                                🏷️
+                            </div>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Kasbon</div>
+                                <div style="font-size: 12px; font-weight: 900; color: #7c3aed; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalKasbonValue">
+                                    Rp {{ number_format($totalKasbonPeriode, 0, ',', '.') }}
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    {{-- 2. Bonus & Lembur Badge --}}
-                    <div style="flex: 0.95 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
-                         title="Total Bonus & Lembur Seluruh Karyawan">
-                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fefce8; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #ca8a04; flex-shrink: 0;">
-                            ⭐
-                        </div>
-                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                            <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Bonus</div>
-                            <div style="font-size: 12.5px; font-weight: 900; color: #d97706; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBonusValue">
-                                Rp {{ number_format($totalBonusPeriode, 0, ',', '.') }}
+                    {{-- BARIS 2: 3 KARTU ARUS TRANSFER GAJI & BEBAN --}}
+                    <div style="display: flex !important; flex-direction: row !important; align-items: stretch !important; gap: 8px !important; width: 100% !important; box-sizing: border-box !important;">
+                        {{-- 5. Total THP Akhir Bulan --}}
+                        <div style="flex: 1.15 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #a7f3d0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(16, 185, 129, 0.08) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Gaji Bersih Transfer Akhir Bulan (P1 Karyawan 1 Periode/Bulanan + P2 Karyawan 2 Periode)">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #059669; flex-shrink: 0; border: 1px solid #d1fae5;">
+                                💳
+                            </div>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #065f46; line-height: 1; white-space: nowrap;">THP Akhir Bulan</span>
+                                    <span style="font-size: 7.5px; font-weight: 800; background: #d1fae5; color: #065f46; border-radius: 3px; padding: 1px 4px; line-height: 1;">Transfer Now</span>
+                                </div>
+                                <div style="font-size: 12.5px; font-weight: 900; color: #059669; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalThpAkhirBulanValue">
+                                    Rp {{ number_format($totalThpAkhirBulan, 0, ',', '.') }}
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    {{-- 3. Potongan Badge --}}
-                    <div style="flex: 0.95 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #e2e8f0 !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
-                         title="Total Pengurangan & Potongan Seluruh Karyawan">
-                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fff1f2; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #e11d48; flex-shrink: 0;">
-                            ✂️
-                        </div>
-                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                            <div style="font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; color: #64748b; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Total Potongan</div>
-                            <div style="font-size: 12.5px; font-weight: 900; color: #e11d48; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalPotonganValue">
-                                Rp {{ number_format($totalPotonganPeriode, 0, ',', '.') }}
+                        {{-- 6. Total Beban Gaji (THP Akhir + THP Pertengahan + Kasbon) --}}
+                        <div style="flex: 1.15 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #bae6fd !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(14, 165, 233, 0.08) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Beban Gaji Keseluruhan (THP Akhir + THP Pertengahan + Total Kasbon)">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #f0f9ff; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #0284c7; flex-shrink: 0; border: 1px solid #e0f2fe;">
+                                📈
+                            </div>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #0369a1; line-height: 1; white-space: nowrap;">Total Beban Gaji</span>
+                                    <span style="font-size: 7.5px; font-weight: 800; background: #e0f2fe; color: #0369a1; border-radius: 3px; padding: 1px 4px; line-height: 1;">THP + Kasbon</span>
+                                </div>
+                                <div style="font-size: 12.5px; font-weight: 900; color: #0284c7; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalBebanGajiValue">
+                                    Rp {{ number_format($totalBebanGajiKeseluruhan, 0, ',', '.') }}
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    {{-- 4. Total Gaji Bersih / Nett Badge (P1, P2, Total) --}}
-                    <div id="headerTotalGajiNettBadge"
-                         style="flex: 1.15 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #a7f3d0 !important; padding: 4px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(16, 185, 129, 0.08) !important; display: flex !important; align-items: center !important; gap: 8px !important; box-sizing: border-box !important;"
-                         title="Total Take Home Pay Seluruh Karyawan (P1, P2, dan Total Seluruh Periode)">
-                        <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #059669; flex-shrink: 0; border: 1px solid #d1fae5;">
-                            💰
-                        </div>
-                        <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
-                            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 4px;">
-                                <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #475569; line-height: 1; white-space: nowrap;">Total THP</span>
-                                <span style="font-size: 12.5px; font-weight: 900; color: #16a34a; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;" id="headerTotalGajiNettValue">
-                                    Rp {{ number_format($totalGajiNettPeriode, 0, ',', '.') }}
-                                </span>
+                        {{-- 7. Total THP Pertengahan Bulan (P1 Karyawan 2 Periode) --}}
+                        <div style="flex: 1.15 1 0% !important; min-width: 0 !important; background: #ffffff !important; border: 1.5px solid #fed7aa !important; padding: 5px 9px !important; border-radius: 8px !important; box-shadow: 0 1px 2px rgba(249, 115, 22, 0.08) !important; display: flex !important; align-items: center !important; gap: 7px !important; box-sizing: border-box !important;"
+                             title="Total Gaji Bersih P1 yang Sudah Ditransfer di Pertengahan Bulan (Khusus Karyawan 2 Periode)">
+                            <div style="width: 28px; height: 28px; border-radius: 6px; background-color: #fff7ed; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #ea580c; flex-shrink: 0; border: 1px solid #ffedd5;">
+                                🗓️
                             </div>
-                            <div style="display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 9px; font-weight: 700; color: #64748b; line-height: 1; flex-wrap: nowrap; overflow: hidden;">
-                                <span style="display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;">
-                                    <span style="padding: 0.5px 3.5px; border-radius: 3px; font-size: 7.5px; font-weight: 900; background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe;">P1</span>
-                                    <span id="headerTotalGajiNettP1Value" style="color: #1e293b; font-weight: 800;">Rp {{ number_format($totalGajiNettP1, 0, ',', '.') }}</span>
-                                </span>
-                                <span style="color: #cbd5e1; font-size: 8px;">|</span>
-                                <span style="display: inline-flex; align-items: center; gap: 2px; white-space: nowrap;">
-                                    <span style="padding: 0.5px 3.5px; border-radius: 3px; font-size: 7.5px; font-weight: 900; background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff;">P2</span>
-                                    <span id="headerTotalGajiNettP2Value" style="color: #1e293b; font-weight: 800;">Rp {{ number_format($totalGajiNettP2, 0, ',', '.') }}</span>
-                                </span>
+                            <div style="flex: 1 1 0%; min-width: 0; text-align: left;">
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                                    <span style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; color: #9a3412; line-height: 1; white-space: nowrap;">THP Pertengahan (P1)</span>
+                                    <span style="font-size: 7.5px; font-weight: 800; background: #ffedd5; color: #9a3412; border-radius: 3px; padding: 1px 4px; line-height: 1;">Transfer Lalu</span>
+                                </div>
+                                <div style="font-size: 12.5px; font-weight: 900; color: #ea580c; line-height: 1.2; margin-top: 2px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" id="headerTotalThpPertengahanValue">
+                                    Rp {{ number_format($totalThpPertengahanBulan, 0, ',', '.') }}
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            @if(session('success'))
+@if(session('success'))
             <div class="bg-emerald-50 border border-emerald-300 text-emerald-900 px-3.5 py-1.5 rounded-lg mb-2 text-xs font-bold flex items-center gap-2 shadow-2xs">
                 <span class="text-emerald-600 text-sm">&#10003;</span> {{ session('success') }}
             </div>
@@ -622,6 +697,7 @@
                                 <th class="px-3 py-2 text-center whitespace-nowrap min-w-[155px] border-b border-slate-300 font-bold">Aksi</th>
                             </tr>
                         </thead>
+                        @php $exportModalList = []; @endphp
                         <tbody class="divide-y divide-slate-100 bg-white" id="tbodyKaryawan">
                             @forelse($payrolls as $index => $payroll)
                             @php
@@ -948,6 +1024,29 @@
 
                                 // WhatsApp preparation
                                 $cleanName = $payroll->karyawan->nama_karyawan ?? 'Karyawan';
+
+                                // Koleksi item untuk modal seleksi export excel payroll
+                                if (isset($itemBreakdowns)) {
+                                    foreach ($itemBreakdowns as $ibItem) {
+                                        if (!empty($ibItem['id'])) {
+                                            $exportModalList[] = [
+                                                'id' => $ibItem['id'],
+                                                'karyawan_id' => $payroll->karyawan_id,
+                                                'nama' => $payroll->karyawan->nama_karyawan ?? '-',
+                                                'jabatan' => $payroll->karyawan->jabatan ?? '-',
+                                                'departemen' => $payroll->karyawan->departemen ?? '-',
+                                                'no_rekening' => preg_replace('/\D/', '', $payroll->karyawan->no_rekening ?? ''),
+                                                'no_rekening_display' => $payroll->karyawan->no_rekening ?? '',
+                                                'bank' => $payroll->karyawan->bank ?? '',
+                                                'email' => $payroll->karyawan->email ?? '',
+                                                'periode_num' => (int)($ibItem['periode'] ?? 1),
+                                                'periode_label' => $hasMultiplePeriods ? ('Periode ' . ($ibItem['periode'] ?? 1)) : ($satuanRow === 'Bulanan' ? 'Bulanan' : '1 Periode'),
+                                                'is_multi' => $hasMultiplePeriods,
+                                                'thp' => max(0, (float)($ibItem['total_gaji_bersih'] ?? 0)),
+                                            ];
+                                        }
+                                    }
+                                }
                                 $rawPhone = preg_replace('/\D/', '', $payroll->karyawan->whatsapp ?? '');
                                 if ($rawPhone !== '' && substr($rawPhone, 0, 1) === '0') {
                                     $cleanPhone = '62' . substr($rawPhone, 1);
@@ -1098,6 +1197,8 @@
                                 data-gaji-pokok="{{ (float)$gajiPokok }}"
                                 data-bonus-total="{{ (float)$totalBonus }}"
                                 data-deductions-total="{{ (float)$totalPotongan }}"
+                                data-pot-non-kasbon="{{ (float)($totalPotongan - ($payroll->potongan_kasbon ?? 0)) }}"
+                                data-kasbon-total="{{ (float)($payroll->potongan_kasbon ?? 0) }}"
                                 data-take-home-pay="{{ (float)$payroll->take_home_pay }}"
                                 data-has-multiple="{{ $hasMultiplePeriods ? '1' : '0' }}"
                                 data-active-periode="{{ $itemBreakdowns->first()['periode'] ?? ($payroll->pilihan_periode ?? 1) }}"
@@ -2661,7 +2762,215 @@
                 </div>
             </div>
         </template>
+    
+        {{-- ========================================================================= --}}
+        {{-- POPUP MODAL EXPORT PAYROLL EXCEL (SELEKSI GAJI KARYAWAN & PERIODE) --}}
+        {{-- ========================================================================= --}}
+        <div id="modalExportPayrollExcel" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; align-items: center; justify-content: center; padding: 16px;">
+            {{-- BACKDROP --}}
+            <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); cursor: pointer;"
+                 onclick="closeExportPayrollModal()"></div>
+
+            {{-- MODAL CONTAINER --}}
+            <div style="position: relative; background: #ffffff; border-radius: 16px; width: 100%; max-width: 820px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4); border: 1px solid #cbd5e1; z-index: 100000; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;"
+                 onclick="event.stopPropagation()">
+                
+                {{-- HEADER --}}
+                <div style="background: #f8fafc; padding: 14px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="width: 36px; height: 36px; border-radius: 8px; background: #ecfdf5; color: #059669; display: flex; align-items: center; justify-content: center; font-size: 18px; border: 1px solid #a7f3d0;">
+                            📊
+                        </div>
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 800; color: #0f172a; margin: 0;">Export Excel Transfer Payroll Bank</h3>
+                            <p style="font-size: 11.5px; color: #64748b; font-weight: 600; margin: 2px 0 0 0;">
+                                Periode {{ \App\Models\Penggajian::formatPeriode($periode) }} &bull; Outlet {{ $selectedOutlet }}
+                            </p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="closeExportPayrollModal()"
+                            style="background: none; border: none; color: #64748b; font-size: 24px; font-weight: 700; line-height: 1; cursor: pointer; padding: 0 4px;"
+                            onmouseover="this.style.color='#0f172a'" onmouseout="this.style.color='#64748b'">
+                        &times;
+                    </button>
+                </div>
+
+                {{-- FORM BODY --}}
+                <form action="{{ route('penggajian.export-excel') }}" method="POST" id="formExportPayrollExcel" style="display: flex; flex-direction: column; overflow: hidden; flex: 1; margin: 0;">
+                    @csrf
+                    <input type="hidden" name="periode" value="{{ $periode }}">
+                    <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
+                    <input type="hidden" name="filter_label" id="exportFilterLabel" value="">
+
+                    {{-- PRESET SELECTION & SEARCH BAR --}}
+                    <div style="padding: 12px 20px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                            <div style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">
+                                Filter Cepat Periode:
+                            </div>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button type="button" onclick="setExportPreset('all')" id="btnPresetAll"
+                                        class="btn-export-preset active"
+                                        style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; transition: all .15s;">
+                                    Semua Gaji (P1+P2)
+                                </button>
+                                <button type="button" onclick="setExportPreset('p2_monthly')" id="btnPresetP2Monthly"
+                                        class="btn-export-preset"
+                                        style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; transition: all .15s;"
+                                        title="Pilih Periode 2 untuk karyawan 2 periode + gaji bulanan (abaikan P1 yang sudah ditransfer sebelumnya)">
+                                    ✨ Hanya P2 &amp; Bulanan
+                                </button>
+                                <button type="button" onclick="setExportPreset('p1')" id="btnPresetP1"
+                                        class="btn-export-preset"
+                                        style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; border: 1.5px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; transition: all .15s;">
+                                    Hanya Periode 1 (P1)
+                                </button>
+                                <button type="button" onclick="setExportPreset('clear')"
+                                        style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; border: 1px dashed #cbd5e1; background: transparent; color: #64748b; cursor: pointer;">
+                                    Reset / Kosongkan
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- SEARCH & LIVE SUMMARY BAR --}}
+                        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <div style="position: relative; flex: 1; min-width: 220px;">
+                                <input type="text" id="searchExportKaryawan" oninput="filterExportTableList()"
+                                       placeholder="🔍 Cari nama karyawan / rekening..."
+                                       style="width: 100%; padding: 6px 12px; font-size: 11.5px; border-radius: 7px; border: 1px solid #cbd5e1; background: #ffffff; outline: none; box-sizing: border-box;">
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 7px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #334155; display: flex; align-items: center; gap: 6px;">
+                                    <span>Terpilih:</span>
+                                    <span id="exportSelectedCount" style="color: #059669; font-weight: 800;">0</span> / <span id="exportTotalCount">{{ isset($exportModalList) ? count($exportModalList) : 0 }}</span>
+                                </div>
+                                <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 7px; padding: 4px 10px; font-size: 11.5px; font-weight: 800; color: #065f46;">
+                                    Total: <span id="exportSelectedNominalTotal">Rp 0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- TABLE OF ITEMS (SCROLLABLE) --}}
+                    <div style="overflow-y: auto; max-height: 48vh; padding: 0 4px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+                            <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10; border-bottom: 1px solid #cbd5e1;">
+                                <tr style="color: #64748b; font-size: 10.5px; font-weight: 800; text-transform: uppercase;">
+                                    <th style="padding: 8px 10px; width: 36px; text-align: center;">
+                                        <input type="checkbox" id="checkAllExportModal" onchange="toggleAllExportModal(this.checked)" style="cursor: pointer;">
+                                    </th>
+                                    <th style="padding: 8px 10px; text-align: left;">Karyawan</th>
+                                    <th style="padding: 8px 10px; text-align: center; width: 100px;">Periode</th>
+                                    <th style="padding: 8px 10px; text-align: left; width: 190px;">No. Rekening</th>
+                                    <th style="padding: 8px 12px; text-align: right; width: 140px;">Nominal THP</th>
+                                </tr>
+                            </thead>
+                            <tbody id="exportModalTbody">
+                                @if(isset($exportModalList) && count($exportModalList) > 0)
+                                    @foreach($exportModalList as $item)
+                                    <tr class="export-item-row"
+                                        data-nama="{{ strtolower($item['nama']) }}"
+                                        data-rekening="{{ $item['no_rekening'] }}"
+                                        data-is-multi="{{ $item['is_multi'] ? '1' : '0' }}"
+                                        data-periode-num="{{ $item['periode_num'] }}"
+                                        data-has-rekening="{{ !empty($item['no_rekening']) ? '1' : '0' }}"
+                                        style="border-bottom: 1px solid #f1f5f9; transition: background .1s;"
+                                        onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                                        
+                                        {{-- CHECKBOX --}}
+                                        <td style="padding: 8px 10px; text-align: center;">
+                                            <input type="checkbox" name="payroll_ids[]" value="{{ $item['id'] }}"
+                                                   class="check-export-item"
+                                                   data-thp="{{ $item['thp'] }}"
+                                                   data-has-rekening="{{ !empty($item['no_rekening']) ? '1' : '0' }}"
+                                                   data-is-multi="{{ $item['is_multi'] ? '1' : '0' }}"
+                                                   data-periode-num="{{ $item['periode_num'] }}"
+                                                   onchange="onExportItemChange()"
+                                                   style="cursor: pointer;">
+                                        </td>
+
+                                        {{-- NAMA & JABATAN --}}
+                                        <td style="padding: 8px 10px;">
+                                            <div style="font-weight: 800; color: #0f172a;">{{ $item['nama'] }}</div>
+                                            <div style="font-size: 10px; color: #64748b; font-weight: 600;">
+                                                {{ $item['jabatan'] }} @if($item['departemen']) &bull; {{ $item['departemen'] }} @endif
+                                            </div>
+                                        </td>
+
+                                        {{-- PERIODE BADGE --}}
+                                        <td style="padding: 8px 10px; text-align: center;">
+                                            @if($item['is_multi'])
+                                                @if($item['periode_num'] == 1)
+                                                    <span style="font-size: 10px; font-weight: 800; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; border-radius: 5px; padding: 2px 7px;">
+                                                        Periode 1
+                                                    </span>
+                                                @else
+                                                    <span style="font-size: 10px; font-weight: 800; background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; border-radius: 5px; padding: 2px 7px;">
+                                                        Periode 2
+                                                    </span>
+                                                @endif
+                                            @else
+                                                <span style="font-size: 10px; font-weight: 800; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 5px; padding: 2px 7px;">
+                                                    {{ $item['periode_label'] }}
+                                                </span>
+                                            @endif
+                                        </td>
+
+                                        {{-- NO REKENING & BANK --}}
+                                        <td style="padding: 8px 10px;">
+                                            @if(!empty($item['no_rekening']))
+                                                <div style="font-family: monospace; font-weight: 700; color: #0f172a; font-size: 11.5px;">
+                                                    {{ $item['no_rekening_display'] }}
+                                                </div>
+                                                <div style="font-size: 9.5px; color: #64748b; font-weight: 700;">
+                                                    {{ $item['bank'] ?: 'BANK' }}
+                                                </div>
+                                            @else
+                                                <span style="font-size: 10px; font-weight: 800; background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; border-radius: 5px; padding: 1px 6px;">
+                                                    ⚠️ Rekening Belum Diisi
+                                                </span>
+                                            @endif
+                                        </td>
+
+                                        {{-- NOMINAL THP --}}
+                                        <td style="padding: 8px 12px; text-align: right;">
+                                            <span style="font-weight: 800; color: #047857; font-size: 12px; font-variant-numeric: tabular-nums;">
+                                                Rp {{ number_format($item['thp'], 0, ',', '.') }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                @else
+                                    <tr>
+                                        <td colspan="5" style="padding: 24px; text-align: center; color: #64748b;">
+                                            Tidak ada data penggajian untuk periode ini.
+                                        </td>
+                                    </tr>
+                                @endif
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {{-- FOOTER BUTTONS --}}
+                    <div style="background: #f8fafc; padding: 12px 20px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                        <button type="button" onclick="closeExportPayrollModal()"
+                                style="padding: 8px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; color: #475569; background: #ffffff; border: 1.5px solid #cbd5e1; cursor: pointer;">
+                            Batal
+                        </button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button type="submit" id="btnSubmitExportExcel"
+                                    style="padding: 8px 20px; border-radius: 8px; font-size: 12px; font-weight: 800; color: #ffffff; background: #166534; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 1px 3px rgba(22,101,52,0.3); transition: all .15s;">
+                                <span>📥</span> Unduh Excel Transfer (<span id="btnExportCountBadge">0</span> Item)
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
     </div>
+
+
 
     <script>
         function payrollManager() {
@@ -3225,6 +3534,8 @@
                     // Period Deductions Subtotal
                     const subPotongan = potTerlambat + potInv + potKasbon + potDeposit + potDll;
                     totalPotongan += subPotongan;
+                    totalKasbon += potKasbon;
+                    totalPotNonKasbon += (potTerlambat + potInv + potDeposit + potDll);
                     const subPotEl = row.querySelector('.sub-potongan-p-' + pNum);
                     if (subPotEl) subPotEl.textContent = Math.round(subPotongan).toLocaleString('id-ID');
 
@@ -3255,6 +3566,8 @@
                 }
 
                 row.setAttribute('data-deductions-total', totalPotongan);
+                row.setAttribute('data-kasbon-total', totalKasbon);
+                row.setAttribute('data-pot-non-kasbon', totalPotNonKasbon);
                 const potCell = row.querySelector('.row-total-deductions-cell');
                 if (potCell) {
                     const valEl = potCell.querySelector('.main-deductions-val');
@@ -3379,7 +3692,10 @@
                 const potDll = potDllInput ? cleanNumber(potDllInput.value) : 0;
 
                 totalPotongan = potTerlambat + potInv + potKasbon + potDeposit + potDll;
+                const potNonKasbon = potTerlambat + potInv + potDeposit + potDll;
                 row.setAttribute('data-deductions-total', totalPotongan);
+                row.setAttribute('data-kasbon-total', potKasbon);
+                row.setAttribute('data-pot-non-kasbon', potNonKasbon);
                 const potCell = row.querySelector('.row-total-deductions-cell');
                 if (potCell) {
                     const valEl = potCell.querySelector('.main-deductions-val');
@@ -3458,48 +3774,39 @@
         }
 
         function recalculateAllHeaderTotals() {
-            let grandNett = 0;
-            let grandNettP1 = 0;
-            let grandNettP2 = 0;
             let grandPokok = 0;
             let grandBonus = 0;
-            let grandPotongan = 0;
+            let grandPotNonKasbon = 0;
+            let grandKasbon = 0;
+            let grandThpAkhirBulan = 0;
+            let grandThpPertengahan = 0;
 
             document.querySelectorAll('.payroll-row').forEach(row => {
-                const rowNett = parseFloat(row.getAttribute('data-take-home-pay')) || 0;
-                grandNett += rowNett;
-                grandPokok += parseFloat(row.getAttribute('data-gaji-pokok')) || 0;
-                grandBonus += parseFloat(row.getAttribute('data-bonus-total')) || 0;
-                grandPotongan += parseFloat(row.getAttribute('data-deductions-total')) || 0;
-
                 const isMultiple = row.getAttribute('data-has-multiple') === '1';
+                const rowPokok = parseFloat(row.getAttribute('data-gaji-pokok')) || 0;
+                const rowBonus = parseFloat(row.getAttribute('data-bonus-total')) || 0;
+                const rowPotNonKasbon = parseFloat(row.getAttribute('data-pot-non-kasbon')) || 0;
+                const rowKasbon = parseFloat(row.getAttribute('data-kasbon-total')) || 0;
+                const rowNett = parseFloat(row.getAttribute('data-take-home-pay')) || 0;
+
+                grandPokok += rowPokok;
+                grandBonus += rowBonus;
+                grandPotNonKasbon += rowPotNonKasbon;
+                grandKasbon += rowKasbon;
+
                 if (isMultiple) {
                     const p1El = row.querySelector('.sub-thp-p-1');
                     const p2El = row.querySelector('.sub-thp-p-2');
-                    if (p1El) {
-                        grandNettP1 += cleanNumber(p1El.textContent) || 0;
-                    }
-                    if (p2El) {
-                        grandNettP2 += cleanNumber(p2El.textContent) || 0;
-                    }
+                    const p1Val = p1El ? (cleanNumber(p1El.textContent) || 0) : 0;
+                    const p2Val = p2El ? (cleanNumber(p2El.textContent) || 0) : 0;
+                    grandThpPertengahan += p1Val;
+                    grandThpAkhirBulan += p2Val;
                 } else {
-                    const actPeriode = parseInt(row.getAttribute('data-active-periode') || '1', 10);
-                    if (actPeriode === 2) {
-                        grandNettP2 += rowNett;
-                    } else {
-                        grandNettP1 += rowNett;
-                    }
+                    grandThpAkhirBulan += rowNett;
                 }
             });
 
-            const nettEl = document.getElementById('headerTotalGajiNettValue');
-            if (nettEl) nettEl.textContent = 'Rp ' + Math.round(grandNett).toLocaleString('id-ID');
-
-            const nettP1El = document.getElementById('headerTotalGajiNettP1Value');
-            if (nettP1El) nettP1El.textContent = 'Rp ' + Math.round(grandNettP1).toLocaleString('id-ID');
-
-            const nettP2El = document.getElementById('headerTotalGajiNettP2Value');
-            if (nettP2El) nettP2El.textContent = 'Rp ' + Math.round(grandNettP2).toLocaleString('id-ID');
+            const grandBeban = grandThpAkhirBulan + grandThpPertengahan + grandKasbon;
 
             const pokokEl = document.getElementById('headerTotalGajiPokokValue');
             if (pokokEl) pokokEl.textContent = 'Rp ' + Math.round(grandPokok).toLocaleString('id-ID');
@@ -3507,8 +3814,20 @@
             const bonusEl = document.getElementById('headerTotalBonusValue');
             if (bonusEl) bonusEl.textContent = 'Rp ' + Math.round(grandBonus).toLocaleString('id-ID');
 
-            const potEl = document.getElementById('headerTotalPotonganValue');
-            if (potEl) potEl.textContent = 'Rp ' + Math.round(grandPotongan).toLocaleString('id-ID');
+            const potNonKasbonEl = document.getElementById('headerTotalPotonganNonKasbonValue');
+            if (potNonKasbonEl) potNonKasbonEl.textContent = 'Rp ' + Math.round(grandPotNonKasbon).toLocaleString('id-ID');
+
+            const kasbonEl = document.getElementById('headerTotalKasbonValue');
+            if (kasbonEl) kasbonEl.textContent = 'Rp ' + Math.round(grandKasbon).toLocaleString('id-ID');
+
+            const thpAkhirEl = document.getElementById('headerTotalThpAkhirBulanValue');
+            if (thpAkhirEl) thpAkhirEl.textContent = 'Rp ' + Math.round(grandThpAkhirBulan).toLocaleString('id-ID');
+
+            const bebanEl = document.getElementById('headerTotalBebanGajiValue');
+            if (bebanEl) bebanEl.textContent = 'Rp ' + Math.round(grandBeban).toLocaleString('id-ID');
+
+            const thpMidEl = document.getElementById('headerTotalThpPertengahanValue');
+            if (thpMidEl) thpMidEl.textContent = 'Rp ' + Math.round(grandThpPertengahan).toLocaleString('id-ID');
         }
 
         async function submitBatchUnifiedPayroll(btn) {
@@ -3910,5 +4229,134 @@
                 });
             }
         });
-    </script>
+    
+        // =========================================================================
+        // EXPORT EXCEL PAYROLL MODAL FUNCTIONS
+        // =========================================================================
+        function openExportPayrollModal() {
+            const modal = document.getElementById('modalExportPayrollExcel');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            // Default preset: P2 & Bulanan (paling sering digunakan saat transfer akhir bulan)
+            setExportPreset('p2_monthly');
+        }
+
+        function closeExportPayrollModal() {
+            const modal = document.getElementById('modalExportPayrollExcel');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function setExportPreset(preset) {
+            document.querySelectorAll('.btn-export-preset').forEach(b => {
+                b.style.borderColor = '#cbd5e1';
+                b.style.background = '#ffffff';
+                b.style.color = '#1e293b';
+            });
+
+            const activeBtn = {
+                'all': document.getElementById('btnPresetAll'),
+                'p2_monthly': document.getElementById('btnPresetP2Monthly'),
+                'p1': document.getElementById('btnPresetP1'),
+            }[preset];
+
+            if (activeBtn) {
+                activeBtn.style.borderColor = '#059669';
+                activeBtn.style.background = '#ecfdf5';
+                activeBtn.style.color = '#065f46';
+            }
+
+            const filterLabelInput = document.getElementById('exportFilterLabel');
+            if (filterLabelInput) {
+                filterLabelInput.value = preset === 'p2_monthly' ? 'P2' : (preset === 'p1' ? 'P1' : '');
+            }
+
+            const checkboxes = document.querySelectorAll('.check-export-item');
+            checkboxes.forEach(cb => {
+                const isMulti = cb.getAttribute('data-is-multi') === '1';
+                const pNum = parseInt(cb.getAttribute('data-periode-num') || '1');
+
+                if (preset === 'all') {
+                    cb.checked = true;
+                } else if (preset === 'p2_monthly') {
+                    // Jika multi periode: pilih P2 saja. Jika single periode: pilih (karena bulanan/single transfer di akhir periode)
+                    cb.checked = isMulti ? (pNum === 2) : true;
+                } else if (preset === 'p1') {
+                    // Jika multi periode: pilih P1 saja. Jika single periode: jangan pilih
+                    cb.checked = isMulti ? (pNum === 1) : false;
+                } else if (preset === 'clear') {
+                    cb.checked = false;
+                }
+            });
+
+            onExportItemChange();
+        }
+
+        function toggleAllExportModal(checked) {
+            const visibleRows = Array.from(document.querySelectorAll('.export-item-row')).filter(r => r.style.display !== 'none');
+            visibleRows.forEach(r => {
+                const cb = r.querySelector('.check-export-item');
+                if (cb) cb.checked = checked;
+            });
+            onExportItemChange();
+        }
+
+        function filterExportTableList() {
+            const q = (document.getElementById('searchExportKaryawan').value || '').toLowerCase().trim();
+            const rows = document.querySelectorAll('.export-item-row');
+            rows.forEach(r => {
+                const nama = r.getAttribute('data-nama') || '';
+                const rek = r.getAttribute('data-rekening') || '';
+                if (!q || nama.includes(q) || rek.includes(q)) {
+                    r.style.display = '';
+                } else {
+                    r.style.display = 'none';
+                }
+            });
+        }
+
+        function onExportItemChange() {
+            const checkboxes = document.querySelectorAll('.check-export-item');
+            let totalNominal = 0;
+            let selectedCount = 0;
+            let allChecked = checkboxes.length > 0;
+
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    selectedCount++;
+                    const thp = parseFloat(cb.getAttribute('data-thp') || 0);
+                    totalNominal += thp;
+                } else {
+                    allChecked = false;
+                }
+            });
+
+            const checkAll = document.getElementById('checkAllExportModal');
+            if (checkAll) {
+                checkAll.checked = allChecked && checkboxes.length > 0;
+            }
+
+            const countEl = document.getElementById('exportSelectedCount');
+            if (countEl) countEl.textContent = selectedCount;
+
+            const countBadge = document.getElementById('btnExportCountBadge');
+            if (countBadge) countBadge.textContent = selectedCount;
+
+            const nomEl = document.getElementById('exportSelectedNominalTotal');
+            if (nomEl) nomEl.textContent = 'Rp ' + Math.round(totalNominal).toLocaleString('id-ID');
+
+            const btnSubmit = document.getElementById('btnSubmitExportExcel');
+            if (btnSubmit) {
+                if (selectedCount === 0) {
+                    btnSubmit.disabled = true;
+                    btnSubmit.style.opacity = '0.5';
+                    btnSubmit.style.cursor = 'not-allowed';
+                } else {
+                    btnSubmit.disabled = false;
+                    btnSubmit.style.opacity = '1';
+                    btnSubmit.style.cursor = 'pointer';
+                }
+            }
+        }
+
+</script>
 </x-app-layout>
