@@ -25,7 +25,7 @@ class StorePembelianRequest extends FormRequest
             'tax_service' => ['nullable', 'string'],
 
             'items' => ['required', 'array', 'min:1'],
-            'items.*.barang_id' => ['required', \Illuminate\Validation\Rule::exists('master_barang', 'id')->where('is_active', true)],
+            'items.*.barang_id' => ['required', 'exists:master_barang,id'],
             'items.*.qty' => ['required', 'numeric', 'min:0.01', 'max:99999999'],
             'items.*.harga' => ['required', 'numeric', 'min:0', 'max:999999999999'],
             'items.*.batch_number' => ['nullable', 'string', 'max:100'],
@@ -53,8 +53,9 @@ class StorePembelianRequest extends FormRequest
             $user = $this->user() ?: auth()->user();
             $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
 
-            // Validasi tanggal transaksi minimal hari ini (hanya jika bukan Super Admin)
-            if (!$isSuperAdmin) {
+            // Validasi tanggal transaksi minimal hari ini (hanya jika bukan Super Admin DAN hanya saat CREATE baru, bukan Edit)
+            $isEditing = $this->isMethod('PUT') || $this->isMethod('PATCH') || $this->route('pembelian');
+            if (!$isSuperAdmin && !$isEditing) {
                 if ($this->input('tanggal') && date('Y-m-d', strtotime($this->input('tanggal'))) < date('Y-m-d')) {
                     $validator->errors()->add('tanggal', 'Tanggal transaksi tidak boleh sebelum hari ini.');
                 }

@@ -37,7 +37,7 @@ class MasterGudangSeeder extends Seeder
             [
                 'nama' => 'Gudang KeJingga',
                 'kategori' => 'Operasional',
-                'divisi' => ['Kitchen', 'Barista', 'Server'],
+                'divisi' => ['Kitchen', 'Barista', 'Server', 'Gudang Utama'],
             ],
         ];
 

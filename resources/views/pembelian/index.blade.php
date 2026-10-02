@@ -43,6 +43,17 @@
                 <i class="bi bi-exclamation-triangle-fill"></i> {{ session('error') }}
             </div>
         @endif
+        @if($errors->any())
+            <div class="alert alert-danger rounded-3 shadow-sm">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <strong>Gagal menyimpan:</strong>
+                <ul class="mb-0 mt-1">
+                    @foreach($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
 
         {{-- ALERT SARAN RESTOCK BAHAN BAKU GUDANG UTAMA --}}
         @if(!empty($countLowStockUtama) && $countLowStockUtama > 0)

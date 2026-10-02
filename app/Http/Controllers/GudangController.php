@@ -176,6 +176,13 @@ class GudangController extends Controller
         }
 
         $isOperasional = strtolower($gudang->kategori) === 'operasional';
+        if ($isOperasional && stripos($gudang->nama, 'kejingga') !== false) {
+            \App\Models\GudangDivisi::firstOrCreate(
+                ['gudang_id' => $gudang->id, 'nama' => 'Gudang Utama'],
+                ['keterangan' => 'Divisi Gudang Utama untuk ' . $gudang->nama]
+            );
+            $gudang->load('divisi');
+        }
         $divisi = $isOperasional ? $gudang->divisi->map(fn($d) => [
             'id'   => $d->id,
             'nama' => $d->nama,

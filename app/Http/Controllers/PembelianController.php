@@ -226,7 +226,7 @@ class PembelianController extends Controller
         } else {
             $gudangs = MasterGudang::orderBy('nama')->get();
         }
-        $barangs   = MasterBarang::query()
+        $barangs = MasterBarang::query()
             ->where('is_active', true)
             ->where(function ($q) {
                 $q->where('is_bahan_baku', true)
@@ -236,6 +236,19 @@ class PembelianController extends Controller
             })
             ->orderBy('nama')
             ->get();
+
+        // Pastikan barang yang sudah ada di detail PO (meski tidak memenuhi filter di atas) tetap masuk ke daftar
+        // agar form edit bisa menampilkan dan mengirim barang tersebut dengan benar
+        $existingDetailBarangIds = $pembelian->pluck('details')->flatten()->pluck('barang_id')->unique()->filter()->values();
+        if ($existingDetailBarangIds->isNotEmpty()) {
+            $missingBarangs = MasterBarang::withoutGlobalScopes()
+                ->whereIn('id', $existingDetailBarangIds)
+                ->whereNotIn('id', $barangs->pluck('id'))
+                ->get();
+            if ($missingBarangs->isNotEmpty()) {
+                $barangs = $barangs->concat($missingBarangs)->sortBy('nama')->values();
+            }
+        }
 
         return view('pembelian.index', compact('pembelian', 'dataPembayaran', 'countLowStockUtama', 'suppliers', 'gudangs', 'barangs'));
     }
@@ -837,6 +850,7 @@ class PembelianController extends Controller
 
         $data = $request->validated();
 
+        try {
         DB::transaction(function () use ($data, $pembelian, $request) {
 
             $pembelian->load('details');
@@ -1011,7 +1025,12 @@ class PembelianController extends Controller
         return redirect()
             ->route('pembelian.index')
             ->with('success', 'Pembelian berhasil diperbarui.');
+    } catch (\Exception $e) {
+        return redirect()
+            ->route('pembelian.index')
+            ->with('error', 'Gagal memperbarui pembelian: ' . $e->getMessage());
     }
+}
 
     /*
     |--------------------------------------------------------------------------

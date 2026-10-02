@@ -387,10 +387,34 @@ class PembelianKejinggaController extends Controller
                 'total'             => $grandTotal,
                 'tax_service'       => $taxService,
                 'metode_pembayaran' => null,
-                'is_diterima'       => false,
+                'is_diterima'       => true,
+                'diterima_at'       => now(),
+                'diterima_oleh'     => auth()->id() ?? 1,
                 'is_lunas'          => false,
                 'created_by'        => auth()->id() ?? 1,
             ]);
+
+            $noPenerimaan = 'RCV-KJG-' . date('Ymd') . '-' . rand(100, 999);
+            while (DB::table('penerimaan_pembelian')->where('no_penerimaan', $noPenerimaan)->exists()) {
+                $noPenerimaan = 'RCV-KJG-' . date('Ymd') . '-' . rand(100, 999);
+            }
+            $penerimaan = \App\Models\PenerimaanPembelian::create([
+                'pembelian_id'  => $pembelian->id,
+                'no_penerimaan' => $noPenerimaan,
+                'tanggal'       => $request->tanggal,
+                'created_by'    => auth()->id() ?? 1
+            ]);
+
+            $divisiUtamaId = DB::table('gudang_divisi')->where('gudang_id', $gudangId)->where('nama', 'Gudang Utama')->value('id');
+            if (!$divisiUtamaId) {
+                $divisiUtamaId = DB::table('gudang_divisi')->insertGetId([
+                    'gudang_id'   => $gudangId,
+                    'nama'        => 'Gudang Utama',
+                    'keterangan'  => 'Divisi Gudang Utama untuk Gudang KeJingga',
+                    'created_at'  => now(),
+                    'updated_at'  => now(),
+                ]);
+            }
 
             $parsedCount = count($parsedItems);
             $runningStoreTax = 0;
@@ -420,18 +444,61 @@ class PembelianKejinggaController extends Controller
                     }
                 }
 
-                $detail = PembelianDetail::create([
+                $detailData = [
                     'pembelian_id'       => $pembelian->id,
                     'barang_id'          => $it['barang_id'],
                     'supplier_id'        => $it['supplier_id'],
                     'satuan_pembelian'   => $satuan,
                     'konversi_pembelian' => $konversi,
                     'qty'                => $it['qty'],
-                    'qty_diterima'       => 0,
+                    'qty_diterima'       => $it['qty'],
                     'harga'              => $it['harga'],
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => date('Ymd') . '-PBKJG' . rand(100, 999),
+                ];
+                if (Schema::hasColumn('pembelian_detail', 'tanggal_diterima')) {
+                    $detailData['tanggal_diterima'] = $request->tanggal;
+                }
+                $detail = PembelianDetail::create($detailData);
+
+                $penerimaan->details()->create([
+                    'pembelian_detail_id' => $detail->id,
+                    'barang_id'           => $detail->barang_id,
+                    'qty'                 => $detail->qty,
+                    'harga_per_qty'       => floatval($detail->harga_per_qty)
                 ]);
+
+                $totalHargaDiterima = round(floatval($detail->qty) * floatval($detail->harga_per_qty), 2);
+                $qtyMasukStok = floatval($detail->qty) * $konversi;
+                $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
+
+                StokGudangBatch::create([
+                    'gudang_id'           => $gudangId,
+                    'divisi_id'           => $divisiUtamaId,
+                    'supplier_id'         => $detail->supplier_id ?: $pembelian->supplier_id,
+                    'barang_id'           => $detail->barang_id,
+                    'pembelian_id'        => $pembelian->id,
+                    'pembelian_detail_id' => $detail->id,
+                    'batch_number'        => $detail->batch_number . '-RCV-' . rand(10, 99),
+                    'qty_masuk'           => $qtyMasukStok,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qtyMasukStok,
+                    'harga_per_qty'       => $hargaPerQtyStok,
+                    'is_habis'            => false,
+                ]);
+
+                $this->stockService->stockIn([
+                    'barang_id'       => $detail->barang_id,
+                    'gudang_tujuan_id'=> $gudangId,
+                    'divisi_tujuan_id'=> $divisiUtamaId,
+                    'qty'             => $qtyMasukStok,
+                    'total_harga'     => $totalHargaDiterima,
+                    'source_type'     => 'pembelian_kejingga',
+                    'source_id'       => $pembelian->id,
+                    'user_id'         => auth()->id() ?? 1,
+                ]);
+
+                app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
 
                 if ($itemTax > 0) {
                     $itemTaxes[$detail->id] = $itemTax;

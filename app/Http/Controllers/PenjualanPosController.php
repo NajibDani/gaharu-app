@@ -870,13 +870,6 @@ class PenjualanPosController extends Controller
                     'updated_at'     => now()
                 ]);
 
-                // Global Stok Pengurang (bisa negatif jika stok fisik belum opname)
-                $stokGudang = StokGudang::firstOrCreate(
-                    ['gudang_id' => $gudangId, 'barang_id' => $bahanId],
-                    ['jumlah' => 0]
-                );
-                $stokGudang->decrement('jumlah', $totalDipotong);
-
                 // Potong Batch (FIFO) dengan fallback harga terbaru di gudang POS jika stok tidak cukup (allowNegative = true)
                 $fifoLayers = $fifoService->consumeFIFO($bahanId, $totalDipotong, $gudangId, true);
 
@@ -897,6 +890,30 @@ class PenjualanPosController extends Controller
                         'created_at'     => now(),
                         'updated_at'     => now()
                     ]);
+
+                    $batchModel = isset($layer['batch_id']) && $layer['batch_id'] > 0 ? \App\Models\StokGudangBatch::find($layer['batch_id']) : null;
+                    $divisiAsalId = $batchModel ? $batchModel->divisi_id : null;
+
+                    // Global Stok Pengurang (bisa negatif jika stok fisik belum opname)
+                    $stokGudang = \App\Models\StokGudang::firstOrCreate(
+                        ['gudang_id' => $gudangId, 'barang_id' => $bahanId, 'divisi_id' => $divisiAsalId],
+                        ['jumlah' => 0]
+                    );
+                    $stokGudang->decrement('jumlah', $diambil);
+
+                    // Catat mutasi pengeluaran ke TransaksiStok agar Buku Pembantu Persediaan selalu sinkron 100%
+                    \App\Models\TransaksiStok::create([
+                        'tanggal'        => $tanggalTrans,
+                        'tipe'           => 'keluar',
+                        'source_type'    => 'penjualan_pos',
+                        'source_id'      => $penjualan->id,
+                        'gudang_asal_id' => $gudangId,
+                        'divisi_asal_id' => $divisiAsalId,
+                        'barang_id'      => $bahanId,
+                        'qty'            => $diambil,
+                        'total_harga'    => $nilaiHppDiambil,
+                        'created_by'     => auth()->id() ?? 1,
+                    ]);
                 }
 
                 $avgHppSatuan = $totalDipotong > 0 ? ($totalHppBahanGrup / $totalDipotong) : 0;
@@ -904,19 +921,6 @@ class PenjualanPosController extends Controller
                     'harga_satuan' => $avgHppSatuan,
                     'total_harga'  => $totalHppBahanGrup,
                     'hpp_total'    => $totalHppBahanGrup
-                ]);
-
-                // Catat mutasi pengeluaran ke TransaksiStok agar Buku Pembantu Persediaan selalu sinkron 100%
-                \App\Models\TransaksiStok::create([
-                    'tanggal'        => $tanggalTrans,
-                    'tipe'           => 'keluar',
-                    'source_type'    => 'penjualan_pos',
-                    'source_id'      => $penjualan->id,
-                    'gudang_asal_id' => $gudangId,
-                    'barang_id'      => $bahanId,
-                    'qty'            => $totalDipotong,
-                    'total_harga'    => $totalHppBahanGrup,
-                    'created_by'     => auth()->id() ?? 1,
                 ]);
 
                 $mapHppBahanAvg[$bahanId] = $avgHppSatuan;
