@@ -229,6 +229,7 @@
                                     <th class="text-center text-nowrap" style="width: 45px;">NO</th>
                                     <th class="text-nowrap">KODE ORDER</th>
                                     <th class="text-nowrap">OUTLET PEMESAN</th>
+                                    <th class="text-nowrap">TANGGAL PERMINTAAN</th>
                                     <th class="text-nowrap">ESTIMASI KIRIM</th>
                                     <th class="text-center text-nowrap">TOTAL ITEM</th>
                                     <th class="text-center text-nowrap" style="width: 200px;">AKSI</th>
@@ -240,6 +241,7 @@
                                         <td class="text-center fw-semibold text-muted text-nowrap">{{ $index + 1 }}</td>
                                         <td class="fw-bold text-dark text-nowrap">{{ $p->kode_pesanan }}</td>
                                         <td class="text-nowrap"><span class="badge bg-light text-dark border">{{ $p->customer->nama ?? '-' }}</span></td>
+                                        <td class="text-nowrap">{{ date('d M Y', strtotime($p->tanggal)) }}</td>
                                         <td class="text-nowrap">{{ date('d M Y', strtotime($p->estimasi_kirim)) }}</td>
                                         <td class="text-center text-nowrap">
                                             <span class="badge bg-secondary-subtle text-dark border px-3 py-2 fw-bold" style="font-size: 12px;">

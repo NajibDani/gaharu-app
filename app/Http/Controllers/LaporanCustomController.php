@@ -13,27 +13,45 @@ use Illuminate\Support\Facades\DB;
 
 class LaporanCustomController extends Controller
 {
-    // 1. Pengeluaran bahan baku dari gudang utama kejingga
+    // 1. Pengeluaran bahan baku dari gudang utama ke kejingga
     public function pengeluaranBahanBakuGudangUtamaKejingga(Request $request)
     {
+        // Pengeluaran/Permintaan transfer bahan baku dari Gudang Utama ke Kejingga
+        // Pada tabel pengeluaran_bahan_baku, kolom gudang_id dan divisi_id menyimpan GUDANG & DIVISI TUJUAN transfer
+        // Permintaan bahan baku antar gudang menggunakan prefix PBK- (transfer), bukan otomatisasi penjualan kasir/POS (OUT-MOKA/AUTO_POS)
         $query = PengeluaranBahanBaku::with(['details.barang', 'gudang', 'divisi'])
-            ->whereHas('gudang', function ($q) {
-                $q->where('nama', 'like', '%Gudang Utama%');
-            })
             ->where(function ($q) {
-                $q->where('keterangan', 'like', '%kejingga%')
-                  ->orWhere('jenis_pengeluaran', 'like', '%kejingga%')
-                  ->orWhereHas('divisi', function ($q2) {
-                      $q2->where('nama', 'like', '%kejingga%');
-                  });
+                $q->whereHas('gudang', function ($gq) {
+                    $gq->where('nama', 'like', '%kejingga%');
+                })
+                ->orWhereHas('divisi', function ($dq) {
+                    $dq->where('nama', 'like', '%kejingga%')
+                       ->orWhereHas('gudang', function ($dgq) {
+                           $dgq->where('nama', 'like', '%kejingga%');
+                       });
+                })
+                ->orWhere('keterangan', 'like', '%kejingga%')
+                ->orWhere('jenis_pengeluaran', 'like', '%kejingga%');
             })
             ->where(function($q) {
-                $q->whereNull('keterangan')->orWhere('keterangan', 'not like', '%opname%');
+                $q->whereNull('keterangan')->orWhere(function($k) {
+                    $k->where('keterangan', 'not like', '%opname%')
+                      ->where('keterangan', 'not like', '%AUTO_POS%')
+                      ->where('keterangan', 'not like', '%MOKA%');
+                });
             })
-            ->where('kode_pengeluaran', 'not like', '%SO%');
+            ->where('kode_pengeluaran', 'like', 'PBK-%')
+            ->where('kode_pengeluaran', 'not like', '%SO%')
+            ->where('kode_pengeluaran', 'not like', '%WST%')
+            ->where(function($q) {
+                $q->whereNull('jenis_pengeluaran')
+                  ->orWhere('jenis_pengeluaran', 'transfer')
+                  ->orWhere('jenis_pengeluaran', 'like', '%kejingga%');
+            });
 
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('tanggal', [$request->start_date, $request->end_date]);
+            $query->whereDate('tanggal', '>=', $request->start_date)
+                  ->whereDate('tanggal', '<=', $request->end_date);
         }
 
         $data = $query->latest('tanggal')->get();

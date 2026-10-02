@@ -178,6 +178,7 @@
                                     </th>
                                     <th class="text-nowrap" style="width: 15%;">KODE PESANAN</th>
                                     <th class="text-nowrap" style="width: 18%;">CUSTOMER</th>
+                                    <th class="text-center text-nowrap" style="width: 14%;">TANGGAL PERMINTAAN</th>
                                     <th class="text-center text-nowrap" style="width: 14%;">ESTIMASI KIRIM</th>
                                     <th class="text-nowrap">DAFTAR ITEM &amp; TARGET QTY</th>
                                     <th class="text-center text-nowrap" style="width: 12%;">STATUS BAYAR</th>
@@ -210,6 +211,9 @@
                                         <td class="fw-bold text-dark text-nowrap" style="font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.82rem;">{{ $p->kode_pesanan }}</td>
                                         <td class="text-nowrap">
                                             <span class="fw-semibold text-dark">{{ $p->customer->nama ?? ($p->customer->name ?? '-') }}</span>
+                                        </td>
+                                        <td class="text-center text-nowrap">
+                                            {{ date('d M Y', strtotime($p->tanggal)) }}
                                         </td>
                                         <td class="text-center text-nowrap">
                                             @php

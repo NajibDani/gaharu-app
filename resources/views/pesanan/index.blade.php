@@ -6,7 +6,22 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        .ts-dropdown { z-index: 99999 !important; }
+        .ts-dropdown {
+            z-index: 999999 !important;
+            max-height: 250px !important;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18) !important;
+        }
+        .ts-dropdown .ts-dropdown-content {
+            max-height: 230px !important;
+            overflow-y: auto !important;
+        }
+        #modalCreateColdOrder .table-responsive {
+            overflow: visible !important;
+        }
+        #modalCreateColdOrder .modal-body {
+            overflow-y: visible !important;
+            min-height: 380px;
+        }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
 
         /* ===== TABLE ===== */
