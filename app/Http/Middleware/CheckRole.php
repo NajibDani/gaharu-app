@@ -33,13 +33,23 @@ class CheckRole
 
         $normalizedUserRole = $roleMap[$userRole] ?? $userRole;
 
-        // Super Admin memiliki bypass akses ke semua route yang diproteksi CheckRole
-        if (in_array($normalizedUserRole, ['Super Admin', 'Superadmin'])) {
-            return $next($request);
+        // Cek apakah parameter berisi opsi strict (misal: 'role:strict,HRD' atau khusus HRD)
+        $isStrict = in_array('strict', $roles, true);
+        $targetRoles = array_filter($roles, fn($r) => $r !== 'strict');
+
+        // Jika mode strict aktif ATAU hanya role HRD yang diizinkan (demi kerahasiaan gaji & personil):
+        // Super Admin TIDAK diberikan bypass, hanya user dengan role HRD yang dapat mengakses
+        $onlyHrd = count($targetRoles) === 1 && in_array('HRD', $targetRoles, true);
+
+        if (!$isStrict && !$onlyHrd) {
+            // Super Admin memiliki bypass akses ke route umum lainnya
+            if (in_array($normalizedUserRole, ['Super Admin', 'Superadmin'])) {
+                return $next($request);
+            }
         }
 
         // Cek apakah punya izin (membandingkan role asli maupun normalized)
-        foreach ($roles as $allowedRole) {
+        foreach ($targetRoles as $allowedRole) {
             $normalizedAllowed = $roleMap[$allowedRole] ?? $allowedRole;
             if (
                 $userRole === $allowedRole ||

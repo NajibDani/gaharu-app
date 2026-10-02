@@ -147,9 +147,10 @@
             @endif
 
             {{-- ========================================================================= --}}
-            {{-- HRD & PERSONALIA --}}
             {{-- ========================================================================= --}}
-            @if($canRole(['HRD']))
+            {{-- HRD & PERSONALIA (Eksklusif Khusus Akun Role HRD - Superadmin pun Tidak Bisa Akses) --}}
+            {{-- ========================================================================= --}}
+            @if($role === 'HRD')
             <div class="menu-group {{ $hrdActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
@@ -164,21 +165,19 @@
                     <a href="{{ route('karyawan.index') }}" class="{{ request()->routeIs('karyawan.*') ? 'active' : '' }}">
                         <i class="bi bi-person-badge me-2" style="font-size:12px;"></i>Data Karyawan
                     </a>
-                    @if($canRole(['HRD']))
-                        <a href="{{ route('profile.edit') }}" class="{{ request()->routeIs('profile.*') ? 'active' : '' }}" title="Ubah username &amp; password akun HRD">
-                            <i class="bi bi-shield-lock me-2" style="font-size:12px;"></i>Akun &amp; Keamanan
-                        </a>
-                        <a href="{{ route('pengaturan-gaji.index') }}" class="{{ request()->routeIs('pengaturan-gaji.*') ? 'active' : '' }}">
-                            <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Pengaturan Gaji
-                        </a>
-                        <div class="submenu-divider">TRANSAKSI</div>
-                        <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') ? 'active' : '' }}">
-                            <i class="bi bi-calculator me-2" style="font-size:12px;"></i>Hitung Gaji (Formulir)
-                        </a>
-                        <a href="{{ route('keterlambatan.index') }}" class="{{ request()->routeIs('keterlambatan.*') ? 'active' : '' }}">
-                            <i class="bi bi-clock-history me-2" style="font-size:12px;"></i>Data Keterlambatan
-                        </a>
-                    @endif
+                    <a href="{{ route('profile.edit') }}" class="{{ request()->routeIs('profile.*') ? 'active' : '' }}" title="Ubah username &amp; password akun HRD">
+                        <i class="bi bi-shield-lock me-2" style="font-size:12px;"></i>Akun &amp; Keamanan
+                    </a>
+                    <a href="{{ route('pengaturan-gaji.index') }}" class="{{ request()->routeIs('pengaturan-gaji.*') ? 'active' : '' }}">
+                        <i class="bi bi-sliders me-2" style="font-size:12px;"></i>Pengaturan Gaji
+                    </a>
+                    <div class="submenu-divider">TRANSAKSI</div>
+                    <a href="{{ route('penggajian.index') }}" class="{{ request()->routeIs('penggajian.*') ? 'active' : '' }}">
+                        <i class="bi bi-calculator me-2" style="font-size:12px;"></i>Hitung Gaji (Formulir)
+                    </a>
+                    <a href="{{ route('keterlambatan.index') }}" class="{{ request()->routeIs('keterlambatan.*') ? 'active' : '' }}">
+                        <i class="bi bi-clock-history me-2" style="font-size:12px;"></i>Data Keterlambatan
+                    </a>
                 </div>
             </div>
             @endif
