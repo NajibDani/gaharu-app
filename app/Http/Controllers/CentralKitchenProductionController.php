@@ -1840,7 +1840,30 @@ class CentralKitchenProductionController extends Controller
                             ->latest()
                             ->first();
 
-                        $hppUnitBaru = floatval($produkNew->hpp_referensi ?? 0);
+                        $fifoService = app(\App\Services\FifoService::class);
+                        $hppUnitBaru = 0;
+                        if ($produkNew->is_bahan_setengah_jadi) {
+                            $hppUnitBaru = $fifoService->getHppResepBsj($newPid);
+                        }
+                        if ($hppUnitBaru <= 0 && $produkNew->resepBtklBop) {
+                            $outputQty = floatval($produkNew->resepBtklBop->output_qty ?: 1);
+                            $totalBbb = 0;
+                            foreach ($produkNew->resepBtklBop->bahanbaku as $bb) {
+                                $hBahan = $fifoService->getHargaTerakhirBahan($bb->bahan_id, $gudangCkId);
+                                $totalBbb += floatval($bb->qty_bahan) * $hBahan;
+                            }
+                            if ($totalBbb > 0) {
+                                $hppUnitBaru = ($totalBbb * 1.30) / $outputQty;
+                            }
+                        }
+                        if ($hppUnitBaru <= 0) {
+                            $hppUnitBaru = floatval($produkNew->hpp_referensi ?? 0);
+                            // Jika hpp_referensi per KG (konversi > 1), konversi ke per satuan dasar (GR)
+                            $konv = floatval($produkNew->konversi_pembelian ?? 1);
+                            if ($konv > 1 && $hppUnitBaru > 1000) {
+                                $hppUnitBaru = $hppUnitBaru / $konv;
+                            }
+                        }
 
                         if ($lastProduksi) {
                             // Alokasi produksi pesanan
@@ -2667,6 +2690,82 @@ class CentralKitchenProductionController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', "Gagal membatalkan hasil produksi: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hitung ulang HPP untuk hasil produksi CK tertentu berdasarkan resep aktif & harga FIFO.
+     * Mengoreksi data jika sebelumnya terjadi anomali (misal hpp_referensi tersimpan dalam satuan pack/kg).
+     */
+    public function recalculateHpp($id)
+    {
+        $prod = Produksi::with(['details.produk', 'pesanan'])->find($id);
+        if (!$prod) {
+            return redirect()->back()->with('error', 'Data produksi tidak ditemukan.');
+        }
+
+        $fifoService = app(\App\Services\FifoService::class);
+        $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+        $gudangCkId = $gudangCk ? $gudangCk->id : ($prod->gudang_bahan_id ?: 5);
+
+        DB::beginTransaction();
+        try {
+            foreach ($prod->details as $detail) {
+                $produk = $detail->produk;
+                if (!$produk) continue;
+
+                $qtyHasil = floatval($detail->qty);
+                if ($qtyHasil <= 0) continue;
+
+                $resepBtkl = $produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $produk->id)->first();
+                $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
+                $batchCount = $qtyHasil / $outputQtyResep;
+
+                $resepId = $produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null);
+                $totalBbb = 0;
+
+                if ($resepId) {
+                    $resepItems = ResepBahanBaku::where('resep_id', $resepId)->get();
+                    foreach ($resepItems as $item) {
+                        $qtyButuh = floatval($item->qty_bahan) * $batchCount;
+                        $hargaPerUnit = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangCkId);
+                        $totalBbb += $hargaPerUnit * $qtyButuh;
+                    }
+                } else {
+                    $hppRef = floatval($produk->hpp_referensi ?? 0);
+                    $konv = floatval($produk->konversi_pembelian ?? 1);
+                    if ($konv > 1 && $hppRef > 1000) {
+                        $hppRef = $hppRef / $konv;
+                    }
+                    $totalBbb = $hppRef * $qtyHasil;
+                }
+
+                $hppKeseluruhan = $totalBbb * 1.30;
+                $hppPerUnit = $qtyHasil > 0 ? ($hppKeseluruhan / $qtyHasil) : 0;
+
+                DB::table('produksi_detail')
+                    ->where('id', $detail->id)
+                    ->update([
+                        'hpp_total'  => $hppKeseluruhan,
+                        'updated_at' => now(),
+                    ]);
+
+                // Update alokasi jika ada
+                DB::table('alokasi_produksi_pesanan')
+                    ->where('produksi_id', $prod->id)
+                    ->where('produk_id', $produk->id)
+                    ->update([
+                        'hpp_per_unit'      => $hppPerUnit,
+                        'total_hpp_alokasi' => DB::raw("qty_alokasi * {$hppPerUnit}"),
+                        'updated_at'        => now(),
+                    ]);
+            }
+
+            DB::commit();
+            return redirect()->back()->with('success', "HPP untuk produksi {$prod->kode_produksi} berhasil dihitung ulang dan disinkronkan dengan resep.");
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', "Gagal menghitung ulang HPP: " . $e->getMessage());
         }
     }
 }

@@ -712,12 +712,32 @@ class PenggajianController extends Controller
             $nominal = (int) round($takeHomePay);
 
             return [
-                'rekening' => $rekening,
-                'nominal'  => $nominal,
-                'email'    => $karyawan->email ?? '',
-                'nama'     => $karyawan->nama_karyawan ?? '-',
+                'karyawan_id' => $karyawan->id,
+                'urutan'      => $karyawan->urutan ?? 999999,
+                'rekening'    => $rekening,
+                'nominal'     => $nominal,
+                'email'       => $karyawan->email ?? '',
+                'nama'        => $karyawan->nama_karyawan ?? '-',
             ];
-        })->filter(fn($r) => !empty($r) && $r['rekening'] !== '' && $r['nominal'] > 0)->values();
+        })->filter(fn($r) => !empty($r) && $r['rekening'] !== '' && $r['nominal'] > 0);
+
+        // Urutkan baris agar persis sama dengan urutan di formulir hitung gaji
+        $orderedKaryawanIds = $request->input('ordered_karyawan_ids') ?? $request->query('ordered_karyawan_ids');
+        if (!empty($orderedKaryawanIds)) {
+            if (is_string($orderedKaryawanIds)) {
+                $orderedKaryawanIds = explode(',', $orderedKaryawanIds);
+            }
+            $orderedMap = array_flip(array_values(array_filter(array_map('intval', (array)$orderedKaryawanIds))));
+            $rows = $rows->sortBy(function ($row) use ($orderedMap) {
+                $kid = (int)($row['karyawan_id'] ?? 0);
+                return $orderedMap[$kid] ?? 999999;
+            })->values();
+        } else {
+            $rows = $rows->sortBy([
+                fn ($a, $b) => ($a['urutan'] ?? 999999) <=> ($b['urutan'] ?? 999999),
+                fn ($a, $b) => ($a['karyawan_id'] ?? 0) <=> ($b['karyawan_id'] ?? 0),
+            ])->values();
+        }
 
         if ($rows->isEmpty()) {
             return back()->with('error', 'Tidak ada data transfer gaji yang valid untuk diekspor (pastikan nomor rekening karyawan terisi dan nominal > 0).');

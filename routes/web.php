@@ -349,6 +349,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::post('/central-kitchen/produksi/stok-internal/store', [CentralKitchenProductionController::class, 'storeStokInternal'])->name('ck-produksi.store-stok-internal');
     Route::post('/central-kitchen/produksi/wo/{id}/edit-qty', [CentralKitchenProductionController::class, 'editQtyWo'])->name('ck-produksi.edit-qty-wo');
     Route::delete('/central-kitchen/produksi/wo/{id}', [CentralKitchenProductionController::class, 'destroyWo'])->name('ck-produksi.destroy-wo');
+    Route::post('/central-kitchen/produksi/{id}/recalculate-hpp', [CentralKitchenProductionController::class, 'recalculateHpp'])->name('ck-produksi.recalculate-hpp');
     Route::delete('/central-kitchen/produksi/{id}', [CentralKitchenProductionController::class, 'destroyProduksi'])->name('ck-produksi.destroy-produksi');
 
     // =========================================================================
@@ -410,9 +411,9 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
     // =========================================================================
     // 6. GROUP HRD & PAYROLL
-    // Hak Akses: Master Data Karyawan (HRD & Management), User, Role, Penggajian (Khusus HRD)
+    // Hak Akses: Khusus HRD (Master Data Karyawan, User, Role, Penggajian, Keterlambatan)
     // =========================================================================
-    Route::middleware(['role:HRD,Management,Direktur Keuangan'])->group(function () {
+    Route::middleware(['role:HRD'])->group(function () {
         Route::get('/karyawan/jabatan', [KaryawanController::class, 'getJabatan'])->name('karyawan.jabatan.index');
         Route::post('/karyawan/jabatan', [KaryawanController::class, 'storeJabatan'])->name('karyawan.jabatan.store');
         Route::put('/karyawan/jabatan/{id}', [KaryawanController::class, 'updateJabatan'])->name('karyawan.jabatan.update');

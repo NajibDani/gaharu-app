@@ -1641,6 +1641,14 @@
                                                             @endif
                                                         </div>
                                                         <div class="modal-footer bg-light py-2">
+                                                            @if(auth()->user() && (auth()->user()->isSuperAdmin() || in_array(auth()->user()->role->nama ?? '', ['Management', 'Direktur Keuangan'])))
+                                                                <form action="{{ route('ck-produksi.recalculate-hpp', $prod->id) }}" method="POST" class="me-auto" onsubmit="return confirm('Hitung ulang HPP hasil produksi ini berdasarkan formulasi resep saat ini?')">
+                                                                    @csrf
+                                                                    <button type="submit" class="btn btn-outline-primary btn-sm px-2.5" title="Hitung ulang total HPP jika terjadi ketidaksesuaian/anomali nilai per unit">
+                                                                        <i class="bi bi-arrow-repeat me-1"></i> Hitung Ulang HPP
+                                                                    </button>
+                                                                </form>
+                                                            @endif
                                                             @if(strtolower($prod->status_produksi) == 'draft')
                                                                 <form id="formApproveProd{{ $prod->id }}" action="{{ route('ck-produksi.approve', $prod->id) }}" method="POST" onsubmit="return confirm('Approve Produksi CK sekarang?')">
                                                                     @csrf

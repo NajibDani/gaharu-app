@@ -2625,6 +2625,7 @@
                     <input type="hidden" name="periode" value="{{ $periode }}">
                     <input type="hidden" name="outlet" value="{{ $selectedOutlet }}">
                     <input type="hidden" name="filter_label" id="exportFilterLabel" value="">
+                    <input type="hidden" name="ordered_karyawan_ids" id="exportOrderedKaryawanIds" value="">
 
                     {{-- PRESET SELECTION & SEARCH BAR --}}
                     <div style="padding: 12px 20px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0;">
@@ -2693,6 +2694,7 @@
                                 @if(isset($exportModalList) && count($exportModalList) > 0)
                                     @foreach($exportModalList as $item)
                                     <tr class="export-item-row"
+                                        data-karyawan-id="{{ $item['karyawan_id'] }}"
                                         data-nama="{{ strtolower($item['nama']) }}"
                                         data-rekening="{{ $item['no_rekening'] }}"
                                         data-is-multi="{{ $item['is_multi'] ? '1' : '0' }}"
@@ -2706,6 +2708,7 @@
                                         <td style="padding: 8px 10px; text-align: center;">
                                             <input type="checkbox" name="payroll_ids[]" value="{{ $item['id'] }}"
                                                    class="check-export-item"
+                                                   data-karyawan-id="{{ $item['karyawan_id'] }}"
                                                    data-thp="{{ $item['thp'] }}"
                                                    data-has-rekening="{{ !empty($item['no_rekening']) ? '1' : '0' }}"
                                                    data-is-multi="{{ $item['is_multi'] ? '1' : '0' }}"
@@ -4068,13 +4071,63 @@
         // =========================================================================
         // EXPORT EXCEL PAYROLL MODAL FUNCTIONS
         // =========================================================================
+        function syncExportModalOrder() {
+            // Urutkan baris di modal export sesuai urutan baris di tabel utama formulir hitung gaji
+            const mainRows = document.querySelectorAll('#tbodyKaryawan .payroll-row');
+            if (!mainRows || mainRows.length === 0) return;
+
+            const modalTbody = document.getElementById('exportModalTbody');
+            const orderedIds = [];
+            mainRows.forEach(row => {
+                const kid = row.getAttribute('data-karyawan-id');
+                if (kid && !orderedIds.includes(kid)) {
+                    orderedIds.push(kid);
+                }
+            });
+
+            // Set hidden input agar controller menerima urutan yang pasti sama dengan tabel
+            const orderedInput = document.getElementById('exportOrderedKaryawanIds');
+            if (orderedInput) {
+                orderedInput.value = orderedIds.join(',');
+            }
+
+            if (modalTbody) {
+                const modalRows = Array.from(modalTbody.querySelectorAll('.export-item-row'));
+                modalRows.sort((a, b) => {
+                    const kidA = a.getAttribute('data-karyawan-id');
+                    const kidB = b.getAttribute('data-karyawan-id');
+                    const idxA = orderedIds.indexOf(kidA);
+                    const idxB = orderedIds.indexOf(kidB);
+                    const orderA = idxA === -1 ? 999999 : idxA;
+                    const orderB = idxB === -1 ? 999999 : idxB;
+                    if (orderA !== orderB) return orderA - orderB;
+                    // Jika karyawan sama (misal multi periode P1 & P2), urutkan berdasarkan periode_num
+                    const pA = parseInt(a.getAttribute('data-periode-num') || '1');
+                    const pB = parseInt(b.getAttribute('data-periode-num') || '1');
+                    return pA - pB;
+                });
+                modalRows.forEach(row => modalTbody.appendChild(row));
+            }
+        }
+
         function openExportPayrollModal() {
             const modal = document.getElementById('modalExportPayrollExcel');
             if (!modal) return;
+            // Sinkronkan urutan baris modal dengan urutan tabel utama
+            syncExportModalOrder();
             modal.style.display = 'flex';
             // Default preset: P2 & Bulanan (paling sering digunakan saat transfer akhir bulan)
             setExportPreset('p2_monthly');
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const formExport = document.getElementById('formExportPayrollExcel');
+            if (formExport) {
+                formExport.addEventListener('submit', function() {
+                    syncExportModalOrder();
+                });
+            }
+        });
 
         function closeExportPayrollModal() {
             const modal = document.getElementById('modalExportPayrollExcel');
