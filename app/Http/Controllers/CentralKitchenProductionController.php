@@ -27,6 +27,7 @@ class CentralKitchenProductionController extends Controller
     public function index(Request $request)
     {
         MasterBarang::syncAllResepIds();
+        MasterBarang::autoHealUnconvertedPembelianBatches();
 
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
@@ -2783,6 +2784,9 @@ class CentralKitchenProductionController extends Controller
         $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
         $gudangCkId = $gudangCk ? $gudangCk->id : ($prod->gudang_bahan_id ?: 5);
 
+        \App\Services\FifoService::clearHargaCache();
+        MasterBarang::autoHealUnconvertedPembelianBatches();
+
         DB::beginTransaction();
         try {
             foreach ($prod->details as $detail) {
@@ -2808,10 +2812,6 @@ class CentralKitchenProductionController extends Controller
                     }
                 } else {
                     $hppRef = floatval($produk->hpp_referensi ?? 0);
-                    $konv = floatval($produk->konversi_pembelian ?? 1);
-                    if ($konv > 1 && $hppRef > 1000) {
-                        $hppRef = $hppRef / $konv;
-                    }
                     $totalBbb = $hppRef * $qtyHasil;
                 }
 
@@ -2834,6 +2834,28 @@ class CentralKitchenProductionController extends Controller
                         'total_hpp_alokasi' => DB::raw("qty_alokasi * {$hppPerUnit}"),
                         'updated_at'        => now(),
                     ]);
+
+                // Update batch produk di stok_gudang_batch
+                DB::table('stok_gudang_batch')
+                    ->where('batch_number', 'CK-' . $prod->kode_produksi)
+                    ->where('barang_id', $produk->id)
+                    ->update([
+                        'harga_per_qty' => $hppPerUnit,
+                        'updated_at'    => now(),
+                    ]);
+
+                // Update transaksi_stok
+                DB::table('transaksi_stok')
+                    ->where('source_type', 'produksi_ck')
+                    ->where('source_id', $prod->id)
+                    ->where('barang_id', $produk->id)
+                    ->where('tipe', 'masuk')
+                    ->update([
+                        'total_harga' => $hppKeseluruhan,
+                    ]);
+
+                // Sinkronkan HPP di master_barang
+                $fifoService->syncBarangHpp($produk->id);
             }
 
             DB::commit();

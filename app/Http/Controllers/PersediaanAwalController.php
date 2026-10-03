@@ -1420,6 +1420,19 @@ class PersediaanAwalController extends Controller
                 ->where('source_id', $persediaanAwal->id)
                 ->delete();
 
+            // Refresh Inventory: Nonaktifkan semua batch FIFO aktif sebelum cut-off ini untuk gudang & divisi terkait
+            $resetBatchQuery = StokGudangBatch::where('gudang_id', $gudangId)
+                ->where('qty_sisa', '>', 0);
+            if ($divisiId) {
+                $resetBatchQuery->where('divisi_id', $divisiId);
+            } else {
+                $resetBatchQuery->whereNull('divisi_id');
+            }
+            $resetBatchQuery->update([
+                'qty_sisa' => 0,
+                'is_habis' => true,
+            ]);
+
             // Reload details to obtain any updated prices
             $persediaanAwal->load('details.barang');
 

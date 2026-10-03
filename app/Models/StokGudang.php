@@ -183,8 +183,7 @@ class StokGudang extends Model
                  FROM transaksi_stok sa
                  WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
                    AND sa.gudang_tujuan_id = transaksi_stok.gudang_tujuan_id
-                   AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_tujuan_id, 0)
-                   AND sa.barang_id = transaksi_stok.barang_id),
+                   AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_tujuan_id, 0)),
                 '1970-01-01 00:00:00'
             )")
             ->select(
@@ -202,8 +201,7 @@ class StokGudang extends Model
                  FROM transaksi_stok sa
                  WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
                    AND sa.gudang_tujuan_id = transaksi_stok.gudang_asal_id
-                   AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_asal_id, 0)
-                   AND sa.barang_id = transaksi_stok.barang_id),
+                   AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_asal_id, 0)),
                 '1970-01-01 00:00:00'
             )")
             ->select(

@@ -423,23 +423,31 @@ class FifoService
             $pQty = (float)($latestPembelian->qty ?? 0);
             $pHarga = (float)($latestPembelian->harga ?? 0);
             $pHargaPerQty = (float)($latestPembelian->harga_per_qty ?? 0);
-            $konversi = (float)($latestPembelian->konversi_pembelian ?? 1);
-            if ($konversi <= 1) {
-                $masterKonv = (float) DB::table('master_barang')->where('id', $barangId)->value('konversi_pembelian');
-                if ($masterKonv > 1) {
-                    $konversi = $masterKonv;
-                }
-            }
-            if ($konversi <= 0) $konversi = 1;
+            $detailKonv = (float)($latestPembelian->konversi_pembelian ?? 1);
+            $satBeli = strtolower(trim($latestPembelian->satuan_pembelian ?? ''));
 
-            $unitPriceBeli = $pHargaPerQty > 0 ? $pHargaPerQty : ($pQty > 0 ? ($pHarga / $pQty) : 0);
-            $unitPriceDasar = $konversi > 0 ? ($unitPriceBeli / $konversi) : $unitPriceBeli;
+            $master = DB::table('master_barang')->where('id', $barangId)->first();
+            $satDasar = strtolower(trim($master->satuan ?? ''));
+            $masterSatBeli = strtolower(trim($master->satuan_pembelian ?? ''));
+            $masterKonv = (float)($master->konversi_pembelian ?? 1);
+
+            $isSatuanBeli = false;
+            $konversi = 1.0;
+
+            if ($detailKonv > 1) {
+                $isSatuanBeli = true;
+                $konversi = $detailKonv;
+            } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar && $masterKonv > 1) {
+                $isSatuanBeli = true;
+                $konversi = $masterKonv;
+            }
+
+            $totalBaseQty = $isSatuanBeli ? ($pQty * $konversi) : $pQty;
+            $unitPriceDasar = $totalBaseQty > 0 ? ($pHarga / $totalBaseQty) : ($pHargaPerQty > 0 ? ($isSatuanBeli ? $pHargaPerQty / $konversi : $pHargaPerQty) : 0);
 
             if ($unitPriceDasar > 0) {
                 $res = (float) $unitPriceDasar;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
-                }
+                self::$hargaTerakhirCache[$cacheKey] = $res;
                 return $res;
             }
         }
@@ -688,12 +696,22 @@ class FifoService
     public function syncBarangHpp(int $barangId): float
     {
         self::clearHargaCache();
-        $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
-        $newHpp = $this->getFifoHpp($barangId, $gudangUtamaId);
+        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        if (!$barang) return 0.0;
 
-        MasterBarang::withoutGlobalScopes()
-            ->where('id', $barangId)
-            ->update(['hpp_referensi' => $newHpp]);
+        // Jika barang merupakan Bahan Setengah Jadi atau memiliki formulasi resep, utamakan kalkulasi HPP Resep BSJ
+        if ($barang->is_bahan_setengah_jadi || $barang->hasResep()) {
+            $newHpp = $this->getHppResepBsj($barangId);
+        } else {
+            $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+            $newHpp = $this->getFifoHpp($barangId, $gudangUtamaId);
+        }
+
+        if ($newHpp > 0) {
+            MasterBarang::withoutGlobalScopes()
+                ->where('id', $barangId)
+                ->update(['hpp_referensi' => $newHpp]);
+        }
 
         return $newHpp;
     }

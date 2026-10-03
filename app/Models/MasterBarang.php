@@ -264,7 +264,7 @@ public function resepBahanBakuAlternatif()
             }
         }
 
-        // 2. Ambil detail pembelian yang memiliki konversi pembelian > 1
+        // 2. Ambil detail pembelian untuk divalidasi dan disinkronkan kuantitas serta harga batch-nya
         $query = \Illuminate\Support\Facades\DB::table('pembelian_detail')
             ->join('master_barang', 'pembelian_detail.barang_id', '=', 'master_barang.id')
             ->select(
@@ -272,23 +272,13 @@ public function resepBahanBakuAlternatif()
                 'master_barang.satuan as master_satuan',
                 'master_barang.satuan_pembelian as master_satuan_pembelian',
                 'master_barang.konversi_pembelian as master_konversi'
-            )
-            ->where(function ($q) {
-                $q->where('pembelian_detail.konversi_pembelian', '>', 1)
-                  ->orWhere('master_barang.konversi_pembelian', '>', 1);
-            });
+            );
 
         if ($targetBarangId) {
             $query->where('pembelian_detail.barang_id', $targetBarangId);
             $pDetails = $query->get();
         } else {
-            $hasUnconverted = \Illuminate\Support\Facades\DB::table('stok_gudang_batch as b')
-                ->join('pembelian_detail as pd', 'b.pembelian_detail_id', '=', 'pd.id')
-                ->where('pd.konversi_pembelian', '>', 1)
-                ->whereRaw('ABS(b.qty_masuk - pd.qty) < 0.01')
-                ->exists();
-
-            $pDetails = $hasUnconverted ? $query->get() : collect();
+            $pDetails = $query->get();
         }
 
         foreach ($pDetails as $pd) {
@@ -299,27 +289,31 @@ public function resepBahanBakuAlternatif()
                 continue;
             }
 
-            $unitPriceBeli = $pHargaPerQty > 0 ? $pHargaPerQty : ($pQty > 0 ? ($pHarga / $pQty) : 0);
-            if ($pHarga <= 0 && $unitPriceBeli > 0) {
-                $pHarga = round($pQty * $unitPriceBeli, 2);
+            if ($pHarga <= 0 && $pHargaPerQty > 0) {
+                $pHarga = round($pQty * $pHargaPerQty, 2);
             }
 
             $detailKonv = (float) ($pd->konversi_pembelian ?? 1);
+            $satBeli = strtolower(trim($pd->satuan_pembelian ?? ''));
+            $satDasar = strtolower(trim($pd->master_satuan ?? ''));
+            $masterSatBeli = strtolower(trim($pd->master_satuan_pembelian ?? ''));
             $masterKonv = (float) ($pd->master_konversi ?? 1);
-            $konversi = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
 
-            $satBeli = strtolower(trim($pd->satuan_pembelian ?: ($pd->master_satuan_pembelian ?: '')));
-            $satDasar = strtolower(trim($pd->master_satuan ?: ''));
+            $isSatuanBeli = false;
+            $konversi = 1.0;
 
-            if ($satBeli === $satDasar || $konversi <= 1) {
-                continue;
+            if ($detailKonv > 1) {
+                $isSatuanBeli = true;
+                $konversi = $detailKonv;
+            } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar && $masterKonv > 1) {
+                $isSatuanBeli = true;
+                $konversi = $masterKonv;
             }
 
-            // Kuantitas dasar yang benar dalam satuan stok dasar (misal 18 GALON * 19.000 ML = 342.000 ML)
-            $correctBaseQty = round($pQty * $konversi, 4);
-            $correctHargaPerQty = round($unitPriceBeli / $konversi, 4);
+            $correctBaseQty = $isSatuanBeli ? round($pQty * $konversi, 4) : $pQty;
+            $correctHargaPerQty = $correctBaseQty > 0 ? round($pHarga / $correctBaseQty, 4) : ($pHargaPerQty > 0 ? ($isSatuanBeli ? round($pHargaPerQty / $konversi, 4) : $pHargaPerQty) : 0);
 
-            // Perbaiki transaksi_stok jika tidak sesuai dengan correctBaseQty
+            // Perbaiki transaksi_stok jika tidak sesuai dengan correctBaseQty atau pHarga
             $txList = \Illuminate\Support\Facades\DB::table('transaksi_stok')
                 ->where('barang_id', $pd->barang_id)
                 ->where('source_id', $pd->pembelian_id)
@@ -352,9 +346,9 @@ public function resepBahanBakuAlternatif()
                 $needsUpdate = false;
                 $updateData = [];
 
-                // Konversi kuantitas jika masih dalam satuan pembelian
-                if (abs((float)$batch->qty_masuk - $pQty) < 0.01 && $konversi > 1) {
-                    $newMasuk = round((float)$batch->qty_masuk * $konversi, 4);
+                // Konversi kuantitas jika masih dalam format qty pembelian
+                if ($isSatuanBeli && abs((float)$batch->qty_masuk - $pQty) < 0.01 && abs((float)$batch->qty_masuk - $correctBaseQty) > 0.01) {
+                    $newMasuk = $correctBaseQty;
                     $qtyKeluar = (float)$batch->qty_keluar;
                     $newSisa = max(0, $newMasuk - $qtyKeluar);
                     $updateData['qty_masuk'] = $newMasuk;
@@ -363,8 +357,8 @@ public function resepBahanBakuAlternatif()
                     $needsUpdate = true;
                 }
 
-                // Konversi harga jika masih menggunakan harga satuan pembelian
-                if ($correctHargaPerQty > 0 && abs((float)$batch->harga_per_qty - $unitPriceBeli) < 0.01) {
+                // Konversi harga jika tidak sesuai dengan correctHargaPerQty
+                if ($correctHargaPerQty > 0 && abs((float)$batch->harga_per_qty - $correctHargaPerQty) > 0.001) {
                     $updateData['harga_per_qty'] = $correctHargaPerQty;
                     $needsUpdate = true;
                 }
