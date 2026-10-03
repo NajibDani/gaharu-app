@@ -383,8 +383,8 @@ class BarangController extends Controller
         $hpp       = (float) str_replace('.', '', (string)($hpp ?? 0));
     
         $data->update([
-            'kategori_id'    => $request->kategori_id,
-            'resep_id'       => $request->resep_id,
+            'kategori_id'    => (int) $request->kategori_id,
+            'resep_id'       => $request->has('resep_id') ? $request->resep_id : $data->resep_id,
             'kode_barang'    => $request->kode_barang,
             'nama'           => $request->nama,
             'satuan'         => $request->satuan,
@@ -444,8 +444,26 @@ class BarangController extends Controller
             }
         }
     
+        if ($request->filled('_return_query')) {
+            $returnQuery = $request->input('_return_query');
+            if (!str_starts_with($returnQuery, '?')) {
+                $returnQuery = '?' . $returnQuery;
+            }
+            return redirect(route('barang.index') . $returnQuery)->with('success', 'Data barang & kategori berhasil diperbarui.');
+        }
+
         $page = $request->query('page', 1);
-        return redirect()->route('barang.index', ['page' => $page])->with('success', 'Data berhasil diupdate');
+        $redirectParams = ['page' => $page];
+        if ($request->filled('kategori_id')) {
+            $redirectParams['kategori_id'] = $request->input('kategori_id');
+        }
+        if ($request->filled('search')) {
+            $redirectParams['search'] = $request->input('search');
+        }
+        if ($request->filled('sort')) {
+            $redirectParams['sort'] = $request->input('sort');
+        }
+        return redirect()->route('barang.index', $redirectParams)->with('success', 'Data barang & kategori berhasil diperbarui.');
     }
 
     /**
