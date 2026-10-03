@@ -728,7 +728,8 @@ class PersediaanAwalController extends Controller
                 $hrgBeliUtama = $hrgStokUtama * $konv;
 
                 // Untuk Gudang non-Utama: otomatis gunakan harga referensi Gudang Utama
-                if (!$isGudangUtama && $hrgStokUtama > 0) {
+                // HANYA jika harga tersimpan di database adalah 0 (belum pernah diisi)
+                if (!$isGudangUtama && $hrgStokUtama > 0 && $hargaInput <= 0) {
                     $hargaInput = ($satuanTipe === 'pembelian') ? $hrgBeliUtama : $hrgStokUtama;
                 }
             }
