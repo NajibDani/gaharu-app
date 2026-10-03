@@ -303,14 +303,14 @@
                                     <div class="mb-1">
                                         <span class="badge bg-info text-white">Parsial ({{ number_format($totalReceived, 0) }}/{{ number_format($totalOrdered, 0) }})</span>
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" style="font-size:11px;" onclick="bukaModalDetail({{ $item->id }})" title="Terima / Konfirmasi Penerimaan Stok">
+                                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" style="font-size:11px;" onclick="bukaModalTerimaPo({{ $item->id }})" title="Terima / Konfirmasi Penerimaan Stok">
                                         <i class="bi bi-box-arrow-in-down me-1"></i> Terima Barang
                                     </button>
                                 @else
                                     <div class="mb-1">
                                         <span class="badge bg-light text-muted border">Belum Diterima</span>
                                     </div>
-                                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" style="font-size:11px;" onclick="bukaModalDetail({{ $item->id }})" title="Terima / Konfirmasi Penerimaan Stok">
+                                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" style="font-size:11px;" onclick="bukaModalTerimaPo({{ $item->id }})" title="Terima / Konfirmasi Penerimaan Stok">
                                         <i class="bi bi-box-arrow-in-down me-1"></i> Terima Barang
                                     </button>
                                 @endif
@@ -327,11 +327,11 @@
                                         <i class="bi bi-eye"></i> Detail
                                     </button>
 
-                                    {{-- Tombol Terima Barang --}}
+                                    {{-- Tombol Terima Barang Langsung Dari Halaman Depan --}}
                                     @if(!$isFullyReceived)
                                         <button type="button"
                                                 class="btn btn-sm btn-success text-white rounded-2 px-2 py-1 fw-semibold"
-                                                onclick="bukaModalDetail({{ $item->id }})"
+                                                onclick="bukaModalTerimaPo({{ $item->id }})"
                                                 title="Terima / Konfirmasi Penerimaan Barang">
                                             <i class="bi bi-box-arrow-in-down me-1"></i> Terima Barang
                                         </button>
@@ -636,6 +636,57 @@
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
                         <button type="submit" class="btn btn-success btn-sm fw-bold"><i class="bi bi-box-arrow-in-down me-1"></i>Proses Terima Stok</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL TERIMA SEMUA / SEBAGIAN BARANG DALAM PO -->
+    <div class="modal fade" id="modalTerimaPoKejingga" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow rounded-4">
+                <div class="modal-header border-bottom pb-3">
+                    <h5 class="modal-title fw-bold text-dark">
+                        <i class="bi bi-box-arrow-in-down text-success me-2"></i>Penerimaan Barang PO: <span id="modal_terima_po_kode" class="font-monospace text-primary"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="formTerimaPoKejingga" method="POST">
+                    @csrf
+                    <div class="modal-body p-3 p-md-4">
+                        <div class="alert alert-info py-2 px-3 mb-3 small d-flex align-items-center">
+                            <i class="bi bi-info-circle-fill me-2 fs-5"></i>
+                            <div>Barang yang diterima akan otomatis masuk ke <strong>Gudang KeJingga</strong> dan menambah stok fisik serta pembukuan kartu stok.</div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label small text-dark fw-bold mb-1">Tanggal Penerimaan <span class="text-danger">*</span></label>
+                                <input type="date" name="tanggal_diterima" id="terima_po_tanggal" class="form-control fw-bold" value="{{ date('Y-m-d') }}" required>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive border rounded-3 mb-0">
+                            <table class="table table-hover table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr style="font-size: 12px;">
+                                        <th style="width: 5%;">No</th>
+                                        <th>Nama Barang</th>
+                                        <th class="text-center" style="width: 15%;">Qty Dipesan</th>
+                                        <th class="text-center" style="width: 15%;">Sudah Terima</th>
+                                        <th class="text-center" style="width: 25%;">Qty Terima Sekarang</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="terima_po_items_tbody" style="font-size: 13px;">
+                                    {{-- Rendered dynamically --}}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top-0 bg-light rounded-bottom-4">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-success btn-sm fw-bold"><i class="bi bi-check2-circle me-1"></i> Simpan Penerimaan</button>
                     </div>
                 </form>
             </div>
@@ -1296,6 +1347,60 @@
         }
         document.getElementById('formTerimaDetail').action = `/pembelian-kejingga/detail/${detailId}/terima`;
         new bootstrap.Modal(document.getElementById('modalTerimaDetail')).show();
+    }
+
+    function bukaModalTerimaPo(poId) {
+        const item = dataPembayaranMap[poId];
+        if (!item) return;
+
+        document.getElementById('modal_terima_po_kode').innerText = item.kode_pembelian;
+        document.getElementById('formTerimaPoKejingga').action = `/pembelian-kejingga/${poId}/terima`;
+        
+        const tglEl = document.getElementById('terima_po_tanggal');
+        if (tglEl) {
+            tglEl.value = new Date().toISOString().split('T')[0];
+        }
+
+        const tbody = document.getElementById('terima_po_items_tbody');
+        tbody.innerHTML = '';
+
+        item.details.forEach((d, idx) => {
+            const sisa = Math.max(0, (d.qty || 0) - (d.qty_diterima || 0));
+            const isDone = (d.qty_diterima || 0) >= (d.qty || 0) && (d.qty || 0) > 0;
+            
+            let rowHtml = `
+                <tr>
+                    <td class="text-center text-muted">${idx + 1}</td>
+                    <td>
+                        <div class="fw-semibold text-dark">${d.nama || '-'}</div>
+                        <small class="text-muted font-monospace">${d.kode_barang || ''}</small>
+                    </td>
+                    <td class="text-center fw-bold">${d.qty} ${d.satuan}</td>
+                    <td class="text-center">
+                        <span class="badge ${isDone ? 'bg-success' : 'bg-warning text-dark'}">
+                            ${d.qty_diterima || 0} ${d.satuan}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="input-group input-group-sm">
+                            <input type="number" 
+                                   name="qty_diterima[${d.id}]" 
+                                   class="form-control text-end fw-bold ${isDone ? 'bg-light text-muted' : 'text-primary'}" 
+                                   value="${sisa}" 
+                                   step="any" 
+                                   min="0" 
+                                   max="${sisa}" 
+                                   ${isDone ? 'readonly' : ''}
+                                   placeholder="0">
+                            <span class="input-group-text">${d.satuan}</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            tbody.innerHTML += rowHtml;
+        });
+
+        new bootstrap.Modal(document.getElementById('modalTerimaPoKejingga')).show();
     }
 
     function generateJpgHtml(item) {

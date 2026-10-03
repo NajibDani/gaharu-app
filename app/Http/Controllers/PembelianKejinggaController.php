@@ -1379,4 +1379,125 @@ class PembelianKejinggaController extends Controller
 
         return redirect()->route('pembelian-kejingga.index')->with('success', 'Stok barang ' . ($detail->barang->nama ?? '') . ' berhasil diterima dan masuk ke Stok Gudang Kejingga.');
     }
+
+    // ==========================================
+    // TERIMA SEMUA BARANG DALAM PURCHASE ORDER KEJINGGA (DARI HALAMAN DEPAN)
+    // ==========================================
+    public function terima(Request $request, $id)
+    {
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+        $roleName = $user?->role?->nama ?? '';
+        $isKejinggaUser = in_array($roleName, ['Kepala Outlet Kejingga', 'Operasional Kejingga', 'Super Admin', 'Superadmin', 'Administrator']);
+
+        if (!$isKejinggaUser) {
+            return back()->with('error', 'Akses ditolak: Anda tidak memiliki wewenang untuk menerima barang pembelian Kejingga.');
+        }
+
+        $pembelian = Pembelian::with('details.barang')->findOrFail($id);
+        $tglDiterima = $request->filled('tanggal_diterima') ? \Carbon\Carbon::parse($request->tanggal_diterima) : now();
+        $qtyDiterimaMap = $request->input('qty_diterima', []);
+
+        DB::transaction(function () use ($pembelian, $tglDiterima, $qtyDiterimaMap) {
+            $gudangId = $pembelian->gudang_id ?: (\App\Models\MasterGudang::where('nama', 'like', '%Kejingga%')->value('id') ?? 5);
+
+            $noPenerimaan = 'RCV-KJG-' . date('Ymd') . '-' . rand(100, 999);
+            while (DB::table('penerimaan_pembelian')->where('no_penerimaan', $noPenerimaan)->exists()) {
+                $noPenerimaan = 'RCV-KJG-' . date('Ymd') . '-' . rand(100, 999);
+            }
+
+            $penerimaan = \App\Models\PenerimaanPembelian::create([
+                'pembelian_id'  => $pembelian->id,
+                'no_penerimaan' => $noPenerimaan,
+                'tanggal'       => $tglDiterima,
+                'created_by'    => auth()->id() ?? 1
+            ]);
+
+            foreach ($pembelian->details as $detail) {
+                $sisaPesanan = max(0, floatval($detail->qty) - floatval($detail->qty_diterima));
+                if ($sisaPesanan <= 0) {
+                    continue;
+                }
+
+                if (!empty($qtyDiterimaMap) && isset($qtyDiterimaMap[$detail->id])) {
+                    $qtyBaruInput = floatval($qtyDiterimaMap[$detail->id]);
+                } else {
+                    $qtyBaruInput = $sisaPesanan;
+                }
+
+                if ($qtyBaruInput <= 0) {
+                    continue;
+                }
+
+                $qtyBaruInput = min($qtyBaruInput, $sisaPesanan);
+
+                $accReceived = floatval($detail->qty_diterima ?? 0);
+                $detailUpdateData = [
+                    'qty_diterima' => $accReceived + $qtyBaruInput,
+                ];
+                if (Schema::hasColumn('pembelian_detail', 'tanggal_diterima')) {
+                    $detailUpdateData['tanggal_diterima'] = $tglDiterima;
+                }
+                $detail->update($detailUpdateData);
+
+                $penerimaan->details()->create([
+                    'pembelian_detail_id' => $detail->id,
+                    'barang_id'           => $detail->barang_id,
+                    'qty'                 => $qtyBaruInput,
+                    'harga_per_qty'       => floatval($detail->harga_per_qty)
+                ]);
+
+                $totalHargaDiterima = round($qtyBaruInput * floatval($detail->harga_per_qty), 2);
+                $konversi = floatval($detail->konversi_pembelian ?? 1);
+                if ($konversi <= 0) $konversi = 1;
+
+                $qtyMasukStok = $qtyBaruInput * $konversi;
+                $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
+
+                StokGudangBatch::create([
+                    'gudang_id'           => $gudangId,
+                    'supplier_id'         => $detail->supplier_id ?: $pembelian->supplier_id,
+                    'barang_id'           => $detail->barang_id,
+                    'pembelian_id'        => $pembelian->id,
+                    'pembelian_detail_id' => $detail->id,
+                    'batch_number'        => $detail->batch_number . '-RCV-' . rand(10, 99),
+                    'qty_masuk'           => $qtyMasukStok,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qtyMasukStok,
+                    'harga_per_qty'       => $hargaPerQtyStok,
+                    'is_habis'            => false,
+                ]);
+
+                $this->stockService->stockIn([
+                    'barang_id'       => $detail->barang_id,
+                    'gudang_tujuan_id'=> $gudangId,
+                    'qty'             => $qtyMasukStok,
+                    'total_harga'     => $totalHargaDiterima,
+                    'source_type'     => 'pembelian_kejingga',
+                    'source_id'       => $pembelian->id,
+                    'user_id'         => auth()->id() ?? 1,
+                ]);
+
+                // Sinkronisasi HPP barang sesuai FIFO
+                app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
+            }
+
+            // Check if all items in PO are fully received
+            $allFullyReceived = true;
+            foreach ($pembelian->details()->get() as $det) {
+                if (floatval($det->qty_diterima) < floatval($det->qty)) {
+                    $allFullyReceived = false;
+                    break;
+                }
+            }
+
+            $pembelian->update([
+                'is_diterima'   => $allFullyReceived,
+                'diterima_at'   => $allFullyReceived ? now() : $pembelian->diterima_at,
+                'diterima_oleh' => auth()->id() ?? 1
+            ]);
+        });
+
+        return redirect()->route('pembelian-kejingga.index')->with('success', "Barang Purchase Order {$pembelian->kode_pembelian} berhasil diterima dan stok telah masuk ke Gudang Kejingga.");
+    }
 }

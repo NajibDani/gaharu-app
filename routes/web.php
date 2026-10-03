@@ -115,6 +115,7 @@ Route::middleware('auth')->group(function () {
         Route::post('pembelian-kejingga/detail/{detail}/terima', [\App\Http\Controllers\PembelianKejinggaController::class, 'terimaDetail'])->name('pembelian-kejingga.terima-detail');
         Route::post('pembelian-kejingga/detail/{detail}/upload-bukti', [\App\Http\Controllers\PembelianKejinggaController::class, 'uploadBuktiDetail'])->name('pembelian-kejingga.upload-bukti-detail');
         Route::post('pembelian-kejingga/bayar-massal', [\App\Http\Controllers\PembelianKejinggaController::class, 'bayarMassalDetail'])->name('pembelian-kejingga.bayar-massal-detail');
+        Route::post('pembelian-kejingga/{pembelian}/terima', [\App\Http\Controllers\PembelianKejinggaController::class, 'terima'])->name('pembelian-kejingga.terima');
         Route::post('pembelian-kejingga/{pembelian}/input-barang-terpilih', [\App\Http\Controllers\PembelianKejinggaController::class, 'inputBarangTerpilih'])->name('pembelian-kejingga.input-barang-terpilih');
         Route::delete('pembelian-kejingga/detail/{detail}', [\App\Http\Controllers\PembelianKejinggaController::class, 'destroyDetail'])->name('pembelian-kejingga.destroy-detail');
         Route::resource('pembelian-kejingga', \App\Http\Controllers\PembelianKejinggaController::class)->names('pembelian-kejingga');

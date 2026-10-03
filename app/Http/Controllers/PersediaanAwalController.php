@@ -947,6 +947,7 @@ class PersediaanAwalController extends Controller
         $validItems = [];
         foreach ($submittedMap as $bId => $sub) {
             $qtyInput = $sub['qty_input'];
+            $subHarga = (float) ($sub['harga_input'] ?? 0);
 
             if ($qtyInput > 0) {
                 $barang = MasterBarang::find($bId);
