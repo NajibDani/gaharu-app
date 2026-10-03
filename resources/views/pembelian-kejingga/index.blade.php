@@ -950,7 +950,10 @@
         </div>
     </div>
 
+    @endif {{-- end @if($isSuperAdmin) --}}
+
     {{-- HIDDEN CONTAINER FOR DIRECT JPG GENERATION --}}
+
     <div id="jpg-render-hidden" style="position: fixed; left: -9999px; top: 0; width: 900px; background: #ffffff; padding: 25px; font-family: sans-serif; color: #1e293b;"></div>
 
     <script>
