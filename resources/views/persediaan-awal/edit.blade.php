@@ -658,14 +658,33 @@
                     const isReadonly = hargaInputEl.hasAttribute('readonly');
                     const hargaStokUtama = parseFloat(row.getAttribute('data-harga-stok-utama')) || 0;
                     const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
+                    const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
+
+                    let currentPrice = parseFloat(hargaInputEl.value) || 0;
 
                     if (isReadonly) {
                         const newPrice = newUnit === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
                         hargaInputEl.value = newPrice > 0 ? newPrice : '';
-                        const refSubtext = row.querySelector('.ref-price-subtext');
-                        if (refSubtext) {
-                            refSubtext.textContent = 'Rp ' + Number(newPrice).toLocaleString('id-ID');
+                    } else {
+                        if (newUnit === 'pembelian') {
+                            if (currentPrice > 0 && currentPrice <= (hargaStokUtama * 2) && konversi > 1) {
+                                hargaInputEl.value = Math.round(currentPrice * konversi);
+                            } else if (hargaBeliUtama > 0) {
+                                hargaInputEl.value = hargaBeliUtama;
+                            }
+                        } else {
+                            if (currentPrice > 0 && currentPrice >= (hargaStokUtama * 2) && konversi > 1) {
+                                hargaInputEl.value = Number((currentPrice / konversi).toFixed(4));
+                            } else if (hargaStokUtama > 0) {
+                                hargaInputEl.value = hargaStokUtama;
+                            }
                         }
+                    }
+
+                    const refSubtext = row.querySelector('.ref-price-subtext');
+                    if (refSubtext) {
+                        const refPrice = newUnit === 'pembelian' ? hargaBeliUtama : hargaStokUtama;
+                        refSubtext.textContent = 'Rp ' + Number(refPrice).toLocaleString('id-ID');
                     }
 
                     row.setAttribute('data-current-unit', newUnit);

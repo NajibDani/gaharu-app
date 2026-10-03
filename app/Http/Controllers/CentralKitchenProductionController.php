@@ -1455,7 +1455,7 @@ class CentralKitchenProductionController extends Controller
                     if ($qtySisaAlokasi <= 0) break;
 
                     // Alokasikan seluruh hasil produksi rill ke WO ini
-                    $porsi = ($wIdx === $totalWodCount - 1) ? $qtySisaAlokasi : min($qtySisaAlokasi, max(floatval($wod->qty_rencana), $qtySisaAlokasi));
+                    $porsi = ($wIdx === $totalWodCount - 1) ? $qtySisaAlokasi : min($qtySisaAlokasi, floatval($wod->qty_rencana));
                     $porsi = min($porsi, $qtySisaAlokasi);
 
                     $pesananItem = Pesanan::find($wod->pesanan_id);
@@ -1467,15 +1467,31 @@ class CentralKitchenProductionController extends Controller
                         }
                     }
 
-                    ProduksiPesanan::create([
-                        'produksi_id'       => $produksiId,
-                        'pesanan_id'        => $wod->pesanan_id,
-                        'produk_id'         => $produkId,
-                        'qty_alokasi'       => $porsi,
-                        'qty_terkirim'      => $isInternalCk ? $porsi : 0,
-                        'hpp_per_unit'      => $hppPerUnit,
-                        'total_hpp_alokasi' => $hppPerUnit * $porsi,
-                    ]);
+                    // Gunakan find/update jika alokasi untuk (produksi_id, pesanan_id, produk_id) sudah ada
+                    $existingAlokasi = ProduksiPesanan::where('produksi_id', $produksiId)
+                        ->where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $produkId)
+                        ->first();
+
+                    if ($existingAlokasi) {
+                        $existingAlokasi->qty_alokasi += $porsi;
+                        $existingAlokasi->hpp_per_unit = $hppPerUnit;
+                        $existingAlokasi->total_hpp_alokasi = $existingAlokasi->qty_alokasi * $hppPerUnit;
+                        if ($isInternalCk) {
+                            $existingAlokasi->qty_terkirim += $porsi;
+                        }
+                        $existingAlokasi->save();
+                    } else {
+                        ProduksiPesanan::create([
+                            'produksi_id'       => $produksiId,
+                            'pesanan_id'        => $wod->pesanan_id,
+                            'produk_id'         => $produkId,
+                            'qty_alokasi'       => $porsi,
+                            'qty_terkirim'      => $isInternalCk ? $porsi : 0,
+                            'hpp_per_unit'      => $hppPerUnit,
+                            'total_hpp_alokasi' => $hppPerUnit * $porsi,
+                        ]);
+                    }
 
                     $totalRealisasi = DB::table('alokasi_produksi_pesanan')
                         ->where('pesanan_id', $wod->pesanan_id)
@@ -1485,7 +1501,7 @@ class CentralKitchenProductionController extends Controller
                     // Update target rencana WO sesuai total rill yang diselesaikan staff
                     DB::table('work_order_detail')
                         ->where('id', $wod->id)
-                        ->update(['qty_rencana' => $totalRealisasi]);
+                        ->update(['qty_rencana' => $porsi]);
 
                     // Update PesananDetail sesuai total produksi rill & HPP
                     PesananDetail::where('pesanan_id', $wod->pesanan_id)
@@ -1523,8 +1539,8 @@ class CentralKitchenProductionController extends Controller
                 // Tandai WO sebagai Selesai karena staff sudah menyelesaikan pesanan sesuai produksi rill
                 $wo->update(['status_wo' => 'Selesai']);
                 
-                $pId = $wo->details->pluck('pesanan_id')->first();
-                if ($pId) {
+                $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique();
+                foreach ($pesananIds as $pId) {
                     $pObj = Pesanan::find($pId);
                     if ($pObj) {
                         $custNama = strtolower($pObj->customer_nama ?? $pObj->customer->nama ?? '');
@@ -2130,15 +2146,28 @@ class CentralKitchenProductionController extends Controller
                 }
 
                 // Alokasi pesanan CK
-                ProduksiPesanan::create([
-                    'produksi_id'       => $produksi->id,
-                    'pesanan_id'        => $produksi->pesanan_id,
-                    'produk_id'         => $produkId,
-                    'qty_alokasi'       => $qtyHasil,
-                    'qty_terkirim'      => $isInternalCk ? $qtyHasil : 0,
-                    'hpp_per_unit'      => $hppPerUnit,
-                    'total_hpp_alokasi' => $hppKeseluruhan,
-                ]);
+                $existingAlokasi = ProduksiPesanan::where('produksi_id', $produksi->id)
+                    ->where('pesanan_id', $produksi->pesanan_id)
+                    ->where('produk_id', $produkId)
+                    ->first();
+
+                if ($existingAlokasi) {
+                    $existingAlokasi->qty_alokasi = $qtyHasil;
+                    $existingAlokasi->qty_terkirim = $isInternalCk ? $qtyHasil : 0;
+                    $existingAlokasi->hpp_per_unit = $hppPerUnit;
+                    $existingAlokasi->total_hpp_alokasi = $hppKeseluruhan;
+                    $existingAlokasi->save();
+                } else {
+                    ProduksiPesanan::create([
+                        'produksi_id'       => $produksi->id,
+                        'pesanan_id'        => $produksi->pesanan_id,
+                        'produk_id'         => $produkId,
+                        'qty_alokasi'       => $qtyHasil,
+                        'qty_terkirim'      => $isInternalCk ? $qtyHasil : 0,
+                        'hpp_per_unit'      => $hppPerUnit,
+                        'total_hpp_alokasi' => $hppKeseluruhan,
+                    ]);
+                }
 
                 // Update harga di PesananDetail sesuai HPP murni (tanpa keuntungan)
                 PesananDetail::where('pesanan_id', $produksi->pesanan_id)

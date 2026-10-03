@@ -478,6 +478,16 @@ class PersediaanAwalController extends Controller
                 $canEditHarga = $isSuperAdmin || $isGudang;
                 $rawHarga = (float) str_replace(',', '.', $request->harga_satuan[$index] ?? 0);
 
+                $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
+
+                // Deteksi jika user memilih satuan stok dasar (GR) tetapi mengisi harga per PACK (misal Rp 25.000 bukannya Rp 25)
+                if (!$isPembelian && $hasKonv && $rawHarga > 0 && !empty($hargaUtamaMap[$barangId])) {
+                    $refStok = (float) $hargaUtamaMap[$barangId];
+                    if ($refStok > 0 && $rawHarga >= ($refStok * ($konversi / 2))) {
+                        $rawHarga = round($rawHarga / $konversi, 4);
+                    }
+                }
+
                 // Bahan Setengah Jadi: harga SELALU dari HPP resep Central Kitchen (tidak bisa diubah siapapun)
                 if ($barang->is_bahan_setengah_jadi) {
                     $fifoService = app(FifoService::class);
@@ -608,6 +618,10 @@ class PersediaanAwalController extends Controller
             'details.barang.kategori',
         ])->findOrFail($id);
 
+        $this->fixPersediaanAwalDetailPrices($persediaanAwal);
+        $persediaanAwal->refresh();
+        $persediaanAwal->load(['gudang', 'divisi', 'user', 'details.barang.kategori']);
+
         $jurnal = JurnalPenyesuaian::with('details.account')
             ->where('source_type', 'saldo_awal')
             ->where('source_id', $persediaanAwal->id)
@@ -633,6 +647,10 @@ class PersediaanAwalController extends Controller
             'divisi',
             'details.barang.kategori',
         ])->findOrFail($id);
+
+        $this->fixPersediaanAwalDetailPrices($persediaanAwal);
+        $persediaanAwal->refresh();
+        $persediaanAwal->load(['gudang.divisi', 'divisi', 'details.barang.kategori']);
 
         $isSuperAdmin = $user->isSuperAdmin();
         $isGudang = $user->isGudang();
@@ -953,6 +971,15 @@ class PersediaanAwalController extends Controller
                 $qtyStok = $qtyInput * $multiplier;
 
                 $canEditHarga = $user && ($user->isSuperAdmin() || $user->isGudang());
+                $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
+
+                $subHarga = (float) ($sub['harga_input'] ?? 0);
+                if (!$isPembelian && $hasKonv && $subHarga > 0 && !empty($hargaUtamaMap[$bId])) {
+                    $refStok = (float) $hargaUtamaMap[$bId];
+                    if ($refStok > 0 && $subHarga >= ($refStok * ($konversi / 2))) {
+                        $subHarga = round($subHarga / $konversi, 4);
+                    }
+                }
 
                 // Bahan Setengah Jadi: harga SELALU dari HPP resep Central Kitchen (tidak bisa diubah siapapun)
                 if ($barang->is_bahan_setengah_jadi) {
@@ -960,8 +987,8 @@ class PersediaanAwalController extends Controller
                     $hargaStok   = $fifoService->getHppResepBsj((int) $barang->id);
                     $hargaInput  = $hargaStok * $multiplier;
                 } elseif ($canEditHarga) {
-                    if ($sub['harga_input'] > 0) {
-                        $hargaInput = $sub['harga_input'];
+                    if ($subHarga > 0) {
+                        $hargaInput = $subHarga;
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
                     } else {
                         $hargaStok = (float) ($hargaUtamaMap[$bId] ?? ($barang->hpp_referensi ?? 0));
@@ -1019,7 +1046,7 @@ class PersediaanAwalController extends Controller
 
             if ($isApproved) {
                 // Hapus mutasi TransaksiStok lama
-                TransaksiStok::where('source_type', 'saldo_awal')
+                TransaksiStok::whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
                     ->where('source_id', $persediaanAwal->id)
                     ->delete();
             }
@@ -1398,6 +1425,11 @@ class PersediaanAwalController extends Controller
             $surplusDebits = [];
             $totalKredit = 0;
 
+            // Bersihkan TransaksiStok lama agar tidak pernah terjadi duplikasi mutasi
+            TransaksiStok::whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+                ->where('source_id', $persediaanAwal->id)
+                ->delete();
+
             // Reload details to obtain any updated prices
             $persediaanAwal->load('details.barang');
 
@@ -1450,8 +1482,9 @@ class PersediaanAwalController extends Controller
                             'harga_per_qty' => $hargaStok,
                             'is_habis'      => false,
                         ]);
+                        $currentBatchId = $existingBatch->id;
                     } else {
-                        StokGudangBatch::create([
+                        $newBatch = StokGudangBatch::create([
                             'gudang_id'           => $gudangId,
                             'divisi_id'           => $divisiId,
                             'supplier_id'         => $defaultSupplierId ?: null,
@@ -1465,11 +1498,27 @@ class PersediaanAwalController extends Controller
                             'harga_per_qty'       => $hargaStok,
                             'is_habis'            => false,
                         ]);
+                        $currentBatchId = $newBatch->id;
                     }
 
-                    // 3. Catat Transaksi Stok (Masuk)
+                    // Dinonaktifkan batch-batch lama untuk (gudang_id, divisi_id, barang_id) sebelum tanggal persediaan awal ini
+                    $oldBatchQuery = StokGudangBatch::where('gudang_id', $gudangId)
+                        ->where('barang_id', $barangId)
+                        ->where('id', '!=', $currentBatchId)
+                        ->where('qty_sisa', '>', 0);
+                    if ($divisiId) {
+                        $oldBatchQuery->where('divisi_id', $divisiId);
+                    } else {
+                        $oldBatchQuery->whereNull('divisi_id');
+                    }
+                    $oldBatchQuery->update([
+                        'qty_sisa' => 0,
+                        'is_habis' => true,
+                    ]);
+
+                    // 3. Catat Transaksi Stok (Masuk) pada pukul 00:00:01 sebagai Baseline Inventory Refresh
                     TransaksiStok::create([
-                        'tanggal'          => $tanggal . ' ' . date('H:i:s'),
+                        'tanggal'          => $tanggal . ' 00:00:01',
                         'tipe'             => 'masuk',
                         'source_type'      => 'saldo_awal',
                         'source_id'        => $persediaanAwal->id,
@@ -1499,6 +1548,9 @@ class PersediaanAwalController extends Controller
             $persediaanAwal->update([
                 'total_nilai' => $totalNilai,
             ]);
+
+            // Reconcile stok_gudang ringkasan
+            StokGudang::reconcileStockSummary(null, $gudangId, $divisiId);
 
             // 4. Buat Jurnal Penyesuaian / Saldo Awal
             if ($totalKredit > 0) {
@@ -1574,6 +1626,8 @@ class PersediaanAwalController extends Controller
             ->get();
 
         foreach ($nonUtamaTransactions as $pa) {
+            $this->fixPersediaanAwalDetailPrices($pa);
+
             $totalNilai = 0;
 
             foreach ($pa->details as $d) {
@@ -1590,11 +1644,9 @@ class PersediaanAwalController extends Controller
 
                 if ($hargaStok > 0) {
                     $d->harga_satuan = $hargaStok;
+                    $d->total_nilai = round((float)$d->qty * $hargaStok, 2);
                     if ($d->qty_pembelian !== null) {
                         $d->harga_pembelian = round($hargaStok * $konv, 2);
-                        $d->total_nilai = round((float)$d->qty_pembelian * (float)$d->harga_pembelian, 2);
-                    } else {
-                        $d->total_nilai = round((float)$d->qty * $hargaStok, 2);
                     }
                     $d->save();
                 }
@@ -1605,6 +1657,68 @@ class PersediaanAwalController extends Controller
             $pa->update([
                 'total_nilai' => $totalNilai,
             ]);
+        }
+    }
+
+    /**
+     * Memperbaiki dan merekolkoreksi harga satuan, harga pembelian, dan total nilai pada rincian persediaan awal
+     * apabila terdapat kesalahan pengisian/skala harga per PACK yang secara tidak sengaja tersimpan pada harga per GR.
+     */
+    private function fixPersediaanAwalDetailPrices(PersediaanAwal $persediaanAwal)
+    {
+        $gudangUtamaMap = $this->getHargaGudangUtamaMap();
+        $totalNilaiCalculated = 0;
+
+        $persediaanAwal->load(['details.barang']);
+
+        foreach ($persediaanAwal->details as $d) {
+            $barang = $d->barang;
+            if (!$barang) continue;
+
+            $konv = (float)($d->konversi_pembelian ?: ($barang->konversi_pembelian ?? 1.00));
+            if ($konv <= 0) $konv = 1.00;
+
+            $satStok = $barang->satuan ?: 'pcs';
+            $satBeli = $barang->satuan_pembelian ?: $satStok;
+
+            $refHargaStok = (float) ($gudangUtamaMap[$d->barang_id] ?? ($barang->hpp_referensi ?? 0));
+            $refHargaBeli = round($refHargaStok * $konv, 2);
+
+            $dChanged = false;
+
+            if ($satBeli !== $satStok && $konv > 1) {
+                // Jika harga_satuan (harga per stok dasar) bernilai besar (setara harga per PACK),
+                // maka secara otomatis dikoreksi kembali menjadi harga per stok dasar (GR/PCS)
+                if ((float)$d->harga_satuan > 0 && $refHargaStok > 0 && (float)$d->harga_satuan >= ($refHargaStok * ($konv / 2))) {
+                    $d->harga_pembelian = (float)$d->harga_satuan;
+                    $d->harga_satuan = round((float)$d->harga_satuan / $konv, 4);
+                    $dChanged = true;
+                }
+            }
+
+            if ((float)$d->harga_satuan <= 0 && $refHargaStok > 0) {
+                $d->harga_satuan = $refHargaStok;
+                if ($satBeli !== $satStok && $konv > 1) {
+                    $d->harga_pembelian = $refHargaBeli;
+                }
+                $dChanged = true;
+            }
+
+            $calcTotalNilai = round((float)$d->qty * (float)$d->harga_satuan, 2);
+            if (abs((float)$d->total_nilai - $calcTotalNilai) > 0.01) {
+                $d->total_nilai = $calcTotalNilai;
+                $dChanged = true;
+            }
+
+            if ($dChanged) {
+                $d->save();
+            }
+
+            $totalNilaiCalculated += (float)$d->total_nilai;
+        }
+
+        if (abs((float)$persediaanAwal->total_nilai - $totalNilaiCalculated) > 0.01) {
+            $persediaanAwal->update(['total_nilai' => $totalNilaiCalculated]);
         }
     }
 

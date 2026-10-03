@@ -2121,17 +2121,7 @@ class StockOpnameController extends Controller
     private function hitungStokSistemByTanggal($gudangId, $barangId, $tanggal = null, $divisiId = null): float
     {
         if ($tanggal && date('Y-m-d', strtotime($tanggal)) !== date('Y-m-d')) {
-            $cutoff = date('Y-m-d', strtotime($tanggal)) . ' 23:59:59';
-            $qIn = DB::table('transaksi_stok')->where('barang_id', $barangId)->where('tanggal', '<=', $cutoff);
-            $qOut = DB::table('transaksi_stok')->where('barang_id', $barangId)->where('tanggal', '<=', $cutoff);
-            if ($gudangId && $divisiId) {
-                $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-                $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
-            } elseif ($gudangId) {
-                $qIn->where('gudang_tujuan_id', $gudangId);
-                $qOut->where('gudang_asal_id', $gudangId);
-            }
-            return max(0, (float)($qIn->sum('qty') - $qOut->sum('qty')));
+            return max(0, \App\Models\StokGudang::getStokBukuPembantu($barangId, $gudangId, $divisiId, date('Y-m-d', strtotime($tanggal))));
         } else {
             $q = DB::table('stok_gudang')->where('gudang_id', $gudangId)->where('barang_id', $barangId);
             if ($divisiId) {

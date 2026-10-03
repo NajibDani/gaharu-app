@@ -303,12 +303,45 @@ class StokGudangController extends Controller
         $saQty = 0;
         $saNilai = 0;
 
+        // Cari tanggal persediaan awal disetujui terbaru pada atau sebelum endDate
+        $saQuery = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+            ->where('tanggal', '<=', $endDate . ' 23:59:59');
+
+        if ($gudangId && $divisiId) {
+            $saQuery->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+        } elseif ($gudangId) {
+            $saQuery->where('gudang_tujuan_id', $gudangId);
+        } elseif ($divisiId) {
+            $saQuery->where('divisi_tujuan_id', $divisiId);
+        }
+
+        $latestSaTanggal = $saQuery->max('tanggal');
+        $minTanggal = $latestSaTanggal ? (date('Y-m-d', strtotime($latestSaTanggal)) . ' 00:00:00') : null;
+
         $rawBefore = DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
             ->where('tanggal', '<', $startDate . ' 00:00:00');
 
+        $rawPeriod = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+
+        if ($minTanggal) {
+            $rawBefore->where('tanggal', '>=', $minTanggal);
+            $rawPeriod->where('tanggal', '>=', $minTanggal);
+        }
+
         if ($gudangId && $divisiId) {
             $rawBefore->where(function ($q) use ($gudangId, $divisiId) {
+                $q->where(function($sub) use ($gudangId, $divisiId) {
+                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+                })->orWhere(function($sub) use ($gudangId, $divisiId) {
+                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                });
+            });
+            $rawPeriod->where(function ($q) use ($gudangId, $divisiId) {
                 $q->where(function($sub) use ($gudangId, $divisiId) {
                     $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
                 })->orWhere(function($sub) use ($gudangId, $divisiId) {
@@ -320,8 +353,16 @@ class StokGudangController extends Controller
                 $q->where('gudang_asal_id', $gudangId)
                   ->orWhere('gudang_tujuan_id', $gudangId);
             });
+            $rawPeriod->where(function ($q) use ($gudangId) {
+                $q->where('gudang_asal_id', $gudangId)
+                  ->orWhere('gudang_tujuan_id', $gudangId);
+            });
         } elseif ($divisiId) {
             $rawBefore->where(function ($q) use ($divisiId) {
+                $q->where('divisi_asal_id', $divisiId)
+                  ->orWhere('divisi_tujuan_id', $divisiId);
+            });
+            $rawPeriod->where(function ($q) use ($divisiId) {
                 $q->where('divisi_asal_id', $divisiId)
                   ->orWhere('divisi_tujuan_id', $divisiId);
             });
@@ -410,30 +451,6 @@ class StokGudangController extends Controller
                 }
                 $saNilai = $saQty * (float) $fallbackPrice;
             }
-        }
-
-        $rawPeriod = DB::table('transaksi_stok')
-            ->where('barang_id', $barangId)
-            ->whereBetween('tanggal', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
-
-        if ($gudangId && $divisiId) {
-            $rawPeriod->where(function ($q) use ($gudangId, $divisiId) {
-                $q->where(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
-                })->orWhere(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-                });
-            });
-        } elseif ($gudangId) {
-            $rawPeriod->where(function ($q) use ($gudangId) {
-                $q->where('gudang_asal_id', $gudangId)
-                  ->orWhere('gudang_tujuan_id', $gudangId);
-            });
-        } elseif ($divisiId) {
-            $rawPeriod->where(function ($q) use ($divisiId) {
-                $q->where('divisi_asal_id', $divisiId)
-                  ->orWhere('divisi_tujuan_id', $divisiId);
-            });
         }
 
         $itemsPeriod = $rawPeriod->orderBy('tanggal', 'asc')->orderBy('id', 'asc')->get();
@@ -1430,6 +1447,66 @@ class StokGudangController extends Controller
                         'is_habis'   => ($newSisa <= 0),
                     ]);
                 }
+            }
+
+            // 6. Duplicate & Orphan Saldo Awal (Persediaan Awal)
+            // 6a. Hapus transaksi_stok saldo awal yang dokumen persediaan_awal nya sudah tidak ada ATAU masih berstatus draft
+            $orphanSaldoAwalQuery = DB::table('transaksi_stok')
+                ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+                ->whereNotNull('source_id')
+                ->where(function($q) {
+                    $q->whereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('persediaan_awal')
+                          ->whereColumn('persediaan_awal.id', 'transaksi_stok.source_id');
+                    })->orWhereExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('persediaan_awal')
+                          ->whereColumn('persediaan_awal.id', 'transaksi_stok.source_id')
+                          ->whereNotIn(DB::raw('LOWER(persediaan_awal.status)'), ['approved', 'posted']);
+                    });
+                });
+            if ($barangId) {
+                $orphanSaldoAwalQuery->where('barang_id', $barangId);
+            }
+            $orphanSaldoAwalQuery->delete();
+
+            // 6b. Bersihkan duplikasi transaksi_stok saldo_awal untuk pasangan (source_id, barang_id, gudang_tujuan_id) yang sama
+            $dupSaldoAwalQuery = DB::table('transaksi_stok')
+                ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+                ->whereNotNull('source_id');
+            if ($barangId) {
+                $dupSaldoAwalQuery->where('barang_id', $barangId);
+            }
+
+            $duplicateGroups = $dupSaldoAwalQuery
+                ->select(
+                    'source_id',
+                    'barang_id',
+                    'gudang_tujuan_id',
+                    DB::raw('COALESCE(divisi_tujuan_id, 0) as div_id'),
+                    DB::raw('COUNT(*) as total_count'),
+                    DB::raw('MAX(id) as keep_id')
+                )
+                ->groupBy('source_id', 'barang_id', 'gudang_tujuan_id', DB::raw('COALESCE(divisi_tujuan_id, 0)'))
+                ->having('total_count', '>', 1)
+                ->get();
+
+            foreach ($duplicateGroups as $group) {
+                $deleteQuery = DB::table('transaksi_stok')
+                    ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+                    ->where('source_id', $group->source_id)
+                    ->where('barang_id', $group->barang_id)
+                    ->where('gudang_tujuan_id', $group->gudang_tujuan_id)
+                    ->where('id', '!=', $group->keep_id);
+
+                if ($group->div_id == 0) {
+                    $deleteQuery->whereNull('divisi_tujuan_id');
+                } else {
+                    $deleteQuery->where('divisi_tujuan_id', $group->div_id);
+                }
+
+                $deleteQuery->delete();
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoCleanOrphanMutations error: ' . $e->getMessage());

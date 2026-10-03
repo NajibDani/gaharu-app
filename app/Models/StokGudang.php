@@ -40,6 +40,23 @@ class StokGudang extends Model
         $date = $date ?: date('Y-m-d');
         $cutoff = $date . ' 23:59:59';
 
+        // Cari tanggal persediaan awal disetujui terbaru pada atau sebelum tanggal cutoff
+        $saQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+            ->where('tanggal', '<=', $cutoff);
+
+        if ($gudangId && $divisiId) {
+            $saQuery->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+        } elseif ($gudangId) {
+            $saQuery->where('gudang_tujuan_id', $gudangId);
+        } elseif ($divisiId) {
+            $saQuery->where('divisi_tujuan_id', $divisiId);
+        }
+
+        $latestSa = $saQuery->max('tanggal');
+        $minTanggal = $latestSa ? date('Y-m-d', strtotime($latestSa)) . ' 00:00:00' : null;
+
         $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
             ->where('tanggal', '<=', $cutoff);
@@ -47,6 +64,11 @@ class StokGudang extends Model
         $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
             ->where('tanggal', '<=', $cutoff);
+
+        if ($minTanggal) {
+            $qIn->where('tanggal', '>=', $minTanggal);
+            $qOut->where('tanggal', '>=', $minTanggal);
+        }
 
         if ($gudangId && $divisiId) {
             $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
@@ -78,38 +100,72 @@ class StokGudang extends Model
         $date = $date ?: date('Y-m-d');
         $cutoff = $date . ' 23:59:59';
 
-        $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+        // Ambil baseline tanggal persediaan awal per barang
+        $saMapQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->whereIn('barang_id', $barangIds)
-            ->where('tanggal', '<=', $cutoff)
-            ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_in'))
-            ->groupBy('barang_id');
-
-        $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
-            ->whereIn('barang_id', $barangIds)
-            ->where('tanggal', '<=', $cutoff)
-            ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_out'))
-            ->groupBy('barang_id');
+            ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+            ->where('tanggal', '<=', $cutoff);
 
         if ($gudangId && $divisiId) {
-            $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-            $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+            $saMapQuery->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
         } elseif ($gudangId) {
-            $qIn->where('gudang_tujuan_id', $gudangId);
-            $qOut->where('gudang_asal_id', $gudangId);
+            $saMapQuery->where('gudang_tujuan_id', $gudangId);
         } elseif ($divisiId) {
-            $qIn->where('divisi_tujuan_id', $divisiId);
-            $qOut->where('divisi_asal_id', $divisiId);
-        } else {
-            $qIn->where('tipe', 'masuk');
-            $qOut->where('tipe', 'keluar');
+            $saMapQuery->where('divisi_tujuan_id', $divisiId);
         }
 
-        $ins = $qIn->pluck('total_in', 'barang_id');
-        $outs = $qOut->pluck('total_out', 'barang_id');
+        $saMap = $saMapQuery->select('barang_id', \Illuminate\Support\Facades\DB::raw('MAX(tanggal) as max_tanggal'))
+            ->groupBy('barang_id')
+            ->pluck('max_tanggal', 'barang_id')
+            ->toArray();
+
+        // Kelompokkan barang_id berdasarkan minTanggal
+        $groupedBarangs = [];
+        foreach ($barangIds as $bId) {
+            $minTgl = isset($saMap[$bId]) ? (date('Y-m-d', strtotime($saMap[$bId])) . ' 00:00:00') : 'none';
+            $groupedBarangs[$minTgl][] = $bId;
+        }
 
         $result = [];
-        foreach ($barangIds as $id) {
-            $result[$id] = (float) (($ins[$id] ?? 0) - ($outs[$id] ?? 0));
+
+        foreach ($groupedBarangs as $minTanggal => $subIds) {
+            $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->whereIn('barang_id', $subIds)
+                ->where('tanggal', '<=', $cutoff)
+                ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_in'))
+                ->groupBy('barang_id');
+
+            $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->whereIn('barang_id', $subIds)
+                ->where('tanggal', '<=', $cutoff)
+                ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_out'))
+                ->groupBy('barang_id');
+
+            if ($minTanggal !== 'none') {
+                $qIn->where('tanggal', '>=', $minTanggal);
+                $qOut->where('tanggal', '>=', $minTanggal);
+            }
+
+            if ($gudangId && $divisiId) {
+                $qIn->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                $qOut->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+            } elseif ($gudangId) {
+                $qIn->where('gudang_tujuan_id', $gudangId);
+                $qOut->where('gudang_asal_id', $gudangId);
+            } elseif ($divisiId) {
+                $qIn->where('divisi_tujuan_id', $divisiId);
+                $qOut->where('divisi_asal_id', $divisiId);
+            } else {
+                $qIn->where('tipe', 'masuk');
+                $qOut->where('tipe', 'keluar');
+            }
+
+            $ins = $qIn->pluck('total_in', 'barang_id');
+            $outs = $qOut->pluck('total_out', 'barang_id');
+
+            foreach ($subIds as $id) {
+                $result[$id] = (float) (($ins[$id] ?? 0) - ($outs[$id] ?? 0));
+            }
         }
 
         return $result;
@@ -122,6 +178,15 @@ class StokGudang extends Model
     {
         $inQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->whereNotNull('gudang_tujuan_id')
+            ->whereRaw("transaksi_stok.tanggal >= COALESCE(
+                (SELECT DATE_FORMAT(MAX(sa.tanggal), '%Y-%m-%d 00:00:00')
+                 FROM transaksi_stok sa
+                 WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
+                   AND sa.gudang_tujuan_id = transaksi_stok.gudang_tujuan_id
+                   AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_tujuan_id, 0)
+                   AND sa.barang_id = transaksi_stok.barang_id),
+                '1970-01-01 00:00:00'
+            )")
             ->select(
                 'gudang_tujuan_id as gudang_id',
                 \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_tujuan_id, 0) as divisi_id'),
@@ -132,6 +197,15 @@ class StokGudang extends Model
 
         $outQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->whereNotNull('gudang_asal_id')
+            ->whereRaw("transaksi_stok.tanggal >= COALESCE(
+                (SELECT DATE_FORMAT(MAX(sa.tanggal), '%Y-%m-%d 00:00:00')
+                 FROM transaksi_stok sa
+                 WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
+                   AND sa.gudang_tujuan_id = transaksi_stok.gudang_asal_id
+                   AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_asal_id, 0)
+                   AND sa.barang_id = transaksi_stok.barang_id),
+                '1970-01-01 00:00:00'
+            )")
             ->select(
                 'gudang_asal_id as gudang_id',
                 \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_asal_id, 0) as divisi_id'),
