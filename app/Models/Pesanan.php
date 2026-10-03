@@ -84,12 +84,14 @@ class Pesanan extends Model
     }
 
     //untuk membatasi pengeditan setelah WO dibuat
+    public function workOrderDetails()
+    {
+        return $this->hasMany(WorkOrderDetail::class, 'pesanan_id');
+    }
+
     public function workOrder()
     {
-        return $this->hasMany(
-            WorkOrder::class,
-            'pesanan_id'
-        );
+        return $this->hasManyThrough(WorkOrder::class, WorkOrderDetail::class, 'pesanan_id', 'id', 'id', 'work_order_id');
     }
 
     public function pengirimans()

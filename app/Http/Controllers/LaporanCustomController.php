@@ -223,35 +223,81 @@ class LaporanCustomController extends Controller
         })
         ->where('kode_produksi', 'not like', '%SO%');
 
-        if ($request->filled('start_date')) {
-            $query->where(function($q) use ($request) {
-                $q->whereDate('tanggal_mulai', '>=', $request->start_date)
-                  ->orWhereDate('tanggal_selesai', '>=', $request->start_date)
-                  ->orWhereDate('created_at', '>=', $request->start_date)
-                  ->orWhereHas('pesanan', function($pq) use ($request) {
-                      $pq->whereDate('tanggal', '>=', $request->start_date)
-                         ->orWhereDate('estimasi_kirim', '>=', $request->start_date);
-                  })
-                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($request) {
-                      $pq->whereDate('tanggal', '>=', $request->start_date)
-                         ->orWhereDate('estimasi_kirim', '>=', $request->start_date);
-                  });
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $startDate = $request->start_date;
+            $endDate = $request->end_date;
+            $query->where(function($q) use ($startDate, $endDate) {
+                $q->whereHas('pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhere(function($sq) use ($startDate, $endDate) {
+                    $sq->whereDoesntHave('pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->whereDoesntHave('alokasiPesanan.pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->where(function($dq) use ($startDate, $endDate) {
+                        $dq->whereBetween('tanggal_mulai', [$startDate, $endDate])
+                          ->orWhere(function($cq) use ($startDate, $endDate) {
+                              $cq->whereNull('tanggal_mulai')
+                                 ->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                          });
+                    });
+                });
             });
-        }
-
-        if ($request->filled('end_date')) {
-            $query->where(function($q) use ($request) {
-                $q->whereDate('tanggal_mulai', '<=', $request->end_date)
-                  ->orWhereDate('tanggal_selesai', '<=', $request->end_date)
-                  ->orWhereDate('created_at', '<=', $request->end_date)
-                  ->orWhereHas('pesanan', function($pq) use ($request) {
-                      $pq->whereDate('tanggal', '<=', $request->end_date)
-                         ->orWhereDate('estimasi_kirim', '<=', $request->end_date);
-                  })
-                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($request) {
-                      $pq->whereDate('tanggal', '<=', $request->end_date)
-                         ->orWhereDate('estimasi_kirim', '<=', $request->end_date);
-                  });
+        } elseif ($request->filled('start_date')) {
+            $startDate = $request->start_date;
+            $query->where(function($q) use ($startDate) {
+                $q->whereHas('pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhere(function($sq) use ($startDate) {
+                    $sq->whereDoesntHave('pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->whereDoesntHave('alokasiPesanan.pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->where(function($dq) use ($startDate) {
+                        $dq->whereDate('tanggal_mulai', '>=', $startDate)
+                          ->orWhere(function($cq) use ($startDate) {
+                              $cq->whereNull('tanggal_mulai')
+                                 ->whereDate('created_at', '>=', $startDate);
+                          });
+                    });
+                });
+            });
+        } elseif ($request->filled('end_date')) {
+            $endDate = $request->end_date;
+            $query->where(function($q) use ($endDate) {
+                $q->whereHas('pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhere(function($sq) use ($endDate) {
+                    $sq->whereDoesntHave('pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->whereDoesntHave('alokasiPesanan.pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->where(function($dq) use ($endDate) {
+                        $dq->whereDate('tanggal_mulai', '<=', $endDate)
+                          ->orWhere(function($cq) use ($endDate) {
+                              $cq->whereNull('tanggal_mulai')
+                                 ->whereDate('created_at', '<=', $endDate);
+                          });
+                    });
+                });
             });
         }
 

@@ -120,7 +120,8 @@
                                     <input type="checkbox" class="form-check-input" id="checkAll" style="cursor: pointer;">
                                 </th>
                                 <th style="background-color: #2563eb; color: white;">Kode Produksi</th>
-                                <th style="background-color: #2563eb; color: white;">Tanggal Mulai</th>
+                                <th style="background-color: #2563eb; color: white;">Tanggal Permintaan</th>
+                                <th style="background-color: #2563eb; color: white;">Tanggal Produksi WO</th>
                                 <th style="background-color: #2563eb; color: white;">Gudang Bahan</th>
                                 <th style="background-color: #2563eb; color: white;">Gudang Hasil / Divisi</th>
                                 <th style="background-color: #2563eb; color: white;" class="text-center">Status Produksi</th>
@@ -137,13 +138,40 @@
                                     });
                                     $isLunas = strtolower($row->status_pembayaran ?? '') === 'lunas';
                                     $outletNama = $row->gudangHasil->nama ?? ($row->pesanan->customer->nama ?? ($row->alokasiPesanan->first()->pesanan->customer->nama ?? ($row->divisi->nama ?? 'Gudang KeJingga')));
+
+                                    $tglPermintaan = '-';
+                                    if ($row->pesanan && $row->pesanan->tanggal) {
+                                        $tglPermintaan = \Carbon\Carbon::parse($row->pesanan->tanggal)->format('d/m/Y');
+                                    } elseif ($row->alokasiPesanan->first() && $row->alokasiPesanan->first()->pesanan && $row->alokasiPesanan->first()->pesanan->tanggal) {
+                                        $tglPermintaan = \Carbon\Carbon::parse($row->alokasiPesanan->first()->pesanan->tanggal)->format('d/m/Y');
+                                    } elseif ($row->tanggal_mulai) {
+                                        $tglPermintaan = \Carbon\Carbon::parse($row->tanggal_mulai)->format('d/m/Y');
+                                    }
+
+                                    $tglProduksiWo = '-';
+                                    if ($row->tanggal_selesai) {
+                                        $tglProduksiWo = \Carbon\Carbon::parse($row->tanggal_selesai)->format('d/m/Y');
+                                    } elseif ($row->created_at) {
+                                        $tglProduksiWo = $row->created_at->format('d/m/Y');
+                                    } elseif ($row->tanggal_mulai) {
+                                        $tglProduksiWo = \Carbon\Carbon::parse($row->tanggal_mulai)->format('d/m/Y');
+                                    }
                                 @endphp
                                 <tr>
                                     <td class="text-center ps-3">
                                         <input type="checkbox" class="form-check-input check-item" value="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}" style="cursor: pointer;">
                                     </td>
                                     <td class="fw-semibold" style="color:#2563eb;">{{ $row->kode_produksi ?? '-' }}</td>
-                                    <td>{{ $row->tanggal_mulai ? \Carbon\Carbon::parse($row->tanggal_mulai)->format('d/m/Y') : ($row->created_at ? $row->created_at->format('d/m/Y') : '-') }}</td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border">
+                                            <i class="bi bi-calendar-event me-1 text-primary"></i>{{ $tglPermintaan }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark border">
+                                            <i class="bi bi-gear-wide-connected me-1 text-success"></i>{{ $tglProduksiWo }}
+                                        </span>
+                                    </td>
                                     <td>{{ $row->gudangBahan->nama ?? 'Central Kitchen' }}</td>
                                     <td>{{ $outletNama }}</td>
                                     <td class="text-center">
@@ -183,13 +211,13 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="9" class="text-center py-5 text-muted">Tidak ada data produksi.</td>
+                                    <td colspan="10" class="text-center py-5 text-muted">Tidak ada data produksi.</td>
                                 </tr>
                             @endforelse
                         </tbody>
                         <tfoot style="background-color: #f8f9fa;">
                             <tr>
-                                <th colspan="7" class="text-end px-4 py-3 fw-bold" style="color: #2563eb;">Grand Total</th>
+                                <th colspan="8" class="text-end px-4 py-3 fw-bold" style="color: #2563eb;">Grand Total</th>
                                 <th class="text-end fw-bold text-dark fs-6 py-3">Rp {{ number_format($grandTotal, 0, ',', '.') }}</th>
                                 <th></th>
                             </tr>
