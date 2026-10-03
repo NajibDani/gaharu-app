@@ -201,24 +201,113 @@
             </div>
         </div>
 
+        {{-- FILTER BAR CARD (SESUAI DESAIN LAMPIRAN USER) --}}
+        <div class="card border-0 shadow-sm rounded-4 mb-4" style="background: #ffffff; border: 1px solid #eae6e1 !important;">
+            <div class="card-body p-3 p-md-4">
+                <form method="GET" action="{{ route('ck-orders.index') }}" id="filterFormCk">
+                    <div class="row g-3 align-items-end">
+                        {{-- 1. Outlet Pemesan --}}
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label class="form-label small fw-bold text-secondary mb-1.5 d-flex align-items-center gap-1.5">
+                                <i class="bi bi-shop text-primary"></i> Outlet Pemesan
+                            </label>
+                            <select name="customer_id" class="form-select form-select-sm py-2 px-3 rounded-3" style="border-color: #dcd3cb; font-size: 0.84rem;" onchange="this.form.submit()">
+                                <option value="">-- Semua Outlet Pemesan --</option>
+                                @foreach($customers as $c)
+                                    <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>
+                                        {{ $c->nama }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+
+                        {{-- 2. Urutan (Sort) --}}
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label class="form-label small fw-bold text-secondary mb-1.5 d-flex align-items-center gap-1.5">
+                                <i class="bi bi-arrow-down-up text-primary"></i> Urutan (Sort)
+                            </label>
+                            <select name="sort" class="form-select form-select-sm py-2 px-3 rounded-3" style="border-color: #dcd3cb; font-size: 0.84rem;" onchange="this.form.submit()">
+                                <option value="latest" {{ request('sort', 'latest') == 'latest' ? 'selected' : '' }}>Terbaru (Default)</option>
+                                <option value="oldest" {{ request('sort') == 'oldest' ? 'selected' : '' }}>Terlama</option>
+                                <option value="code_asc" {{ request('sort') == 'code_asc' ? 'selected' : '' }}>Kode Order (A-Z)</option>
+                                <option value="code_desc" {{ request('sort') == 'code_desc' ? 'selected' : '' }}>Kode Order (Z-A)</option>
+                            </select>
+                        </div>
+
+                        {{-- 3. Tanggal Permintaan / WO --}}
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label class="form-label small fw-bold text-secondary mb-1.5 d-flex align-items-center gap-1.5">
+                                <i class="bi bi-calendar3 text-primary"></i> Tanggal Permintaan / WO
+                            </label>
+                            <select name="tanggal_filter" id="tanggalFilterSelect" class="form-select form-select-sm py-2 px-3 rounded-3" style="border-color: #dcd3cb; font-size: 0.84rem;" onchange="handleTanggalFilterChange(this.value)">
+                                <option value="semua" {{ request('tanggal_filter', 'semua') == 'semua' ? 'selected' : '' }}>Semua Tanggal</option>
+                                <option value="hari_ini" {{ request('tanggal_filter') == 'hari_ini' ? 'selected' : '' }}>Hari Ini</option>
+                                <option value="7_hari" {{ request('tanggal_filter') == '7_hari' ? 'selected' : '' }}>7 Hari Terakhir</option>
+                                <option value="bulan_ini" {{ request('tanggal_filter') == 'bulan_ini' ? 'selected' : '' }}>Bulan Ini</option>
+                                <option value="custom" {{ (request('tanggal_filter') == 'custom' || request('start_date')) ? 'selected' : '' }}>Custom Tanggal...</option>
+                            </select>
+                        </div>
+
+                        {{-- 4. Cari Data & Filter Button --}}
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <label class="form-label small fw-bold text-secondary mb-1.5 d-flex align-items-center gap-1.5">
+                                <i class="bi bi-search text-primary"></i> Cari Data
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" name="search" class="form-control py-2 px-3 border-end-0" style="border-color: #dcd3cb; border-top-left-radius: 8px; border-bottom-left-radius: 8px; font-size: 0.84rem;" placeholder="No. WO, Order, Menu..." value="{{ request('search') }}">
+                                <button type="submit" class="btn text-white px-3 fw-bold d-flex align-items-center gap-1.5" style="background-color: #DE8958; border-color: #DE8958; border-top-right-radius: 8px; border-bottom-right-radius: 8px; font-size: 0.84rem;">
+                                    <i class="bi bi-funnel-fill"></i> Filter
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- Input Rentang Tanggal jika Custom Tanggal Dipilih --}}
+                        <div class="col-12 {{ (request('tanggal_filter') == 'custom' || request('start_date')) ? '' : 'd-none' }}" id="customDateRangeRow">
+                            <div class="p-2.5 rounded-3 bg-light border d-flex align-items-center gap-2 flex-wrap" style="font-size: 0.82rem;">
+                                <span class="fw-semibold text-muted ms-1"><i class="bi bi-calendar-range me-1 text-primary"></i> Rentang Tanggal Custom:</span>
+                                <input type="date" name="start_date" class="form-control form-control-sm w-auto rounded-2" value="{{ request('start_date') }}">
+                                <span class="text-muted">s/d</span>
+                                <input type="date" name="end_date" class="form-control form-control-sm w-auto rounded-2" value="{{ request('end_date') }}">
+                                <button type="submit" class="btn btn-sm text-white py-1 px-3 rounded-2 fw-semibold" style="background-color: #DE8958;">Terapkan Tanggal</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+
+                {{-- Status Filter Aktif & Reset --}}
+                @if(request('customer_id') || (request('sort') && request('sort') != 'latest') || (request('tanggal_filter') && request('tanggal_filter') != 'semua') || request('search') || request('start_date'))
+                    <div class="d-flex align-items-center gap-2 mt-3 pt-2 border-top flex-wrap" style="font-size: 0.78rem;">
+                        <span class="text-muted fw-semibold">Filter Aktif:</span>
+                        @if(request('customer_id'))
+                            @php $selCust = $customers->firstWhere('id', request('customer_id')); @endphp
+                            <span class="badge bg-light text-dark border"><i class="bi bi-shop me-1 text-primary"></i> {{ $selCust->nama ?? 'Outlet #'.request('customer_id') }}</span>
+                        @endif
+                        @if(request('sort') && request('sort') != 'latest')
+                            <span class="badge bg-light text-dark border"><i class="bi bi-arrow-down-up me-1 text-primary"></i> Sort: {{ request('sort') }}</span>
+                        @endif
+                        @if(request('tanggal_filter') && request('tanggal_filter') != 'semua')
+                            <span class="badge bg-light text-dark border"><i class="bi bi-calendar3 me-1 text-primary"></i> {{ ucfirst(str_replace('_', ' ', request('tanggal_filter'))) }}</span>
+                        @endif
+                        @if(request('search'))
+                            <span class="badge bg-light text-dark border"><i class="bi bi-search me-1 text-primary"></i> "{{ request('search') }}"</span>
+                        @endif
+                        <a href="{{ route('ck-orders.index') }}" class="text-danger fw-bold ms-auto text-decoration-none">
+                            <i class="bi bi-x-circle-fill me-1"></i> Reset Filter
+                        </a>
+                    </div>
+                @endif
+            </div>
+        </div>
+
         {{-- TABLE CARD --}}
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-            <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom border-light d-flex justify-content-between align-items-center flex-column flex-md-row gap-2">
-                <div class="d-flex align-items-center justify-content-between w-100 w-md-auto gap-2">
+            <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom border-light d-flex justify-content-between align-items-center flex-row gap-2">
+                <div class="d-flex align-items-center justify-content-between w-100 gap-2">
                     <h6 class="fw-bold mb-0 text-dark text-nowrap">Daftar Central Kitchen Orders</h6>
                     <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarCk" data-bs-toggle="modal" data-bs-target="#modalBulkBayarCk" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
                         <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedCk">0</span>)
                     </button>
                 </div>
-
-                <form method="GET" action="{{ route('ck-orders.index') }}" class="d-flex align-items-center w-100 w-md-auto" style="max-width: 320px;">
-                    <div class="input-group input-group-sm w-100">
-                        <input type="text" name="search" class="form-control border-end-0" placeholder="Cari Kode / Outlet..." value="{{ request('search') }}">
-                        <button class="btn btn-outline-secondary border-start-0" type="submit">
-                            <i class="bi bi-search"></i>
-                        </button>
-                    </div>
-                </form>
             </div>
 
             <div class="table-responsive">
@@ -1564,6 +1653,17 @@
                     }
                     inputBayar.placeholder = "Masukkan nominal pembayaran";
                 }
+            }
+        }
+
+        function handleTanggalFilterChange(val) {
+            var row = document.getElementById('customDateRangeRow');
+            if (val === 'custom') {
+                if (row) row.classList.remove('d-none');
+            } else {
+                if (row) row.classList.add('d-none');
+                var form = document.getElementById('filterFormCk');
+                if (form) form.submit();
             }
         }
     </script>

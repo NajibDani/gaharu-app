@@ -174,42 +174,148 @@ class LaporanCustomController extends Controller
     // 2. Pengeluaran produksi central kitchen ke jingga
     public function pengeluaranProduksiCentralKitchenKejingga(Request $request)
     {
-        // Asumsi: Produksi dari gudang/divisi Central Kitchen ke Kejingga
-        $query = Produksi::with(['details.barang', 'gudangBahan', 'gudangHasil', 'divisi', 'creator', 'dibayarByUser'])
-            ->whereHas('gudangBahan', function ($q) {
-                $q->where('nama', 'like', '%Central Kitchen%');
-            })
-            ->where(function ($q) {
-                $q->whereHas('gudangHasil', function ($q2) {
-                    $q2->where('nama', 'like', '%Kejingga%');
-                })->orWhereHas('divisi', function ($q3) {
-                    $q3->where('nama', 'like', '%Kejingga%');
-                });
-            })
-            ->where('kode_produksi', 'not like', '%SO%');
+        $hasColKeterangan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan');
+        $hasColCatatan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan');
+        $hasColCatatanBayar = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan_pembayaran');
 
-        if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('tanggal_mulai', [$request->start_date, $request->end_date]);
+        // Produksi dari Central Kitchen yang dialokasikan ke Outlet Kejingga
+        $query = Produksi::with([
+            'details.barang',
+            'details.produk',
+            'gudangBahan',
+            'gudangHasil',
+            'divisi',
+            'pesanan.customer',
+            'alokasiPesanan.pesanan.customer',
+            'creator',
+            'dibayarByUser'
+        ])
+        ->where(function($q) use ($hasColKeterangan, $hasColCatatan, $hasColCatatanBayar) {
+            $q->whereHas('pesanan.customer', function($cq) {
+                $cq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('alokasiPesanan.pesanan.customer', function($cq) {
+                $cq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('gudangHasil', function($gq) {
+                $gq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('divisi', function($dq) {
+                $dq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('pesanan.gudang', function($gq) {
+                $gq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('alokasiPesanan.pesanan.gudang', function($gq) {
+                $gq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhere('kode_produksi', 'like', '%kejingga%');
+
+            if ($hasColKeterangan) {
+                $q->orWhere('keterangan', 'like', '%kejingga%');
+            }
+            if ($hasColCatatan) {
+                $q->orWhere('catatan', 'like', '%kejingga%');
+            }
+            if ($hasColCatatanBayar) {
+                $q->orWhere('catatan_pembayaran', 'like', '%kejingga%');
+            }
+        })
+        ->where('kode_produksi', 'not like', '%SO%');
+
+        if ($request->filled('start_date')) {
+            $query->where(function($q) use ($request) {
+                $q->whereDate('tanggal_mulai', '>=', $request->start_date)
+                  ->orWhereDate('tanggal_selesai', '>=', $request->start_date)
+                  ->orWhereDate('created_at', '>=', $request->start_date)
+                  ->orWhereHas('pesanan', function($pq) use ($request) {
+                      $pq->whereDate('tanggal', '>=', $request->start_date)
+                         ->orWhereDate('estimasi_kirim', '>=', $request->start_date);
+                  })
+                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($request) {
+                      $pq->whereDate('tanggal', '>=', $request->start_date)
+                         ->orWhereDate('estimasi_kirim', '>=', $request->start_date);
+                  });
+            });
+        }
+
+        if ($request->filled('end_date')) {
+            $query->where(function($q) use ($request) {
+                $q->whereDate('tanggal_mulai', '<=', $request->end_date)
+                  ->orWhereDate('tanggal_selesai', '<=', $request->end_date)
+                  ->orWhereDate('created_at', '<=', $request->end_date)
+                  ->orWhereHas('pesanan', function($pq) use ($request) {
+                      $pq->whereDate('tanggal', '<=', $request->end_date)
+                         ->orWhereDate('estimasi_kirim', '<=', $request->end_date);
+                  })
+                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($request) {
+                      $pq->whereDate('tanggal', '<=', $request->end_date)
+                         ->orWhereDate('estimasi_kirim', '<=', $request->end_date);
+                  });
+            });
         }
 
         $statusPembayaran = $request->query('status_pembayaran', 'semua');
         $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
 
         if ($statusPembayaran === 'belum_dibayar') {
-            $query->where(function($q) use ($hasColumnStatus) {
+            $query->where(function($q) use ($hasColumnStatus, $hasColKeterangan, $hasColCatatan) {
+                $hasCond = false;
                 if ($hasColumnStatus) {
-                    $q->where('status_pembayaran', 'belum_dibayar')
-                      ->orWhereNull('status_pembayaran');
+                    $q->where(function($sq) {
+                        $sq->where('status_pembayaran', 'belum_dibayar')
+                          ->orWhere('status_pembayaran', 'Belum Bayar')
+                          ->orWhereNull('status_pembayaran');
+                    });
+                    $hasCond = true;
                 }
-                $q->orWhereNull('keterangan')
-                  ->orWhere('keterangan', 'not like', '%"status_pembayaran":"lunas"%');
+                if ($hasColKeterangan) {
+                    if ($hasCond) {
+                        $q->orWhereNull('keterangan')->orWhere('keterangan', 'not like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where(function($sq) {
+                            $sq->whereNull('keterangan')->orWhere('keterangan', 'not like', '%"status_pembayaran":"lunas"%');
+                        });
+                        $hasCond = true;
+                    }
+                }
+                if ($hasColCatatan) {
+                    if ($hasCond) {
+                        $q->orWhereNull('catatan')->orWhere('catatan', 'not like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where(function($sq) {
+                            $sq->whereNull('catatan')->orWhere('catatan', 'not like', '%"status_pembayaran":"lunas"%');
+                        });
+                        $hasCond = true;
+                    }
+                }
             });
         } elseif ($statusPembayaran === 'lunas') {
-            $query->where(function($q) use ($hasColumnStatus) {
+            $query->where(function($q) use ($hasColumnStatus, $hasColKeterangan, $hasColCatatan) {
+                $hasCond = false;
                 if ($hasColumnStatus) {
-                    $q->where('status_pembayaran', 'lunas');
+                    $q->where(function($sq) {
+                        $sq->where('status_pembayaran', 'lunas')
+                          ->orWhere('status_pembayaran', 'Lunas');
+                    });
+                    $hasCond = true;
                 }
-                $q->orWhere('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                if ($hasColKeterangan) {
+                    if ($hasCond) {
+                        $q->orWhere('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                        $hasCond = true;
+                    }
+                }
+                if ($hasColCatatan) {
+                    if ($hasCond) {
+                        $q->orWhere('catatan', 'like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where('catatan', 'like', '%"status_pembayaran":"lunas"%');
+                        $hasCond = true;
+                    }
+                }
             });
         }
 
@@ -232,16 +338,20 @@ class LaporanCustomController extends Controller
         $noInvoice = 'INV-CK-KEJINGGA-' . date('Ymd-His');
         $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
 
-        $transactions = Produksi::whereIn('id', $ids)->get();
+        $transactions = Produksi::with(['pesanan', 'alokasiPesanan.pesanan'])->whereIn('id', $ids)->get();
         $updatedCount = 0;
 
         foreach ($transactions as $prod) {
+            $tgl = $request->tanggal_pembayaran . ' ' . date('H:i:s');
+            $metode = $request->metode_pembayaran;
+            $catatan = $request->catatan_pembayaran;
+
             if ($hasColumnStatus) {
                 $prod->update([
                     'status_pembayaran'  => 'lunas',
-                    'tanggal_pembayaran' => $request->tanggal_pembayaran . ' ' . date('H:i:s'),
-                    'metode_pembayaran'  => $request->metode_pembayaran,
-                    'catatan_pembayaran' => $request->catatan_pembayaran,
+                    'tanggal_pembayaran' => $tgl,
+                    'metode_pembayaran'  => $metode,
+                    'catatan_pembayaran' => $catatan,
                     'no_invoice'         => DB::raw("COALESCE(no_invoice, '{$noInvoice}')"),
                     'dibayar_by'         => auth()->id() ?? 1,
                 ]);
@@ -249,17 +359,45 @@ class LaporanCustomController extends Controller
                 $existingInv = $prod->no_invoice;
                 $prod->updatePaymentMeta([
                     'status_pembayaran'  => 'lunas',
-                    'tanggal_pembayaran' => $request->tanggal_pembayaran . ' ' . date('H:i:s'),
-                    'metode_pembayaran'  => $request->metode_pembayaran,
-                    'catatan_pembayaran' => $request->catatan_pembayaran,
+                    'tanggal_pembayaran' => $tgl,
+                    'metode_pembayaran'  => $metode,
+                    'catatan_pembayaran' => $catatan,
                     'no_invoice'         => $existingInv ?: $noInvoice,
                     'dibayar_by'         => auth()->id() ?? 1,
                 ]);
             }
+
+            // Synchronize Lunas status to associated Pesanan records to prevent double payment
+            $pesananIds = collect([$prod->pesanan_id]);
+            if ($prod->alokasiPesanan) {
+                $pesananIds = $pesananIds->merge($prod->alokasiPesanan->pluck('pesanan_id'));
+            }
+            $pesananIds = $pesananIds->filter()->unique();
+
+            foreach ($pesananIds as $pId) {
+                $p = \App\Models\Pesanan::with('details')->find($pId);
+                if ($p) {
+                    $p->update(['status_pembayaran' => 'Lunas']);
+                    $hasPayment = \App\Models\Pembayaran::where('pesanan_id', $p->id)->exists();
+                    if (!$hasPayment) {
+                        $nominal = $p->total_pesanan > 0 ? (float)$p->total_pesanan : (float)$p->details->sum('subtotal');
+                        \App\Models\Pembayaran::create([
+                            'pesanan_id'          => $p->id,
+                            'kategori_pembayaran' => 'penjualan',
+                            'tanggal_bayar'       => $request->tanggal_pembayaran,
+                            'jumlah_bayar'        => $nominal > 0 ? $nominal : 0,
+                            'metode_pembayaran'   => $metode,
+                            'catatan'             => $catatan ? ($catatan . ' (Pelunasan via Laporan Produksi CK)') : 'Pelunasan via Laporan Produksi CK',
+                            'created_by'          => auth()->id() ?? 1,
+                        ]);
+                    }
+                }
+            }
+
             $updatedCount++;
         }
 
-        return redirect()->back()->with('success', "Pembayaran untuk {$updatedCount} produksi berhasil diproses (Status: Lunas). Invoice dapat langsung dicetak.");
+        return redirect()->back()->with('success', "Pembayaran untuk {$updatedCount} produksi & pesanan terkait berhasil diproses (Status: Lunas). Invoice dapat langsung dicetak.");
     }
 
     public function cetakInvoiceProduksiCkKejingga(Request $request)
@@ -274,17 +412,35 @@ class LaporanCustomController extends Controller
             $ids = array_map('intval', explode(',', $idsParam));
         }
 
-        $query = Produksi::with(['details.barang', 'gudangBahan', 'gudangHasil', 'divisi', 'creator', 'dibayarByUser']);
+        $query = Produksi::with([
+            'details.barang',
+            'details.produk',
+            'gudangBahan',
+            'gudangHasil',
+            'divisi',
+            'pesanan.customer',
+            'alokasiPesanan.pesanan.customer',
+            'creator',
+            'dibayarByUser'
+        ]);
 
         if (!empty($ids)) {
             $query->whereIn('id', $ids);
         } elseif (!empty($noInvoice)) {
             $hasColNoInvoice = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'no_invoice');
-            $query->where(function($q) use ($noInvoice, $hasColNoInvoice) {
+            $hasColKeterangan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan');
+            $hasColCatatan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan');
+
+            $query->where(function($q) use ($noInvoice, $hasColNoInvoice, $hasColKeterangan, $hasColCatatan) {
                 if ($hasColNoInvoice) {
                     $q->where('no_invoice', $noInvoice);
                 }
-                $q->orWhere('keterangan', 'like', '%"no_invoice":"' . $noInvoice . '"%');
+                if ($hasColKeterangan) {
+                    $q->orWhere('keterangan', 'like', '%"no_invoice":"' . $noInvoice . '"%');
+                }
+                if ($hasColCatatan) {
+                    $q->orWhere('catatan', 'like', '%"no_invoice":"' . $noInvoice . '"%');
+                }
             });
         } else {
             return redirect()->back()->with('error', 'Pilih minimal 1 transaksi produksi untuk mencetak invoice.');

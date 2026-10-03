@@ -45,19 +45,19 @@
         @php
             $grandTotal = $data->sum(function($row) {
                 return $row->details->sum(function($d) {
-                    return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->total_harga ?? 0);
+                    return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->subtotal ?? ($d->total_harga ?? 0));
                 });
             });
 
             $totalBelumDibayar = $data->filter(fn($r) => strtolower($r->status_pembayaran ?? '') !== 'lunas')->sum(function($row) {
                 return $row->details->sum(function($d) {
-                    return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->total_harga ?? 0);
+                    return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->subtotal ?? ($d->total_harga ?? 0));
                 });
             });
 
             $totalLunas = $data->filter(fn($r) => strtolower($r->status_pembayaran ?? '') === 'lunas')->sum(function($row) {
                 return $row->details->sum(function($d) {
-                    return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->total_harga ?? 0);
+                    return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->subtotal ?? ($d->total_harga ?? 0));
                 });
             });
         @endphp
@@ -133,18 +133,19 @@
                             @forelse($data as $row)
                                 @php
                                     $rowTotal = $row->details->sum(function($d) {
-                                        return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->total_harga ?? 0);
+                                        return ($d->hpp_total && $d->hpp_total > 0) ? $d->hpp_total : ($d->subtotal ?? ($d->total_harga ?? 0));
                                     });
                                     $isLunas = strtolower($row->status_pembayaran ?? '') === 'lunas';
+                                    $outletNama = $row->gudangHasil->nama ?? ($row->pesanan->customer->nama ?? ($row->alokasiPesanan->first()->pesanan->customer->nama ?? ($row->divisi->nama ?? 'Gudang KeJingga')));
                                 @endphp
                                 <tr>
                                     <td class="text-center ps-3">
                                         <input type="checkbox" class="form-check-input check-item" value="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}" style="cursor: pointer;">
                                     </td>
                                     <td class="fw-semibold" style="color:#2563eb;">{{ $row->kode_produksi ?? '-' }}</td>
-                                    <td>{{ $row->tanggal_mulai ? \Carbon\Carbon::parse($row->tanggal_mulai)->format('d/m/Y') : '-' }}</td>
+                                    <td>{{ $row->tanggal_mulai ? \Carbon\Carbon::parse($row->tanggal_mulai)->format('d/m/Y') : ($row->created_at ? $row->created_at->format('d/m/Y') : '-') }}</td>
                                     <td>{{ $row->gudangBahan->nama ?? 'Central Kitchen' }}</td>
-                                    <td>{{ $row->gudangHasil->nama ?? 'Gudang KeJingga' }}</td>
+                                    <td>{{ $outletNama }}</td>
                                     <td class="text-center">
                                         <span class="badge bg-secondary-subtle text-dark border px-2 py-1" style="font-size: 11px;">
                                             {{ $row->status_produksi ?? 'Selesai' }}

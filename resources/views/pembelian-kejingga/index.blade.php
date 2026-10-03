@@ -599,7 +599,7 @@
         </div>
     </div>
 
-    <!-- MODAL TERIMA BARANG ITEM (KHUSUS SUPER ADMIN) -->
+    <!-- MODAL TERIMA BARANG ITEM -->
     <div class="modal fade" id="modalTerimaDetail" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow rounded-4">
@@ -635,13 +635,12 @@
                     </div>
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-primary btn-sm">Proses Terima Stok</button>
+                        <button type="submit" class="btn btn-success btn-sm fw-bold"><i class="bi bi-box-arrow-in-down me-1"></i>Proses Terima Stok</button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
-    @endif
 
     <!-- MODAL DETAIL POP-UP -->
     <div class="modal fade" id="modalDetail" tabindex="-1" aria-hidden="true">
@@ -1465,19 +1464,24 @@
                 buktiBadge = `<a href="${d.bukti_pembayaran_url}" target="_blank" class="badge bg-info-subtle text-info-emphasis border text-decoration-none me-1" title="Lihat Bukti/Nota"><i class="bi bi-file-earmark-image me-1"></i>Lihat Bukti</a>`;
             }
 
+            let displayQty = d.qty_diterima > 0 ? d.qty_diterima : d.qty;
+            let btnTerimaAction = `<button type="button" class="btn btn-success text-white btn-sm py-0 px-2 fw-semibold" style="font-size: 10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${displayQty}, '${addslashes(d.satuan)}')" title="Terima / Konfirmasi Penerimaan Stok"><i class="bi bi-box-arrow-in-down me-1"></i>Terima Barang</button>`;
+
             let terimaHtml = '';
             if (d.is_diterima_item) {
-                terimaHtml = `<span class="badge bg-success-subtle text-success border border-success px-2 py-1" style="font-size: 11px;"><i class="bi bi-check-circle-fill me-1"></i>${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</span>`;
+                terimaHtml = `
+                    <span class="badge bg-success-subtle text-success border border-success px-2 py-1" style="font-size: 11px;"><i class="bi bi-check-circle-fill me-1"></i>${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</span>
+                    <div class="mt-1"><button type="button" class="btn btn-outline-success btn-sm py-0 px-2 fw-semibold" style="font-size: 10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${d.qty_diterima}, '${addslashes(d.satuan)}')"><i class="bi bi-pencil-square me-1"></i>Edit Terima</button></div>
+                `;
             } else if (d.qty_diterima > 0 && d.qty_diterima < d.qty) {
                 terimaHtml = `
                     <span class="badge bg-info-subtle text-info-emphasis border border-info px-2 py-1" style="font-size: 11px;">${d.qty_diterima.toLocaleString('id-ID')} / ${d.qty.toLocaleString('id-ID')} ${d.satuan}</span>
-                    ${isSuperAdminUser ? `<div class="mt-1"><button type="button" class="btn btn-outline-success btn-sm py-0 px-2 fw-semibold" style="font-size: 10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${d.qty_diterima}, '${addslashes(d.satuan)}')"><i class="bi bi-pencil-square me-1"></i>Edit Terima</button></div>` : ''}
+                    <div class="mt-1">${btnTerimaAction}</div>
                 `;
             } else {
-                let displayQty = d.qty_diterima > 0 ? d.qty_diterima : d.qty;
                 terimaHtml = `
                     <span class="badge bg-success-subtle text-success border border-success px-2 py-1" style="font-size: 11px;"><i class="bi bi-check-circle-fill me-1"></i>${displayQty.toLocaleString('id-ID')} ${d.satuan}</span>
-                    ${isSuperAdminUser ? `<div class="mt-1"><button type="button" class="btn btn-outline-success btn-sm py-0 px-2 fw-semibold" style="font-size: 10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${displayQty}, '${addslashes(d.satuan)}')"><i class="bi bi-pencil-square me-1"></i>Edit Terima</button></div>` : ''}
+                    <div class="mt-1">${btnTerimaAction}</div>
                 `;
             }
 
@@ -1491,6 +1495,7 @@
             if (!item.is_terkunci && !d.is_diterima_item) {
                 aksiHtml = `
                     <div class="d-flex justify-content-center align-items-center gap-1">
+                        ${btnTerimaAction}
                         <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold" style="font-size: 11px;" onclick="bukaModalEditBarangSingle(${d.id})" title="Edit / Input Barang Ini">
                             <i class="bi bi-pencil-square me-1"></i>Edit
                         </button>
@@ -1500,7 +1505,11 @@
                     </div>
                 `;
             } else {
-                aksiHtml = `<span class="badge bg-light text-muted border" style="font-size: 11px;"><i class="bi bi-lock-fill me-1"></i>Terkunci</span>`;
+                aksiHtml = `
+                    <div class="d-flex justify-content-center align-items-center gap-1">
+                        ${btnTerimaAction}
+                    </div>
+                `;
             }
 
             let checkHtml = `<input type="checkbox" class="form-check-input item-check-pilih border-primary" data-id="${d.id}" data-nama="${addslashes(d.nama)}" data-qty="${d.qty}" data-satuan="${d.satuan}" data-harga="${d.harga}" data-tax="${d.tax_service || 0}" data-supplier-id="${d.supplier_id || ''}" data-supplier-nama="${addslashes(d.supplier_nama || '')}" data-nota="${addslashes(d.catatan_pembayaran || '')}" onchange="updateItemSelection()">`;

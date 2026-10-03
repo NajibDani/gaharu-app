@@ -29,11 +29,12 @@
 
     foreach ($transactions as $tx) {
         foreach ($tx->details as $detail) {
-            $barangId = $detail->barang_id ?? ($detail->barang->id ?? $detail->barang_nama ?? $detail->id);
-            $namaBarang = strtoupper($detail->barang->nama ?? ($detail->nama_barang ?? 'BARANG TANPA NAMA'));
-            $satuan = strtoupper($detail->barang->satuan ?? ($detail->satuan ?? ''));
+            $barangObj = $detail->barang ?? $detail->produk;
+            $barangId = $detail->barang_id ?? ($detail->produk_id ?? ($barangObj->id ?? $detail->id));
+            $namaBarang = strtoupper($barangObj->nama ?? ($detail->nama_barang ?? 'BARANG TANPA NAMA'));
+            $satuan = strtoupper($barangObj->satuan ?? ($detail->satuan ?? ''));
             
-            $detailNilai = ($detail->hpp_total && $detail->hpp_total > 0) ? (float)$detail->hpp_total : (float)($detail->total_harga ?? 0);
+            $detailNilai = ($detail->hpp_total && $detail->hpp_total > 0) ? (float)$detail->hpp_total : (float)($detail->subtotal ?? ($detail->total_harga ?? 0));
             $qtyNum = (float)($detail->jumlah ?? $detail->qty ?? 0);
 
             if (!isset($summaryItems[$barangId])) {
@@ -432,7 +433,7 @@
                             </tr>
                             <tr>
                                 <td class="info-label">Jumlah Produksi</td>
-                                <td class="info-val">: {{ $transactions->count() }} Transaksi Produksi</div>
+                                <td class="info-val">: {{ $transactions->count() }} Transaksi Produksi</td>
                             </tr>
                             <tr>
                                 <td class="info-label">Daftar Kode WO</td>

@@ -19,19 +19,71 @@ class CentralKitchenOrderController extends Controller
      */
     public function index(Request $request)
     {
-        $search = $request->query('search');
+        $search = trim($request->query('search', ''));
+        $customerId = $request->query('customer_id');
+        $sort = $request->query('sort', 'latest');
+        $tanggalFilter = $request->query('tanggal_filter', 'semua');
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+
         $query = Pesanan::centralKitchen()->with(['customer', 'details.produk.resepBtklBop', 'gudang', 'divisi']);
 
-        if ($search) {
-            $query->where(function($q) use ($search) {
+        // Filter Outlet Pemesan
+        if (!empty($customerId)) {
+            $query->where('customer_id', $customerId);
+        }
+
+        // Filter Tanggal Permintaan / WO
+        if ($tanggalFilter === 'hari_ini') {
+            $query->whereDate('tanggal', date('Y-m-d'));
+        } elseif ($tanggalFilter === '7_hari') {
+            $query->whereBetween('tanggal', [\Carbon\Carbon::now()->subDays(7)->format('Y-m-d'), \Carbon\Carbon::now()->format('Y-m-d')]);
+        } elseif ($tanggalFilter === 'bulan_ini') {
+            $query->whereMonth('tanggal', date('m'))->whereYear('tanggal', date('Y'));
+        } elseif ($tanggalFilter === 'custom' || ($startDate && $endDate)) {
+            if ($startDate && $endDate) {
+                $query->whereBetween('tanggal', [$startDate, $endDate]);
+            } elseif ($startDate) {
+                $query->whereDate('tanggal', '>=', $startDate);
+            } elseif ($endDate) {
+                $query->whereDate('tanggal', '<=', $endDate);
+            }
+        }
+
+        // Filter Search (No. WO, Order, Menu / Produk)
+        if (!empty($search)) {
+            $woPesananIds = WorkOrderDetail::whereHas('workOrder', function($wq) use ($search) {
+                $wq->where('kode_wo', 'like', '%' . $search . '%');
+            })->pluck('pesanan_id')->filter()->toArray();
+
+            $query->where(function($q) use ($search, $woPesananIds) {
                 $q->where('kode_pesanan', 'like', '%' . $search . '%')
                   ->orWhereHas('customer', function($cq) use ($search) {
                       $cq->where('nama', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('details.produk', function($pq) use ($search) {
+                      $pq->where('nama', 'like', '%' . $search . '%')
+                        ->orWhere('kode_barang', 'like', '%' . $search . '%');
                   });
+
+                if (!empty($woPesananIds)) {
+                    $q->orWhereIn('id', $woPesananIds);
+                }
             });
         }
 
-        $pesanan = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
+        // Sorting
+        if ($sort === 'oldest') {
+            $query->orderBy('tanggal', 'asc')->orderBy('created_at', 'asc');
+        } elseif ($sort === 'code_asc') {
+            $query->orderBy('kode_pesanan', 'asc');
+        } elseif ($sort === 'code_desc') {
+            $query->orderBy('kode_pesanan', 'desc');
+        } else {
+            $query->orderBy('tanggal', 'desc')->orderBy('created_at', 'desc');
+        }
+
+        $pesanan = $query->paginate(10)->withQueryString();
 
         foreach ($pesanan as $p) {
             $woDetail = WorkOrderDetail::where('pesanan_id', $p->id)->first();
@@ -682,6 +734,7 @@ class CentralKitchenOrderController extends Controller
          if ($totalTagihan > 0) {
              if ($totalBayar >= $totalTagihan) {
                  $pesanan->update(['status_pembayaran' => 'Lunas']);
+                 $this->syncProduksiLunasForPesanan($pesanan, $request->tanggal_bayar, $request->metode_pembayaran, $request->catatan);
              } elseif ($totalBayar > 0) {
                  $pesanan->update(['status_pembayaran' => 'DP']);
              } else {
@@ -689,6 +742,7 @@ class CentralKitchenOrderController extends Controller
              }
          } else {
              $pesanan->update(['status_pembayaran' => 'Lunas']);
+             $this->syncProduksiLunasForPesanan($pesanan, $request->tanggal_bayar, $request->metode_pembayaran, $request->catatan);
          }
  
          return back()->with('success', 'Pembayaran berhasil disimpan dan bukti bayar telah di-upload!');
@@ -742,6 +796,7 @@ class CentralKitchenOrderController extends Controller
                  ]);
  
                  $pesanan->update(['status_pembayaran' => 'Lunas']);
+                 $this->syncProduksiLunasForPesanan($pesanan, $request->tanggal_bayar, $request->metode_pembayaran, $request->catatan);
                  $totalBayarSemua += $sisaTagihan;
                  $jumlahNota++;
              }
@@ -751,6 +806,46 @@ class CentralKitchenOrderController extends Controller
          } catch (\Exception $e) {
              DB::rollBack();
              return back()->with('error', 'Gagal memproses pembayaran massal CK: ' . $e->getMessage());
+         }
+     }
+
+     /**
+      * Helper method to sync Produksi status to Lunas when Pesanan is paid
+      */
+     protected function syncProduksiLunasForPesanan($pesanan, $tanggalBayar = null, $metodeBayar = null, $catatan = null)
+     {
+         $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
+         $tgl = ($tanggalBayar ? $tanggalBayar : date('Y-m-d')) . ' ' . date('H:i:s');
+         $metode = $metodeBayar ?? 'Transfer';
+         $noInvoice = 'INV-CK-KEJINGGA-' . date('Ymd-His');
+
+         $produksis = \App\Models\Produksi::where('pesanan_id', $pesanan->id)
+             ->orWhereHas('alokasiPesanan', function ($q) use ($pesanan) {
+                 $q->where('pesanan_id', $pesanan->id);
+             })
+             ->get();
+
+         foreach ($produksis as $prod) {
+             if ($hasColumnStatus) {
+                 $prod->update([
+                     'status_pembayaran'  => 'lunas',
+                     'tanggal_pembayaran' => $tgl,
+                     'metode_pembayaran'  => $metode,
+                     'catatan_pembayaran' => $catatan ? ($catatan . ' (Sync via Order CK)') : 'Sync via Order CK',
+                     'no_invoice'         => \DB::raw("COALESCE(no_invoice, '{$noInvoice}')"),
+                     'dibayar_by'         => auth()->id() ?? 1,
+                 ]);
+             } else {
+                 $existingInv = $prod->no_invoice;
+                 $prod->updatePaymentMeta([
+                     'status_pembayaran'  => 'lunas',
+                     'tanggal_pembayaran' => $tgl,
+                     'metode_pembayaran'  => $metode,
+                     'catatan_pembayaran' => $catatan ? ($catatan . ' (Sync via Order CK)') : 'Sync via Order CK',
+                     'no_invoice'         => $existingInv ?: $noInvoice,
+                     'dibayar_by'         => auth()->id() ?? 1,
+                 ]);
+             }
          }
      }
 }

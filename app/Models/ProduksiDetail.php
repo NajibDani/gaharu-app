@@ -18,4 +18,9 @@ class ProduksiDetail extends Model
     public function produk() {
         return $this->belongsTo(MasterBarang::class, 'produk_id')->withoutGlobalScopes();
     }
+
+    // Alias relasi ke Master Barang
+    public function barang() {
+        return $this->belongsTo(MasterBarang::class, 'produk_id')->withoutGlobalScopes();
+    }
 }
