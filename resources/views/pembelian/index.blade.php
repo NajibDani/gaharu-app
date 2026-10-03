@@ -887,12 +887,14 @@
                         <table class="table table-hover align-middle mb-0 text-center" id="table-create-items" style="font-size: 13px;">
                             <thead class="table-light sticky-top" style="z-index: 2;">
                                 <tr>
-                                    <th class="text-start" style="min-width: 250px;">Nama Barang <span class="text-danger">*</span></th>
-                                    <th style="width: 140px;">Qty <span class="text-danger">*</span></th>
-                                    <th style="width: 160px;">Total Harga (Rp) <span class="text-danger">*</span></th>
-                                    <th style="width: 140px;">Harga / Qty</th>
-                                    <th style="width: 170px;">Batch Preview</th>
-                                    <th style="width: 50px;">Aksi</th>
+                                    <th class="text-start" style="min-width: 220px;">Nama Barang <span class="text-danger">*</span></th>
+                                    <th style="width: 110px;">Qty Input <span class="text-danger">*</span></th>
+                                    <th style="width: 140px;">Satuan</th>
+                                    <th style="width: 140px;">Total Qty</th>
+                                    <th style="width: 150px;">Total Harga (Rp) <span class="text-danger">*</span></th>
+                                    <th style="width: 130px;">Harga / Qty</th>
+                                    <th style="width: 150px;">Batch Preview</th>
+                                    <th style="width: 45px;">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="tbodyCreateItems">
@@ -1006,11 +1008,13 @@
                         <table class="table table-hover align-middle mb-0 text-center" id="table-items-modal" style="font-size: 13px;">
                             <thead class="table-light sticky-top" style="z-index: 2;">
                                 <tr>
-                                    <th class="text-start" style="min-width: 250px;">Barang <span class="text-danger">*</span></th>
-                                    <th style="width: 170px;">Qty <span class="text-danger">*</span></th>
-                                    <th style="width: 170px;">Harga Total Item (Rp) <span class="text-danger">*</span></th>
-                                    <th style="width: 160px;">Nomor Batch</th>
-                                    <th style="width: 50px;">Aksi</th>
+                                    <th class="text-start" style="min-width: 220px;">Barang <span class="text-danger">*</span></th>
+                                    <th style="width: 110px;">Qty Input <span class="text-danger">*</span></th>
+                                    <th style="width: 140px;">Satuan</th>
+                                    <th style="width: 140px;">Total Qty</th>
+                                    <th style="width: 150px;">Harga Total Item (Rp) <span class="text-danger">*</span></th>
+                                    <th style="width: 150px;">Nomor Batch</th>
+                                    <th style="width: 45px;">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody id="tbodyEditItems">
@@ -1247,27 +1251,72 @@
 
         function updateModalQtyHint(row) {
             const select = row.querySelector('.barang-select');
-            const qtyInput = row.querySelector('.qty-input');
-            const hint = row.querySelector('.qty-hint');
-            if (!select || !hint) return;
+            const qtyUserInput = row.querySelector('.qty-user-input');
+            const qtyFinalInput = row.querySelector('.qty-input');
+            const satuanSelect = row.querySelector('.satuan-select');
+            const totalQtyDisplay = row.querySelector('.total-qty-display');
+            if (!select || !qtyUserInput || !qtyFinalInput || !satuanSelect) return;
 
             const opt = select.querySelector(`option[value="${select.value}"]`);
             if (!opt || select.value === '') {
-                hint.textContent = '';
+                satuanSelect.innerHTML = '<option value="pembelian">Satuan</option>';
+                if (totalQtyDisplay) totalQtyDisplay.innerHTML = '<span class="text-muted small">-</span>';
+                qtyFinalInput.value = 0;
                 return;
             }
 
             const satuanPembelian = opt.dataset.satuanPembelian || '';
             const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
             const satuanUtama = opt.dataset.satuanUtama || 'Pcs';
-            const qtyVal = getCleanNumber(qtyInput ? qtyInput.value : 0);
+            const currentSelectedSatuan = satuanSelect.value || 'pembelian';
+
+            // Generate options untuk dropdown satuan
+            let optsHtml = '';
+            if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
+                optsHtml += `<option value="pembelian" ${currentSelectedSatuan === 'pembelian' ? 'selected' : ''}>${satuanPembelian}</option>`;
+                optsHtml += `<option value="utama" ${currentSelectedSatuan === 'utama' ? 'selected' : ''}>${satuanUtama}</option>`;
+            } else {
+                optsHtml += `<option value="pembelian" selected>${satuanPembelian || satuanUtama}</option>`;
+            }
+            satuanSelect.innerHTML = optsHtml;
+
+            const userQtyVal = getCleanNumber(qtyUserInput.value);
+            const isSatuanUtama = satuanSelect.value === 'utama';
+            
+            let finalQtyForPurchase = userQtyVal;
+            let totalUtamaVal = userQtyVal;
 
             if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
-                const totalUtama = qtyVal * konversi;
-                hint.innerHTML = `Satuan: <strong>${satuanPembelian}</strong><br><span class="text-primary">= ${Number(totalUtama).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${satuanUtama}</span> (1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})`;
+                if (isSatuanUtama) {
+                    finalQtyForPurchase = konversi > 0 ? (userQtyVal / konversi) : userQtyVal;
+                    totalUtamaVal = userQtyVal;
+                    if (totalQtyDisplay) {
+                        totalQtyDisplay.innerHTML = `
+                            <div class="small fw-bold text-dark">${formatNumberIndonesian(Number(totalUtamaVal).toFixed(2).replace(/\.00$/, '').replace('.', ','))} ${satuanUtama}</div>
+                            <small class="text-muted" style="font-size:10px;">(1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})</small>
+                        `;
+                    }
+                } else {
+                    finalQtyForPurchase = userQtyVal;
+                    totalUtamaVal = userQtyVal * konversi;
+                    if (totalQtyDisplay) {
+                        totalQtyDisplay.innerHTML = `
+                            <div class="small fw-bold text-primary">${formatNumberIndonesian(Number(totalUtamaVal).toFixed(2).replace(/\.00$/, '').replace('.', ','))} ${satuanUtama}</div>
+                            <small class="text-muted" style="font-size:10px;">(1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})</small>
+                        `;
+                    }
+                }
             } else {
-                hint.innerHTML = `Satuan: <strong>${satuanUtama}</strong>`;
+                finalQtyForPurchase = userQtyVal;
+                totalUtamaVal = userQtyVal;
+                if (totalQtyDisplay) {
+                    totalQtyDisplay.innerHTML = userQtyVal > 0 
+                        ? `<span class="small fw-semibold text-dark">${formatNumberIndonesian(Number(userQtyVal).toFixed(2).replace(/\.00$/, '').replace('.', ','))} ${satuanUtama}</span>`
+                        : '<span class="text-muted small">-</span>';
+                }
             }
+
+            qtyFinalInput.value = finalQtyForPurchase > 0 ? Number(finalQtyForPurchase.toFixed(4)) : 0;
         }
 
         function calcModalGrandTotal() {
@@ -1298,7 +1347,7 @@
             return html;
         }
 
-        function addModalItemRow(barangId = '', qty = '', harga = '', batch = '') {
+        function addModalItemRow(barangId = '', qty = '', harga = '', batch = '', satuanTipe = 'pembelian') {
             const tbody = document.getElementById('tbodyEditItems');
             const tr = document.createElement('tr');
             tr.className = 'item-row';
@@ -1310,14 +1359,22 @@
                     </select>
                 </td>
                 <td>
-                    <input type="text" name="items[${editRowIndex}][qty]" class="form-control form-control-sm text-center qty-input mask-number fw-bold" value="${qty}" required placeholder="0">
-                    <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
+                    <input type="text" class="form-control form-control-sm text-center qty-user-input mask-number fw-bold" value="${qty}" required placeholder="0">
+                    <input type="hidden" name="items[${editRowIndex}][qty]" class="qty-input" value="${qty}">
+                </td>
+                <td>
+                    <select class="form-select form-select-sm satuan-select fw-semibold text-center" style="border-radius:6px; font-size:12px;">
+                        <option value="pembelian">Satuan</option>
+                    </select>
+                </td>
+                <td class="total-qty-display text-center">
+                    <span class="text-muted small">-</span>
                 </td>
                 <td>
                     <input type="text" name="items[${editRowIndex}][harga]" class="form-control form-control-sm text-end harga-input mask-number fw-bold" value="${harga}" required placeholder="0">
                 </td>
                 <td>
-                    <input type="text" name="items[${editRowIndex}][batch_number]" class="form-control form-control-sm" value="${batch}" placeholder="Otomatis">
+                    <input type="text" name="items[${editRowIndex}][batch_number]" class="form-control form-control-sm font-monospace text-center" style="font-size:11px;" value="${batch}" placeholder="Otomatis">
                 </td>
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-danger p-1 border-0 btn-remove-item" title="Hapus">
@@ -1329,8 +1386,15 @@
             tbody.appendChild(tr);
 
             const selectEl = tr.querySelector('.barang-select');
+            const satuanSelectEl = tr.querySelector('.satuan-select');
+            satuanSelectEl.value = satuanTipe;
+
             initModalBarangSelect(selectEl);
             updateModalQtyHint(tr);
+
+            satuanSelectEl.addEventListener('change', function() {
+                updateModalQtyHint(tr);
+            });
 
             editRowIndex++;
             calcModalGrandTotal();
@@ -1423,18 +1487,36 @@
                 e.target.selectionEnd = cursorPosition + (newLength - originalLength);
 
                 if (e.target.classList.contains('harga-input')) {
-                    calcModalGrandTotal();
+                    if (e.target.closest('#modalTambahPembelian')) {
+                        calcCreateGrandTotal();
+                        const row = e.target.closest('.item-row');
+                        if (row) calculateCreateHargaPerQty(row);
+                    } else {
+                        calcModalGrandTotal();
+                    }
                 }
             }
 
-            if (e.target.classList.contains('qty-input')) {
+            if (e.target.classList.contains('qty-user-input') || e.target.classList.contains('qty-input')) {
                 const row = e.target.closest('.item-row');
-                if (row) updateModalQtyHint(row);
+                if (row) {
+                    if (row.closest('#modalTambahPembelian')) {
+                        updateCreateQtyHint(row);
+                    } else if (row.closest('#modalEditPembelian')) {
+                        updateModalQtyHint(row);
+                    }
+                }
             }
         });
 
         document.getElementById('formEditPembelian').addEventListener('submit', function (e) {
             document.querySelectorAll('#modalEditPembelian .mask-number').forEach(input => {
+                input.value = getCleanNumber(input.value);
+            });
+        });
+
+        document.getElementById('formTambahPembelian').addEventListener('submit', function (e) {
+            document.querySelectorAll('#modalTambahPembelian .mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
             });
         });
@@ -1470,27 +1552,76 @@
 
         function updateCreateQtyHint(row) {
             const select = row.querySelector('.barang-select');
-            const qtyInput = row.querySelector('.qty-input');
-            const hint = row.querySelector('.qty-hint');
-            if (!select || !hint) return;
+            const qtyUserInput = row.querySelector('.qty-user-input');
+            const qtyFinalInput = row.querySelector('.qty-input');
+            const satuanSelect = row.querySelector('.satuan-select');
+            const totalQtyDisplay = row.querySelector('.total-qty-display');
+            if (!select || !qtyUserInput || !qtyFinalInput || !satuanSelect) return;
 
             const opt = select.querySelector(`option[value="${select.value}"]`);
             if (!opt || select.value === '') {
-                hint.textContent = '';
+                satuanSelect.innerHTML = '<option value="pembelian">Satuan</option>';
+                if (totalQtyDisplay) totalQtyDisplay.innerHTML = '<span class="text-muted small">-</span>';
+                qtyFinalInput.value = 0;
+                calculateCreateHargaPerQty(row);
                 return;
             }
 
             const satuanPembelian = opt.dataset.satuanPembelian || '';
             const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
             const satuanUtama = opt.dataset.satuanUtama || 'Pcs';
-            const qtyVal = getCleanNumber(qtyInput ? qtyInput.value : 0);
+            const currentSelectedSatuan = satuanSelect.value || 'pembelian';
+
+            // Generate options untuk dropdown satuan
+            let optsHtml = '';
+            if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
+                optsHtml += `<option value="pembelian" ${currentSelectedSatuan === 'pembelian' ? 'selected' : ''}>${satuanPembelian}</option>`;
+                optsHtml += `<option value="utama" ${currentSelectedSatuan === 'utama' ? 'selected' : ''}>${satuanUtama}</option>`;
+            } else {
+                optsHtml += `<option value="pembelian" selected>${satuanPembelian || satuanUtama}</option>`;
+            }
+            satuanSelect.innerHTML = optsHtml;
+
+            const userQtyVal = getCleanNumber(qtyUserInput.value);
+            const isSatuanUtama = satuanSelect.value === 'utama';
+            
+            let finalQtyForPurchase = userQtyVal;
+            let totalUtamaVal = userQtyVal;
 
             if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
-                const totalUtama = qtyVal * konversi;
-                hint.innerHTML = `Satuan: <strong>${satuanPembelian}</strong><br><span class="text-primary">= ${Number(totalUtama).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 2})} ${satuanUtama}</span> (1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})`;
+                if (isSatuanUtama) {
+                    // User input satuan dasar (GR) -> converted to purchase unit (LOAFT)
+                    finalQtyForPurchase = konversi > 0 ? (userQtyVal / konversi) : userQtyVal;
+                    totalUtamaVal = userQtyVal;
+                    if (totalQtyDisplay) {
+                        totalQtyDisplay.innerHTML = `
+                            <div class="small fw-bold text-dark">${formatNumberIndonesian(Number(totalUtamaVal).toFixed(2).replace(/\.00$/, '').replace('.', ','))} ${satuanUtama}</div>
+                            <small class="text-muted" style="font-size:10px;">(1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})</small>
+                        `;
+                    }
+                } else {
+                    // User input satuan pembelian (LOAFT)
+                    finalQtyForPurchase = userQtyVal;
+                    totalUtamaVal = userQtyVal * konversi;
+                    if (totalQtyDisplay) {
+                        totalQtyDisplay.innerHTML = `
+                            <div class="small fw-bold text-primary">${formatNumberIndonesian(Number(totalUtamaVal).toFixed(2).replace(/\.00$/, '').replace('.', ','))} ${satuanUtama}</div>
+                            <small class="text-muted" style="font-size:10px;">(1 ${satuanPembelian} = ${Number(konversi).toLocaleString('id-ID')} ${satuanUtama})</small>
+                        `;
+                    }
+                }
             } else {
-                hint.innerHTML = `Satuan: <strong>${satuanUtama}</strong>`;
+                finalQtyForPurchase = userQtyVal;
+                totalUtamaVal = userQtyVal;
+                if (totalQtyDisplay) {
+                    totalQtyDisplay.innerHTML = userQtyVal > 0 
+                        ? `<span class="small fw-semibold text-dark">${formatNumberIndonesian(Number(userQtyVal).toFixed(2).replace(/\.00$/, '').replace('.', ','))} ${satuanUtama}</span>`
+                        : '<span class="text-muted small">-</span>';
+                }
             }
+
+            qtyFinalInput.value = finalQtyForPurchase > 0 ? Number(finalQtyForPurchase.toFixed(4)) : 0;
+            calculateCreateHargaPerQty(row);
         }
 
         function generateCreateBatchNumber(row) {
@@ -1518,21 +1649,23 @@
         }
 
         function calculateCreateHargaPerQty(row) {
-            const qtyInput = row.querySelector('.qty-input');
+            const qtyUserInput = row.querySelector('.qty-user-input');
+            const satuanSelect = row.querySelector('.satuan-select');
             const hargaInput = row.querySelector('.harga-input');
             const hargaPerQtyInput = row.querySelector('.harga-per-qty');
 
-            if (!qtyInput || !hargaInput || !hargaPerQtyInput) return;
+            if (!qtyUserInput || !hargaInput || !hargaPerQtyInput) return;
 
-            const qty = getCleanNumber(qtyInput.value);
+            const qty = getCleanNumber(qtyUserInput.value);
             const harga = getCleanNumber(hargaInput.value);
+            const satuanText = satuanSelect && satuanSelect.options[satuanSelect.selectedIndex] ? satuanSelect.options[satuanSelect.selectedIndex].text.split(' ')[0] : '';
             let hasil = 0;
 
             if (qty > 0) {
                 hasil = harga / qty;
             }
 
-            hargaPerQtyInput.value = hasil > 0 ? ('Rp ' + formatNumberIndonesian(hasil.toFixed(2).replace('.', ','))) : '—';
+            hargaPerQtyInput.value = hasil > 0 ? ('Rp ' + formatNumberIndonesian(hasil.toFixed(2).replace(/\.00$/, '').replace('.', ',')) + (satuanText ? ` / ${satuanText}` : '')) : '—';
         }
 
         function calcCreateGrandTotal() {
@@ -1550,7 +1683,7 @@
             if (grandTotalEl) grandTotalEl.textContent = 'Rp ' + Number(grandTotal).toLocaleString('id-ID');
         }
 
-        function addCreateItemRow(barangId = '', qty = '', harga = '', batch = '') {
+        function addCreateItemRow(barangId = '', qty = '', harga = '', batch = '', satuanTipe = 'pembelian') {
             const tbody = document.getElementById('tbodyCreateItems');
             const tr = document.createElement('tr');
             tr.className = 'item-row';
@@ -1562,17 +1695,25 @@
                     </select>
                 </td>
                 <td>
-                    <input type="text" name="items[${createRowIndex}][qty]" class="form-control form-control-sm text-center qty-input mask-number fw-bold" value="${qty}" required placeholder="0">
-                    <small class="text-muted qty-hint d-block mt-1" style="font-size: 10px;"></small>
+                    <input type="text" class="form-control form-control-sm text-center qty-user-input mask-number fw-bold" value="${qty}" required placeholder="0">
+                    <input type="hidden" name="items[${createRowIndex}][qty]" class="qty-input" value="${qty}">
+                </td>
+                <td>
+                    <select class="form-select form-select-sm satuan-select fw-semibold text-center" style="border-radius:6px; font-size:12px;">
+                        <option value="pembelian">Satuan</option>
+                    </select>
+                </td>
+                <td class="total-qty-display text-center">
+                    <span class="text-muted small">-</span>
                 </td>
                 <td>
                     <input type="text" name="items[${createRowIndex}][harga]" class="form-control form-control-sm text-end harga-input mask-number fw-bold" value="${harga}" required placeholder="0">
                 </td>
                 <td>
-                    <input type="text" class="form-control form-control-sm text-end harga-per-qty bg-light" readonly tabindex="-1" value="—">
+                    <input type="text" class="form-control form-control-sm text-end harga-per-qty bg-light" style="font-size:12px;" readonly tabindex="-1" value="—">
                 </td>
                 <td>
-                    <input type="text" name="items[${createRowIndex}][batch_number]" class="form-control form-control-sm text-center font-monospace bg-light batch-number" value="${batch}" readonly tabindex="-1" placeholder="Otomatis">
+                    <input type="text" name="items[${createRowIndex}][batch_number]" class="form-control form-control-sm text-center font-monospace bg-light batch-number" style="font-size:11px;" value="${batch}" readonly tabindex="-1" placeholder="Otomatis">
                 </td>
                 <td>
                     <button type="button" class="btn btn-sm btn-outline-danger p-1 border-0 btn-remove-create-item" title="Hapus Baris">
@@ -1584,10 +1725,17 @@
             tbody.appendChild(tr);
 
             const selectEl = tr.querySelector('.barang-select');
+            const satuanSelectEl = tr.querySelector('.satuan-select');
+            satuanSelectEl.value = satuanTipe;
+
             initCreateBarangSelect(selectEl);
             updateCreateQtyHint(tr);
             generateCreateBatchNumber(tr);
             calculateCreateHargaPerQty(tr);
+
+            satuanSelectEl.addEventListener('change', function() {
+                updateCreateQtyHint(tr);
+            });
 
             createRowIndex++;
             calcCreateGrandTotal();
@@ -1596,7 +1744,7 @@
         function reindexCreateRows() {
             document.querySelectorAll('#tbodyCreateItems tr.item-row').forEach((row, i) => {
                 const bSelect = row.querySelector('[name*="[barang_id]"]');
-                const qInput = row.querySelector('[name*="[qty]"]');
+                const qInput = row.querySelector('.qty-input');
                 const hInput = row.querySelector('[name*="[harga]"]');
                 const btInput = row.querySelector('[name*="[batch_number]"]');
                 if (bSelect) bSelect.name = `items[${i}][barang_id]`;

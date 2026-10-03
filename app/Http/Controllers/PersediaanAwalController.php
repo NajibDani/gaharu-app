@@ -480,13 +480,8 @@ class PersediaanAwalController extends Controller
 
                 $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
 
-                // Deteksi jika user memilih satuan stok dasar (GR) tetapi mengisi harga per PACK (misal Rp 25.000 bukannya Rp 25)
-                if (!$isPembelian && $hasKonv && $rawHarga > 0 && !empty($hargaUtamaMap[$barangId])) {
-                    $refStok = (float) $hargaUtamaMap[$barangId];
-                    if ($refStok > 0 && $rawHarga >= ($refStok * ($konversi / 2))) {
-                        $rawHarga = round($rawHarga / $konversi, 4);
-                    }
-                }
+                // Jangan otomatis membagi harga jika user memilih satuan stok dasar (harga sudah diinput sesuai satuan yang dipilih)
+
 
                 // Bahan Setengah Jadi: harga SELALU dari HPP resep Central Kitchen (tidak bisa diubah siapapun)
                 if ($barang->is_bahan_setengah_jadi) {
@@ -973,13 +968,8 @@ class PersediaanAwalController extends Controller
                 $canEditHarga = $user && ($user->isSuperAdmin() || $user->isGudang());
                 $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
 
-                $subHarga = (float) ($sub['harga_input'] ?? 0);
-                if (!$isPembelian && $hasKonv && $subHarga > 0 && !empty($hargaUtamaMap[$bId])) {
-                    $refStok = (float) $hargaUtamaMap[$bId];
-                    if ($refStok > 0 && $subHarga >= ($refStok * ($konversi / 2))) {
-                        $subHarga = round($subHarga / $konversi, 4);
-                    }
-                }
+                // Jangan otomatis membagi harga jika user memilih satuan stok dasar (harga sudah diinput sesuai satuan yang dipilih)
+
 
                 // Bahan Setengah Jadi: harga SELALU dari HPP resep Central Kitchen (tidak bisa diubah siapapun)
                 if ($barang->is_bahan_setengah_jadi) {
