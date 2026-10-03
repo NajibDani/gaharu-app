@@ -9,6 +9,7 @@ use App\Models\MasterBarang;
 use App\Models\WorkOrder;
 use App\Models\WorkOrderDetail;
 use App\Models\Pembayaran;
+use App\Services\FifoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -85,6 +86,7 @@ class CentralKitchenOrderController extends Controller
 
         $pesanan = $query->paginate(10)->withQueryString();
 
+        $fifo = app(FifoService::class);
         foreach ($pesanan as $p) {
             $woDetail = WorkOrderDetail::where('pesanan_id', $p->id)->first();
             if ($woDetail) {
@@ -96,6 +98,21 @@ class CentralKitchenOrderController extends Controller
             $p->is_sent = \App\Models\Pengiriman::where('pesanan_id', $p->id)
                 ->where('status_pengiriman', 'Selesai')
                 ->exists() || ($p->total_qty_terkirim ?? 0) > 0;
+
+            // Hitung HPP dinamis jika total_pesanan = 0 (belum pernah dihitung)
+            $storedTotal = (float)($p->total_harga ?? $p->total_pesanan ?? 0);
+            if ($storedTotal <= 0 && $p->details->isNotEmpty()) {
+                $totalHpp = 0;
+                foreach ($p->details as $det) {
+                    if ($det->produk_id) {
+                        $hppPerUnit = $fifo->getHppResepBsj((int)$det->produk_id);
+                        $totalHpp += $hppPerUnit * (float)$det->qty;
+                    }
+                }
+                $p->computed_hpp = $totalHpp;
+            } else {
+                $p->computed_hpp = $storedTotal;
+            }
         }
 
         $totalPesanan = Pesanan::centralKitchen()->count();
@@ -348,7 +365,7 @@ class CentralKitchenOrderController extends Controller
             $gudangId = $gudangOutlet ? $gudangOutlet->id : null;
 
             $isKejingga = str_contains($custNama, 'kejingga');
-            $statusBayar = $isKejingga ? 'Belum Bayar' : 'Lunas';
+            $statusBayar = 'Belum Bayar'; // Semua pesanan CK dimulai dari Belum Bayar, Lunas hanya setelah klik Bayar
 
             $pesanan = Pesanan::create([
                 'kode_pesanan'      => $request->kode_pesanan ?? $kode,

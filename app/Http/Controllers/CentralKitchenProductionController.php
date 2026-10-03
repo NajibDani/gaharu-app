@@ -142,6 +142,10 @@ class CentralKitchenProductionController extends Controller
             $customer = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->customer : null;
             $wo->customer_nama = $customer ? $customer->nama : 'Outlet Internal';
             $wo->pesanan_kode  = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->kode_pesanan : '-';
+            $wo->tanggal_permintaan = $firstDetail && $firstDetail->pesanan && $firstDetail->pesanan->tanggal
+                ? $firstDetail->pesanan->tanggal
+                : null;
+
 
             $totalTarget = 0;
             $totalSelesai = 0;

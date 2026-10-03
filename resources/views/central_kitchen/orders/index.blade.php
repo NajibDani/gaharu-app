@@ -332,10 +332,8 @@
                     <tbody class="table-custom-body">
                         @forelse($pesanan as $index => $p)
                             @php
-                                $totalNilaiItem = (float)($p->total_harga ?? $p->total_pesanan ?? 0);
-                                if ($totalNilaiItem <= 0 && $p->details->isNotEmpty()) {
-                                    $totalNilaiItem = (float)$p->details->sum('subtotal');
-                                }
+                                // HPP dihitung dinamis via FifoService di controller
+                                $totalNilaiItem = (float)($p->computed_hpp ?? $p->total_harga ?? $p->total_pesanan ?? 0);
                                 $sudahBayarItem = isset($p->pembayaran) ? (float)$p->pembayaran->sum('jumlah_bayar') : 0;
                                 $sisaTagihanItem = max(0, $totalNilaiItem - $sudahBayarItem);
                                 $isLunasOrBatal = ($p->status_pembayaran == 'Lunas' || in_array(strtolower($p->status_pesanan ?? ''), ['batal', 'dibatalkan']));

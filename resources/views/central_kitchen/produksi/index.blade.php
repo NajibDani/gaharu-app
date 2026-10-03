@@ -379,6 +379,7 @@
                                     <th class="text-center text-nowrap" style="width: 45px;">NO</th>
                                     <th class="text-nowrap">KODE WO</th>
                                     <th class="text-nowrap">OUTLET PEMESAN</th>
+                                    <th class="text-nowrap">TANGGAL PERMINTAAN</th>
                                     <th class="text-nowrap">TANGGAL WO</th>
                                     <th class="text-nowrap">TARGET &amp; REALISASI</th>
                                     @if($isSuperAdmin)
@@ -404,6 +405,15 @@
                                         <td class="text-center text-nowrap">{{ $index + 1 }}</td>
                                         <td class="fw-bold text-dark text-nowrap">{{ $wo->kode_wo }}</td>
                                         <td class="text-nowrap"><span class="badge bg-light text-dark border">{{ $wo->customer_nama }}</span></td>
+                                        <td class="text-nowrap">
+                                            @if($wo->tanggal_permintaan)
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">
+                                                    <i class="bi bi-calendar-event me-1"></i>{{ \Carbon\Carbon::parse($wo->tanggal_permintaan)->format('d M Y') }}
+                                                </span>
+                                            @else
+                                                <span class="text-muted small">-</span>
+                                            @endif
+                                        </td>
                                         <td class="text-nowrap">{{ date('d M Y H:i', strtotime($wo->tanggal_wo)) }}</td>
                                         <td class="text-nowrap">
                                             <div class="d-flex align-items-center gap-2">
