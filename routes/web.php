@@ -401,7 +401,13 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         // =========================================================================
         Route::prefix('laporan-custom')->name('laporan-custom.')->group(function () {
             Route::get('/pengeluaran-bahan-baku-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranBahanBakuGudangUtamaKejingga'])->name('pbk-kejingga');
+            Route::post('/pengeluaran-bahan-baku-kejingga/bayar', [\App\Http\Controllers\LaporanCustomController::class, 'prosesBayarPbkKejingga'])->name('pbk-kejingga.bayar');
+            Route::get('/pengeluaran-bahan-baku-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoicePbkKejingga'])->name('pbk-kejingga.cetak-invoice');
+            Route::post('/pengeluaran-bahan-baku-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoicePbkKejingga'])->name('pbk-kejingga.cetak-invoice-post');
             Route::get('/pengeluaran-produksi-ck-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranProduksiCentralKitchenKejingga'])->name('produksi-ck-kejingga');
+            Route::post('/pengeluaran-produksi-ck-kejingga/bayar', [\App\Http\Controllers\LaporanCustomController::class, 'prosesBayarProduksiCkKejingga'])->name('produksi-ck-kejingga.bayar');
+            Route::get('/pengeluaran-produksi-ck-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoiceProduksiCkKejingga'])->name('produksi-ck-kejingga.cetak-invoice');
+            Route::post('/pengeluaran-produksi-ck-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoiceProduksiCkKejingga'])->name('produksi-ck-kejingga.cetak-invoice-post');
             Route::get('/pengeluaran-produksi-cold-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranProduksiColdKitchenKejingga'])->name('produksi-cold-kejingga');
             Route::get('/pembelian-gudang-utama-minus-permintaan', [\App\Http\Controllers\LaporanCustomController::class, 'pembelianGudangUtamaDikurangiPermintaan'])->name('pembelian-minus-permintaan');
             Route::get('/total-permintaan-divisi', [\App\Http\Controllers\LaporanCustomController::class, 'totalPermintaanBahanBakuDivisi'])->name('total-permintaan-divisi');

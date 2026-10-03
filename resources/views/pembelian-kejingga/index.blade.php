@@ -300,9 +300,19 @@
                                 @if($isFullyReceived)
                                     <span class="badge bg-success">✓ Diterima Lengkap</span>
                                 @elseif($isPartiallyReceived)
-                                    <span class="badge bg-info text-white">Parsial ({{ number_format($totalReceived, 0) }}/{{ number_format($totalOrdered, 0) }})</span>
+                                    <div class="mb-1">
+                                        <span class="badge bg-info text-white">Parsial ({{ number_format($totalReceived, 0) }}/{{ number_format($totalOrdered, 0) }})</span>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" style="font-size:11px;" onclick="bukaModalDetail({{ $item->id }})" title="Terima / Konfirmasi Penerimaan Stok">
+                                        <i class="bi bi-box-arrow-in-down me-1"></i> Terima Barang
+                                    </button>
                                 @else
-                                    <span class="badge bg-light text-muted border">Belum Diterima</span>
+                                    <div class="mb-1">
+                                        <span class="badge bg-light text-muted border">Belum Diterima</span>
+                                    </div>
+                                    <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" style="font-size:11px;" onclick="bukaModalDetail({{ $item->id }})" title="Terima / Konfirmasi Penerimaan Stok">
+                                        <i class="bi bi-box-arrow-in-down me-1"></i> Terima Barang
+                                    </button>
                                 @endif
                             </td>
 
@@ -316,6 +326,16 @@
                                             title="Lihat Detail PO (Pop-up)">
                                         <i class="bi bi-eye"></i> Detail
                                     </button>
+
+                                    {{-- Tombol Terima Barang --}}
+                                    @if(!$isFullyReceived)
+                                        <button type="button"
+                                                class="btn btn-sm btn-success text-white rounded-2 px-2 py-1 fw-semibold"
+                                                onclick="bukaModalDetail({{ $item->id }})"
+                                                title="Terima / Konfirmasi Penerimaan Barang">
+                                            <i class="bi bi-box-arrow-in-down me-1"></i> Terima Barang
+                                        </button>
+                                    @endif
 
                                     {{-- Cetak PO (PDF) --}}
                                     <a href="{{ route('pembelian.cetak-pdf', $item->id) }}"
@@ -737,10 +757,11 @@
                                     <thead class="bg-light text-secondary border-bottom">
                                         <tr>
                                             <th width="35" class="text-center small py-2">No</th>
-                                            <th class="small py-2" style="min-width: 220px;">Nama Barang</th>
-                                            <th width="115" class="text-center small py-2">Qty Dipesan</th>
-                                            <th width="190" class="text-end small py-2">Total Harga (Rp) <span class="text-danger">*</span></th>
-                                            <th width="135" class="text-end small py-2">Harga/Satuan</th>
+                                            <th class="small py-2" style="min-width: 200px;">Nama Barang</th>
+                                            <th width="100" class="text-center small py-2">Qty Dipesan</th>
+                                            <th width="100" class="text-center small py-2">Qty Diterima</th>
+                                            <th width="170" class="text-end small py-2">Total Harga (Rp) <span class="text-danger">*</span></th>
+                                            <th width="125" class="text-end small py-2">Harga/Satuan</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbody-input-barang-terpilih" class="bg-white">
@@ -748,7 +769,7 @@
                                     </tbody>
                                     <tfoot class="bg-light border-top">
                                         <tr>
-                                            <td colspan="3" class="text-end small fw-semibold text-secondary py-2">Subtotal Barang:</td>
+                                            <td colspan="4" class="text-end small fw-semibold text-secondary py-2">Subtotal Barang:</td>
                                             <td class="text-end fw-bold text-dark py-2" id="total-harga-terpilih-display">Rp 0</td>
                                             <td></td>
                                         </tr>
@@ -1263,11 +1284,10 @@
     function bukaModalTerimaDetail(detailId, barangNama, qtyPesan, qtyDiterima, satuan) {
         document.getElementById('terima_detail_barang_nama').value = barangNama;
         document.getElementById('terima_detail_qty_pesan').value = qtyPesan + ' ' + satuan;
-        document.getElementById('terima_detail_qty_diterima').value = qtyDiterima + ' ' + satuan;
-        const sisa = qtyPesan - qtyDiterima;
+        document.getElementById('terima_detail_qty_diterima').value = (qtyDiterima > 0 ? qtyDiterima : qtyPesan) + ' ' + satuan;
         const inputEl = document.getElementById('terima_detail_input');
-        inputEl.value = sisa > 0 ? sisa : 0;
-        inputEl.max = sisa;
+        inputEl.value = qtyDiterima > 0 ? qtyDiterima : qtyPesan;
+        inputEl.max = qtyPesan;
         const tglEl = document.getElementById('terima_detail_tanggal');
         if (tglEl) {
             tglEl.value = new Date().toISOString().split('T')[0];
@@ -1445,6 +1465,22 @@
                 buktiBadge = `<a href="${d.bukti_pembayaran_url}" target="_blank" class="badge bg-info-subtle text-info-emphasis border text-decoration-none me-1" title="Lihat Bukti/Nota"><i class="bi bi-file-earmark-image me-1"></i>Lihat Bukti</a>`;
             }
 
+            let terimaHtml = '';
+            if (d.is_diterima_item) {
+                terimaHtml = `<span class="badge bg-success-subtle text-success border border-success px-2 py-1" style="font-size: 11px;"><i class="bi bi-check-circle-fill me-1"></i>${d.qty_diterima.toLocaleString('id-ID')} ${d.satuan}</span>`;
+            } else if (d.qty_diterima > 0 && d.qty_diterima < d.qty) {
+                terimaHtml = `
+                    <span class="badge bg-info-subtle text-info-emphasis border border-info px-2 py-1" style="font-size: 11px;">${d.qty_diterima.toLocaleString('id-ID')} / ${d.qty.toLocaleString('id-ID')} ${d.satuan}</span>
+                    ${isSuperAdminUser ? `<div class="mt-1"><button type="button" class="btn btn-outline-success btn-sm py-0 px-2 fw-semibold" style="font-size: 10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${d.qty_diterima}, '${addslashes(d.satuan)}')"><i class="bi bi-pencil-square me-1"></i>Edit Terima</button></div>` : ''}
+                `;
+            } else {
+                let displayQty = d.qty_diterima > 0 ? d.qty_diterima : d.qty;
+                terimaHtml = `
+                    <span class="badge bg-success-subtle text-success border border-success px-2 py-1" style="font-size: 11px;"><i class="bi bi-check-circle-fill me-1"></i>${displayQty.toLocaleString('id-ID')} ${d.satuan}</span>
+                    ${isSuperAdminUser ? `<div class="mt-1"><button type="button" class="btn btn-outline-success btn-sm py-0 px-2 fw-semibold" style="font-size: 10px;" onclick="bukaModalTerimaDetail(${d.id}, '${addslashes(d.nama)}', ${d.qty}, ${displayQty}, '${addslashes(d.satuan)}')"><i class="bi bi-pencil-square me-1"></i>Edit Terima</button></div>` : ''}
+                `;
+            }
+
             let hargaHtml = d.harga > 0
                 ? `<div class="fw-bold text-dark fs-6">Rp ${d.harga.toLocaleString('id-ID')}</div>
                    <div class="text-muted small">@ Rp ${Math.round(d.harga_per_qty).toLocaleString('id-ID')} / ${d.satuan}</div>
@@ -1491,6 +1527,9 @@
                     <td class="text-center align-middle">
                         <div class="fw-bold text-primary">${d.qty.toLocaleString('id-ID')} ${d.satuan}</div>
                         ${konvInfo}
+                    </td>
+                    <td class="text-center align-middle">
+                        ${terimaHtml}
                     </td>
                     <td class="text-end align-middle">
                         ${hargaHtml}
@@ -1545,9 +1584,10 @@
                                 </th>
                                 <th width="40" class="text-center">No</th>
                                 <th>Nama Barang</th>
-                                <th width="140" class="text-center">Stok Kejingga</th>
-                                <th width="140" class="text-center">Qty Dipesan</th>
-                                <th width="160" class="text-end">Harga</th>
+                                <th width="130" class="text-center">Stok Kejingga</th>
+                                <th width="120" class="text-center">Qty Dipesan</th>
+                                <th width="130" class="text-center">Qty Diterima</th>
+                                <th width="150" class="text-end">Harga</th>
                                 <th width="130" class="text-center">Aksi</th>
                             </tr>
                         </thead>
@@ -1779,6 +1819,8 @@
                 `;
             }
 
+            let qtyDiterimaPrefill = d.qty_diterima > 0 ? d.qty_diterima : d.qty;
+
             tbodyHtml += `
                 <tr id="input-item-row-${d.id}">
                     <td class="text-center align-middle">${idx + 1}</td>
@@ -1787,6 +1829,9 @@
                     </td>
                     <td class="text-center align-middle">
                         <input type="number" step="any" min="0.01" name="items[${d.id}][qty]" class="form-control form-control-sm text-center fw-bold input-row-qty" data-id="${d.id}" value="${d.qty}" oninput="recalcItemRow(${d.id})">
+                    </td>
+                    <td class="text-center align-middle">
+                        <input type="number" step="any" min="0" name="items[${d.id}][qty_diterima]" class="form-control form-control-sm text-center fw-bold text-success input-row-qty-diterima" data-id="${d.id}" value="${qtyDiterimaPrefill}" title="Otomatis terisi sesuai Qty Dipesan, dapat diedit jika parsial">
                     </td>
                     <td class="align-middle">
                         <div class="input-group input-group-sm">

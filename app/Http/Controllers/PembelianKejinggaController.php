@@ -697,7 +697,7 @@ class PembelianKejinggaController extends Controller
                     'satuan_pembelian'   => $satuan,
                     'konversi_pembelian' => $konversi,
                     'qty'                => $it['qty'],
-                    'qty_diterima'       => $oldDet ? $oldDet->qty_diterima : 0,
+                    'qty_diterima'       => ($oldDet && floatval($oldDet->qty_diterima) > 0) ? $oldDet->qty_diterima : $it['qty'],
                     'harga'              => $it['harga'],
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => $oldDet ? $oldDet->batch_number : (date('Ymd') . '-PBKJG' . rand(100, 999)),
@@ -1119,9 +1119,14 @@ class PembelianKejinggaController extends Controller
                     $itemTaxes[$detail->id] = $itemTax;
                 }
 
+                $qtyDiterimaInput = isset($itemInput['qty_diterima']) && $itemInput['qty_diterima'] !== '' 
+                    ? (float) str_replace(['.', ','], ['', '.'], (string) $itemInput['qty_diterima']) 
+                    : ((float) $detail->qty_diterima > 0 ? (float) $detail->qty_diterima : $qty);
+
                 $updateData = [
                     'supplier_id'         => $request->supplier_id,
                     'qty'                 => $qty,
+                    'qty_diterima'        => $qtyDiterimaInput,
                     'harga'               => $harga,
                     'harga_per_qty'       => $hargaPerQty,
                     'metode_pembayaran'   => $metode,

@@ -425,18 +425,30 @@ class CentralKitchenProductionController extends Controller
             'details.produk.resepBtklBop.bahanbaku.bahan',
             'details.produk.resepBtklBop.bahanbaku.alternatif.bahan',
             'pesanan.customer',
+            'alokasiPesanan.pesanan.customer',
             'divisi'
         ])
             ->where(function($q) use ($customerId) {
                 if ($customerId) {
-                    $q->whereHas('pesanan', function($pq) use ($customerId) {
-                        $pq->where('tipe_pesanan', 'central_kitchen')
-                           ->where('customer_id', $customerId);
+                    $q->where(function($sub) use ($customerId) {
+                        $sub->whereHas('pesanan', function($pq) use ($customerId) {
+                            $pq->where(function($tp) {
+                                $tp->where('tipe_pesanan', 'central_kitchen')->orWhereNull('tipe_pesanan');
+                            })->where('customer_id', $customerId);
+                        })->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($customerId) {
+                            $pq->where(function($tp) {
+                                $tp->where('tipe_pesanan', 'central_kitchen')->orWhereNull('tipe_pesanan');
+                            })->where('customer_id', $customerId);
+                        });
                     });
                 } else {
-                    $q->whereHas('pesanan', function($pq) {
-                        $pq->where('tipe_pesanan', 'central_kitchen');
-                    })->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
+                    $q->where(function($sub) {
+                        $sub->whereHas('pesanan', function($pq) {
+                            $pq->where('tipe_pesanan', 'central_kitchen')->orWhereNull('tipe_pesanan');
+                        })->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                            $pq->where('tipe_pesanan', 'central_kitchen')->orWhereNull('tipe_pesanan');
+                        })->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
+                    });
                 }
             });
 
@@ -446,7 +458,13 @@ class CentralKitchenProductionController extends Controller
                   ->orWhereHas('pesanan.customer', function($cq) use ($search) {
                       $cq->where('nama', 'like', '%' . $search . '%');
                   })
+                  ->orWhereHas('alokasiPesanan.pesanan.customer', function($cq) use ($search) {
+                      $cq->where('nama', 'like', '%' . $search . '%');
+                  })
                   ->orWhereHas('pesanan', function($pq) use ($search) {
+                      $pq->where('kode_pesanan', 'like', '%' . $search . '%');
+                  })
+                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($search) {
                       $pq->where('kode_pesanan', 'like', '%' . $search . '%');
                   })
                   ->orWhereHas('details.produk', function($prq) use ($search) {
@@ -457,11 +475,35 @@ class CentralKitchenProductionController extends Controller
         }
 
         if ($startDate) {
-            $queryProduksi->whereDate('tanggal_mulai', '>=', $startDate);
+            $queryProduksi->where(function($q) use ($startDate) {
+                $q->whereDate('tanggal_mulai', '>=', $startDate)
+                  ->orWhereDate('tanggal_selesai', '>=', $startDate)
+                  ->orWhereDate('created_at', '>=', $startDate)
+                  ->orWhereHas('pesanan', function($pq) use ($startDate) {
+                      $pq->whereDate('tanggal', '>=', $startDate)
+                         ->orWhereDate('estimasi_kirim', '>=', $startDate);
+                  })
+                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate) {
+                      $pq->whereDate('tanggal', '>=', $startDate)
+                         ->orWhereDate('estimasi_kirim', '>=', $startDate);
+                  });
+            });
         }
 
         if ($endDate) {
-            $queryProduksi->whereDate('tanggal_mulai', '<=', $endDate);
+            $queryProduksi->where(function($q) use ($endDate) {
+                $q->whereDate('tanggal_mulai', '<=', $endDate)
+                  ->orWhereDate('tanggal_selesai', '<=', $endDate)
+                  ->orWhereDate('created_at', '<=', $endDate)
+                  ->orWhereHas('pesanan', function($pq) use ($endDate) {
+                      $pq->whereDate('tanggal', '<=', $endDate)
+                         ->orWhereDate('estimasi_kirim', '<=', $endDate);
+                  })
+                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($endDate) {
+                      $pq->whereDate('tanggal', '<=', $endDate)
+                         ->orWhereDate('estimasi_kirim', '<=', $endDate);
+                  });
+            });
         }
 
         switch ($sort) {
@@ -488,11 +530,11 @@ class CentralKitchenProductionController extends Controller
                 break;
 
             case 'tgl_terdekat':
-                $queryProduksi->orderBy('tanggal_mulai', 'asc')->orderBy('id', 'asc');
+                $queryProduksi->orderByRaw('COALESCE(tanggal_mulai, tanggal_selesai, created_at) ASC')->orderBy('id', 'asc');
                 break;
 
             case 'tgl_terjauh':
-                $queryProduksi->orderBy('tanggal_mulai', 'desc')->orderBy('id', 'desc');
+                $queryProduksi->orderByRaw('COALESCE(tanggal_mulai, tanggal_selesai, created_at) DESC')->orderBy('id', 'desc');
                 break;
 
             case 'oldest':

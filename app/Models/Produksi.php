@@ -30,6 +30,11 @@ class Produksi extends Model
         return $this->belongsTo(Pesanan::class, 'pesanan_id');
     }
 
+    public function alokasiPesanan(): HasMany
+    {
+        return $this->hasMany(ProduksiPesanan::class, 'produksi_id');
+    }
+
     public function divisi(): BelongsTo
     {
         return $this->belongsTo(GudangDivisi::class, 'divisi_id');
@@ -73,5 +78,99 @@ class Produksi extends Model
     public function gudangHasil(): BelongsTo
     {
         return $this->belongsTo(MasterGudang::class, 'gudang_hasil_id');
+    }
+
+    // Accessors & JSON Payment Metadata (Tanpa Migrasi)
+    public function getPaymentMeta(): array
+    {
+        $raw = $this->catatan ?? $this->keterangan ?? '';
+        if ($raw && str_contains($raw, '__PAYMENT_META__:')) {
+            $jsonStr = substr($raw, strpos($raw, '__PAYMENT_META__:') + strlen('__PAYMENT_META__:'));
+            $decoded = json_decode($jsonStr, true);
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+        return [];
+    }
+
+    public function getStatusPembayaranAttribute()
+    {
+        if (isset($this->attributes['status_pembayaran']) && $this->attributes['status_pembayaran']) {
+            return $this->attributes['status_pembayaran'];
+        }
+        $meta = $this->getPaymentMeta();
+        return $meta['status_pembayaran'] ?? 'belum_dibayar';
+    }
+
+    public function getTanggalPembayaranAttribute()
+    {
+        if (isset($this->attributes['tanggal_pembayaran']) && $this->attributes['tanggal_pembayaran']) {
+            return \Carbon\Carbon::parse($this->attributes['tanggal_pembayaran']);
+        }
+        $meta = $this->getPaymentMeta();
+        return isset($meta['tanggal_pembayaran']) ? \Carbon\Carbon::parse($meta['tanggal_pembayaran']) : null;
+    }
+
+    public function getMetodePembayaranAttribute()
+    {
+        if (isset($this->attributes['metode_pembayaran']) && $this->attributes['metode_pembayaran']) {
+            return $this->attributes['metode_pembayaran'];
+        }
+        $meta = $this->getPaymentMeta();
+        return $meta['metode_pembayaran'] ?? null;
+    }
+
+    public function getCatatanPembayaranAttribute()
+    {
+        if (isset($this->attributes['catatan_pembayaran']) && $this->attributes['catatan_pembayaran']) {
+            return $this->attributes['catatan_pembayaran'];
+        }
+        $meta = $this->getPaymentMeta();
+        return $meta['catatan_pembayaran'] ?? null;
+    }
+
+    public function getNoInvoiceAttribute()
+    {
+        if (isset($this->attributes['no_invoice']) && $this->attributes['no_invoice']) {
+            return $this->attributes['no_invoice'];
+        }
+        $meta = $this->getPaymentMeta();
+        return $meta['no_invoice'] ?? null;
+    }
+
+    public function getDibayarByAttribute()
+    {
+        if (isset($this->attributes['dibayar_by']) && $this->attributes['dibayar_by']) {
+            return $this->attributes['dibayar_by'];
+        }
+        $meta = $this->getPaymentMeta();
+        return $meta['dibayar_by'] ?? null;
+    }
+
+    public function dibayarByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'dibayar_by');
+    }
+
+    public function updatePaymentMeta(array $data)
+    {
+        $existing = $this->getPaymentMeta();
+        $merged = array_merge($existing, $data);
+        
+        $baseText = $this->catatan ?? $this->keterangan ?? '';
+        if (str_contains($baseText, '__PAYMENT_META__:')) {
+            $baseText = trim(substr($baseText, 0, strpos($baseText, '__PAYMENT_META__:')));
+        }
+
+        $newRaw = ($baseText ? $baseText . "\n" : '') . '__PAYMENT_META__:' . json_encode($merged);
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan')) {
+            $this->update(['catatan' => $newRaw]);
+        } elseif (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan')) {
+            $this->update(['keterangan' => $newRaw]);
+        } else {
+            \Illuminate\Support\Facades\DB::table('produksi')->where('id', $this->id)->update(['keterangan' => $newRaw]);
+        }
     }
 }
