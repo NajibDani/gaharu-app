@@ -15,6 +15,32 @@ class StorePembelianRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        // Bersihkan format ribuan (titik) dari harga, qty, dan tax_service sebelum validasi
+        $items = $this->input('items', []);
+        foreach ($items as $key => $item) {
+            if (isset($item['harga'])) {
+                $items[$key]['harga'] = is_string($item['harga'])
+                    ? (float) str_replace(['.', ','], ['', '.'], $item['harga'])
+                    : $item['harga'];
+            }
+            if (isset($item['qty'])) {
+                $items[$key]['qty'] = is_string($item['qty'])
+                    ? (float) str_replace(['.', ','], ['', '.'], $item['qty'])
+                    : $item['qty'];
+            }
+        }
+        $this->merge(['items' => $items]);
+
+        if ($this->has('tax_service')) {
+            $tax = $this->input('tax_service');
+            if (is_string($tax)) {
+                $this->merge(['tax_service' => str_replace('.', '', $tax)]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [

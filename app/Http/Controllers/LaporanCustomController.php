@@ -178,7 +178,7 @@ class LaporanCustomController extends Controller
         $hasColCatatan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan');
         $hasColCatatanBayar = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan_pembayaran');
 
-        // Produksi dari Central Kitchen yang dialokasikan ke Outlet Kejingga
+        // 1. Produksi dari Central Kitchen yang dialokasikan ke Outlet Kejingga
         $query = Produksi::with([
             'details.barang',
             'details.produk',
@@ -220,8 +220,7 @@ class LaporanCustomController extends Controller
             if ($hasColCatatanBayar) {
                 $q->orWhere('catatan_pembayaran', 'like', '%kejingga%');
             }
-        })
-        ->where('kode_produksi', 'not like', '%SO%');
+        });
 
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $startDate = $request->start_date;
@@ -365,7 +364,107 @@ class LaporanCustomController extends Controller
             });
         }
 
-        $data = $query->latest('tanggal_mulai')->latest('id')->get();
+        $prodList = $query->latest('tanggal_mulai')->latest('id')->get();
+
+        // 2. Query Pesanan Central Kitchen Kejingga (Termasuk Permintaan Stok BSJ tanpa Batch Produksi Baru)
+        $fifoService = app(\App\Services\FifoService::class);
+        $pesananQuery = \App\Models\Pesanan::centralKitchen()
+            ->with([
+                'customer',
+                'gudang',
+                'divisi',
+                'details.produk',
+                'creator',
+                'workOrderDetails.workOrder'
+            ])
+            ->where(function($q) {
+                $q->whereHas('customer', function($cq) { $cq->where('nama', 'like', '%kejingga%'); })
+                  ->orWhereHas('gudang', function($gq) { $gq->where('nama', 'like', '%kejingga%'); });
+            })
+            ->whereNotIn('id', function($q) {
+                $q->select('pesanan_id')->from('alokasi_produksi_pesanan')->whereNotNull('pesanan_id');
+            })
+            ->whereNotIn('id', function($q) {
+                $q->select('pesanan_id')->from('produksi')->whereNotNull('pesanan_id');
+            });
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $pesananQuery->whereBetween('tanggal', [$request->start_date, $request->end_date]);
+        } elseif ($request->filled('start_date')) {
+            $pesananQuery->whereDate('tanggal', '>=', $request->start_date);
+        } elseif ($request->filled('end_date')) {
+            $pesananQuery->whereDate('tanggal', '<=', $request->end_date);
+        }
+
+        if ($statusPembayaran === 'belum_dibayar') {
+            $pesananQuery->where(function($q) {
+                $q->where('status_pembayaran', '!=', 'Lunas')
+                  ->where('status_pembayaran', '!=', 'lunas')
+                  ->orWhereNull('status_pembayaran');
+            });
+        } elseif ($statusPembayaran === 'lunas') {
+            $pesananQuery->where(function($q) {
+                $q->where('status_pembayaran', 'Lunas')
+                  ->orWhere('status_pembayaran', 'lunas');
+            });
+        }
+
+        $pesananList = $pesananQuery->latest('tanggal')->latest('id')->get();
+
+        $data = collect();
+
+        foreach ($prodList as $p) {
+            $p->row_type = 'produksi';
+            $p->row_date = $p->pesanan->tanggal ?? ($p->alokasiPesanan->first()->pesanan->tanggal ?? $p->tanggal_mulai);
+            $data->push($p);
+        }
+
+        foreach ($pesananList as $pes) {
+            $woDetail = $pes->workOrderDetails->first();
+            $wo = $woDetail ? $woDetail->workOrder : null;
+            $kodeWo = $wo ? $wo->kode_wo : $pes->kode_pesanan;
+
+            foreach ($pes->details as $d) {
+                if (!$d->hpp_total || $d->hpp_total <= 0) {
+                    $harga = 0;
+                    if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0) {
+                        $harga = $d->subtotal / $d->qty;
+                    } elseif ($d->produk_id) {
+                        $harga = $fifoService->getHppResepBsj($d->produk_id);
+                        if ($harga <= 0 && $d->produk) {
+                            $harga = (float)($d->produk->harga_beli ?? 0);
+                        }
+                    }
+                    $d->hpp_total = ($d->subtotal && $d->subtotal > 0) ? $d->subtotal : ($d->qty * $harga);
+                }
+                $d->barang = $d->produk;
+            }
+
+            $virtualObj = new \stdClass();
+            $virtualObj->row_type = 'pesanan';
+            $virtualObj->id = 'pes_' . $pes->id;
+            $virtualObj->pesanan_real_id = $pes->id;
+            $virtualObj->kode_produksi = $kodeWo;
+            $virtualObj->tanggal_mulai = $pes->tanggal;
+            $virtualObj->tanggal_selesai = $pes->estimasi_kirim ?? $pes->tanggal;
+            $virtualObj->gudangBahan = (object)['nama' => 'Gudang Central Kitchen'];
+            $virtualObj->gudangHasil = $pes->customer ?? $pes->gudang ?? (object)['nama' => 'Outlet KeJingga'];
+            $virtualObj->divisi = $pes->divisi;
+            $virtualObj->status_produksi = 'Stok BSJ (' . ucfirst($pes->status_pesanan ?? 'Diproses') . ')';
+            $virtualObj->status_pembayaran = strtolower($pes->status_pembayaran ?? '') === 'lunas' ? 'lunas' : 'belum_dibayar';
+            $virtualObj->details = $pes->details;
+            $virtualObj->pesanan = $pes;
+            $virtualObj->alokasiPesanan = collect();
+            $virtualObj->creator = $pes->creator;
+            $virtualObj->dibayarByUser = null;
+            $virtualObj->row_date = $pes->tanggal;
+
+            $data->push($virtualObj);
+        }
+
+        $data = $data->sortByDesc(function($item) {
+            return $item->row_date;
+        })->values();
 
         return view('laporan_custom.pengeluaran_produksi_ck_kejingga', compact('data', 'statusPembayaran'));
     }
@@ -374,7 +473,6 @@ class LaporanCustomController extends Controller
     {
         $request->validate([
             'ids' => 'required|array|min:1',
-            'ids.*' => 'exists:produksi,id',
             'tanggal_pembayaran' => 'required|date',
             'metode_pembayaran' => 'required|string',
             'catatan_pembayaran' => 'nullable|string|max:500',
@@ -384,63 +482,115 @@ class LaporanCustomController extends Controller
         $noInvoice = 'INV-CK-KEJINGGA-' . date('Ymd-His');
         $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
 
-        $transactions = Produksi::with(['pesanan', 'alokasiPesanan.pesanan'])->whereIn('id', $ids)->get();
-        $updatedCount = 0;
+        $prodIds = [];
+        $pesIds = [];
 
-        foreach ($transactions as $prod) {
-            $tgl = $request->tanggal_pembayaran . ' ' . date('H:i:s');
-            $metode = $request->metode_pembayaran;
-            $catatan = $request->catatan_pembayaran;
-
-            if ($hasColumnStatus) {
-                $prod->update([
-                    'status_pembayaran'  => 'lunas',
-                    'tanggal_pembayaran' => $tgl,
-                    'metode_pembayaran'  => $metode,
-                    'catatan_pembayaran' => $catatan,
-                    'no_invoice'         => DB::raw("COALESCE(no_invoice, '{$noInvoice}')"),
-                    'dibayar_by'         => auth()->id() ?? 1,
-                ]);
-            } else {
-                $existingInv = $prod->no_invoice;
-                $prod->updatePaymentMeta([
-                    'status_pembayaran'  => 'lunas',
-                    'tanggal_pembayaran' => $tgl,
-                    'metode_pembayaran'  => $metode,
-                    'catatan_pembayaran' => $catatan,
-                    'no_invoice'         => $existingInv ?: $noInvoice,
-                    'dibayar_by'         => auth()->id() ?? 1,
-                ]);
-            }
-
-            // Synchronize Lunas status to associated Pesanan records to prevent double payment
-            $pesananIds = collect([$prod->pesanan_id]);
-            if ($prod->alokasiPesanan) {
-                $pesananIds = $pesananIds->merge($prod->alokasiPesanan->pluck('pesanan_id'));
-            }
-            $pesananIds = $pesananIds->filter()->unique();
-
-            foreach ($pesananIds as $pId) {
-                $p = \App\Models\Pesanan::with('details')->find($pId);
-                if ($p) {
-                    $p->update(['status_pembayaran' => 'Lunas']);
-                    $hasPayment = \App\Models\Pembayaran::where('pesanan_id', $p->id)->exists();
-                    if (!$hasPayment) {
-                        $nominal = $p->total_pesanan > 0 ? (float)$p->total_pesanan : (float)$p->details->sum('subtotal');
-                        \App\Models\Pembayaran::create([
-                            'pesanan_id'          => $p->id,
-                            'kategori_pembayaran' => 'penjualan',
-                            'tanggal_bayar'       => $request->tanggal_pembayaran,
-                            'jumlah_bayar'        => $nominal > 0 ? $nominal : 0,
-                            'metode_pembayaran'   => $metode,
-                            'catatan'             => $catatan ? ($catatan . ' (Pelunasan via Laporan Produksi CK)') : 'Pelunasan via Laporan Produksi CK',
-                            'created_by'          => auth()->id() ?? 1,
-                        ]);
-                    }
+        foreach ($ids as $idItem) {
+            if (str_starts_with($idItem, 'pes_')) {
+                $pesIds[] = (int) str_replace('pes_', '', $idItem);
+            } elseif (str_starts_with($idItem, 'prod_')) {
+                $prodIds[] = (int) str_replace('prod_', '', $idItem);
+            } elseif (is_numeric($idItem)) {
+                if (Produksi::where('id', $idItem)->exists()) {
+                    $prodIds[] = (int) $idItem;
+                } else {
+                    $pesIds[] = (int) $idItem;
                 }
             }
+        }
 
-            $updatedCount++;
+        $updatedCount = 0;
+
+        if (!empty($prodIds)) {
+            $transactions = Produksi::with(['pesanan', 'alokasiPesanan.pesanan'])->whereIn('id', $prodIds)->get();
+
+            foreach ($transactions as $prod) {
+                $tgl = $request->tanggal_pembayaran . ' ' . date('H:i:s');
+                $metode = $request->metode_pembayaran;
+                $catatan = $request->catatan_pembayaran;
+
+                if ($hasColumnStatus) {
+                    $prod->update([
+                        'status_pembayaran'  => 'lunas',
+                        'tanggal_pembayaran' => $tgl,
+                        'metode_pembayaran'  => $metode,
+                        'catatan_pembayaran' => $catatan,
+                        'no_invoice'         => DB::raw("COALESCE(no_invoice, '{$noInvoice}')"),
+                        'dibayar_by'         => auth()->id() ?? 1,
+                    ]);
+                } else {
+                    $existingInv = $prod->no_invoice;
+                    $prod->updatePaymentMeta([
+                        'status_pembayaran'  => 'lunas',
+                        'tanggal_pembayaran' => $tgl,
+                        'metode_pembayaran'  => $metode,
+                        'catatan_pembayaran' => $catatan,
+                        'no_invoice'         => $existingInv ?: $noInvoice,
+                        'dibayar_by'         => auth()->id() ?? 1,
+                    ]);
+                }
+
+                $pesananIds = collect([$prod->pesanan_id]);
+                if ($prod->alokasiPesanan) {
+                    $pesananIds = $pesananIds->merge($prod->alokasiPesanan->pluck('pesanan_id'));
+                }
+                $pesananIds = $pesananIds->filter()->unique();
+
+                foreach ($pesananIds as $pId) {
+                    $p = \App\Models\Pesanan::with('details')->find($pId);
+                    if ($p) {
+                        $p->update(['status_pembayaran' => 'Lunas']);
+                        $hasPayment = \App\Models\Pembayaran::where('pesanan_id', $p->id)->exists();
+                        if (!$hasPayment) {
+                            $nominal = $p->total_pesanan > 0 ? (float)$p->total_pesanan : (float)$p->details->sum('subtotal');
+                            \App\Models\Pembayaran::create([
+                                'pesanan_id'          => $p->id,
+                                'kategori_pembayaran' => 'penjualan',
+                                'tanggal_bayar'       => $request->tanggal_pembayaran,
+                                'jumlah_bayar'        => $nominal > 0 ? $nominal : 0,
+                                'metode_pembayaran'   => $metode,
+                                'catatan'             => $catatan ? ($catatan . ' (Pelunasan via Laporan Produksi CK)') : 'Pelunasan via Laporan Produksi CK',
+                                'created_by'          => auth()->id() ?? 1,
+                            ]);
+                        }
+                    }
+                }
+                $updatedCount++;
+            }
+        }
+
+        if (!empty($pesIds)) {
+            $fifoService = app(\App\Services\FifoService::class);
+            $pesanans = \App\Models\Pesanan::with('details.produk')->whereIn('id', $pesIds)->get();
+
+            foreach ($pesanans as $p) {
+                $p->update(['status_pembayaran' => 'Lunas']);
+                $hasPayment = \App\Models\Pembayaran::where('pesanan_id', $p->id)->exists();
+                if (!$hasPayment) {
+                    $calcNominal = 0;
+                    foreach ($p->details as $d) {
+                        if ($d->subtotal && $d->subtotal > 0) {
+                            $calcNominal += (float)$d->subtotal;
+                        } else {
+                            $h = $fifoService->getHppResepBsj($d->produk_id);
+                            if ($h <= 0 && $d->produk) $h = (float)($d->produk->harga_beli ?? 0);
+                            $calcNominal += ($d->qty * $h);
+                        }
+                    }
+                    $nominal = $p->total_pesanan > 0 ? (float)$p->total_pesanan : $calcNominal;
+
+                    \App\Models\Pembayaran::create([
+                        'pesanan_id'          => $p->id,
+                        'kategori_pembayaran' => 'penjualan',
+                        'tanggal_bayar'       => $request->tanggal_pembayaran,
+                        'jumlah_bayar'        => $nominal > 0 ? $nominal : 0,
+                        'metode_pembayaran'   => $request->metode_pembayaran,
+                        'catatan'             => $request->catatan_pembayaran ? ($request->catatan_pembayaran . ' (Pelunasan via Laporan Produksi CK)') : 'Pelunasan via Laporan Produksi CK',
+                        'created_by'          => auth()->id() ?? 1,
+                    ]);
+                }
+                $updatedCount++;
+            }
         }
 
         return redirect()->back()->with('success', "Pembayaran untuk {$updatedCount} produksi & pesanan terkait berhasil diproses (Status: Lunas). Invoice dapat langsung dicetak.");
@@ -451,51 +601,109 @@ class LaporanCustomController extends Controller
         $idsParam = $request->input('ids');
         $noInvoice = $request->input('no_invoice');
 
-        $ids = [];
+        $rawIds = [];
         if (is_array($idsParam)) {
-            $ids = array_map('intval', $idsParam);
+            $rawIds = $idsParam;
         } elseif (is_string($idsParam) && !empty($idsParam)) {
-            $ids = array_map('intval', explode(',', $idsParam));
+            $rawIds = explode(',', $idsParam);
         }
 
-        $query = Produksi::with([
-            'details.barang',
-            'details.produk',
-            'gudangBahan',
-            'gudangHasil',
-            'divisi',
-            'pesanan.customer',
-            'alokasiPesanan.pesanan.customer',
-            'creator',
-            'dibayarByUser'
-        ]);
+        $prodIds = [];
+        $pesIds = [];
 
-        if (!empty($ids)) {
-            $query->whereIn('id', $ids);
-        } elseif (!empty($noInvoice)) {
-            $hasColNoInvoice = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'no_invoice');
-            $hasColKeterangan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan');
-            $hasColCatatan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan');
-
-            $query->where(function($q) use ($noInvoice, $hasColNoInvoice, $hasColKeterangan, $hasColCatatan) {
-                if ($hasColNoInvoice) {
-                    $q->where('no_invoice', $noInvoice);
+        foreach ($rawIds as $idItem) {
+            $idItem = trim($idItem);
+            if (str_starts_with($idItem, 'pes_')) {
+                $pesIds[] = (int) str_replace('pes_', '', $idItem);
+            } elseif (str_starts_with($idItem, 'prod_')) {
+                $prodIds[] = (int) str_replace('prod_', '', $idItem);
+            } elseif (is_numeric($idItem)) {
+                if (Produksi::where('id', $idItem)->exists()) {
+                    $prodIds[] = (int) $idItem;
+                } else {
+                    $pesIds[] = (int) $idItem;
                 }
-                if ($hasColKeterangan) {
-                    $q->orWhere('keterangan', 'like', '%"no_invoice":"' . $noInvoice . '"%');
-                }
-                if ($hasColCatatan) {
-                    $q->orWhere('catatan', 'like', '%"no_invoice":"' . $noInvoice . '"%');
-                }
-            });
-        } else {
-            return redirect()->back()->with('error', 'Pilih minimal 1 transaksi produksi untuk mencetak invoice.');
+            }
         }
 
-        $transactions = $query->orderBy('tanggal_mulai', 'asc')->get();
+        $transactions = collect();
+        $fifoService = app(\App\Services\FifoService::class);
+
+        if (!empty($prodIds)) {
+            $prodTx = Produksi::with([
+                'details.barang',
+                'details.produk',
+                'gudangBahan',
+                'gudangHasil',
+                'divisi',
+                'pesanan.customer',
+                'alokasiPesanan.pesanan.customer',
+                'creator',
+                'dibayarByUser'
+            ])->whereIn('id', $prodIds)->get();
+
+            foreach ($prodTx as $pt) {
+                $transactions->push($pt);
+            }
+        }
+
+        if (!empty($pesIds)) {
+            $pesTx = \App\Models\Pesanan::with([
+                'customer',
+                'gudang',
+                'divisi',
+                'details.produk',
+                'creator',
+                'workOrderDetails.workOrder'
+            ])->whereIn('id', $pesIds)->get();
+
+            foreach ($pesTx as $pes) {
+                $woDetail = $pes->workOrderDetails->first();
+                $wo = $woDetail ? $woDetail->workOrder : null;
+                $kodeWo = $wo ? $wo->kode_wo : $pes->kode_pesanan;
+
+                foreach ($pes->details as $d) {
+                    if (!$d->hpp_total || $d->hpp_total <= 0) {
+                        $harga = 0;
+                        if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0) {
+                            $harga = $d->subtotal / $d->qty;
+                        } elseif ($d->produk_id) {
+                            $harga = $fifoService->getHppResepBsj($d->produk_id);
+                            if ($harga <= 0 && $d->produk) {
+                                $harga = (float)($d->produk->harga_beli ?? 0);
+                            }
+                        }
+                        $d->hpp_total = ($d->subtotal && $d->subtotal > 0) ? $d->subtotal : ($d->qty * $harga);
+                    }
+                    $d->barang = $d->produk;
+                }
+
+                $virtualObj = new \stdClass();
+                $virtualObj->id = 'pes_' . $pes->id;
+                $virtualObj->kode_produksi = $kodeWo;
+                $virtualObj->tanggal_mulai = $pes->tanggal;
+                $virtualObj->tanggal_selesai = $pes->estimasi_kirim ?? $pes->tanggal;
+                $virtualObj->gudangBahan = (object)['nama' => 'Gudang Central Kitchen'];
+                $virtualObj->gudangHasil = $pes->customer ?? $pes->gudang ?? (object)['nama' => 'Outlet KeJingga'];
+                $virtualObj->divisi = $pes->divisi;
+                $virtualObj->status_produksi = 'Stok BSJ (' . ucfirst($pes->status_pesanan ?? 'Diproses') . ')';
+                $virtualObj->status_pembayaran = strtolower($pes->status_pembayaran ?? '') === 'lunas' ? 'lunas' : 'belum_dibayar';
+                $virtualObj->details = $pes->details;
+                $virtualObj->pesanan = $pes;
+                $virtualObj->alokasiPesanan = collect();
+                $virtualObj->creator = $pes->creator;
+                $virtualObj->dibayarByUser = null;
+                $virtualObj->no_invoice = 'INV-CK-KEJINGGA-' . date('YmdHis');
+                $virtualObj->tanggal_pembayaran = null;
+                $virtualObj->metode_pembayaran = null;
+                $virtualObj->catatan_pembayaran = null;
+
+                $transactions->push($virtualObj);
+            }
+        }
 
         if ($transactions->isEmpty()) {
-            return redirect()->back()->with('error', 'Data produksi tidak ditemukan.');
+            return redirect()->back()->with('error', 'Data produksi/permintaan tidak ditemukan.');
         }
 
         $isPdf = $request->has('pdf');
