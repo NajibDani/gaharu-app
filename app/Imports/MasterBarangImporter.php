@@ -151,16 +151,78 @@ class MasterBarangImporter
                 continue;
             }
 
-            // ATURAN UTAMA: skip jika kode_barang sudah ada (cek tanpa scope role)
+            // JIKA KODE_BARANG SUDAH ADA: Update data barang (kategori, nama, spesifikasi, dan minimum stock) tanpa duplikasi
             $exists = MasterBarang::withoutGlobalScopes()
                 ->where('kode_barang', $kodeBarang)
                 ->first();
             if ($exists) {
-                // UPDATE MINIMUM STOCK untuk barang yang sudah ada
                 try {
-                    DB::transaction(function () use ($exists, $minStock, $minStockEntries, $numeric) {
-                        if ($minStock !== '') {
-                            $exists->update(['minimum_stock' => $numeric($minStock, 0)]);
+                    $updatePayload = [];
+
+                    if ($kategoriNama !== '') {
+                        $kategori = $kategoriMap->get(strtolower($kategoriNama));
+                        if (!$kategori) {
+                            $this->errors[] = "Baris {$excelRowNum}: kategori '{$kategoriNama}' tidak ditemukan untuk barang '{$kodeBarang}', dilewati.";
+                            continue;
+                        }
+                        $updatePayload['kategori_id'] = $kategori->id;
+                    }
+
+                    if ($nama !== '') {
+                        $updatePayload['nama'] = $nama;
+                    }
+
+                    if ($satuan !== '') {
+                        $satuanClean = strtoupper(trim($satuan));
+                        if ($jenisUtama === 'BAHAN_SETENGAH_JADI' || ($jenisUtama === '' && $exists->is_bahan_setengah_jadi)) {
+                            if ($satuanClean === 'GRAM') $satuanClean = 'GR';
+                            elseif ($satuanClean === 'MILILITER') $satuanClean = 'ML';
+                        }
+                        $updatePayload['satuan'] = $satuanClean;
+                    }
+
+                    if ($satuanPembelian !== '') {
+                        $updatePayload['satuan_pembelian'] = $satuanPembelian;
+                    }
+
+                    if ($konversiPembelian !== '') {
+                        $updatePayload['konversi_pembelian'] = $numeric($konversiPembelian, 1);
+                    }
+
+                    if ($jenisUtama !== '' && in_array($jenisUtama, $this->jenisAllowed, true)) {
+                        $updatePayload['is_bahan_baku']          = ($jenisUtama === 'BAHAN_BAKU');
+                        $updatePayload['is_bahan_setengah_jadi'] = ($jenisUtama === 'BAHAN_SETENGAH_JADI');
+                        $updatePayload['is_barang_jadi']         = ($jenisUtama === 'BARANG_JADI');
+                        $updatePayload['is_operational']         = ($jenisUtama === 'OPERATIONAL');
+                    }
+
+                    if ($tipePenjualan !== '' && in_array($tipePenjualan, $this->tipeAllowed, true)) {
+                        $updatePayload['tipe_penjualan'] = $tipePenjualan;
+                    }
+
+                    if ($hargaB2b !== '') {
+                        $updatePayload['harga_jual_b2b'] = $numeric($hargaB2b, 0);
+                    }
+
+                    if ($hargaPos !== '') {
+                        $updatePayload['harga_jual_pos'] = $numeric($hargaPos, 0);
+                    }
+
+                    if ($hpp !== '') {
+                        $updatePayload['hpp_referensi'] = $numeric($hpp, 0);
+                    }
+
+                    if ($minStock !== '') {
+                        $updatePayload['minimum_stock'] = $numeric($minStock, 0);
+                    }
+
+                    if ($minOrder !== '') {
+                        $updatePayload['minimum_order'] = $numeric($minOrder, 1);
+                    }
+
+                    DB::transaction(function () use ($exists, $updatePayload, $minStockEntries, $numeric) {
+                        if (!empty($updatePayload)) {
+                            $exists->update($updatePayload);
                         }
 
                         // Simpan / update minimum stock per outlet & divisi dinamis
@@ -180,10 +242,11 @@ class MasterBarangImporter
                             }
                         }
                     });
-                    $this->skipped++; // Tetap dikelompokkan ke "skipped" atau "updated" agar user tahu
-                    $this->skippedRows[] = "Baris {$excelRowNum}: kode_barang '{$kodeBarang}' sudah ada, minimum stock diperbarui.";
+
+                    $this->skipped++;
+                    $this->skippedRows[] = "Baris {$excelRowNum}: kode_barang '{$kodeBarang}' ({$exists->nama}) sudah ada, data & kategori berhasil diperbarui.";
                 } catch (\Throwable $e) {
-                    $this->errors[] = "Baris {$excelRowNum}: gagal memperbarui minimum stock ({$e->getMessage()}).";
+                    $this->errors[] = "Baris {$excelRowNum}: gagal memperbarui data '{$kodeBarang}' ({$e->getMessage()}).";
                 }
                 continue;
             }

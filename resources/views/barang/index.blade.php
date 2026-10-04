@@ -50,6 +50,11 @@
                 <i class="bi bi-inbox-fill"></i> Persediaan Awal
             </a>
 
+            {{-- Tombol Export Excel (Sesuai Filter Aktif) --}}
+            <a href="{{ route('barang.import.template', request()->query()) }}" class="btn btn-sm btn-outline-success" style="border-radius: 6px; padding: 5px 15px;" title="Download data barang yang sedang terfilter ke Excel">
+                <i class="bi bi-file-earmark-excel"></i> Export Excel
+            </a>
+
             {{-- Tombol Import Excel membuka modal import --}}
             <button type="button" class="btn btn-sm btn-outline-secondary" style="border-radius: 6px; padding: 5px 15px;" data-bs-toggle="modal" data-bs-target="#modalImportBarang">
                 <i class="bi bi-upload"></i> Import Excel
@@ -67,7 +72,7 @@
         <div class="alert alert-info mx-3 mt-3 mb-0">
             <strong>Hasil Import:</strong>
             {{ $ir['created'] }} barang baru ditambahkan,
-            {{ $ir['skipped'] }} barang diupdate minimum stock-nya.
+            {{ $ir['skipped'] }} data barang berhasil diperbarui (kategori / min stock / spesifikasi).
             @if (!empty($ir['errors']))
                 <div class="mt-2">
                     <strong class="text-danger">{{ count($ir['errors']) }} baris bermasalah:</strong>
@@ -80,7 +85,7 @@
             @endif
             @if (!empty($ir['skippedRows']))
                 <details class="mt-2 small">
-                    <summary>Lihat detail barang yang diupdate min stock-nya</summary>
+                    <summary>Lihat detail data barang yang diperbarui</summary>
                     <ul class="mb-0">
                         @foreach ($ir['skippedRows'] as $sk)
                             <li>{{ $sk }}</li>
@@ -465,14 +470,24 @@
                 @csrf
                 <div class="modal-body text-start">
                     <p class="text-muted small">
-                        Baris dengan <strong>kode_barang</strong> yang sudah ada di sistem akan otomatis di-<strong>update minimum stock-nya</strong>.
-                        Barang baru akan ditambahkan. Jenis barang yang didukung: Bahan Baku, Bahan Setengah Jadi, Barang Jadi, Operational.
+                        Baris dengan <strong>kode_barang</strong> yang sudah ada di sistem akan otomatis <strong>diperbarui (kategori, nama, spesifikasi, dan minimum stock)</strong> tanpa membuat duplikasi data.
+                        Barang dengan <strong>kode_barang baru</strong> akan ditambahkan ke sistem.
                     </p>
 
-                    <div class="mb-3">
-                        <a href="{{ route('barang.import.template') }}" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-download"></i> Download Template Excel
-                        </a>
+                    <div class="mb-3 d-flex flex-column gap-2">
+                        @if(request('kategori_id') || request('search'))
+                            <a href="{{ route('barang.import.template', request()->query()) }}" class="btn btn-sm text-white text-start d-flex align-items-center justify-content-between" style="background-color: #d88656;">
+                                <span><i class="bi bi-funnel-fill me-1"></i> Download Template (Khusus Barang Terfilter Saat Ini)</span>
+                                <span class="badge bg-white text-dark">{{ $data->total() }} Barang</span>
+                            </a>
+                            <a href="{{ route('barang.import.template') }}" class="btn btn-sm btn-outline-secondary text-start">
+                                <i class="bi bi-download me-1"></i> Download Template (Semua Barang)
+                            </a>
+                        @else
+                            <a href="{{ route('barang.import.template') }}" class="btn btn-sm btn-outline-secondary text-start">
+                                <i class="bi bi-download me-1"></i> Download Template Excel
+                            </a>
+                        @endif
                     </div>
 
                     <div class="mb-3">

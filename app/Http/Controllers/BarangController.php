@@ -682,7 +682,7 @@ class BarangController extends Controller
      * Sheet 2 "Referensi Kategori" = daftar kategori yang tersedia saat ini di sistem.
      * Sheet 3 "Panduan" = penjelasan setiap kolom.
      */
-    public function importTemplate()
+    public function importTemplate(Request $request)
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -761,11 +761,42 @@ class BarangController extends Controller
                 ->getStartColor()->setRGB('2E7D32'); // hijau gelap untuk kolom min stock dinamis
         }
 
-        // Isi semua data barang dari database beserta minimum stock saat ini
-        $barangs = MasterBarang::with('kategori')
-            ->where('is_active', true)
-            ->orderBy('kode_barang', 'asc')
-            ->get();
+        // Ambil data barang (dengan filter kategori/search/sort jika ada)
+        $query = MasterBarang::with('kategori')
+            ->where('is_active', true);
+
+        if ($request->filled('kategori_id')) {
+            $query->where('kategori_id', $request->query('kategori_id'));
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->query('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('nama', 'like', '%' . $search . '%')
+                  ->orWhere('kode_barang', 'like', '%' . $search . '%');
+            });
+        }
+
+        $sort = $request->query('sort', 'kode_asc');
+        switch ($sort) {
+            case 'az':
+                $query->orderBy('nama', 'asc');
+                break;
+            case 'za':
+                $query->orderBy('nama', 'desc');
+                break;
+            case 'terlama':
+                $query->orderBy('created_at', 'asc')->orderBy('id', 'asc');
+                break;
+            case 'terbaru':
+                $query->orderBy('created_at', 'desc')->orderBy('id', 'desc');
+                break;
+            default:
+                $query->orderBy('kode_barang', 'asc');
+                break;
+        }
+
+        $barangs = $query->get();
 
         // Pre-load semua minimum stock per barang
         $minStockAll = \App\Models\BarangMinimumStock::all()->groupBy('barang_id');
@@ -866,11 +897,11 @@ class BarangController extends Controller
         // Sheet panduan singkat
         $guideData = [
             ['Kolom', 'Wajib?', 'Keterangan'],
-            ['kode_barang', 'Ya', 'Harus unik. Jika kode sudah ada di sistem, minimum stock akan di-UPDATE (data barang lainnya tidak berubah).'],
-            ['nama', 'Ya (barang baru)', 'Nama barang. Untuk barang yang sudah ada, kolom ini diabaikan.'],
-            ['kategori', 'Ya (barang baru)', 'Isi persis sama dengan nama di sheet "Referensi Kategori". Untuk barang yang sudah ada, kolom ini diabaikan.'],
-            ['jenis_utama', 'Ya (barang baru)', 'Salah satu: BAHAN_BAKU, BAHAN_SETENGAH_JADI, BARANG_JADI, OPERATIONAL. Untuk barang yang sudah ada, kolom ini diabaikan.'],
-            ['satuan', 'Ya (barang baru)', 'Contoh: GR, KG, PCS, LITER. Untuk barang yang sudah ada, kolom ini diabaikan.'],
+            ['kode_barang', 'Ya', 'Harus unik. Jika kode sudah ada di sistem, kategori & data barang akan diperbarui (TIDAK diduplikasi).'],
+            ['nama', 'Ya (barang baru)', 'Nama barang. Jika barang sudah ada, akan diperbarui.'],
+            ['kategori', 'Ya', 'Isi persis sama dengan nama di sheet "Referensi Kategori". Untuk barang yang sudah ada, kategori barang akan otomatis diubah ke kategori ini.'],
+            ['jenis_utama', 'Ya (barang baru)', 'Salah satu: BAHAN_BAKU, BAHAN_SETENGAH_JADI, BARANG_JADI, OPERATIONAL.'],
+            ['satuan', 'Ya (barang baru)', 'Contoh: GR, KG, PCS, LITER.'],
             ['satuan_pembelian', 'Tidak', 'Kosongkan jika tidak ada satuan pembelian berbeda.'],
             ['konversi_pembelian', 'Tidak', 'Default 1 jika kosong.'],
             ['tipe_penjualan', 'Wajib jika BARANG_JADI', 'Salah satu: POS Kejingga, POS Gaharu, B2B'],
@@ -886,8 +917,8 @@ class BarangController extends Controller
         $guideData[] = ['minimum_stock_umum', 'Tidak', 'Minimum stock umum / fallback. Kosongkan jika tidak perlu diubah.'];
         $guideData[] = ['minimum_order', 'Tidak', 'Default 1 jika kosong.'];
         $guideData[] = ['', '', ''];
-        $guideData[] = ['CARA PAKAI', '', 'Download template ini → isi/edit kolom min_stock (kolom hijau yang digenerate otomatis sesuai gudang & divisi aktif) → Import kembali file ini.'];
-        $guideData[] = ['', '', 'Barang yang kode_barang-nya sudah ada di sistem: hanya minimum stock yang akan diperbarui.'];
+        $guideData[] = ['CARA PAKAI', '', 'Download template ini → ubah kolom kategori atau kolom lainnya yang ingin diperbarui → Import kembali file ini.'];
+        $guideData[] = ['', '', 'Barang yang kode_barang-nya sudah ada di sistem: kategori, nama, spesifikasi, dan minimum stock akan diperbarui tanpa membuat duplikat.'];
         $guideData[] = ['', '', 'Barang baru (kode_barang belum ada): akan ditambahkan sebagai master barang baru.'];
 
         $guide = $spreadsheet->createSheet();
@@ -903,6 +934,14 @@ class BarangController extends Controller
 
         $writer = new Xlsx($spreadsheet);
         $fileName = 'template_import_master_barang.xlsx';
+        if ($request->filled('kategori_id')) {
+            $kat = Kategori::find($request->query('kategori_id'));
+            if ($kat) {
+                $fileName = 'master_barang_' . \Illuminate\Support\Str::slug($kat->nama, '_') . '.xlsx';
+            }
+        } elseif ($request->filled('search')) {
+            $fileName = 'master_barang_' . \Illuminate\Support\Str::slug($request->query('search'), '_') . '.xlsx';
+        }
 
         return response()->streamDownload(function () use ($writer) {
             $writer->save('php://output');
@@ -925,6 +964,6 @@ class BarangController extends Controller
 
         return back()
             ->with('import_result_barang', $result)
-            ->with('success', "Import Master Barang selesai. {$result['created']} barang baru ditambahkan, {$result['skipped']} barang diupdate minimum stock-nya.");
+            ->with('success', "Import Master Barang selesai. {$result['created']} barang baru ditambahkan, {$result['skipped']} data barang berhasil diperbarui.");
     }
 } // <-- FIX: Kurung tutup ganda yang salah sudah dihapus
