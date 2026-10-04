@@ -524,8 +524,11 @@ class PembelianController extends Controller
                 $qtyMasukStok = $qtyBaruInput * $konversi;
                 $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
 
+                $targetDivisiId = MasterGudang::resolveDivisiIdForBarang($pembelian->gudang_id, $detail->barang_id);
+
                 \App\Models\StokGudangBatch::create([
                     'gudang_id' => $pembelian->gudang_id,
+                    'divisi_id' => $targetDivisiId,
                     'supplier_id' => $pembelian->supplier_id,
                     'barang_id' => $detail->barang_id,
                     'pembelian_id' => $pembelian->id,
@@ -543,6 +546,7 @@ class PembelianController extends Controller
                     'tanggal'         => $pembelian->tanggal,
                     'barang_id'       => $detail->barang_id,
                     'gudang_tujuan_id'=> $pembelian->gudang_id,
+                    'divisi_tujuan_id'=> $targetDivisiId,
                     'qty'             => $qtyMasukStok,
                     'total_harga'     => $totalHargaDiterima,
                     'source_type'     => 'pembelian',
@@ -991,9 +995,11 @@ class PembelianController extends Controller
                         $qtyMasukStok = $qtyInput * $konversi;
                         $hargaPerQtyStok = $hargaPerQty / $konversi;
 
+                        $targetDivisiId = MasterGudang::resolveDivisiIdForBarang($pembelian->gudang_id, $barangId);
+
                         \App\Models\StokGudangBatch::create([
                             'gudang_id'           => $pembelian->gudang_id,
-                            'divisi_id'           => null,
+                            'divisi_id'           => $targetDivisiId,
                             'supplier_id'         => $pembelian->supplier_id,
                             'barang_id'           => $barangId,
                             'pembelian_id'        => $pembelian->id,
@@ -1007,7 +1013,7 @@ class PembelianController extends Controller
                         ]);
 
                         $stokGudang = \App\Models\StokGudang::firstOrCreate(
-                            ['gudang_id' => $pembelian->gudang_id, 'barang_id' => $barangId, 'divisi_id' => null],
+                            ['gudang_id' => $pembelian->gudang_id, 'barang_id' => $barangId, 'divisi_id' => $targetDivisiId],
                             ['jumlah' => 0]
                         );
                         $stokGudang->increment('jumlah', $qtyMasukStok);

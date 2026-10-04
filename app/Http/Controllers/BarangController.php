@@ -76,11 +76,31 @@ class BarangController extends Controller
 
     public function checkNama(Request $request)
     {
-        $nama = $request->query('nama');
+        $nama = trim($request->query('nama') ?? '');
         $excludeId = $request->query('exclude_id');
-        $query = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($nama)]);
+        $jenisUtama = $request->query('jenis_utama');
+        $tipePenjualan = $request->query('tipe_penjualan');
+
+        if (empty($nama)) {
+            return response()->json(['exists' => false]);
+        }
+
+        $query = MasterBarang::withoutGlobalScopes()->whereRaw('LOWER(nama) = ?', [strtolower($nama)]);
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
+        }
+        if ($jenisUtama === 'BARANG_JADI' && !empty($tipePenjualan)) {
+            $query->where('tipe_penjualan', $tipePenjualan);
+        } elseif ($jenisUtama) {
+            $col = match ($jenisUtama) {
+                'BAHAN_BAKU' => 'is_bahan_baku',
+                'BAHAN_SETENGAH_JADI' => 'is_bahan_setengah_jadi',
+                'OPERATIONAL' => 'is_operational',
+                default => null,
+            };
+            if ($col) {
+                $query->where($col, true);
+            }
         }
         return response()->json(['exists' => $query->exists()]);
     }
@@ -180,7 +200,21 @@ class BarangController extends Controller
             $request->merge(['satuan' => $satuanUpper]);
         }
 
-        $nameExists = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])->exists();
+        $nameExistsQuery = MasterBarang::withoutGlobalScopes()->whereRaw('LOWER(nama) = ?', [strtolower($namaClean)]);
+        if ($request->jenis_utama === 'BARANG_JADI' && $request->filled('tipe_penjualan')) {
+            $nameExistsQuery->where('tipe_penjualan', $request->tipe_penjualan);
+        } elseif ($request->jenis_utama) {
+            $col = match ($request->jenis_utama) {
+                'BAHAN_BAKU' => 'is_bahan_baku',
+                'BAHAN_SETENGAH_JADI' => 'is_bahan_setengah_jadi',
+                'OPERATIONAL' => 'is_operational',
+                default => null,
+            };
+            if ($col) {
+                $nameExistsQuery->where($col, true);
+            }
+        }
+        $nameExists = $nameExistsQuery->exists();
         if ($nameExists) {
             return back()->withErrors(['nama' => 'Nama barang sudah ada di sistem. Nama barang harus unik (tidak sensitif huruf besar/kecil).'])->withInput();
         }
@@ -331,9 +365,24 @@ class BarangController extends Controller
             $request->merge(['satuan' => $satuanUpper]);
         }
 
-        $nameExists = MasterBarang::whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])
-            ->where('id', '!=', $id)
-            ->exists();
+        $nameExistsQuery = MasterBarang::withoutGlobalScopes()
+            ->whereRaw('LOWER(nama) = ?', [strtolower($namaClean)])
+            ->where('id', '!=', $id);
+
+        if ($request->jenis_utama === 'BARANG_JADI' && $request->filled('tipe_penjualan')) {
+            $nameExistsQuery->where('tipe_penjualan', $request->tipe_penjualan);
+        } elseif ($request->jenis_utama) {
+            $col = match ($request->jenis_utama) {
+                'BAHAN_BAKU' => 'is_bahan_baku',
+                'BAHAN_SETENGAH_JADI' => 'is_bahan_setengah_jadi',
+                'OPERATIONAL' => 'is_operational',
+                default => null,
+            };
+            if ($col) {
+                $nameExistsQuery->where($col, true);
+            }
+        }
+        $nameExists = $nameExistsQuery->exists();
         if ($nameExists) {
             return back()->withErrors(['nama' => 'Nama barang sudah ada di sistem. Nama barang harus unik (tidak sensitif huruf besar/kecil).'])->withInput();
         }
@@ -341,9 +390,9 @@ class BarangController extends Controller
         $user = auth()->user();
         if ($user && $user->role) {
             $roleName = $user->role->nama;
-            if ($roleName === 'Kepala Outlet Gaharu') {
+            if ($roleName === 'Kepala Outlet Gaharu' || $roleName === 'Operasional Gaharu') {
                 $allowed = ['POS Gaharu', 'B2B'];
-            } elseif ($roleName === 'Kepala Outlet Kejingga') {
+            } elseif ($roleName === 'Kepala Outlet Kejingga' || $roleName === 'Operasional Kejingga') {
                 $allowed = ['POS Kejingga'];
             } elseif ($roleName === 'Kepala Gudang') {
                 $allowed = ['B2B'];
@@ -405,6 +454,11 @@ class BarangController extends Controller
             'tipe_penjualan' => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
         ]);
 
+        // Muat ulang relasi kategori agar nama terbaru terbaca
+        $data->load('kategori');
+        $kategoriNama = $data->kategori ? $data->kategori->nama : '';
+        $msgSuccess = 'Data barang "' . $data->nama . '" & kategori (' . $kategoriNama . ') berhasil diperbarui.';
+
         // Simpan / update tagging divisi jika form mengirimkan divisi_tag
         if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI']) && $request->has('divisi_tag')) {
             $existingMinStocks = \App\Models\BarangMinimumStock::where('barang_id', $data->id)->get();
@@ -449,21 +503,18 @@ class BarangController extends Controller
             if (!str_starts_with($returnQuery, '?')) {
                 $returnQuery = '?' . $returnQuery;
             }
-            return redirect(route('barang.index') . $returnQuery)->with('success', 'Data barang & kategori berhasil diperbarui.');
+            return redirect(route('barang.index') . $returnQuery)->with('success', $msgSuccess);
         }
 
         $page = $request->query('page', 1);
         $redirectParams = ['page' => $page];
-        if ($request->filled('kategori_id')) {
-            $redirectParams['kategori_id'] = $request->input('kategori_id');
-        }
         if ($request->filled('search')) {
             $redirectParams['search'] = $request->input('search');
         }
         if ($request->filled('sort')) {
             $redirectParams['sort'] = $request->input('sort');
         }
-        return redirect()->route('barang.index', $redirectParams)->with('success', 'Data barang & kategori berhasil diperbarui.');
+        return redirect()->route('barang.index', $redirectParams)->with('success', $msgSuccess);
     }
 
     /**

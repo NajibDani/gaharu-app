@@ -1,11 +1,9 @@
 @php
     $userRole = auth()->user()->role->nama ?? '';
-    $tipePenjualanOptions = [];
-    if (in_array($userRole, ['Super Admin', 'Administrator'])) {
-        $tipePenjualanOptions = ['POS Gaharu', 'POS Kejingga', 'B2B'];
-    } elseif ($userRole === 'Kepala Outlet Gaharu') {
+    $tipePenjualanOptions = ['POS Gaharu', 'POS Kejingga', 'B2B'];
+    if ($userRole === 'Kepala Outlet Gaharu' || $userRole === 'Operasional Gaharu') {
         $tipePenjualanOptions = ['POS Gaharu', 'B2B'];
-    } elseif ($userRole === 'Kepala Outlet Kejingga') {
+    } elseif ($userRole === 'Kepala Outlet Kejingga' || $userRole === 'Operasional Kejingga') {
         $tipePenjualanOptions = ['POS Kejingga'];
     } elseif ($userRole === 'Kepala Gudang') {
         $tipePenjualanOptions = ['B2B'];
@@ -102,10 +100,23 @@
             </div>
         @endif
 
-        @if(session('error') || $errors->has('error'))
+        @if ($errors->any())
+            <div class="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+                <div class="d-flex align-items-center mb-1">
+                    <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                    <strong>Terdapat kendala pada data barang:</strong>
+                </div>
+                <ul class="mb-0 small ps-3">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @elseif(session('error'))
             <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center mb-3" role="alert">
                 <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
-                <div>{{ session('error') ?? $errors->first('error') }}</div>
+                <div>{{ session('error') }}</div>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         @endif
@@ -1119,11 +1130,15 @@ document.addEventListener("DOMContentLoaded", function () {
         const namaVal = namaInput.value.trim();
         if (!namaVal) { bypassFormSubmit(); return; }
 
-        fetch("{{ route('barang.check-nama') }}?nama=" + encodeURIComponent(namaVal))
+        const jenisVal = jenis.value;
+        const tipeVal = tipePenjualanSelect ? tipePenjualanSelect.value : '';
+        const checkUrl = "{{ route('barang.check-nama') }}?nama=" + encodeURIComponent(namaVal) + "&jenis_utama=" + encodeURIComponent(jenisVal) + "&tipe_penjualan=" + encodeURIComponent(tipeVal);
+
+        fetch(checkUrl)
             .then(response => response.json())
             .then(data => {
                 if (data.exists) {
-                    if (confirm("Nama Barang ini sudah terdaftar, apakah tetap ingin diinput?")) {
+                    if (confirm("Nama Barang ini sudah terdaftar untuk tipe penjualan tersebut, apakah tetap ingin diinput?")) {
                         bypassFormSubmit();
                     }
                 } else {
@@ -1406,7 +1421,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // Ketika kategori di modal edit diubah, sesuaikan _return_query agar tabel memuat kategori baru tersebut
+    // Ketika form edit disubmit, pastikan query filter URL dipertahankan dengan rapi
     var formEditBarang = document.getElementById('formEditBarang');
     if (formEditBarang) {
         formEditBarang.addEventListener('submit', function() {
@@ -1414,13 +1429,14 @@ document.addEventListener("DOMContentLoaded", function () {
             var currentUrlParams = new URLSearchParams(window.location.search);
             var currentCatId = currentUrlParams.get('kategori_id');
 
-            // Jika kategori berbeda dari filter saat ini, sesuaikan URL query agar row yang diedit tetap terlihat di tabel
-            if (newCatId && newCatId !== currentCatId) {
+            // Jika user sebelumnya memfilter kategori tertentu dan kategori barang ini diubah
+            if (currentCatId && newCatId && newCatId !== currentCatId) {
                 currentUrlParams.set('kategori_id', newCatId);
-                // Reset page ke 1 karena kategori berganti
                 currentUrlParams.delete('page');
+            }
 
-                var newQueryString = '?' + currentUrlParams.toString();
+            var newQueryString = currentUrlParams.toString() ? ('?' + currentUrlParams.toString()) : '';
+            if (newQueryString) {
                 var hiddenQuery = formEditBarang.querySelector('input[name="_return_query"]');
                 if (!hiddenQuery) {
                     hiddenQuery = document.createElement('input');
@@ -1429,10 +1445,6 @@ document.addEventListener("DOMContentLoaded", function () {
                     formEditBarang.appendChild(hiddenQuery);
                 }
                 hiddenQuery.value = newQueryString;
-
-                // Update URL browser secara seamless
-                var newUrl = window.location.pathname + newQueryString;
-                window.history.replaceState({}, '', newUrl);
             }
         });
     }

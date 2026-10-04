@@ -250,6 +250,8 @@ class StokGudangController extends Controller
             foreach ($itemIds as $bId) {
                 self::autoCleanOrphanMutations($bId);
                 self::autoHealMissingDivisiInTransaksiStok($bId);
+                self::autoHealApprovedPaTransaksiStok($bId);
+                self::autoHealApprovedPbkTransaksiStok($bId);
             }
             $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($itemIds, $gudangId, $divisiId, $endDate);
             foreach ($items as $item) {
@@ -288,6 +290,12 @@ class StokGudangController extends Controller
         // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
         self::autoHealMissingDivisiInTransaksiStok($barangId);
 
+        // Auto-heal mutasi Persediaan Awal disetujui
+        self::autoHealApprovedPaTransaksiStok($barangId);
+
+        // Auto-heal mutasi PBK disetujui yang belum tercatat atau belum lengkap di transaksi_stok
+        self::autoHealApprovedPbkTransaksiStok($barangId);
+
         // Auto-heal mutasi stok opname prematur yang PBK-nya masih berstatus Draft
         $this->autoHealPrematureDraftSoMutations($barangId);
 
@@ -303,8 +311,9 @@ class StokGudangController extends Controller
         $saQty = 0;
         $saNilai = 0;
 
-        // Cari tanggal persediaan awal disetujui terbaru untuk gudang/divisi ini (Cut-off Baseline Refresh Inventory)
+        // Cari tanggal persediaan awal disetujui terbaru untuk item barang dan gudang/divisi ini (Cut-off Baseline Refresh Inventory)
         $saQuery = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
             ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
             ->where('tanggal', '<=', $endDate . ' 23:59:59');
 
@@ -329,7 +338,6 @@ class StokGudangController extends Controller
 
         if ($minTanggal) {
             $rawBefore->where('tanggal', '>=', $minTanggal);
-            $rawPeriod->where('tanggal', '>=', $minTanggal);
         }
 
         if ($gudangId && $divisiId) {
@@ -553,7 +561,7 @@ class StokGudangController extends Controller
 
                 $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
 
-                $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id) . $keteranganExtra;
+                $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id, $isMasuk) . $keteranganExtra;
                 if ($row->tipe === 'transfer') {
                     $gAsal = DB::table('master_gudang')->where('id', $row->gudang_asal_id)->value('nama');
                     $gTujuan = DB::table('master_gudang')->where('id', $row->gudang_tujuan_id)->value('nama');
@@ -648,7 +656,7 @@ class StokGudangController extends Controller
         return (float) $row->qty;
     }
 
-    private function formatSourceDescription($type, $id)
+    private function formatSourceDescription($type, $id, $isMasuk = false)
     {
         if (empty($type) || empty($id)) {
             return 'Manual / Saldo Awal';
@@ -695,9 +703,13 @@ class StokGudangController extends Controller
                     if ($gudangTujuan) $tujuanInfo[] = "Gudang: {$gudangTujuan}";
                     if ($divisiTujuan) $tujuanInfo[] = "Divisi: {$divisiTujuan}";
                     $tujuanStr = !empty($tujuanInfo) ? ' [' . implode(' - ', $tujuanInfo) . ']' : '';
-                    return "Material Output: {$kode}{$tujuanStr}";
+
+                    if ($isMasuk) {
+                        return "Permintaan / Transfer Bahan Masuk: {$kode}{$tujuanStr}";
+                    }
+                    return "Pengeluaran Bahan Baku: {$kode}{$tujuanStr}";
                 }
-                return "Material Output (ID: {$id})";
+                return $isMasuk ? "Permintaan Bahan Masuk (ID: {$id})" : "Pengeluaran Bahan Baku (ID: {$id})";
 
             case 'produksi':
                 $prod = \App\Models\Produksi::find($id);
@@ -885,8 +897,217 @@ class StokGudangController extends Controller
                 $q5->where('ts.barang_id', $barangId);
             }
             $q5->update(['ts.divisi_tujuan_id' => DB::raw('pa.divisi_id')]);
+
+            // 6. Backfill divisi_tujuan_id untuk Pembelian ke Outlet (Kejingga / Luar) sesuai ketentuan tagging divisi
+            $outletIds = \App\Models\MasterGudang::getOutletGudangIds();
+            $q6 = DB::table('transaksi_stok as ts')
+                ->whereIn('ts.source_type', ['pembelian', 'penerimaan_pembelian'])
+                ->where('ts.tipe', 'masuk')
+                ->whereIn('ts.gudang_tujuan_id', $outletIds)
+                ->whereNull('ts.divisi_tujuan_id');
+            if ($barangId) {
+                $q6->where('ts.barang_id', $barangId);
+            }
+            $pembelianOutletTxs = $q6->get();
+
+            foreach ($pembelianOutletTxs as $pTx) {
+                $divId = \App\Models\MasterGudang::resolveDivisiIdForBarang($pTx->gudang_tujuan_id, $pTx->barang_id);
+                if ($divId) {
+                    DB::table('transaksi_stok')->where('id', $pTx->id)->update(['divisi_tujuan_id' => $divId]);
+                    if ($pTx->source_id) {
+                        DB::table('stok_gudang_batch')
+                            ->where('pembelian_id', $pTx->source_id)
+                            ->where('barang_id', $pTx->barang_id)
+                            ->where('gudang_id', $pTx->gudang_tujuan_id)
+                            ->whereNull('divisi_id')
+                            ->update(['divisi_id' => $divId]);
+                    }
+                }
+            }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoHealMissingDivisiInTransaksiStok error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Auto-heal transaksi_stok untuk seluruh Persediaan Awal yang berstatus approved / posted
+     * agar tercatat akurat sebagai baseline saldo awal per gudang dan divisi.
+     */
+    public static function autoHealApprovedPaTransaksiStok($barangId = null)
+    {
+        try {
+            $paQuery = \App\Models\PersediaanAwal::whereIn(DB::raw('LOWER(status)'), ['approved', 'posted'])
+                ->with(['details']);
+
+            if ($barangId) {
+                $paQuery->whereHas('details', function ($q) use ($barangId) {
+                    $q->where('barang_id', $barangId);
+                });
+            }
+
+            $approvedPas = $paQuery->get();
+
+            foreach ($approvedPas as $pa) {
+                $details = $pa->details;
+                if ($barangId) {
+                    $details = $details->where('barang_id', $barangId);
+                }
+
+                $tanggalPa = ($pa->tanggal ? $pa->tanggal->format('Y-m-d') : date('Y-m-d')) . ' 00:00:01';
+
+                foreach ($details as $detail) {
+                    $bId = $detail->barang_id;
+                    $qty = (float) $detail->qty;
+                    $totalNilai = (float) ($detail->total_nilai ?: ($qty * (float) $detail->harga_satuan));
+
+                    if ($qty > 0) {
+                        $txPa = \App\Models\TransaksiStok::whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+                            ->where('source_id', $pa->id)
+                            ->where('barang_id', $bId)
+                            ->where('tipe', 'masuk')
+                            ->first();
+
+                        if (!$txPa) {
+                            \App\Models\TransaksiStok::create([
+                                'tanggal'          => $tanggalPa,
+                                'tipe'             => 'masuk',
+                                'source_type'      => 'persediaan_awal',
+                                'source_id'        => $pa->id,
+                                'gudang_asal_id'   => null,
+                                'divisi_asal_id'   => null,
+                                'gudang_tujuan_id' => $pa->gudang_id,
+                                'divisi_tujuan_id' => $pa->divisi_id,
+                                'barang_id'        => $bId,
+                                'qty'              => $qty,
+                                'total_harga'      => $totalNilai,
+                                'created_by'       => $pa->created_by ?? 1,
+                            ]);
+                        } else {
+                            $needsUpdate = false;
+                            $upData = [];
+                            if ($txPa->gudang_tujuan_id != $pa->gudang_id) {
+                                $upData['gudang_tujuan_id'] = $pa->gudang_id;
+                                $needsUpdate = true;
+                            }
+                            if ($txPa->divisi_tujuan_id != $pa->divisi_id) {
+                                $upData['divisi_tujuan_id'] = $pa->divisi_id;
+                                $needsUpdate = true;
+                            }
+                            if ($needsUpdate) {
+                                $txPa->update($upData);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoHealApprovedPaTransaksiStok error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Auto-heal transaksi_stok untuk seluruh Pengeluaran/Permintaan Bahan Baku yang berstatus disetujui/approved
+     * agar mutasi transfer masuk ke outlet (Kejingga/Gaharu) dan keluar dari Gudang Utama tercatat akurat.
+     */
+    public static function autoHealApprovedPbkTransaksiStok($barangId = null)
+    {
+        try {
+            $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+
+            $pbkQuery = \App\Models\PengeluaranBahanBaku::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui'])
+                ->with(['details']);
+
+            if ($barangId) {
+                $pbkQuery->whereHas('details', function ($q) use ($barangId) {
+                    $q->where('barang_id', $barangId);
+                });
+            }
+
+            $approvedPbks = $pbkQuery->get();
+
+            foreach ($approvedPbks as $pbk) {
+                $isOpnameOrWasted = str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-SO-')
+                    || $pbk->jenis_pengeluaran === 'wasted'
+                    || str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-WST-');
+
+                $details = $pbk->details;
+                if ($barangId) {
+                    $details = $details->where('barang_id', $barangId);
+                }
+
+                foreach ($details as $detail) {
+                    $bId = $detail->barang_id;
+                    $qty = (float) $detail->qty;
+                    $totalHarga = (float) ($detail->total_harga ?: ($detail->hpp_total ?: ($qty * (float) $detail->harga_satuan)));
+                    $tanggal = $pbk->tanggal ?? $pbk->created_at ?? now();
+
+                    if (!$isOpnameOrWasted && $pbk->gudang_id) {
+                        // 1. Mutasi Masuk di Gudang/Divisi Tujuan (e.g. Kejingga)
+                        $txMasuk = \App\Models\TransaksiStok::where('source_type', 'pengeluaran_bahan_baku')
+                            ->where('source_id', $pbk->id)
+                            ->where('barang_id', $bId)
+                            ->where('tipe', 'masuk')
+                            ->first();
+
+                        if (!$txMasuk) {
+                            \App\Models\TransaksiStok::create([
+                                'tanggal'          => $tanggal,
+                                'tipe'             => 'masuk',
+                                'source_type'      => 'pengeluaran_bahan_baku',
+                                'source_id'        => $pbk->id,
+                                'gudang_asal_id'   => null,
+                                'divisi_asal_id'   => null,
+                                'gudang_tujuan_id' => $pbk->gudang_id,
+                                'divisi_tujuan_id' => $pbk->divisi_id,
+                                'barang_id'        => $bId,
+                                'qty'              => $qty,
+                                'total_harga'      => $totalHarga,
+                                'created_by'       => $pbk->approved_by ?? $pbk->created_by ?? 1,
+                            ]);
+                        } else {
+                            $needsUpdate = false;
+                            $upMasuk = [];
+                            if ($txMasuk->gudang_tujuan_id != $pbk->gudang_id) {
+                                $upMasuk['gudang_tujuan_id'] = $pbk->gudang_id;
+                                $needsUpdate = true;
+                            }
+                            if ($txMasuk->divisi_tujuan_id != $pbk->divisi_id) {
+                                $upMasuk['divisi_tujuan_id'] = $pbk->divisi_id;
+                                $needsUpdate = true;
+                            }
+                            if ($needsUpdate) {
+                                $txMasuk->update($upMasuk);
+                            }
+                        }
+
+                        // 2. Mutasi Keluar di Gudang Asal (Gudang Utama)
+                        $txKeluar = \App\Models\TransaksiStok::where('source_type', 'pengeluaran_bahan_baku')
+                            ->where('source_id', $pbk->id)
+                            ->where('barang_id', $bId)
+                            ->where('tipe', 'keluar')
+                            ->first();
+
+                        if (!$txKeluar) {
+                            \App\Models\TransaksiStok::create([
+                                'tanggal'          => $tanggal,
+                                'tipe'             => 'keluar',
+                                'source_type'      => 'pengeluaran_bahan_baku',
+                                'source_id'        => $pbk->id,
+                                'gudang_asal_id'   => $gudangUtamaId,
+                                'divisi_asal_id'   => null,
+                                'gudang_tujuan_id' => null,
+                                'divisi_tujuan_id' => null,
+                                'barang_id'        => $bId,
+                                'qty'              => $qty,
+                                'total_harga'      => $totalHarga,
+                                'created_by'       => $pbk->approved_by ?? $pbk->created_by ?? 1,
+                            ]);
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoHealApprovedPbkTransaksiStok error: ' . $e->getMessage());
         }
     }
 
@@ -1904,6 +2125,12 @@ class StokGudangController extends Controller
 
             // 2. Auto-heal missing divisi in transaksi_stok
             self::autoHealMissingDivisiInTransaksiStok($barangId);
+
+            // 2a. Auto-heal missing Persediaan Awal transactions
+            self::autoHealApprovedPaTransaksiStok($barangId);
+
+            // 2b. Auto-heal missing PBK transactions
+            self::autoHealApprovedPbkTransaksiStok($barangId);
 
             // 3. Auto-heal SO prematur
             $this->autoHealPrematureDraftSoMutations($barangId);
