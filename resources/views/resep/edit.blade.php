@@ -69,12 +69,20 @@ value="{{ (int) $data->bop_per_batch }}" class="form-control">
 <td>
 <select name="bahan_id[]" class="form-control bahan-select">
 @foreach($bahan as $bb)
+@php
+    $bbExtra = '';
+    if ($bb->is_barang_jadi) {
+        $bbExtra = $bb->tipe_penjualan ? ' (' . $bb->tipe_penjualan . ')' : ' (POS)';
+    } elseif ($bb->is_bahan_setengah_jadi) {
+        $bbExtra = ' (BSJ)';
+    }
+@endphp
 <option value="{{ $bb->id }}" 
         data-satuan="{{ $bb->satuan }}"
         data-satuan-konversi="{{ $bb->satuan_pembelian }}"
         data-konversi="{{ $bb->konversi_pembelian }}"
         {{ $b->bahan_id == $bb->id ? 'selected' : '' }}>
-    {{ $bb->nama }}
+    {{ $bb->nama }}{{ $bbExtra }}
 </option>
 @endforeach
 </select>

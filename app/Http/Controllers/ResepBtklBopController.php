@@ -107,7 +107,7 @@ class ResepBtklBopController extends Controller
 
         $listBahanResep = MasterBarang::whereIn('id', $usedBahanIds)
             ->orderBy('nama')
-            ->get(['id', 'nama', 'kode_barang']);
+            ->get(['id', 'nama', 'kode_barang', 'is_barang_jadi', 'tipe_penjualan', 'is_bahan_setengah_jadi']);
 
         return view('resep.index', compact(
             'data',

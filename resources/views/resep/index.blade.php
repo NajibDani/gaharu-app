@@ -108,8 +108,16 @@
                             <option value="">-- Cari Bahan Baku --</option>
                             @if(isset($listBahanResep))
                                 @foreach($listBahanResep as $br)
+                                    @php
+                                        $brExtra = '';
+                                        if ($br->is_barang_jadi) {
+                                            $brExtra = $br->tipe_penjualan ? ' (' . $br->tipe_penjualan . ')' : ' (POS)';
+                                        } elseif ($br->is_bahan_setengah_jadi) {
+                                            $brExtra = ' (BSJ)';
+                                        }
+                                    @endphp
                                     <option value="{{ $br->nama }}" {{ request('search_bahan') == $br->nama ? 'selected' : '' }}>
-                                        {{ $br->nama }}
+                                        {{ $br->nama }}{{ $brExtra }}
                                     </option>
                                 @endforeach
                             @endif
@@ -355,8 +363,16 @@
                                                       <select class="form-select form-select-sm search-select-alternatif">
                                                           <option value="" disabled selected>Pilih Bahan...</option>
                                                           @foreach($bahan as $b)
-                                                              <option value="{{ $b->id }}" data-satuan="{{ $b->satuan }}" data-nama="{{ $b->nama }}">
-                                                                  {{ $b->nama }}
+                                                              @php
+                                                                  $extraLabel = '';
+                                                                  if ($b->is_barang_jadi) {
+                                                                      $extraLabel = $b->tipe_penjualan ? ' (' . $b->tipe_penjualan . ')' : ' (POS)';
+                                                                  } elseif ($b->is_bahan_setengah_jadi) {
+                                                                      $extraLabel = ' (BSJ)';
+                                                                  }
+                                                              @endphp
+                                                              <option value="{{ $b->id }}" data-satuan="{{ $b->satuan }}" data-nama="{{ $b->nama . $extraLabel }}">
+                                                                  {{ $b->nama }}{{ $extraLabel }}
                                                               </option>
                                                           @endforeach
                                                       </select>
@@ -1203,6 +1219,18 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
+    // Helper: format nama bahan dengan label POS / BSJ jika ada
+    function formatBahanNama(b) {
+        if (!b) return 'Bahan Tidak Diketahui';
+        let extra = '';
+        if (b.is_barang_jadi) {
+            extra = b.tipe_penjualan ? ` (${b.tipe_penjualan})` : ' (POS)';
+        } else if (b.is_bahan_setengah_jadi) {
+            extra = ' (BSJ)';
+        }
+        return (b.nama || 'Bahan') + extra;
+    }
+
     // ============ MODAL EDIT ============
     document.querySelectorAll('.btn-edit-resep').forEach(tombol => {
         tombol.addEventListener('click', function() {
@@ -1244,7 +1272,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     const pBadge = document.createElement('span');
                     pBadge.className = 'alt-chip';
                     pBadge.dataset.value = item.bahan_id;
-                    pBadge.dataset.nama = item.bahan ? item.bahan.nama : 'Bahan';
+                    pBadge.dataset.nama = formatBahanNama(item.bahan);
                     const primarySatuan = (item.bahan && item.bahan.satuan) ? item.bahan.satuan : getMasterSatuan(item.bahan_id, item.satuan);
                     pBadge.dataset.satuan = primarySatuan;
                     container.appendChild(pBadge);
@@ -1255,7 +1283,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             const aBadge = document.createElement('span');
                             aBadge.className = 'alt-chip';
                             aBadge.dataset.value = alt.bahan_id;
-                            aBadge.dataset.nama = alt.bahan ? alt.bahan.nama : 'Bahan';
+                            aBadge.dataset.nama = formatBahanNama(alt.bahan);
                             const altSatuan = (alt.bahan && alt.bahan.satuan) ? alt.bahan.satuan : getMasterSatuan(alt.bahan_id, primarySatuan);
                             aBadge.dataset.satuan = altSatuan;
                             container.appendChild(aBadge);
@@ -1362,7 +1390,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar.</td></tr>`;
             } else {
                 bahanList.forEach((b, idx) => {
-                    const primaryName = b.bahan ? b.bahan.nama : 'Bahan Tidak Diketahui';
+                    const primaryName = formatBahanNama(b.bahan);
                     const primaryKode = b.bahan ? b.bahan.kode_barang : '';
                     const satuan = b.satuan || (b.bahan ? b.bahan.satuan : '-');
                     const qty = parseFloat(b.qty_bahan) || 0;
@@ -1370,7 +1398,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     let altHtml = '';
                     if (b.alternatif && b.alternatif.length > 0) {
                         b.alternatif.forEach(alt => {
-                            const altName = alt.bahan ? alt.bahan.nama : 'Bahan Alternatif';
+                            const altName = formatBahanNama(alt.bahan);
                             const prio = alt.prioritas || 2;
                             altHtml += `
                                 <div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size: 11.5px;">

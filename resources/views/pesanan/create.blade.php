@@ -48,11 +48,22 @@
                         <select name="customer_id" id="select-customer" class="form-select text-sm rounded-3" required>
                             <option value="">-- Pilih Outlet / Pemesan --</option>
                             @foreach($customers as $c)
-                                <option value="{{ $c->id }}" {{ old('customer_id') == $c->id ? 'selected' : '' }}>
+                                <option value="{{ $c->id }}"
+                                        data-has-divisi="{{ isset($c->has_divisi) && $c->has_divisi ? '1' : '0' }}"
+                                        data-divisis='@json($c->divisis ?? [])'
+                                        {{ old('customer_id') == $c->id ? 'selected' : '' }}>
                                     {{ $c->nama }} ({{ $c->gudang_nama ?? $c->nama }})
                                 </option>
                             @endforeach
                         </select>
+                    </div>
+
+                    <div class="col-md-6" id="divisi-wrapper" style="display: none;">
+                        <label class="form-label form-label-custom">Divisi Pemesan <span class="text-danger">*</span></label>
+                        <select name="divisi_id" id="select-divisi" class="form-select text-sm rounded-3">
+                            <option value="">-- Pilih Divisi Outlet --</option>
+                        </select>
+                        <small class="text-muted" style="font-size: 0.75rem;">Divisi internal pemesan di outlet ini</small>
                     </div>
 
                     <div class="col-md-6">
@@ -454,6 +465,29 @@
                 initTomSelectOnSelect(select);
             });
 
+            function updateDivisiOptions(divisiList) {
+                const divisiWrapper = document.getElementById('divisi-wrapper');
+                const divisiSelect = document.getElementById('select-divisi');
+                if (!divisiWrapper || !divisiSelect) return;
+
+                divisiSelect.innerHTML = '<option value="">-- Pilih Divisi Outlet --</option>';
+
+                if (divisiList && divisiList.length > 0) {
+                    divisiList.forEach(div => {
+                        const opt = document.createElement('option');
+                        opt.value = div.id;
+                        opt.textContent = div.nama + (div.keterangan ? ' (' + div.keterangan + ')' : '');
+                        divisiSelect.appendChild(opt);
+                    });
+                    divisiWrapper.style.display = 'block';
+                    divisiSelect.required = true;
+                } else {
+                    divisiWrapper.style.display = 'none';
+                    divisiSelect.required = false;
+                    divisiSelect.value = '';
+                }
+            }
+
             function fetchSuggestions(customerId) {
                 const toggleContainer = document.getElementById('toggle-suggestion-container');
                 if (!customerId) {
@@ -461,7 +495,18 @@
                     toggleContainer.style.display = 'none';
                     suggestionList.innerHTML = '';
                     currentSuggestions = [];
+                    updateDivisiOptions([]);
                     return;
+                }
+
+                const opt = customerSelect.querySelector(`option[value="${customerId}"]`);
+                if (opt && opt.getAttribute('data-divisis')) {
+                    try {
+                        const divisis = JSON.parse(opt.getAttribute('data-divisis'));
+                        updateDivisiOptions(divisis);
+                    } catch (e) {
+                        updateDivisiOptions([]);
+                    }
                 }
 
                 fetch("{{ route('pesanan.suggestions') }}?customer_id=" + customerId)
@@ -469,6 +514,10 @@
                     .then(data => {
                         currentSuggestions = data.suggestions || [];
                         suggestionOutletName.innerText = data.outlet_name || '';
+
+                        if (data.divisi_list !== undefined) {
+                            updateDivisiOptions(data.divisi_list);
+                        }
 
                         if (currentSuggestions.length > 0) {
                             toggleContainer.style.display = 'block';

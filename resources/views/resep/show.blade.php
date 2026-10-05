@@ -77,13 +77,29 @@
                         <td class="ps-4">
                             <div class="fw-semibold text-dark">
                                 <span class="badge bg-primary rounded-pill me-1">1</span>
-                                {{ $b->bahan->nama ?? 'Bahan Tidak Diketahui' }}
+                                @php
+                                    $bExtra = '';
+                                    if ($b->bahan && $b->bahan->is_barang_jadi) {
+                                        $bExtra = $b->bahan->tipe_penjualan ? ' (' . $b->bahan->tipe_penjualan . ')' : ' (POS)';
+                                    } elseif ($b->bahan && $b->bahan->is_bahan_setengah_jadi) {
+                                        $bExtra = ' (BSJ)';
+                                    }
+                                @endphp
+                                {{ ($b->bahan->nama ?? 'Bahan Tidak Diketahui') . $bExtra }}
                             </div>
                             @if($b->alternatif && $b->alternatif->count() > 0)
                                 @foreach($b->alternatif as $alt)
                                 <div class="ms-3 mt-1 text-muted small">
                                     <span class="badge bg-secondary rounded-pill me-1">{{ $alt->prioritas }}</span>
-                                    {{ $alt->bahan->nama ?? 'Alternatif' }}
+                                    @php
+                                        $altExtra = '';
+                                        if ($alt->bahan && $alt->bahan->is_barang_jadi) {
+                                            $altExtra = $alt->bahan->tipe_penjualan ? ' (' . $alt->bahan->tipe_penjualan . ')' : ' (POS)';
+                                        } elseif ($alt->bahan && $alt->bahan->is_bahan_setengah_jadi) {
+                                            $altExtra = ' (BSJ)';
+                                        }
+                                    @endphp
+                                    {{ ($alt->bahan->nama ?? 'Alternatif') . $altExtra }}
                                     <span class="text-warning fst-italic">(substitusi)</span>
                                 </div>
                                 @endforeach

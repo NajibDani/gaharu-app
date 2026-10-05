@@ -77,7 +77,14 @@
                         </tr>
                         <tr>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
-                            <td><strong class="text-primary fs-6">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? '-' }}</strong></td>
+                            <td>
+                                <strong class="text-primary fs-6">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? '-' }}</strong>
+                                @if($pesanan->divisi)
+                                    <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-2 py-1 px-2" style="font-size: 0.75rem;">
+                                        <i class="bi bi-diagram-3-fill me-1"></i>Divisi: {{ $pesanan->divisi->nama }}
+                                    </span>
+                                @endif
+                            </td>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
                             <td><strong>{{ $pesanan->gudang->nama ?? 'Gudang Cold Kitchen' }}</strong> <span class="text-muted small">(Penyedia)</span></td>
                         </tr>

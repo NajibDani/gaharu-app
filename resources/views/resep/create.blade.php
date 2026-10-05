@@ -81,8 +81,16 @@
 <td>
 <select name="bahan_id[]" class="form-control bahan-select">
 @foreach($bahan as $b)
+@php
+    $bExtra = '';
+    if ($b->is_barang_jadi) {
+        $bExtra = $b->tipe_penjualan ? ' (' . $b->tipe_penjualan . ')' : ' (POS)';
+    } elseif ($b->is_bahan_setengah_jadi) {
+        $bExtra = ' (BSJ)';
+    }
+@endphp
 <option value="{{ $b->id }}" data-satuan="{{ $b->satuan }}">
-    {{ $b->nama }} (Rp {{ number_format($b->hpp_referensi) }})
+    {{ $b->nama }}{{ $bExtra }} (Rp {{ number_format($b->hpp_referensi) }})
 </option>
 @endforeach
 </select>

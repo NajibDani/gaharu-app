@@ -122,7 +122,12 @@
         </tr>
         <tr>
             <td class="info-label">Outlet Pemesan</td>
-            <td class="info-value"><strong style="color: #1d4ed8; font-size: 12px;">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? '-' }}</strong></td>
+            <td class="info-value">
+                <strong style="color: #1d4ed8; font-size: 12px;">{{ $pesanan->customer->nama ?? $pesanan->customer->name ?? '-' }}</strong>
+                @if($pesanan->divisi)
+                    <span style="font-size: 10px; color: #475569; font-weight: bold; margin-left: 4px;">({{ $pesanan->divisi->nama }})</span>
+                @endif
+            </td>
             <td class="info-label">Gudang Sumber</td>
             <td class="info-value"><strong>{{ $pesanan->gudang->nama ?? 'Gudang Cold Kitchen' }}</strong> (Penyedia)</td>
         </tr>

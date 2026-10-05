@@ -84,14 +84,17 @@
                                         <th class="ps-3 py-3" width="5%">No</th>
                                         <th class="py-3" width="22%">Outlet Pemesan</th>
                                         <th class="py-3">Nama Barang</th>
-                                        <th class="py-3 text-end" width="14%">HPP Referensi</th>
-                                        <th class="py-3 text-end" width="16%">Harga Jual B2B</th>
+                                        <th class="py-3 text-end" width="15%">HPP / Satuan</th>
+                                        <th class="py-3 text-end" width="17%">Harga Jual B2B</th>
                                         <th class="py-3 text-end" width="14%">Estimasi Laba</th>
                                         <th class="py-3 text-center" width="10%">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @forelse($listHargaB2b as $index => $item)
+                                        @php
+                                            $itemSatuan = $item->barang->satuan ?? 'unit';
+                                        @endphp
                                         <tr>
                                             <td class="ps-3 text-muted">{{ $listHargaB2b->firstItem() + $index }}</td>
                                             <td>
@@ -107,18 +110,20 @@
                                                 @endif
                                             </td>
                                             <td class="text-end text-muted fw-semibold">
-                                                Rp {{ number_format($item->hpp_referensi ?? 0, 0, ',', '.') }}
+                                                <div>Rp {{ number_format($item->hpp_referensi ?? 0, 0, ',', '.') }}</div>
+                                                <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }}</span>
                                             </td>
-                                            <td class="text-end fw-bold text-success fs-6">
-                                                Rp {{ number_format($item->harga_b2b ?? 0, 0, ',', '.') }}
+                                            <td class="text-end">
+                                                <div class="fw-bold text-success fs-6">Rp {{ number_format($item->harga_b2b ?? 0, 0, ',', '.') }}</div>
+                                                <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }}</span>
                                             </td>
                                             <td class="text-end">
                                                 @if(($item->laba_unit ?? 0) >= 0)
                                                     <div class="fw-bold text-primary">Rp {{ number_format($item->laba_unit ?? 0, 0, ',', '.') }}</div>
-                                                    <span class="badge bg-success-subtle text-success small" style="font-size: 11px;">+{{ $item->margin_persen ?? 0 }}%</span>
+                                                    <span class="badge bg-success-subtle text-success small" style="font-size: 11px;">+{{ $item->margin_persen ?? 0 }}% / {{ $itemSatuan }}</span>
                                                 @else
                                                     <div class="fw-bold text-danger">Rp {{ number_format($item->laba_unit ?? 0, 0, ',', '.') }}</div>
-                                                    <span class="badge bg-danger-subtle text-danger small" style="font-size: 11px;">{{ $item->margin_persen ?? 0 }}%</span>
+                                                    <span class="badge bg-danger-subtle text-danger small" style="font-size: 11px;">{{ $item->margin_persen ?? 0 }}% / {{ $itemSatuan }}</span>
                                                 @endif
                                             </td>
                                             <td class="text-center">
@@ -154,10 +159,14 @@
                                                                 <input type="text" class="form-control bg-light" value="{{ $item->barang->nama ?? '-' }} ({{ $item->barang->kode_barang ?? '-' }})" readonly>
                                                             </div>
                                                             <div class="mb-3">
-                                                                <label class="form-label fw-semibold text-secondary small">Harga Jual B2B (Rp) <span class="text-danger">*</span></label>
+                                                                <label class="form-label fw-semibold text-secondary small">Harga Jual B2B per Satuan (Rp) <span class="text-danger">*</span></label>
                                                                 <div class="input-group">
                                                                     <span class="input-group-text bg-light fw-bold">Rp</span>
                                                                     <input type="number" name="harga_b2b" class="form-control fw-bold text-success fs-6" value="{{ (int)$item->harga_b2b }}" required min="0" step="any">
+                                                                    <span class="input-group-text bg-light text-muted fw-semibold">/ {{ $itemSatuan }}</span>
+                                                                </div>
+                                                                <div class="form-text small text-muted mt-1">
+                                                                    Harga jual per <strong>{{ $itemSatuan }}</strong> khusus untuk outlet pemesan yang dipilih (Satuan Master Barang).
                                                                 </div>
                                                             </div>
                                                             <div class="mb-3">
@@ -190,7 +199,7 @@
                                                             <div class="p-3 bg-light rounded-3 border">
                                                                 <div><strong>Outlet:</strong> {{ $item->customer->nama ?? '-' }}</div>
                                                                 <div><strong>Barang:</strong> {{ $item->barang->nama ?? '-' }}</div>
-                                                                <div><strong>Harga:</strong> Rp {{ number_format($item->harga_b2b, 0, ',', '.') }}</div>
+                                                                <div><strong>Harga:</strong> Rp {{ number_format($item->harga_b2b, 0, ',', '.') }} / {{ $itemSatuan }}</div>
                                                             </div>
                                                             <p class="text-muted small mt-2 mb-0">Setelah dihapus, harga jual untuk outlet ini akan kembali menggunakan harga standar barang.</p>
                                                         </div>
@@ -231,7 +240,7 @@
                     <h5 class="modal-title fw-bold mb-0"><i class="bi bi-plus-circle-fill me-2"></i>Tambah Harga Jual B2B per Outlet</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <form action="{{ route('harga-b2b.store') }}" method="POST">
+                <form action="{{ route('harga-b2b.store') }}" method="POST" id="formTambahHargaB2b">
                     @csrf
                     <div class="modal-body p-4">
                         <div class="mb-3">
@@ -239,27 +248,36 @@
                             <select name="customer_id" id="selectCustomerB2b" class="form-select select2-b2b-customer" required style="width: 100%;">
                                 <option value="">-- Ketik / Pilih Outlet Pemesan --</option>
                                 @foreach($customers as $c)
-                                    <option value="{{ $c->id }}">{{ $c->nama ?? $c->name }} ({{ $c->jenis ?? 'Customer B2B' }})</option>
+                                    <option value="{{ $c->id }}" 
+                                            data-nama="{{ strtolower($c->nama ?? $c->name) }}"
+                                            {{ ($customerId == $c->id) ? 'selected' : '' }}>
+                                        {{ $c->nama ?? $c->name }} ({{ $c->jenis ?? 'Customer B2B' }})
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-semibold text-secondary small">Nama Barang / Produk <span class="text-danger">*</span></label>
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <label class="form-label fw-semibold text-secondary small mb-0">Nama Barang / Produk <span class="text-danger">*</span></label>
+                                <span class="badge bg-secondary-subtle text-secondary border px-2 py-0.5" id="badgeItemCount" style="font-size: 0.72rem;">0 item</span>
+                            </div>
                             <select name="barang_id" id="selectBarangB2b" class="form-select select2-b2b-barang" required style="width: 100%;">
-                                <option value="">-- Ketik nama atau kode produk untuk mencari --</option>
-                                @foreach($listBarang as $b)
-                                    <option value="{{ $b->id }}">{{ $b->nama }} [{{ $b->kode_barang }}] - Std: Rp {{ number_format($b->harga_jual_b2b > 0 ? $b->harga_jual_b2b : $b->harga_jual_pos, 0, ',', '.') }}</option>
-                                @endforeach
+                                <option value="">-- Pilih outlet pemesan terlebih dahulu --</option>
                             </select>
-                            <div class="form-text small text-muted"><i class="bi bi-search me-1"></i>Anda dapat mengetik langsung nama produk atau kode barang pada kolom di atas.</div>
+                            <div class="form-text small text-muted mt-1" id="barangFilterHint">
+                                <i class="bi bi-info-circle me-1"></i>Pilih outlet pemesan untuk memuat produk yang sesuai (BSJ tagging divisi / POS).
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold text-secondary small">Harga Jual B2B Khusus (Rp) <span class="text-danger">*</span></label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light fw-bold">Rp</span>
-                                <input type="number" name="harga_b2b" class="form-control fw-bold text-success fs-6" placeholder="0" required min="0" step="any">
+                                <input type="number" name="harga_b2b" id="inputHargaB2b" class="form-control fw-bold text-success fs-6" placeholder="0" required min="0" step="any">
+                                <span class="input-group-text bg-light text-muted fw-semibold" id="b2bSatuanSuffix">/ unit</span>
                             </div>
-                            <div class="form-text small">Harga jual per unit khusus untuk outlet pemesan yang dipilih.</div>
+                            <div class="form-text small text-muted mt-1" id="b2bSatuanHelp">
+                                Harga jual per unit/satuan master barang khusus untuk outlet pemesan yang dipilih.
+                            </div>
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold text-secondary small">Catatan / Keterangan (Opsional)</label>
@@ -276,9 +294,123 @@
     </div>
 
     <script>
+        const allBarangData = @json($barangData ?? []);
+
+        function filterBarangByCustomer(customerId) {
+            const selectCustomer = document.getElementById('selectCustomerB2b');
+            const selectBarang = document.getElementById('selectBarangB2b');
+            const badgeCount = document.getElementById('badgeItemCount');
+            const filterHint = document.getElementById('barangFilterHint');
+            const suffix = document.getElementById('b2bSatuanSuffix');
+            const help = document.getElementById('b2bSatuanHelp');
+
+            if (!selectCustomer || !selectBarang) return;
+
+            let customerName = '';
+            const selectedOpt = selectCustomer.querySelector(`option[value="${customerId}"]`);
+            if (selectedOpt) {
+                customerName = (selectedOpt.getAttribute('data-nama') || selectedOpt.textContent || '').toLowerCase();
+            }
+
+            let filtered = [];
+            let outletTypeLabel = '';
+
+            if (customerName.includes('kejingga')) {
+                outletTypeLabel = 'KeJingga';
+                filtered = allBarangData.filter(item => item.is_kejingga_bsj || item.is_kejingga_pos);
+            } else if (customerName.includes('gaharu')) {
+                outletTypeLabel = 'Gaharu';
+                filtered = allBarangData.filter(item => item.is_gaharu_bsj || item.is_gaharu_pos);
+            } else if (customerId) {
+                outletTypeLabel = 'Outlet B2B';
+                filtered = allBarangData.filter(item => item.for_b2b_general);
+            } else {
+                filtered = [];
+            }
+
+            // Bersihkan select barang
+            selectBarang.innerHTML = '';
+
+            if (!customerId) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '-- Pilih outlet pemesan terlebih dahulu --';
+                selectBarang.appendChild(opt);
+                if (badgeCount) badgeCount.textContent = '0 item';
+                if (filterHint) {
+                    filterHint.innerHTML = '<i class="bi bi-info-circle me-1"></i>Pilih outlet pemesan untuk memuat produk yang sesuai.';
+                }
+                if (suffix) suffix.textContent = '/ unit';
+                if (help) help.textContent = 'Harga jual per unit/satuan master barang khusus untuk outlet pemesan yang dipilih.';
+            } else if (filtered.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = `-- Tidak ada produk BSJ / POS untuk ${outletTypeLabel} --`;
+                selectBarang.appendChild(opt);
+                if (badgeCount) badgeCount.textContent = '0 item';
+                if (filterHint) {
+                    filterHint.innerHTML = `<i class="bi bi-exclamation-triangle text-warning me-1"></i>Belum ada barang setengah jadi dengan tagging divisi ${outletTypeLabel} atau barang jadi POS ${outletTypeLabel}.`;
+                }
+                if (suffix) suffix.textContent = '/ unit';
+            } else {
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = '';
+                defaultOpt.textContent = `-- Ketik nama atau kode produk (${filtered.length} item ${outletTypeLabel}) --`;
+                selectBarang.appendChild(defaultOpt);
+
+                filtered.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    opt.dataset.stdPrice = item.std_price;
+                    opt.dataset.satuan = item.satuan || 'unit';
+
+                    let tagLabel = '';
+                    if (customerName.includes('kejingga')) {
+                        if (item.is_kejingga_bsj) {
+                            const divStr = item.kejingga_divisis && item.kejingga_divisis.length ? ' - ' + item.kejingga_divisis.join(', ') : '';
+                            tagLabel = ` [BSJ Divisi Kejingga${divStr}]`;
+                        } else if (item.is_kejingga_pos) {
+                            tagLabel = ' [POS Kejingga]';
+                        }
+                    } else if (customerName.includes('gaharu')) {
+                        if (item.is_gaharu_bsj) {
+                            const divStr = item.gaharu_divisis && item.gaharu_divisis.length ? ' - ' + item.gaharu_divisis.join(', ') : '';
+                            tagLabel = ` [BSJ Divisi Gaharu${divStr}]`;
+                        } else if (item.is_gaharu_pos) {
+                            tagLabel = ' [POS Gaharu]';
+                        }
+                    } else {
+                        tagLabel = item.is_bahan_setengah_jadi ? ' [BSJ]' : (item.tipe_penjualan ? ` [${item.tipe_penjualan}]` : '');
+                    }
+
+                    const satStr = item.satuan ? ` / ${item.satuan}` : '';
+                    opt.textContent = `${item.nama} [${item.kode_barang}]${tagLabel} - Std: Rp ${item.formatted_price}${satStr}`;
+                    selectBarang.appendChild(opt);
+                });
+
+                if (badgeCount) badgeCount.textContent = `${filtered.length} item`;
+                if (filterHint) {
+                    filterHint.innerHTML = `<i class="bi bi-check-circle text-success me-1"></i>Menampilkan <strong>${filtered.length} produk</strong> untuk <strong>${outletTypeLabel}</strong> (BSJ tagging divisi &amp; Barang Jadi POS).`;
+                }
+            }
+
+            // Trigger Select2 refresh
+            if (typeof $ !== 'undefined' && $(selectBarang).data('select2')) {
+                $(selectBarang).val('').trigger('change');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             if (typeof $ !== 'undefined') {
                 $('#modalTambahHargaB2b').on('shown.bs.modal', function () {
+                    $('#selectCustomerB2b').select2({
+                        theme: 'bootstrap-5',
+                        dropdownParent: $('#modalTambahHargaB2b'),
+                        width: '100%',
+                        placeholder: '-- Ketik / Pilih Outlet Pemesan --',
+                        allowClear: true
+                    });
+
                     $('#selectBarangB2b').select2({
                         theme: 'bootstrap-5',
                         dropdownParent: $('#modalTambahHargaB2b'),
@@ -287,13 +419,35 @@
                         allowClear: true
                     });
 
-                    $('#selectCustomerB2b').select2({
-                        theme: 'bootstrap-5',
-                        dropdownParent: $('#modalTambahHargaB2b'),
-                        width: '100%',
-                        placeholder: '-- Ketik nama outlet pemesan --',
-                        allowClear: true
-                    });
+                    const currentCust = $('#selectCustomerB2b').val();
+                    filterBarangByCustomer(currentCust);
+                });
+
+                $('#selectCustomerB2b').on('change', function() {
+                    const custId = $(this).val();
+                    filterBarangByCustomer(custId);
+                });
+
+                $('#selectBarangB2b').on('change', function() {
+                    const barangId = $(this).val();
+                    const inputHarga = document.getElementById('inputHargaB2b');
+                    const suffix = document.getElementById('b2bSatuanSuffix');
+                    const help = document.getElementById('b2bSatuanHelp');
+
+                    const item = allBarangData.find(b => String(b.id) === String(barangId));
+                    if (item) {
+                        const sat = item.satuan || 'unit';
+                        if (suffix) suffix.textContent = `/ ${sat}`;
+                        if (help) help.innerHTML = `Tarif harga jual khusus per <strong>${sat}</strong> untuk outlet pemesan yang dipilih (Satuan Master Barang).`;
+                        if (inputHarga && (!inputHarga.value || inputHarga.value == '0')) {
+                            if (item.std_price > 0) {
+                                inputHarga.value = item.std_price;
+                            }
+                        }
+                    } else {
+                        if (suffix) suffix.textContent = '/ unit';
+                        if (help) help.textContent = 'Harga jual per unit/satuan master barang khusus untuk outlet pemesan yang dipilih.';
+                    }
                 });
             }
         });

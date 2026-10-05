@@ -301,6 +301,13 @@
                                 </td>
                                 <td class="text-nowrap">
                                     <span class="badge bg-light text-dark border">{{ $item->customer->nama ?? '-' }}</span>
+                                    @if($item->divisi)
+                                        <div class="mt-1">
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 0.7rem; font-weight: 500;">
+                                                <i class="bi bi-diagram-3 me-1"></i>{{ $item->divisi->nama }}
+                                            </span>
+                                        </div>
+                                    @endif
                                     @if(isset($item->customer->no_hp) && $item->customer->no_hp !== '-')
                                         <div class="text-muted small" style="font-size: 0.7rem;">
                                             <i class="bi bi-telephone"></i> {{ $item->customer->no_hp }}
@@ -491,7 +498,14 @@
                                                                     </tr>
                                                                     <tr>
                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
-                                                                        <td><strong class="text-primary fs-6">{{ $item->customer->nama ?? '-' }}</strong></td>
+                                                                        <td>
+                                                                            <strong class="text-primary fs-6">{{ $item->customer->nama ?? '-' }}</strong>
+                                                                            @if($item->divisi)
+                                                                                <span class="badge bg-info-subtle text-info border border-info-subtle ms-2 py-1 px-2" style="font-size: 0.72rem;">
+                                                                                    <i class="bi bi-diagram-3-fill me-1"></i>Divisi: {{ $item->divisi->nama }}
+                                                                                </span>
+                                                                            @endif
+                                                                        </td>
                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
                                                                         <td><strong>Gudang Cold Kitchen</strong> <span class="text-muted small">(Penyedia)</span></td>
                                                                     </tr>
@@ -955,18 +969,29 @@
                     @csrf
                     <div class="modal-body p-4">
                         <div class="row g-3 mb-4">
-                            <div class="col-md-12">
+                            <div class="col-md-12" id="modal-cold-customer-col">
                                 <label class="form-label fw-bold small text-secondary">Outlet / Konsumen Pemesan <span class="text-danger">*</span></label>
                                 <select name="customer_id" id="modal-select-customer-cold" class="form-select rounded-3" required>
                                     <option value="">-- Pilih Outlet / Konsumen Pemesan --</option>
                                     @if(isset($customers))
                                         @foreach($customers as $c)
-                                            <option value="{{ $c->id }}">
+                                            <option value="{{ $c->id }}"
+                                                    data-has-divisi="{{ isset($c->has_divisi) && $c->has_divisi ? '1' : '0' }}"
+                                                    data-divisis='@json($c->divisis ?? [])'>
                                                 {{ $c->nama }} @if(isset($c->jenis_customer) && $c->jenis_customer) ({{ $c->jenis_customer }}) @endif
                                             </option>
                                         @endforeach
                                     @endif
                                 </select>
+                            </div>
+                            <div class="col-md-6" id="modal-cold-divisi-wrapper" style="display: none;">
+                                <label class="form-label fw-bold small text-secondary">
+                                    Divisi Pemesan <span class="text-danger">*</span>
+                                </label>
+                                <select name="divisi_id" id="modal-select-divisi-cold" class="form-select rounded-3">
+                                    <option value="">-- Pilih Divisi Outlet --</option>
+                                </select>
+                                <small class="text-muted" style="font-size: 0.72rem;">Divisi internal pemesan di outlet ini</small>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-secondary">Tanggal Order <span class="text-danger">*</span></label>
@@ -1392,13 +1417,58 @@
             const tomSelectColdInstances = new Map();
             let tomSelectCustomerCold = null;
 
+            function updateModalDivisiOptions(divisiList) {
+                const divisiWrapper = document.getElementById('modal-cold-divisi-wrapper');
+                const customerCol = document.getElementById('modal-cold-customer-col');
+                const divisiSelect = document.getElementById('modal-select-divisi-cold');
+                if (!divisiWrapper || !divisiSelect) return;
+
+                divisiSelect.innerHTML = '<option value="">-- Pilih Divisi Outlet --</option>';
+
+                if (divisiList && divisiList.length > 0) {
+                    divisiList.forEach(div => {
+                        const opt = document.createElement('option');
+                        opt.value = div.id;
+                        opt.textContent = div.nama + (div.keterangan ? ' (' + div.keterangan + ')' : '');
+                        divisiSelect.appendChild(opt);
+                    });
+                    divisiWrapper.style.display = 'block';
+                    if (customerCol) {
+                        customerCol.className = 'col-md-6';
+                    }
+                } else {
+                    divisiWrapper.style.display = 'none';
+                    if (customerCol) {
+                        customerCol.className = 'col-md-12';
+                    }
+                    divisiSelect.value = '';
+                }
+            }
+
             function initTomSelectColdCustomer() {
                 if (customerSelectCold && !tomSelectCustomerCold && typeof TomSelect !== 'undefined') {
                     tomSelectCustomerCold = new TomSelect(customerSelectCold, {
                         create: false,
                         placeholder: '-- Cari / Pilih Outlet / Konsumen --',
                         allowEmptyOption: true,
-                        dropdownParent: 'body'
+                        dropdownParent: 'body',
+                        onChange: function(val) {
+                            if (!val) {
+                                updateModalDivisiOptions([]);
+                                fetchColdSuggestions('');
+                                return;
+                            }
+                            const opt = customerSelectCold.querySelector(`option[value="${val}"]`);
+                            if (opt && opt.getAttribute('data-divisis')) {
+                                try {
+                                    const divisis = JSON.parse(opt.getAttribute('data-divisis'));
+                                    updateModalDivisiOptions(divisis);
+                                } catch (e) {
+                                    updateModalDivisiOptions([]);
+                                }
+                            }
+                            fetchColdSuggestions(val);
+                        }
                     });
                 }
             }
@@ -1660,6 +1730,9 @@
                     .then(data => {
                         currentSuggestionsCold = data.suggestions || [];
                         if (suggestionOutletNameCold) suggestionOutletNameCold.innerText = data.outlet_name || '';
+                        if (data.divisi_list !== undefined) {
+                            updateModalDivisiOptions(data.divisi_list);
+                        }
 
                         if (currentSuggestionsCold.length > 0) {
                             suggestionBoxCold.style.display = 'block';

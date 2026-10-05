@@ -16,12 +16,36 @@ use Illuminate\Support\Facades\DB;
 class PesananController extends Controller
 {
     /**
+     * Helper untuk menentukan Gudang dan Divisi dari Outlet / Customer
+     */
+    private function getCustomerGudangAndDivisi($customer)
+    {
+        if (!$customer) return [null, collect()];
+        $custNama = strtolower($customer->nama);
+        $g = null;
+        if (str_contains($custNama, 'kejingga')) {
+            $g = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
+        } elseif (str_contains($custNama, 'gaharu')) {
+            $g = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->where('kategori', 'Operasional')->first()
+                ?? \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
+        } else {
+            $g = \App\Models\MasterGudang::find($customer->gudang_id ?? 0) 
+                ?? \App\Models\MasterGudang::where('nama', 'like', '%' . $customer->nama . '%')->first()
+                ?? \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
+        }
+
+        $divisis = $g ? \App\Models\GudangDivisi::where('gudang_id', $g->id)->orderBy('nama')->get(['id', 'nama', 'keterangan']) : collect();
+
+        return [$g, $divisis];
+    }
+
+    /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
         $search = $request->query('search');
-        $query = Pesanan::b2b()->with(['customer', 'pembayaran', 'details.produk.resepBtklBop', 'gudang', 'creator']);
+        $query = Pesanan::b2b()->with(['customer', 'divisi', 'pembayaran', 'details.produk.resepBtklBop', 'gudang', 'creator']);
 
         $customerId = $request->query('customer_id');
         if ($customerId) {
@@ -55,6 +79,14 @@ class PesananController extends Controller
         }
 
         $customers = Customer::orderBy('nama')->get();
+        foreach ($customers as $c) {
+            [$g, $divisis] = $this->getCustomerGudangAndDivisi($c);
+            $c->gudang = $g;
+            $c->gudang_id = $g?->id;
+            $c->gudang_nama = $g?->nama ?? $c->nama;
+            $c->divisis = $divisis;
+            $c->has_divisi = $divisis->isNotEmpty();
+        }
 
         $totalPesanan = Pesanan::b2b()->count();
         $totalProses = Pesanan::b2b()->whereIn('status_pesanan', ['Draft', 'Proses', 'Siap kirim', 'pending', 'ready', 'Diproses'])->count();
@@ -140,21 +172,19 @@ class PesananController extends Controller
         }
 
         if (!$gudang && $customer) {
-            $customerName = strtolower($customer->nama);
-            if (str_contains($customerName, 'gaharu')) {
-                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->where('kategori', 'Operasional')->first()
-                    ?? \App\Models\MasterGudang::where('nama', 'like', '%Gaharu%')->first();
-            } elseif (str_contains($customerName, 'kejingga')) {
-                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%')->first();
-            } else {
-                $gudang = \App\Models\MasterGudang::where('nama', 'like', '%' . $customer->nama . '%')->first()
-                    ?? \App\Models\MasterGudang::where('kategori', 'Operasional')->first();
-            }
+            [$gudang, $divisis] = $this->getCustomerGudangAndDivisi($customer);
+        } else {
+            $divisis = $gudang ? \App\Models\GudangDivisi::where('gudang_id', $gudang->id)->orderBy('nama')->get(['id', 'nama', 'keterangan']) : collect();
         }
 
         if (!$gudang) {
             $outletName = $customer ? $customer->nama : '';
-            return response()->json(['suggestions' => [], 'outlet_name' => $outletName]);
+            return response()->json([
+                'suggestions' => [],
+                'outlet_name' => $outletName,
+                'divisi_list' => [],
+                'has_divisi'  => false,
+            ]);
         }
 
         $gudangName = strtolower($gudang->nama);
@@ -200,7 +230,9 @@ class PesananController extends Controller
             'suggestions' => $suggestions,
             'outlet_name' => $customer ? $customer->nama : $gudang->nama,
             'gudang_id'   => $gudang->id,
-            'gudang_nama' => $gudang->nama
+            'gudang_nama' => $gudang->nama,
+            'divisi_list' => $divisis,
+            'has_divisi'  => $divisis->isNotEmpty(),
         ]);
     }
 
@@ -210,6 +242,14 @@ class PesananController extends Controller
     public function create()
     {
         $customers = Customer::orderBy('nama')->get();
+        foreach ($customers as $c) {
+            [$g, $divisis] = $this->getCustomerGudangAndDivisi($c);
+            $c->gudang = $g;
+            $c->gudang_id = $g?->id;
+            $c->gudang_nama = $g?->nama ?? $c->nama;
+            $c->divisis = $divisis;
+            $c->has_divisi = $divisis->isNotEmpty();
+        }
         
         // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
         $produk = MasterBarang::with('resepBtklBop')
@@ -231,6 +271,7 @@ class PesananController extends Controller
     {
         $request->validate([
             'customer_id'    => 'required',
+            'divisi_id'      => 'nullable|exists:gudang_divisi,id',
             'tanggal'        => 'required',
             'estimasi_kirim' => 'nullable',
             'produk_id'      => 'required|array|min:1',
@@ -349,6 +390,7 @@ class PesananController extends Controller
                 'kode_pesanan'      => $kodePesanan,
                 'tipe_pesanan'      => 'b2b',
                 'customer_id'       => $request->customer_id,
+                'divisi_id'         => $request->divisi_id ?: null,
                 'tanggal'           => $request->tanggal,
                 'estimasi_kirim'    => $estimasiKirim,
                 'estimasi_produksi' => $request->estimasi_produksi ?? null,
@@ -384,7 +426,7 @@ class PesananController extends Controller
      */
     public function show(string $id)
     {
-        $pesanan = Pesanan::with(['customer', 'details.produk.resepBtklBop', 'gudang', 'creator'])->findOrFail($id);
+        $pesanan = Pesanan::with(['customer', 'divisi', 'details.produk.resepBtklBop', 'gudang', 'creator'])->findOrFail($id);
         
         $woDetail = WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
         $workOrder = $woDetail ? WorkOrder::find($woDetail->work_order_id) : null;
@@ -397,7 +439,7 @@ class PesananController extends Controller
      */
     public function edit(string $id)
     {
-        $pesanan = Pesanan::with(['details.produk.resepBtklBop', 'customer'])->findOrFail($id);
+        $pesanan = Pesanan::with(['details.produk.resepBtklBop', 'customer', 'divisi'])->findOrFail($id);
 
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
         if ($sudahWO) {
@@ -411,6 +453,14 @@ class PesananController extends Controller
         }
 
         $customers = Customer::orderBy('nama')->get();
+        foreach ($customers as $c) {
+            [$g, $divisis] = $this->getCustomerGudangAndDivisi($c);
+            $c->gudang = $g;
+            $c->gudang_id = $g?->id;
+            $c->gudang_nama = $g?->nama ?? $c->nama;
+            $c->divisis = $divisis;
+            $c->has_divisi = $divisis->isNotEmpty();
+        }
 
         // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
         $produk = MasterBarang::with('resepBtklBop')
@@ -444,6 +494,7 @@ class PesananController extends Controller
 
         $request->validate([
             'customer_id'    => 'required',
+            'divisi_id'      => 'nullable|exists:gudang_divisi,id',
             'tanggal'        => 'required',
             'estimasi_kirim' => 'nullable',
             'produk_id'      => 'required|array|min:1',
@@ -540,6 +591,7 @@ class PesananController extends Controller
 
             $pesanan->update([
                 'customer_id'       => $request->customer_id,
+                'divisi_id'         => $request->divisi_id ?: null,
                 'tanggal'           => $request->tanggal,
                 'estimasi_kirim'    => $request->estimasi_kirim ?: $request->tanggal,
                 'estimasi_produksi' => $request->estimasi_produksi ?? $pesanan->estimasi_produksi,
@@ -797,7 +849,7 @@ class PesananController extends Controller
 
     public function cetakSoPdf($id)
     {
-        $pesanan = Pesanan::with(['customer', 'gudang', 'creator', 'details.produk.resepBtklBop', 'pembayaran'])->findOrFail($id);
+        $pesanan = Pesanan::with(['customer', 'divisi', 'gudang', 'creator', 'details.produk.resepBtklBop', 'pembayaran'])->findOrFail($id);
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
         $pdf->loadView('pesanan.so-pdf', compact('pesanan'));
         return $pdf->stream('Sales-Order-' . $pesanan->kode_pesanan . '.pdf');
