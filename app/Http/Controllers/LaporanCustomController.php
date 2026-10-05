@@ -334,6 +334,19 @@ class LaporanCustomController extends Controller
                         $hasCond = true;
                     }
                 }
+                if (!$hasCond) {
+                    $q->where(function($sq) {
+                        $sq->whereHas('pesanan', function($pq) {
+                            $pq->where('status_pembayaran', '!=', 'Lunas')
+                               ->where('status_pembayaran', '!=', 'lunas')
+                               ->orWhereNull('status_pembayaran');
+                        })->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                            $pq->where('status_pembayaran', '!=', 'Lunas')
+                               ->where('status_pembayaran', '!=', 'lunas')
+                               ->orWhereNull('status_pembayaran');
+                        });
+                    });
+                }
             });
         } elseif ($statusPembayaran === 'lunas') {
             $query->where(function($q) use ($hasColumnStatus, $hasColKeterangan, $hasColCatatan) {
@@ -360,6 +373,17 @@ class LaporanCustomController extends Controller
                         $q->where('catatan', 'like', '%"status_pembayaran":"lunas"%');
                         $hasCond = true;
                     }
+                }
+                if (!$hasCond) {
+                    $q->where(function($sq) {
+                        $sq->whereHas('pesanan', function($pq) {
+                            $pq->where('status_pembayaran', 'Lunas')
+                               ->orWhere('status_pembayaran', 'lunas');
+                        })->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                            $pq->where('status_pembayaran', 'Lunas')
+                               ->orWhere('status_pembayaran', 'lunas');
+                        });
+                    });
                 }
             });
         }

@@ -35,6 +35,26 @@ class MasterBarang extends Model
 
     protected static function booted()
     {
+        static::saving(function ($barang) {
+            if ($barang->is_barang_jadi) {
+                $barang->is_bahan_baku = false;
+                $barang->is_bahan_setengah_jadi = false;
+                $barang->is_operational = false;
+            } elseif ($barang->is_operational) {
+                $barang->is_bahan_baku = false;
+                $barang->is_bahan_setengah_jadi = false;
+                $barang->is_barang_jadi = false;
+            } elseif ($barang->is_bahan_setengah_jadi) {
+                $barang->is_bahan_baku = false;
+                $barang->is_barang_jadi = false;
+                $barang->is_operational = false;
+            } elseif ($barang->is_bahan_baku) {
+                $barang->is_bahan_setengah_jadi = false;
+                $barang->is_barang_jadi = false;
+                $barang->is_operational = false;
+            }
+        });
+
         static::addGlobalScope('role_barang_filter', function (\Illuminate\Database\Eloquent\Builder $builder) {
             // Bypass filter di luar konteks request (CLI, seeder, migrate)
             if (app()->runningInConsole()) {
@@ -526,5 +546,44 @@ public function resepBahanBakuAlternatif()
                 }
             }
         }
+    }
+
+    public static function healConflictingJenisFlags(): void
+    {
+        // 1. Barang jadi yang masih berstatus bahan baku / operational
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where('is_barang_jadi', 1)
+            ->where(function ($q) {
+                $q->where('is_bahan_baku', 1)
+                  ->orWhere('is_bahan_setengah_jadi', 1)
+                  ->orWhere('is_operational', 1);
+            })
+            ->update([
+                'is_bahan_baku'          => 0,
+                'is_bahan_setengah_jadi' => 0,
+                'is_operational'         => 0,
+            ]);
+
+        // 2. Operational yang masih berstatus bahan baku / BSJ / barang jadi
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where('is_operational', 1)
+            ->where(function ($q) {
+                $q->where('is_bahan_baku', 1)
+                  ->orWhere('is_bahan_setengah_jadi', 1)
+                  ->orWhere('is_barang_jadi', 1);
+            })
+            ->update([
+                'is_bahan_baku'          => 0,
+                'is_bahan_setengah_jadi' => 0,
+                'is_barang_jadi'         => 0,
+            ]);
+
+        // 3. Bahan setengah jadi yang masih berstatus bahan baku
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where('is_bahan_setengah_jadi', 1)
+            ->where('is_bahan_baku', 1)
+            ->update([
+                'is_bahan_baku' => 0,
+            ]);
     }
 }

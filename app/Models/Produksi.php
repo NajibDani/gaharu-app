@@ -19,7 +19,15 @@ class Produksi extends Model
         'gudang_bahan_id', 
         'gudang_hasil_id', 
         'created_by',
-        'divisi_id'
+        'divisi_id',
+        'catatan',
+        'keterangan',
+        'status_pembayaran',
+        'tanggal_pembayaran',
+        'metode_pembayaran',
+        'catatan_pembayaran',
+        'no_invoice',
+        'dibayar_by'
     ];
 
     /**
@@ -100,7 +108,20 @@ class Produksi extends Model
             return $this->attributes['status_pembayaran'];
         }
         $meta = $this->getPaymentMeta();
-        return $meta['status_pembayaran'] ?? 'belum_dibayar';
+        if (isset($meta['status_pembayaran'])) {
+            return $meta['status_pembayaran'];
+        }
+        if ($this->pesanan && strtolower($this->pesanan->status_pembayaran ?? '') === 'lunas') {
+            return 'lunas';
+        }
+        if ($this->alokasiPesanan && $this->alokasiPesanan->isNotEmpty()) {
+            foreach ($this->alokasiPesanan as $alo) {
+                if ($alo->pesanan && strtolower($alo->pesanan->status_pembayaran ?? '') === 'lunas') {
+                    return 'lunas';
+                }
+            }
+        }
+        return 'belum_dibayar';
     }
 
     public function getTanggalPembayaranAttribute()
@@ -109,7 +130,17 @@ class Produksi extends Model
             return \Carbon\Carbon::parse($this->attributes['tanggal_pembayaran']);
         }
         $meta = $this->getPaymentMeta();
-        return isset($meta['tanggal_pembayaran']) ? \Carbon\Carbon::parse($meta['tanggal_pembayaran']) : null;
+        if (isset($meta['tanggal_pembayaran'])) {
+            return \Carbon\Carbon::parse($meta['tanggal_pembayaran']);
+        }
+        $pes = $this->pesanan ?? ($this->alokasiPesanan->first()->pesanan ?? null);
+        if ($pes) {
+            $pembayaran = \App\Models\Pembayaran::where('pesanan_id', $pes->id)->latest('id')->first();
+            if ($pembayaran && $pembayaran->tanggal_bayar) {
+                return \Carbon\Carbon::parse($pembayaran->tanggal_bayar);
+            }
+        }
+        return null;
     }
 
     public function getMetodePembayaranAttribute()
@@ -118,7 +149,17 @@ class Produksi extends Model
             return $this->attributes['metode_pembayaran'];
         }
         $meta = $this->getPaymentMeta();
-        return $meta['metode_pembayaran'] ?? null;
+        if (isset($meta['metode_pembayaran'])) {
+            return $meta['metode_pembayaran'];
+        }
+        $pes = $this->pesanan ?? ($this->alokasiPesanan->first()->pesanan ?? null);
+        if ($pes) {
+            $pembayaran = \App\Models\Pembayaran::where('pesanan_id', $pes->id)->latest('id')->first();
+            if ($pembayaran) {
+                return $pembayaran->metode_pembayaran;
+            }
+        }
+        return null;
     }
 
     public function getCatatanPembayaranAttribute()
@@ -127,7 +168,17 @@ class Produksi extends Model
             return $this->attributes['catatan_pembayaran'];
         }
         $meta = $this->getPaymentMeta();
-        return $meta['catatan_pembayaran'] ?? null;
+        if (isset($meta['catatan_pembayaran'])) {
+            return $meta['catatan_pembayaran'];
+        }
+        $pes = $this->pesanan ?? ($this->alokasiPesanan->first()->pesanan ?? null);
+        if ($pes) {
+            $pembayaran = \App\Models\Pembayaran::where('pesanan_id', $pes->id)->latest('id')->first();
+            if ($pembayaran) {
+                return $pembayaran->catatan;
+            }
+        }
+        return null;
     }
 
     public function getNoInvoiceAttribute()
@@ -136,7 +187,17 @@ class Produksi extends Model
             return $this->attributes['no_invoice'];
         }
         $meta = $this->getPaymentMeta();
-        return $meta['no_invoice'] ?? null;
+        if (isset($meta['no_invoice'])) {
+            return $meta['no_invoice'];
+        }
+        $pes = $this->pesanan ?? ($this->alokasiPesanan->first()->pesanan ?? null);
+        if ($pes) {
+            $pembayaran = \App\Models\Pembayaran::where('pesanan_id', $pes->id)->latest('id')->first();
+            if ($pembayaran && $pembayaran->no_invoice) {
+                return $pembayaran->no_invoice;
+            }
+        }
+        return null;
     }
 
     public function getDibayarByAttribute()
@@ -145,7 +206,17 @@ class Produksi extends Model
             return $this->attributes['dibayar_by'];
         }
         $meta = $this->getPaymentMeta();
-        return $meta['dibayar_by'] ?? null;
+        if (isset($meta['dibayar_by'])) {
+            return $meta['dibayar_by'];
+        }
+        $pes = $this->pesanan ?? ($this->alokasiPesanan->first()->pesanan ?? null);
+        if ($pes) {
+            $pembayaran = \App\Models\Pembayaran::where('pesanan_id', $pes->id)->latest('id')->first();
+            if ($pembayaran) {
+                return $pembayaran->created_by;
+            }
+        }
+        return null;
     }
 
     public function dibayarByUser(): BelongsTo
@@ -155,22 +226,34 @@ class Produksi extends Model
 
     public function updatePaymentMeta(array $data)
     {
-        $existing = $this->getPaymentMeta();
-        $merged = array_merge($existing, $data);
-        
-        $baseText = $this->catatan ?? $this->keterangan ?? '';
-        if (str_contains($baseText, '__PAYMENT_META__:')) {
-            $baseText = trim(substr($baseText, 0, strpos($baseText, '__PAYMENT_META__:')));
+        // 1. Direct update to columns if they exist in schema
+        $directUpdates = [];
+        foreach (['status_pembayaran', 'tanggal_pembayaran', 'metode_pembayaran', 'catatan_pembayaran', 'no_invoice', 'dibayar_by'] as $col) {
+            if (isset($data[$col]) && \Illuminate\Support\Facades\Schema::hasColumn('produksi', $col)) {
+                $directUpdates[$col] = $data[$col];
+            }
+        }
+        if (!empty($directUpdates)) {
+            $this->update($directUpdates);
         }
 
-        $newRaw = ($baseText ? $baseText . "\n" : '') . '__PAYMENT_META__:' . json_encode($merged);
+        // 2. Also keep payment metadata in catatan / keterangan ONLY IF column exists
+        if (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan') || \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan')) {
+            $existing = $this->getPaymentMeta();
+            $merged = array_merge($existing, $data);
+            
+            $baseText = $this->catatan ?? $this->keterangan ?? '';
+            if (str_contains($baseText, '__PAYMENT_META__:')) {
+                $baseText = trim(substr($baseText, 0, strpos($baseText, '__PAYMENT_META__:')));
+            }
 
-        if (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan')) {
-            $this->update(['catatan' => $newRaw]);
-        } elseif (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan')) {
-            $this->update(['keterangan' => $newRaw]);
-        } else {
-            \Illuminate\Support\Facades\DB::table('produksi')->where('id', $this->id)->update(['keterangan' => $newRaw]);
+            $newRaw = ($baseText ? $baseText . "\n" : '') . '__PAYMENT_META__:' . json_encode($merged);
+
+            if (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan')) {
+                $this->update(['catatan' => $newRaw]);
+            } elseif (\Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan')) {
+                $this->update(['keterangan' => $newRaw]);
+            }
         }
     }
 }

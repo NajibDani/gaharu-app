@@ -790,12 +790,12 @@
                                                                                 @else
                                                                                     <span class="badge bg-success text-white small fw-bold"><i class="bi bi-check-circle-fill me-1"></i>Stok Cukup</span>
                                                                                 @endif
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" onclick="toggleCustomCollapse('collapseRekapBahanWo{{ $wo->id }}', this)">
-                                                                                    <i class="bi bi-chevron-down"></i> Rekap Bahan Baku
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" aria-expanded="true" onclick="toggleCustomCollapse('collapseRekapBahanWo{{ $wo->id }}', this)">
+                                                                                    <i class="bi bi-chevron-up"></i> Rekap Bahan Baku
                                                                                 </button>
                                                                             </div>
                                                                         </div>
-                                                                        <div class="collapse" id="collapseRekapBahanWo{{ $wo->id }}">
+                                                                        <div class="collapse show" id="collapseRekapBahanWo{{ $wo->id }}">
                                                                             <div class="card-body p-0" style="max-height: 280px; overflow-y: auto;">
                                                                                 <div class="table-responsive">
                                                                                     <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
@@ -921,12 +921,12 @@
                                                                             </h6>
                                                                             <div class="d-flex align-items-center gap-2">
                                                                                 <span class="badge bg-white text-dark border small fw-semibold">{{ $wo->total_jenis_bahan }} Jenis Bahan</span>
-                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" onclick="toggleCustomCollapse('collapseRekapBahanWoDone{{ $wo->id }}', this)">
-                                                                                    <i class="bi bi-chevron-down"></i> Rekap Bahan Baku
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" aria-expanded="true" onclick="toggleCustomCollapse('collapseRekapBahanWoDone{{ $wo->id }}', this)">
+                                                                                    <i class="bi bi-chevron-up"></i> Rekap Bahan Baku
                                                                                 </button>
                                                                             </div>
                                                                         </div>
-                                                                        <div class="collapse" id="collapseRekapBahanWoDone{{ $wo->id }}">
+                                                                        <div class="collapse show" id="collapseRekapBahanWoDone{{ $wo->id }}">
                                                                             <div class="card-body p-0" style="max-height: 280px; overflow-y: auto;">
                                                                                 <div class="table-responsive">
                                                                                     <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
@@ -2109,9 +2109,10 @@
                 }
                 if (btnEl) {
                     btnEl.setAttribute('aria-expanded', 'true');
-                    const icon = btnEl.querySelector('i.bi-chevron-down');
+                    const icon = btnEl.querySelector('i');
                     if (icon) {
-                        icon.className = 'bi bi-chevron-up';
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-up');
                     }
                 }
             } else {
@@ -2119,9 +2120,10 @@
                 el.style.display = 'none';
                 if (btnEl) {
                     btnEl.setAttribute('aria-expanded', 'false');
-                    const icon = btnEl.querySelector('i.bi-chevron-up');
+                    const icon = btnEl.querySelector('i');
                     if (icon) {
-                        icon.className = 'bi bi-chevron-down';
+                        icon.classList.remove('bi-chevron-up');
+                        icon.classList.add('bi-chevron-down');
                     }
                 }
             }

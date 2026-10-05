@@ -143,6 +143,8 @@ class StockOpnameController extends Controller
                 }
             })
             ->where('master_barang.is_active', true)
+            ->where('master_barang.is_barang_jadi', 0)
+            ->where('master_barang.is_operational', 0)
             ->where(function ($q) {
                 $q->where('master_barang.is_bahan_baku', 1)
                   ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
@@ -174,7 +176,7 @@ class StockOpnameController extends Controller
                     });
                 }
 
-                // Jika sedang edit SO, item yang sudah tercatat di detail SO ini harus selalu muncul
+                // Jika sedang edit SO, item yang sudah tercatat di detail SO ini harus selalu muncul (selama valid bahan baku / BSJ)
                 if ($opnameId) {
                     $q->orWhereExists(function($opnameDetailQuery) use ($opnameId) {
                         $opnameDetailQuery->select(DB::raw(1))
@@ -289,8 +291,21 @@ class StockOpnameController extends Controller
             }
         }
 
+        $barangIdsInput = array_column($items, 'barang_id');
+        $validBarangs = DB::table('master_barang')
+            ->whereIn('id', $barangIdsInput)
+            ->where('is_barang_jadi', 0)
+            ->where('is_operational', 0)
+            ->where(function($q) {
+                $q->where('is_bahan_baku', 1)->orWhere('is_bahan_setengah_jadi', 1);
+            })
+            ->pluck('id')
+            ->toArray();
+
+        $items = array_values(array_filter($items, fn($it) => in_array($it['barang_id'], $validBarangs)));
+
         if (empty($items)) {
-            return back()->with('error', 'Tidak ada data barang yang disimpan. Silakan periksa kembali daftar barang opname.')->withInput();
+            return back()->with('error', 'Tidak ada data barang bahan baku / bahan setengah jadi yang valid untuk disimpan.')->withInput();
         }
 
         DB::beginTransaction();
@@ -348,12 +363,27 @@ class StockOpnameController extends Controller
 
     public function show(string $id)
     {
+        \App\Models\MasterBarang::healConflictingJenisFlags();
+
         $stockOpname = StockOpname::with([
             'gudang',
             'divisi',
             'user',
             'details.barang',
         ])->findOrFail($id);
+
+        if ($stockOpname->status === 'draft') {
+            StockOpnameDetail::where('stock_opname_id', $stockOpname->id)
+                ->whereHas('barang', function($bq) {
+                    $bq->where('is_barang_jadi', 1)
+                       ->orWhere('is_operational', 1)
+                       ->orWhere(function($bq2) {
+                           $bq2->where('is_bahan_baku', 0)->where('is_bahan_setengah_jadi', 0);
+                       });
+                })
+                ->delete();
+            $stockOpname->load(['details.barang']);
+        }
 
         $pengeluaranOtomatis = $stockOpname->pengeluaranOtomatis();
         $isSuperAdmin = $this->isSuperAdminUser();
@@ -378,11 +408,13 @@ class StockOpnameController extends Controller
 
         $isSuperAdmin = $this->isSuperAdminUser();
 
-        $detailsSorted = $opname->details->sortBy(function ($d) {
-            $stok = (float) $d->stok_sistem;
-            $order = $stok > 0 ? 0 : ($stok < 0 ? 1 : 2);
-            return sprintf('%d_%s', $order, strtolower($d->barang->nama ?? ''));
-        })->values();
+        $detailsSorted = $opname->details
+            ->filter(fn($d) => $d->barang && ($d->barang->is_bahan_baku || $d->barang->is_bahan_setengah_jadi) && !$d->barang->is_barang_jadi && !$d->barang->is_operational)
+            ->sortBy(function ($d) {
+                $stok = (float) $d->stok_sistem;
+                $order = $stok > 0 ? 0 : ($stok < 0 ? 1 : 2);
+                return sprintf('%d_%s', $order, strtolower($d->barang->nama ?? ''));
+            })->values();
 
         return response()->json([
             'id'            => $opname->id,
@@ -440,10 +472,25 @@ class StockOpnameController extends Controller
         DB::beginTransaction();
 
         try {
+            \App\Models\MasterBarang::healConflictingJenisFlags();
+
+            // Bersihkan item non-bahan baku / non-BSJ yang mungkin sebelumnya tersimpan di draft SO
+            StockOpnameDetail::where('stock_opname_id', $opname->id)
+                ->whereHas('barang', function($bq) {
+                    $bq->where('is_barang_jadi', 1)
+                       ->orWhere('is_operational', 1)
+                       ->orWhere(function($bq2) {
+                           $bq2->where('is_bahan_baku', 0)->where('is_bahan_setengah_jadi', 0);
+                       });
+                })
+                ->delete();
+
+            $opname->load(['details.barang']);
+
             $gudangId = $opname->gudang_id;
             $divisiId = $opname->divisi_id;
 
-            // Ambil semua barang aktif beserta stok sistem terkini di gudang/divisi ini
+            // Ambil semua barang aktif beserta stok sistem terkini di gudang/divisi ini (HANYA Bahan Baku & Bahan Setengah Jadi)
             $barangList = DB::table('master_barang')
                 ->leftJoin('stok_gudang', function ($join) use ($gudangId, $divisiId) {
                     $join->on('master_barang.id', '=', 'stok_gudang.barang_id')
@@ -455,6 +502,8 @@ class StockOpnameController extends Controller
                     }
                 })
                 ->where('master_barang.is_active', true)
+                ->where('master_barang.is_barang_jadi', 0)
+                ->where('master_barang.is_operational', 0)
                 ->where(function ($q) {
                     $q->where('master_barang.is_bahan_baku', 1)
                       ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
@@ -545,10 +594,16 @@ class StockOpnameController extends Controller
                 }
             }
 
-            // Untuk barang yang ada di detail tetapi tidak ada di query master aktif (misal barang non-aktif):
+            // Untuk barang yang ada di detail tetapi tidak ada di query master aktif:
             $processedBarangIds = $barangList->pluck('id')->all();
             foreach ($existingDetails as $barangId => $detail) {
                 if (!in_array($barangId, $processedBarangIds)) {
+                    $barang = DB::table('master_barang')->where('id', $barangId)->first();
+                    if (!$barang || $barang->is_barang_jadi || $barang->is_operational || (!$barang->is_bahan_baku && !$barang->is_bahan_setengah_jadi)) {
+                        $detail->delete();
+                        continue;
+                    }
+
                     $stokAktual = (float) (DB::table('stok_gudang')
                         ->where('barang_id', $barangId)
                         ->where('gudang_id', $gudangId)
@@ -770,19 +825,38 @@ class StockOpnameController extends Controller
                 ->with('error', 'Stock Opname yang sudah diapprove hanya dapat diedit oleh Super Admin.');
         }
 
+        \App\Models\MasterBarang::healConflictingJenisFlags();
+
+        if ($opname->status === 'draft') {
+            StockOpnameDetail::where('stock_opname_id', $opname->id)
+                ->whereHas('barang', function($bq) {
+                    $bq->where('is_barang_jadi', 1)
+                       ->orWhere('is_operational', 1)
+                       ->orWhere(function($bq2) {
+                           $bq2->where('is_bahan_baku', 0)->where('is_bahan_setengah_jadi', 0);
+                       });
+                })
+                ->delete();
+            $opname->load(['details.barang']);
+        }
+
         $gudang = $opname->gudang;
         $divisi = $opname->divisi;
         $divisiId = $opname->divisi_id;
         $kategoris = \App\Models\Kategori::orderBy('nama')->get();
 
-        $existingDetails = $opname->details->mapWithKeys(function ($d) {
-            return [$d->barang_id => [
-                'stok_sistem' => (float) $d->stok_sistem,
-                'stok_fisik'  => (float) $d->stok_fisik,
-                'selisih'     => (float) $d->selisih,
-                'nilai'       => (float) $d->nilai_selisih,
-            ]];
-        });
+        $existingDetails = $opname->details
+            ->filter(function ($d) {
+                return $d->barang && ($d->barang->is_bahan_baku || $d->barang->is_bahan_setengah_jadi) && !$d->barang->is_barang_jadi && !$d->barang->is_operational;
+            })
+            ->mapWithKeys(function ($d) {
+                return [$d->barang_id => [
+                    'stok_sistem' => (float) $d->stok_sistem,
+                    'stok_fisik'  => (float) $d->stok_fisik,
+                    'selisih'     => (float) $d->selisih,
+                    'nilai'       => (float) $d->nilai_selisih,
+                ]];
+            });
 
         return view('stock-opname.edit', compact(
             'opname',
@@ -837,8 +911,21 @@ class StockOpnameController extends Controller
                 }
             }
 
+            $barangIdsInput = array_column($items, 'barang_id');
+            $validBarangs = DB::table('master_barang')
+                ->whereIn('id', $barangIdsInput)
+                ->where('is_barang_jadi', 0)
+                ->where('is_operational', 0)
+                ->where(function($q) {
+                    $q->where('is_bahan_baku', 1)->orWhere('is_bahan_setengah_jadi', 1);
+                })
+                ->pluck('id')
+                ->toArray();
+
+            $items = array_values(array_filter($items, fn($it) => in_array($it['barang_id'], $validBarangs)));
+
             if (empty($items)) {
-                return back()->with('error', 'Tidak ada data barang yang disimpan. Silakan periksa kembali formulir opname.')->withInput();
+                return back()->with('error', 'Tidak ada data barang bahan baku / bahan setengah jadi yang valid untuk disimpan.')->withInput();
             }
 
             DB::beginTransaction();
@@ -1670,10 +1757,12 @@ class StockOpnameController extends Controller
         $query = \App\Models\MasterBarang::with('kategori')->where('is_active', true);
 
         // Filter HANYA bahan baku & bahan setengah jadi
-        $query->where(function ($q) {
-            $q->where('is_bahan_baku', true)
-              ->orWhere('is_bahan_setengah_jadi', true);
-        });
+        $query->where('is_barang_jadi', false)
+              ->where('is_operational', false)
+              ->where(function ($q) {
+                  $q->where('is_bahan_baku', true)
+                    ->orWhere('is_bahan_setengah_jadi', true);
+              });
 
         // Filter sesuai alokasi/tagging divisi & gudang
         $query->where(function ($q) use ($gudangId, $divisiId) {
@@ -1735,6 +1824,10 @@ class StockOpnameController extends Controller
         $items = [];
         foreach ($opname->details as $d) {
             $b = $d->barang;
+            if (!$b || (!$b->is_bahan_baku && !$b->is_bahan_setengah_jadi) || $b->is_barang_jadi || $b->is_operational) {
+                continue;
+            }
+
             $items[] = [
                 'kode_barang' => $b ? $b->kode_barang : '-',
                 'nama'        => $b ? $b->nama : '-',
