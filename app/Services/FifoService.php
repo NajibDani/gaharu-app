@@ -769,7 +769,7 @@ class FifoService
 
         $hasPesananCk = DB::table('pesanan_detail')
             ->join('pesanan', 'pesanan.id', '=', 'pesanan_detail.pesanan_id')
-            ->where('pesanan_detail.barang_id', $barangId)
+            ->where('pesanan_detail.produk_id', $barangId)
             ->where('pesanan.tipe_pesanan', 'central_kitchen')
             ->exists();
 
