@@ -121,8 +121,8 @@ class HargaBarangB2bController extends Controller
         $fifoService = app(FifoService::class);
         foreach ($listHargaB2b as $item) {
             if ($item->barang) {
-                $hppResep = $fifoService->getHppResepBsj($item->barang_id);
-                $item->hpp_referensi = $hppResep > 0 ? $hppResep : floatval($item->barang->hpp_referensi ?? ($item->barang->harga_beli ?? 0));
+                $detail = $this->getHppDetail($item->barang_id)->getData(true);
+                $item->hpp_referensi = floatval($detail['hpp_per_unit'] ?? 0);
                 $item->laba_unit = floatval($item->harga_b2b) - $item->hpp_referensi;
                 $item->margin_persen = floatval($item->harga_b2b) > 0 ? round(($item->laba_unit / floatval($item->harga_b2b)) * 100, 1) : 0;
             } else {

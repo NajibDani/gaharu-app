@@ -327,7 +327,7 @@
                     {{-- ISI RINCIAN --}}
                     <div id="modalHppContent" style="display: none;">
                         {{-- ALERT IF NO RESEP --}}
-                        <div id="modalHppNoResepAlert" class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center gap-2 rounded-3" style="display: none;">
+                        <div id="modalHppNoResepAlert" class="alert alert-info py-2 px-3 mb-3 align-items-center gap-2 rounded-3 d-none">
                             <i class="bi bi-info-circle-fill text-info fs-5"></i>
                             <div class="small">
                                 Produk ini belum memiliki formula resep BOM. Nilai HPP yang ditampilkan adalah harga referensi master barang.
@@ -587,7 +587,7 @@
                     document.getElementById('modalHppSubtitle').textContent = 'Memuat formulasi & harga referensi...';
                     document.getElementById('modalHppLoading').style.display = 'block';
                     document.getElementById('modalHppContent').style.display = 'none';
-                    document.getElementById('modalHppNoResepAlert').style.display = 'none';
+                    document.getElementById('modalHppNoResepAlert').classList.replace('d-flex', 'd-none');
 
                     if (modalHpp) modalHpp.show();
 
@@ -620,7 +620,7 @@
                             let sumBbbPerUnit = 0;
 
                             if (!data.has_resep || !data.ingredients || data.ingredients.length === 0) {
-                                document.getElementById('modalHppNoResepAlert').style.display = 'flex';
+                                document.getElementById('modalHppNoResepAlert').classList.replace('d-none', 'd-flex');
                                 tbody.innerHTML = `
                                     <tr>
                                         <td class="text-center">1</td>
