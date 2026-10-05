@@ -600,7 +600,7 @@ class PenjualanPosController extends Controller
                         ->selectRaw('SUM(qty * hpp_satuan) as total_hpp')
                         ->value('total_hpp') ?? 0;
 
-                    $jurnalPos = DB::table('jurnal_penjualan_pos')->where('source_type', 'penjualan_pos')->where('source_id', $penjualan->id)->latest()->first();
+                    $jurnalPos = DB::table('jurnal_penjualan_pos')->where('source_type', 'penjualan_pos')->where('source_id', $penjualan->id)->orderBy('id', 'desc')->first();
                     if ($jurnalPos) {
                         $gudang = DB::table('master_gudang')->where('id', $penjualan->gudang_id)->first();
                         $isKejingga = ($penjualan->gudang_id == 4) || ($gudang && stripos($gudang->nama, 'kejingga') !== false);
@@ -1206,8 +1206,8 @@ class PenjualanPosController extends Controller
                 ]);
             }
 
-            // Jika status SUKSES, sinkronkan nilai HPP ke jurnal akuntansi jika ada
-            if ($penjualan->status === 'SUKSES') {
+            // Jika status SUKSES / Approved, sinkronkan nilai HPP ke jurnal akuntansi jika ada
+            if (in_array(strtoupper($penjualan->status ?? ''), ['SUKSES', 'APPROVED'])) {
                 $newTotalHpp = PenjualanPosDetail::where('penjualan_id', $penjualan->id)
                     ->selectRaw('SUM(qty * hpp_satuan) as total_hpp')
                     ->value('total_hpp') ?? 0;
@@ -1215,7 +1215,7 @@ class PenjualanPosController extends Controller
                 $jurnalPos = DB::table('jurnal_penjualan_pos')
                     ->where('source_type', 'penjualan_pos')
                     ->where('source_id', $penjualan->id)
-                    ->latest()
+                    ->orderBy('id', 'desc')
                     ->first();
 
                 if ($jurnalPos) {
