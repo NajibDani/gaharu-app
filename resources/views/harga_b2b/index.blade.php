@@ -109,9 +109,17 @@
                                                     <div class="text-secondary small fst-italic mt-0.5"><i class="bi bi-info-circle me-1"></i>{{ $item->keterangan }}</div>
                                                 @endif
                                             </td>
-                                            <td class="text-end text-muted fw-semibold">
-                                                <div>Rp {{ number_format($item->hpp_referensi ?? 0, 0, ',', '.') }}</div>
-                                                <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }}</span>
+                                            <td class="text-end">
+                                                <button type="button" class="btn btn-link text-decoration-none p-0 text-end btn-show-hpp-detail" 
+                                                        data-barang-id="{{ $item->barang_id }}"
+                                                        data-barang-nama="{{ $item->barang->nama ?? '' }}"
+                                                        title="Klik untuk melihat rincian bahan & perhitungan HPP per {{ $itemSatuan }}">
+                                                    <div class="fw-bold text-dark d-flex align-items-center justify-content-end gap-1">
+                                                        <span>Rp {{ number_format($item->hpp_referensi ?? 0, 0, ',', '.') }}</span>
+                                                        <i class="bi bi-info-circle-fill text-info" style="font-size: 13px;"></i>
+                                                    </div>
+                                                    <span class="text-primary small text-decoration-underline" style="font-size: 11px;">/ {{ $itemSatuan }} (lihat detail)</span>
+                                                </button>
                                             </td>
                                             <td class="text-end">
                                                 <div class="fw-bold text-success fs-6">Rp {{ number_format($item->harga_b2b ?? 0, 0, ',', '.') }}</div>
@@ -293,6 +301,116 @@
         </div>
     </div>
 
+    {{-- MODAL DETAIL RINCIAN HPP & RESEP BAHAN --}}
+    <div class="modal fade" id="modalDetailHppResep" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-dark text-white py-3 px-4">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-calculator fs-4 text-warning"></i>
+                        <div>
+                            <h5 class="modal-title fw-bold mb-0 text-white" id="modalHppTitle">Rincian Komponen HPP &amp; Resep</h5>
+                            <span class="badge bg-secondary-subtle text-white-50 small" id="modalHppSubtitle" style="font-size: 11px;">Memuat data...</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    {{-- SPINNER LOADING --}}
+                    <div id="modalHppLoading" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status" style="width: 2.5rem; height: 2.5rem;">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <div class="text-muted mt-2 small">Mengambil rincian bahan &amp; harga referensi...</div>
+                    </div>
+
+                    {{-- ISI RINCIAN --}}
+                    <div id="modalHppContent" style="display: none;">
+                        {{-- ALERT IF NO RESEP --}}
+                        <div id="modalHppNoResepAlert" class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center gap-2 rounded-3" style="display: none;">
+                            <i class="bi bi-info-circle-fill text-info fs-5"></i>
+                            <div class="small">
+                                Produk ini belum memiliki formula resep BOM. Nilai HPP yang ditampilkan adalah harga referensi master barang.
+                            </div>
+                        </div>
+
+                        {{-- INFO SUMMARY HEADER --}}
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="p-3 bg-light rounded-3 border text-center">
+                                    <div class="text-muted small fw-semibold">Output Yield 1 Batch</div>
+                                    <div class="fw-bold fs-5 text-dark" id="modalHppOutputBatch">-</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 bg-light rounded-3 border text-center">
+                                    <div class="text-muted small fw-semibold">Total HPP 1 Batch</div>
+                                    <div class="fw-bold fs-5 text-secondary" id="modalHppTotalBatch">-</div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="p-3 bg-primary bg-opacity-10 rounded-3 border border-primary text-center">
+                                    <div class="text-primary small fw-bold">HPP Satuan (Cost / Unit)</div>
+                                    <div class="fw-bolder fs-4 text-primary" id="modalHppPerUnit">-</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- TABEL BAHAN BAKU --}}
+                        <h6 class="fw-bold text-dark mb-2 d-flex align-items-center gap-2">
+                            <i class="bi bi-basket3 text-primary"></i>
+                            Rincian Bahan Baku &amp; Harga Referensi
+                        </h6>
+                        <div class="table-responsive border rounded-3 mb-4">
+                            <table class="table table-sm table-striped align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr class="text-secondary small">
+                                        <th class="py-2 text-center" width="5%">#</th>
+                                        <th class="py-2">Nama Bahan</th>
+                                        <th class="py-2 text-end" width="15%">Qty 1 Batch</th>
+                                        <th class="py-2 text-end" width="15%">Qty / Satuan</th>
+                                        <th class="py-2 text-end" width="18%">Harga Satuan</th>
+                                        <th class="py-2 text-end" width="18%">Biaya / Satuan</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modalHppTableBody" class="small">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                                <tfoot class="table-light fw-bold">
+                                    <tr>
+                                        <td colspan="5" class="text-end py-2">Total Biaya Bahan Baku (BBB) / Satuan:</td>
+                                        <td class="text-end py-2 text-primary" id="modalHppTotalBbbPerUnit">-</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+
+                        {{-- RINCIAN KOMPONEN BIAYA (BBB, BTKL, BOP) --}}
+                        <div class="card border-0 bg-light rounded-3 p-3">
+                            <div class="row g-2 small">
+                                <div class="col-md-4 d-flex justify-content-between">
+                                    <span class="text-muted">Biaya Bahan Baku (BBB):</span>
+                                    <strong id="modalHppBbbSummary">Rp 0</strong>
+                                </div>
+                                <div class="col-md-4 d-flex justify-content-between">
+                                    <span class="text-muted">BTKL (20%):</span>
+                                    <strong id="modalHppBtklSummary">Rp 0</strong>
+                                </div>
+                                <div class="col-md-4 d-flex justify-content-between">
+                                    <span class="text-muted">BOP (10%):</span>
+                                    <strong id="modalHppBopSummary">Rp 0</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light px-4 py-3">
+                    <button type="button" class="btn btn-secondary px-4 fw-semibold" data-bs-dismiss="modal">Tutup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const allBarangData = @json($barangData ?? []);
 
@@ -401,6 +519,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', function() {
+            // Setup Select2 pada modal tambah
             if (typeof $ !== 'undefined') {
                 $('#modalTambahHargaB2b').on('shown.bs.modal', function () {
                     $('#selectCustomerB2b').select2({
@@ -450,6 +569,127 @@
                     }
                 });
             }
+
+            // Detail HPP Pop-up Handler
+            const modalHppEl = document.getElementById('modalDetailHppResep');
+            const modalHpp = modalHppEl ? new bootstrap.Modal(modalHppEl) : null;
+
+            document.querySelectorAll('.btn-show-hpp-detail').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const barangId = this.dataset.barangId;
+                    const barangNama = this.dataset.barangNama || 'Produk';
+
+                    if (!barangId) return;
+
+                    // Reset modal content state
+                    document.getElementById('modalHppTitle').textContent = `Rincian HPP: ${barangNama}`;
+                    document.getElementById('modalHppSubtitle').textContent = 'Memuat formulasi & harga referensi...';
+                    document.getElementById('modalHppLoading').style.display = 'block';
+                    document.getElementById('modalHppContent').style.display = 'none';
+                    document.getElementById('modalHppNoResepAlert').style.display = 'none';
+
+                    if (modalHpp) modalHpp.show();
+
+                    // Fetch detail from backend
+                    fetch(`{{ url('/harga-b2b/hpp-detail') }}/${barangId}`)
+                        .then(response => {
+                            if (!response.ok) throw new Error('Gagal memuat rincian HPP');
+                            return response.json();
+                        })
+                        .then(data => {
+                            document.getElementById('modalHppLoading').style.display = 'none';
+                            document.getElementById('modalHppContent').style.display = 'block';
+
+                            document.getElementById('modalHppTitle').textContent = `${data.nama_produk} [${data.kode_barang}]`;
+                            document.getElementById('modalHppSubtitle').textContent = data.has_resep 
+                                ? `Formula BOM 1 Batch: ${data.output_qty} ${data.satuan_output}`
+                                : `Harga Referensi Master Barang`;
+
+                            document.getElementById('modalHppOutputBatch').textContent = `${data.output_qty} ${data.satuan_output}`;
+                            document.getElementById('modalHppTotalBatch').textContent = `Rp ${data.formatted_hpp_batch}`;
+                            document.getElementById('modalHppPerUnit').textContent = `Rp ${data.formatted_per_unit} / ${data.satuan}`;
+
+                            document.getElementById('modalHppBbbSummary').textContent = `Rp ${data.formatted_bbb}`;
+                            document.getElementById('modalHppBtklSummary').textContent = `Rp ${data.formatted_btkl}`;
+                            document.getElementById('modalHppBopSummary').textContent = `Rp ${data.formatted_bop}`;
+
+                            const tbody = document.getElementById('modalHppTableBody');
+                            tbody.innerHTML = '';
+
+                            let sumBbbPerUnit = 0;
+
+                            if (!data.has_resep || !data.ingredients || data.ingredients.length === 0) {
+                                document.getElementById('modalHppNoResepAlert').style.display = 'flex';
+                                tbody.innerHTML = `
+                                    <tr>
+                                        <td class="text-center">1</td>
+                                        <td>
+                                            <span class="fw-bold">${data.nama_produk}</span>
+                                            <div class="text-muted small">${data.kode_barang}</div>
+                                        </td>
+                                        <td class="text-end">1 ${data.satuan}</td>
+                                        <td class="text-end">1 ${data.satuan}</td>
+                                        <td class="text-end">Rp ${data.formatted_hpp}</td>
+                                        <td class="text-end fw-bold">Rp ${data.formatted_hpp}</td>
+                                    </tr>
+                                `;
+                                document.getElementById('modalHppTotalBbbPerUnit').textContent = `Rp ${data.formatted_hpp} / ${data.satuan}`;
+                            } else {
+                                let topNo = 0;
+                                data.ingredients.forEach((ing, idx) => {
+                                    sumBbbPerUnit += (ing.subtotal_per_unit || 0);
+
+                                    let badgeType = '';
+                                    if (ing.is_bsj) {
+                                        badgeType = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 10px;">BSJ</span>`;
+                                    } else if (ing.is_pos) {
+                                        const posLabel = ing.tipe_penjualan ? `POS ${ing.tipe_penjualan}` : 'POS';
+                                        badgeType = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle ms-1" style="font-size: 10px;">${posLabel}</span>`;
+                                    }
+
+                                    const tr = document.createElement('tr');
+                                    const lvl = ing.level || 0;
+                                    const indent = lvl * 20;
+                                    const arrow = lvl > 0 ? '<i class="bi bi-arrow-return-right text-muted me-1"></i>' : '';
+                                    const parentNote = ing.is_parent
+                                        ? `<div class="text-info" style="font-size: 11px;"><i class="bi bi-diagram-3 me-1"></i>Resep turunan (1 batch = ${ing.sub_output}) — rincian di bawah</div>`
+                                        : '';
+                                    if (ing.is_parent) tr.classList.add('table-info');
+                                    tr.innerHTML = `
+                                        <td class="text-center text-muted">${lvl === 0 ? (++topNo) : ''}</td>
+                                        <td style="padding-left: ${8 + indent}px;">
+                                            <div class="fw-semibold text-dark">${arrow}${ing.nama_bahan} ${badgeType}</div>
+                                            <div class="text-muted font-monospace" style="font-size: 11px;">${ing.kode_bahan || ''}</div>
+                                            ${parentNote}
+                                        </td>
+                                        <td class="text-end">${Number(ing.qty_batch).toLocaleString('id-ID', {maximumFractionDigits: 4})} <span class="text-muted">${ing.satuan}</span></td>
+                                        <td class="text-end fw-semibold text-dark">${Number(ing.qty_per_unit).toLocaleString('id-ID', {minimumFractionDigits: 0, maximumFractionDigits: 4})} <span class="text-muted">${ing.satuan}</span></td>
+                                        <td class="text-end text-muted">Rp ${ing.formatted_harga} <span style="font-size: 10px;">/${ing.satuan}</span></td>
+                                        <td class="text-end ${ing.is_parent ? 'fst-italic text-info' : 'fw-bold text-dark'}">Rp ${ing.formatted_per_unit}${ing.is_parent ? '<div style="font-size:10px;">(subtotal)</div>' : ''}</td>
+                                    `;
+                                    tbody.appendChild(tr);
+                                });
+
+                                const bbbUnit = Math.round(data.total_bbb / (data.output_qty || 1));
+                                document.getElementById('modalHppTotalBbbPerUnit').textContent = `Rp ${bbbUnit.toLocaleString('id-ID')} / ${data.satuan}`;
+                            }
+                        })
+                        .catch(err => {
+                            document.getElementById('modalHppLoading').style.display = 'none';
+                            document.getElementById('modalHppContent').style.display = 'block';
+                            document.getElementById('modalHppTableBody').innerHTML = `
+                                <tr>
+                                    <td colspan="6" class="text-center text-danger py-4">
+                                        <i class="bi bi-exclamation-triangle-fill fs-4 d-block mb-1"></i>
+                                        Gagal mengambil rincian bahan: ${err.message}
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                });
+            });
         });
     </script>
 </x-app-layout>
+
