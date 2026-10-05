@@ -823,9 +823,6 @@ class ProduksiController extends Controller
                                     ]);
                             }
                         }
-
-                        $newTotalHpp = DB::table('produksi_detail')->where('produksi_id', $prodId)->sum('hpp_total');
-                        DB::table('produksi')->where('id', $prodId)->update(['total_hpp' => $newTotalHpp]);
                     }
 
                     // Jika WO sudah Selesai, kurangi stok Gudang Cold Kitchen
@@ -938,9 +935,6 @@ class ProduksiController extends Controller
                                         'qty'       => $newProdQty,
                                         'hpp_total' => $newProdQty * $hppPerUnit,
                                     ]);
-
-                                $newTotalHpp = DB::table('produksi_detail')->where('produksi_id', $alokasiItem->produksi_id)->sum('hpp_total');
-                                DB::table('produksi')->where('id', $alokasiItem->produksi_id)->update(['total_hpp' => $newTotalHpp]);
                             }
                         }
 
