@@ -74,7 +74,7 @@ class ProduksiController extends Controller
         });
 
         // 2. Filter Work Order Cold Kitchen
-        $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resep.bahan'])
+        $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resep.bahan', 'details.produk.resepBtklBop'])
             ->where(function($q) {
                 $q->whereHas('details.pesanan', function($pq) {
                     $pq->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
@@ -96,9 +96,10 @@ class ProduksiController extends Controller
         $gudangCold = MasterGudang::where('nama', 'like', '%Cold Kitchen%')->first();
         $gudangColdId = $gudangCold ? $gudangCold->id : 4;
         $gudangB2BId = $gudangColdId; // Gudang Cold Kitchen
+        $fifoService = app(\App\Services\FifoService::class);
 
         // Hitung progress produksi & ketersediaan bahan baku untuk setiap WO
-        $woList->getCollection()->transform(function($wo) use ($gudangB2BId) {
+        $woList->getCollection()->transform(function($wo) use ($gudangB2BId, $fifoService) {
             $firstDetail = $wo->details->first();
             $customer = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->customer : null;
             $wo->customer_nama = $customer ? ($customer->nama ?? $customer->name ?? 'Customer B2B') : 'Customer B2B';
@@ -107,50 +108,155 @@ class ProduksiController extends Controller
             $totalTarget = 0;
             $totalSelesai = 0;
             $totalSisa = 0;
+            $grandTotalHpp = 0;
+            $grandTotalHargaJual = 0;
+            $grandTotalLaba = 0;
 
             $itemsProgress = [];
             $agregatKebutuhan = [];
+            $rekapBahanMap = [];
 
             foreach ($wo->details as $wod) {
                 $target = floatval($wod->qty_rencana);
-                $sudah = DB::table('alokasi_produksi_pesanan')
+                $alokasiRows = DB::table('alokasi_produksi_pesanan')
                     ->where('pesanan_id', $wod->pesanan_id)
                     ->where('produk_id', $wod->produk_id)
-                    ->sum('qty_alokasi') ?? 0;
-                $sisa = max(0, $target - floatval($sudah));
+                    ->get();
+                $sudah = floatval($alokasiRows->sum('qty_alokasi') ?? 0);
+                $sisa = max(0, $target - $sudah);
+
+                // Hitung HPP Satuan dari alokasi produksi pesanan atau FIFO Service resep
+                $hppSatuan = 0;
+                $totalHppAlokasi = floatval($alokasiRows->sum('total_hpp_alokasi') ?? 0);
+                if ($sudah > 0 && $totalHppAlokasi > 0) {
+                    $hppSatuan = $totalHppAlokasi / $sudah;
+                } else {
+                    $hppResep = $fifoService->getHppResepBsj($wod->produk_id);
+                    if ($hppResep > 0) {
+                        $hppSatuan = $hppResep;
+                    } else {
+                        $hppSatuan = floatval($wod->produk->hpp_referensi ?? ($wod->produk->harga_beli ?? 0));
+                    }
+                }
+
+                $qtyForHpp = $sudah > 0 ? $sudah : $target;
+                $totalHppItem = $hppSatuan * $qtyForHpp;
+                $grandTotalHpp += $totalHppItem;
+
+                // Tentukan Harga Jual B2B
+                $customerId = $wod->pesanan ? $wod->pesanan->customer_id : null;
+                $hargaJual = 0;
+                if ($wod->pesanan_id) {
+                    $pesDetailHarga = \App\Models\PesananDetail::where('pesanan_id', $wod->pesanan_id)
+                        ->where('produk_id', $wod->produk_id)
+                        ->value('harga');
+                    if ($pesDetailHarga !== null && floatval($pesDetailHarga) > 0) {
+                        $hargaJual = floatval($pesDetailHarga);
+                    }
+                }
+                if ($hargaJual <= 0) {
+                    $hargaJual = \App\Models\HargaBarangB2b::getHargaB2b($customerId, $wod->produk_id);
+                }
+
+                $totalHargaJualItem = $hargaJual * $qtyForHpp;
+                $totalLabaItem = $totalHargaJualItem - $totalHppItem;
+                $marginPersenItem = $totalHargaJualItem > 0 ? round(($totalLabaItem / $totalHargaJualItem) * 100, 1) : 0;
+
+                $grandTotalHargaJual += $totalHargaJualItem;
+                $grandTotalLaba += $totalLabaItem;
 
                 $totalTarget += $target;
-                $totalSelesai += floatval($sudah);
+                $totalSelesai += $sudah;
                 $totalSisa += $sisa;
 
                 $itemsProgress[] = [
-                    'produk_id'    => $wod->produk_id,
-                    'kode_barang'  => $wod->produk->kode_barang ?? 'N/A',
-                    'nama_produk'  => $wod->produk->nama ?? 'N/A',
-                    'satuan'       => $wod->produk->satuan ?? 'pcs',
-                    'target'       => $target,
-                    'sudah'        => floatval($sudah),
-                    'sisa'         => $sisa,
+                    'produk_id'        => $wod->produk_id,
+                    'kode_barang'      => $wod->produk->kode_barang ?? 'N/A',
+                    'nama_produk'      => $wod->produk->nama ?? 'N/A',
+                    'satuan'           => $wod->produk->satuan ?? 'pcs',
+                    'target'           => $target,
+                    'sudah'            => $sudah,
+                    'sisa'             => $sisa,
+                    'hpp_satuan'       => $hppSatuan,
+                    'total_hpp'        => $totalHppItem,
+                    'harga_jual'       => $hargaJual,
+                    'total_harga_jual' => $totalHargaJualItem,
+                    'total_laba'       => $totalLabaItem,
+                    'margin_persen'    => $marginPersenItem,
                 ];
 
-                // Cek kebutuhan bahan untuk sisa target produksi
-                if ($wod->produk && $wod->produk->resep && $sisa > 0) {
+                // Hitung kebutuhan bahan baku (untuk total target WO, realisasi selesai, dan sisa target)
+                if ($wod->produk && $wod->produk->resep && $wod->produk->resep->count() > 0) {
                     $resepBtkl = $wod->produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $wod->produk_id)->first();
                     $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
-                    $batchCount = $sisa / $outputQtyResep;
+                    $batchCountTarget  = $target / $outputQtyResep;
+                    $batchCountSisa    = $sisa / $outputQtyResep;
+                    $batchCountSelesai = $sudah / $outputQtyResep;
 
                     foreach ($wod->produk->resep as $resep) {
-                        $qtyButuh = floatval($resep->qty_bahan) * $batchCount;
-                        if (!isset($agregatKebutuhan[$resep->bahan_id])) {
-                            $agregatKebutuhan[$resep->bahan_id] = [
-                                'nama'   => $resep->bahan->nama ?? 'Bahan',
-                                'butuh'  => 0,
-                                'satuan' => $resep->bahan->satuan ?? 'pcs',
+                        $bahanId = $resep->bahan_id;
+                        $qtyPerBatch = floatval($resep->qty_bahan);
+                        $qtyPerUnit = $outputQtyResep > 0 ? ($qtyPerBatch / $outputQtyResep) : $qtyPerBatch;
+                        $butuhTarget = $qtyPerBatch * $batchCountTarget;
+                        $butuhSisa = $qtyPerBatch * $batchCountSisa;
+                        $butuhSelesai = $qtyPerBatch * $batchCountSelesai;
+
+                        if (!isset($rekapBahanMap[$bahanId])) {
+                            $rekapBahanMap[$bahanId] = [
+                                'bahan_id'      => $bahanId,
+                                'kode_barang'   => $resep->bahan->kode_barang ?? '-',
+                                'nama_bahan'    => $resep->bahan->nama ?? ('Bahan #' . $bahanId),
+                                'satuan'        => $resep->bahan->satuan ?? ($resep->satuan ?? 'pcs'),
+                                'total_butuh'   => 0,
+                                'sisa_butuh'    => 0,
+                                'total_selesai' => 0,
+                                'breakdown'     => [],
                             ];
                         }
-                        $agregatKebutuhan[$resep->bahan_id]['butuh'] += $qtyButuh;
+
+                        $rekapBahanMap[$bahanId]['total_butuh'] += $butuhTarget;
+                        $rekapBahanMap[$bahanId]['sisa_butuh'] += $butuhSisa;
+                        $rekapBahanMap[$bahanId]['total_selesai'] += $butuhSelesai;
+
+                        $rekapBahanMap[$bahanId]['breakdown'][] = [
+                            'nama_produk'      => $wod->produk->nama ?? ('Produk #' . $wod->produk_id),
+                            'kode_produk'      => $wod->produk->kode_barang ?? '-',
+                            'target_produk'    => $target,
+                            'sudah_produk'     => $sudah,
+                            'satuan_produk'    => $wod->produk->satuan ?? 'pcs',
+                            'qty_per_unit'     => $qtyPerUnit,
+                            'subtotal_butuh'   => $butuhTarget,
+                            'subtotal_selesai' => $butuhSelesai,
+                        ];
+
+                        if ($sisa > 0) {
+                            if (!isset($agregatKebutuhan[$bahanId])) {
+                                $agregatKebutuhan[$bahanId] = [
+                                    'nama'   => $resep->bahan->nama ?? 'Bahan',
+                                    'butuh'  => 0,
+                                    'satuan' => $resep->bahan->satuan ?? 'pcs',
+                                ];
+                            }
+                            $agregatKebutuhan[$bahanId]['butuh'] += $butuhSisa;
+                        }
                     }
                 }
+            }
+
+            // Ambil stok terkini di Gudang Cold Kitchen untuk seluruh bahan yang direkap
+            $bahanIds = array_keys($rekapBahanMap);
+            $stokGudangCold = !empty($bahanIds)
+                ? StokGudang::where('gudang_id', $gudangB2BId)
+                    ->whereIn('barang_id', $bahanIds)
+                    ->pluck('jumlah', 'barang_id')
+                    ->toArray()
+                : [];
+
+            $rekapBahanList = [];
+            foreach ($rekapBahanMap as $bahanId => $dataBahan) {
+                $stok = floatval($stokGudangCold[$bahanId] ?? 0);
+                $dataBahan['stok_gudang'] = $stok;
+                $rekapBahanList[] = $dataBahan;
             }
 
             // Validasi kecukupan bahan baku di Gudang B2B
@@ -158,7 +264,7 @@ class ProduksiController extends Controller
             $defisitBahan = [];
 
             foreach ($agregatKebutuhan as $bahanId => $dataBahan) {
-                $stokGudang = floatval(StokGudang::where('gudang_id', $gudangB2BId)->where('barang_id', $bahanId)->value('jumlah') ?? 0);
+                $stokGudang = floatval($stokGudangCold[$bahanId] ?? (StokGudang::where('gudang_id', $gudangB2BId)->where('barang_id', $bahanId)->value('jumlah') ?? 0));
                 if ($stokGudang < $dataBahan['butuh']) {
                     $isBahanSufficient = false;
                     $defisitBahan[] = [
@@ -175,6 +281,11 @@ class ProduksiController extends Controller
             $wo->total_selesai = $totalSelesai;
             $wo->total_sisa = $totalSisa;
             $wo->items_progress = $itemsProgress;
+            $wo->rekap_bahan = $rekapBahanList;
+            $wo->total_jenis_bahan = count($rekapBahanList);
+            $wo->grand_total_hpp = $grandTotalHpp;
+            $wo->grand_total_harga_jual = $grandTotalHargaJual;
+            $wo->grand_total_laba = $grandTotalLaba;
             $wo->is_all_completed = ($totalSisa <= 0 && $totalTarget > 0);
             $wo->is_bahan_sufficient = $isBahanSufficient;
             $wo->defisit_bahan = $defisitBahan;

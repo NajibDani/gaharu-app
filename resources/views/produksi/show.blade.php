@@ -73,37 +73,131 @@
                     </div>
                 </div>
 
-                <h5 class="fw-bold border-bottom pb-2 mb-3">Item Hasil Produksi</h5>
+                <h5 class="fw-bold border-bottom pb-2 mb-3">Item Hasil Produksi &amp; Analisis Laba</h5>
                 <div class="table-responsive mb-4">
-                    <table class="table table-bordered table-hover align-middle">
-                        <thead class="table-dark text-center">
+                    <table class="table table-bordered table-hover align-middle mb-0 text-center">
+                        <thead class="table-dark">
                             <tr>
-                                <th width="5%">No</th>
+                                <th width="4%">No</th>
                                 <th class="text-start ps-3">Nama Produk</th>
-                                <th width="20%">Qty Hasil</th>
-                                <th width="25%">Total HPP (Rp)</th>
+                                <th width="12%" class="text-end pe-2">HPP / Unit</th>
+                                <th width="14%" class="text-end pe-2">Harga Jual / Unit</th>
+                                <th width="10%">Qty Hasil</th>
+                                <th width="14%" class="text-end pe-2">Total HPP</th>
+                                <th width="15%" class="text-end pe-2">Total Harga Jual</th>
+                                <th width="15%" class="text-end pe-2">Total Laba</th>
                             </tr>
                         </thead>
                         <tbody>
+                            @php
+                                $customerId = $produksi->pesanan ? $produksi->pesanan->customer_id : null;
+                                $totalQtyShow = 0;
+                                $totalHppShow = 0;
+                                $totalOmsetShow = 0;
+                                $totalLabaShow = 0;
+                                $allB2bSetShow = true;
+                            @endphp
                             @forelse($produksi->details as $index => $detail)
+                                @php
+                                    $qtyVal = floatval($detail->qty);
+                                    $hppTotalVal = floatval($detail->hpp_total);
+                                    $hppUnitVal = ($qtyVal > 0 && $hppTotalVal > 0) ? ($hppTotalVal / $qtyVal) : floatval($detail->produk->hpp_referensi ?? ($detail->produk->harga_beli ?? 0));
+                                    
+                                    // Cek pengaturan harga jual B2B per customer/outlet
+                                    $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $detail->produk_id);
+                                    $isB2bSet = ($b2bPrice !== null);
+                                    if (!$isB2bSet) {
+                                        $allB2bSetShow = false;
+                                    }
+                                    $hargaJualUnit = $isB2bSet ? $b2bPrice : 0;
+                                    $totalHargaJual = $isB2bSet ? ($hargaJualUnit * $qtyVal) : 0;
+                                    $effectiveHppTotal = ($hppTotalVal > 0) ? $hppTotalVal : ($hppUnitVal * $qtyVal);
+                                    $totalLaba = $isB2bSet ? ($totalHargaJual - $effectiveHppTotal) : 0;
+                                    $marginPersen = ($isB2bSet && $totalHargaJual > 0) ? round(($totalLaba / $totalHargaJual) * 100, 1) : 0;
+
+                                    $totalQtyShow += $qtyVal;
+                                    $totalHppShow += $effectiveHppTotal;
+                                    if ($isB2bSet) {
+                                        $totalOmsetShow += $totalHargaJual;
+                                        $totalLabaShow += $totalLaba;
+                                    }
+                                @endphp
                                 <tr>
                                     <td class="text-center">{{ $index + 1 }}</td>
-                                    <td class="text-start ps-3 fw-bold">{{ $detail->produk->nama ?? 'Produk Tidak Diketahui' }}</td>
-                                    <td class="text-center fw-bold text-primary fs-5">{{ number_format($detail->qty, 0, ',', '.') }} Unit</td>
-                                    <td class="text-end text-success fw-bold pe-3">
-                                        @if($produksi->status_produksi === 'Draft')
-                                            <span class="text-muted fw-normal fst-italic small">Dihitung saat Approve</span>
+                                    <td class="text-start ps-3 fw-bold">
+                                        <div>{{ $detail->produk->nama ?? 'Produk Tidak Diketahui' }}</div>
+                                        <div class="text-muted small font-monospace fw-normal">{{ $detail->produk->kode_barang ?? '-' }}</div>
+                                    </td>
+                                    <td class="text-end pe-2 fw-semibold text-secondary">
+                                        @if($produksi->status_produksi === 'Draft' && $hppTotalVal <= 0)
+                                            <span class="text-muted fst-italic small">Rp {{ number_format($hppUnitVal, 0, ',', '.') }}</span>
                                         @else
-                                            Rp {{ number_format($detail->hpp_total, 0, ',', '.') }}
+                                            Rp {{ number_format($hppUnitVal, 0, ',', '.') }}
+                                        @endif
+                                    </td>
+                                    <td class="text-end pe-2">
+                                        @if($isB2bSet)
+                                            <span class="fw-bold text-dark">Rp {{ number_format($hargaJualUnit, 0, ',', '.') }}</span>
+                                        @else
+                                            <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 text-wrap text-start d-inline-block" style="font-size: 0.72rem; line-height: 1.25;">
+                                                <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Harap mengatur harga jual B2B lebih dulu
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td class="text-center fw-bold text-primary">{{ number_format($qtyVal, 0, ',', '.') }} {{ $detail->produk->satuan ?? 'Unit' }}</td>
+                                    <td class="text-end pe-2 text-secondary fw-bold">
+                                        @if($produksi->status_produksi === 'Draft' && $hppTotalVal <= 0)
+                                            <span class="text-muted fw-normal fst-italic small">Rp {{ number_format($effectiveHppTotal, 0, ',', '.') }}</span>
+                                        @else
+                                            Rp {{ number_format($hppTotalVal, 0, ',', '.') }}
+                                        @endif
+                                    </td>
+                                    <td class="text-end pe-2 fw-bold text-primary">
+                                        @if($isB2bSet)
+                                            Rp {{ number_format($totalHargaJual, 0, ',', '.') }}
+                                        @else
+                                            <span class="text-muted fst-italic small">Belum diatur</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-end pe-2 fw-bold">
+                                        @if($isB2bSet)
+                                            <div class="{{ $totalLaba >= 0 ? 'text-success' : 'text-danger' }}">Rp {{ number_format($totalLaba, 0, ',', '.') }}</div>
+                                            <span class="badge {{ $totalLaba >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
+                                                {{ $marginPersen }}%
+                                            </span>
+                                        @else
+                                            <span class="text-muted fst-italic small">-</span>
                                         @endif
                                     </td>
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="4" class="text-center text-muted py-3">Tidak ada detail produk.</td>
+                                    <td colspan="8" class="text-center text-muted py-3">Tidak ada detail produk.</td>
                                 </tr>
                             @endforelse
                         </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="2" class="text-center">Total Keseluruhan</td>
+                                <td colspan="2"></td>
+                                <td class="text-center text-primary fs-6">{{ number_format($totalQtyShow, 0, ',', '.') }} Unit</td>
+                                <td class="text-end pe-2 text-secondary fs-6">Rp {{ number_format($totalHppShow, 0, ',', '.') }}</td>
+                                <td class="text-end pe-2 text-primary fs-6">
+                                    @if($totalOmsetShow > 0)
+                                        Rp {{ number_format($totalOmsetShow, 0, ',', '.') }}
+                                    @else
+                                        <span class="text-muted fst-italic small">-</span>
+                                    @endif
+                                </td>
+                                <td class="text-end pe-2 text-success fs-6">
+                                    @if($totalOmsetShow > 0)
+                                        Rp {{ number_format($totalLabaShow, 0, ',', '.') }}
+                                    @else
+                                        <span class="text-muted fst-italic small">-</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
 

@@ -630,19 +630,39 @@
                                                                 @else
                                                                     <div class="alert alert-success d-flex align-items-center mb-3">
                                                                         <i class="bi bi-check-circle-fill fs-4 me-2"></i>
-                                                                        <div>Seluruh target Work Order ini telah <strong>100% Selesai</strong> diproduksi dan siap dikirim.</div>
+                                                                        <div>Seluruh target Work Order ini telah <strong>100% Selesai &amp; Approved</strong> dan siap dikirim.</div>
                                                                     </div>
                                                                 @endif
 
-                                                                <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rincian Item Work Order</h6>
-                                                                <div class="table-responsive">
-                                                                    <table class="table table-bordered align-middle text-center mb-0">
+                                                                {{-- RINGKASAN PRODUKSI & TOTAL HPP --}}
+                                                                <div class="row g-2 mb-3">
+                                                                    <div class="col-md-6">
+                                                                        <div class="p-2.5 bg-light rounded-3 border">
+                                                                            <div class="text-muted small">Total Realisasi Produksi:</div>
+                                                                            <div class="fw-bold fs-6 text-dark">{{ number_format($wo->total_selesai, 0, ',', '.') }} pcs</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="col-md-6">
+                                                                        <div class="p-2.5 bg-success-subtle rounded-3 border border-success-subtle">
+                                                                            <div class="text-success small fw-semibold">Grand Total HPP Produksi:</div>
+                                                                            <div class="fw-bold fs-6 text-success">Rp {{ number_format($wo->grand_total_hpp ?? 0, 0, ',', '.') }}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rincian Item &amp; Analisis Laba Work Order</h6>
+                                                                <div class="table-responsive mb-3">
+                                                                    <table class="table table-bordered align-middle text-center mb-0" style="font-size: 0.84rem;">
                                                                         <thead class="bg-light font-weight-bold">
                                                                             <tr>
-                                                                                <th style="width: 5%;">No</th>
+                                                                                <th style="width: 4%;">No</th>
                                                                                 <th class="text-start">Nama Produk</th>
                                                                                 <th>Target WO</th>
                                                                                 <th>Sudah Jadi</th>
+                                                                                <th class="text-end">HPP Satuan</th>
+                                                                                <th class="text-end">Harga Jual</th>
+                                                                                <th class="text-end">Total HPP</th>
+                                                                                <th class="text-end">Total Laba</th>
                                                                                 <th>Status</th>
                                                                             </tr>
                                                                         </thead>
@@ -650,9 +670,27 @@
                                                                             @foreach($wo->items_progress as $idx => $item)
                                                                                 <tr>
                                                                                     <td>{{ $idx + 1 }}</td>
-                                                                                    <td class="text-start fw-bold text-dark">{{ $item['nama_produk'] }}</td>
+                                                                                    <td class="text-start">
+                                                                                        <div class="fw-bold text-dark">{{ $item['nama_produk'] }}</div>
+                                                                                        <div class="text-muted small font-monospace">{{ $item['kode_barang'] }}</div>
+                                                                                    </td>
                                                                                     <td>{{ number_format($item['target'], 0, ',', '.') }} {{ $item['satuan'] }}</td>
                                                                                     <td class="fw-bold text-success">{{ number_format($item['sudah'], 0, ',', '.') }} {{ $item['satuan'] }}</td>
+                                                                                    <td class="text-end fw-semibold text-secondary">
+                                                                                        Rp {{ number_format($item['hpp_satuan'] ?? 0, 0, ',', '.') }}
+                                                                                    </td>
+                                                                                    <td class="text-end fw-bold text-dark">
+                                                                                        Rp {{ number_format($item['harga_jual'] ?? 0, 0, ',', '.') }}
+                                                                                    </td>
+                                                                                    <td class="text-end fw-bold text-secondary">
+                                                                                        Rp {{ number_format($item['total_hpp'] ?? 0, 0, ',', '.') }}
+                                                                                    </td>
+                                                                                    <td class="text-end fw-bold {{ ($item['total_laba'] ?? 0) >= 0 ? 'text-success' : 'text-danger' }}">
+                                                                                        <div>Rp {{ number_format($item['total_laba'] ?? 0, 0, ',', '.') }}</div>
+                                                                                        <span class="badge {{ ($item['total_laba'] ?? 0) >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
+                                                                                            {{ $item['margin_persen'] ?? 0 }}%
+                                                                                        </span>
+                                                                                    </td>
                                                                                     <td>
                                                                                         @if($item['sisa'] <= 0)
                                                                                             <span class="badge bg-success">Lengkap</span>
@@ -663,8 +701,90 @@
                                                                                 </tr>
                                                                             @endforeach
                                                                         </tbody>
+                                                                        <tfoot class="table-light fw-bold">
+                                                                            <tr>
+                                                                                <td colspan="2" class="text-center">Total Keseluruhan</td>
+                                                                                <td>{{ number_format($wo->total_target, 0, ',', '.') }}</td>
+                                                                                <td class="text-success">{{ number_format($wo->total_selesai, 0, ',', '.') }}</td>
+                                                                                <td colspan="2"></td>
+                                                                                <td class="text-end text-secondary">Rp {{ number_format($wo->grand_total_hpp ?? 0, 0, ',', '.') }}</td>
+                                                                                <td class="text-end text-success fs-6">Rp {{ number_format($wo->grand_total_laba ?? 0, 0, ',', '.') }}</td>
+                                                                                <td>
+                                                                                    <span class="badge bg-success">100% Selesai</span>
+                                                                                </td>
+                                                                            </tr>
+                                                                        </tfoot>
                                                                     </table>
                                                                 </div>
+
+                                                                {{-- RINCIAN PENGGUNAAN BAHAN BAKU & STANDAR RESEP --}}
+                                                                @if(!empty($wo->rekap_bahan) && count($wo->rekap_bahan) > 0)
+                                                                    <div class="card border border-primary-subtle rounded-3 overflow-hidden shadow-sm mt-3">
+                                                                        <div class="card-header bg-primary-subtle py-2 px-3 d-flex justify-content-between align-items-center">
+                                                                            <h6 class="fw-bold text-primary mb-0 small text-uppercase d-flex align-items-center gap-2">
+                                                                                <i class="bi bi-boxes"></i> Rincian Penggunaan Bahan Baku &amp; Standar Resep
+                                                                            </h6>
+                                                                            <div class="d-flex align-items-center gap-2">
+                                                                                <span class="badge bg-white text-dark border small fw-semibold">{{ $wo->total_jenis_bahan ?? count($wo->rekap_bahan) }} Jenis Bahan</span>
+                                                                                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold px-2 py-0.5 d-inline-flex align-items-center gap-1" style="font-size: 11px;" data-bs-toggle="collapse" data-bs-target="#collapseRekapBahanB2B{{ $wo->id }}">
+                                                                                    <i class="bi bi-chevron-down"></i> Detail Bahan
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="collapse show" id="collapseRekapBahanB2B{{ $wo->id }}">
+                                                                            <div class="card-body p-0" style="max-height: 280px; overflow-y: auto;">
+                                                                                <div class="table-responsive">
+                                                                                    <table class="table table-sm table-hover align-middle mb-0 text-center" style="font-size: 12px;">
+                                                                                        <thead class="table-light text-secondary">
+                                                                                            <tr>
+                                                                                                <th width="40">No</th>
+                                                                                                <th class="text-start">Kode &amp; Nama Bahan Baku</th>
+                                                                                                <th width="150" class="text-end">Total Kebutuhan Bahan</th>
+                                                                                                <th width="140" class="text-end">Stok Gudang</th>
+                                                                                                <th width="140">Status Bahan</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody>
+                                                                                            @foreach($wo->rekap_bahan as $rbIdx => $rb)
+                                                                                                <tr>
+                                                                                                    <td class="text-muted">{{ $rbIdx + 1 }}</td>
+                                                                                                    <td class="text-start">
+                                                                                                        <div class="fw-bold text-dark">{{ $rb['nama_bahan'] }}</div>
+                                                                                                        <div class="text-muted font-monospace" style="font-size: 11px;">{{ $rb['kode_barang'] }}</div>
+                                                                                                        @if(!empty($rb['breakdown']) && count($rb['breakdown']) > 1)
+                                                                                                            <div class="small text-muted mt-1" style="font-size: 10.5px;">
+                                                                                                                @foreach($rb['breakdown'] as $bItem)
+                                                                                                                    @php
+                                                                                                                        $subQty = ($bItem['subtotal_selesai'] > 0) ? $bItem['subtotal_selesai'] : $bItem['subtotal_butuh'];
+                                                                                                                    @endphp
+                                                                                                                    <span class="d-inline-block me-2">• {{ $bItem['nama_produk'] }}: {{ (fmod($subQty, 1) == 0) ? number_format($subQty, 0, ',', '.') : number_format($subQty, 2, ',', '.') }} {{ $rb['satuan'] }}</span>
+                                                                                                                @endforeach
+                                                                                                            </div>
+                                                                                                        @endif
+                                                                                                    </td>
+                                                                                                    <td class="text-end fw-semibold text-dark">
+                                                                                                        @php
+                                                                                                            $qtyPakai = ($rb['total_selesai'] > 0) ? $rb['total_selesai'] : $rb['total_butuh'];
+                                                                                                        @endphp
+                                                                                                        {{ (fmod($qtyPakai, 1) == 0) ? number_format($qtyPakai, 0, ',', '.') : number_format($qtyPakai, 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                    </td>
+                                                                                                    <td class="text-end fw-bold text-secondary">
+                                                                                                        {{ (fmod($rb['stok_gudang'] ?? 0, 1) == 0) ? number_format($rb['stok_gudang'] ?? 0, 0, ',', '.') : number_format($rb['stok_gudang'] ?? 0, 2, ',', '.') }} {{ $rb['satuan'] }}
+                                                                                                    </td>
+                                                                                                    <td>
+                                                                                                        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                                                                                                            <i class="bi bi-check-circle-fill me-1"></i> Selesai Dipakai
+                                                                                                        </span>
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            @endforeach
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
                                                             </div>
                                                             <div class="modal-footer bg-light">
                                                                 <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Tutup</button>
@@ -898,9 +1018,9 @@
                                                 <td rowspan="{{ $rowCount }}" class="text-center text-nowrap">
                                                     <div class="action-box d-flex justify-content-center">
                                                         <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
-                                                            <a href="{{ route('produksi.show', $p->id) }}" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Lihat Detail">
+                                                            <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalDetailProduksi{{ $p->id }}" title="Lihat Detail Pop-up">
                                                                 <i class="bi bi-eye"></i>
-                                                            </a>
+                                                            </button>
 
                                                             @if($p->status_produksi === 'Draft')
                                                                 <a href="{{ route('produksi.edit', $p->id) }}" class="btn btn-outline-warning text-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Edit">
@@ -913,7 +1033,7 @@
                                                                     <i class="bi bi-trash"></i>
                                                                 </button>
                                                             @else
-                                                                <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-outline-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Cetak PDF">
+                                                                <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-outline-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Cetak PDF" target="_blank">
                                                                     <i class="bi bi-printer"></i>
                                                                 </a>
                                                                 <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $p->pesanan->kode_pesanan ?? $p->kode_produksi]) }}" class="btn btn-custom-orange fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" title="Kirim ke Logistik Outlet">
@@ -930,6 +1050,224 @@
                                                                 @csrf @method('DELETE')
                                                             </form>
                                                         @endif
+                                                    </div>
+
+                                                    {{-- MODAL DETAIL PRODUKSI (POP-UP) --}}
+                                                    <div class="modal fade text-start" id="modalDetailProduksi{{ $p->id }}" tabindex="-1" aria-hidden="true" style="white-space: normal !important;">
+                                                        <div class="modal-dialog modal-lg modal-dialog-centered">
+                                                            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                                                                <div class="modal-header bg-primary text-white py-3 px-4 d-flex justify-content-between align-items-center">
+                                                                    <div>
+                                                                        <h5 class="modal-title fw-bold mb-0">
+                                                                            <i class="bi bi-file-earmark-text me-2"></i> Detail Produksi
+                                                                        </h5>
+                                                                        <small class="text-white-50">Rincian data hasil produksi dan status approval.</small>
+                                                                    </div>
+                                                                    <div class="d-flex align-items-center gap-2">
+                                                                        @if($p->status_produksi === 'Selesai')
+                                                                            <span class="badge bg-success fs-6 px-3 py-1.5 shadow-sm"><i class="bi bi-check-circle me-1"></i> Selesai</span>
+                                                                        @else
+                                                                            <span class="badge bg-warning text-dark fs-6 px-3 py-1.5 shadow-sm"><i class="bi bi-hourglass-split me-1"></i> Draft</span>
+                                                                        @endif
+                                                                        <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal"></button>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div class="modal-body p-4">
+                                                                    {{-- INFORMASI PRODUKSI --}}
+                                                                    <div class="row mb-3 bg-light p-3 rounded-3 border g-2">
+                                                                        <div class="col-md-6">
+                                                                            <table class="table table-borderless table-sm mb-0 small">
+                                                                                <tr>
+                                                                                    <td width="130" class="text-muted">Kode Produksi</td>
+                                                                                    <td>: <strong class="text-dark fs-6">{{ $p->kode_produksi }}</strong></td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td class="text-muted">Tanggal Mulai</td>
+                                                                                    <td>: <span class="text-dark fw-medium">{{ $p->tanggal_mulai ? \Carbon\Carbon::parse($p->tanggal_mulai)->translatedFormat('d F Y') : '-' }}</span></td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td class="text-muted">Tanggal Selesai</td>
+                                                                                    <td>: 
+                                                                                        @if($p->tanggal_selesai)
+                                                                                            <span class="text-dark fw-medium">{{ \Carbon\Carbon::parse($p->tanggal_selesai)->translatedFormat('d F Y') }}</span>
+                                                                                        @else
+                                                                                            <span class="text-muted fst-italic">Belum Selesai</span>
+                                                                                        @endif
+                                                                                    </td>
+                                                                                </tr>
+                                                                            </table>
+                                                                        </div>
+                                                                        <div class="col-md-6 border-start">
+                                                                            <table class="table table-borderless table-sm mb-0 small">
+                                                                                <tr>
+                                                                                    <td width="140" class="text-muted">Kode Pesanan</td>
+                                                                                    <td>: <span class="badge bg-secondary">{{ $p->pesanan->kode_pesanan ?? '-' }}</span></td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td class="text-muted">Nama Customer</td>
+                                                                                    <td>: <strong class="text-dark">{{ $p->pesanan->customer->nama ?? ($p->pesanan->customer->name ?? 'Tidak Ada / Umum') }}</strong></td>
+                                                                                </tr>
+                                                                                <tr>
+                                                                                    <td class="text-muted">Lokasi Penyimpanan</td>
+                                                                                    <td>: <strong class="text-dark">Gudang Cold Kitchen</strong></td>
+                                                                                </tr>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {{-- TABEL ITEM HASIL PRODUKSI --}}
+                                                                    <h6 class="fw-bold text-dark border-bottom pb-2 mb-3 text-uppercase small">Item Hasil Produksi &amp; Analisis Laba</h6>
+                                                                    <div class="table-responsive mb-2">
+                                                                        <table class="table table-bordered table-hover align-middle mb-0 text-center" style="font-size: 0.82rem;">
+                                                                            <thead class="table-dark">
+                                                                                <tr>
+                                                                                    <th width="4%">No</th>
+                                                                                    <th class="text-start ps-3">Nama Produk</th>
+                                                                                    <th width="12%" class="text-end pe-2">HPP / Unit</th>
+                                                                                    <th width="14%" class="text-end pe-2">Harga Jual / Unit</th>
+                                                                                    <th width="10%">Qty Hasil</th>
+                                                                                    <th width="14%" class="text-end pe-2">Total HPP</th>
+                                                                                    <th width="15%" class="text-end pe-2">Total Harga Jual</th>
+                                                                                    <th width="15%" class="text-end pe-2">Total Laba</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                             <tbody>
+                                                                                @php
+                                                                                    $customerId = $p->pesanan ? $p->pesanan->customer_id : null;
+                                                                                    $totalQtyModal = 0;
+                                                                                    $grandHppModal = 0;
+                                                                                    $grandOmsetModal = 0;
+                                                                                    $grandLabaModal = 0;
+                                                                                    $allB2bSet = true;
+                                                                                @endphp
+                                                                                @forelse($p->details as $dIdx => $d)
+                                                                                    @php
+                                                                                        $qtyVal = floatval($d->qty);
+                                                                                        $hppTotalVal = floatval($d->hpp_total);
+                                                                                        $hppUnitVal = ($qtyVal > 0 && $hppTotalVal > 0) ? ($hppTotalVal / $qtyVal) : floatval($d->produk->hpp_referensi ?? ($d->produk->harga_beli ?? 0));
+                                                                                        
+                                                                                        // Cek pengaturan harga jual B2B per customer/outlet
+                                                                                        $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
+                                                                                        $isB2bSet = ($b2bPrice !== null);
+                                                                                        if (!$isB2bSet) {
+                                                                                            $allB2bSet = false;
+                                                                                        }
+                                                                                        $hargaJualUnit = $isB2bSet ? $b2bPrice : 0;
+                                                                                        $totalHargaJual = $isB2bSet ? ($hargaJualUnit * $qtyVal) : 0;
+                                                                                        $effectiveHppTotal = ($hppTotalVal > 0) ? $hppTotalVal : ($hppUnitVal * $qtyVal);
+                                                                                        $totalLaba = $isB2bSet ? ($totalHargaJual - $effectiveHppTotal) : 0;
+                                                                                        $marginPersen = ($isB2bSet && $totalHargaJual > 0) ? round(($totalLaba / $totalHargaJual) * 100, 1) : 0;
+
+                                                                                        $totalQtyModal += $qtyVal;
+                                                                                        $grandHppModal += $effectiveHppTotal;
+                                                                                        if ($isB2bSet) {
+                                                                                            $grandOmsetModal += $totalHargaJual;
+                                                                                            $grandLabaModal += $totalLaba;
+                                                                                        }
+                                                                                    @endphp
+                                                                                    <tr>
+                                                                                        <td>{{ $dIdx + 1 }}</td>
+                                                                                        <td class="text-start ps-3">
+                                                                                            <div class="fw-bold text-dark">{{ $d->produk->nama ?? 'Produk Tidak Diketahui' }}</div>
+                                                                                            <div class="text-muted small font-monospace">{{ $d->produk->kode_barang ?? '-' }}</div>
+                                                                                        </td>
+                                                                                        <td class="text-end pe-2 fw-semibold text-secondary">
+                                                                                            @if($p->status_produksi === 'Draft' && $hppTotalVal <= 0)
+                                                                                                <span class="text-muted fst-italic small">Rp {{ number_format($hppUnitVal, 0, ',', '.') }}</span>
+                                                                                            @else
+                                                                                                Rp {{ number_format($hppUnitVal, 0, ',', '.') }}
+                                                                                            @endif
+                                                                                        </td>
+                                                                                        <td class="text-end pe-2">
+                                                                                            @if($isB2bSet)
+                                                                                                <span class="fw-bold text-dark">Rp {{ number_format($hargaJualUnit, 0, ',', '.') }}</span>
+                                                                                            @else
+                                                                                                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 text-wrap text-start d-inline-block" style="font-size: 0.72rem; line-height: 1.25;">
+                                                                                                    <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Harap mengatur harga jual B2B lebih dulu
+                                                                                                </span>
+                                                                                            @endif
+                                                                                        </td>
+                                                                                        <td class="fw-bold text-primary">{{ number_format($qtyVal, 0, ',', '.') }} {{ $d->produk->satuan ?? 'Unit' }}</td>
+                                                                                        <td class="text-end pe-2 fw-bold text-secondary">
+                                                                                            @if($p->status_produksi === 'Draft' && $hppTotalVal <= 0)
+                                                                                                <span class="text-muted fw-normal fst-italic small">Rp {{ number_format($effectiveHppTotal, 0, ',', '.') }}</span>
+                                                                                            @else
+                                                                                                Rp {{ number_format($hppTotalVal, 0, ',', '.') }}
+                                                                                            @endif
+                                                                                        </td>
+                                                                                        <td class="text-end pe-2 fw-bold text-primary">
+                                                                                            @if($isB2bSet)
+                                                                                                Rp {{ number_format($totalHargaJual, 0, ',', '.') }}
+                                                                                            @else
+                                                                                                <span class="text-muted fst-italic small">Belum diatur</span>
+                                                                                            @endif
+                                                                                        </td>
+                                                                                        <td class="text-end pe-2 fw-bold">
+                                                                                            @if($isB2bSet)
+                                                                                                <div class="{{ $totalLaba >= 0 ? 'text-success' : 'text-danger' }}">Rp {{ number_format($totalLaba, 0, ',', '.') }}</div>
+                                                                                                <span class="badge {{ $totalLaba >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
+                                                                                                    {{ $marginPersen }}%
+                                                                                                </span>
+                                                                                            @else
+                                                                                                <span class="text-muted fst-italic small">-</span>
+                                                                                            @endif
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                @empty
+                                                                                    <tr>
+                                                                                        <td colspan="8" class="text-center text-muted py-3">Tidak ada detail produk.</td>
+                                                                                    </tr>
+                                                                                @endforelse
+                                                                            </tbody>
+                                                                            <tfoot class="table-light fw-bold">
+                                                                                <tr>
+                                                                                    <td colspan="2" class="text-center">Total Keseluruhan</td>
+                                                                                    <td colspan="2"></td>
+                                                                                    <td class="text-primary">{{ number_format($totalQtyModal, 0, ',', '.') }} Unit</td>
+                                                                                    <td class="text-end pe-2 text-secondary">Rp {{ number_format($grandHppModal, 0, ',', '.') }}</td>
+                                                                                    <td class="text-end pe-2 text-primary">
+                                                                                        @if($grandOmsetModal > 0)
+                                                                                            Rp {{ number_format($grandOmsetModal, 0, ',', '.') }}
+                                                                                        @else
+                                                                                            <span class="text-muted fst-italic small">-</span>
+                                                                                        @endif
+                                                                                    </td>
+                                                                                    <td class="text-end pe-2 text-success fs-6">
+                                                                                        @if($grandOmsetModal > 0)
+                                                                                            Rp {{ number_format($grandLabaModal, 0, ',', '.') }}
+                                                                                        @else
+                                                                                            <span class="text-muted fst-italic small">-</span>
+                                                                                        @endif
+                                                                                    </td>
+                                                                                </tr>
+                                                                            </tfoot>
+                                                                        </table>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
+                                                                    <button type="button" class="btn btn-secondary px-4 shadow-sm" data-bs-dismiss="modal">
+                                                                        <i class="bi bi-x-circle me-1"></i> Tutup
+                                                                    </button>
+
+                                                                    <div class="d-flex gap-2">
+                                                                        @if($p->status_produksi === 'Draft')
+                                                                            <a href="{{ route('produksi.edit', $p->id) }}" class="btn btn-warning text-dark fw-bold shadow-sm">
+                                                                                <i class="bi bi-pencil-square me-1"></i> Edit Draft
+                                                                            </a>
+                                                                            <button type="button" class="btn btn-success fw-bold shadow-sm" onclick="if(confirm('Setujui dan proses produksi ini?')) document.getElementById('formApproveB2bProd{{ $p->id }}').submit();">
+                                                                                <i class="bi bi-check2-all me-1"></i> Setujui &amp; Approve
+                                                                            </button>
+                                                                        @else
+                                                                            <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-danger shadow-sm px-4 fw-bold" target="_blank">
+                                                                                <i class="bi bi-file-pdf me-1"></i> Cetak PDF
+                                                                            </a>
+                                                                        @endif
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
                                             @endif

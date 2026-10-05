@@ -48,7 +48,7 @@
 
     $masterActive = request()->routeIs([
         'kategori.*', 'barang.*', 'suppliers.*', 'gudangs.*',
-        'harga.*', 'event-notifikasi.*', 'resep.*', 'customer.*',
+        'harga.*', 'harga-b2b.*', 'event-notifikasi.*', 'resep.*', 'customer.*',
     ]);
 
     $hrdActive = request()->routeIs([
@@ -123,6 +123,9 @@
                         @if($canRole(['Operasional Gaharu', 'Kepala Outlet Gaharu', 'Operasional Kejingga', 'Kepala Outlet Kejingga']))
                             <a href="{{ route('harga.index') }}" class="{{ request()->routeIs('harga.*') ? 'active' : '' }}">
                                 <i class="bi bi-currency-dollar me-2" style="font-size:12px;"></i>Harga Jual POS
+                            </a>
+                            <a href="{{ route('harga-b2b.index') }}" class="{{ request()->routeIs('harga-b2b.*') ? 'active' : '' }}">
+                                <i class="bi bi-tag me-2" style="font-size:12px;"></i>Harga Jual B2B
                             </a>
                         @endif
                         <a href="{{ route('event-notifikasi.index') }}" class="{{ request()->routeIs('event-notifikasi.*') ? 'active' : '' }}">

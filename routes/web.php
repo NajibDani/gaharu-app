@@ -141,6 +141,8 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::put('/harga-barang-pos/{id}', [HargaBarangPosController::class, 'update'])->name('harga.update');
         Route::delete('/harga-barang-pos/{id}', [HargaBarangPosController::class, 'destroy'])->name('harga.destroy');
 
+        // Harga Jual B2B per Outlet Pemesan
+        Route::resource('harga-b2b', \App\Http\Controllers\HargaBarangB2bController::class)->names('harga-b2b');
     });
 
     // Transaksi POS (Akses Operasional - Semua Role)
