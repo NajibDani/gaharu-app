@@ -29,13 +29,17 @@
 
     foreach ($transactions as $tx) {
         foreach ($tx->details as $detail) {
+            $qtyNum = (float)($detail->jumlah ?? ($detail->qty ?? 0));
+            if ($qtyNum <= 0) {
+                continue;
+            }
+
             $barangObj = $detail->barang ?? $detail->produk;
             $barangId = $detail->barang_id ?? ($detail->produk_id ?? ($barangObj->id ?? $detail->id));
             $namaBarang = strtoupper($barangObj->nama ?? ($detail->nama_barang ?? 'BARANG TANPA NAMA'));
             $satuan = strtoupper($barangObj->satuan ?? ($detail->satuan ?? ''));
             
             $detailNilai = ($detail->hpp_total && $detail->hpp_total > 0) ? (float)$detail->hpp_total : (float)($detail->subtotal ?? ($detail->total_harga ?? 0));
-            $qtyNum = (float)($detail->jumlah ?? $detail->qty ?? 0);
 
             if (!isset($summaryItems[$barangId])) {
                 $summaryItems[$barangId] = [

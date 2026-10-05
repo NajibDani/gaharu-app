@@ -39,6 +39,13 @@
                     </button>
                 </form>
             @elseif($isSuperAdmin && ($penjualan->status ?? '') !== 'VOID')
+                <form action="{{ route('penjualan_pos.recalculate-hpp', $penjualan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Hitung ulang HPP seluruh item pada transaksi {{ $penjualan->kode_transaksi }} berdasarkan formulasi resep aktif saat ini?')">
+                    @csrf
+                    <button type="submit" class="btn btn-outline-primary px-3 fw-medium me-2" title="Sinkronkan & Hitung Ulang HPP berdasarkan formulasi resep terkini">
+                        <i class="bi bi-arrow-repeat me-1"></i> Hitung Ulang HPP
+                    </button>
+                </form>
+
                 <a href="{{ route('penjualan_pos.edit', $penjualan->id) }}" class="btn btn-warning px-4 text-dark fw-medium me-2" title="Koreksi Transaksi (Khusus Super Admin)">
                     <i class="bi bi-pencil-square me-1"></i> Koreksi Transaksi
                 </a>
@@ -450,7 +457,17 @@
                 </div>
 
             </div>
-            <div class="modal-footer border-0 px-4 py-3 bg-light">
+            <div class="modal-footer border-0 px-4 py-3 bg-light d-flex justify-content-between align-items-center">
+                @if($isSuperAdmin && ($penjualan->status ?? '') !== 'VOID')
+                    <form action="{{ route('penjualan_pos.recalculate-hpp', $penjualan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Hitung ulang HPP seluruh item pada transaksi {{ $penjualan->kode_transaksi }} berdasarkan formulasi resep aktif saat ini?')">
+                        @csrf
+                        <button type="submit" class="btn btn-outline-primary fw-semibold btn-sm">
+                            <i class="bi bi-arrow-repeat me-1"></i> Sinkronkan / Hitung Ulang HPP Transaksi
+                        </button>
+                    </form>
+                @else
+                    <div></div>
+                @endif
                 <button type="button" class="btn btn-secondary fw-semibold px-4" data-bs-dismiss="modal">Tutup</button>
             </div>
         </div>

@@ -756,54 +756,80 @@ class ProduksiController extends Controller
 
                     $delQty = floatval($delWod->qty_rencana);
                     $delProdukId = $delWod->produk_id;
-                    $delPesananId = $delWod->pesanan_id;
+                    $targetPesananIds = collect([$delWod->pesanan_id, $wo->pesanan_id])
+                        ->merge($pesananIds)
+                        ->merge($wo->details->pluck('pesanan_id'))
+                        ->filter()
+                        ->unique();
 
-                    // Hapus dari PesananDetail
-                    if ($delPesananId) {
-                        PesananDetail::where('pesanan_id', $delPesananId)
+                    // Hapus dari PesananDetail untuk seluruh pesanan terkait WO ini
+                    if ($targetPesananIds->isNotEmpty()) {
+                        PesananDetail::whereIn('pesanan_id', $targetPesananIds)
                             ->where('produk_id', $delProdukId)
                             ->delete();
+
+                        // Rekalkulasi total_pesanan
+                        foreach ($targetPesananIds as $pId) {
+                            $pesModel = Pesanan::with('details')->find($pId);
+                            if ($pesModel) {
+                                $pesModel->update(['total_pesanan' => $pesModel->details->sum('subtotal')]);
+                            }
+                        }
                     }
 
-                    // Jika WO sudah Selesai, kurangi/batalkan alokasi & stok
-                    if ($isSelesai && $delQty > 0) {
-                        $alokasiList = ProduksiPesanan::where('pesanan_id', $delPesananId)
+                    // Cari seluruh alokasi produksi terkait produk & pesanan ini
+                    $alokasiQuery = ProduksiPesanan::where('produk_id', $delProdukId);
+                    if ($targetPesananIds->isNotEmpty()) {
+                        $alokasiQuery->whereIn('pesanan_id', $targetPesananIds);
+                    }
+                    $alokasiList = $alokasiQuery->get();
+
+                    $affectedProdIds = collect();
+                    foreach ($alokasiList as $alokasi) {
+                        $affectedProdIds->push($alokasi->produksi_id);
+                        $alokasi->delete();
+                    }
+
+                    // Cari juga Produksi langsung yang terhubung dengan pesanan atau kode WO
+                    $directProdIds = Produksi::where(function($q) use ($targetPesananIds, $wo) {
+                        if ($targetPesananIds->isNotEmpty()) {
+                            $q->whereIn('pesanan_id', $targetPesananIds);
+                        }
+                        $q->orWhere('kode_produksi', $wo->kode_wo);
+                    })->pluck('id');
+                    $allAffectedProdIds = $affectedProdIds->merge($directProdIds)->filter()->unique();
+
+                    // Bersihkan produksi_detail dan hitung ulang total_hpp
+                    foreach ($allAffectedProdIds as $prodId) {
+                        $remainingAlokasiQty = ProduksiPesanan::where('produksi_id', $prodId)
                             ->where('produk_id', $delProdukId)
-                            ->get();
+                            ->sum('qty_alokasi');
 
-                        if ($alokasiList->isNotEmpty()) {
-                            $lastAlokasi = $alokasiList->last();
-                            $hppPerUnit  = floatval($lastAlokasi->hpp_per_unit);
-                            $newAlokasiQty = max(0, floatval($lastAlokasi->qty_alokasi) - $delQty);
-                            if ($newAlokasiQty <= 0) {
-                                $lastAlokasi->delete();
+                        $prodDetail = DB::table('produksi_detail')
+                            ->where('produksi_id', $prodId)
+                            ->where('produk_id', $delProdukId)
+                            ->first();
+
+                        if ($prodDetail) {
+                            if ($remainingAlokasiQty <= 0) {
+                                DB::table('produksi_detail')->where('id', $prodDetail->id)->delete();
                             } else {
-                                $lastAlokasi->update([
-                                    'qty_alokasi'       => $newAlokasiQty,
-                                    'total_hpp_alokasi' => $newAlokasiQty * $hppPerUnit,
-                                ]);
-                            }
-
-                            $prodDetail = DB::table('produksi_detail')
-                                ->where('produksi_id', $lastAlokasi->produksi_id)
-                                ->where('produk_id', $delProdukId)
-                                ->first();
-                            if ($prodDetail) {
-                                $newProdQty = max(0, floatval($prodDetail->qty) - $delQty);
-                                if ($newProdQty <= 0) {
-                                    DB::table('produksi_detail')->where('id', $prodDetail->id)->delete();
-                                } else {
-                                    DB::table('produksi_detail')
-                                        ->where('id', $prodDetail->id)
-                                        ->update([
-                                            'qty'       => $newProdQty,
-                                            'hpp_total' => $newProdQty * $hppPerUnit,
-                                        ]);
-                                }
+                                $unitHpp = floatval($prodDetail->qty) > 0 ? (floatval($prodDetail->hpp_total) / floatval($prodDetail->qty)) : 0;
+                                DB::table('produksi_detail')
+                                    ->where('id', $prodDetail->id)
+                                    ->update([
+                                        'qty'       => $remainingAlokasiQty,
+                                        'hpp_total' => $remainingAlokasiQty * $unitHpp,
+                                    ]);
                             }
                         }
 
-                        // Kurangi stok Gudang Cold Kitchen
+                        $newTotalHpp = DB::table('produksi_detail')->where('produksi_id', $prodId)->sum('hpp_total');
+                        DB::table('produksi')->where('id', $prodId)->update(['total_hpp' => $newTotalHpp]);
+                    }
+
+                    // Jika WO sudah Selesai, kurangi stok Gudang Cold Kitchen
+                    if ($isSelesai && $delQty > 0) {
                         $stokGudang = StokGudang::where('gudang_id', $gudangB2BId)
                             ->where('barang_id', $delProdukId)
                             ->first();
@@ -856,35 +882,52 @@ class ProduksiController extends Controller
                     $wod->update(['qty_rencana' => $newQty]);
 
                     // Update PesananDetail
-                    $pesDetail = PesananDetail::where('pesanan_id', $wod->pesanan_id)
-                        ->where('produk_id', $wod->produk_id)
-                        ->first();
-                    if ($pesDetail) {
-                        $hargaUnit = floatval($pesDetail->harga);
-                        $pesDetail->update([
-                            'qty'      => $newQty,
-                            'subtotal' => $newQty * $hargaUnit,
-                        ]);
+                    $targetPesananIds = collect([$wod->pesanan_id, $wo->pesanan_id])
+                        ->merge($pesananIds)
+                        ->merge($wo->details->pluck('pesanan_id'))
+                        ->filter()
+                        ->unique();
+
+                    if ($targetPesananIds->isNotEmpty()) {
+                        foreach ($targetPesananIds as $pId) {
+                            $pesDetail = PesananDetail::where('pesanan_id', $pId)
+                                ->where('produk_id', $wod->produk_id)
+                                ->first();
+                            if ($pesDetail) {
+                                $hargaUnit = floatval($pesDetail->harga);
+                                $pesDetail->update([
+                                    'qty'      => $newQty,
+                                    'subtotal' => $newQty * $hargaUnit,
+                                ]);
+                            }
+                            $pesModel = Pesanan::with('details')->find($pId);
+                            if ($pesModel) {
+                                $pesModel->update(['total_pesanan' => $pesModel->details->sum('subtotal')]);
+                            }
+                        }
                     }
 
                     // Jika WO sudah Selesai (sudah dialokasikan hasil produksinya):
                     if ($isSelesai) {
-                        $alokasiList = ProduksiPesanan::where('pesanan_id', $wod->pesanan_id)
+                        $alokasiList = ProduksiPesanan::where(function($q) use ($targetPesananIds) {
+                                if ($targetPesananIds->isNotEmpty()) {
+                                    $q->whereIn('pesanan_id', $targetPesananIds);
+                                }
+                            })
                             ->where('produk_id', $wod->produk_id)
                             ->get();
 
-                        if ($alokasiList->isNotEmpty()) {
-                            $lastAlokasi = $alokasiList->last();
-                            $hppPerUnit  = floatval($lastAlokasi->hpp_per_unit);
-                            $newAlokasiQty = max(0, floatval($lastAlokasi->qty_alokasi) + $deltaQty);
-                            $lastAlokasi->update([
+                        foreach ($alokasiList as $alokasiItem) {
+                            $hppPerUnit  = floatval($alokasiItem->hpp_per_unit);
+                            $newAlokasiQty = max(0, floatval($alokasiItem->qty_alokasi) + $deltaQty);
+                            $alokasiItem->update([
                                 'qty_alokasi'       => $newAlokasiQty,
                                 'total_hpp_alokasi' => $newAlokasiQty * $hppPerUnit,
                             ]);
 
                             // Update produksi_detail terkait
                             $prodDetail = DB::table('produksi_detail')
-                                ->where('produksi_id', $lastAlokasi->produksi_id)
+                                ->where('produksi_id', $alokasiItem->produksi_id)
                                 ->where('produk_id', $wod->produk_id)
                                 ->first();
                             if ($prodDetail) {
@@ -895,6 +938,9 @@ class ProduksiController extends Controller
                                         'qty'       => $newProdQty,
                                         'hpp_total' => $newProdQty * $hppPerUnit,
                                     ]);
+
+                                $newTotalHpp = DB::table('produksi_detail')->where('produksi_id', $alokasiItem->produksi_id)->sum('hpp_total');
+                                DB::table('produksi')->where('id', $alokasiItem->produksi_id)->update(['total_hpp' => $newTotalHpp]);
                             }
                         }
 
@@ -904,7 +950,11 @@ class ProduksiController extends Controller
                                 ->where('barang_id', $wod->produk_id)
                                 ->first();
                             if ($stokGudang) {
-                                $stokGudang->increment('jumlah', $deltaQty);
+                                if ($deltaQty > 0) {
+                                    $stokGudang->increment('jumlah', $deltaQty);
+                                } else {
+                                    $stokGudang->decrement('jumlah', abs($deltaQty));
+                                }
                             }
 
                             $batch = StokGudangBatch::where('gudang_id', $gudangB2BId)
@@ -912,8 +962,13 @@ class ProduksiController extends Controller
                                 ->latest()
                                 ->first();
                             if ($batch) {
-                                $batch->increment('qty_masuk', $deltaQty);
-                                $batch->increment('qty_sisa', $deltaQty);
+                                if ($deltaQty > 0) {
+                                    $batch->increment('qty_masuk', $deltaQty);
+                                    $batch->increment('qty_sisa', $deltaQty);
+                                } else {
+                                    $batch->decrement('qty_masuk', min(floatval($batch->qty_masuk), abs($deltaQty)));
+                                    $batch->decrement('qty_sisa', min(floatval($batch->qty_sisa), abs($deltaQty)));
+                                }
                             }
                         }
                     }

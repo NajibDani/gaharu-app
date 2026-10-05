@@ -1051,20 +1051,28 @@ class PenjualanPosController extends Controller
                 $resepBahan = $resepUtama ? DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get() : collect();
 
                 if ($resepUtama && $resepBahan->count() > 0) {
+                    $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                         $hppBahanIni = $getHppForBarang($bahan->bahan_id);
+                        if ($hppBahanIni <= 0) {
+                            $hppBahanIni = $fifoService->getHargaTerakhirBahan($bahan->bahan_id, $gudangId);
+                            if ($hppBahanIni <= 0) {
+                                $bhnBarang = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
+                                $hppBahanIni = (float) ($bhnBarang->hpp_referensi ?? 0);
+                            }
+                        }
                         $totalHppBahan += ($kebutuhanPerPcs * $hppBahanIni);
                     }
                     $totalBtklBop = $totalHppBahan * 0.30;
-                    $hppSatuanProduk = $totalHppBahan + $totalBtklBop; // BBB + 30% (BTKL & BOP)
+                    $hppSatuanProduk = ($totalHppBahan + $totalBtklBop) / $outputQty; // BBB + 30% (BTKL & BOP) dibagi output_qty
                 } else {
                     $hppTerbaru = $fifoService->getHargaTerakhirBahan($produkId, $gudangId);
                     $hppSatuanProduk = $hppTerbaru > 0 ? $hppTerbaru : ($barangJadi ? floatval($barangJadi->hpp_referensi) : 0);
                 }
 
                 $detail->update([
-                    'hpp_satuan' => $hppSatuanProduk
+                    'hpp_satuan' => round($hppSatuanProduk, 2)
                 ]);
             }
     
@@ -1101,6 +1109,100 @@ class PenjualanPosController extends Controller
                 return ['status' => 'error', 'message' => $e->getMessage()];
             }
             return back()->with('error', 'Gagal approve transaksi: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hitung Ulang HPP untuk Transaksi POS berdasarkan formulasi resep aktif dan harga bahan baku terkini.
+     */
+    public function recalculateHpp($id)
+    {
+        $penjualan = PenjualanPos::with('details.produk')->findOrFail($id);
+        $fifoService = app(\App\Services\FifoService::class);
+        $gudangId = $penjualan->gudang_id;
+
+        // Pastikan relasi resep sinkron
+        MasterBarang::syncAllResepIds();
+        MasterBarang::syncAllResepSatuan();
+
+        DB::beginTransaction();
+        try {
+            foreach ($penjualan->details as $detail) {
+                $produkId = $detail->produk_id;
+                $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
+                if (!$barangJadi) continue;
+
+                $resepUtama = null;
+                if ($barangJadi->resep_id) {
+                    $resepUtama = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
+                }
+                if (!$resepUtama) {
+                    $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                }
+
+                $hppSatuanProduk = 0;
+                $totalHppBahan = 0;
+
+                if ($resepUtama) {
+                    $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
+                    if ($resepBahan->count() > 0) {
+                        $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
+                        foreach ($resepBahan as $bahan) {
+                            $kebutuhanPerPcs = floatval($bahan->qty_bahan);
+                            $hargaBahan = $fifoService->getHargaTerakhirBahan($bahan->bahan_id, $gudangId);
+                            if ($hargaBahan <= 0) {
+                                $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
+                                $hargaBahan = (float) ($bhn->hpp_referensi ?? 0);
+                            }
+                            $totalHppBahan += ($kebutuhanPerPcs * $hargaBahan);
+                        }
+                        $totalBtklBop = $totalHppBahan * 0.30;
+                        $hppSatuanProduk = ($totalHppBahan + $totalBtklBop) / $outputQty;
+                    }
+                }
+
+                if ($hppSatuanProduk <= 0) {
+                    $hppTerbaru = $fifoService->getHargaTerakhirBahan($produkId, $gudangId);
+                    $hppSatuanProduk = $hppTerbaru > 0 ? $hppTerbaru : floatval($barangJadi->hpp_referensi ?? 0);
+                }
+
+                $detail->update([
+                    'hpp_satuan' => round($hppSatuanProduk, 2)
+                ]);
+            }
+
+            // Jika status SUKSES, sinkronkan nilai HPP ke jurnal akuntansi jika ada
+            if ($penjualan->status === 'SUKSES') {
+                $newTotalHpp = PenjualanPosDetail::where('penjualan_id', $penjualan->id)
+                    ->selectRaw('SUM(qty * hpp_satuan) as total_hpp')
+                    ->value('total_hpp') ?? 0;
+
+                $jurnalPos = DB::table('jurnal_penjualan_pos')
+                    ->where('source_type', 'penjualan_pos')
+                    ->where('source_id', $penjualan->id)
+                    ->latest()
+                    ->first();
+
+                if ($jurnalPos) {
+                    $gudang = DB::table('master_gudang')->where('id', $penjualan->gudang_id)->first();
+                    $isKejingga = ($penjualan->gudang_id == 4) || ($gudang && stripos($gudang->nama, 'kejingga') !== false);
+                    $kodeHpp = $isKejingga ? '5102' : '5101';
+                    $idHppPos = DB::table('chart_of_accounts')->where('kode', $kodeHpp)->value('id') ?? ($isKejingga ? 42 : 41);
+                    $idPersediaanJadi = DB::table('chart_of_accounts')->where('kode', '1301')->value('id') ?? 19;
+
+                    DB::table('journal_items')->where('journal_id', $jurnalPos->id)->where('account_id', $idHppPos)->update(['debit' => $newTotalHpp]);
+                    DB::table('journal_items')->where('journal_id', $jurnalPos->id)->where('account_id', $idPersediaanJadi)->update(['kredit' => $newTotalHpp]);
+                }
+            }
+
+            DB::commit();
+
+            return redirect()->route('penjualan_pos.show', $penjualan->id)
+                ->with('success', 'HPP transaksi POS berhasil dihitung ulang dan disinkronkan dengan formulasi resep aktif!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->route('penjualan_pos.show', $penjualan->id)
+                ->with('error', 'Gagal menghitung ulang HPP: ' . $e->getMessage());
         }
     }
 

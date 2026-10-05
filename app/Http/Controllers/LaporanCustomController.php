@@ -440,6 +440,7 @@ class LaporanCustomController extends Controller
         foreach ($prodList as $p) {
             $p->row_type = 'produksi';
             $p->row_date = $p->pesanan->tanggal ?? ($p->alokasiPesanan->first()->pesanan->tanggal ?? $p->tanggal_mulai);
+            $p->details = $p->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
             $data->push($p);
         }
 
@@ -447,8 +448,15 @@ class LaporanCustomController extends Controller
             $woDetail = $pes->workOrderDetails->first();
             $wo = $woDetail ? $woDetail->workOrder : null;
             $kodeWo = $wo ? $wo->kode_wo : $pes->kode_pesanan;
+            $validProductIds = ($wo && $wo->details) ? $wo->details->pluck('produk_id')->toArray() : null;
 
-            foreach ($pes->details as $d) {
+            $activeDetails = $pes->details->filter(function($d) use ($validProductIds) {
+                if (floatval($d->qty ?? 0) <= 0) return false;
+                if ($validProductIds !== null && !in_array($d->produk_id, $validProductIds)) return false;
+                return true;
+            })->values();
+
+            foreach ($activeDetails as $d) {
                 if (!$d->hpp_total || $d->hpp_total <= 0) {
                     $harga = 0;
                     if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0) {
@@ -476,7 +484,7 @@ class LaporanCustomController extends Controller
             $virtualObj->divisi = $pes->divisi;
             $virtualObj->status_produksi = 'Stok BSJ (' . ucfirst($pes->status_pesanan ?? 'Diproses') . ')';
             $virtualObj->status_pembayaran = strtolower($pes->status_pembayaran ?? '') === 'lunas' ? 'lunas' : 'belum_dibayar';
-            $virtualObj->details = $pes->details;
+            $virtualObj->details = $activeDetails;
             $virtualObj->pesanan = $pes;
             $virtualObj->alokasiPesanan = collect();
             $virtualObj->creator = $pes->creator;
@@ -667,6 +675,7 @@ class LaporanCustomController extends Controller
             ])->whereIn('id', $prodIds)->get();
 
             foreach ($prodTx as $pt) {
+                $pt->details = $pt->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
                 $transactions->push($pt);
             }
         }
@@ -685,8 +694,15 @@ class LaporanCustomController extends Controller
                 $woDetail = $pes->workOrderDetails->first();
                 $wo = $woDetail ? $woDetail->workOrder : null;
                 $kodeWo = $wo ? $wo->kode_wo : $pes->kode_pesanan;
+                $validProductIds = ($wo && $wo->details) ? $wo->details->pluck('produk_id')->toArray() : null;
 
-                foreach ($pes->details as $d) {
+                $activeDetails = $pes->details->filter(function($d) use ($validProductIds) {
+                    if (floatval($d->qty ?? 0) <= 0) return false;
+                    if ($validProductIds !== null && !in_array($d->produk_id, $validProductIds)) return false;
+                    return true;
+                })->values();
+
+                foreach ($activeDetails as $d) {
                     if (!$d->hpp_total || $d->hpp_total <= 0) {
                         $harga = 0;
                         if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0) {
@@ -712,7 +728,7 @@ class LaporanCustomController extends Controller
                 $virtualObj->divisi = $pes->divisi;
                 $virtualObj->status_produksi = 'Stok BSJ (' . ucfirst($pes->status_pesanan ?? 'Diproses') . ')';
                 $virtualObj->status_pembayaran = strtolower($pes->status_pembayaran ?? '') === 'lunas' ? 'lunas' : 'belum_dibayar';
-                $virtualObj->details = $pes->details;
+                $virtualObj->details = $activeDetails;
                 $virtualObj->pesanan = $pes;
                 $virtualObj->alokasiPesanan = collect();
                 $virtualObj->creator = $pes->creator;
