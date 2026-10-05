@@ -201,25 +201,13 @@ class HargaBarangPosController extends Controller
 
     private function calculateHppBarangJadi($barangId, $gudangId)
     {
+        $fifoService = app(\App\Services\FifoService::class);
+        $hppResep = $fifoService->getHppResepBsj((int) $barangId);
+        if ($hppResep > 0) {
+            return round($hppResep, 2);
+        }
+
         $barangJadi = MasterBarang::find($barangId);
-        if (!$barangJadi || is_null($barangJadi->resep_id)) {
-            return $barangJadi ? $barangJadi->hpp_referensi : 0;
-        }
-
-        $resepUtama = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
-        if (!$resepUtama) {
-            return $barangJadi->hpp_referensi;
-        }
-
-        $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
-        $totalHppBahan = 0;
-
-        foreach ($resepBahan as $bahan) {
-            $kebutuhanPerPcs = floatval($bahan->qty_bahan);
-            $hppBahanIni = $this->getHargaFIFORata($gudangId, $bahan->bahan_id);
-            $totalHppBahan += ($kebutuhanPerPcs * $hppBahanIni);
-        }
-
-        return $totalHppBahan * 1.30;
+        return $barangJadi ? floatval($barangJadi->hpp_referensi ?? 0) : 0;
     }
 }
