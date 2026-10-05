@@ -568,6 +568,27 @@ class StockOpnameController extends Controller
                 )
                 ->get();
 
+            // Stok sistem harus mengikuti posisi stok per TANGGAL SO (cut-off 23:59:59),
+            // agar transaksi setelah tanggal SO tidak ikut terhitung.
+            $tanggalSo = $opname->tanggal ? date('Y-m-d', strtotime($opname->tanggal)) : date('Y-m-d');
+            $bulkStokCutoff = null;
+            if ($tanggalSo < date('Y-m-d')) {
+                $idsCutoff = array_unique(array_merge(
+                    $barangList->pluck('id')->all(),
+                    $opname->details->pluck('barang_id')->all()
+                ));
+                if (!empty($idsCutoff)) {
+                    $bulkStokCutoff = \App\Models\StokGudang::getBulkStokBukuPembantu(
+                        $idsCutoff, $gudangId, $divisiId, $tanggalSo . ' 23:59:59'
+                    );
+                }
+            }
+            if ($bulkStokCutoff !== null) {
+                foreach ($barangList as $item) {
+                    $item->stok = max(0, (float) ($bulkStokCutoff[$item->id] ?? 0));
+                }
+            }
+
             $existingDetails = $opname->details->keyBy('barang_id');
             $updatedCount = 0;
             $addedCount = 0;
@@ -635,6 +656,10 @@ class StockOpnameController extends Controller
                             return $q->whereNull('divisi_id');
                         })
                         ->value('jumlah') ?? 0);
+
+                    if ($bulkStokCutoff !== null) {
+                        $stokAktual = max(0, (float) ($bulkStokCutoff[$barangId] ?? 0));
+                    }
 
                     $selisihLama = (float)$detail->stok_fisik - (float)$detail->stok_sistem;
                     if (abs($selisihLama) < 0.0001) {

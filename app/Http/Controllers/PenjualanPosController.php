@@ -947,6 +947,40 @@ class PenjualanPosController extends Controller
                 // Tentukan divisi target: Makanan -> Kitchen, Minuman -> Barista
                 $targetDivisiBahan = $bahanDivisiMap[$bahanId] ?? null;
 
+                // Jika divisi tidak bisa ditentukan dari kategori produk (null), jangan potong ke "tanpa divisi"
+                // karena stok bahan di gudang outlet tercatat per divisi (Kitchen/Barista). Pilih divisi yang
+                // benar-benar memiliki stok bahan tersebut agar stok sistem pada Stock Opname ikut berkurang.
+                if (!$targetDivisiBahan && $divisiGudang->isNotEmpty()) {
+                    $adaStokTanpaDivisi = DB::table('stok_gudang_batch')
+                        ->where('gudang_id', $gudangId)
+                        ->where('barang_id', $bahanId)
+                        ->whereNull('divisi_id')
+                        ->where('qty_sisa', '>', 0)
+                        ->exists();
+
+                    if (!$adaStokTanpaDivisi) {
+                        $divisiStok = DB::table('stok_gudang_batch')
+                            ->where('gudang_id', $gudangId)
+                            ->where('barang_id', $bahanId)
+                            ->whereNotNull('divisi_id')
+                            ->where('qty_sisa', '>', 0)
+                            ->groupBy('divisi_id')
+                            ->orderByRaw('SUM(qty_sisa) DESC')
+                            ->value('divisi_id');
+
+                        if (!$divisiStok) {
+                            $divisiStok = DB::table('stok_gudang')
+                                ->where('gudang_id', $gudangId)
+                                ->where('barang_id', $bahanId)
+                                ->whereNotNull('divisi_id')
+                                ->orderByDesc('jumlah')
+                                ->value('divisi_id');
+                        }
+
+                        $targetDivisiBahan = $divisiStok ?: $divisiKitchenId;
+                    }
+                }
+
                 // Potong Batch (FIFO) dengan fallback harga terbaru di gudang POS jika stok tidak cukup (allowNegative = true)
                 $fifoLayers = $fifoService->consumeFIFO($bahanId, $totalDipotong, $gudangId, true, $targetDivisiBahan);
 
