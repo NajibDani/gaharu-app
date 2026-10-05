@@ -172,6 +172,9 @@ class PembelianKejinggaController extends Controller
             $query->orderBy('tanggal', 'desc')->orderBy('id', 'desc');
         }
 
+        // Hitung total belanja sesuai filter
+        $totalBelanja = (float) (clone $query)->sum('total');
+
         $pembelian = $query->paginate(10)->withQueryString();
 
         // High efficiency fetch of stok gudang Kejingga (ID 5)
@@ -282,7 +285,7 @@ class PembelianKejinggaController extends Controller
         $gudangs   = MasterGudang::all();
         $gudangKejingga = MasterGudang::find(5);
 
-        return view('pembelian-kejingga.index', compact('pembelian', 'dataPembayaran', 'suppliers', 'barangs', 'gudangs', 'gudangKejingga'));
+        return view('pembelian-kejingga.index', compact('pembelian', 'dataPembayaran', 'suppliers', 'barangs', 'gudangs', 'gudangKejingga', 'totalBelanja'));
     }
 
     public function create()

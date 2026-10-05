@@ -93,6 +93,17 @@
             <a href="{{ route('pembelian-kejingga.create') }}" class="btn text-white mb-0 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" style="background-color: #DE8958; border-radius: 8px;">
                 <i class="bi bi-plus-lg"></i> Tambah Pembelian Kejingga
             </a>
+
+            <!-- Kartu Total Belanja Sebaris -->
+            <div class="card border rounded-3 px-3 py-2 shadow-xs d-flex flex-row align-items-center gap-3 bg-white" style="border-color: #E2E8F0 !important; border-left: 4px solid #DE8958 !important; min-width: 250px;">
+                <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style="width: 38px; height: 38px; background-color: #FDF5F0; color: #DE8958;">
+                    <i class="bi bi-wallet2 fs-5"></i>
+                </div>
+                <div>
+                    <div class="text-muted small fw-medium" style="font-size: 11px;">Total Belanja (Sesuai Filter)</div>
+                    <div class="fw-bold fs-6" style="color: #DE8958 !important;">Rp {{ number_format($totalBelanja ?? 0, 0, ',', '.') }}</div>
+                </div>
+            </div>
         </div>
 
         {{-- FILTER BAR --}}
@@ -392,6 +403,21 @@
                         </tr>
                     @endforelse
                 </tbody>
+                @if($pembelian->count() > 0)
+                    <tfoot class="table-light">
+                        <tr class="fw-bold">
+                            <td colspan="4" class="text-end text-uppercase py-2" style="font-size: 12px;">Total Belanja (Halaman Ini):</td>
+                            <td class="text-end text-success py-2" style="font-size: 13px;">
+                                Rp {{ number_format($pembelian->sum('total'), 0, ',', '.') }}
+                            </td>
+                            <td colspan="3" class="text-muted small py-2">
+                                @if($pembelian->hasPages())
+                                    <span class="badge bg-light text-secondary border">Total Filter: Rp {{ number_format($totalBelanja ?? 0, 0, ',', '.') }}</span>
+                                @endif
+                            </td>
+                        </tr>
+                    </tfoot>
+                @endif
             </table>
         </div>
 
