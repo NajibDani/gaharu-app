@@ -233,7 +233,6 @@ class PenjualanPosController extends Controller
 
                 foreach ($resep->bahanbaku as $item) {
                     $qtyBahan = floatval($item->qty_bahan);
-                    $hargaBahan = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangId);
                     $isBsj = (bool) ($item->bahan->is_bahan_setengah_jadi ?? false);
                     $subResep = null;
                     $komposisiResep = '';
@@ -246,19 +245,26 @@ class PenjualanPosController extends Controller
                             }
                             $subResep = $cacheSubResep[$item->bahan->resep_id];
                         }
+                        if (!$subResep && !empty($item->bahan->nama)) {
+                            $sameNameIds = DB::table('master_barang')
+                                ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($item->bahan->nama))])
+                                ->pluck('id');
+                            if ($sameNameIds->isNotEmpty()) {
+                                $subResep = \App\Models\ResepBtklBop::with('bahanbaku.bahan')
+                                    ->whereIn('produk_id', $sameNameIds)
+                                    ->first();
+                            }
+                        }
                     }
 
-                    // Cek ketersediaan batch fisik di gudang atau riwayat pembelian supplier
-                    if (!isset($cacheBatchBeli[$item->bahan_id])) {
-                        $cacheBatchBeli[$item->bahan_id] = DB::table('stok_gudang_batch')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists()
-                            || DB::table('pembelian_detail')->where('barang_id', $item->bahan_id)->where('harga_per_qty', '>', 0)->exists();
-                    }
-                    $hasBatchOrBeli = $cacheBatchBeli[$item->bahan_id];
+                    $isBsj = $isBsj || !empty($subResep);
 
-                    $sumberHarga = 'Stok / Pembelian Gudang';
-                    if ($subResep && !$hasBatchOrBeli) {
-                        $sumberHarga = 'Resep BSJ';
-                        if ($subResep->bahanbaku && $subResep->bahanbaku->count() > 0) {
+                    // Jika bahan adalah BSJ (punya resep sendiri atau tagging BSJ) → SELALU gunakan HPP resep BSJ
+                    if ($isBsj) {
+                        $hargaBahan = $fifoService->getHppResepBsj($item->bahan_id);
+                        $sumberHarga = 'HPP Resep BSJ';
+
+                        if ($subResep && $subResep->bahanbaku && $subResep->bahanbaku->count() > 0) {
                             $komposisiArr = [];
                             foreach ($subResep->bahanbaku as $sb) {
                                 $namaSub = $sb->bahan->nama ?? 'Bahan';
@@ -270,9 +276,19 @@ class PenjualanPosController extends Controller
                             $outSat = $subResep->satuan_output ?: ($item->bahan->satuan ?? '');
                             $komposisiResep = implode(' + ', $komposisiArr) . " (Output: {$outSub} {$outSat})";
                         }
-                    } elseif ($hargaBahan <= 0) {
-                        $hargaBahan = (float) ($item->bahan->hpp_referensi ?? 0);
-                        $sumberHarga = 'HPP Referensi';
+                    } else {
+                        // Bahan baku biasa → harga FIFO dari gudang POS
+                        $hargaBahan = $fifoService->getHargaTerakhirBahan($item->bahan_id, $gudangId);
+                        $sumberHarga = 'Stok / Beli Gudang';
+
+                        if ($hargaBahan <= 0) {
+                            $hargaBahan = (float) ($item->bahan->hpp_referensi ?: ($item->bahan->harga_beli ?: 0));
+                            $sumberHarga = 'HPP Referensi';
+                        }
+                    }
+
+                    if ($hargaBahan <= 0 && $item->bahan) {
+                        $hargaBahan = (float) ($item->bahan->hpp_referensi ?: ($item->bahan->harga_beli ?: 0));
                     }
 
                     // Qty bahan resep POS adalah takaran kebutuhan per 1 unit porsi menu terjual
@@ -996,25 +1012,19 @@ class PenjualanPosController extends Controller
                 $barang = DB::table('master_barang')->where('id', $barangId)->first();
                 if (!$barang) return 0;
 
-                $resep = null;
-                if ($barang->resep_id) {
-                    $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
-                }
-                if (!$resep) {
-                    $resep = DB::table('resep_btkl_bop')->where('produk_id', $barang->id)->first();
+                $isBsj = (bool) ($barang->is_bahan_setengah_jadi ?? false);
+                $hasRecipe = !empty($barang->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $barangId)->exists();
+                if (!$hasRecipe && !empty($barang->nama)) {
+                    $hasRecipe = DB::table('resep_btkl_bop')
+                        ->whereIn('produk_id', DB::table('master_barang')->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])->pluck('id'))
+                        ->exists();
                 }
 
-                if ($resep) {
-                    $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
-                    if ($resepBahan->count() > 0) {
-                        $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
-                        $totalHpp = 0;
-                        foreach ($resepBahan as $subBahan) {
-                            $subHpp = $getHppForBarang($subBahan->bahan_id);
-                            $totalHpp += (floatval($subBahan->qty_bahan) * $subHpp);
-                        }
-                        $mapHppBahanAvg[$barangId] = $totalHpp / $outputQty;
-                        return $mapHppBahanAvg[$barangId];
+                if ($isBsj || $hasRecipe) {
+                    $hppBsj = $fifoService->getHppResepBsj($barangId);
+                    if ($hppBsj > 0) {
+                        $mapHppBahanAvg[$barangId] = $hppBsj;
+                        return $hppBsj;
                     }
                 }
 
@@ -1025,7 +1035,7 @@ class PenjualanPosController extends Controller
                     return $hargaTerbaru;
                 }
 
-                $hppRef = (float) ($barang->hpp_referensi ?: 0);
+                $hppRef = (float) ($barang->hpp_referensi ?: ($barang->harga_beli ?: 0));
                 $mapHppBahanAvg[$barangId] = $hppRef;
                 return $hppRef;
             };
@@ -1045,6 +1055,16 @@ class PenjualanPosController extends Controller
                     }
                     if (!$resepUtama) {
                         $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                    }
+                    if (!$resepUtama && !empty($barangJadi->nama)) {
+                        $sameNameIds = DB::table('master_barang')
+                            ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barangJadi->nama))])
+                            ->pluck('id');
+                        if ($sameNameIds->isNotEmpty()) {
+                            $resepUtama = DB::table('resep_btkl_bop')
+                                ->whereIn('produk_id', $sameNameIds)
+                                ->first();
+                        }
                     }
                 }
 
@@ -1136,8 +1156,15 @@ class PenjualanPosController extends Controller
                 if ($barangJadi->resep_id) {
                     $resepUtama = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
                 }
-                if (!$resepUtama) {
-                    $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
+                if (!$resepUtama && !empty($barangJadi->nama)) {
+                    $sameNameIds = DB::table('master_barang')
+                        ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barangJadi->nama))])
+                        ->pluck('id');
+                    if ($sameNameIds->isNotEmpty()) {
+                        $resepUtama = DB::table('resep_btkl_bop')
+                            ->whereIn('produk_id', $sameNameIds)
+                            ->first();
+                    }
                 }
 
                 $hppSatuanProduk = 0;
@@ -1149,10 +1176,18 @@ class PenjualanPosController extends Controller
                         $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
                         foreach ($resepBahan as $bahan) {
                             $kebutuhanPerPcs = floatval($bahan->qty_bahan);
-                            $hargaBahan = $fifoService->getHargaTerakhirBahan($bahan->bahan_id, $gudangId);
+                            $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
+                            $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || !empty($bhn->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists()) : false;
+
+                            $hargaBahan = 0.0;
+                            if ($isBsj) {
+                                $hargaBahan = $fifoService->getHppResepBsj($bahan->bahan_id);
+                            }
                             if ($hargaBahan <= 0) {
-                                $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
-                                $hargaBahan = (float) ($bhn->hpp_referensi ?? 0);
+                                $hargaBahan = $fifoService->getHargaTerakhirBahan($bahan->bahan_id, $gudangId);
+                            }
+                            if ($hargaBahan <= 0 && $bhn) {
+                                $hargaBahan = (float) ($bhn->hpp_referensi ?: ($bhn->harga_beli ?: 0));
                             }
                             $totalHppBahan += ($kebutuhanPerPcs * $hargaBahan);
                         }

@@ -224,7 +224,14 @@
                     @foreach($stockOpname->details as $detail)
 
                         @php
-                            $grandTotal += abs($detail->nilai_selisih);
+                            // nilai_selisih di DB selalu positif (abs * harga)
+                            // Gunakan tanda dari kolom selisih agar surplus & shortage saling mengurangi
+                            $nilai = (float) $detail->nilai_selisih;
+                            if ((float) $detail->selisih >= 0) {
+                                $grandTotal += $nilai;   // surplus = +
+                            } else {
+                                $grandTotal -= $nilai;   // shortage = -
+                            }
                             $konversi = (float) ($detail->barang->konversi_pembelian ?? 1);
                             $hasKonversi = !empty($detail->barang->satuan_pembelian) && $konversi > 1;
                             $satuan = $detail->barang->satuan ?? 'pcs';
@@ -308,24 +315,19 @@
                     </tbody>
 
                     <tfoot>
-
                         <tr>
-
-                            <th colspan="5" class="text-end">
-
-                                TOTAL NILAI SELISIH
-
+                            <th colspan="5" class="text-end py-3">
+                                TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small>
                             </th>
-
-                            <th>
-
-                                Rp
-                                {{ number_format($grandTotal,0,',','.') }}
-
+                            <th class="py-3 {{ $grandTotal > 0 ? 'text-success' : ($grandTotal < 0 ? 'text-danger' : 'text-muted') }}">
+                                {{ $grandTotal > 0 ? '+' : '' }}Rp {{ number_format($grandTotal, 0, ',', '.') }}
+                                @if($grandTotal > 0)
+                                    <div class="fw-normal small text-success"><i class="bi bi-arrow-up-circle me-1"></i>Surplus bersih</div>
+                                @elseif($grandTotal < 0)
+                                    <div class="fw-normal small text-danger"><i class="bi bi-arrow-down-circle me-1"></i>Shortage bersih</div>
+                                @endif
                             </th>
-
                         </tr>
-
                     </tfoot>
 
                 </table>

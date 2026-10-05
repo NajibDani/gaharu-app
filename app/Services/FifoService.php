@@ -648,8 +648,13 @@ class FifoService
      * Formula: (sum(qty_bahan * harga_CK) * 1.30 BOP/BTKL) / output_qty
      * Fallback ke hpp_referensi jika resep tidak ditemukan.
      */
-    public function getHppResepBsj(int $barangId): float
+    public function getHppResepBsj(int $barangId, array $visited = []): float
     {
+        if (in_array($barangId, $visited) || count($visited) > 6) {
+            return 0.0;
+        }
+        $visited[] = $barangId;
+
         // Cari gudang Central Kitchen (kategori Produksi)
         $gudangCk = DB::table('master_gudang')
             ->where(function ($q) {
@@ -665,13 +670,23 @@ class FifoService
             return 0.0;
         }
 
-        // Cari resep
+        // Cari resep: via resep_id, produk_id, atau barang lain dengan nama sama
         $resep = null;
         if (!empty($barang->resep_id)) {
             $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
         }
         if (!$resep) {
             $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
+        }
+        if (!$resep && !empty($barang->nama)) {
+            $sameNameBarangIds = DB::table('master_barang')
+                ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])
+                ->pluck('id');
+            if ($sameNameBarangIds->isNotEmpty()) {
+                $resep = DB::table('resep_btkl_bop')
+                    ->whereIn('produk_id', $sameNameBarangIds)
+                    ->first();
+            }
         }
 
         if ($resep) {
@@ -680,8 +695,21 @@ class FifoService
                 $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
                 $totalBbb  = 0.0;
                 foreach ($subBahanList as $subBahan) {
-                    $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangCkId);
-                    $totalBbb  += floatval($subBahan->qty_bahan) * $hargaBahan;
+                    $subBhn = DB::table('master_barang')->where('id', $subBahan->bahan_id)->first();
+                    $isSubBsj = $subBhn ? ($subBhn->is_bahan_setengah_jadi || !empty($subBhn->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $subBahan->bahan_id)->exists()) : false;
+                    
+                    $hargaBahan = 0.0;
+                    if ($isSubBsj) {
+                        $hargaBahan = $this->getHppResepBsj((int) $subBahan->bahan_id, $visited);
+                    }
+                    if ($hargaBahan <= 0) {
+                        $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangCkId);
+                    }
+                    if ($hargaBahan <= 0 && $subBhn) {
+                        $hargaBahan = (float) ($subBhn->hpp_referensi ?: ($subBhn->harga_beli ?: 0));
+                    }
+
+                    $totalBbb += floatval($subBahan->qty_bahan) * $hargaBahan;
                 }
                 if ($totalBbb > 0) {
                     return round(($totalBbb * 1.30) / $outputQty, 4);
@@ -689,8 +717,32 @@ class FifoService
             }
         }
 
-        // Fallback: hpp_referensi master barang
-        return (float) ($barang->hpp_referensi ?? 0);
+        // Cek riwayat harga produksi / batch FIFO di Gudang Central Kitchen untuk barang ini / nama sama
+        $sameNameIds = !empty($barang->nama) ? DB::table('master_barang')
+            ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])
+            ->pluck('id')
+            ->toArray() : [$barangId];
+        if (!in_array($barangId, $sameNameIds)) {
+            $sameNameIds[] = $barangId;
+        }
+
+        foreach ($sameNameIds as $idToTest) {
+            $hargaCk = $this->getHargaTerakhirBahan((int) $idToTest, $gudangCkId);
+            if ($hargaCk > 0) {
+                return round($hargaCk, 4);
+            }
+        }
+
+        // Fallback: hpp_referensi master barang atau barang lain dengan nama sama
+        $hppRef = (float) ($barang->hpp_referensi ?: ($barang->harga_beli ?: 0));
+        if ($hppRef <= 0 && !empty($barang->nama)) {
+            $hppRef = (float) (DB::table('master_barang')
+                ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])
+                ->where('hpp_referensi', '>', 0)
+                ->value('hpp_referensi') ?: 0);
+        }
+
+        return $hppRef;
     }
 
     public function syncBarangHpp(int $barangId): float

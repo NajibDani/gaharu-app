@@ -770,12 +770,20 @@ function hitungGrandTotal()
 {
     let total = 0;
     Object.values(userValues).forEach(uv => {
-        total += (uv.nilai || 0);
+        let nilai = uv.nilai || 0;
+        let selisih = (uv.selisih !== undefined) ? uv.selisih : (uv.stok_fisik - uv.stok_sistem);
+        if (selisih >= 0) {
+            total += nilai;   // surplus = +
+        } else {
+            total -= nilai;   // shortage = -
+        }
     });
 
     let grandTotalEl = document.getElementById('grandTotal');
     if (grandTotalEl) {
-        grandTotalEl.innerHTML = 'Rp ' + total.toLocaleString('id-ID');
+        let sign = total > 0 ? '+' : '';
+        let color = total > 0 ? 'text-success' : (total < 0 ? 'text-danger' : '');
+        grandTotalEl.innerHTML = `<span class="${color}">${sign}Rp ${total.toLocaleString('id-ID')}</span>`;
     }
 }
 

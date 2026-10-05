@@ -115,7 +115,10 @@ class StockOpnameController extends Controller
                 ->with('error', 'Gudang ' . $gudang->nama . ' memiliki beberapa divisi. Silakan pilih divisi yang akan di-opname.');
         }
 
-        return view('stock-opname.create', compact('gudang', 'divisi', 'divisiId', 'kategoris'));
+        $isSuperAdmin = $this->isSuperAdminUser();
+        \App\Models\StockOpnameDetail::ensureHargaColumn();
+
+        return view('stock-opname.create', compact('gudang', 'divisi', 'divisiId', 'kategoris', 'isSuperAdmin'));
     }
 
     /*
@@ -239,6 +242,12 @@ class StockOpnameController extends Controller
     public function hitungFIFORealtime(Request $request)
     {
         $selisih = (float) ($request->selisih ?? 0);
+
+        if ($request->filled('harga_satuan') && is_numeric($request->harga_satuan)) {
+            $harga = (float) $request->harga_satuan;
+            return response()->json(['nilai' => round(abs($selisih) * $harga, 2)]);
+        }
+
         $nilai = $this->hitungNilaiOpname(
             $request->gudang_id,
             $request->barang_id,
@@ -321,27 +330,40 @@ class StockOpnameController extends Controller
                 'created_by'  => Auth::id(),
             ]);
 
-            foreach ($items as $item) {
-                $barangId     = $item['barang_id'];
-                $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
-                $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
-                $selisih      = $stokFisik - $stokSistem;
+        StockOpnameDetail::ensureHargaColumn();
+        $isSuperAdmin = $this->isSuperAdminUser();
+
+        foreach ($items as $item) {
+            $barangId     = $item['barang_id'];
+            $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
+            $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
+            $selisih      = $stokFisik - $stokSistem;
+            
+            $hargaSatuan = (isset($item['harga_satuan']) && $item['harga_satuan'] !== '' && $item['harga_satuan'] !== null)
+                ? (float) $item['harga_satuan']
+                : null;
+
+            if ($hargaSatuan !== null && $hargaSatuan >= 0 && $isSuperAdmin) {
+                $nilaiSelisih = round(abs($selisih) * $hargaSatuan, 2);
+            } else {
                 $nilaiSelisih = $this->hitungNilaiOpname(
                     $request->gudang_id,
                     $barangId,
                     $selisih,
                     $request->divisi_id
                 );
-
-                StockOpnameDetail::create([
-                    'stock_opname_id' => $opname->id,
-                    'barang_id'       => $barangId,
-                    'stok_sistem'     => $stokSistem,
-                    'stok_fisik'      => $stokFisik,
-                    'selisih'         => $selisih,
-                    'nilai_selisih'   => $nilaiSelisih,
-                ]);
             }
+
+            StockOpnameDetail::create([
+                'stock_opname_id' => $opname->id,
+                'barang_id'       => $barangId,
+                'stok_sistem'     => $stokSistem,
+                'stok_fisik'      => $stokFisik,
+                'selisih'         => $selisih,
+                'nilai_selisih'   => $nilaiSelisih,
+                'harga_satuan'    => $hargaSatuan,
+            ]);
+        }
 
             DB::commit();
 
@@ -845,16 +867,19 @@ class StockOpnameController extends Controller
         $divisiId = $opname->divisi_id;
         $kategoris = \App\Models\Kategori::orderBy('nama')->get();
 
+        StockOpnameDetail::ensureHargaColumn();
+
         $existingDetails = $opname->details
             ->filter(function ($d) {
                 return $d->barang && ($d->barang->is_bahan_baku || $d->barang->is_bahan_setengah_jadi) && !$d->barang->is_barang_jadi && !$d->barang->is_operational;
             })
             ->mapWithKeys(function ($d) {
                 return [$d->barang_id => [
-                    'stok_sistem' => (float) $d->stok_sistem,
-                    'stok_fisik'  => (float) $d->stok_fisik,
-                    'selisih'     => (float) $d->selisih,
-                    'nilai'       => (float) $d->nilai_selisih,
+                    'stok_sistem'  => (float) $d->stok_sistem,
+                    'stok_fisik'   => (float) $d->stok_fisik,
+                    'selisih'      => (float) $d->selisih,
+                    'nilai'        => (float) $d->nilai_selisih,
+                    'harga_satuan' => $d->harga_satuan !== null ? (float) $d->harga_satuan : null,
                 ]];
             });
 
@@ -873,6 +898,7 @@ class StockOpnameController extends Controller
     {
         $opname = StockOpname::with(['details.barang', 'gudang', 'divisi'])->findOrFail($id);
         $isSuperAdmin = $this->isSuperAdminUser();
+        StockOpnameDetail::ensureHargaColumn();
 
         if ($opname->status !== 'draft' && !$isSuperAdmin) {
             return redirect()
@@ -904,9 +930,10 @@ class StockOpnameController extends Controller
             } elseif ($request->has('barang_id') && is_array($request->barang_id)) {
                 foreach ($request->barang_id as $index => $barangId) {
                     $items[] = [
-                        'barang_id'   => $barangId,
-                        'stok_sistem' => $request->stok_sistem[$index] ?? 0,
-                        'stok_fisik'  => $request->stok_fisik[$index] ?? 0,
+                        'barang_id'    => $barangId,
+                        'stok_sistem'  => $request->stok_sistem[$index] ?? 0,
+                        'stok_fisik'   => $request->stok_fisik[$index] ?? 0,
+                        'harga_satuan' => $request->harga_satuan[$index] ?? null,
                     ];
                 }
             }
@@ -949,12 +976,21 @@ class StockOpnameController extends Controller
                     $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
                     $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
                     $selisih      = $stokFisik - $stokSistem;
-                    $nilaiSelisih = $this->hitungNilaiOpname(
-                        $opname->gudang_id,
-                        $barangId,
-                        $selisih,
-                        $opname->divisi_id
-                    );
+                    
+                    $hargaSatuan = (isset($item['harga_satuan']) && $item['harga_satuan'] !== '' && $item['harga_satuan'] !== null)
+                        ? (float) $item['harga_satuan']
+                        : null;
+
+                    if ($hargaSatuan !== null && $hargaSatuan >= 0 && $isSuperAdmin) {
+                        $nilaiSelisih = round(abs($selisih) * $hargaSatuan, 2);
+                    } else {
+                        $nilaiSelisih = $this->hitungNilaiOpname(
+                            $opname->gudang_id,
+                            $barangId,
+                            $selisih,
+                            $opname->divisi_id
+                        );
+                    }
 
                     StockOpnameDetail::create([
                         'stock_opname_id' => $opname->id,
@@ -963,6 +999,7 @@ class StockOpnameController extends Controller
                         'stok_fisik'      => $stokFisik,
                         'selisih'         => $selisih,
                         'nilai_selisih'   => $nilaiSelisih,
+                        'harga_satuan'    => $hargaSatuan,
                     ]);
                 }
 

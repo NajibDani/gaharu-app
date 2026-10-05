@@ -503,7 +503,12 @@ function renderDetailOpname(data) {
             ? `<small class="text-primary d-block font-monospace" style="font-size:0.72rem;">1 ${detail.satuan_pembelian} = ${detail.konversi_pembelian.toLocaleString('id-ID')} ${detail.satuan}</small>`
             : '';
 
-        grandTotal += detail.nilai_selisih;
+        // nilai_selisih di DB selalu positif; gunakan tanda selisih untuk net total
+        if (detail.selisih >= 0) {
+            grandTotal += detail.nilai_selisih;
+        } else {
+            grandTotal -= detail.nilai_selisih;
+        }
 
         let safeNama = (detail.nama_barang || '').replace(/"/g, '&quot;');
         let safeKode = (detail.kode_barang || '').replace(/"/g, '&quot;');
@@ -648,8 +653,10 @@ function renderDetailOpname(data) {
                 </tbody>
                 <tfoot>
                     <tr>
-                        <th colspan="5" class="text-end">TOTAL NILAI SELISIH</th>
-                        <th class="fw-bold">Rp ${grandTotal.toLocaleString('id-ID')}</th>
+                        <th colspan="5" class="text-end">TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small></th>
+                        <th class="fw-bold ${grandTotal > 0 ? 'text-success' : (grandTotal < 0 ? 'text-danger' : '')}">
+                            ${grandTotal > 0 ? '+' : ''}Rp ${grandTotal.toLocaleString('id-ID')}
+                        </th>
                     </tr>
                 </tfoot>
             </table>
