@@ -509,10 +509,8 @@ class FifoService
             ->value('harga_satuan');
 
         if ($sa && floatval($sa) > 0) {
-            $res = (float) $sa;
-            if (true) {
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-            }
+            $res = round((float) $sa, 2);
+            self::$hargaTerakhirCache[$cacheKey] = $res;
             return $res;
         }
 
@@ -537,11 +535,10 @@ class FifoService
                         $totalBiayaResep += (floatval($subBahan->qty_bahan) * $subHarga);
                     }
                     if ($totalBiayaResep > 0) {
-                        $totalBiayaResep = $totalBiayaResep * 1.30; // Tambahkan 30% BTKL & BOP untuk produksi BSJ
+                        $multiplier = $this->isProducedInCkOrColdKitchen($barangId) ? 1.30 : 1.0;
+                        $totalBiayaResep = $totalBiayaResep * $multiplier;
                         $res = (float) ($totalBiayaResep / $outputQty);
-                        if (true) {
-                            self::$hargaTerakhirCache[$cacheKey] = $res;
-                        }
+                        self::$hargaTerakhirCache[$cacheKey] = $res;
                         return $res;
                     }
                 }
@@ -712,7 +709,8 @@ class FifoService
                     $totalBbb += floatval($subBahan->qty_bahan) * $hargaBahan;
                 }
                 if ($totalBbb > 0) {
-                    return round(($totalBbb * 1.30) / $outputQty, 4);
+                    $multiplier = $this->isProducedInCkOrColdKitchen($barangId) ? 1.30 : 1.0;
+                    return round(($totalBbb * $multiplier) / $outputQty, 4);
                 }
             }
         }
@@ -743,6 +741,62 @@ class FifoService
         }
 
         return $hppRef;
+    }
+
+    /**
+     * Cek apakah Bahan Setengah Jadi (BSJ) dipesan / diproduksi melalui Central Kitchen atau Cold Kitchen.
+     * Jika dibuat sendiri di outlet (tidak via CK/Cold Kitchen), pembebanan 30% BTKL/BOP tidak ditambahkan pada resep BSJ,
+     * melainkan hanya dibebankan sekali saat transaksi Penjualan POS.
+     */
+    public function isProducedInCkOrColdKitchen(int $barangId): bool
+    {
+        $hasProduksi = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->whereIn('source_type', ['produksi', 'produksi_ck'])
+            ->exists();
+
+        if ($hasProduksi) {
+            return true;
+        }
+
+        $hasProduksiDetail = DB::table('produksi_detail')
+            ->where('produk_id', $barangId)
+            ->exists();
+
+        if ($hasProduksiDetail) {
+            return true;
+        }
+
+        $hasPesananCk = DB::table('pesanan_detail')
+            ->join('pesanan', 'pesanan.id', '=', 'pesanan_detail.pesanan_id')
+            ->where('pesanan_detail.barang_id', $barangId)
+            ->where('pesanan.tipe_pesanan', 'central_kitchen')
+            ->exists();
+
+        if ($hasPesananCk) {
+            return true;
+        }
+
+        $gudangCkIds = DB::table('master_gudang')
+            ->where(function ($q) {
+                $q->where('kategori', 'Produksi')
+                  ->orWhere('nama', 'like', '%Central Kitchen%')
+                  ->orWhere('nama', 'like', '%Cold Kitchen%');
+            })
+            ->pluck('id');
+
+        if ($gudangCkIds->isNotEmpty()) {
+            $hasCkBatch = DB::table('stok_gudang_batch')
+                ->whereIn('gudang_id', $gudangCkIds)
+                ->where('barang_id', $barangId)
+                ->where('harga_per_qty', '>', 0)
+                ->exists();
+            if ($hasCkBatch) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function syncBarangHpp(int $barangId): float
