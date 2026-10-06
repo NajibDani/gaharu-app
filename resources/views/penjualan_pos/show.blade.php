@@ -79,8 +79,8 @@
     @php
         $isDraft = ($penjualan->status ?? 'Draft') === 'Draft';
         $totalHpp = $penjualan->details ? $penjualan->details->sum(function($d) use ($isDraft) {
-            $hpp = ($isDraft && ($d->hpp_satuan === null || $d->hpp_satuan <= 0))
-                ? ($d->estimated_hpp ?? 0)
+            $hpp = $isDraft
+                ? ($d->estimated_hpp ?? floatval($d->hpp_satuan))
                 : floatval($d->hpp_satuan);
             return $hpp * $d->qty;
         }) : 0;
@@ -245,8 +245,8 @@
                         @foreach($penjualan->details as $key => $d)
                         @php
                             $itemHasResep = $d->has_resep ?? ($d->produk ? $d->produk->hasResep() : false);
-                            $unitHpp = ($penjualan->status === 'Draft' && ($d->hpp_satuan === null || $d->hpp_satuan <= 0))
-                                ? ($d->estimated_hpp ?? 0)
+                            $unitHpp = $isDraft
+                                ? ($d->estimated_hpp ?? floatval($d->hpp_satuan))
                                 : floatval($d->hpp_satuan);
                         @endphp
                         <tr>
@@ -269,7 +269,7 @@
                             <td class="text-center bg-light fw-semibold" data-value="{{ floatval($d->qty) }}">{{ $d->qty }}</td>
                             <td class="text-end" data-value="{{ floatval($d->harga) }}">Rp {{ number_format($d->harga, 0, ',', '.') }}</td>
                             <td class="text-end text-muted" data-value="{{ floatval($unitHpp) }}">
-                                @if(($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0)
+                                @if(!$isDraft)
                                     <div class="fw-semibold text-dark">Rp {{ number_format($d->hpp_satuan, 0, ',', '.') }}</div>
                                     @if(!$itemHasResep)
                                         <div class="mt-1">
@@ -278,12 +278,14 @@
                                             </span>
                                         </div>
                                     @endif
-                                @elseif($isDraft)
+                                @else
                                     @if($unitHpp > 0)
                                         <div class="fw-semibold text-dark">
                                             Rp {{ number_format($unitHpp, 0, ',', '.') }}
                                             <span class="badge bg-secondary-subtle text-secondary small" style="font-size: 0.65rem;">Estimasi</span>
                                         </div>
+                                    @else
+                                        <span class="text-muted small"><em>(Draft)</em></span>
                                     @endif
                                     @if(!$itemHasResep)
                                         <div class="mt-1">
@@ -291,11 +293,7 @@
                                                 Belum Memiliki Resep
                                             </span>
                                         </div>
-                                    @elseif($unitHpp <= 0)
-                                        <span class="text-muted small"><em>(Draft)</em></span>
                                     @endif
-                                @else
-                                    <span class="text-muted small"><em>(Draft)</em></span>
                                 @endif
 
                                 <div class="mt-1">
@@ -631,7 +629,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('mTotalBtklBop').textContent = 'Rp ' + totalBtklBop.toLocaleString('id-ID', { maximumFractionDigits: 2 });
                 document.getElementById('mGrandTotalHppUnit').textContent = 'Rp ' + totalHppPerUnit.toLocaleString('id-ID', { maximumFractionDigits: 2 });
 
-                const hppPerUnitFinal = data.hpp_satuan > 0 ? data.hpp_satuan : totalHppPerUnit;
+                const isDraftMode = {{ $isDraft ? 'true' : 'false' }};
+                const hppPerUnitFinal = isDraftMode 
+                    ? (totalHppPerUnit > 0 ? totalHppPerUnit : (Number(data.hpp_satuan) > 0 ? Number(data.hpp_satuan) : 0))
+                    : (Number(data.hpp_satuan) > 0 ? Number(data.hpp_satuan) : totalHppPerUnit);
                 document.getElementById('mInfoHppUnit').textContent = 'Rp ' + Number(hppPerUnitFinal).toLocaleString('id-ID', { maximumFractionDigits: 2 });
 
                 const totalHppDetail = data.qty_terjual * hppPerUnitFinal;

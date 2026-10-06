@@ -335,19 +335,18 @@ class PenjualanPosController extends Controller
                 'hpp_referensi'       => $hppRefProduk,
             ];
 
-            if (($d->hpp_satuan === null || floatval($d->hpp_satuan) <= 0) && $d->produk) {
-                $d->estimated_hpp = $totalHppProduk > 0 ? $totalHppProduk : ($hargaTerbaruProduk > 0 ? $hargaTerbaruProduk : $hppRefProduk);
-            } else {
-                $d->estimated_hpp = floatval($d->hpp_satuan);
-            }
+            $d->estimated_hpp = $totalHppProduk > 0 ? $totalHppProduk : ($hargaTerbaruProduk > 0 ? $hargaTerbaruProduk : $hppRefProduk);
         }
 
-        $rincianHppPayload = $penjualan->details->mapWithKeys(function($d) use ($penjualan) {
+        $isDraftStatus = ($penjualan->status ?? 'Draft') === 'Draft';
+
+        $rincianHppPayload = $penjualan->details->mapWithKeys(function($d) use ($penjualan, $isDraftStatus) {
+            $effectiveHpp = $isDraftStatus ? ($d->estimated_hpp ?? 0) : (($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0 ? $d->hpp_satuan : ($d->estimated_hpp ?? 0));
             return [$d->id => [
                 'nama_produk' => $d->produk->nama ?? 'Item',
                 'kode_produk' => $d->produk->kode_barang ?? '-',
                 'qty_terjual' => floatval($d->qty),
-                'hpp_satuan'  => floatval(($penjualan->status ?? '') === 'SUKSES' || $d->hpp_satuan > 0 ? $d->hpp_satuan : ($d->estimated_hpp ?? 0)),
+                'hpp_satuan'  => floatval($effectiveHpp),
                 'rincian'     => $d->rincian_hpp ?? null,
             ]];
         });
@@ -1287,20 +1286,69 @@ class PenjualanPosController extends Controller
         MasterBarang::syncAllResepIds();
         MasterBarang::syncAllResepSatuan();
 
+        $fifoService = app(\App\Services\FifoService::class);
+        $gudangId = $penjualan->gudang_id;
+
         $totalItems = $penjualan->details->count();
         $withRecipeCount = 0;
         $withoutRecipeCount = 0;
 
         foreach ($penjualan->details as $detail) {
-            $barang = MasterBarang::find($detail->produk_id);
+            $produkId = $detail->produk_id;
+            $barang = MasterBarang::find($produkId);
             if ($barang && $barang->hasResep()) {
                 $withRecipeCount++;
             } else {
                 $withoutRecipeCount++;
             }
+
+            $resepUtama = ($barang && $barang->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first() : null;
+            if (!$resepUtama && $barang && !empty($barang->nama)) {
+                $sameNameIds = DB::table('master_barang')->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])->pluck('id');
+                if ($sameNameIds->isNotEmpty()) {
+                    $resepUtama = DB::table('resep_btkl_bop')->whereIn('produk_id', $sameNameIds)->first();
+                }
+            }
+
+            $hppSatuanProduk = 0;
+            if ($resepUtama) {
+                $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
+                if ($resepBahan->count() > 0) {
+                    $outputQty = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
+                    $totalHppBahan = 0;
+                    foreach ($resepBahan as $bahan) {
+                        $kebutuhanPerPcs = floatval($bahan->qty_bahan);
+                        $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
+                        $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || !empty($bhn->resep_id) || ($bhn->is_bahan_setengah_jadi && DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists())) : false;
+
+                        $hargaBahan = 0.0;
+                        if ($isBsj) {
+                            $hargaBahan = $fifoService->getHppResepBsj($bahan->bahan_id);
+                        }
+                        if ($hargaBahan <= 0) {
+                            $hargaBahan = $fifoService->getHargaTerakhirBahan($bahan->bahan_id, $gudangId);
+                        }
+                        if ($hargaBahan <= 0 && $bhn) {
+                            $hargaBahan = (float) ($bhn->hpp_referensi ?: 0);
+                        }
+                        $totalHppBahan += ($kebutuhanPerPcs * $hargaBahan);
+                    }
+                    $totalBtklBop = $totalHppBahan * 0.30;
+                    $hppSatuanProduk = ($totalHppBahan + $totalBtklBop) / $outputQty;
+                }
+            }
+
+            if ($hppSatuanProduk <= 0 && $barang) {
+                $hppTerbaru = $fifoService->getHargaTerakhirBahan($produkId, $gudangId);
+                $hppSatuanProduk = $hppTerbaru > 0 ? $hppTerbaru : floatval($barang->hpp_referensi ?? 0);
+            }
+
+            $detail->update([
+                'hpp_satuan' => round($hppSatuanProduk, 2)
+            ]);
         }
 
-        $msg = "Halaman rincian berhasil diperbarui! Dari {$totalItems} item produk, {$withRecipeCount} item telah memiliki resep lengkap.";
+        $msg = "Halaman rincian & nilai HPP transaksi berhasil disinkronkan ulang! Dari {$totalItems} item produk, {$withRecipeCount} item telah memiliki resep lengkap.";
         if ($withoutRecipeCount > 0) {
             $msg .= " Masih terdapat {$withoutRecipeCount} item yang belum memiliki resep (item ini akan otomatis tertinggal sebagai Draft saat di-Approve).";
         }
