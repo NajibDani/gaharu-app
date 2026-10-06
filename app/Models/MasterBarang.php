@@ -328,6 +328,9 @@ public function resepBahanBakuAlternatif()
             } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar && $masterKonv > 1) {
                 $isSatuanBeli = true;
                 $konversi = $masterKonv;
+            } elseif ($masterKonv > 1 && in_array($satDasar, ['gr', 'ml', 'gram']) && ($pQty <= 50 || $pHargaPerQty >= 1000 || $pHarga >= 1000)) {
+                $isSatuanBeli = true;
+                $konversi = $masterKonv;
             }
 
             $correctBaseQty = $isSatuanBeli ? round($pQty * $konversi, 4) : $pQty;

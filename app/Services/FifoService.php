@@ -350,7 +350,7 @@ class FifoService
             $expectedMinPrice = $masterHppRef * 0.1;
         }
 
-        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv) {
+        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv, $masterHppRef, $satDasar) {
             $p = floatval($rawPrice);
             if ($p <= 0) return false;
             // Cegah harga rogue dummy yang sering mengontaminasi sistem
@@ -363,7 +363,12 @@ class FifoService
                 if ($expectedMinPrice > 0 && $p < $expectedMinPrice) {
                     return false;
                 }
-                if ($p < 0.5 && ($expectedMinPrice > 0 || $masterHargaBeli > 100)) {
+                // Jika harga batch jauh lebih tinggi dari HPP referensi (misal Rp 7.000 vs Rp 140),
+                // berarti harga batch tersebut masih dalam satuan beli (papan/kg/karton) dan belum dikonversi ke satuan dasar.
+                if ($masterHppRef > 0 && $p > ($masterHppRef * 4) && $masterKonv >= 5) {
+                    return false;
+                }
+                if ($p > 500 && in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv >= 5 && $masterHppRef <= 500) {
                     return false;
                 }
             }
