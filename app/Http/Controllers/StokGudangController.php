@@ -463,8 +463,6 @@ class StokGudangController extends Controller
                     $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
                     if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
                         $fallbackPrice = $refHpp;
-                    } else {
-                        $fallbackPrice = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
                     }
                 }
                 $saNilai = round($saQty * (float) $fallbackPrice, 2);
@@ -576,8 +574,6 @@ class StokGudangController extends Controller
                         $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
                         if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
                             $fallbackPrice = $refHpp;
-                        } else {
-                            $fallbackPrice = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
                         }
                     }
                     $runningNilai = round($runningQty * (float) $fallbackPrice, 2);

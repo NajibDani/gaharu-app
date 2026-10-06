@@ -303,8 +303,6 @@ class FifoService
                 $refHpp = (float)(DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
                 if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
                     $hargaFallback = $refHpp;
-                } else {
-                    $hargaFallback = (float)(DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
                 }
             }
 
@@ -347,14 +345,9 @@ class FifoService
         $masterSatBeli = strtolower(trim($master->satuan_pembelian ?? ''));
         $masterKonv = (float)($master->konversi_pembelian ?? 1);
         $masterHppRef = (float)($master->hpp_referensi ?? 0);
-        $masterHargaBeli = (float)($master->harga_beli ?? 0);
         $expectedMinPrice = 0.0;
-        if ($masterKonv > 1) {
-            if ($masterHppRef > 0) {
-                $expectedMinPrice = $masterHppRef * 0.1;
-            } elseif ($masterHargaBeli > 0) {
-                $expectedMinPrice = ($masterHargaBeli / $masterKonv) * 0.1;
-            }
+        if ($masterKonv > 1 && $masterHppRef > 0) {
+            $expectedMinPrice = $masterHppRef * 0.1;
         }
 
         $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv) {
@@ -581,20 +574,9 @@ class FifoService
                 }
             }
 
-            // 8. Fallback ke HPP referensi master barang / harga beli
+            // 8. Fallback ke HPP referensi master barang
             if (isset($barang->hpp_referensi) && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
-                }
-                return $res;
-            }
-            if (isset($barang->harga_beli) && floatval($barang->harga_beli) > 0) {
-                $res = (float) $barang->harga_beli;
-                $konversi = isset($barang->konversi_pembelian) ? (float)$barang->konversi_pembelian : 1;
-                if ($konversi > 1) {
-                    $res = $res / $konversi;
-                }
                 if (true) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
                 }
@@ -653,8 +635,6 @@ class FifoService
                 $refHpp = (float)(DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
                 if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
                     $hargaFallback = $refHpp;
-                } else {
-                    $hargaFallback = (float)(DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
                 }
             }
 
@@ -748,7 +728,7 @@ class FifoService
                         $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangCkId);
                     }
                     if ($hargaBahan <= 0 && $subBhn) {
-                        $hargaBahan = (float) ($subBhn->hpp_referensi ?: ($subBhn->harga_beli ?: 0));
+                        $hargaBahan = (float) ($subBhn->hpp_referensi ?: 0);
                     }
 
                     $totalBbb += floatval($subBahan->qty_bahan) * $hargaBahan;
@@ -777,7 +757,7 @@ class FifoService
         }
 
         // Fallback: hpp_referensi master barang atau barang lain dengan nama sama
-        $hppRef = (float) ($barang->hpp_referensi ?: ($barang->harga_beli ?: 0));
+        $hppRef = (float) ($barang->hpp_referensi ?: 0);
         if ($hppRef <= 0 && !empty($barang->nama)) {
             $hppRef = (float) (DB::table('master_barang')
                 ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])

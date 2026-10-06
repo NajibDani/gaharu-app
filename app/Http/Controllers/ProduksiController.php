@@ -135,7 +135,7 @@ class ProduksiController extends Controller
                     if ($hppResep > 0) {
                         $hppSatuan = $hppResep;
                     } else {
-                        $hppSatuan = floatval($wod->produk->hpp_referensi ?? ($wod->produk->harga_beli ?? 0));
+                        $hppSatuan = floatval($wod->produk->hpp_referensi ?? 0);
                     }
                 }
 

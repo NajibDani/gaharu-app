@@ -497,10 +497,7 @@ public function resepBahanBakuAlternatif()
             }
 
             if (!$realPrice || $realPrice <= 0) {
-                $realPrice = (float)($item->harga_beli ?? 0);
-                if ($masterKonv > 1 && $realPrice > 0) {
-                    $realPrice = round($realPrice / $masterKonv, 4);
-                }
+                $realPrice = (float)($item->hpp_referensi ?? 0);
             }
 
             if ($realPrice && $realPrice > 0) {

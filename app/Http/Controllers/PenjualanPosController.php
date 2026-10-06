@@ -283,13 +283,13 @@ class PenjualanPosController extends Controller
                         $sumberHarga = 'Stok / Beli Gudang';
 
                         if ($hargaBahan <= 0) {
-                            $hargaBahan = (float) ($item->bahan->hpp_referensi ?: ($item->bahan->harga_beli ?: 0));
+                            $hargaBahan = (float) ($item->bahan->hpp_referensi ?: 0);
                             $sumberHarga = 'HPP Referensi';
                         }
                     }
 
                     if ($hargaBahan <= 0 && $item->bahan) {
-                        $hargaBahan = (float) ($item->bahan->hpp_referensi ?: ($item->bahan->harga_beli ?: 0));
+                        $hargaBahan = (float) ($item->bahan->hpp_referensi ?: 0);
                     }
 
                     // Qty bahan resep POS adalah takaran kebutuhan per 1 unit porsi menu terjual
@@ -1065,7 +1065,7 @@ class PenjualanPosController extends Controller
                     return $hargaTerbaru;
                 }
 
-                $hppRef = (float) ($barang->hpp_referensi ?: ($barang->harga_beli ?: 0));
+                $hppRef = (float) ($barang->hpp_referensi ?: 0);
                 $mapHppBahanAvg[$barangId] = $hppRef;
                 return $hppRef;
             };
@@ -1217,7 +1217,7 @@ class PenjualanPosController extends Controller
                                 $hargaBahan = $fifoService->getHargaTerakhirBahan($bahan->bahan_id, $gudangId);
                             }
                             if ($hargaBahan <= 0 && $bhn) {
-                                $hargaBahan = (float) ($bhn->hpp_referensi ?: ($bhn->harga_beli ?: 0));
+                                $hargaBahan = (float) ($bhn->hpp_referensi ?: 0);
                             }
                             $totalHppBahan += ($kebutuhanPerPcs * $hargaBahan);
                         }

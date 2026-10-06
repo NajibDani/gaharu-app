@@ -720,209 +720,233 @@ class PengeluaranBahanBakuController extends Controller
      */
     public function detailJson(string $id)
     {
-        $pengeluaran = PengeluaranBahanBaku::with([
-            'details.barang',
-            'gudang',
-            'divisi',
-        ])->findOrFail($id);
+        try {
+            $pengeluaran = PengeluaranBahanBaku::with([
+                'details.barang',
+                'gudang',
+                'divisi',
+            ])->findOrFail($id);
 
-        $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
-        $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
+            $isWasted = ($pengeluaran->jenis_pengeluaran === 'wasted' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-WST-'));
+            $isOpname = ($pengeluaran->jenis_pengeluaran === 'stock_opname' || str_starts_with($pengeluaran->kode_pengeluaran, 'PBK-SO-') || str_contains($pengeluaran->keterangan ?? '', 'Stock Opname'));
 
-        $gudangNama = strtolower($pengeluaran->gudang->nama ?? '');
-        $divisiNama = strtolower($pengeluaran->divisi->nama ?? '');
-        $ketNama    = strtolower($pengeluaran->keterangan ?? '');
-        $isCentralKitchen = str_contains($gudangNama, 'central kitchen') 
-            || str_contains($divisiNama, 'central kitchen') 
-            || str_contains($ketNama, 'central kitchen');
+            $gudangNama = strtolower($pengeluaran->gudang->nama ?? '');
+            $divisiNama = strtolower($pengeluaran->divisi->nama ?? '');
+            $ketNama    = strtolower($pengeluaran->keterangan ?? '');
+            $isCentralKitchen = str_contains($gudangNama, 'central kitchen') 
+                || str_contains($divisiNama, 'central kitchen') 
+                || str_contains($ketNama, 'central kitchen');
 
-        $gudangUtama = MasterGudang::getGudangUtama();
-        $gudangUtamaId = MasterGudang::getGudangUtamaId();
+            $gudangUtama = MasterGudang::getGudangUtama();
+            $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
-        FifoService::clearHargaCache();
-        // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
-        foreach ($pengeluaran->details as $dItem) {
-            \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
-            \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
-            MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
-            if ($pengeluaran->gudang_id) {
-                StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
-            }
-            if ($gudangUtamaId) {
-                StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
-            }
-        }
-
-        $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
-
-        $soDetailsMap = [];
-        if ($isOpname) {
-            $so = $pengeluaran->findAssociatedStockOpname();
-            if ($so) {
-                foreach ($so->details as $sod) {
-                    $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
+            FifoService::clearHargaCache();
+            // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
+            foreach ($pengeluaran->details as $dItem) {
+                if (!$dItem->barang_id) continue;
+                try {
+                    \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
+                    \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
+                    MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
+                    if ($pengeluaran->gudang_id) {
+                        StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+                    }
+                    if ($gudangUtamaId) {
+                        StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+                    }
+                } catch (\Throwable $eReconcile) {
+                    Log::warning("Reconcile error in detailJson for item {$dItem->barang_id}: " . $eReconcile->getMessage());
                 }
             }
-        }
 
-        $grandTotal = 0;
-        $totalKurang = 0;
-        $totalShortageHpp = 0;
-        $totalSurplusHpp = 0;
+            $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
-        $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $isCentralKitchen, $gudangUtamaId, &$grandTotal, &$totalKurang, &$totalShortageHpp, &$totalSurplusHpp, $soDetailsMap) {
-            $hppTotal = (float) ($detail->hpp_total ?? 0);
-            $unitHpp = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
-            $isCorruptedPrice = ($unitHpp > 0 && (abs($unitHpp - 233) <= 1 || abs($unitHpp - 25888.89) <= 1));
-
-            if (!$isApproved || $hppTotal <= 0 || $isCorruptedPrice) {
-                if ($isOpname) {
-                    $hppTotal = $this->hitungNilaiOpname(
-                        $pengeluaran->gudang_id,
-                        $detail->barang_id,
-                        $detail->qty,
-                        $pengeluaran->divisi_id
-                    );
-                } else {
-                    $est = $this->fifoService->getEstimatedHargaFIFO(
-                        $detail->barang_id,
-                        $detail->qty,
-                        ($isWasted) ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
-                        ($isWasted) ? $pengeluaran->divisi_id : null
-                    );
-                    $hppTotal = (float) ($est['total_harga'] ?? 0);
-                }
-            }
-            if ($hppTotal <= 0 || ($detail->qty > 0 && abs(($hppTotal / $detail->qty) - 233) <= 1)) {
-                $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
-                if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
-                    $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
-                }
-                $hppTotal = round($detail->qty * $hargaUnit, 2);
-            }
-
-            $selisihType = 'shortage';
+            $soDetailsMap = [];
             if ($isOpname) {
-                $rawSelisih = $soDetailsMap[$detail->barang_id] ?? null;
-                if ($rawSelisih !== null && $rawSelisih > 0) {
-                    $selisihType = 'surplus';
-                    $totalSurplusHpp += $hppTotal;
+                $so = $pengeluaran->findAssociatedStockOpname();
+                if ($so) {
+                    foreach ($so->details as $sod) {
+                        $soDetailsMap[$sod->barang_id] = (float)$sod->selisih;
+                    }
+                }
+            }
+
+            $grandTotal = 0;
+            $totalKurang = 0;
+            $totalShortageHpp = 0;
+            $totalSurplusHpp = 0;
+
+            $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $isCentralKitchen, $gudangUtamaId, &$grandTotal, &$totalKurang, &$totalShortageHpp, &$totalSurplusHpp, $soDetailsMap) {
+                $hppTotal = (float) ($detail->hpp_total ?? 0);
+                $unitHpp = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
+                $isCorruptedPrice = ($unitHpp > 0 && (abs($unitHpp - 233) <= 1 || abs($unitHpp - 25888.89) <= 1));
+
+                if (!$isApproved || $hppTotal <= 0 || $isCorruptedPrice) {
+                    try {
+                        if ($isOpname) {
+                            $hppTotal = $this->hitungNilaiOpname(
+                                $pengeluaran->gudang_id,
+                                $detail->barang_id,
+                                $detail->qty,
+                                $pengeluaran->divisi_id
+                            );
+                        } else {
+                            $est = $this->fifoService->getEstimatedHargaFIFO(
+                                $detail->barang_id,
+                                $detail->qty,
+                                ($isWasted) ? ($pengeluaran->gudang_id ?? 1) : $gudangUtamaId,
+                                ($isWasted) ? $pengeluaran->divisi_id : null
+                            );
+                            $hppTotal = (float) ($est['total_harga'] ?? 0);
+                        }
+                    } catch (\Throwable $eEst) {
+                        Log::warning("Estimated FIFO error in detailJson: " . $eEst->getMessage());
+                        $hppTotal = 0;
+                    }
+                }
+                if ($hppTotal <= 0 || ($detail->qty > 0 && abs(($hppTotal / $detail->qty) - 233) <= 1)) {
+                    try {
+                        $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
+                        if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
+                            $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                        }
+                        $hppTotal = round($detail->qty * $hargaUnit, 2);
+                    } catch (\Throwable $eLastPrice) {
+                        Log::warning("Last price error in detailJson: " . $eLastPrice->getMessage());
+                    }
+                }
+
+                $selisihType = 'shortage';
+                if ($isOpname) {
+                    $rawSelisih = $soDetailsMap[$detail->barang_id] ?? null;
+                    if ($rawSelisih !== null && $rawSelisih > 0) {
+                        $selisihType = 'surplus';
+                        $totalSurplusHpp += $hppTotal;
+                    } else {
+                        $totalShortageHpp += $hppTotal;
+                    }
                 } else {
                     $totalShortageHpp += $hppTotal;
                 }
-            } else {
-                $totalShortageHpp += $hppTotal;
-            }
 
-            $signedHpp = ($selisihType === 'surplus') ? -$hppTotal : +$hppTotal;
-            $grandTotal += $signedHpp;
+                $signedHpp = ($selisihType === 'surplus') ? -$hppTotal : +$hppTotal;
+                $grandTotal += $signedHpp;
 
-            $hargaSatuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
+                $hargaSatuan = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
 
-            $qtyDiminta = (float) $detail->qty;
+                $qtyDiminta = (float) $detail->qty;
 
-            if ($isWasted || $isOpname) {
-                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
-            } else {
-                $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $gudangUtamaId);
-            }
-
-            if ($isOpname) {
-                $kekurangan = 0;
-            } else {
-                $kekurangan = max(0, $qtyDiminta - $stokTersedia);
-                if ($kekurangan > 0) {
-                    $totalKurang++;
-                }
-            }
-
-            $satuan = $detail->barang->satuan ?? ($detail->satuan ?? 'pcs');
-
-            if ($isOpname) {
-                $statusStok = $selisihType === 'surplus' ? 'Selisih Lebih (+)' : 'Selisih Kurang (-)';
-                $statusColor = $selisihType === 'surplus' ? 'success' : 'danger';
-            } elseif ($stokTersedia > $qtyDiminta) {
-                $statusStok = 'Tersedia Penuh';
-                $statusColor = 'success';
-            } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
-                $statusStok = 'Stok Terakhir di Gudang (Segera Pembelian)';
-                $statusColor = 'warning';
-            } elseif ($stokTersedia > 0) {
-                $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
-                $statusColor = 'danger';
-            } else {
-                if ($isWasted && $isCentralKitchen) {
-                    $statusStok = 'Stok Habis (0) - HPP Harga Terakhir';
-                    $statusColor = 'warning';
+                if ($isWasted || $isOpname) {
+                    $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
                 } else {
-                    $statusStok = 'Stok Habis (0)';
-                    $statusColor = 'danger';
+                    $stokTersedia = StokGudang::getStokBukuPembantu($detail->barang_id, $gudangUtamaId);
                 }
-            }
 
-            $bItem       = $detail->barang;
-            $satuanBeli  = $bItem->satuan_pembelian ?? '';
-            $konversi    = (float) ($bItem->konversi_pembelian ?? 1);
-            $hasKonv     = ($satuanBeli && $konversi > 1 && $satuanBeli !== $satuan);
+                if ($isOpname) {
+                    $kekurangan = 0;
+                } else {
+                    $kekurangan = max(0, $qtyDiminta - $stokTersedia);
+                    if ($kekurangan > 0) {
+                        $totalKurang++;
+                    }
+                }
 
-            return [
-                'id'                 => $detail->id,
-                'barang_id'          => $detail->barang_id,
-                'nama_barang'        => $detail->barang->nama ?? '-',
-                'kode_barang'        => $detail->barang->kode_barang ?? '-',
-                'satuan'             => $satuan,
-                'satuan_pembelian'   => $satuanBeli,
-                'konversi_pembelian' => $konversi,
-                'has_konversi'       => $hasKonv,
-                'qty'                => $qtyDiminta,
-                'selisih_type'       => $selisihType,
-                'signed_hpp'         => $signedHpp,
-                'stok_tersedia'      => $stokTersedia,
-                'stok_gudang_utama'  => $stokTersedia, // backward compatibility
-                'kekurangan'         => $kekurangan,
-                'status_stok'        => $statusStok,
-                'status_color'       => $statusColor,
-                'harga_satuan'       => $hargaSatuan,
-                'total_harga'        => $hppTotal,
-            ];
-        });
+                $bItem       = $detail->barang;
+                $satuan      = $bItem->satuan ?? ($detail->satuan ?? 'pcs');
 
-        $isWO = str_contains(
-            strtolower($pengeluaran->keterangan ?? ''),
-            'permintaan bahan baku untuk'
-        );
+                if ($isOpname) {
+                    $statusStok = $selisihType === 'surplus' ? 'Selisih Lebih (+)' : 'Selisih Kurang (-)';
+                    $statusColor = $selisihType === 'surplus' ? 'success' : 'danger';
+                } elseif ($stokTersedia > $qtyDiminta) {
+                    $statusStok = 'Tersedia Penuh';
+                    $statusColor = 'success';
+                } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
+                    $statusStok = 'Stok Terakhir di Gudang (Segera Pembelian)';
+                    $statusColor = 'warning';
+                } elseif ($stokTersedia > 0) {
+                    $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
+                    $statusColor = 'danger';
+                } else {
+                    if ($isWasted && $isCentralKitchen) {
+                        $statusStok = 'Stok Habis (0) - HPP Harga Terakhir';
+                        $statusColor = 'warning';
+                    } else {
+                        $statusStok = 'Stok Habis (0)';
+                        $statusColor = 'danger';
+                    }
+                }
 
-        $lokasiNama = ($pengeluaran->gudang->nama ?? '-') . ($pengeluaran->divisi ? ' - ' . $pengeluaran->divisi->nama : '');
+                $satuanBeli  = $bItem->satuan_pembelian ?? '';
+                $konversi    = (float) ($bItem->konversi_pembelian ?? 1);
+                $hasKonv     = ($satuanBeli && $konversi > 1 && $satuanBeli !== $satuan);
 
-        return response()->json([
-            'id'                  => $pengeluaran->id,
-            'kode_pengeluaran'    => $pengeluaran->kode_pengeluaran,
-            'tanggal'             => \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i'),
-            'gudang_nama'         => $pengeluaran->gudang->nama ?? '-',
-            'gudang_utama_nama'   => $gudangUtama->nama ?? 'Gudang Utama',
-            'divisi_nama'         => $pengeluaran->divisi->nama ?? null,
-            'lokasi_nama'         => $lokasiNama,
-            'is_wasted'           => $isWasted,
-            'is_central_kitchen'  => $isCentralKitchen,
-            'is_opname'           => $isOpname,
-            'jenis_pengeluaran'   => $pengeluaran->jenis_pengeluaran ?? ($isWasted ? 'wasted' : 'transfer'),
-            'status'              => $pengeluaran->status,
-            'is_approved'         => $isApproved,
-            'is_superadmin'       => (bool) (auth()->user() && auth()->user()->isSuperAdmin()),
-            'keterangan'          => $pengeluaran->keterangan ?? '-',
-            'is_wo'               => $isWO,
-            'grand_total'         => $grandTotal,
-            'total_shortage_hpp'  => $totalShortageHpp,
-            'total_surplus_hpp'   => $totalSurplusHpp,
-            'total_item'          => count($details),
-            'total_item_kurang'   => $totalKurang,
-            'can_approve'         => auth()->user() && auth()->user()->canApprovePengeluaran(),
-            'pdf_url'             => route('pengeluaran-bahan-baku.cetak-pdf', $pengeluaran->id),
-            'edit_url'            => route('pengeluaran-bahan-baku.edit', $pengeluaran->id),
-            'approve_url'         => route('pengeluaran-bahan-baku.approve', $pengeluaran->id),
-            'delete_url'          => route('pengeluaran-bahan-baku.destroy', $pengeluaran->id),
-            'details'             => $details,
-        ]);
+                return [
+                    'id'                 => $detail->id,
+                    'barang_id'          => $detail->barang_id,
+                    'nama_barang'        => $bItem->nama ?? "Barang ID #{$detail->barang_id}",
+                    'kode_barang'        => $bItem->kode_barang ?? '-',
+                    'satuan'             => $satuan,
+                    'satuan_pembelian'   => $satuanBeli,
+                    'konversi_pembelian' => $konversi,
+                    'has_konversi'       => $hasKonv,
+                    'qty'                => $qtyDiminta,
+                    'selisih_type'       => $selisihType,
+                    'signed_hpp'         => $signedHpp,
+                    'stok_tersedia'      => $stokTersedia,
+                    'stok_gudang_utama'  => $stokTersedia, // backward compatibility
+                    'kekurangan'         => $kekurangan,
+                    'status_stok'        => $statusStok,
+                    'status_color'       => $statusColor,
+                    'harga_satuan'       => $hargaSatuan,
+                    'total_harga'        => $hppTotal,
+                ];
+            });
+
+            $isWO = str_contains(
+                strtolower($pengeluaran->keterangan ?? ''),
+                'permintaan bahan baku untuk'
+            );
+
+            $lokasiNama = ($pengeluaran->gudang->nama ?? '-') . ($pengeluaran->divisi ? ' - ' . $pengeluaran->divisi->nama : '');
+
+            $user = auth()->user();
+
+            return response()->json([
+                'id'                  => $pengeluaran->id,
+                'kode_pengeluaran'    => $pengeluaran->kode_pengeluaran,
+                'tanggal'             => \Carbon\Carbon::parse($pengeluaran->tanggal)->format('d M Y H:i'),
+                'gudang_nama'         => $pengeluaran->gudang->nama ?? '-',
+                'gudang_utama_nama'   => $gudangUtama->nama ?? 'Gudang Utama',
+                'divisi_nama'         => $pengeluaran->divisi->nama ?? null,
+                'lokasi_nama'         => $lokasiNama,
+                'is_wasted'           => $isWasted,
+                'is_central_kitchen'  => $isCentralKitchen,
+                'is_opname'           => $isOpname,
+                'jenis_pengeluaran'   => $pengeluaran->jenis_pengeluaran ?? ($isWasted ? 'wasted' : 'transfer'),
+                'status'              => $pengeluaran->status,
+                'is_approved'         => $isApproved,
+                'is_superadmin'       => (bool) ($user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()),
+                'keterangan'          => $pengeluaran->keterangan ?? '-',
+                'is_wo'               => $isWO,
+                'grand_total'         => $grandTotal,
+                'total_shortage_hpp'  => $totalShortageHpp,
+                'total_surplus_hpp'   => $totalSurplusHpp,
+                'total_item'          => count($details),
+                'total_item_kurang'   => $totalKurang,
+                'can_approve'         => (bool) ($user && method_exists($user, 'canApprovePengeluaran') && $user->canApprovePengeluaran()),
+                'pdf_url'             => route('pengeluaran-bahan-baku.cetak-pdf', $pengeluaran->id),
+                'edit_url'            => route('pengeluaran-bahan-baku.edit', $pengeluaran->id),
+                'approve_url'         => route('pengeluaran-bahan-baku.approve', $pengeluaran->id),
+                'delete_url'          => route('pengeluaran-bahan-baku.destroy', $pengeluaran->id),
+                'details'             => $details,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error("Error loading detailJson for pengeluaran id {$id}: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+            return response()->json([
+                'error'   => true,
+                'message' => 'Gagal memuat detail pengeluaran: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

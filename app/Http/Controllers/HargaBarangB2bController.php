@@ -231,7 +231,7 @@ class HargaBarangB2bController extends Controller
         $resep = $this->findResep($barang);
 
         if (!$resep || $resep->bahanbaku->isEmpty()) {
-            $fallbackHpp = floatval($barang->hpp_referensi ?? ($barang->harga_beli ?? 0));
+            $fallbackHpp = floatval($barang->hpp_referensi ?? 0);
             return response()->json([
                 'has_resep'          => false,
                 'nama_produk'        => $barang->nama,
@@ -370,7 +370,7 @@ class HargaBarangB2bController extends Controller
             } else {
                 $harga = $fifoService->getHargaTerakhirBahan((int) $bahan->id, $gudangId);
                 if ($harga <= 0) {
-                    $harga = floatval($bahan->hpp_referensi ?? ($bahan->harga_beli ?? 0));
+                    $harga = floatval($bahan->hpp_referensi ?? 0);
                 }
                 $cost = $qtyBatch * $harga;
                 $rows[] = array_merge($row, $this->costFields($harga, $cost, $topOutput));

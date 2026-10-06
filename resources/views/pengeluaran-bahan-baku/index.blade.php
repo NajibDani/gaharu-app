@@ -582,8 +582,13 @@ function showDetailPengeluaran(id) {
     }
 
     fetch(`/pengeluaran-bahan-baku/${id}/detail-json`)
-        .then(response => {
-            if (!response.ok) throw new Error('HTTP ' + response.status);
+        .then(async response => {
+            if (!response.ok) {
+                let errData = null;
+                try { errData = await response.json(); } catch(e) {}
+                let errMsg = errData && errData.message ? errData.message : 'HTTP ' + response.status;
+                throw new Error(errMsg);
+            }
             return response.json();
         })
         .then(data => {
@@ -599,7 +604,8 @@ function showDetailPengeluaran(id) {
                 body.innerHTML = `
                     <div class="text-center text-danger py-4">
                         <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
-                        Gagal memuat detail pengeluaran.
+                        <div class="fw-semibold">Gagal memuat detail pengeluaran.</div>
+                        <div class="small text-muted mt-1 px-3">${err.message || 'Terjadi kesalahan sistem.'}</div>
                         <div class="mt-3">
                             <a href="/pengeluaran-bahan-baku/${id}" target="_blank" class="btn btn-sm btn-primary">
                                 <i class="bi bi-box-arrow-up-right me-1"></i> Buka Halaman Detail Dokumen
