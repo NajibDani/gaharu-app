@@ -1442,6 +1442,20 @@
             new bootstrap.Modal(document.getElementById('modalEditPembelian')).show();
         }
 
+        function reindexEditRows() {
+            document.querySelectorAll('#tbodyEditItems tr.item-row').forEach((row, i) => {
+                const bSelect = row.querySelector('.barang-select');
+                const qInput = row.querySelector('.qty-input');
+                const hInput = row.querySelector('.harga-input');
+                const btInput = row.querySelector('[name*="[batch_number]"]');
+                if (bSelect) bSelect.name = `items[${i}][barang_id]`;
+                if (qInput) qInput.name = `items[${i}][qty]`;
+                if (hInput) hInput.name = `items[${i}][harga]`;
+                if (btInput) btInput.name = `items[${i}][batch_number]`;
+            });
+            editRowIndex = document.querySelectorAll('#tbodyEditItems tr.item-row').length;
+        }
+
         document.getElementById('btn-add-item-modal').addEventListener('click', function () {
             addModalItemRow();
         });
@@ -1451,6 +1465,7 @@
                 const rows = document.querySelectorAll('#tbodyEditItems .item-row');
                 if (rows.length > 1) {
                     e.target.closest('.item-row').remove();
+                    reindexEditRows();
                     calcModalGrandTotal();
                 } else {
                     alert('Minimal harus ada 1 barang pada pesanan.');
@@ -1519,12 +1534,20 @@
         });
 
         document.getElementById('formEditPembelian').addEventListener('submit', function (e) {
+            reindexEditRows();
+            document.querySelectorAll('#tbodyEditItems tr.item-row').forEach(row => {
+                updateModalQtyHint(row);
+            });
             document.querySelectorAll('#modalEditPembelian .mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
             });
         });
 
         document.getElementById('formTambahPembelian').addEventListener('submit', function (e) {
+            reindexCreateRows();
+            document.querySelectorAll('#tbodyCreateItems tr.item-row').forEach(row => {
+                updateCreateQtyHint(row);
+            });
             document.querySelectorAll('#modalTambahPembelian .mask-number').forEach(input => {
                 input.value = getCleanNumber(input.value);
             });

@@ -711,16 +711,17 @@ class FifoService
             return 0.0;
         }
 
-        // Cari resep: via resep_id, produk_id, atau barang lain dengan nama sama
+        // Cari resep: via resep_id, produk_id, atau barang lain dengan nama sama (HANYA jika berjenis BSJ, bukan bahan baku murni)
         $resep = null;
         if (!empty($barang->resep_id)) {
             $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
         }
-        if (!$resep) {
+        if (!$resep && ($barang->is_bahan_setengah_jadi || $barang->is_barang_jadi)) {
             $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
         }
-        if (!$resep && !empty($barang->nama)) {
+        if (!$resep && $barang->is_bahan_setengah_jadi && !empty($barang->nama)) {
             $sameNameBarangIds = DB::table('master_barang')
+                ->where('is_bahan_setengah_jadi', 1)
                 ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])
                 ->pluck('id');
             if ($sameNameBarangIds->isNotEmpty()) {

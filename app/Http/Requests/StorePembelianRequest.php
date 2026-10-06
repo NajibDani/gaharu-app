@@ -17,18 +17,14 @@ class StorePembelianRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        // Bersihkan format ribuan (titik) dari harga, qty, dan tax_service sebelum validasi
+        // Bersihkan format harga, qty, dan tax_service sebelum validasi
         $items = $this->input('items', []);
         foreach ($items as $key => $item) {
             if (isset($item['harga'])) {
-                $items[$key]['harga'] = is_string($item['harga'])
-                    ? (float) str_replace(['.', ','], ['', '.'], $item['harga'])
-                    : $item['harga'];
+                $items[$key]['harga'] = $this->parseNumericValue($item['harga']);
             }
             if (isset($item['qty'])) {
-                $items[$key]['qty'] = is_string($item['qty'])
-                    ? (float) str_replace(['.', ','], ['', '.'], $item['qty'])
-                    : $item['qty'];
+                $items[$key]['qty'] = $this->parseNumericValue($item['qty']);
             }
         }
         $this->merge(['items' => $items]);
@@ -36,9 +32,65 @@ class StorePembelianRequest extends FormRequest
         if ($this->has('tax_service')) {
             $tax = $this->input('tax_service');
             if (is_string($tax)) {
-                $this->merge(['tax_service' => str_replace('.', '', $tax)]);
+                $this->merge(['tax_service' => $this->parseNumericValue($tax)]);
             }
         }
+    }
+
+    /**
+     * Parse input angka yang bisa berupa format Indonesia (1.250,50) atau standar decimal (4.65)
+     */
+    private function parseNumericValue(mixed $value): float
+    {
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+
+        if (!is_string($value)) {
+            return 0.0;
+        }
+
+        $str = trim($value);
+        if ($str === '') {
+            return 0.0;
+        }
+
+        // Jika terdapat titik dan koma, misal: 1.250,50
+        if (str_contains($str, '.') && str_contains($str, ',')) {
+            $str = str_replace('.', '', $str);
+            $str = str_replace(',', '.', $str);
+            return (float) $str;
+        }
+
+        // Jika hanya terdapat koma, misal: 4,65
+        if (str_contains($str, ',')) {
+            $str = str_replace(',', '.', $str);
+            return (float) $str;
+        }
+
+        // Jika hanya terdapat titik:
+        // Cek apakah format ribuan (misal 1.000 atau 1.000.000) atau desimal standar (misal 4.65 atau 4.6500)
+        if (str_contains($str, '.')) {
+            $parts = explode('.', $str);
+            // Lebih dari satu titik pasti pemisah ribuan, misal: 1.000.000
+            if (count($parts) > 2) {
+                return (float) str_replace('.', '', $str);
+            }
+
+            // Tepat 1 titik: cek panjang bagian desimal
+            // Jika tepat 3 digit dan bukan diawali 0 (misal 1.000 atau 25.000), anggap ribuan KECUALI bagian depan 0 (0.125)
+            $integerPart = $parts[0];
+            $decimalPart = $parts[1];
+            if (strlen($decimalPart) === 3 && $integerPart !== '0' && strlen($integerPart) <= 3) {
+                // Pola ribuan Indonesia (contoh: 1.000, 25.000, 100.000)
+                return (float) str_replace('.', '', $str);
+            }
+
+            // Standar desimal (misal 4.65, 0.5, 12.5)
+            return (float) $str;
+        }
+
+        return (float) $str;
     }
 
     public function rules(): array

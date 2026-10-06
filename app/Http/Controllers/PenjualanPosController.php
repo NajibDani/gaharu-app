@@ -237,7 +237,7 @@ class PenjualanPosController extends Controller
                     $subResep = null;
                     $komposisiResep = '';
 
-                    if ($item->bahan) {
+                    if ($item->bahan && ($item->bahan->is_bahan_setengah_jadi || !empty($item->bahan->resep_id))) {
                         $subResep = $item->bahan->resepBtklBop;
                         if (!$subResep && $item->bahan->resep_id) {
                             if (!array_key_exists($item->bahan->resep_id, $cacheSubResep)) {
@@ -245,8 +245,9 @@ class PenjualanPosController extends Controller
                             }
                             $subResep = $cacheSubResep[$item->bahan->resep_id];
                         }
-                        if (!$subResep && !empty($item->bahan->nama)) {
+                        if (!$subResep && $item->bahan->is_bahan_setengah_jadi && !empty($item->bahan->nama)) {
                             $sameNameIds = DB::table('master_barang')
+                                ->where('is_bahan_setengah_jadi', 1)
                                 ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($item->bahan->nama))])
                                 ->pluck('id');
                             if ($sameNameIds->isNotEmpty()) {
@@ -257,7 +258,7 @@ class PenjualanPosController extends Controller
                         }
                     }
 
-                    $isBsj = $isBsj || !empty($subResep);
+                    $isBsj = $isBsj || (!empty($subResep) && ($item->bahan->is_bahan_setengah_jadi ?? false));
 
                     // Jika bahan adalah BSJ (punya resep sendiri atau tagging BSJ) → SELALU gunakan HPP resep BSJ
                     if ($isBsj) {
@@ -1047,12 +1048,7 @@ class PenjualanPosController extends Controller
                 if (!$barang) return 0;
 
                 $isBsj = (bool) ($barang->is_bahan_setengah_jadi ?? false);
-                $hasRecipe = !empty($barang->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $barangId)->exists();
-                if (!$hasRecipe && !empty($barang->nama)) {
-                    $hasRecipe = DB::table('resep_btkl_bop')
-                        ->whereIn('produk_id', DB::table('master_barang')->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])->pluck('id'))
-                        ->exists();
-                }
+                $hasRecipe = !empty($barang->resep_id) || ($isBsj && DB::table('resep_btkl_bop')->where('produk_id', $barangId)->exists());
 
                 if ($isBsj || $hasRecipe) {
                     $hppBsj = $fifoService->getHppResepBsj($barangId);
@@ -1211,7 +1207,7 @@ class PenjualanPosController extends Controller
                         foreach ($resepBahan as $bahan) {
                             $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                             $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
-                            $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || !empty($bhn->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists()) : false;
+                            $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || !empty($bhn->resep_id) || ($bhn->is_bahan_setengah_jadi && DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists())) : false;
 
                             $hargaBahan = 0.0;
                             if ($isBsj) {
@@ -1396,6 +1392,8 @@ class PenjualanPosController extends Controller
                 $msg = 'Transaksi berstatus Draft berhasil dihapus secara permanen!';
             }
     
+            \App\Models\StokGudang::reconcileStockSummary(null, $gudangId);
+
             DB::commit();
             return redirect()->route('penjualan_pos.index')->with('success', $msg);
     
@@ -1593,8 +1591,14 @@ class PenjualanPosController extends Controller
                     if (str_contains($cellValue, 'item sold') || str_contains($cellValue, 'quantity') || str_contains($cellValue, 'qty')) {
                         $mapping['qty'] = $colLetter;
                     }
-                    if (str_contains($cellValue, 'net sales') || str_contains($cellValue, 'subtotal')) {
+                    if (str_contains($cellValue, 'gross sales') || str_contains($cellValue, 'gross sale') || str_contains($cellValue, 'penjualan kotor')) {
+                        $mapping['gross_sales'] = $colLetter;
+                    }
+                    if (str_contains($cellValue, 'net sales') || str_contains($cellValue, 'subtotal') || str_contains($cellValue, 'penjualan bersih')) {
                         $mapping['net_sales'] = $colLetter;
+                    }
+                    if (str_contains($cellValue, 'discount') || str_contains($cellValue, 'diskon') || str_contains($cellValue, 'potongan')) {
+                        $mapping['discount'] = $colLetter;
                     }
                     if (str_contains($cellValue, 'price') || str_contains($cellValue, 'harga')) {
                         $mapping['price'] = $colLetter;
@@ -1642,9 +1646,13 @@ class PenjualanPosController extends Controller
 
                     $variantName = isset($mapping['variant']) ? trim((string)($row[$mapping['variant']] ?? '')) : '';
                     $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? 0);
-                    if ($netSales <= 0 && isset($mapping['price'])) {
-                        $price = floatval($row[$mapping['price']] ?? 0);
-                        $netSales = $qty * $price;
+                    $grossSales = isset($mapping['gross_sales']) ? floatval($row[$mapping['gross_sales']] ?? 0) : 0;
+                    $unitPriceInput = isset($mapping['price']) ? floatval($row[$mapping['price']] ?? 0) : 0;
+
+                    if ($netSales <= 0 && $grossSales > 0) {
+                        $netSales = $grossSales;
+                    } elseif ($netSales <= 0 && $unitPriceInput > 0) {
+                        $netSales = $qty * $unitPriceInput;
                     }
 
                     $product = $this->matchBarangJadi($itemName, $variantName, $gudangId);
@@ -1654,16 +1662,35 @@ class PenjualanPosController extends Controller
 
                     $prodId = $product->id;
 
+                    // Tentukan harga normal (sebelum diskon):
+                    // Prioritas: Gross Sales / Qty > Price kolom Excel > Master Harga POS > Net Sales / Qty
+                    $normalPrice = 0;
+                    if ($grossSales > 0 && $qty > 0) {
+                        $normalPrice = round($grossSales / $qty, 2);
+                    } elseif ($unitPriceInput > 0) {
+                        $normalPrice = $unitPriceInput;
+                    } elseif (!empty($product->harga_jual_pos) && floatval($product->harga_jual_pos) > 0) {
+                        $normalPrice = (float) $product->harga_jual_pos;
+                    } else {
+                        $normalPrice = $qty > 0 ? round($netSales / $qty, 2) : 0;
+                    }
+
                     if (isset($itemsToImport[$prodId])) {
                         $itemsToImport[$prodId]['qty'] += $qty;
                         $itemsToImport[$prodId]['net_sales'] += $netSales;
+                        $itemsToImport[$prodId]['gross_sales'] += ($grossSales > 0 ? $grossSales : ($normalPrice * $qty));
+                        if ($normalPrice > 0 && $itemsToImport[$prodId]['normal_price'] <= 0) {
+                            $itemsToImport[$prodId]['normal_price'] = $normalPrice;
+                        }
                     } else {
                         $itemsToImport[$prodId] = [
                             'product'      => $product,
                             'item_name'    => $itemName,
                             'variant_name' => $variantName,
                             'qty'          => $qty,
-                            'net_sales'    => $netSales
+                            'net_sales'    => $netSales,
+                            'gross_sales'  => ($grossSales > 0 ? $grossSales : ($normalPrice * $qty)),
+                            'normal_price' => $normalPrice,
                         ];
                     }
                 }
@@ -1687,12 +1714,19 @@ class PenjualanPosController extends Controller
 
                     foreach ($itemsToImport as $prodId => $it) {
                         $product = $it['product'];
-                        $avgPrice = $it['qty'] > 0 ? round($it['net_sales'] / $it['qty'], 2) : (float) $product->harga_jual_pos;
+                        $itemPrice = $it['normal_price'] > 0 
+                            ? $it['normal_price'] 
+                            : ($it['qty'] > 0 ? round($it['gross_sales'] / $it['qty'], 2) : (float) $product->harga_jual_pos);
+
+                        if ($itemPrice <= 0 && $it['qty'] > 0) {
+                            $itemPrice = round($it['net_sales'] / $it['qty'], 2);
+                        }
+
                         PenjualanPosDetail::create([
                             'penjualan_id' => $penjualan->id,
                             'produk_id'    => $product->id,
                             'qty'          => $it['qty'],
-                            'harga'        => $avgPrice,
+                            'harga'        => $itemPrice,
                             'hpp_satuan'   => 0,
                             'subtotal'     => $it['net_sales']
                         ]);
@@ -1737,8 +1771,11 @@ class PenjualanPosController extends Controller
                     if ($qty <= 0) continue;
 
                     $price = floatval($row[$mapping['price'] ?? ''] ?? 0);
+                    $grossSales = isset($mapping['gross_sales']) ? floatval($row[$mapping['gross_sales']] ?? 0) : 0;
                     $netSales = floatval($row[$mapping['net_sales'] ?? ''] ?? 0);
-                    if ($netSales <= 0 && $price > 0) {
+                    if ($netSales <= 0 && $grossSales > 0) {
+                        $netSales = $grossSales;
+                    } elseif ($netSales <= 0 && $price > 0) {
                         $netSales = $qty * $price;
                     }
                     $tax = floatval($row[$mapping['tax'] ?? ''] ?? 0);
@@ -1764,18 +1801,30 @@ class PenjualanPosController extends Controller
 
                     $prodId = $product->id;
 
+                    // Tentukan harga jual normal (gross/master/price)
+                    $normalPrice = 0;
+                    if ($price > 0) {
+                        $normalPrice = $price;
+                    } elseif ($grossSales > 0 && $qty > 0) {
+                        $normalPrice = round($grossSales / $qty, 2);
+                    } elseif (!empty($product->harga_jual_pos) && floatval($product->harga_jual_pos) > 0) {
+                        $normalPrice = (float) $product->harga_jual_pos;
+                    } else {
+                        $normalPrice = $qty > 0 ? round($netSales / $qty, 2) : 0;
+                    }
+
                     if (isset($transactions[$receipt]['items'][$prodId])) {
                         $transactions[$receipt]['items'][$prodId]['qty'] += $qty;
                         $transactions[$receipt]['items'][$prodId]['subtotal'] += $netSales;
-                        if ($transactions[$receipt]['items'][$prodId]['qty'] > 0) {
-                            $transactions[$receipt]['items'][$prodId]['price'] = round($transactions[$receipt]['items'][$prodId]['subtotal'] / $transactions[$receipt]['items'][$prodId]['qty'], 2);
+                        if ($normalPrice > 0 && $transactions[$receipt]['items'][$prodId]['price'] <= 0) {
+                            $transactions[$receipt]['items'][$prodId]['price'] = $normalPrice;
                         }
                     } else {
                         $transactions[$receipt]['items'][$prodId] = [
                             'product'   => $product,
                             'item_name' => $itemName,
                             'qty'       => $qty,
-                            'price'     => $price > 0 ? $price : ($qty > 0 ? round($netSales / $qty, 2) : 0),
+                            'price'     => $normalPrice,
                             'subtotal'  => $netSales
                         ];
                     }
