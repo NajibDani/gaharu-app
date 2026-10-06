@@ -1371,10 +1371,10 @@ class PenjualanPosController extends Controller
     
         try {
             $penjualan = PenjualanPos::with('details')->findOrFail($id);
+            $gudangId = $penjualan->gudang_id;
             
             if ($penjualan->status == 'SUKSES') {
                 // A. JIKA SUDAH APPROVE
-                $gudangId = $penjualan->gudang_id;
                 foreach ($penjualan->details as $detail) {
                     $barangJadi = DB::table('master_barang')->where('id', $detail->produk_id)->first();
                     $resepUtama = ($barangJadi && $barangJadi->resep_id) ? DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first() : null;
