@@ -1268,7 +1268,8 @@
             const satuanPembelian = opt.dataset.satuanPembelian || '';
             const konversi = parseFloat(opt.dataset.konversiPembelian) || 1.00;
             const satuanUtama = opt.dataset.satuanUtama || 'Pcs';
-            const currentSelectedSatuan = satuanSelect.value || 'pembelian';
+            const currentSelectedSatuan = satuanSelect.dataset.initialSatuan || satuanSelect.value || 'pembelian';
+            delete satuanSelect.dataset.initialSatuan;
 
             // Generate options untuk dropdown satuan
             let optsHtml = '';
@@ -1387,6 +1388,7 @@
 
             const selectEl = tr.querySelector('.barang-select');
             const satuanSelectEl = tr.querySelector('.satuan-select');
+            satuanSelectEl.dataset.initialSatuan = satuanTipe;
             satuanSelectEl.value = satuanTipe;
 
             initModalBarangSelect(selectEl);
@@ -1424,7 +1426,14 @@
                 data.details.forEach(det => {
                     const formattedQty = Number(det.qty).toLocaleString('id-ID');
                     const formattedHarga = Number(det.harga || (det.qty * det.harga_per_qty)).toLocaleString('id-ID');
-                    addModalItemRow(det.barang_id, formattedQty, formattedHarga, det.batch_number || '');
+                    let satuanTipe = 'pembelian';
+                    if (det.has_konversi) {
+                        // Jika det.satuan sama dengan satuan_utama, gunakan 'utama'
+                        if (det.satuan && det.satuan_utama && det.satuan.toLowerCase() === det.satuan_utama.toLowerCase()) {
+                            satuanTipe = 'utama';
+                        }
+                    }
+                    addModalItemRow(det.barang_id, formattedQty, formattedHarga, det.batch_number || '', satuanTipe);
                 });
             } else {
                 addModalItemRow();

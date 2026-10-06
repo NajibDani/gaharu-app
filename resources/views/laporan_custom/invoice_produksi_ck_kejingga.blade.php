@@ -518,7 +518,7 @@
                                 <span style="font-weight: normal; font-size: 9.5px; color: #64748b;">{{ $item['satuan'] }}</span>
                             @endif
                         </td>
-                        <td class="text-right" style="color: #475569;">Rp {{ number_format($unitPrice, 0, ',', '.') }}</td>
+                        <td class="text-right" style="color: #475569;">Rp {{ number_format($unitPrice, (fmod($unitPrice, 1) !== 0.0 && $unitPrice < 1000) ? 2 : 0, ',', '.') }}</td>
                         <td class="text-right fw-bold" style="color: #0f172a;">Rp {{ number_format($item['total_nilai'], 0, ',', '.') }}</td>
                     </tr>
                 @endforeach

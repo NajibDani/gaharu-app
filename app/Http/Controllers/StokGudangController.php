@@ -442,7 +442,13 @@ class StokGudangController extends Controller
                         $deductedNilai = min($prevSaNilai, $prevSaNilai * ($qty / $prevSaQty));
                         $saNilai = max(0, $prevSaNilai - $deductedNilai);
                     } else {
-                        if ($totalHarga > $prevSaNilai && $prevSaNilai > 0) {
+                        $currentAvgPrice = $prevSaQty > 0 ? ($prevSaNilai / $prevSaQty) : 0;
+                        if ($currentAvgPrice > 0) {
+                            $expectedDeduct = round($qty * $currentAvgPrice, 2);
+                            if ($totalHarga > $prevSaNilai || abs($totalHarga - $prevSaNilai) < 1) {
+                                $totalHarga = min($prevSaNilai, $expectedDeduct);
+                            }
+                        } elseif ($totalHarga > $prevSaNilai && $prevSaNilai > 0) {
                             $totalHarga = $prevSaNilai;
                         }
                         $saNilai = max(0, $prevSaNilai - $totalHarga);
@@ -453,10 +459,15 @@ class StokGudangController extends Controller
             if ($saQty > 0 && $saNilai <= 0) {
                 $fifoService = app(\App\Services\FifoService::class);
                 $fallbackPrice = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
-                if ($fallbackPrice <= 0) {
-                    $fallbackPrice = \Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0;
+                if ($fallbackPrice <= 0 || abs($fallbackPrice - 233) <= 1 || abs($fallbackPrice - 25888.89) <= 1) {
+                    $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
+                    if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
+                        $fallbackPrice = $refHpp;
+                    } else {
+                        $fallbackPrice = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
+                    }
                 }
-                $saNilai = $saQty * (float) $fallbackPrice;
+                $saNilai = round($saQty * (float) $fallbackPrice, 2);
             }
         }
 
@@ -542,7 +553,15 @@ class StokGudangController extends Controller
                             $totalHarga = $deductedNilai;
                             $runningNilai = max(0, $prevRunningNilai - $deductedNilai);
                         } else {
-                            if ($totalHarga > $prevRunningNilai && $prevRunningNilai > 0) {
+                            // Hitung unit price sebelum keluar
+                            $currentAvgPrice = $prevRunningQty > 0 ? ($prevRunningNilai / $prevRunningQty) : 0;
+                            // Pastikan totalHarga keluar proporsional dan tidak menguras seluruh nilai sisa stok
+                            if ($currentAvgPrice > 0) {
+                                $expectedDeduct = round($qty * $currentAvgPrice, 2);
+                                if ($totalHarga > $prevRunningNilai || abs($totalHarga - $prevRunningNilai) < 1) {
+                                    $totalHarga = min($prevRunningNilai, $expectedDeduct);
+                                }
+                            } elseif ($totalHarga > $prevRunningNilai && $prevRunningNilai > 0) {
                                 $totalHarga = $prevRunningNilai;
                             }
                             $runningNilai = max(0, $prevRunningNilai - $totalHarga);
@@ -553,10 +572,15 @@ class StokGudangController extends Controller
                 if ($runningQty > 0 && $runningNilai <= 0) {
                     $fifoService = app(\App\Services\FifoService::class);
                     $fallbackPrice = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
-                    if ($fallbackPrice <= 0) {
-                        $fallbackPrice = \Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0;
+                    if ($fallbackPrice <= 0 || abs($fallbackPrice - 233) <= 1 || abs($fallbackPrice - 25888.89) <= 1) {
+                        $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
+                        if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
+                            $fallbackPrice = $refHpp;
+                        } else {
+                            $fallbackPrice = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
+                        }
                     }
-                    $runningNilai = $runningQty * (float) $fallbackPrice;
+                    $runningNilai = round($runningQty * (float) $fallbackPrice, 2);
                 }
 
                 $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
@@ -1039,6 +1063,22 @@ class StokGudangController extends Controller
                     $bId = $detail->barang_id;
                     $qty = (float) $detail->qty;
                     $totalHarga = (float) ($detail->total_harga ?: ($detail->hpp_total ?: ($qty * (float) $detail->harga_satuan)));
+                    
+                    // Deteksi jika harga satuan transaksi terdistorsi oleh harga corrupted dummy (~233)
+                    $unitPrice = $qty > 0 ? ($totalHarga / $qty) : 0;
+                    if ($unitPrice > 0 && (abs($unitPrice - 233) <= 1 || abs($unitPrice - 25888.89) <= 1)) {
+                        $fifoService = app(\App\Services\FifoService::class);
+                        $realUnit = $fifoService->getHargaTerakhirBahan($bId, $gudangUtamaId);
+                        if ($realUnit > 0) {
+                            $totalHarga = round($qty * $realUnit, 2);
+                            $detail->update([
+                                'harga_satuan' => $realUnit,
+                                'total_harga'  => $totalHarga,
+                                'hpp_total'    => $totalHarga,
+                            ]);
+                        }
+                    }
+
                     $tanggal = $pbk->tanggal ?? $pbk->created_at ?? now();
 
                     if (!$isOpnameOrWasted && $pbk->gudang_id) {
@@ -1075,6 +1115,10 @@ class StokGudangController extends Controller
                                 $upMasuk['divisi_tujuan_id'] = $pbk->divisi_id;
                                 $needsUpdate = true;
                             }
+                            if (abs((float)$txMasuk->total_harga - $totalHarga) > 0.01) {
+                                $upMasuk['total_harga'] = $totalHarga;
+                                $needsUpdate = true;
+                            }
                             if ($needsUpdate) {
                                 $txMasuk->update($upMasuk);
                             }
@@ -1102,6 +1146,10 @@ class StokGudangController extends Controller
                                 'total_harga'      => $totalHarga,
                                 'created_by'       => $pbk->approved_by ?? $pbk->created_by ?? 1,
                             ]);
+                        } else {
+                            if (abs((float)$txKeluar->total_harga - $totalHarga) > 0.01) {
+                                $txKeluar->update(['total_harga' => $totalHarga]);
+                            }
                         }
                     }
                 }

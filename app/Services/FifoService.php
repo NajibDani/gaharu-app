@@ -271,11 +271,20 @@ class FifoService
 
             $batch->save();
 
+            $batchHarga = (float) $batch->harga_per_qty;
+            if ($batchHarga <= 0 || abs($batchHarga - 233) <= 1 || abs($batchHarga - 25888.89) <= 1) {
+                $batchHarga = $this->getHargaTerakhirBahan($barangId, $gudangId);
+                if ($batchHarga > 0) {
+                    $batch->harga_per_qty = $batchHarga;
+                    $batch->save();
+                }
+            }
+
             $result[] = [
                 'batch_id'      => $batch->id,
                 'batch_number'  => $batch->batch_number,
                 'qty_keluar'    => $ambilQty,
-                'harga_per_qty' => $batch->harga_per_qty,
+                'harga_per_qty' => $batchHarga,
             ];
 
             $sisaPermintaan -= $ambilQty;
@@ -290,10 +299,13 @@ class FifoService
         if ($sisaPermintaan > 0 && $allowNegative) {
             $hargaFallback = $this->getHargaTerakhirBahan($barangId, $gudangId);
 
-            if (!$hargaFallback || $hargaFallback <= 0) {
-                $hargaFallback = DB::table('master_barang')
-                    ->where('id', $barangId)
-                    ->value('hpp_referensi') ?? 0;
+            if (!$hargaFallback || $hargaFallback <= 0 || abs($hargaFallback - 233) <= 1 || abs($hargaFallback - 25888.89) <= 1) {
+                $refHpp = (float)(DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
+                if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
+                    $hargaFallback = $refHpp;
+                } else {
+                    $hargaFallback = (float)(DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
+                }
             }
 
             $result[] = [
@@ -330,6 +342,41 @@ class FifoService
 
         $visited[] = $barangId;
 
+        $master = DB::table('master_barang')->where('id', $barangId)->first();
+        $satDasar = strtolower(trim($master->satuan ?? ''));
+        $masterSatBeli = strtolower(trim($master->satuan_pembelian ?? ''));
+        $masterKonv = (float)($master->konversi_pembelian ?? 1);
+        $masterHppRef = (float)($master->hpp_referensi ?? 0);
+        $masterHargaBeli = (float)($master->harga_beli ?? 0);
+        $expectedMinPrice = 0.0;
+        if ($masterKonv > 1) {
+            if ($masterHppRef > 0) {
+                $expectedMinPrice = $masterHppRef * 0.1;
+            } elseif ($masterHargaBeli > 0) {
+                $expectedMinPrice = ($masterHargaBeli / $masterKonv) * 0.1;
+            }
+        }
+
+        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv) {
+            $p = floatval($rawPrice);
+            if ($p <= 0) return false;
+            // Cegah harga rogue dummy yang sering mengontaminasi sistem
+            if (abs($p - 233) <= 1 || abs($p - 25888.89) <= 1) {
+                return false;
+            }
+            // Jika barang memiliki konversi besar (> 1) dan harga batch sangat kecil (< 1 atau < 10% estimasi harga dasar),
+            // kemungkinan besar terkena bug double division oleh konversi.
+            if ($masterKonv > 1) {
+                if ($expectedMinPrice > 0 && $p < $expectedMinPrice) {
+                    return false;
+                }
+                if ($p < 0.5 && ($expectedMinPrice > 0 || $masterHargaBeli > 100)) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
         // 1. Cek batch aktif di gudang spesifik yang memiliki sisa stok (qty_sisa > 0)
         if ($gudangId) {
             $activeGudangBatch = DB::table('stok_gudang_batch')
@@ -341,11 +388,9 @@ class FifoService
                 ->orderBy('id', 'asc')
                 ->value('harga_per_qty');
 
-            if ($activeGudangBatch && floatval($activeGudangBatch) > 0) {
+            if ($activeGudangBatch && $isValidBatchPrice($activeGudangBatch)) {
                 $res = (float) $activeGudangBatch;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
-                }
+                self::$hargaTerakhirCache[$cacheKey] = $res;
                 return $res;
             }
         }
@@ -368,11 +413,9 @@ class FifoService
                 ->orderBy('id', 'asc')
                 ->value('harga_per_qty');
 
-            if ($activeUtamaBatch && floatval($activeUtamaBatch) > 0) {
+            if ($activeUtamaBatch && $isValidBatchPrice($activeUtamaBatch)) {
                 $res = (float) $activeUtamaBatch;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
-                }
+                self::$hargaTerakhirCache[$cacheKey] = $res;
                 return $res;
             }
         }
@@ -386,11 +429,9 @@ class FifoService
             ->orderBy('id', 'asc')
             ->value('harga_per_qty');
 
-        if ($activeAnyBatch && floatval($activeAnyBatch) > 0) {
+        if ($activeAnyBatch && $isValidBatchPrice($activeAnyBatch)) {
             $res = (float) $activeAnyBatch;
-            if (true) {
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-            }
+            self::$hargaTerakhirCache[$cacheKey] = $res;
             return $res;
         }
 
@@ -426,24 +467,26 @@ class FifoService
             $detailKonv = (float)($latestPembelian->konversi_pembelian ?? 1);
             $satBeli = strtolower(trim($latestPembelian->satuan_pembelian ?? ''));
 
-            $master = DB::table('master_barang')->where('id', $barangId)->first();
-            $satDasar = strtolower(trim($master->satuan ?? ''));
-            $masterSatBeli = strtolower(trim($master->satuan_pembelian ?? ''));
-            $masterKonv = (float)($master->konversi_pembelian ?? 1);
+            $effectiveKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
 
+            // Deteksi apakah pQty dinyatakan dalam satuan pembelian (misal LOAFT) atau satuan dasar (misal GR)
             $isSatuanBeli = false;
-            $konversi = 1.0;
-
-            if ($detailKonv > 1) {
+            if (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
                 $isSatuanBeli = true;
-                $konversi = $detailKonv;
-            } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar && $masterKonv > 1) {
+            } elseif (!empty($masterSatBeli) && !empty($satDasar) && $masterSatBeli !== $satDasar && $satBeli === $masterSatBeli) {
                 $isSatuanBeli = true;
-                $konversi = $masterKonv;
+            } elseif ($effectiveKonv > 1 && $pQty < ($effectiveKonv * 0.5) && $pHarga > 0) {
+                // Heuristik: jika qty sangat kecil dibanding konversi (misal 4.65 vs konversi 5000), ini adalah satuan pembelian
+                $isSatuanBeli = true;
             }
 
-            $totalBaseQty = $isSatuanBeli ? ($pQty * $konversi) : $pQty;
-            $unitPriceDasar = $totalBaseQty > 0 ? ($pHarga / $totalBaseQty) : ($pHargaPerQty > 0 ? ($isSatuanBeli ? $pHargaPerQty / $konversi : $pHargaPerQty) : 0);
+            $totalBaseQty = $isSatuanBeli ? ($pQty * $effectiveKonv) : $pQty;
+            $unitPriceDasar = 0.0;
+            if ($totalBaseQty > 0 && $pHarga > 0) {
+                $unitPriceDasar = $pHarga / $totalBaseQty;
+            } elseif ($pHargaPerQty > 0) {
+                $unitPriceDasar = $isSatuanBeli ? ($pHargaPerQty / $effectiveKonv) : $pHargaPerQty;
+            }
 
             if ($unitPriceDasar > 0) {
                 $res = (float) $unitPriceDasar;
@@ -461,11 +504,9 @@ class FifoService
                 ->orderBy('id', 'desc')
                 ->value('harga_per_qty');
 
-            if ($latestGudangBatch && floatval($latestGudangBatch) > 0) {
+            if ($latestGudangBatch && $isValidBatchPrice($latestGudangBatch)) {
                 $res = (float) $latestGudangBatch;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
-                }
+                self::$hargaTerakhirCache[$cacheKey] = $res;
                 return $res;
             }
         }
@@ -478,11 +519,9 @@ class FifoService
                 ->orderBy('id', 'desc')
                 ->value('harga_per_qty');
 
-            if ($latestUtamaBatch && floatval($latestUtamaBatch) > 0) {
+            if ($latestUtamaBatch && $isValidBatchPrice($latestUtamaBatch)) {
                 $res = (float) $latestUtamaBatch;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
-                }
+                self::$hargaTerakhirCache[$cacheKey] = $res;
                 return $res;
             }
         }
@@ -493,11 +532,9 @@ class FifoService
             ->orderBy('id', 'desc')
             ->value('harga_per_qty');
 
-        if ($latestBatchGlobal && floatval($latestBatchGlobal) > 0) {
+        if ($latestBatchGlobal && $isValidBatchPrice($latestBatchGlobal)) {
             $res = (float) $latestBatchGlobal;
-            if (true) {
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-            }
+            self::$hargaTerakhirCache[$cacheKey] = $res;
             return $res;
         }
 
@@ -600,18 +637,25 @@ class FifoService
             if ($sisaPermintaan <= 0) {
                 break;
             }
+            $batchHarga = (float) $batch->harga_per_qty;
+            if ($batchHarga <= 0 || abs($batchHarga - 233) <= 1 || abs($batchHarga - 25888.89) <= 1) {
+                $batchHarga = $this->getHargaTerakhirBahan($barangId, $gudangId);
+            }
             $ambilQty = min($batch->qty_sisa, $sisaPermintaan);
-            $totalHpp += $ambilQty * $batch->harga_per_qty;
+            $totalHpp += $ambilQty * $batchHarga;
             $sisaPermintaan -= $ambilQty;
         }
 
         if ($sisaPermintaan > 0) {
             $hargaFallback = $this->getHargaTerakhirBahan($barangId, $gudangId);
 
-            if (!$hargaFallback || $hargaFallback <= 0) {
-                $hargaFallback = DB::table('master_barang')
-                    ->where('id', $barangId)
-                    ->value('hpp_referensi') ?? 0;
+            if (!$hargaFallback || $hargaFallback <= 0 || abs($hargaFallback - 233) <= 1 || abs($hargaFallback - 25888.89) <= 1) {
+                $refHpp = (float)(DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
+                if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
+                    $hargaFallback = $refHpp;
+                } else {
+                    $hargaFallback = (float)(DB::table('master_barang')->where('id', $barangId)->value('harga_beli') ?? 0);
+                }
             }
 
             $totalHpp += $sisaPermintaan * (float) $hargaFallback;

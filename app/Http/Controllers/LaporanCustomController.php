@@ -457,9 +457,14 @@ class LaporanCustomController extends Controller
             })->values();
 
             foreach ($activeDetails as $d) {
-                if (!$d->hpp_total || $d->hpp_total <= 0) {
+                $needsHppCalc = (!$d->hpp_total || $d->hpp_total <= 0);
+                if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
+                    $needsHppCalc = true;
+                }
+
+                if ($needsHppCalc) {
                     $harga = 0;
-                    if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0) {
+                    if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
                         $harga = $d->subtotal / $d->qty;
                     } elseif ($d->produk_id) {
                         $harga = $fifoService->getHppResepBsj($d->produk_id);
@@ -467,7 +472,7 @@ class LaporanCustomController extends Controller
                             $harga = (float)($d->produk->harga_beli ?? 0);
                         }
                     }
-                    $d->hpp_total = ($d->subtotal && $d->subtotal > 0) ? $d->subtotal : ($d->qty * $harga);
+                    $d->hpp_total = ($d->subtotal && $d->subtotal > 0 && ($d->subtotal / $d->qty) >= 1.0) ? $d->subtotal : ($d->qty * $harga);
                 }
                 $d->barang = $d->produk;
             }
@@ -703,9 +708,14 @@ class LaporanCustomController extends Controller
                 })->values();
 
                 foreach ($activeDetails as $d) {
-                    if (!$d->hpp_total || $d->hpp_total <= 0) {
+                    $needsHppCalc = (!$d->hpp_total || $d->hpp_total <= 0);
+                    if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
+                        $needsHppCalc = true;
+                    }
+
+                    if ($needsHppCalc) {
                         $harga = 0;
-                        if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0) {
+                        if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
                             $harga = $d->subtotal / $d->qty;
                         } elseif ($d->produk_id) {
                             $harga = $fifoService->getHppResepBsj($d->produk_id);
@@ -713,7 +723,7 @@ class LaporanCustomController extends Controller
                                 $harga = (float)($d->produk->harga_beli ?? 0);
                             }
                         }
-                        $d->hpp_total = ($d->subtotal && $d->subtotal > 0) ? $d->subtotal : ($d->qty * $harga);
+                        $d->hpp_total = ($d->subtotal && $d->subtotal > 0 && ($d->subtotal / $d->qty) >= 1.0) ? $d->subtotal : ($d->qty * $harga);
                     }
                     $d->barang = $d->produk;
                 }

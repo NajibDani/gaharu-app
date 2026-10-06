@@ -557,11 +557,6 @@ class PembelianKejinggaController extends Controller
 
         $pembelian = Pembelian::with(['details.barang', 'details.supplier'])->where('gudang_id', 5)->findOrFail($id);
 
-        if ($pembelian->isTerkunci()) {
-            return redirect()->route('pembelian-kejingga.index')
-                ->with('error', 'Purchase Order ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar atau diterima) dan tidak dapat diubah.');
-        }
-
         $suppliers = Supplier::orderBy('nama')->get();
 
         $stokKejinggaMap = StokGudang::where('gudang_id', 5)
@@ -588,11 +583,6 @@ class PembelianKejinggaController extends Controller
         $this->authorizeAccess();
 
         $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
-
-        if ($pembelian->isTerkunci()) {
-            return redirect()->route('pembelian-kejingga.index')
-                ->with('error', 'Purchase Order ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar atau diterima) dan tidak dapat diubah.');
-        }
 
         $request->validate([
             'tanggal'                 => 'required|date',
@@ -628,7 +618,7 @@ class PembelianKejinggaController extends Controller
 
                 $totalItems += $hargaVal;
                 $parsedItems[] = [
-                    'barang_id'          => $it['barang_id'],
+                    'barang_id'          => (int) $it['barang_id'],
                     'supplier_id'        => !empty($it['supplier_id']) ? $it['supplier_id'] : null,
                     'satuan_pembelian'   => $it['satuan_pembelian'] ?? null,
                     'konversi_pembelian' => isset($it['konversi_pembelian']) ? (float) $it['konversi_pembelian'] : 1.00,
@@ -655,12 +645,33 @@ class PembelianKejinggaController extends Controller
                 'tax_service' => $taxService,
             ]);
 
-            // Save existing payment & reception status and old item taxes before re-creating
             $existingDetails = PembelianDetail::where('pembelian_id', $pembelian->id)->get()->keyBy('barang_id');
+            $submittedBarangIds = collect($parsedItems)->pluck('barang_id')->map(fn($id) => (int)$id)->toArray();
+            $allAffectedBarangIds = $existingDetails->pluck('barang_id')->merge($submittedBarangIds)->unique()->map(fn($id) => (int)$id)->toArray();
             $oldItemTaxes = $this->getItemTaxes($pembelian);
 
-            PembelianDetail::where('pembelian_id', $pembelian->id)->delete();
+            // 1. Rollback & hapus item yang dihilangkan
+            foreach ($existingDetails as $oldBarangId => $oldDet) {
+                if (!in_array((int)$oldBarangId, $submittedBarangIds)) {
+                    $batches = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->get();
+                    foreach ($batches as $batch) {
+                        if ($batch->qty_masuk > 0) {
+                            $stokGudang = \App\Models\StokGudang::where('barang_id', $batch->barang_id)
+                                ->where('gudang_id', $batch->gudang_id)
+                                ->lockForUpdate()
+                                ->first();
+                            if ($stokGudang) {
+                                $stokGudang->decrement('jumlah', (float) $batch->qty_masuk);
+                            }
+                        }
+                        $batch->delete();
+                    }
+                    \App\Models\PenerimaanPembelianDetail::where('pembelian_detail_id', $oldDet->id)->delete();
+                    $oldDet->delete();
+                }
+            }
 
+            // 2. Perbarui atau buat item baru
             $parsedCount = count($parsedItems);
             $runningUpdateTax = 0;
             $updateIdx = 0;
@@ -668,12 +679,15 @@ class PembelianKejinggaController extends Controller
 
             foreach ($parsedItems as $it) {
                 $updateIdx++;
-                $barang = MasterBarang::withoutGlobalScopes()->find($it['barang_id']);
-                $hargaPerQty = $it['qty'] > 0 ? $it['harga'] / $it['qty'] : 0;
+                $barangId = (int) $it['barang_id'];
+                $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+                $qtyInput = (float) $it['qty'];
+                $hargaInput = (float) $it['harga'];
+                $hargaPerQty = $qtyInput > 0 ? $hargaInput / $qtyInput : 0;
                 $satuan = $it['satuan_pembelian'] ?: ($barang->satuan_pembelian ?: ($barang->satuan ?: 'pcs'));
                 $konversi = $it['konversi_pembelian'] > 0 ? $it['konversi_pembelian'] : ($barang->konversi_pembelian ?? 1.00);
 
-                $oldDet = $existingDetails->get($it['barang_id']);
+                $oldDet = $existingDetails->get($barangId);
 
                 $itemTax = 0;
                 if ($taxService > 0) {
@@ -683,7 +697,7 @@ class PembelianKejinggaController extends Controller
                         $itemTax = max(0, round($taxService - $runningUpdateTax, 2));
                     } else {
                         if ($totalItems > 0) {
-                            $itemTax = round($taxService * ($it['harga'] / $totalItems), 2);
+                            $itemTax = round($taxService * ($hargaInput / $totalItems), 2);
                         } else {
                             $itemTax = round($taxService / $parsedCount, 2);
                         }
@@ -693,44 +707,147 @@ class PembelianKejinggaController extends Controller
                     $itemTax = (float) $oldItemTaxes[$oldDet->id];
                 }
 
-                $detailData = [
-                    'pembelian_id'       => $pembelian->id,
-                    'barang_id'          => $it['barang_id'],
-                    'supplier_id'        => $it['supplier_id'],
-                    'satuan_pembelian'   => $satuan,
-                    'konversi_pembelian' => $konversi,
-                    'qty'                => $it['qty'],
-                    'qty_diterima'       => ($oldDet && floatval($oldDet->qty_diterima) > 0) ? $oldDet->qty_diterima : $it['qty'],
-                    'harga'              => $it['harga'],
-                    'harga_per_qty'      => $hargaPerQty,
-                    'batch_number'       => $oldDet ? $oldDet->batch_number : (date('Ymd') . '-PBKJG' . rand(100, 999)),
-                    'metode_pembayaran'   => $oldDet ? $oldDet->metode_pembayaran : null,
-                    'persen_dp'           => $oldDet ? $oldDet->persen_dp : null,
-                    'nominal_dp'          => $oldDet ? $oldDet->nominal_dp : null,
-                    'tanggal_jatuh_tempo' => $oldDet ? $oldDet->tanggal_jatuh_tempo : null,
-                    'tanggal_pelunasan'   => $oldDet ? $oldDet->tanggal_pelunasan : null,
-                    'catatan_pembayaran'  => $oldDet ? $oldDet->catatan_pembayaran : null,
-                    'is_lunas'            => $oldDet ? $oldDet->is_lunas : false,
-                    'lunas_at'            => $oldDet ? $oldDet->lunas_at : null,
-                ];
+                $qtyMasukStok = $qtyInput * $konversi;
+                $hargaPerQtyStok = $hargaPerQty / $konversi;
 
-                if (Schema::hasColumn('pembelian_detail', 'tanggal_diterima')) {
-                    $detailData['tanggal_diterima'] = $oldDet ? $oldDet->tanggal_diterima : null;
+                if ($oldDet) {
+                    $oldQty = (float) $oldDet->qty;
+                    $diffQty = $qtyInput - $oldQty;
+                    $diffQtyKonv = $diffQty * $konversi;
+
+                    $oldDet->update([
+                        'supplier_id'        => $it['supplier_id'],
+                        'satuan_pembelian'   => $satuan,
+                        'konversi_pembelian' => $konversi,
+                        'qty'                => $qtyInput,
+                        'qty_diterima'       => $qtyInput,
+                        'harga'              => $hargaInput,
+                        'harga_per_qty'      => $hargaPerQty,
+                    ]);
+
+                    $targetDetailId = $oldDet->id;
+
+                    $batch = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->first();
+                    if ($batch) {
+                        if ($diffQty != 0) {
+                            $batch->qty_masuk = max(0, (float)$batch->qty_masuk + $diffQtyKonv);
+                            $batch->qty_sisa  = max(0, (float)$batch->qty_sisa + $diffQtyKonv);
+                            $batch->is_habis  = ($batch->qty_sisa <= 0);
+                        }
+                        $batch->harga_per_qty = $hargaPerQtyStok;
+                        $batch->supplier_id   = $it['supplier_id'] ?: $resolvedSupplierId;
+                        $batch->save();
+
+                        if ($diffQty != 0) {
+                            $stokGudang = \App\Models\StokGudang::where('barang_id', $barangId)
+                                ->where('gudang_id', 5)
+                                ->lockForUpdate()
+                                ->first();
+
+                            if ($stokGudang) {
+                                if ($diffQtyKonv > 0) {
+                                    $stokGudang->increment('jumlah', $diffQtyKonv);
+                                } else {
+                                    $stokGudang->decrement('jumlah', abs($diffQtyKonv));
+                                }
+                            }
+                        }
+                    } else {
+                        \App\Models\StokGudangBatch::create([
+                            'gudang_id'           => 5,
+                            'divisi_id'           => 4,
+                            'supplier_id'         => $it['supplier_id'] ?: $resolvedSupplierId,
+                            'barang_id'           => $barangId,
+                            'pembelian_id'        => $pembelian->id,
+                            'pembelian_detail_id' => $oldDet->id,
+                            'batch_number'        => ($oldDet->batch_number ?: date('Ymd') . '-PBKJG' . rand(100, 999)) . '-RCV-' . rand(10, 99),
+                            'qty_masuk'           => $qtyMasukStok,
+                            'qty_keluar'          => 0,
+                            'qty_sisa'            => $qtyMasukStok,
+                            'harga_per_qty'       => $hargaPerQtyStok,
+                            'is_habis'            => false,
+                        ]);
+
+                        $stokGudang = \App\Models\StokGudang::firstOrCreate(
+                            ['barang_id' => $barangId, 'gudang_id' => 5],
+                            ['jumlah' => 0]
+                        );
+                        $stokGudang->increment('jumlah', $qtyMasukStok);
+                    }
+
+                    $penerimaanDet = \App\Models\PenerimaanPembelianDetail::where('pembelian_detail_id', $oldDet->id)->first();
+                    if ($penerimaanDet) {
+                        $penerimaanDet->update([
+                            'qty'           => $qtyInput,
+                            'harga_per_qty' => $hargaPerQty,
+                        ]);
+                    }
+                } else {
+                    $batchNumber = date('Ymd') . '-PBKJG' . rand(100, 999);
+                    $newDet = PembelianDetail::create([
+                        'pembelian_id'       => $pembelian->id,
+                        'barang_id'          => $barangId,
+                        'supplier_id'        => $it['supplier_id'],
+                        'satuan_pembelian'   => $satuan,
+                        'konversi_pembelian' => $konversi,
+                        'qty'                => $qtyInput,
+                        'qty_diterima'       => $qtyInput,
+                        'harga'              => $hargaInput,
+                        'harga_per_qty'      => $hargaPerQty,
+                        'batch_number'       => $batchNumber,
+                    ]);
+
+                    $targetDetailId = $newDet->id;
+
+                    \App\Models\StokGudangBatch::create([
+                        'gudang_id'           => 5,
+                        'divisi_id'           => 4,
+                        'supplier_id'         => $it['supplier_id'] ?: $resolvedSupplierId,
+                        'barang_id'           => $barangId,
+                        'pembelian_id'        => $pembelian->id,
+                        'pembelian_detail_id' => $newDet->id,
+                        'batch_number'        => $batchNumber . '-RCV-' . rand(10, 99),
+                        'qty_masuk'           => $qtyMasukStok,
+                        'qty_keluar'          => 0,
+                        'qty_sisa'            => $qtyMasukStok,
+                        'harga_per_qty'       => $hargaPerQtyStok,
+                        'is_habis'            => false,
+                    ]);
+
+                    $stokGudang = \App\Models\StokGudang::firstOrCreate(
+                        ['barang_id' => $barangId, 'gudang_id' => 5],
+                        ['jumlah' => 0]
+                    );
+                    $stokGudang->increment('jumlah', $qtyMasukStok);
+
+                    $penerimaan = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelian->id)->first();
+                    if ($penerimaan) {
+                        $penerimaan->details()->create([
+                            'pembelian_detail_id' => $newDet->id,
+                            'barang_id'           => $barangId,
+                            'qty'                 => $qtyInput,
+                            'harga_per_qty'       => $hargaPerQty,
+                        ]);
+                    }
                 }
 
-                $newDetail = PembelianDetail::create($detailData);
-
                 if ($itemTax > 0) {
-                    $newItemTaxes[$newDetail->id] = $itemTax;
+                    $newItemTaxes[$targetDetailId] = $itemTax;
                 }
             }
 
             $this->setItemTaxes($pembelian, $newItemTaxes);
             $pembelian->save();
 
+            // SINKRONISASI HPP FIFO untuk semua barang yang terdampak
+            $fifoService = app(\App\Services\FifoService::class);
+            foreach ($allAffectedBarangIds as $bId) {
+                $fifoService->syncBarangHpp((int) $bId);
+            }
+
             DB::commit();
 
-            return redirect()->route('pembelian-kejingga.index')->with('success', "Pembelian Kejingga ({$pembelian->kode_pembelian}) berhasil diperbarui.");
+            return redirect()->route('pembelian-kejingga.index')->with('success', "Pembelian Kejingga ({$pembelian->kode_pembelian}) berhasil diperbarui dan stok/HPP telah disinkronkan.");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -742,18 +859,7 @@ class PembelianKejinggaController extends Controller
     {
         $this->authorizeAccess();
 
-        $user = auth()->user();
-        $isSuperAdmin = $user && $user->isSuperAdmin();
-
         $pembelian = Pembelian::where('gudang_id', 5)->findOrFail($id);
-
-        if ($pembelian->isReceived() && !$isSuperAdmin) {
-            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah diterima fisiknya dan hanya dapat dihapus / di-rollback oleh Super Admin.');
-        }
-
-        if ($pembelian->isTerkunci() && !$isSuperAdmin) {
-            return back()->with('error', 'Pembelian ' . $pembelian->kode_pembelian . ' sudah dikunci (dibayar) dan hanya dapat dihapus oleh Super Admin.');
-        }
 
         DB::transaction(function() use ($pembelian) {
             $pembelian->load(['details.barang']);

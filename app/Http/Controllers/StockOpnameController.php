@@ -473,6 +473,65 @@ class StockOpnameController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | HAPUS BARANG DARI STOCK OPNAME & DIVISI
+    |--------------------------------------------------------------------------
+    */
+    public function hapusBarang(Request $request)
+    {
+        $request->validate([
+            'barang_id' => 'required|exists:master_barang,id',
+        ]);
+
+        $barangId = (int) $request->barang_id;
+        $opnameId = $request->opname_id ? (int) $request->opname_id : null;
+        $divisiId = $request->divisi_id ? (int) $request->divisi_id : null;
+        $gudangId = $request->gudang_id ? (int) $request->gudang_id : null;
+
+        DB::beginTransaction();
+        try {
+            // 1. Hapus dari detail draft SO jika ada
+            if ($opnameId) {
+                $opname = StockOpname::find($opnameId);
+                if ($opname && $opname->status === 'draft') {
+                    StockOpnameDetail::where('stock_opname_id', $opname->id)
+                        ->where('barang_id', $barangId)
+                        ->delete();
+
+                    if (!$divisiId) {
+                        $divisiId = $opname->divisi_id;
+                    }
+                    if (!$gudangId) {
+                        $gudangId = $opname->gudang_id;
+                    }
+                }
+            }
+
+            // 2. Hapus / nonaktifkan mapping divisi pada barang_minimum_stock agar tidak muncul lagi di divisi ini
+            if ($divisiId) {
+                DB::table('barang_minimum_stock')
+                    ->where('barang_id', $barangId)
+                    ->where('divisi_id', $divisiId)
+                    ->when($gudangId, fn($q) => $q->where('gudang_id', $gudangId))
+                    ->delete();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Barang berhasil dihapus dari daftar opname dan dikeluarkan dari divisi ini.',
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal menghapus barang: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | REFRESH / SINKRONKAN STOK SISTEM (DRAFT ONLY)
     |--------------------------------------------------------------------------
     */

@@ -240,6 +240,10 @@
                                 Nilai Selisih
                             </th>
 
+                            <th width="70" class="text-center">
+                                Aksi
+                            </th>
+
                         </tr>
 
                         </thead>
@@ -248,7 +252,7 @@
 
                             <tr>
 
-                                <td colspan="7"
+                                <td colspan="8"
                                     class="text-center py-4 text-muted">
 
                                     Memuat data barang...
@@ -367,7 +371,7 @@ function loadBarang()
     let tbody = document.getElementById('tbodyBarang');
     tbody.innerHTML = `
         <tr>
-            <td colspan="7" class="text-center py-4 text-muted">
+            <td colspan="8" class="text-center py-4 text-muted">
                 <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
                 Memuat data barang dari gudang...
             </td>
@@ -481,7 +485,7 @@ function renderPagination() {
     if (totalItems === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" class="text-center text-muted py-4">
+                <td colspan="8" class="text-center text-muted py-4">
                     Tidak ada barang yang sesuai dengan filter pencarian / kategori / jenis.
                 </td>
             </tr>
@@ -585,6 +589,14 @@ function renderPagination() {
                     <span class="nilai fw-bold" id="nilai_${item.id}">
                         Rp ${uv.nilai.toLocaleString('id-ID')}
                     </span>
+                </td>
+                <td class="text-center align-middle">
+                    <button type="button" 
+                            class="btn btn-sm btn-outline-danger py-1 px-2 rounded-2 shadow-none" 
+                            onclick="hapusBarangDariOpname(${item.id})" 
+                            title="Hapus barang ini dari daftar opname & divisi">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </td>
             </tr>
         `;
@@ -795,6 +807,59 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function hapusBarangDariOpname(barangId) {
+    const item = rawItems.find(i => i.id == barangId);
+    if (!item) return;
+
+    let confirmMsg = `Hapus "${item.nama}" (${item.kode_barang}) dari daftar Stock Opname ini?`;
+    let divisiId = document.getElementById('divisi_id') ? document.getElementById('divisi_id').value : null;
+    let gudangId = document.getElementById('gudang_id') ? document.getElementById('gudang_id').value : null;
+
+    if (divisiId) {
+        confirmMsg += `\n\nBarang ini juga akan dikeluarkan dari daftar divisi ini agar tidak muncul lagi pada opname berikutnya.`;
+    }
+
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    // Panggil AJAX ke backend jika ingin mengeluarkan dari divisi
+    fetch("{{ route('stock-opname.hapus-barang') }}", {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            barang_id: barangId,
+            divisi_id: divisiId || null,
+            gudang_id: gudangId || null
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        rawItems = rawItems.filter(i => i.id != barangId);
+        filteredItems = filteredItems.filter(i => i.id != barangId);
+        delete userValues[barangId];
+
+        document.getElementById('totalItem').innerText = rawItems.length;
+
+        renderPagination();
+        hitungGrandTotal();
+        saveCache();
+    })
+    .catch(err => {
+        console.error(err);
+        rawItems = rawItems.filter(i => i.id != barangId);
+        filteredItems = filteredItems.filter(i => i.id != barangId);
+        delete userValues[barangId];
+        document.getElementById('totalItem').innerText = rawItems.length;
+        renderPagination();
+        hitungGrandTotal();
+        saveCache();
+    });
+}
 
 function downloadExcelTemplate() {
     let gudangId = document.getElementById('gudang_id').value;

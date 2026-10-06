@@ -98,7 +98,7 @@ class StokGudang extends Model
         if (empty($barangIds)) return [];
 
         $date = $date ?: date('Y-m-d');
-        $cutoff = $date . ' 23:59:59';
+        $cutoff = strlen($date) <= 10 ? ($date . ' 23:59:59') : $date;
 
         // Ambil baseline tanggal persediaan awal per barang
         $saMapQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')

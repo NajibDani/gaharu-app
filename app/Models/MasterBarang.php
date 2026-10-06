@@ -392,6 +392,9 @@ public function resepBahanBakuAlternatif()
             }
         }
 
+        // Heal corrupted rogue prices (233 / 25888.89 / dummy fallback) in batches and master_barang
+        self::autoHealCorruptedDummyBatches($targetBarangId);
+
         // Jalankan juga healing untuk saldo awal dan mutasi agar data selalu sinkron
         self::autoHealSaldoAwalBatches($targetBarangId);
         self::autoHealMutasiBatches($targetBarangId);
@@ -401,6 +404,127 @@ public function resepBahanBakuAlternatif()
                 app(\App\Services\FifoService::class)->syncBarangHpp((int)$targetBarangId);
             } catch (\Throwable $e) {
                 // Ignore if service fails during migration/testing
+            }
+        }
+    }
+
+    /**
+     * Bersihkan batch atau master barang yang terkontaminasi harga corrupted dummy (seperti 233 atau 25888.89)
+     */
+    public static function autoHealCorruptedDummyBatches($targetBarangId = null): void
+    {
+        $barangsQuery = \Illuminate\Support\Facades\DB::table('master_barang');
+        if ($targetBarangId) {
+            $barangsQuery->where('id', $targetBarangId);
+        } else {
+            $barangsQuery->where(function($q) {
+                $q->whereBetween('hpp_referensi', [232, 234])
+                  ->orWhereBetween('hpp_referensi', [25888, 25889])
+                  ->orWhereExists(function($sub) {
+                      $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                          ->from('stok_gudang_batch')
+                          ->whereColumn('stok_gudang_batch.barang_id', 'master_barang.id')
+                          ->where(function($bSub) {
+                              $bSub->whereBetween('stok_gudang_batch.harga_per_qty', [232, 234])
+                                   ->orWhereBetween('stok_gudang_batch.harga_per_qty', [25888, 25889]);
+                          });
+                  });
+            });
+        }
+
+        $items = $barangsQuery->get();
+        foreach ($items as $item) {
+            // Dapatkan harga acuan sebenarnya: dari pembelian_detail terbaru atau persediaan_awal_detail
+            $realPrice = null;
+            $satDasar = strtolower(trim($item->satuan ?? ''));
+            $masterKonv = (float)($item->konversi_pembelian ?? 1);
+
+            $latestPd = \Illuminate\Support\Facades\DB::table('pembelian_detail')
+                ->join('pembelian', 'pembelian.id', '=', 'pembelian_detail.pembelian_id')
+                ->where('pembelian_detail.barang_id', $item->id)
+                ->where(function($q) {
+                    $q->whereNull('pembelian.catatan_pembayaran')
+                      ->orWhere(function($sub) {
+                          $sub->where('pembelian.catatan_pembayaran', 'not like', '[DELETED]%')
+                              ->where('pembelian.catatan_pembayaran', 'not like', '[BATAL]%');
+                      });
+                })
+                ->where(function($q) {
+                    $q->whereNull('pembelian.keterangan')
+                      ->orWhere('pembelian.keterangan', 'not like', '[BATAL]%');
+                })
+                ->where(function($q) {
+                    $q->where('pembelian_detail.harga_per_qty', '>', 0)
+                      ->orWhere('pembelian_detail.harga', '>', 0);
+                })
+                ->orderBy('pembelian.tanggal', 'desc')
+                ->orderBy('pembelian.id', 'desc')
+                ->orderBy('pembelian_detail.id', 'desc')
+                ->first();
+
+            if ($latestPd) {
+                $pQty = (float)($latestPd->qty ?? 0);
+                $pHarga = (float)($latestPd->harga ?? 0);
+                $pHargaPerQty = (float)($latestPd->harga_per_qty ?? 0);
+                $detailKonv = (float)($latestPd->konversi_pembelian ?? 1);
+                $satBeli = strtolower(trim($latestPd->satuan_pembelian ?? ''));
+                $effectiveKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
+
+                $isSatuanBeli = false;
+                if (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
+                    $isSatuanBeli = true;
+                } elseif ($effectiveKonv > 1 && $pQty < ($effectiveKonv * 0.5) && $pHarga > 0) {
+                    $isSatuanBeli = true;
+                }
+
+                $totalBaseQty = $isSatuanBeli ? ($pQty * $effectiveKonv) : $pQty;
+                if ($totalBaseQty > 0 && $pHarga > 0) {
+                    $realPrice = round($pHarga / $totalBaseQty, 4);
+                } elseif ($pHargaPerQty > 0) {
+                    $realPrice = round($isSatuanBeli ? ($pHargaPerQty / $effectiveKonv) : $pHargaPerQty, 4);
+                }
+            }
+
+            if (!$realPrice || $realPrice <= 0) {
+                $sad = \Illuminate\Support\Facades\DB::table('persediaan_awal_detail')
+                    ->where('barang_id', $item->id)
+                    ->where('harga_satuan', '>', 0)
+                    ->orderBy('id', 'desc')
+                    ->value('harga_satuan');
+                if ($sad && (float)$sad > 0) {
+                    $realPrice = (float)$sad;
+                }
+            }
+
+            if (!$realPrice || $realPrice <= 0) {
+                $realPrice = (float)($item->harga_beli ?? 0);
+                if ($masterKonv > 1 && $realPrice > 0) {
+                    $realPrice = round($realPrice / $masterKonv, 4);
+                }
+            }
+
+            if ($realPrice && $realPrice > 0) {
+                // Update batch yang korup
+                \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                    ->where('barang_id', $item->id)
+                    ->where(function($q) {
+                        $q->whereBetween('harga_per_qty', [232, 234])
+                          ->orWhereBetween('harga_per_qty', [25888, 25889]);
+                    })
+                    ->update([
+                        'harga_per_qty' => $realPrice,
+                        'updated_at'    => now(),
+                    ]);
+
+                // Update master_barang hpp_referensi jika korup
+                if ((abs((float)$item->hpp_referensi - 233) <= 1) || (abs((float)$item->hpp_referensi - 25888.89) <= 1)) {
+                    \Illuminate\Support\Facades\DB::table('master_barang')
+                        ->where('id', $item->id)
+                        ->update([
+                            'hpp_referensi' => $realPrice,
+                            'updated_at'    => now(),
+                        ]);
+                }
             }
         }
     }
@@ -499,7 +623,10 @@ public function resepBahanBakuAlternatif()
                     ->where('tanggal', $mb->created_at)
                     ->first();
                 if ($tx && (float)$tx->qty > 0) {
-                    $origPrice = round((float)$tx->total_harga / (float)$tx->qty, 4);
+                    $calcPrice = round((float)$tx->total_harga / (float)$tx->qty, 4);
+                    if ($calcPrice > 0 && abs($calcPrice - 233) > 1 && abs($calcPrice - 25888.89) > 1) {
+                        $origPrice = $calcPrice;
+                    }
                 }
             }
 

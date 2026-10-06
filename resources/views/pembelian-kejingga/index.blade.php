@@ -363,37 +363,26 @@
                                         <i class="bi bi-file-image"></i>
                                     </button>
 
-                                    {{-- FLEKSIBEL EDIT & HAPUS POP-UP --}}
-                                    @php
-                                        $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
-                                    @endphp
-                                    @if(!$item->isTerkunci())
-                                        {{-- Hapus --}}
-                                        <form action="{{ route('pembelian-kejingga.destroy', $item->id) }}"
-                                              method="POST" class="d-inline"
-                                              onsubmit="return confirm('Yakin ingin menghapus {{ $item->kode_pembelian }}?')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit"
-                                                    class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
-                                                    title="Hapus Pembelian / Draft">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
-                                    @elseif($isSuperAdmin && !$item->isReceived())
-                                        {{-- Super Admin Hapus PO yang Belum Diterima/Terkirim --}}
-                                        <form action="{{ route('pembelian-kejingga.destroy', $item->id) }}"
-                                              method="POST" class="d-inline"
-                                              onsubmit="return confirm('PERHATIAN (Superadmin):\nYakin ingin menghapus Purchase Order {{ $item->kode_pembelian }} yang belum diterima ini?')">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="submit"
-                                                    class="btn btn-sm btn-danger rounded-2 px-2 py-1 fw-semibold"
-                                                    title="Hapus PO (Super Admin)">
-                                                <i class="bi bi-trash3-fill"></i> Hapus PO
-                                            </button>
-                                        </form>
-                                    @endif
+                                    {{-- Edit PO --}}
+                                    <button type="button"
+                                            class="btn btn-sm btn-warning text-white rounded-2 px-2 py-1"
+                                            onclick="bukaModalEdit({{ $item->id }})"
+                                            title="Edit PO">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+
+                                    {{-- Hapus PO --}}
+                                    <form action="{{ route('pembelian-kejingga.destroy', $item->id) }}"
+                                          method="POST" class="d-inline"
+                                          onsubmit="return confirm('Apakah Anda yakin ingin menghapus Purchase Order {{ $item->kode_pembelian }}?\n\nPerhatian: Stok gudang akan dikembalikan (rollback) dan HPP barang akan disinkronkan kembali.')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1"
+                                                title="Hapus PO">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -624,6 +613,7 @@
             </div>
         </div>
     </div>
+    @endif {{-- end @if($isSuperAdmin) for payment recording modals --}}
 
     <!-- MODAL TERIMA BARANG ITEM -->
     <div class="modal fade" id="modalTerimaDetail" tabindex="-1" aria-hidden="true">
@@ -1026,8 +1016,6 @@
             </div>
         </div>
     </div>
-
-    @endif {{-- end @if($isSuperAdmin) --}}
 
     {{-- HIDDEN CONTAINER FOR DIRECT JPG GENERATION --}}
 
@@ -2264,11 +2252,6 @@
     function bukaModalEdit(id) {
         const item = dataPembayaranMap[id];
         if (!item) return;
-
-        if (item.is_terkunci) {
-            alert('Purchase Order ini sudah dikunci (dibayar atau diterima) dan tidak dapat diubah.');
-            return;
-        }
 
         document.getElementById('modalEditTitle').innerHTML = `<i class="bi bi-pencil-square text-warning me-2"></i>Edit Purchase Order (${item.kode})`;
         document.getElementById('formEditModal').action = `/pembelian-kejingga/${id}`;

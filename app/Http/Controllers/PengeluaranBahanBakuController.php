@@ -652,7 +652,11 @@ class PengeluaranBahanBakuController extends Controller
 
         foreach ($pengeluaran->details as $detail) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
-            if (!$isApproved || $hppTotal <= 0) {
+            // Jika hpp_total belum ada atau terdistorsi harga rogue dummy (~233/satuan atau 25888.89)
+            $unitHpp = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
+            $isCorruptedPrice = ($unitHpp > 0 && (abs($unitHpp - 233) <= 1 || abs($unitHpp - 25888.89) <= 1));
+
+            if (!$isApproved || $hppTotal <= 0 || $isCorruptedPrice) {
                 if ($isOpname) {
                     $hppTotal = $this->hitungNilaiOpname(
                         $pengeluaran->gudang_id,
@@ -670,9 +674,9 @@ class PengeluaranBahanBakuController extends Controller
                     $hppTotal = (float) ($est['total_harga'] ?? 0);
                 }
             }
-            if ($hppTotal <= 0) {
+            if ($hppTotal <= 0 || ($detail->qty > 0 && abs(($hppTotal / $detail->qty) - 233) <= 1)) {
                 $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
-                if ($hargaUnit <= 0) {
+                if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
                     $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                 }
                 $hppTotal = round($detail->qty * $hargaUnit, 2);
@@ -768,7 +772,10 @@ class PengeluaranBahanBakuController extends Controller
 
         $details = $pengeluaran->details->map(function ($detail) use ($pengeluaran, $isApproved, $isWasted, $isOpname, $isCentralKitchen, $gudangUtamaId, &$grandTotal, &$totalKurang, &$totalShortageHpp, &$totalSurplusHpp, $soDetailsMap) {
             $hppTotal = (float) ($detail->hpp_total ?? 0);
-            if (!$isApproved || $hppTotal <= 0) {
+            $unitHpp = $detail->qty > 0 ? ($hppTotal / $detail->qty) : 0;
+            $isCorruptedPrice = ($unitHpp > 0 && (abs($unitHpp - 233) <= 1 || abs($unitHpp - 25888.89) <= 1));
+
+            if (!$isApproved || $hppTotal <= 0 || $isCorruptedPrice) {
                 if ($isOpname) {
                     $hppTotal = $this->hitungNilaiOpname(
                         $pengeluaran->gudang_id,
@@ -786,9 +793,9 @@ class PengeluaranBahanBakuController extends Controller
                     $hppTotal = (float) ($est['total_harga'] ?? 0);
                 }
             }
-            if ($hppTotal <= 0) {
+            if ($hppTotal <= 0 || ($detail->qty > 0 && abs(($hppTotal / $detail->qty) - 233) <= 1)) {
                 $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
-                if ($hargaUnit <= 0) {
+                if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
                     $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
                 }
                 $hppTotal = round($detail->qty * $hargaUnit, 2);
