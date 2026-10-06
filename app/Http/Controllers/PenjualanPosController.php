@@ -232,7 +232,8 @@ class PenjualanPosController extends Controller
                 $satuanOutput = $resep->satuan_output ?: ($d->produk->satuan ?? 'Porsi');
 
                 foreach ($resep->bahanbaku as $item) {
-                    $qtyBahan = floatval($item->qty_bahan);
+                    $rawQtyBahan = floatval($item->qty_bahan);
+                    $qtyBahan = $rawQtyBahan / $outputQty;
                     $isBsj = (bool) ($item->bahan->is_bahan_setengah_jadi ?? false);
                     $subResep = null;
                     $komposisiResep = '';
@@ -479,8 +480,9 @@ class PenjualanPosController extends Controller
 
                     if ($resepUtama) {
                         $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
+                        $outputQtyUtama = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
                         foreach ($resepBahan as $bahan) {
-                            $kebutuhanPerPcs = floatval($bahan->qty_bahan);
+                            $kebutuhanPerPcs = floatval($bahan->qty_bahan) / $outputQtyUtama;
                             $qtyKembali = $kebutuhanPerPcs * floatval($oldDetail->qty);
 
                             $stokGudang = StokGudang::where('gudang_id', $gudangLamaId)->where('barang_id', $bahan->bahan_id)->first();
@@ -843,8 +845,9 @@ class PenjualanPosController extends Controller
                 if ($resepUtama) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
                     if ($resepBahan->count() > 0) {
+                        $outputQtyUtama = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
                         foreach ($resepBahan as $bahan) {
-                            $kebutuhanPerPcs = floatval($bahan->qty_bahan);
+                            $kebutuhanPerPcs = floatval($bahan->qty_bahan) / $outputQtyUtama;
                             $butuh = $kebutuhanPerPcs * $qtyTerjual;
                             $resolveBahan($bahan->bahan_id, $butuh);
                         }
@@ -1381,8 +1384,9 @@ class PenjualanPosController extends Controller
 
                     if ($resepUtama) {
                         $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
+                        $outputQtyUtama = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
                         foreach ($resepBahan as $bahan) {
-                            $kebutuhanPerPcs = floatval($bahan->qty_bahan);
+                            $kebutuhanPerPcs = floatval($bahan->qty_bahan) / $outputQtyUtama;
                             $qtyKembali = $kebutuhanPerPcs * floatval($detail->qty);
 
                             $stokGudang = StokGudang::where('gudang_id', $gudangId)->where('barang_id', $bahan->bahan_id)->first();

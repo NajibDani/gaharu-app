@@ -578,7 +578,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 stateHasResep.classList.remove('d-none');
                 stateNoResep.classList.add('d-none');
 
-                document.getElementById('mInfoOutputResep').textContent = 'Kebutuhan Resep per 1 ' + (rincian.satuan_output || 'Porsi');
+                let outputText = 'Kebutuhan Resep per 1 ' + (rincian.satuan_output || 'Porsi');
+                if (Number(rincian.output_qty) > 1) {
+                    outputText += ' (Batch: ' + Number(rincian.output_qty).toLocaleString('id-ID') + ' ' + (rincian.satuan_output || 'Porsi') + ')';
+                }
+                document.getElementById('mInfoOutputResep').textContent = outputText;
 
                 const tbody = document.getElementById('mTbodyBahan');
                 tbody.innerHTML = '';
