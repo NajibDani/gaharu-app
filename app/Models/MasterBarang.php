@@ -1329,11 +1329,33 @@ public function resepBahanBakuAlternatif()
             }
         }
 
-        // 9. Bersihkan duplikat daging ayam pada resep Sop Ayam (FNB478 / Resep 370)
-        // Sop Ayam sebelumnya memiliki 2 baris ayam: AYAM PEJANTAN POTONG (150 GR) & AYAM POTONG SOP (150 GR)
+        // 9. Update formulasi Kuah Soup (tanpa Iga Sapi) dan Sop Ayam (menggunakan AYAM PEJANTAN POTONG 150 GR)
+        // A. Hapus Iga Sapi (BBB250) dari resep Kuah Soup (BSJ001 / Resep 18)
         \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
-            ->where('resep_id', 370)
-            ->where('bahan_id', 1350) // AYAM PEJANTAN POTONG (mentah)
+            ->where('resep_id', 18)
+            ->where('bahan_id', 249) // IGA
             ->delete();
+
+        // B. Formulasi Sop Ayam (FNB478 / Resep 370) dan Nasi Sup Ayam (FNB202 / Resep 68): gunakan AYAM PEJANTAN POTONG (BBB725 / id 1350) 150 GR
+        foreach ([370, 68] as $rId) {
+            \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->where('resep_id', $rId)
+                ->where('bahan_id', 1092) // AYAM POTONG SOP
+                ->delete();
+
+            $existsPj = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->where('resep_id', $rId)
+                ->where('bahan_id', 1350) // AYAM PEJANTAN POTONG
+                ->exists();
+
+            if (!$existsPj) {
+                \Illuminate\Support\Facades\DB::table('resep_bahanbaku')->insert([
+                    'resep_id'   => $rId,
+                    'bahan_id'   => 1350,
+                    'qty_bahan'  => 150.00,
+                    'satuan'     => 'GR',
+                ]);
+            }
+        }
     }
 }
