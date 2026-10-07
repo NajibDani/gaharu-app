@@ -1328,5 +1328,12 @@ public function resepBahanBakuAlternatif()
                 }
             }
         }
+
+        // 9. Bersihkan duplikat daging ayam pada resep Sop Ayam (FNB478 / Resep 370)
+        // Sop Ayam sebelumnya memiliki 2 baris ayam: AYAM PEJANTAN POTONG (150 GR) & AYAM POTONG SOP (150 GR)
+        \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+            ->where('resep_id', 370)
+            ->where('bahan_id', 1350) // AYAM PEJANTAN POTONG (mentah)
+            ->delete();
     }
 }
