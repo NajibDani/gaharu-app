@@ -742,17 +742,21 @@ class PenjualanPosController extends Controller
             // -- A. Hitung total kebutuhan bahan baku (hanya untuk item yang berresep)
             $totalKebutuhanBahan = [];
 
-            // Helper function to resolve ingredients recursively
-            $resolveBahan = function($barangId, $qtyNeeded) use (&$resolveBahan, &$totalKebutuhanBahan, $gudangId) {
+            // Helper function to resolve ingredients recursively with allocated stock tracking
+            $allocatedStock = [];
+            $resolveBahan = function($barangId, $qtyNeeded) use (&$resolveBahan, &$totalKebutuhanBahan, &$allocatedStock, $gudangId) {
                 $barang = DB::table('master_barang')->where('id', $barangId)->first();
                 if (!$barang) return;
 
-                // Check available stock of this item in this warehouse
-                $stokTersedia = DB::table('stok_gudang_batch')
+                $allocated = $allocatedStock[$barangId] ?? 0;
+
+                // Check available stock of this item in this warehouse minus already allocated in this transaction
+                $stokTersediaTotal = (float) DB::table('stok_gudang_batch')
                     ->where('gudang_id', $gudangId)
                     ->where('barang_id', $barangId)
                     ->where('qty_sisa', '>', 0)
                     ->sum('qty_sisa');
+                $stokTersedia = max(0, $stokTersediaTotal - $allocated);
 
                 $resep = null;
                 if ($barang->resep_id) {
@@ -764,6 +768,7 @@ class PenjualanPosController extends Controller
 
                 // If we have enough stock, or if it is NOT a semi-finished good (bahan baku biasa), or if it doesn't have a recipe:
                 if ($stokTersedia >= $qtyNeeded || !$barang->is_bahan_setengah_jadi || !$resep) {
+                    $allocatedStock[$barangId] = $allocated + min($stokTersedia, $qtyNeeded);
                     if (isset($totalKebutuhanBahan[$barangId])) {
                         $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyNeeded;
                     } else {
@@ -776,10 +781,11 @@ class PenjualanPosController extends Controller
                     return;
                 }
 
-                // If it is a semi-finished good and stock is not enough:
+                // If it is a semi-finished good and stock is not enough (or 0):
                 // Consume whatever is available first
                 $qtyRemaining = $qtyNeeded;
                 if ($stokTersedia > 0) {
+                    $allocatedStock[$barangId] = $allocated + $stokTersedia;
                     if (isset($totalKebutuhanBahan[$barangId])) {
                         $totalKebutuhanBahan[$barangId]['jumlah'] += $stokTersedia;
                     } else {
@@ -792,7 +798,7 @@ class PenjualanPosController extends Controller
                     $qtyRemaining -= $stokTersedia;
                 }
 
-                // Explode the remaining qty using its recipe
+                // Explode the remaining qty using its recipe to raw materials
                 if ($resep) {
                     $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->get();
                     if ($resepBahan->count() > 0) {
