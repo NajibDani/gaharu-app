@@ -712,5 +712,193 @@ public function resepBahanBakuAlternatif()
             ->update([
                 'is_bahan_baku' => 0,
             ]);
+
+        // 4. Normalisasi master data Tempe (BBB633) konversi 50 GR per PAPAN @ Rp 140/GR
+        self::healTempeAndCaramelData();
     }
+
+    public static function healTempeAndCaramelData(): void
+    {
+        // 1. Normalisasi master Tempe (BBB633): 50 GR / PAPAN, konversi = 50, hpp_referensi = 140
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB633')
+                  ->orWhere('nama', 'TEMPE');
+            })
+            ->update([
+                'satuan'             => 'GR',
+                'satuan_pembelian'   => 'PAPAN',
+                'konversi_pembelian' => 50.00,
+                'hpp_referensi'      => 140.00,
+            ]);
+
+        $tempe = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where('kode_barang', 'BBB633')
+            ->orWhere('nama', 'TEMPE')
+            ->first();
+        if ($tempe) {
+            \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('barang_id', $tempe->id)
+                ->where('harga_per_qty', '>=', 1000)
+                ->update([
+                    'harga_per_qty' => 140.00,
+                ]);
+            \Illuminate\Support\Facades\DB::table('fifo_layer')
+                ->where('barang_id', $tempe->id)
+                ->where('harga_satuan', '>=', 1000)
+                ->update([
+                    'harga_satuan' => 140.00,
+                ]);
+        }
+
+        // 2. Mapping substitusi Caramel Monin (BBB113) & Caramel Drip (BBB112)
+        $monin = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BBB113')->first();
+        $drip = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BBB112')->first();
+        if ($monin && $drip) {
+            // Sambungkan Monin -> Drip
+            $rbbMonin = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->where('barang_id', $monin->id)
+                ->get();
+            foreach ($rbbMonin as $rb) {
+                $exists = \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')
+                    ->where('resep_bahanbaku_id', $rb->id)
+                    ->where('barang_id', $drip->id)
+                    ->exists();
+                if (!$exists) {
+                    \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')->insert([
+                        'resep_bahanbaku_id' => $rb->id,
+                        'barang_id'          => $drip->id,
+                        'rasio'              => 1.0000,
+                        'prioritas'          => 1,
+                        'catatan'            => 'Substitusi Caramel Drip',
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
+                    ]);
+                }
+            }
+
+            // Sambungkan Drip -> Monin
+            $rbbDrip = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->where('barang_id', $drip->id)
+                ->get();
+            foreach ($rbbDrip as $rb) {
+                $exists = \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')
+                    ->where('resep_bahanbaku_id', $rb->id)
+                    ->where('barang_id', $monin->id)
+                    ->exists();
+                if (!$exists) {
+                    \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')->insert([
+                        'resep_bahanbaku_id' => $rb->id,
+                        'barang_id'          => $monin->id,
+                        'rasio'              => 1.0000,
+                        'prioritas'          => 1,
+                        'catatan'            => 'Substitusi Caramel Monin',
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
+                    ]);
+                }
+            }
+
+            // 3. Perbaiki transaksi POS historis di mana Caramel Monin terpotong 410 ML padahal stok Monin 0 dan Drip tersedia
+            $moninTx = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $monin->id)
+                ->where('gudang_asal_id', 3)
+                ->where('divisi_asal_id', 2)
+                ->where('tipe', 'keluar')
+                ->where('source_type', 'pos')
+                ->get();
+
+            if ($moninTx->isNotEmpty()) {
+                foreach ($moninTx as $mtx) {
+                    \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                        ->where('id', $mtx->id)
+                        ->update([
+                            'barang_id' => $drip->id,
+                        ]);
+                }
+            }
+
+            // Hitung total masuk & keluar Drip di Gudang Gaharu Barista (gudang_id=3, divisi_id=2)
+            $dripMasuk = (float) \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $drip->id)
+                ->where('gudang_tujuan_id', 3)
+                ->where('divisi_tujuan_id', 2)
+                ->where('tipe', 'masuk')
+                ->sum('qty');
+            $dripKeluar = (float) \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $drip->id)
+                ->where('gudang_asal_id', 3)
+                ->where('divisi_asal_id', 2)
+                ->where('tipe', 'keluar')
+                ->sum('qty');
+
+            if ($dripMasuk >= 950 && $dripKeluar >= 500) {
+                $stokRealDrip = max(0, $dripMasuk - $dripKeluar);
+                \Illuminate\Support\Facades\DB::table('stok_gudang')
+                    ->where('barang_id', $drip->id)
+                    ->where('gudang_id', 3)
+                    ->where('divisi_id', 2)
+                    ->update(['jumlah' => $stokRealDrip]);
+
+                \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                    ->where('barang_id', $drip->id)
+                    ->where('gudang_id', 3)
+                    ->where('divisi_id', 2)
+                    ->where('batch_number', 'like', 'SA-%')
+                    ->update([
+                        'qty_keluar' => $dripKeluar,
+                        'qty_sisa'   => $stokRealDrip,
+                        'is_habis'   => ($stokRealDrip <= 0) ? 1 : 0
+                    ]);
+            }
+
+            // Pastikan Monin di Gaharu Barista bernilai 0 jika tidak ada stok masuk
+            $moninMasuk = (float) \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $monin->id)
+                ->where('gudang_tujuan_id', 3)
+                ->where('divisi_tujuan_id', 2)
+                ->where('tipe', 'masuk')
+                ->sum('qty');
+            if ($moninMasuk <= 0) {
+                \Illuminate\Support\Facades\DB::table('stok_gudang')
+                    ->where('barang_id', $monin->id)
+                    ->where('gudang_id', 3)
+                    ->where('divisi_id', 2)
+                    ->update(['jumlah' => 0]);
+            }
+
+            // 4. Perbarui draft Stock Opname Gaharu Barista yang memuat Caramel Drip
+            $draftSoGaharu = \Illuminate\Support\Facades\DB::table('stock_opname')
+                ->where('gudang_id', 3)
+                ->where('divisi_id', 2)
+                ->where('status', 'draft')
+                ->pluck('id');
+
+            if ($draftSoGaharu->isNotEmpty()) {
+                $dripStokReal = \Illuminate\Support\Facades\DB::table('stok_gudang')
+                    ->where('barang_id', $drip->id)
+                    ->where('gudang_id', 3)
+                    ->where('divisi_id', 2)
+                    ->value('jumlah');
+
+                if ($dripStokReal !== null) {
+                    $soDetails = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                        ->whereIn('stock_opname_id', $draftSoGaharu)
+                        ->where('barang_id', $drip->id)
+                        ->get();
+
+                    foreach ($soDetails as $sod) {
+                        $fisik = (float) $sod->stok_fisik;
+                        $sistem = (float) $dripStokReal;
+                        $selisih = $fisik - $sistem;
+                        \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                            ->where('id', $sod->id)
+                            ->update([
+                                'stok_sistem' => $sistem,
+                                'selisih'     => $selisih,
+                            ]);
+                    }
+                }
+            }
+        }
 }

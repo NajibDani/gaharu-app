@@ -372,6 +372,15 @@ class FifoService
             if (abs($p - 233) <= 1 || abs($p - 25888.89) <= 1) {
                 return false;
             }
+            // Jika satuan dasar adalah GR / ML dan harga per GR/ML di atas Rp 1.000 (kecuali HPP referensi memang mahal)
+            if (in_array($satDasar, ['gr', 'ml', 'gram'])) {
+                if ($p >= 1000 && ($masterHppRef <= 500 || $masterKonv >= 5)) {
+                    return false;
+                }
+                if ($p > 500 && $masterKonv >= 5 && $masterHppRef <= 500) {
+                    return false;
+                }
+            }
             // Jika barang memiliki konversi besar (> 1) dan harga batch sangat kecil (< 1 atau < 10% estimasi harga dasar),
             // kemungkinan besar terkena bug double division oleh konversi.
             if ($masterKonv > 1) {
@@ -380,10 +389,7 @@ class FifoService
                 }
                 // Jika harga batch jauh lebih tinggi dari HPP referensi (misal Rp 7.000 vs Rp 140),
                 // berarti harga batch tersebut masih dalam satuan beli (papan/kg/karton) dan belum dikonversi ke satuan dasar.
-                if ($masterHppRef > 0 && $p > ($masterHppRef * 4) && $masterKonv >= 5) {
-                    return false;
-                }
-                if ($p > 500 && in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv >= 5 && $masterHppRef <= 500) {
+                if ($masterHppRef > 0 && $p > ($masterHppRef * 4)) {
                     return false;
                 }
             }
@@ -482,7 +488,7 @@ class FifoService
 
             $effectiveKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
 
-            // Deteksi apakah pQty dinyatakan dalam satuan pembelian (misal LOAFT) atau satuan dasar (misal GR)
+            // Deteksi apakah pQty dinyatakan dalam satuan pembelian (misal LOAFT, PAPAN, PCS) atau satuan dasar (misal GR)
             $isSatuanBeli = false;
             if (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
                 $isSatuanBeli = true;
@@ -501,7 +507,7 @@ class FifoService
                 $unitPriceDasar = $isSatuanBeli ? ($pHargaPerQty / $effectiveKonv) : $pHargaPerQty;
             }
 
-            if ($unitPriceDasar > 0) {
+            if ($unitPriceDasar > 0 && $isValidBatchPrice($unitPriceDasar)) {
                 $res = (float) $unitPriceDasar;
                 self::$hargaTerakhirCache[$cacheKey] = $res;
                 return $res;

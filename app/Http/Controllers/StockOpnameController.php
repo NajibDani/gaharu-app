@@ -29,6 +29,8 @@ class StockOpnameController extends Controller
 
     public function index(Request $request)
     {
+        \App\Models\MasterBarang::healConflictingJenisFlags();
+
         $search = $request->query('search');
         $gudangId = $request->query('gudang_id');
         $kategoriId = $request->query('kategori_id');
@@ -129,6 +131,8 @@ class StockOpnameController extends Controller
 
     public function loadBarang(Request $request)
     {
+        \App\Models\MasterBarang::healConflictingJenisFlags();
+
         $request->validate(['gudang_id' => 'required']);
         $gudangId = $request->gudang_id;
         $divisiId = $request->divisi_id;
@@ -421,6 +425,8 @@ class StockOpnameController extends Controller
 
     public function detailJson(string $id)
     {
+        \App\Models\MasterBarang::healConflictingJenisFlags();
+
         $opname = StockOpname::with([
             'gudang',
             'divisi',
