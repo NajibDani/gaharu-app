@@ -31,8 +31,10 @@ class StorePembelianRequest extends FormRequest
 
         if ($this->has('tax_service')) {
             $tax = $this->input('tax_service');
-            if (is_string($tax)) {
+            if ($tax !== null && $tax !== '') {
                 $this->merge(['tax_service' => $this->parseNumericValue($tax)]);
+            } else {
+                $this->merge(['tax_service' => 0]);
             }
         }
     }
@@ -100,7 +102,7 @@ class StorePembelianRequest extends FormRequest
             'gudang_id' => ['required', 'exists:master_gudang,id'],
             'tanggal' => ['required', 'date'],
             'keterangan' => ['nullable', 'string', 'max:1000'],
-            'tax_service' => ['nullable', 'string'],
+            'tax_service' => ['nullable', 'numeric', 'min:0', 'max:999999999999'],
 
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_id' => ['required', 'exists:master_barang,id'],
@@ -121,6 +123,9 @@ class StorePembelianRequest extends FormRequest
             'items.*.qty.max' => 'Qty tidak boleh melebihi 99.999.999.',
             'items.*.harga.required' => 'Harga wajib diisi.',
             'items.*.harga.max' => 'Harga tidak boleh melebihi 999.999.999.999.',
+            'tax_service.numeric' => 'Biaya tambahan harus berupa angka.',
+            'tax_service.min' => 'Biaya tambahan tidak boleh kurang dari 0.',
+            'tax_service.max' => 'Biaya tambahan tidak boleh melebihi 999.999.999.999.',
             'tanggal.after_or_equal' => 'Tanggal transaksi tidak boleh sebelum hari ini.',
         ];
     }
@@ -136,17 +141,6 @@ class StorePembelianRequest extends FormRequest
             if (!$isSuperAdmin && !$isEditing) {
                 if ($this->input('tanggal') && date('Y-m-d', strtotime($this->input('tanggal'))) < date('Y-m-d')) {
                     $validator->errors()->add('tanggal', 'Tanggal transaksi tidak boleh sebelum hari ini.');
-                }
-            }
-
-            // Validasi tax_service jika diisi
-            if ($this->input('tax_service')) {
-                $taxClean = (float) str_replace('.', '', $this->input('tax_service'));
-                if ($taxClean < 0) {
-                    $validator->errors()->add('tax_service', 'Biaya tambahan tidak boleh kurang dari 0.');
-                }
-                if ($taxClean > 999999999999) {
-                    $validator->errors()->add('tax_service', 'Biaya tambahan tidak boleh melebihi 999.999.999.999.');
                 }
             }
         });

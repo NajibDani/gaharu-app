@@ -361,10 +361,7 @@ class PembelianController extends Controller
 
         DB::transaction(function () use ($data, $request) {
 
-            $taxService = 0;
-            if (!empty($request->tax_service)) {
-                $taxService = (float) str_replace('.', '', $request->tax_service);
-            }
+            $taxService = (float) ($data['tax_service'] ?? 0);
 
             $total = collect($data['items'])->sum(fn($item) => (float) $item['harga']) + $taxService;
 
@@ -891,10 +888,7 @@ class PembelianController extends Controller
                 }
             }
 
-            $taxService = 0;
-            if (!empty($request->tax_service)) {
-                $taxService = (float) str_replace('.', '', $request->tax_service);
-            }
+            $taxService = (float) ($data['tax_service'] ?? 0);
 
             $total = collect($data['items'])->sum(fn($item) => (float) $item['harga']) + $taxService;
 
