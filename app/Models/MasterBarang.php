@@ -1193,5 +1193,76 @@ public function resepBahanBakuAlternatif()
                 ->where('id', '!=', $dupe->keep_id)
                 ->delete();
         }
+
+        // 7. Sinkronisasi perubahan takaran Fresh Milk Caffe Latte (200 ML) & Rekonsiliasi SO Gaharu Barista
+        $freshMilk = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BBB195')->first();
+        if ($freshMilk) {
+            // Update resep Caffe Latte (FNB031 - resep 133 & FNB349 - resep 227) menjadi 200 ML
+            \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->whereIn('resep_id', [133, 227])
+                ->where('bahan_id', $freshMilk->id)
+                ->update(['qty_bahan' => 200.00]);
+
+            // Total pemakaian POS 28 di Gaharu Barista (dengan Caffe Latte @ 200 ML) = 40.883,86 ML
+            // Total masuk di Gaharu Barista (16.000 PA + 48.000 PBK) = 64.000,00 ML
+            // Stok Riil Sistem = 64.000,00 - 40.883,86 = 23.116,14 ML (23,12 PACK)
+            $stokRealFmgGaharu = 23116.14;
+            $totalKeluarFmgGaharu = 40883.86;
+
+            // Update transaksi keluar POS 28 untuk Fresh Milk
+            $pos28Tx = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $freshMilk->id)
+                ->where('gudang_asal_id', 3)
+                ->where('divisi_asal_id', 2)
+                ->where('tipe', 'keluar')
+                ->where('source_type', 'penjualan_pos')
+                ->get();
+
+            if ($pos28Tx->isNotEmpty()) {
+                $firstTx = $pos28Tx->first();
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                    ->where('id', $firstTx->id)
+                    ->update(['qty' => $totalKeluarFmgGaharu]);
+
+                // Hapus baris transaksi duplikat POS 28 jika ada
+                if ($pos28Tx->count() > 1) {
+                    $otherIds = $pos28Tx->pluck('id')->slice(1)->all();
+                    \Illuminate\Support\Facades\DB::table('transaksi_stok')->whereIn('id', $otherIds)->delete();
+                }
+            }
+
+            \Illuminate\Support\Facades\DB::table('stok_gudang')
+                ->where('barang_id', $freshMilk->id)
+                ->where('gudang_id', 3)
+                ->where('divisi_id', 2)
+                ->update(['jumlah' => $stokRealFmgGaharu]);
+
+            // Update draft SO Gaharu Barista (SO-20261006215253)
+            $draftSoGaharu = \Illuminate\Support\Facades\DB::table('stock_opname')
+                ->where('gudang_id', 3)
+                ->where('divisi_id', 2)
+                ->where('status', 'draft')
+                ->pluck('id');
+
+            if ($draftSoGaharu->isNotEmpty()) {
+                $soDetailsFmg = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                    ->whereIn('stock_opname_id', $draftSoGaharu)
+                    ->where('barang_id', $freshMilk->id)
+                    ->get();
+
+                foreach ($soDetailsFmg as $sod) {
+                    $fisik = (float) $sod->stok_fisik;
+                    $sistem = $stokRealFmgGaharu;
+                    $selisih = $fisik - $sistem;
+                    \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                        ->where('id', $sod->id)
+                        ->update([
+                            'stok_sistem'   => $sistem,
+                            'selisih'       => $selisih,
+                            'nilai_selisih' => round(abs($selisih) * 19.74, 2),
+                        ]);
+                }
+            }
+        }
     }
 }
