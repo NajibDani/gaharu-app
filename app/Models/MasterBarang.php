@@ -1103,5 +1103,95 @@ public function resepBahanBakuAlternatif()
                 }
             }
         }
+
+        // 6. Normalisasi HPP Bahan Baku & BSJ Adonan Croissant dan item Bakery
+        // A. Excellence Butter Sheet (BBB714): Rp 68.27 / GR (Rp 136.546 / PACK 2000 GR)
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB714')
+                  ->orWhere('nama', 'like', '%Excellence Butter Sheet%');
+            })
+            ->update([
+                'hpp_referensi' => 68.27,
+            ]);
+
+        // B. Kayu Manis Bubuk (BBB283): Rp 62.00 / GR
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB283')
+                  ->orWhere('nama', 'like', '%KAYU MANIS BUBUK%');
+            })
+            ->update([
+                'hpp_referensi' => 62.00,
+            ]);
+
+        // C. Pisang Raja (BBB455): Rp 14.00 / GR (Rp 14.000 / sisir ~1000 GR)
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB455')
+                  ->orWhere('nama', 'like', '%PISANG RAJA%');
+            })
+            ->update([
+                'hpp_referensi' => 14.00,
+            ]);
+
+        // D. Tepung Pro Sedang (BBB642): Rp 8.40 / GR (Rp 210.000 / SAK 25000 GR)
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB642')
+                  ->orWhere('nama', 'like', '%TEPUNG PRO SEDANG%');
+            })
+            ->update([
+                'hpp_referensi' => 8.40,
+            ]);
+
+        // E. Bawang Putih (BBB045): Rp 34.00 / GR (Rp 34.000 / KG)
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB045')
+                  ->orWhere('nama', 'BAWANG PUTIH');
+            })
+            ->update([
+                'hpp_referensi' => 34.00,
+            ]);
+
+        // F. Nescafe (BBB712): Rp 237.50 / GR (Rp 47.500 / 200 GR)
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB712')
+                  ->orWhere('nama', 'like', '%Nescafe%');
+            })
+            ->update([
+                'satuan'             => 'GR',
+                'satuan_pembelian'   => 'JAR',
+                'konversi_pembelian' => 200.00,
+                'hpp_referensi'      => 237.50,
+            ]);
+
+        // G. Adonan Croissant (BSJ098): HPP referensi = Rp 39.33 / GR
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BSJ098')
+                  ->orWhere('nama', 'Adonan Croissant');
+            })
+            ->where('is_bahan_setengah_jadi', 1)
+            ->update([
+                'hpp_referensi' => 39.33,
+            ]);
+
+        // H. Bersihkan duplikat pada resep_bahanbaku
+        $duplicates = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+            ->select('resep_id', 'bahan_id', \Illuminate\Support\Facades\DB::raw('MIN(id) as keep_id'), \Illuminate\Support\Facades\DB::raw('COUNT(*) as cnt'))
+            ->groupBy('resep_id', 'bahan_id')
+            ->having('cnt', '>', 1)
+            ->get();
+
+        foreach ($duplicates as $dupe) {
+            \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->where('resep_id', $dupe->resep_id)
+                ->where('bahan_id', $dupe->bahan_id)
+                ->where('id', '!=', $dupe->keep_id)
+                ->delete();
+        }
     }
 }
