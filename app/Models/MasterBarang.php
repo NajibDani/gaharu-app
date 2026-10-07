@@ -743,12 +743,6 @@ public function resepBahanBakuAlternatif()
                 ->update([
                     'harga_per_qty' => 140.00,
                 ]);
-            \Illuminate\Support\Facades\DB::table('fifo_layer')
-                ->where('barang_id', $tempe->id)
-                ->where('harga_satuan', '>=', 1000)
-                ->update([
-                    'harga_satuan' => 140.00,
-                ]);
         }
 
         // 2. Mapping substitusi Caramel Monin (BBB113) & Caramel Drip (BBB112)
@@ -757,44 +751,36 @@ public function resepBahanBakuAlternatif()
         if ($monin && $drip) {
             // Sambungkan Monin -> Drip
             $rbbMonin = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
-                ->where('barang_id', $monin->id)
+                ->where('bahan_id', $monin->id)
                 ->get();
             foreach ($rbbMonin as $rb) {
                 $exists = \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')
                     ->where('resep_bahanbaku_id', $rb->id)
-                    ->where('barang_id', $drip->id)
+                    ->where('bahan_id', $drip->id)
                     ->exists();
                 if (!$exists) {
                     \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')->insert([
                         'resep_bahanbaku_id' => $rb->id,
-                        'barang_id'          => $drip->id,
-                        'rasio'              => 1.0000,
+                        'bahan_id'          => $drip->id,
                         'prioritas'          => 1,
-                        'catatan'            => 'Substitusi Caramel Drip',
-                        'created_at'         => now(),
-                        'updated_at'         => now(),
                     ]);
                 }
             }
 
             // Sambungkan Drip -> Monin
             $rbbDrip = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
-                ->where('barang_id', $drip->id)
+                ->where('bahan_id', $drip->id)
                 ->get();
             foreach ($rbbDrip as $rb) {
                 $exists = \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')
                     ->where('resep_bahanbaku_id', $rb->id)
-                    ->where('barang_id', $monin->id)
+                    ->where('bahan_id', $monin->id)
                     ->exists();
                 if (!$exists) {
                     \Illuminate\Support\Facades\DB::table('resep_bahanbaku_alternatif')->insert([
                         'resep_bahanbaku_id' => $rb->id,
-                        'barang_id'          => $monin->id,
-                        'rasio'              => 1.0000,
+                        'bahan_id'          => $monin->id,
                         'prioritas'          => 1,
-                        'catatan'            => 'Substitusi Caramel Monin',
-                        'created_at'         => now(),
-                        'updated_at'         => now(),
                     ]);
                 }
             }
