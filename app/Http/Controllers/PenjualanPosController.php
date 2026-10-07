@@ -827,33 +827,7 @@ class PenjualanPosController extends Controller
                 }
             };
 
-            foreach ($itemsWithRecipe as $detail) {
-                $qtyTerjual = floatval($detail->qty);
-                $produkId = $detail->produk_id;
-
-                $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
-                $resepUtama = null;
-                if ($barangJadi) {
-                    if ($barangJadi->resep_id) {
-                        $resepUtama = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
-                    }
-                    if (!$resepUtama) {
-                        $resepUtama = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
-                    }
-                }
-                
-                if ($resepUtama) {
-                    $resepBahan = DB::table('resep_bahanbaku')->where('resep_id', $resepUtama->id)->get();
-                    if ($resepBahan->count() > 0) {
-                        $outputQtyUtama = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
-                        foreach ($resepBahan as $bahan) {
-                            $kebutuhanPerPcs = floatval($bahan->qty_bahan) / $outputQtyUtama;
-                            $butuh = $kebutuhanPerPcs * $qtyTerjual;
-                            $resolveBahan($bahan->bahan_id, $butuh);
-                        }
-                    }
-                }
-            }
+            $fifoService = app(\App\Services\FifoService::class);
 
             // Resolusi divisi operasional berdasarkan kategori produk yang dijual:
             // - Kategori MAKANAN (eksklusif) → potong dari divisi Kitchen di gudang outlet
@@ -878,35 +852,46 @@ class PenjualanPosController extends Controller
             $bahanDivisiMap = [];
 
             foreach ($itemsWithRecipe as $detail) {
+                $qtyTerjual = floatval($detail->qty);
                 $produkId = $detail->produk_id;
-                $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
-                if (!$barangJadi) continue;
 
-                $kategoriId = $barangJadi->kategori_id;
-                if (in_array($kategoriId, $kategoriMakananIds) && $divisiKitchenId) {
+                $barangJadi = DB::table('master_barang')->where('id', $produkId)->first();
+                $resepUtama = null;
+                if ($barangJadi) {
+                    $resepId = $barangJadi->resep_id;
+                    if ($resepId) {
+                        $resepUtama = \App\Models\ResepBtklBop::with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->find($resepId);
+                    }
+                    if (!$resepUtama) {
+                        $resepUtama = \App\Models\ResepBtklBop::with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->where('produk_id', $barangJadi->id)->first();
+                    }
+                }
+
+                $kategoriId = $barangJadi ? $barangJadi->kategori_id : null;
+                if ($kategoriId && in_array($kategoriId, $kategoriMakananIds) && $divisiKitchenId) {
                     $targetDivisiId = $divisiKitchenId;
-                } elseif (in_array($kategoriId, $kategoriMinumanIds) && $divisiBaristaId) {
+                } elseif ($kategoriId && in_array($kategoriId, $kategoriMinumanIds) && $divisiBaristaId) {
                     $targetDivisiId = $divisiBaristaId;
                 } else {
                     $targetDivisiId = null;
                 }
+                
+                if ($resepUtama && $resepUtama->bahanbaku && $resepUtama->bahanbaku->count() > 0) {
+                    $outputQtyUtama = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
+                    foreach ($resepUtama->bahanbaku as $bahanItem) {
+                        $kebutuhanPerPcs = floatval($bahanItem->qty_bahan) / $outputQtyUtama;
+                        $butuh = $kebutuhanPerPcs * $qtyTerjual;
 
-                $resepJadi = null;
-                if ($barangJadi->resep_id) {
-                    $resepJadi = DB::table('resep_btkl_bop')->where('id', $barangJadi->resep_id)->first();
-                }
-                if (!$resepJadi) {
-                    $resepJadi = DB::table('resep_btkl_bop')->where('produk_id', $barangJadi->id)->first();
-                }
-                if ($resepJadi) {
-                    $bahanJadi = DB::table('resep_bahanbaku')->where('resep_id', $resepJadi->id)->get();
-                    foreach ($bahanJadi as $bhn) {
-                        $bid = $bhn->bahan_id;
-                        if (!array_key_exists($bid, $bahanDivisiMap)) {
-                            $bahanDivisiMap[$bid] = $targetDivisiId;
-                        } elseif ($bahanDivisiMap[$bid] !== $targetDivisiId) {
-                            // Bahan dipakai oleh produk dari kategori berbeda → potong tanpa filter divisi
-                            $bahanDivisiMap[$bid] = null;
+                        // Otomatis cek dan gunakan bahan substitusi jika bahan utama habis / tidak cukup
+                        $resolved = $fifoService->resolveAlternativeBahan($bahanItem, $butuh, $gudangId, $targetDivisiId);
+                        $bahanDipakaiId = (int) ($resolved['bahan_id'] ?? $bahanItem->bahan_id);
+
+                        $resolveBahan($bahanDipakaiId, $butuh);
+
+                        if (!array_key_exists($bahanDipakaiId, $bahanDivisiMap)) {
+                            $bahanDivisiMap[$bahanDipakaiId] = $targetDivisiId;
+                        } elseif ($bahanDivisiMap[$bahanDipakaiId] !== $targetDivisiId) {
+                            $bahanDivisiMap[$bahanDipakaiId] = null;
                         }
                     }
                 }

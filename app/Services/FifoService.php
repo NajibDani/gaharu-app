@@ -61,6 +61,9 @@ class FifoService
             return $candidates->first();
         }
 
+        $bestCandidate = null;
+        $maxStock = -1;
+
         // Cek stok per kandidat, pilih yang cukup dengan prioritas tertinggi
         foreach ($candidates as $candidate) {
             $query = StokGudang::where('gudang_id', $gudangId)
@@ -70,11 +73,23 @@ class FifoService
                 $query->where('divisi_id', $divisiId);
             }
 
-            $stok = (float) ($query->value('jumlah') ?? 0);
+            $stok = (float) ($query->sum('jumlah') ?? 0);
 
+            // Jika stok cukup penuh, langsung gunakan kandidat ini
             if ($stok >= $qtyButuh) {
                 return $candidate;
             }
+
+            // Simpan kandidat terbaik yang memiliki stok positif lebih besar
+            if ($stok > $maxStock) {
+                $maxStock = $stok;
+                $bestCandidate = $candidate;
+            }
+        }
+
+        // Jika bahan utama kosong (<= 0) dan ada bahan alternatif dengan stok positif, gunakan alternatif tersebut
+        if ($bestCandidate && $maxStock > 0) {
+            return $bestCandidate;
         }
 
         // Tidak ada yang cukup — return bahan utama (prioritas 1)
