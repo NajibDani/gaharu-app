@@ -1264,5 +1264,69 @@ public function resepBahanBakuAlternatif()
                 }
             }
         }
+
+        // 8. Normalisasi pemakaian biji kopi ARABICA ROCKNROLL (BBB022) di Gaharu Barista (gudang 3, divisi 2)
+        $arabicaRnR = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BBB022')->first();
+        if ($arabicaRnR) {
+            // Total masuk di Gaharu Barista (2.000 PA + 5.000 PBK) = 7.000,00 GR
+            // Total pemakaian POS 28 (Direct 1.172,00 GR + Via Espresso Prep 4.256,97 GR) = 5.428,97 GR
+            // Stok Riil Sistem = 7.000,00 - 5.428,97 = 1.571,03 GR (1,57 BAG)
+            $stokRealRnR = 1571.03;
+            $totalKeluarRnR = 5428.97;
+
+            // Update transaksi keluar POS 28
+            $pos28RnRTx = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $arabicaRnR->id)
+                ->where('gudang_asal_id', 3)
+                ->where('divisi_asal_id', 2)
+                ->where('tipe', 'keluar')
+                ->where('source_type', 'penjualan_pos')
+                ->get();
+
+            if ($pos28RnRTx->isNotEmpty()) {
+                $firstTx = $pos28RnRTx->first();
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                    ->where('id', $firstTx->id)
+                    ->update(['qty' => $totalKeluarRnR]);
+
+                if ($pos28RnRTx->count() > 1) {
+                    $otherIds = $pos28RnRTx->pluck('id')->slice(1)->all();
+                    \Illuminate\Support\Facades\DB::table('transaksi_stok')->whereIn('id', $otherIds)->delete();
+                }
+            }
+
+            \Illuminate\Support\Facades\DB::table('stok_gudang')
+                ->where('barang_id', $arabicaRnR->id)
+                ->where('gudang_id', 3)
+                ->where('divisi_id', 2)
+                ->update(['jumlah' => $stokRealRnR]);
+
+            // Update draft SO Gaharu Barista
+            $draftSoGaharu = \Illuminate\Support\Facades\DB::table('stock_opname')
+                ->where('gudang_id', 3)
+                ->where('divisi_id', 2)
+                ->where('status', 'draft')
+                ->pluck('id');
+
+            if ($draftSoGaharu->isNotEmpty()) {
+                $soDetailsRnR = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                    ->whereIn('stock_opname_id', $draftSoGaharu)
+                    ->where('barang_id', $arabicaRnR->id)
+                    ->get();
+
+                foreach ($soDetailsRnR as $sod) {
+                    $fisik = (float) $sod->stok_fisik;
+                    $sistem = $stokRealRnR;
+                    $selisih = $fisik - $sistem;
+                    \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                        ->where('id', $sod->id)
+                        ->update([
+                            'stok_sistem'   => $sistem,
+                            'selisih'       => $selisih,
+                            'nilai_selisih' => round(abs($selisih) * 170.00, 2),
+                        ]);
+                }
+            }
+        }
     }
 }
