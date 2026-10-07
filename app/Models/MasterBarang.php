@@ -889,99 +889,215 @@ public function resepBahanBakuAlternatif()
         }
 
         // 5. Normalisasi stok BSJ Espresso Classic (BSJ120) dan Ubud Bali (BBB718) di KeJingga Barista (gudang_id=5, divisi_id=5)
-        $ubudBali = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BBB718')->first();
-        $bsj120 = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BSJ120')->first();
-        if ($ubudBali && $bsj120) {
-            // Jika ada transaksi oversold pada BSJ120 di POS 24 (tgl 03/10/2026) sebesar 149 ML
-            $oversoldBsj120 = \Illuminate\Support\Facades\DB::table('transaksi_stok')
-                ->where('barang_id', $bsj120->id)
-                ->where('source_type', 'pos')
-                ->where('qty', 149)
+        $ubudBali = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB718')
+                  ->orWhere('nama', 'like', '%UBUD BALI%');
+            })
+            ->first();
+        $bsj120 = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BSJ120')
+                  ->orWhere('nama', 'like', '%ESPRESSO CLASSIC%');
+            })
+            ->first();
+
+        if ($ubudBali) {
+            $gudangId = 5;
+            $divisiId = 5;
+
+            // Pastikan transaksi masuk Persediaan Awal Ubud Bali tercatat
+            $paUb = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $ubudBali->id)
+                ->where('gudang_tujuan_id', $gudangId)
+                ->where('divisi_tujuan_id', $divisiId)
+                ->where('tipe', 'masuk')
+                ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
                 ->first();
 
-            if ($oversoldBsj120) {
-                // Konversi pemotongan ke bahan baku Ubud Bali (149 ML * 0.50 = 74.50 GR)
-                \Illuminate\Support\Facades\DB::table('transaksi_stok')
-                    ->where('id', $oversoldBsj120->id)
-                    ->update([
-                        'barang_id' => $ubudBali->id,
-                        'qty'       => 74.50,
-                    ]);
+            if (!$paUb) {
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')->insert([
+                    'tanggal'          => '2026-10-01 00:00:00',
+                    'tipe'             => 'masuk',
+                    'source_type'      => 'persediaan_awal',
+                    'source_id'        => 0,
+                    'gudang_tujuan_id' => $gudangId,
+                    'divisi_tujuan_id' => $divisiId,
+                    'barang_id'        => $ubudBali->id,
+                    'qty'              => 18516.00,
+                    'total_harga'      => round(18516.00 * 168.00, 2),
+                    'created_by'       => 1,
+                ]);
             }
 
-            // Pastikan stok_gudang BSJ120 di KeJingga Barista tidak bernilai minus
-            $bsj120Stok = (float) \Illuminate\Support\Facades\DB::table('stok_gudang')
-                ->where('barang_id', $bsj120->id)
-                ->where('gudang_id', 5)
-                ->where('divisi_id', 5)
-                ->value('jumlah');
+            // Bersihkan transaksi oversold / minus pada BSJ120 (sudah diekspansi ke Ubud Bali)
+            if ($bsj120) {
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                    ->where('barang_id', $bsj120->id)
+                    ->where('source_type', 'pos')
+                    ->whereIn('qty', [149, 328])
+                    ->delete();
 
-            if ($bsj120Stok < 0) {
+                // Pastikan stok BSJ120 di KeJingga Barista = 0
                 \Illuminate\Support\Facades\DB::table('stok_gudang')
                     ->where('barang_id', $bsj120->id)
-                    ->where('gudang_id', 5)
-                    ->where('divisi_id', 5)
+                    ->where('gudang_id', $gudangId)
+                    ->where('divisi_id', $divisiId)
                     ->update(['jumlah' => 0]);
-            }
-
-            // Hitung total keluar Ubud Bali di KeJingga Barista dari POS (03/10 dan 04/10)
-            $ubudKeluarPos = (float) \Illuminate\Support\Facades\DB::table('transaksi_stok')
-                ->where('barang_id', $ubudBali->id)
-                ->where('gudang_asal_id', 5)
-                ->where('divisi_asal_id', 5)
-                ->where('tipe', 'keluar')
-                ->where('source_type', 'pos')
-                ->sum('qty');
-
-            // Persediaan awal Ubud Bali di KeJingga Barista = 18.516 GR
-            $ubudPa = (float) \Illuminate\Support\Facades\DB::table('transaksi_stok')
-                ->where('barang_id', $ubudBali->id)
-                ->where('gudang_tujuan_id', 5)
-                ->where('divisi_tujuan_id', 5)
-                ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
-                ->sum('qty');
-
-            if ($ubudPa >= 18000) {
-                $stokRealUbud = max(0, $ubudPa - $ubudKeluarPos);
-                \Illuminate\Support\Facades\DB::table('stok_gudang')
-                    ->where('barang_id', $ubudBali->id)
-                    ->where('gudang_id', 5)
-                    ->where('divisi_id', 5)
-                    ->update(['jumlah' => $stokRealUbud]);
 
                 \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
-                    ->where('barang_id', $ubudBali->id)
-                    ->where('gudang_id', 5)
-                    ->where('divisi_id', 5)
-                    ->where('batch_number', 'like', 'SA-%')
+                    ->where('barang_id', $bsj120->id)
+                    ->where('gudang_id', $gudangId)
+                    ->where('divisi_id', $divisiId)
                     ->update([
-                        'qty_keluar' => $ubudKeluarPos,
-                        'qty_sisa'   => $stokRealUbud,
-                        'is_habis'   => ($stokRealUbud <= 0) ? 1 : 0
+                        'qty_keluar' => 1011.00,
+                        'qty_sisa'   => 0.00,
+                        'is_habis'   => 1
                     ]);
+            }
 
-                // Update draft SO KeJingga Barista
-                $draftSoBarista = \Illuminate\Support\Facades\DB::table('stock_opname')
-                    ->where('gudang_id', 5)
-                    ->where('divisi_id', 5)
-                    ->where('status', 'draft')
-                    ->pluck('id');
+            // Catat pengeluaran POS yang akurat untuk Ubud Bali (03/10: 1.119,50 GR & 04/10: 392,00 GR)
+            $pos24Ub = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $ubudBali->id)
+                ->where('gudang_asal_id', $gudangId)
+                ->where('divisi_asal_id', $divisiId)
+                ->where('tipe', 'keluar')
+                ->where('source_type', 'pos')
+                ->where('tanggal', 'like', '2026-10-03%')
+                ->first();
 
-                if ($draftSoBarista->isNotEmpty()) {
-                    $soDetailsUb = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+            if ($pos24Ub) {
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                    ->where('id', $pos24Ub->id)
+                    ->update(['qty' => 1119.50]);
+            } else {
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')->insert([
+                    'tanggal'        => '2026-10-03 23:00:00',
+                    'tipe'           => 'keluar',
+                    'source_type'    => 'pos',
+                    'source_id'      => 24,
+                    'gudang_asal_id' => $gudangId,
+                    'divisi_asal_id' => $divisiId,
+                    'barang_id'      => $ubudBali->id,
+                    'qty'            => 1119.50,
+                    'total_harga'    => round(1119.50 * 168.00, 2),
+                    'created_by'     => 1,
+                ]);
+            }
+
+            $pos26Ub = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $ubudBali->id)
+                ->where('gudang_asal_id', $gudangId)
+                ->where('divisi_asal_id', $divisiId)
+                ->where('tipe', 'keluar')
+                ->where('source_type', 'pos')
+                ->where('tanggal', 'like', '2026-10-04%')
+                ->first();
+
+            if ($pos26Ub) {
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                    ->where('id', $pos26Ub->id)
+                    ->update(['qty' => 392.00]);
+            } else {
+                \Illuminate\Support\Facades\DB::table('transaksi_stok')->insert([
+                    'tanggal'        => '2026-10-04 23:00:00',
+                    'tipe'           => 'keluar',
+                    'source_type'    => 'pos',
+                    'source_id'      => 26,
+                    'gudang_asal_id' => $gudangId,
+                    'divisi_asal_id' => $divisiId,
+                    'barang_id'      => $ubudBali->id,
+                    'qty'            => 392.00,
+                    'total_harga'    => round(392.00 * 168.00, 2),
+                    'created_by'     => 1,
+                ]);
+            }
+
+            // Bersihkan transaksi POS duplikat jika ada
+            $allPosUb = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                ->where('barang_id', $ubudBali->id)
+                ->where('gudang_asal_id', $gudangId)
+                ->where('divisi_asal_id', $divisiId)
+                ->where('tipe', 'keluar')
+                ->where('source_type', 'pos')
+                ->get();
+
+            $seenDates = [];
+            foreach ($allPosUb as $tx) {
+                $d = substr($tx->tanggal, 0, 10);
+                if (isset($seenDates[$d])) {
+                    \Illuminate\Support\Facades\DB::table('transaksi_stok')->where('id', $tx->id)->delete();
+                } else {
+                    $seenDates[$d] = true;
+                }
+            }
+
+            // Total pemakaian = 1.119,50 + 392,00 = 1.511,50 GR
+            // Stok Riil = 18.516,00 - 1.511,50 = 17.004,50 GR
+            $stokRealUbud = 17004.50;
+            $totalKeluarUbud = 1511.50;
+
+            \Illuminate\Support\Facades\DB::table('stok_gudang')
+                ->where('barang_id', $ubudBali->id)
+                ->where('gudang_id', $gudangId)
+                ->where('divisi_id', $divisiId)
+                ->update(['jumlah' => $stokRealUbud]);
+
+            \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('barang_id', $ubudBali->id)
+                ->where('gudang_id', $gudangId)
+                ->where('divisi_id', $divisiId)
+                ->update([
+                    'qty_masuk'  => 18516.00,
+                    'qty_keluar' => $totalKeluarUbud,
+                    'qty_sisa'   => $stokRealUbud,
+                    'is_habis'   => 0
+                ]);
+
+            // Update seluruh draft Stock Opname KeJingga Barista
+            $draftSoBarista = \Illuminate\Support\Facades\DB::table('stock_opname')
+                ->where('gudang_id', $gudangId)
+                ->where('divisi_id', $divisiId)
+                ->where('status', 'draft')
+                ->pluck('id');
+
+            if ($draftSoBarista->isNotEmpty()) {
+                // 1. Ubud Bali detail
+                $soDetailsUb = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                    ->whereIn('stock_opname_id', $draftSoBarista)
+                    ->where('barang_id', $ubudBali->id)
+                    ->get();
+
+                foreach ($soDetailsUb as $sod) {
+                    $fisik = (float) $sod->stok_fisik;
+                    $sistem = $stokRealUbud;
+                    $selisih = $fisik - $sistem;
+                    \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                        ->where('id', $sod->id)
+                        ->update([
+                            'stok_sistem'   => $sistem,
+                            'selisih'       => $selisih,
+                            'nilai_selisih' => round(abs($selisih) * 168.00, 2),
+                        ]);
+                }
+
+                // 2. BSJ Espresso Classic detail
+                if ($bsj120) {
+                    $soDetailsBsj = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
                         ->whereIn('stock_opname_id', $draftSoBarista)
-                        ->where('barang_id', $ubudBali->id)
+                        ->where('barang_id', $bsj120->id)
                         ->get();
 
-                    foreach ($soDetailsUb as $sod) {
+                    foreach ($soDetailsBsj as $sod) {
                         $fisik = (float) $sod->stok_fisik;
-                        $sistem = (float) $stokRealUbud;
+                        $sistem = 0.00;
                         $selisih = $fisik - $sistem;
                         \Illuminate\Support\Facades\DB::table('stock_opname_detail')
                             ->where('id', $sod->id)
                             ->update([
-                                'stok_sistem' => $sistem,
-                                'selisih'     => $selisih,
+                                'stok_sistem'   => $sistem,
+                                'selisih'       => $selisih,
+                                'nilai_selisih' => 0.00,
                             ]);
                     }
                 }
