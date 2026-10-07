@@ -1357,5 +1357,25 @@ public function resepBahanBakuAlternatif()
                 ]);
             }
         }
+
+        // 10. Sanitasi pesanan Central Kitchen dengan total_pesanan tidak wajar (bengkak ratusan juta akibat fallback referensi)
+        $corruptedPesanan = \Illuminate\Support\Facades\DB::table('pesanan')
+            ->where('tipe_pesanan', 'central_kitchen')
+            ->where('total_pesanan', '>', 10000000)
+            ->where('id', '>=', 70)
+            ->get();
+
+        foreach ($corruptedPesanan as $cp) {
+            \Illuminate\Support\Facades\DB::table('pesanan')
+                ->where('id', $cp->id)
+                ->update(['total_pesanan' => 0.00]);
+            \Illuminate\Support\Facades\DB::table('pesanan_detail')
+                ->where('pesanan_id', $cp->id)
+                ->where('subtotal', '>', 10000000)
+                ->update([
+                    'harga'    => 0.00,
+                    'subtotal' => 0.00,
+                ]);
+        }
     }
 }

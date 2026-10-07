@@ -232,7 +232,25 @@
                                     <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
                                 </div>
                             </th>
-                            <th class="text-end pe-4 sortable-th" style="cursor: pointer; user-select: none;" data-col="5" title="Klik untuk mengurutkan Total Harga Jual">
+                            <th class="text-center sortable-th" style="cursor: pointer; user-select: none;" data-col="5" width="130" title="Klik untuk mengurutkan Cost %">
+                                <div class="d-flex align-items-center justify-content-center">
+                                    <span>Cost %</span>
+                                    <i class="bi bi-info-circle-fill text-warning ms-1" 
+                                       data-bs-toggle="popover" 
+                                       data-bs-trigger="hover focus" 
+                                       data-bs-placement="top" 
+                                       data-bs-html="true" 
+                                       title="<strong>Panduan Indikator Cost %</strong>" 
+                                       data-bs-content="<div class='small text-start'>
+                                          <div class='mb-1'><span class='badge bg-success-subtle text-success border border-success-subtle me-1'>🟢 &le; 35%</span> <strong>Ideal:</strong> Margin Laba &ge; 65%</div>
+                                          <div class='mb-1'><span class='badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1'>🟡 35.1% - 45%</span> <strong>Waspada:</strong> Margin Laba 55% - 64.9%</div>
+                                          <div><span class='badge bg-danger-subtle text-danger border border-danger-subtle me-1'>🔴 > 45%</span> <strong>Tinggi:</strong> Margin Laba &lt; 55% (Perlu Evaluasi)</div>
+                                       </div>"
+                                       onclick="event.stopPropagation();"></i>
+                                    <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
+                                </div>
+                            </th>
+                            <th class="text-end pe-4 sortable-th" style="cursor: pointer; user-select: none;" data-col="6" title="Klik untuk mengurutkan Total Harga Jual">
                                 <div class="d-flex align-items-center justify-content-end">
                                     <span>Total Harga Jual</span>
                                     <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon"></i>
@@ -248,6 +266,10 @@
                             $unitHpp = $isDraft
                                 ? ($d->estimated_hpp ?? floatval($d->hpp_satuan))
                                 : floatval($d->hpp_satuan);
+                            $hargaJual = floatval($d->harga);
+                            $costPct = ($hargaJual > 0 && $unitHpp > 0) ? ($unitHpp / $hargaJual) * 100 : 0;
+                            $marginPct = ($hargaJual > 0 && $unitHpp > 0) ? (1 - ($unitHpp / $hargaJual)) * 100 : 0;
+                            $labaNominal = max(0, $hargaJual - $unitHpp);
                         @endphp
                         <tr>
                             <td class="ps-4 text-muted" data-value="{{ $key + 1 }}">{{ $key + 1 }}</td>
@@ -305,6 +327,32 @@
                                         <i class="bi bi-receipt"></i> Cek Resep & Bahan
                                     </button>
                                 </div>
+                            </td>
+                            <td class="text-center" data-value="{{ floatval($costPct) }}">
+                                @if($hargaJual > 0 && $unitHpp > 0)
+                                    @php
+                                        $badgeBg = '#ecfdf5';
+                                        $badgeColor = '#059669';
+                                        $badgeBorder = '#a7f3d0';
+                                        if ($costPct > 45) {
+                                            $badgeBg = '#fef2f2';
+                                            $badgeColor = '#dc2626';
+                                            $badgeBorder = '#fecaca';
+                                        } elseif ($costPct > 35) {
+                                            $badgeBg = '#fffbeb';
+                                            $badgeColor = '#d97706';
+                                            $badgeBorder = '#fde68a';
+                                        }
+                                    @endphp
+                                    <span class="badge border px-2 py-1 fw-bold rounded-pill" style="font-size: 0.8rem; background-color: {{ $badgeBg }}; color: {{ $badgeColor }}; border-color: {{ $badgeBorder }} !important;">
+                                        {{ number_format($costPct, 1, ',', '.') }}%
+                                    </span>
+                                    <div class="small text-muted mt-1" style="font-size: 0.7rem;">
+                                        Laba: <span class="fw-semibold text-dark">{{ number_format($marginPct, 1, ',', '.') }}%</span>
+                                    </div>
+                                @else
+                                    <span class="text-muted small">—</span>
+                                @endif
                             </td>
                             <td class="text-end fw-medium pe-4" data-value="{{ floatval($d->subtotal) }}">Rp {{ number_format($d->subtotal, 0, ',', '.') }}</td>
                         </tr>
@@ -666,6 +714,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             modalRincianHpp.show();
         });
+    });
+
+    // Inisialisasi Popover Bootstrap
+    const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+    popoverTriggerList.map(function (popoverTriggerEl) {
+        return new bootstrap.Popover(popoverTriggerEl);
     });
 });
 </script>

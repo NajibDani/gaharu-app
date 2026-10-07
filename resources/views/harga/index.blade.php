@@ -66,6 +66,20 @@
                                         <th class="ps-4 py-3">Nama Barang</th>
                                         <th class="py-3 text-end">Harga Jual</th>
                                         <th class="py-3 text-end">HPP Referensi</th>
+                                        <th class="py-3 text-center" width="130">
+                                            <span>Cost %</span>
+                                            <i class="bi bi-info-circle-fill text-warning ms-1" 
+                                               data-bs-toggle="popover" 
+                                               data-bs-trigger="hover focus" 
+                                               data-bs-placement="top" 
+                                               data-bs-html="true" 
+                                               title="<strong>Panduan Indikator Cost %</strong>" 
+                                               data-bs-content="<div class='small text-start'>
+                                                  <div class='mb-1'><span class='badge bg-success-subtle text-success border border-success-subtle me-1'>🟢 &le; 35%</span> <strong>Ideal:</strong> Margin Laba &ge; 65%</div>
+                                                  <div class='mb-1'><span class='badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1'>🟡 35.1% - 45%</span> <strong>Waspada:</strong> Margin Laba 55% - 64.9%</div>
+                                                  <div><span class='badge bg-danger-subtle text-danger border border-danger-subtle me-1'>🔴 > 45%</span> <strong>Tinggi:</strong> Margin Laba &lt; 55% (Perlu Evaluasi)</div>
+                                               </div>"></i>
+                                        </th>
                                         <th class="py-3 text-center">Periode</th>
                                         <th class="py-3 text-center">Status</th>
                                         <th class="py-3 text-center pe-4" width="120">Aksi</th>
@@ -74,7 +88,10 @@
                                 <tbody>
                                     @forelse($listBarang as $item)
                                         @php
-                                            $hpp = $item->dynamic_hpp;
+                                            $hpp = (float) $item->dynamic_hpp;
+                                            $hargaJualAktif = (float) ($item->hargaPosAktif ? $item->hargaPosAktif->harga_pos : $item->harga_jual_pos);
+                                            $costPct = ($hargaJualAktif > 0 && $hpp > 0) ? ($hpp / $hargaJualAktif) * 100 : 0;
+                                            $marginPct = ($hargaJualAktif > 0 && $hpp > 0) ? (1 - ($hpp / $hargaJualAktif)) * 100 : 0;
                                         @endphp
                                         <tr>
                                             <td class="ps-4">
@@ -90,6 +107,32 @@
                                             </td>
                                             <td class="text-end text-gray-700 fw-semibold">
                                                 Rp {{ number_format($hpp, 0, ',', '.') }}
+                                            </td>
+                                            <td class="text-center">
+                                                @if($hargaJualAktif > 0 && $hpp > 0)
+                                                    @php
+                                                        $badgeBg = '#ecfdf5';
+                                                        $badgeColor = '#059669';
+                                                        $badgeBorder = '#a7f3d0';
+                                                        if ($costPct > 45) {
+                                                            $badgeBg = '#fef2f2';
+                                                            $badgeColor = '#dc2626';
+                                                            $badgeBorder = '#fecaca';
+                                                        } elseif ($costPct > 35) {
+                                                            $badgeBg = '#fffbeb';
+                                                            $badgeColor = '#d97706';
+                                                            $badgeBorder = '#fde68a';
+                                                        }
+                                                    @endphp
+                                                    <span class="badge border px-2 py-1 fw-bold rounded-pill" style="font-size: 0.78rem; background-color: {{ $badgeBg }}; color: {{ $badgeColor }}; border-color: {{ $badgeBorder }} !important;">
+                                                        {{ number_format($costPct, 1, ',', '.') }}%
+                                                    </span>
+                                                    <div class="small text-muted mt-1" style="font-size: 0.68rem;">
+                                                        Laba: <span class="fw-semibold text-dark">{{ number_format($marginPct, 1, ',', '.') }}%</span>
+                                                    </div>
+                                                @else
+                                                    <span class="text-muted small">—</span>
+                                                @endif
                                             </td>
                                             <td class="text-center">
                                                 @if($item->hargaPosAktif)
@@ -122,7 +165,7 @@
                                         </tr>
                                     @empty
                                         <tr>
-                                            <td colspan="6" class="text-center py-5 text-muted">
+                                            <td colspan="7" class="text-center py-5 text-muted">
                                                 <div class="py-4">
                                                     <i class="bi bi-box-seam fs-1 text-secondary opacity-25 d-block mb-3"></i>
                                                     <h6 class="fw-bold text-gray-700">Belum ada barang jadi terdaftar.</h6>
@@ -139,4 +182,13 @@
             </div>
         </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+            popoverTriggerList.map(function (popoverTriggerEl) {
+                return new bootstrap.Popover(popoverTriggerEl);
+            });
+        });
+    </script>
 </x-app-layout>
