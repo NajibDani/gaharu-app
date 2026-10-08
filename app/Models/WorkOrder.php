@@ -34,14 +34,45 @@ class WorkOrder extends Model
         }
         $pesananIds = $this->details->pluck('pesanan_id')->filter()->unique();
         if ($pesananIds->isNotEmpty()) {
-            $lunasExists = Produksi::whereIn('pesanan_id', $pesananIds)
-                ->where(function($q) {
-                    $q->where('status_pembayaran', 'lunas')
-                      ->orWhere('catatan', 'like', '%"status_pembayaran":"lunas"%')
-                      ->orWhere('keterangan', 'like', '%"status_pembayaran":"lunas"%');
-                })->exists();
-            if ($lunasExists) {
+            $pesananLunas = Pesanan::whereIn('id', $pesananIds)
+                ->whereIn('status_pembayaran', ['lunas', 'Lunas'])
+                ->exists();
+            if ($pesananLunas) {
                 return 'lunas';
+            }
+
+            $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
+            $hasCatatan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan');
+            $hasKeterangan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan');
+
+            if ($hasColumnStatus || $hasCatatan || $hasKeterangan) {
+                $lunasExists = Produksi::whereIn('pesanan_id', $pesananIds)
+                    ->where(function($q) use ($hasColumnStatus, $hasCatatan, $hasKeterangan) {
+                        $hasCond = false;
+                        if ($hasColumnStatus) {
+                            $q->whereIn('status_pembayaran', ['lunas', 'Lunas']);
+                            $hasCond = true;
+                        }
+                        if ($hasCatatan) {
+                            if ($hasCond) {
+                                $q->orWhere('catatan', 'like', '%"status_pembayaran":"lunas"%');
+                            } else {
+                                $q->where('catatan', 'like', '%"status_pembayaran":"lunas"%');
+                                $hasCond = true;
+                            }
+                        }
+                        if ($hasKeterangan) {
+                            if ($hasCond) {
+                                $q->orWhere('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                            } else {
+                                $q->where('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                                $hasCond = true;
+                            }
+                        }
+                    })->exists();
+                if ($lunasExists) {
+                    return 'lunas';
+                }
             }
         }
         return 'belum_dibayar';
