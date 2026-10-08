@@ -392,6 +392,11 @@
             </a>
         </div>
         <div style="display: flex; gap: 8px;">
+            @if(!$isLunas)
+                <a href="{{ request()->fullUrlWithQuery(['refresh_hpp' => 1]) }}" class="btn-toolbar" style="background-color: #f59e0b; color: white;" title="Muat ulang & perbarui kalkulasi HPP invoice dengan resep/harga bahan terkini">
+                    &#8635; Refresh / Update HPP
+                </a>
+            @endif
             <button onclick="window.print()" class="btn-toolbar btn-print">
                 &#128438; Cetak Invoice (Print)
             </button>
@@ -402,6 +407,12 @@
                 &#128444; Download JPG
             </button>
         </div>
+    </div>
+    @endif
+
+    @if(!$isPdf && (!empty($hppRecalculated) || request()->has('refresh_hpp')))
+    <div style="max-width: 850px; margin: 0 auto 10px auto; background-color: #dcfce7; border: 1px solid #86efac; color: #166534; padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 11.5px; text-align: center;">
+        &#10003; HPP seluruh item invoice ini telah berhasil dihitung ulang &amp; disinkronkan dengan formulasi resep &amp; harga FIFO terkini!
     </div>
     @endif
 

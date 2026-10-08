@@ -665,6 +665,22 @@ class LaporanCustomController extends Controller
 
         $transactions = collect();
         $fifoService = app(\App\Services\FifoService::class);
+        $hppRecalculated = false;
+
+        if ($request->has('refresh_hpp') || $request->has('recalculate')) {
+            \App\Services\FifoService::clearHargaCache();
+            $hppRecalculated = true;
+
+            if (!empty($prodIds)) {
+                $prodController = app(\App\Http\Controllers\CentralKitchenProductionController::class);
+                foreach ($prodIds as $pId) {
+                    $pObj = Produksi::with(['pesanan', 'alokasiPesanan.pesanan'])->find($pId);
+                    if ($pObj && !$pObj->isLunas()) {
+                        $prodController->recalculateHpp($pId);
+                    }
+                }
+            }
+        }
 
         if (!empty($prodIds)) {
             $prodTx = Produksi::with([
@@ -708,14 +724,14 @@ class LaporanCustomController extends Controller
                 })->values();
 
                 foreach ($activeDetails as $d) {
-                    $needsHppCalc = (!$d->hpp_total || $d->hpp_total <= 0);
+                    $needsHppCalc = $hppRecalculated || (!$d->hpp_total || $d->hpp_total <= 0);
                     if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
                         $needsHppCalc = true;
                     }
 
                     if ($needsHppCalc) {
                         $harga = 0;
-                        if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
+                        if (!$hppRecalculated && $d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
                             $harga = $d->subtotal / $d->qty;
                         } elseif ($d->produk_id) {
                             $harga = $fifoService->getHppResepBsj($d->produk_id);
@@ -723,7 +739,7 @@ class LaporanCustomController extends Controller
                                 $harga = (float)($d->produk->hpp_referensi ?? 0);
                             }
                         }
-                        $d->hpp_total = ($d->subtotal && $d->subtotal > 0 && ($d->subtotal / $d->qty) >= 1.0) ? $d->subtotal : ($d->qty * $harga);
+                        $d->hpp_total = ($d->qty * $harga);
                     }
                     $d->barang = $d->produk;
                 }
@@ -760,11 +776,11 @@ class LaporanCustomController extends Controller
 
         if ($isPdf) {
             $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
-            $pdf->loadView('laporan_custom.invoice_produksi_ck_kejingga', compact('transactions', 'isPdf'));
+            $pdf->loadView('laporan_custom.invoice_produksi_ck_kejingga', compact('transactions', 'isPdf', 'hppRecalculated'));
             return $pdf->stream('Invoice-Produksi-CK-Kejingga-' . date('YmdHis') . '.pdf');
         }
 
-        return view('laporan_custom.invoice_produksi_ck_kejingga', compact('transactions', 'isPdf'));
+        return view('laporan_custom.invoice_produksi_ck_kejingga', compact('transactions', 'isPdf', 'hppRecalculated'));
     }
 
     // 3. Pengeluaran produksi cold kitchen kejingga

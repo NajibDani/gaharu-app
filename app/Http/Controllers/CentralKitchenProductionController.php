@@ -2925,7 +2925,6 @@ class CentralKitchenProductionController extends Controller
         $gudangCkId = $gudangCk ? $gudangCk->id : ($prod->gudang_bahan_id ?: 5);
 
         \App\Services\FifoService::clearHargaCache();
-        MasterBarang::autoHealUnconvertedPembelianBatches();
 
         DB::beginTransaction();
         try {
