@@ -159,9 +159,18 @@
                                 @endphp
                                 <tr>
                                     <td class="text-center ps-3">
-                                        <input type="checkbox" class="form-check-input check-item" value="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}" style="cursor: pointer;">
+                                        <input type="checkbox" class="form-check-input check-item" value="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}" {{ $isLunas ? 'disabled' : '' }} style="cursor: {{ $isLunas ? 'not-allowed' : 'pointer' }};">
                                     </td>
-                                    <td class="fw-semibold" style="color:#2563eb;">{{ $row->kode_produksi ?? '-' }}</td>
+                                    <td class="fw-semibold font-monospace" style="color:#2563eb;">
+                                        @if($isLunas)
+                                            <span class="badge bg-secondary-subtle text-muted border text-decoration-line-through me-1 opacity-75" title="Nomor WO/Produksi ini disabled karena sudah dibayar (Lunas)" style="cursor: not-allowed; font-size: 0.85rem;">
+                                                <i class="bi bi-lock-fill me-1 text-secondary"></i>{{ $row->kode_produksi ?? '-' }}
+                                            </span>
+                                            <span class="badge bg-secondary text-white" style="font-size: 9px; vertical-align: middle;">DISABLED</span>
+                                        @else
+                                            {{ $row->kode_produksi ?? '-' }}
+                                        @endif
+                                    </td>
                                     <td>
                                         <span class="badge bg-light text-dark border">
                                             <i class="bi bi-calendar-event me-1 text-primary"></i>{{ $tglPermintaan }}
@@ -192,13 +201,17 @@
                                     </td>
                                     <td class="text-end fw-bold text-dark">Rp {{ number_format($rowTotal, 0, ',', '.') }}</td>
                                     <td class="text-center pe-4">
+                                        @php
+                                            $authUser = auth()->user();
+                                            $isSuperAdminUser = $authUser && ($authUser->isSuperAdmin() || $authUser->username === 'superadmin');
+                                        @endphp
                                         <div class="d-flex justify-content-center gap-1">
                                             @if(!$isLunas)
                                                 <button type="button" class="btn btn-sm btn-outline-success btn-single-bayar px-2 py-1" style="font-size: 12px;" data-id="{{ $row->id }}" data-kode="{{ $row->kode_produksi }}" data-total="{{ number_format($rowTotal, 0, ',', '.') }}">
                                                     <i class="bi bi-credit-card me-1"></i> Bayar
                                                 </button>
                                             @else
-                                                <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-1 disabled" style="font-size: 12px;">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary px-2 py-1 disabled" style="font-size: 12px;" title="WO Produksi Sudah Dibayar (Disabled)">
                                                     <i class="bi bi-check2-all me-1"></i> Lunas
                                                 </button>
                                             @endif
@@ -206,6 +219,28 @@
                                             <a href="{{ route('laporan.laporan-custom.produksi-ck-kejingga.cetak-invoice', ['ids' => $row->id]) }}" class="btn btn-sm text-white px-2 py-1" style="background-color:#2563eb; font-size: 12px;" target="_blank">
                                                 <i class="bi bi-file-earmark-text me-1"></i> Invoice
                                             </a>
+
+                                            @if($isSuperAdminUser)
+                                                @if($isLunas)
+                                                    <form action="{{ route('ck-produksi.destroy-produksi', $row->id) }}" method="POST" class="d-inline"
+                                                          onsubmit="return confirm('PERINGATAN SANGAT PENTING SUPER ADMIN!\n\nWork Order / Produksi {{ $row->kode_produksi }} ini SUDAH DIBAYAR (LUNAS).\n\nMenghapus WO/Produksi yang sudah dibayar ini akan mempengaruhi laporan keuangan dan rekapitulasi pembayaran!\n\nApakah Anda BENAR-BENAR YAKIN ingin menghapus WO yang sudah dibayar ini?')">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-sm btn-danger px-2 py-1 text-white" style="font-size: 12px;" title="Hapus WO/Produksi Lunas (Super Admin)">
+                                                            <i class="bi bi-trash-fill"></i>
+                                                        </button>
+                                                    </form>
+                                                @else
+                                                    <form action="{{ route('ck-produksi.destroy-produksi', $row->id) }}" method="POST" class="d-inline"
+                                                          onsubmit="return confirm('Yakin ingin menghapus dokumen produksi {{ $row->kode_produksi }} ini?')">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-sm btn-danger px-2 py-1 text-white" style="font-size: 12px;" title="Hapus Dokumen Produksi">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                @endif
+                                            @endif
                                         </div>
                                     </td>
                                 </tr>
@@ -322,7 +357,9 @@
             if (checkAll) {
                 checkAll.addEventListener('change', function () {
                     checkItems.forEach(item => {
-                        item.checked = this.checked;
+                        if (!item.disabled) {
+                            item.checked = this.checked;
+                        }
                     });
                     updateSelection();
                 });

@@ -821,6 +821,10 @@ class ProduksiController extends Controller
         ]);
 
         $wo = WorkOrder::with(['details.produk', 'details.pesanan'])->findOrFail($id);
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+        if ($wo->isLunas() && !$isSuperAdmin) {
+            return back()->with('error', 'Gagal: Work Order ' . $wo->kode_wo . ' sudah berstatus LUNAS. Data yang sudah dibayar harganya tidak boleh berubah dan hanya dapat diubah oleh Super Admin.');
+        }
 
         $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique();
         $isTerkirim = Pengiriman::whereIn('pesanan_id', $pesananIds)
@@ -1534,6 +1538,12 @@ class ProduksiController extends Controller
     public function destroy($id)
     {
         $produksi = Produksi::findOrFail($id);
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        if ($produksi->isLunas() && !$isSuperAdmin) {
+            return redirect()->back()->with('error', 'Gagal: Produksi ' . $produksi->kode_produksi . ' sudah berstatus LUNAS. Data yang sudah dibayar harganya tidak boleh berubah dan tidak dapat dihapus oleh pengguna non-Super Admin.');
+        }
 
         if ($produksi->status_produksi !== 'Draft') {
             return redirect()->back()->with('error', 'Tidak dapat menghapus produksi yang sudah di-Approve (Terkunci).');

@@ -48,6 +48,24 @@
     </div>
 </div>
 
+@if(!empty($isLunas))
+    <div class="alert alert-danger border-danger shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fff5f5 0%, #ffe3e3 100%); border-left: 5px solid #dc3545 !important;">
+        <div class="d-flex align-items-center gap-3">
+            <div class="rounded-circle bg-danger text-white d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px; font-size: 20px;">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+            </div>
+            <div>
+                <h6 class="fw-bold text-danger mb-1">
+                    PERINGATAN KETAT: NOTA PBK SUDAH DIBAYAR (LUNAS)
+                </h6>
+                <p class="text-dark small mb-0">
+                    Nota <strong>{{ $pengeluaran->kode_pengeluaran }}</strong> ini sudah berstatus <strong>LUNAS</strong>. Barang dan harga pada nota yang sudah dibayar harganya tidak boleh berubah lagi. Harap berhati-hati dalam melakukan pengeditan karena dapat memengaruhi laporan keuangan.
+                </p>
+            </div>
+        </div>
+    </div>
+@endif
+
 @if(!empty($isApproved))
     <div class="alert alert-warning border-warning shadow-sm rounded-4 mb-4" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-left: 5px solid #f59e0b !important;">
         <div class="d-flex align-items-center gap-3">
@@ -73,7 +91,8 @@
     </div>
 
     <div class="card-body p-4">
-        <form action="{{ route('pengeluaran-bahan-baku.update', $pengeluaran->id) }}" method="POST">
+        <form action="{{ route('pengeluaran-bahan-baku.update', $pengeluaran->id) }}" method="POST"
+              @if(!empty($isLunas)) onsubmit="return confirm('PERINGATAN SUPER ADMIN!\n\nNota PBK ini SUDAH DIBAYAR (LUNAS). Barang yang sudah dibayar harganya tidak boleh berubah lagi.\n\nApakah Anda BENAR-BENAR YAKIN ingin menyimpan perubahan pada nota yang sudah dibayar ini?')" @endif>
             @csrf
             @method('PUT')
             <input type="hidden" name="page" value="{{ request('page', 1) }}">

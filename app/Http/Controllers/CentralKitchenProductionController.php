@@ -26,9 +26,6 @@ class CentralKitchenProductionController extends Controller
      */
     public function index(Request $request)
     {
-        MasterBarang::syncAllResepIds();
-        MasterBarang::autoHealUnconvertedPembelianBatches();
-
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
         $sort = $request->query('sort', 'latest');
@@ -42,7 +39,14 @@ class CentralKitchenProductionController extends Controller
         $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
         $gudangCkId = $gudangCk ? $gudangCk->id : 5;
 
-        $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resep.bahan'])
+        // Global Pre-fetch Stok Gudang CK dalam 1 query untuk menghindari N+1 DB lookup
+        $stokCkMap = StokGudang::where('gudang_id', $gudangCkId)
+            ->groupBy('barang_id')
+            ->select('barang_id', DB::raw('SUM(jumlah) as total_stok'))
+            ->pluck('total_stok', 'barang_id')
+            ->toArray();
+
+        $queryWo = WorkOrder::with(['details.pesanan.customer', 'details.produk.resepBtklBop', 'details.produk.resep.bahan'])
             ->whereHas('details.pesanan', function($q) use ($customerId) {
                 $q->where('tipe_pesanan', 'central_kitchen');
                 if ($customerId) {
@@ -137,8 +141,32 @@ class CentralKitchenProductionController extends Controller
 
         $woList = $queryWo->paginate(10, ['*'], 'wo_page')->withQueryString();
 
+        // Batch pre-fetch data alokasi produksi & pengiriman untuk seluruh WO yang ditampilkan
+        $allWoDetails = $woList->getCollection()->pluck('details')->flatten();
+        $allWoPesananIds = $allWoDetails->pluck('pesanan_id')->filter()->unique()->toArray();
+        $allWoProdukIds = $allWoDetails->pluck('produk_id')->filter()->unique()->toArray();
+
+        $alokasiMap = !empty($allWoPesananIds) && !empty($allWoProdukIds)
+            ? DB::table('alokasi_produksi_pesanan')
+                ->whereIn('pesanan_id', $allWoPesananIds)
+                ->whereIn('produk_id', $allWoProdukIds)
+                ->select('pesanan_id', 'produk_id', DB::raw('SUM(qty_alokasi) as total_alokasi'))
+                ->groupBy('pesanan_id', 'produk_id')
+                ->get()
+                ->keyBy(fn($i) => $i->pesanan_id . '_' . $i->produk_id)
+            : collect();
+
+        $terkirimPesananSet = !empty($allWoPesananIds)
+            ? array_flip(
+                Pengiriman::whereIn('pesanan_id', $allWoPesananIds)
+                    ->where('status_pengiriman', 'Selesai')
+                    ->pluck('pesanan_id')
+                    ->toArray()
+            )
+            : [];
+
         // Hitung progress produksi, sisa kekurangan, dan ketersediaan bahan baku di Gudang CK
-        $woList->getCollection()->transform(function($wo) use ($gudangCkId) {
+        $woList->getCollection()->transform(function($wo) use ($stokCkMap, $alokasiMap, $terkirimPesananSet) {
             $firstDetail = $wo->details->first();
             $customer = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->customer : null;
             $wo->customer_nama = $customer ? $customer->nama : 'Outlet Internal';
@@ -146,7 +174,6 @@ class CentralKitchenProductionController extends Controller
             $wo->tanggal_permintaan = $firstDetail && $firstDetail->pesanan && $firstDetail->pesanan->tanggal
                 ? $firstDetail->pesanan->tanggal
                 : null;
-
 
             $totalTarget = 0;
             $totalSelesai = 0;
@@ -160,14 +187,12 @@ class CentralKitchenProductionController extends Controller
 
             foreach ($wo->details as $wod) {
                 $target = floatval($wod->qty_rencana);
-                $sudah = DB::table('alokasi_produksi_pesanan')
-                    ->where('pesanan_id', $wod->pesanan_id)
-                    ->where('produk_id', $wod->produk_id)
-                    ->sum('qty_alokasi') ?? 0;
-                $sisa = max(0, $target - floatval($sudah));
+                $keyAlokasi = $wod->pesanan_id . '_' . $wod->produk_id;
+                $sudah = isset($alokasiMap[$keyAlokasi]) ? floatval($alokasiMap[$keyAlokasi]->total_alokasi) : 0;
+                $sisa = max(0, $target - $sudah);
 
                 $totalTarget += $target;
-                $totalSelesai += floatval($sudah);
+                $totalSelesai += $sudah;
                 $totalSisa += $sisa;
 
                 // Cek apakah produk memiliki resep dengan bahan baku
@@ -192,14 +217,14 @@ class CentralKitchenProductionController extends Controller
                     'satuan_pembelian' => $satuanKonversi,
                     'konversi'         => $konversiVal,
                     'target'           => $target,
-                    'sudah'            => floatval($sudah),
+                    'sudah'            => $sudah,
                     'sisa'             => $sisa,
                     'has_resep'        => $hasResep,
                 ];
 
                 // Hitung kebutuhan bahan baku (untuk total target WO dan sisa target)
                 if ($hasResep) {
-                    $resepBtkl = $wod->produk ? ($wod->produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $wod->produk_id)->first()) : null;
+                    $resepBtkl = $wod->produk ? $wod->produk->resepBtklBop : null;
                     $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
                     $batchCountTarget = $target / $outputQtyResep;
                     $batchCountSisa   = $sisa / $outputQtyResep;
@@ -251,15 +276,6 @@ class CentralKitchenProductionController extends Controller
                 }
             }
 
-            // Ambil stok terkini di Gudang Central Kitchen untuk seluruh bahan yang direkap
-            $bahanIds = array_keys($rekapBahanMap);
-            $stokGudangCk = !empty($bahanIds)
-                ? StokGudang::where('gudang_id', $gudangCkId)
-                    ->whereIn('barang_id', $bahanIds)
-                    ->pluck('jumlah', 'barang_id')
-                    ->toArray()
-                : [];
-
             $isBahanSufficient = true;
             $defisitBahan = [];
             $rekapBahanList = [];
@@ -267,8 +283,7 @@ class CentralKitchenProductionController extends Controller
             $totalBahanCukup = 0;
 
             foreach ($rekapBahanMap as $bahanId => $dataBahan) {
-                $stok = floatval($stokGudangCk[$bahanId] ?? 0);
-                // Jika WO masih ada sisa produksi, gunakan sisa_butuh; jika sudah komplit, gunakan total_butuh
+                $stok = floatval($stokCkMap[$bahanId] ?? 0);
                 $refButuh = ($totalSisa > 0) ? $dataBahan['sisa_butuh'] : $dataBahan['total_butuh'];
                 $isCukup = ($stok >= $refButuh);
                 $kurang = max(0, $refButuh - $stok);
@@ -300,7 +315,6 @@ class CentralKitchenProductionController extends Controller
                 $rekapBahanList[] = $dataBahan;
             }
 
-            // Urutkan bahan baku: yang kurang ditaruh paling atas, lalu urut abjad nama
             usort($rekapBahanList, function($a, $b) {
                 if ($a['is_cukup'] === $b['is_cukup']) {
                     return strcmp($a['nama_bahan'], $b['nama_bahan']);
@@ -321,14 +335,17 @@ class CentralKitchenProductionController extends Controller
             $wo->total_jenis_bahan = count($rekapBahanList);
             $wo->total_bahan_kurang = $totalBahanKurang;
             $wo->total_bahan_cukup = $totalBahanCukup;
-            // Approval hanya bisa dilakukan jika seluruh item punya resep dan bahan cukup
             $wo->can_approve = !$hasMissingResep && $isBahanSufficient;
 
             // Cek status pengiriman pesanan terkait Work Order ini
             $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique();
-            $isTerkirim = Pengiriman::whereIn('pesanan_id', $pesananIds)
-                ->where('status_pengiriman', 'Selesai')
-                ->exists();
+            $isTerkirim = false;
+            foreach ($pesananIds as $pId) {
+                if (isset($terkirimPesananSet[$pId])) {
+                    $isTerkirim = true;
+                    break;
+                }
+            }
             $wo->is_terkirim = $isTerkirim;
             $wo->is_belum_terkirim = !$isTerkirim;
 
@@ -416,9 +433,9 @@ class CentralKitchenProductionController extends Controller
             ->paginate(10, ['*'], 'pesanan_page')
             ->withQueryString();
 
-        $pesananCkPending->getCollection()->transform(function($p) use ($gudangCkId) {
+        $pesananCkPending->getCollection()->transform(function($p) use ($stokCkMap) {
             foreach ($p->details as $d) {
-                $stok = floatval(StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $d->produk_id)->value('jumlah') ?? 0);
+                $stok = floatval($stokCkMap[$d->produk_id] ?? 0);
                 $d->stok_tersedia = $stok;
                 $d->qty_kurang = max(0, floatval($d->qty) - $stok);
             }
@@ -452,7 +469,7 @@ class CentralKitchenProductionController extends Controller
                             $pq->where('tipe_pesanan', 'central_kitchen')->orWhereNull('tipe_pesanan');
                         })->orWhereHas('alokasiPesanan.pesanan', function($pq) {
                             $pq->where('tipe_pesanan', 'central_kitchen')->orWhereNull('tipe_pesanan');
-                        })->orWhereNull('pesanan_id'); // produksi mandiri tanpa pesanan outlet
+                        })->orWhereNull('pesanan_id');
                     });
                 }
             });
@@ -552,27 +569,62 @@ class CentralKitchenProductionController extends Controller
                 break;
         }
 
-        // Hitung total HPP seluruh riwayat produksi sesuai filter yang aktif
-        $filteredProdIds = (clone $queryProduksi)->reorder()->pluck('produksi.id')->toArray();
-        $totalHppRiwayat = !empty($filteredProdIds)
-            ? (float) \App\Models\ProduksiDetail::whereIn('produksi_id', $filteredProdIds)->sum('hpp_total')
-            : 0.0;
+        // Hitung total HPP seluruh riwayat produksi sesuai filter yang aktif menggunakan subquery
+        $totalHppRiwayat = (float) \App\Models\ProduksiDetail::whereIn(
+            'produksi_id',
+            (clone $queryProduksi)->reorder()->select('produksi.id')
+        )->sum('hpp_total');
 
         $riwayatProduksi = $queryProduksi->paginate(10, ['*'], 'prod_page')->withQueryString();
 
-        // Hitung ketersediaan bahan baku & resep untuk setiap draft riwayat produksi CK
-        $riwayatProduksi->getCollection()->transform(function($prod) use ($gudangCkId) {
+        // Batch pre-fetch data pendukung riwayat produksi
+        $riwayatProds = $riwayatProduksi->getCollection();
+        $riwayatProdIds = $riwayatProds->pluck('id')->toArray();
+
+        $riwayatAlokasiMap = !empty($riwayatProdIds)
+            ? ProduksiPesanan::whereIn('produksi_id', $riwayatProdIds)->get()->groupBy('produksi_id')
+            : collect();
+
+        $allRiwayatPesananIds = [];
+        foreach ($riwayatProds as $p) {
+            if ($p->pesanan_id) {
+                $allRiwayatPesananIds[] = $p->pesanan_id;
+            }
+            if (isset($riwayatAlokasiMap[$p->id])) {
+                foreach ($riwayatAlokasiMap[$p->id] as $al) {
+                    if ($al->pesanan_id) {
+                        $allRiwayatPesananIds[] = $al->pesanan_id;
+                    }
+                }
+            }
+        }
+        $allRiwayatPesananIds = array_unique(array_filter($allRiwayatPesananIds));
+
+        $terkirimRiwayatSet = !empty($allRiwayatPesananIds)
+            ? array_flip(Pengiriman::whereIn('pesanan_id', $allRiwayatPesananIds)->where('status_pengiriman', 'Selesai')->pluck('pesanan_id')->toArray())
+            : [];
+
+        $wodRiwayatMap = !empty($allRiwayatPesananIds)
+            ? WorkOrderDetail::with(['workOrder.details.produk', 'workOrder.details.pesanan'])
+                ->whereIn('pesanan_id', $allRiwayatPesananIds)
+                ->get()
+                ->keyBy('pesanan_id')
+            : collect();
+
+        // Transform riwayat produksi
+        $riwayatProduksi->getCollection()->transform(function($prod) use ($stokCkMap, $riwayatAlokasiMap, $terkirimRiwayatSet, $wodRiwayatMap) {
             $isBahanSufficient = true;
             $hasMissingResep = false;
             $defisitBahan = [];
             $produkTanpaResep = [];
-            $fifoService = app(\App\Services\FifoService::class);
 
             if (strtolower($prod->status_produksi) === 'draft') {
                 foreach ($prod->details as $detail) {
-                    $produk = MasterBarang::with('resep.bahan')->find($detail->produk_id);
-                    $hasResep = ($produk && $produk->resep && $produk->resep->count() > 0);
-                    
+                    $produk = $detail->produk;
+                    $resepBtkl = $produk ? $produk->resepBtklBop : null;
+                    $resepItems = $resepBtkl && $resepBtkl->bahanbaku ? $resepBtkl->bahanbaku : collect();
+                    $hasResep = $resepItems->count() > 0;
+
                     if (!$hasResep) {
                         $hasMissingResep = true;
                         $produkTanpaResep[] = [
@@ -583,23 +635,47 @@ class CentralKitchenProductionController extends Controller
                         continue;
                     }
 
-                    $resepBtkl = $produk ? ($produk->resepBtklBop ?: \App\Models\ResepBtklBop::where('produk_id', $detail->produk_id)->first()) : null;
                     $outputQtyResep = ($resepBtkl && floatval($resepBtkl->output_qty) > 0) ? floatval($resepBtkl->output_qty) : 1;
                     $batchCount = floatval($detail->qty) / $outputQtyResep;
 
-                    $resepId = $produk->resep_id ?: ($resepBtkl ? $resepBtkl->id : null);
-                    $resepItems = $resepId ? ResepBahanBaku::where('resep_id', $resepId)->with(['bahan', 'alternatif.bahan'])->get() : collect();
                     foreach ($resepItems as $resep) {
                         $kebutuhan = floatval($resep->qty_bahan) * $batchCount;
-                        
-                        $avail = $fifoService->checkBahanAvailability($resep, $kebutuhan, $gudangCkId);
-                        if (!$avail['sufficient']) {
+
+                        // Check availability via pre-fetched stock map
+                        $candList = collect([
+                            ['bahan_id' => $resep->bahan_id, 'nama' => $resep->bahan->nama ?? 'Bahan']
+                        ]);
+                        if ($resep->alternatif && $resep->alternatif->isNotEmpty()) {
+                            foreach ($resep->alternatif as $alt) {
+                                $candList->push(['bahan_id' => $alt->bahan_id, 'nama' => $alt->bahan->nama ?? 'Bahan Alternatif']);
+                            }
+                        }
+
+                        $isCandidateSufficient = false;
+                        $candNama = $resep->bahan->nama ?? 'Bahan';
+                        $maxCandStok = 0.0;
+
+                        foreach ($candList as $cand) {
+                            $stk = floatval($stokCkMap[$cand['bahan_id']] ?? 0);
+                            if ($stk >= $kebutuhan) {
+                                $isCandidateSufficient = true;
+                                $candNama = $cand['nama'];
+                                $maxCandStok = $stk;
+                                break;
+                            }
+                            if ($stk > $maxCandStok) {
+                                $candNama = $cand['nama'];
+                                $maxCandStok = $stk;
+                            }
+                        }
+
+                        if (!$isCandidateSufficient) {
                             $isBahanSufficient = false;
                             $defisitBahan[] = [
-                                'nama'   => $avail['nama'],
+                                'nama'   => $candNama,
                                 'butuh'  => $kebutuhan,
-                                'stok'   => $avail['stok'],
-                                'kurang' => $kebutuhan - $avail['stok'],
+                                'stok'   => $maxCandStok,
+                                'kurang' => $kebutuhan - $maxCandStok,
                                 'satuan' => $resep->bahan->satuan ?? 'pcs',
                             ];
                         }
@@ -613,27 +689,25 @@ class CentralKitchenProductionController extends Controller
             $prod->defisit_bahan = $defisitBahan;
             $prod->can_approve = !$hasMissingResep && $isBahanSufficient;
 
-            // Cek status pengiriman pesanan terkait produksi ini
+            // Status pengiriman pesanan terkait produksi ini
             $isTerkirim = false;
-            if ($prod->pesanan_id) {
-                $isTerkirim = Pengiriman::where('pesanan_id', $prod->pesanan_id)
-                    ->where('status_pengiriman', 'Selesai')
-                    ->exists();
+            if ($prod->pesanan_id && isset($terkirimRiwayatSet[$prod->pesanan_id])) {
+                $isTerkirim = true;
             }
             $prod->is_terkirim = $isTerkirim;
             $prod->is_belum_terkirim = !$isTerkirim;
 
             // Cari WorkOrder terkait
             $wo = null;
-            if ($prod->pesanan_id) {
-                $wod = WorkOrderDetail::with(['workOrder.details.produk', 'workOrder.details.pesanan'])->where('pesanan_id', $prod->pesanan_id)->first();
-                $wo = $wod ? $wod->workOrder : null;
+            if ($prod->pesanan_id && isset($wodRiwayatMap[$prod->pesanan_id])) {
+                $wo = $wodRiwayatMap[$prod->pesanan_id]->workOrder;
             }
-            if (!$wo) {
-                $pIds = ProduksiPesanan::where('produksi_id', $prod->id)->pluck('pesanan_id')->toArray();
-                if (!empty($pIds)) {
-                    $wod = WorkOrderDetail::with(['workOrder.details.produk', 'workOrder.details.pesanan'])->whereIn('pesanan_id', $pIds)->first();
-                    $wo = $wod ? $wod->workOrder : null;
+            if (!$wo && isset($riwayatAlokasiMap[$prod->id])) {
+                foreach ($riwayatAlokasiMap[$prod->id] as $al) {
+                    if ($al->pesanan_id && isset($wodRiwayatMap[$al->pesanan_id])) {
+                        $wo = $wodRiwayatMap[$al->pesanan_id]->workOrder;
+                        break;
+                    }
                 }
             }
             $prod->work_order = $wo;
@@ -666,56 +740,62 @@ class CentralKitchenProductionController extends Controller
         $stokBsjCk = $queryBsj->paginate(15, ['*'], 'bsj_page')
             ->withQueryString();
 
-        $stokBsjCk->getCollection()->transform(function ($barang) use ($gudangCkId, $customerId) {
-            // 1. Stok fisik saat ini di Gudang Central Kitchen
-            $stokTersedia = (float) (StokGudang::where('gudang_id', $gudangCkId)
-                ->where('barang_id', $barang->id)
-                ->sum('jumlah') ?? 0);
+        // Batch pre-fetch data pesanan & alokasi untuk item BSJ
+        $bsjIds = $stokBsjCk->getCollection()->pluck('id')->toArray();
 
-            // 2. Query PesananDetail untuk barang ini yang belum selesai terkirim
-            $pdQuery = PesananDetail::with('pesanan.customer')
-                ->where('produk_id', $barang->id)
+        $allBsjPesananDetails = !empty($bsjIds)
+            ? PesananDetail::with('pesanan.customer')
+                ->whereIn('produk_id', $bsjIds)
                 ->whereHas('pesanan', function($q) use ($customerId) {
                     $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
                     if ($customerId) {
                         $q->where('customer_id', $customerId);
                     }
-                });
+                })
+                ->get()
+                ->groupBy('produk_id')
+            : collect();
 
-            $pesananDetails = $pdQuery->get();
+        $allBsjAlokasi = !empty($bsjIds)
+            ? DB::table('alokasi_produksi_pesanan')
+                ->join('pesanan', 'alokasi_produksi_pesanan.pesanan_id', '=', 'pesanan.id')
+                ->whereIn('alokasi_produksi_pesanan.produk_id', $bsjIds)
+                ->where('pesanan.tipe_pesanan', 'central_kitchen')
+                ->whereIn('pesanan.status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses'])
+                ->when($customerId, fn($q) => $q->where('pesanan.customer_id', $customerId))
+                ->select(
+                    'alokasi_produksi_pesanan.produk_id',
+                    'pesanan.customer_id',
+                    DB::raw('SUM(alokasi_produksi_pesanan.qty_alokasi) as total_alokasi')
+                )
+                ->groupBy('alokasi_produksi_pesanan.produk_id', 'pesanan.customer_id')
+                ->get()
+            : collect();
 
-            // Total permintaan kotor
-            $totalPermintaan = (float) $pesananDetails->sum('qty');
+        $bsjAlokasiCustMap = [];
+        $bsjAlokasiTotalMap = [];
+        foreach ($allBsjAlokasi as $row) {
+            $pId = $row->produk_id;
+            $cId = $row->customer_id;
+            $qty = floatval($row->total_alokasi);
+            $bsjAlokasiCustMap[$pId][$cId] = $qty;
+            $bsjAlokasiTotalMap[$pId] = ($bsjAlokasiTotalMap[$pId] ?? 0) + $qty;
+        }
 
-            // 3. Qty yang sudah selesai / teralokasi dari produksi
-            $sudahDiproduksiQuery = \App\Models\ProduksiPesanan::where('produk_id', $barang->id)
-                ->whereHas('pesanan', function($q) use ($customerId) {
-                    $q->centralKitchen()->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
-                    if ($customerId) {
-                        $q->where('customer_id', $customerId);
-                    }
-                });
-            $sudahDiproduksi = (float) ($sudahDiproduksiQuery->sum('qty_alokasi') ?? 0);
-
+        $stokBsjCk->getCollection()->transform(function ($barang) use ($stokCkMap, $allBsjPesananDetails, $bsjAlokasiCustMap, $bsjAlokasiTotalMap) {
+            $stokTersedia = floatval($stokCkMap[$barang->id] ?? 0);
+            $pesananDetails = $allBsjPesananDetails->get($barang->id, collect());
+            $totalPermintaan = floatval($pesananDetails->sum('qty'));
+            $sudahDiproduksi = floatval($bsjAlokasiTotalMap[$barang->id] ?? 0);
             $sisaPermintaan = max(0, $totalPermintaan - $sudahDiproduksi);
 
-            // 4. Breakdown permintaan per masing-masing outlet pemesan
             $outletBreakdown = [];
             $groupedByCustomer = $pesananDetails->groupBy('pesanan.customer_id');
 
             foreach ($groupedByCustomer as $cId => $detailsGroup) {
                 $custNama = $detailsGroup->first()?->pesanan?->customer?->nama ?? 'Outlet #' . $cId;
-                $custTotalQty = (float) $detailsGroup->sum('qty');
-
-                // Alokasi produksi untuk customer ini
-                $custAlokasi = (float) (\App\Models\ProduksiPesanan::where('produk_id', $barang->id)
-                    ->whereHas('pesanan', function($q) use ($cId) {
-                        $q->centralKitchen()
-                          ->where('customer_id', $cId)
-                          ->whereIn('status_pesanan', ['pending', 'Draft', 'diproses', 'Diproses']);
-                    })
-                    ->sum('qty_alokasi') ?? 0);
-
+                $custTotalQty = floatval($detailsGroup->sum('qty'));
+                $custAlokasi = floatval($bsjAlokasiCustMap[$barang->id][$cId] ?? 0);
                 $custSisa = max(0, $custTotalQty - $custAlokasi);
 
                 if ($custSisa > 0) {
@@ -728,7 +808,6 @@ class CentralKitchenProductionController extends Controller
                 }
             }
 
-            // 5. Rekomendasi produksi: berapa yang harus diproduksi dengan melihat stok yang sudah ada
             $rekomendasiProduksi = max(0, $sisaPermintaan - $stokTersedia);
 
             return [
@@ -1634,6 +1713,10 @@ class CentralKitchenProductionController extends Controller
         ]);
 
         $wo = WorkOrder::with(['details.produk', 'details.pesanan'])->findOrFail($id);
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+        if ($wo->isLunas() && !$isSuperAdmin) {
+            return back()->with('error', 'Gagal: Work Order ' . $wo->kode_wo . ' sudah berstatus LUNAS. Data yang sudah dibayar harganya tidak boleh berubah dan hanya dapat diubah oleh Super Admin.');
+        }
 
         $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique();
         $isTerkirim = Pengiriman::whereIn('pesanan_id', $pesananIds)
@@ -2581,6 +2664,10 @@ class CentralKitchenProductionController extends Controller
 
         $wo = WorkOrder::with('details')->findOrFail($id);
 
+        if ($wo->isLunas() && !$isSuperAdmin) {
+            return redirect()->back()->with('error', "Gagal: Work Order {$wo->kode_wo} sudah berstatus LUNAS. Data yang sudah dibayar harganya tidak boleh berubah dan tidak dapat dihapus oleh pengguna non-Super Admin.");
+        }
+
         // Validasi status pengiriman
         $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique()->toArray();
         $isTerkirim = Pengiriman::whereIn('pesanan_id', $pesananIds)
@@ -2701,6 +2788,10 @@ class CentralKitchenProductionController extends Controller
         }
 
         $prod = Produksi::with(['details', 'pesanan'])->findOrFail($id);
+
+        if ($prod->isLunas() && !$isSuperAdmin) {
+            return redirect()->back()->with('error', "Gagal: Hasil Produksi / WO {$prod->kode_produksi} sudah berstatus LUNAS. Data yang sudah dibayar harganya tidak boleh berubah dan tidak dapat dihapus oleh pengguna non-Super Admin.");
+        }
 
         // Validasi status pengiriman
         $isTerkirim = false;

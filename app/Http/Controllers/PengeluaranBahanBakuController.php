@@ -925,6 +925,8 @@ class PengeluaranBahanBakuController extends Controller
                 'jenis_pengeluaran'   => $pengeluaran->jenis_pengeluaran ?? ($isWasted ? 'wasted' : 'transfer'),
                 'status'              => $pengeluaran->status,
                 'is_approved'         => $isApproved,
+                'is_lunas'            => $pengeluaran->isLunas(),
+                'status_pembayaran'   => $pengeluaran->status_pembayaran,
                 'is_superadmin'       => (bool) ($user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()),
                 'keterangan'          => $pengeluaran->keterangan ?? '-',
                 'is_wo'               => $isWO,
@@ -1151,6 +1153,7 @@ class PengeluaranBahanBakuController extends Controller
 
         $user = auth()->user();
         $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+        $isLunas = $pengeluaran->isLunas();
 
         return view(
             'pengeluaran-bahan-baku.edit',
@@ -1162,6 +1165,7 @@ class PengeluaranBahanBakuController extends Controller
                 'gudangDivisiList',
                 'jenis',
                 'isApproved',
+                'isLunas',
                 'isSuperAdmin'
             )
         );
@@ -1228,6 +1232,13 @@ class PengeluaranBahanBakuController extends Controller
                 */
                 $isApproved = in_array(strtolower($data->status), ['approved', 'disetujui']);
                 $isApprovedGlobal = $isApproved;
+                $isLunas = $data->isLunas();
+
+                if ($isLunas && !$isSuperAdmin) {
+                    throw new \Exception(
+                        'Nota pengeluaran yang sudah dibayar (LUNAS) harganya tidak boleh berubah dan tidak dapat diubah oleh pengguna non-Super Admin.'
+                    );
+                }
 
                 if ($isApproved && !$isSuperAdmin) {
                     throw new \Exception(
@@ -1362,6 +1373,11 @@ class PengeluaranBahanBakuController extends Controller
                 $isSuperAdmin = $user && $user->isSuperAdmin();
 
                 $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
+                $isLunas = $pengeluaran->isLunas();
+
+                if ($isLunas && !$isSuperAdmin) {
+                    throw new \Exception('Nota pengeluaran yang sudah dibayar (LUNAS) hanya dapat dihapus oleh Super Admin.');
+                }
 
                 if ($isApproved && !$isSuperAdmin) {
                     throw new \Exception('Pengeluaran yang sudah disetujui hanya dapat dihapus oleh Super Admin.');
@@ -1408,6 +1424,11 @@ class PengeluaranBahanBakuController extends Controller
                 $user = auth()->user();
                 $isSuperAdmin = $user && $user->isSuperAdmin();
                 $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
+                $isLunas = $pengeluaran->isLunas();
+
+                if ($isLunas && !$isSuperAdmin) {
+                    throw new \Exception('Item pada nota yang sudah dibayar (LUNAS) harganya tidak boleh berubah dan hanya dapat dihapus oleh Super Admin.');
+                }
 
                 if ($isApproved && !$isSuperAdmin) {
                     throw new \Exception('Item pada pengeluaran yang sudah disetujui hanya dapat dihapus oleh Super Admin.');

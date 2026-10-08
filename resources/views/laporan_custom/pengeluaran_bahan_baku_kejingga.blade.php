@@ -140,10 +140,17 @@
                                 @endphp
                                 <tr data-id="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}">
                                     <td class="text-center ps-3">
-                                        <input type="checkbox" class="form-check-input cb-item" value="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}" style="cursor: pointer;">
+                                        <input type="checkbox" class="form-check-input cb-item" value="{{ $row->id }}" data-total="{{ $rowTotal }}" data-lunas="{{ $isLunas ? '1' : '0' }}" {{ $isLunas ? 'disabled' : '' }} style="cursor: {{ $isLunas ? 'not-allowed' : 'pointer' }};">
                                     </td>
                                     <td class="fw-semibold font-monospace" style="color:#d88656;">
-                                        {{ $row->kode_pengeluaran ?? '-' }}
+                                        @if($isLunas)
+                                            <span class="badge bg-secondary-subtle text-muted border text-decoration-line-through me-1 opacity-75" title="Nomor PBK ini disabled karena sudah dibayar (Lunas)" style="cursor: not-allowed; font-size: 0.85rem;">
+                                                <i class="bi bi-lock-fill me-1 text-secondary"></i>{{ $row->kode_pengeluaran ?? '-' }}
+                                            </span>
+                                            <span class="badge bg-secondary text-white" style="font-size: 9px; vertical-align: middle;">DISABLED</span>
+                                        @else
+                                            {{ $row->kode_pengeluaran ?? '-' }}
+                                        @endif
                                         @if($row->no_invoice)
                                             <div class="text-muted small" style="font-size: 10px;">Inv: {{ $row->no_invoice }}</div>
                                         @endif
@@ -182,6 +189,10 @@
                                     </td>
                                     <td class="text-end fw-bold">Rp {{ number_format($rowTotal, 0, ',', '.') }}</td>
                                     <td class="text-center pe-4">
+                                        @php
+                                            $authUser = auth()->user();
+                                            $isSuperAdminUser = $authUser && ($authUser->isSuperAdmin() || $authUser->username === 'superadmin');
+                                        @endphp
                                         <div class="d-flex justify-content-center gap-1">
                                             <!-- DETAIL BUTTON -->
                                             <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 text-dark"
@@ -201,6 +212,38 @@
                                             <a href="{{ route('laporan.laporan-custom.pbk-kejingga.cetak-invoice', ['ids' => $row->id]) }}" target="_blank" class="btn btn-sm btn-outline-warning text-dark py-1 px-2 fw-semibold" title="Cetak Invoice">
                                                 <i class="bi bi-printer me-1"></i> Invoice
                                             </a>
+
+                                            <!-- SUPERADMIN EDIT & HAPUS AKSI -->
+                                            @if($isSuperAdminUser)
+                                                @if($isLunas)
+                                                    <a href="{{ route('pengeluaran-bahan-baku.edit', $row->id) }}"
+                                                       class="btn btn-sm btn-warning py-1 px-2 text-dark"
+                                                       title="Edit Nota (Super Admin)"
+                                                       onclick="return confirm('PERINGATAN SUPER ADMIN!\n\nNota PBK {{ $row->kode_pengeluaran }} ini SUDAH DIBAYAR (LUNAS). Barang yang sudah dibayar harganya tidak boleh berubah lagi.\n\nApakah Anda yakin ingin melanjutkan edit nota yang sudah dibayar ini?')">
+                                                        <i class="bi bi-pencil-square"></i>
+                                                    </a>
+                                                    <form action="{{ route('pengeluaran-bahan-baku.destroy', $row->id) }}" method="POST" class="d-inline"
+                                                          onsubmit="return confirm('PERINGATAN SANGAT PENTING SUPER ADMIN!\n\nNota PBK {{ $row->kode_pengeluaran }} ini SUDAH DIBAYAR (LUNAS).\n\nMenghapus nota yang sudah dibayar ini akan mempengaruhi laporan dan pencatatan keuangan!\n\nApakah Anda BENAR-BENAR YAKIN ingin menghapus nota yang sudah dibayar ini?')">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-sm btn-danger py-1 px-2 text-white" title="Hapus Nota Lunas (Super Admin)">
+                                                            <i class="bi bi-trash-fill"></i>
+                                                        </button>
+                                                    </form>
+                                                @else
+                                                    <a href="{{ route('pengeluaran-bahan-baku.edit', $row->id) }}" class="btn btn-sm btn-warning py-1 px-2 text-dark" title="Edit Nota">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </a>
+                                                    <form action="{{ route('pengeluaran-bahan-baku.destroy', $row->id) }}" method="POST" class="d-inline"
+                                                          onsubmit="return confirm('Yakin ingin menghapus nota pengeluaran {{ $row->kode_pengeluaran }} ini?')">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-sm btn-danger py-1 px-2 text-white" title="Hapus Nota">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                @endif
+                                            @endif
                                         </div>
 
                                         {{-- MODAL DETAIL --}}
@@ -400,7 +443,9 @@
         if (checkAll) {
             checkAll.addEventListener('change', function () {
                 cbItems.forEach(cb => {
-                    cb.checked = this.checked;
+                    if (!cb.disabled) {
+                        cb.checked = this.checked;
+                    }
                 });
                 updateSelectionState();
             });

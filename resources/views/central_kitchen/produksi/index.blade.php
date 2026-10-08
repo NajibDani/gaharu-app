@@ -541,13 +541,26 @@
 
                                                 {{-- 4. TOMBOL HAPUS WO (HANYA JIKA BELUM TERKIRIM - KARENA KESALAHAN PRODUKSI) --}}
                                                 @if(($canDeleteWo ?? $isSuperAdmin) && ($wo->is_belum_terkirim ?? true))
-                                                    <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Work Order {{ $wo->kode_wo }} karena kesalahan produksi? Status pesanan akan dikembalikan ke antrean Order Masuk (Pending). Tindakan ini tidak dapat dibatalkan.');">
-                                                        @csrf
-                                                        @method('DELETE')
-                                                        <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus WO yang belum terkirim (karena kesalahan produksi)">
-                                                            <i class="bi bi-trash"></i> Hapus WO
-                                                        </button>
-                                                    </form>
+                                                    @php
+                                                        $woIsLunas = method_exists($wo, 'isLunas') ? $wo->isLunas() : (strtolower($wo->status_pembayaran ?? '') === 'lunas');
+                                                    @endphp
+                                                    @if($woIsLunas)
+                                                        <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('PERINGATAN SANGAT PENTING SUPER ADMIN!\n\nWork Order {{ $wo->kode_wo }} ini SUDAH DIBAYAR (LUNAS). Data yang sudah dibayar harganya tidak boleh berubah lagi.\n\nApakah Anda BENAR-BENAR YAKIN ingin menghapus WO yang sudah dibayar ini?');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus WO Lunas (Super Admin)">
+                                                                <i class="bi bi-trash-fill"></i> Hapus WO Lunas
+                                                            </button>
+                                                        </form>
+                                                    @else
+                                                        <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Work Order {{ $wo->kode_wo }} karena kesalahan produksi? Status pesanan akan dikembalikan ke antrean Order Masuk (Pending). Tindakan ini tidak dapat dibatalkan.');">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus WO yang belum terkirim (karena kesalahan produksi)">
+                                                                <i class="bi bi-trash"></i> Hapus WO
+                                                            </button>
+                                                        </form>
+                                                    @endif
                                                 @endif
                                                 </div>
                                             </div>
@@ -1419,13 +1432,26 @@
                                                             </button>
                                                         @endif
 
-                                                        <form action="{{ route('ck-produksi.destroy-produksi', $prod->id) }}" method="POST" class="d-inline {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '' : 'w-100' }}" onsubmit="return confirm('Apakah Anda yakin ingin membatalkan/menghapus hasil produksi {{ $prod->kode_produksi }} karena kesalahan produksi/QC? Stok produk jadi akan ditarik dan stok bahan baku akan dikembalikan ke gudang CK.');">
-                                                            @csrf
-                                                            @method('DELETE')
-                                                            <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '0 6px 6px 0' : '6px' }};" title="Batalkan Hasil Produksi (Kesalahan QC)">
-                                                                <i class="bi bi-trash"></i> Hapus
-                                                            </button>
-                                                        </form>
+                                                        @php
+                                                            $prodIsLunas = method_exists($prod, 'isLunas') ? $prod->isLunas() : (strtolower($prod->status_pembayaran ?? '') === 'lunas');
+                                                        @endphp
+                                                        @if($prodIsLunas)
+                                                            <form action="{{ route('ck-produksi.destroy-produksi', $prod->id) }}" method="POST" class="d-inline {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '' : 'w-100' }}" onsubmit="return confirm('PERINGATAN SANGAT PENTING SUPER ADMIN!\n\nHasil Produksi / WO {{ $prod->kode_produksi }} ini SUDAH DIBAYAR (LUNAS). Data yang sudah dibayar harganya tidak boleh berubah lagi.\n\nApakah Anda BENAR-BENAR YAKIN ingin membatalkan/menghapus hasil produksi yang sudah dibayar ini?');">
+                                                                @csrf
+                                                                @method('DELETE')
+                                                                <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '0 6px 6px 0' : '6px' }};" title="Hapus Hasil Produksi Lunas (Super Admin)">
+                                                                    <i class="bi bi-trash-fill"></i> Hapus Lunas
+                                                                </button>
+                                                            </form>
+                                                        @else
+                                                            <form action="{{ route('ck-produksi.destroy-produksi', $prod->id) }}" method="POST" class="d-inline {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '' : 'w-100' }}" onsubmit="return confirm('Apakah Anda yakin ingin membatalkan/menghapus hasil produksi {{ $prod->kode_produksi }} karena kesalahan produksi/QC? Stok produk jadi akan ditarik dan stok bahan baku akan dikembalikan ke gudang CK.');">
+                                                                @csrf
+                                                                @method('DELETE')
+                                                                <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: {{ ($prod->work_order && auth()->user() && auth()->user()->canEditWoQty()) ? '0 6px 6px 0' : '6px' }};" title="Batalkan Hasil Produksi (Kesalahan QC)">
+                                                                    <i class="bi bi-trash"></i> Hapus
+                                                                </button>
+                                                            </form>
+                                                        @endif
                                                     </div>
                                                 @endif
 

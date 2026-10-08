@@ -417,18 +417,43 @@
                                         </form>
                                     @elseif($isSuperAdmin)
                                         {{-- SUPER ADMIN BOLEH EDIT & HAPUS APPROVED --}}
-                                        <a href="{{ route('pengeluaran-bahan-baku.edit', ['pengeluaran_bahan_baku' => $item->id, 'page' => $data->currentPage()]) }}"
-                                           class="btn btn-warning btn-sm" title="Edit Pengeluaran (Super Admin)">
-                                            <i class="bi bi-pencil-square"></i>
-                                        </a>
-                                        <form id="delete-form-{{ $item->id }}" action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="button" class="btn btn-danger btn-sm text-white" title="Hapus Pengeluaran Approved (Super Admin)"
-                                                    onclick="confirmDeletePengeluaran('{{ $item->id }}', '{{ $item->kode_pengeluaran }}', true)">
-                                                <i class="bi bi-trash-fill"></i>
-                                            </button>
-                                        </form>
+                                        @php
+                                            $itemIsLunas = (strtolower($item->status_pembayaran ?? '') === 'lunas');
+                                            if (!$itemIsLunas && !empty($item->keterangan)) {
+                                                $meta = json_decode($item->keterangan, true);
+                                                if (is_array($meta) && isset($meta['status_pembayaran']) && strtolower($meta['status_pembayaran']) === 'lunas') {
+                                                    $itemIsLunas = true;
+                                                }
+                                            }
+                                        @endphp
+                                        @if($itemIsLunas)
+                                            <a href="{{ route('pengeluaran-bahan-baku.edit', ['pengeluaran_bahan_baku' => $item->id, 'page' => $data->currentPage()]) }}"
+                                               class="btn btn-warning btn-sm" title="Edit Pengeluaran Lunas (Super Admin)"
+                                               onclick="return confirm('PERINGATAN SUPER ADMIN!\n\nNota PBK {{ $item->kode_pengeluaran }} ini SUDAH DIBAYAR (LUNAS). Barang dan harganya sudah tidak boleh berubah lagi.\n\nApakah Anda yakin ingin tetap mengedit nota yang sudah dibayar ini?')">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </a>
+                                            <form id="delete-form-{{ $item->id }}" action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="button" class="btn btn-danger btn-sm text-white" title="Hapus Pengeluaran Lunas (Super Admin)"
+                                                        onclick="confirmDeletePengeluaran('{{ $item->id }}', '{{ $item->kode_pengeluaran }}', true, null, true)">
+                                                    <i class="bi bi-trash-fill"></i>
+                                                </button>
+                                            </form>
+                                        @else
+                                            <a href="{{ route('pengeluaran-bahan-baku.edit', ['pengeluaran_bahan_baku' => $item->id, 'page' => $data->currentPage()]) }}"
+                                               class="btn btn-warning btn-sm" title="Edit Pengeluaran (Super Admin)">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </a>
+                                            <form id="delete-form-{{ $item->id }}" action="{{ route('pengeluaran-bahan-baku.destroy', $item->id) }}" method="POST" class="d-inline">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="button" class="btn btn-danger btn-sm text-white" title="Hapus Pengeluaran Approved (Super Admin)"
+                                                        onclick="confirmDeletePengeluaran('{{ $item->id }}', '{{ $item->kode_pengeluaran }}', true, null, false)">
+                                                    <i class="bi bi-trash-fill"></i>
+                                                </button>
+                                            </form>
+                                        @endif
                                     @endif
                                 </div>
                             </td>
@@ -1581,9 +1606,38 @@ document.addEventListener('DOMContentLoaded', function () {
     updateTriggerDisplay();
 });
 
-function confirmDeletePengeluaran(id, kode, isApproved, formId) {
+function confirmDeletePengeluaran(id, kode, isApproved, formId, isPaid) {
     const targetForm = formId ? document.getElementById(formId) : document.getElementById('delete-form-' + id);
     if (!targetForm) return;
+
+    if (isPaid) {
+        Swal.fire({
+            title: '⛔ DOKUMEN SUDAH DIBAYAR (LUNAS)',
+            html: `
+                <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #334155;">
+                    <p style="margin-bottom: 8px;">Anda akan menghapus dokumen <strong>${kode}</strong> yang <strong>SUDAH DIBAYAR (LUNAS)</strong>.</p>
+                    <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 12px; border-radius: 4px; margin-bottom: 8px;">
+                        <strong style="color: #991b1b; display: block; margin-bottom: 4px; font-size: 14px;">⚠️ PERINGATAN KETAT SUPER ADMIN:</strong>
+                        <span style="color: #b91c1c; font-size: 13px;">Nota PBK ini sudah lunas. Barang dan harganya sudah tidak boleh berubah lagi. Menghapus nota yang sudah dibayar ini dapat mempengaruhi pencatatan keuangan dan rekapitulasi pembayaran yang telah lunas!</span>
+                    </div>
+                    <p style="margin-bottom: 0; font-size: 12.5px; color: #64748b;">Apakah Anda BENAR-BENAR YAKIN ingin melanjutkan penghapusan nota yang sudah dibayar ini?</p>
+                </div>
+            `,
+            icon: 'error',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            confirmButtonText: '<i class="bi bi-exclamation-triangle-fill me-1"></i> Ya, Hapus Nota Lunas',
+            cancelButtonText: 'Batal',
+            reverseButtons: true,
+            focusCancel: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                targetForm.submit();
+            }
+        });
+        return;
+    }
 
     if (isApproved) {
         Swal.fire({

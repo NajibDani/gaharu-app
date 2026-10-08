@@ -96,6 +96,11 @@ class PengeluaranBahanBaku extends Model
         $this->save();
     }
 
+    public function isLunas(): bool
+    {
+        return strtolower($this->status_pembayaran ?? '') === 'lunas';
+    }
+
     public function getStatusPembayaranAttribute(): string
     {
         if (isset($this->attributes['status_pembayaran']) && !empty($this->attributes['status_pembayaran'])) {

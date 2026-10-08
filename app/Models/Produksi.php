@@ -102,6 +102,11 @@ class Produksi extends Model
         return [];
     }
 
+    public function isLunas(): bool
+    {
+        return strtolower($this->status_pembayaran ?? '') === 'lunas';
+    }
+
     public function getStatusPembayaranAttribute()
     {
         if (isset($this->attributes['status_pembayaran']) && $this->attributes['status_pembayaran']) {

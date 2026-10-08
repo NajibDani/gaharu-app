@@ -86,18 +86,23 @@ class CentralKitchenOrderController extends Controller
 
         $pesanan = $query->paginate(10)->withQueryString();
 
+        $pesananIds = $pesanan->pluck('id')->toArray();
+        $woMap = !empty($pesananIds)
+            ? WorkOrderDetail::with('workOrder')->whereIn('pesanan_id', $pesananIds)->get()->keyBy('pesanan_id')
+            : collect();
+        $terkirimSet = !empty($pesananIds)
+            ? array_flip(\App\Models\Pengiriman::whereIn('pesanan_id', $pesananIds)->where('status_pengiriman', 'Selesai')->pluck('pesanan_id')->toArray())
+            : [];
+
         $fifo = app(FifoService::class);
         foreach ($pesanan as $p) {
-            $woDetail = WorkOrderDetail::where('pesanan_id', $p->id)->first();
-            if ($woDetail) {
-                $wo = WorkOrder::find($woDetail->work_order_id);
-                $p->wo_status = $wo ? strtolower($wo->status_wo) : null;
+            $woDetail = $woMap->get($p->id);
+            if ($woDetail && $woDetail->workOrder) {
+                $p->wo_status = strtolower($woDetail->workOrder->status_wo);
             } else {
                 $p->wo_status = null;
             }
-            $p->is_sent = \App\Models\Pengiriman::where('pesanan_id', $p->id)
-                ->where('status_pengiriman', 'Selesai')
-                ->exists() || ($p->total_qty_terkirim ?? 0) > 0;
+            $p->is_sent = isset($terkirimSet[$p->id]) || ($p->total_qty_terkirim ?? 0) > 0;
 
             // Hitung HPP dinamis jika total_pesanan = 0 (belum pernah dihitung)
             $storedTotal = (float)($p->total_harga ?? $p->total_pesanan ?? 0);
@@ -135,6 +140,14 @@ class CentralKitchenOrderController extends Controller
 
         // Hitung ringkasan saran restock Bahan Setengah Jadi per outlet (di bawah minimum stock)
         $outletSuggestionsSummary = [];
+        $bsjAllItems = MasterBarang::where('is_active', true)
+            ->where('is_bahan_setengah_jadi', true)
+            ->get();
+        $bsjItemIds = $bsjAllItems->pluck('id')->toArray();
+
+        // Batch pre-fetch stok untuk seluruh gudang yang relevan
+        $allTargetGudangIds = [];
+        $outletGudangMap = [];
         foreach ($customers as $c) {
             $g = null;
             $mField = null;
@@ -151,37 +164,54 @@ class CentralKitchenOrderController extends Controller
             }
 
             if ($g && $mField) {
-                $bsjItems = MasterBarang::where('is_active', true)
-                    ->where('is_bahan_setengah_jadi', true)
-                    ->whereNotNull($mField)
-                    ->where($mField, '>', 0)
-                    ->get();
-                $deficitItems = [];
-                foreach ($bsjItems as $it) {
-                    $curStok = (float)(\App\Models\StokGudang::where('gudang_id', $g->id)->where('barang_id', $it->id)->value('jumlah') ?? 0);
-                    $mStok = (float)$it->{$mField};
-                    if ($curStok < $mStok) {
-                        $deficitItems[] = [
-                            'barang_id'     => $it->id,
-                            'kode_barang'   => $it->kode_barang,
-                            'nama'          => $it->nama,
-                            'satuan'        => $it->satuan,
-                            'current_stock' => $curStok,
-                            'min_stock'     => $mStok,
-                            'suggested_qty' => max(1, (float) ceil($mStok - $curStok)),
-                        ];
-                    }
-                }
-                if (!empty($deficitItems)) {
-                    $outletSuggestionsSummary[] = [
-                        'customer_id'   => $c->id,
-                        'customer_nama' => $c->nama,
-                        'gudang_id'     => $g->id,
-                        'gudang_nama'   => $g->nama,
-                        'count'         => count($deficitItems),
-                        'items'         => $deficitItems,
+                $allTargetGudangIds[] = $g->id;
+                $outletGudangMap[$c->id] = ['gudang' => $g, 'mField' => $mField];
+            }
+        }
+
+        $allTargetGudangIds = array_unique(array_filter($allTargetGudangIds));
+        $bulkStokMap = !empty($allTargetGudangIds) && !empty($bsjItemIds)
+            ? \App\Models\StokGudang::whereIn('gudang_id', $allTargetGudangIds)
+                ->whereIn('barang_id', $bsjItemIds)
+                ->groupBy('gudang_id', 'barang_id')
+                ->select('gudang_id', 'barang_id', DB::raw('SUM(jumlah) as total_stok'))
+                ->get()
+                ->groupBy('gudang_id')
+            : collect();
+
+        foreach ($customers as $c) {
+            if (!isset($outletGudangMap[$c->id])) continue;
+            $g = $outletGudangMap[$c->id]['gudang'];
+            $mField = $outletGudangMap[$c->id]['mField'];
+
+            $gudangStok = $bulkStokMap->get($g->id, collect())->pluck('total_stok', 'barang_id')->toArray();
+            $bsjFiltered = $bsjAllItems->filter(fn($it) => !is_null($it->{$mField}) && floatval($it->{$mField}) > 0);
+
+            $deficitItems = [];
+            foreach ($bsjFiltered as $it) {
+                $curStok = floatval($gudangStok[$it->id] ?? 0);
+                $mStok = floatval($it->{$mField});
+                if ($curStok < $mStok) {
+                    $deficitItems[] = [
+                        'barang_id'     => $it->id,
+                        'kode_barang'   => $it->kode_barang,
+                        'nama'          => $it->nama,
+                        'satuan'        => $it->satuan,
+                        'current_stock' => $curStok,
+                        'min_stock'     => $mStok,
+                        'suggested_qty' => max(1, (float) ceil($mStok - $curStok)),
                     ];
                 }
+            }
+            if (!empty($deficitItems)) {
+                $outletSuggestionsSummary[] = [
+                    'customer_id'   => $c->id,
+                    'customer_nama' => $c->nama,
+                    'gudang_id'     => $g->id,
+                    'gudang_nama'   => $g->nama,
+                    'count'         => count($deficitItems),
+                    'items'         => $deficitItems,
+                ];
             }
         }
 
@@ -201,17 +231,27 @@ class CentralKitchenOrderController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
-        $customers = collect();
+        $cNames = [];
+        $ogMap = [];
         foreach ($outletGudangs as $og) {
             $cName = str_contains($og->nama, 'Central Kitchen') ? 'Central Kitchen' : (str_starts_with($og->nama, 'Gudang ') ? 'Outlet ' . substr($og->nama, 7) : $og->nama);
-            $customer = Customer::firstOrCreate(
-                ['nama' => $cName],
-                [
+            $cNames[] = $cName;
+            $ogMap[$cName] = $og;
+        }
+
+        $existingCustomers = Customer::whereIn('nama', array_unique($cNames))->get()->keyBy('nama');
+        $customers = collect();
+
+        foreach ($ogMap as $cName => $og) {
+            $customer = $existingCustomers->get($cName);
+            if (!$customer) {
+                $customer = Customer::create([
+                    'nama'   => $cName,
                     'jenis'  => 'Outlet Internal',
                     'no_hp'  => '-',
                     'alamat' => $og->nama,
-                ]
-            );
+                ]);
+            }
             $customer->gudang_id = $og->id;
             $customer->gudang_nama = $og->nama;
             $customers->push($customer);
