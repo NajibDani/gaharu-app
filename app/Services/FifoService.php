@@ -769,6 +769,10 @@ class FifoService
                     if ($hargaBahan <= 0) {
                         $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangCkId);
                     }
+                    if ($hargaBahan <= 0) {
+                        $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+                        $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangUtamaId);
+                    }
                     if ($hargaBahan <= 0 && $subBhn) {
                         $hargaBahan = (float) ($subBhn->hpp_referensi ?: 0);
                     }

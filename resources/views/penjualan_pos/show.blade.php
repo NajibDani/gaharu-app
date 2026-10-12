@@ -644,7 +644,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
 
                     let sumberBadge = '';
-                    if (b.sumber_harga === 'Resep BSJ') {
+                    if (b.sumber_harga === 'Resep BSJ' || b.sumber_harga === 'HPP Resep BSJ') {
                         sumberBadge = '<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 10px;"><i class="bi bi-diagram-3 me-1"></i>Resep BSJ</span>';
                     } else if (b.sumber_harga === 'HPP Referensi') {
                         sumberBadge = '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 10px;"><i class="bi bi-bookmark me-1"></i>HPP Referensi</span>';

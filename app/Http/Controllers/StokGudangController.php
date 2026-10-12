@@ -1050,6 +1050,14 @@ class StokGudangController extends Controller
                                 $upData['divisi_tujuan_id'] = $pa->divisi_id;
                                 $needsUpdate = true;
                             }
+                            if (abs((float)$txPa->qty - $qty) > 0.01) {
+                                $upData['qty'] = $qty;
+                                $needsUpdate = true;
+                            }
+                            if (abs((float)$txPa->total_harga - $totalNilai) > 0.01) {
+                                $upData['total_harga'] = $totalNilai;
+                                $needsUpdate = true;
+                            }
                             if ($needsUpdate) {
                                 $txPa->update($upData);
                             }
@@ -1118,6 +1126,45 @@ class StokGudangController extends Controller
                                 'total_harga'  => $totalHarga,
                                 'hpp_total'    => $totalHarga,
                             ]);
+                        }
+                    }
+
+                    // Deteksi jika detail PBK tersimpan kuantitas dalam gram sebelum master barang diubah ke PCS (cth: 4000 GR @ Rp 32 = Rp 128.000 menjadi 160 PCS @ Rp 800)
+                    $barang = \App\Models\MasterBarang::find($bId);
+                    if ($barang && strtolower($barang->satuan) === 'pcs' && $totalHarga > 0 && $unitPrice > 0) {
+                        $fifoService = app(\App\Services\FifoService::class);
+                        $refUnit = $fifoService->getHargaTerakhirBahan($bId, $gudangUtamaId);
+                        if ($refUnit <= 0) {
+                            $refUnit = (float) ($barang->hpp_referensi ?: 0);
+                        }
+                        if ($refUnit > 0) {
+                            $ratio = $refUnit / $unitPrice;
+                            if (abs($ratio - 25) < 1.0) {
+                                $realQty = round($qty / 25, 2);
+                                $detail->update([
+                                    'qty'          => $realQty,
+                                    'satuan'       => 'pcs',
+                                    'harga_satuan' => $refUnit,
+                                    'total_harga'  => $totalHarga,
+                                    'hpp_total'    => $totalHarga,
+                                ]);
+                                $qty = $realQty;
+                                $unitPrice = $refUnit;
+
+                                \App\Models\StokGudangBatch::where('barang_id', $bId)
+                                    ->where('gudang_id', $gudangUtamaId)
+                                    ->where('batch_number', 'like', 'SA-%')
+                                    ->where('qty_keluar', '>=', 4000)
+                                    ->each(function($b) use ($realQty) {
+                                        $newKeluar = min((float)$b->qty_masuk, $realQty);
+                                        $newSisa = max(0, (float)$b->qty_masuk - $newKeluar);
+                                        $b->update([
+                                            'qty_keluar' => $newKeluar,
+                                            'qty_sisa'   => $newSisa,
+                                            'is_habis'   => ($newSisa <= 0),
+                                        ]);
+                                    });
+                            }
                         }
                     }
 

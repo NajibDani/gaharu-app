@@ -238,9 +238,9 @@ class BarangController extends Controller
         }
     
         try {
-            $harga_b2b = str_replace('.', '', $request->harga_jual_b2b ?? 0);
-            $harga_pos = str_replace('.', '', $request->harga_jual_pos ?? 0);
-            $hpp       = str_replace('.', '', $request->hpp_referensi ?? 0);
+            $harga_b2b = $this->cleanPriceInput($request->harga_jual_b2b ?? 0);
+            $harga_pos = $this->cleanPriceInput($request->harga_jual_pos ?? 0);
+            $hpp       = $this->cleanPriceInput($request->hpp_referensi ?? 0);
     
             if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI', 'OPERATIONAL'])) {
                 $harga_b2b = 0;
@@ -427,9 +427,9 @@ class BarangController extends Controller
             }
         }
     
-        $harga_b2b = (float) str_replace('.', '', (string)($harga_b2b ?? 0));
-        $harga_pos = (float) str_replace('.', '', (string)($harga_pos ?? 0));
-        $hpp       = (float) str_replace('.', '', (string)($hpp ?? 0));
+        $harga_b2b = $this->cleanPriceInput($harga_b2b ?? 0);
+        $harga_pos = $this->cleanPriceInput($harga_pos ?? 0);
+        $hpp       = $this->cleanPriceInput($hpp ?? 0);
     
         $data->update([
             'kategori_id'    => (int) $request->kategori_id,
@@ -966,4 +966,30 @@ class BarangController extends Controller
             ->with('import_result_barang', $result)
             ->with('success', "Import Master Barang selesai. {$result['created']} barang baru ditambahkan, {$result['skipped']} data barang berhasil diperbarui.");
     }
-} // <-- FIX: Kurung tutup ganda yang salah sudah dihapus
+
+    /**
+     * Membersihkan dan mem-parsing input harga agar tidak merusak angka desimal (cth: 18.29 tidak menjadi 1829).
+     */
+    private function cleanPriceInput($val): float
+    {
+        if (is_null($val) || $val === '') {
+            return 0.0;
+        }
+        if (is_numeric($val)) {
+            return (float) $val;
+        }
+        $str = trim((string) $val);
+        if (strpos($str, '.') !== false && strpos($str, ',') !== false) {
+            $str = str_replace('.', '', $str);
+            $str = str_replace(',', '.', $str);
+        } elseif (strpos($str, ',') !== false) {
+            $str = str_replace(',', '.', $str);
+        } elseif (strpos($str, '.') !== false) {
+            // Hanya ada titik. Jika formatnya ribuan (cth: 10.000 atau 1.000.000)
+            if (preg_match('/^\d{1,3}(\.\d{3})+$/', $str)) {
+                $str = str_replace('.', '', $str);
+            }
+        }
+        return (float) $str;
+    }
+}
