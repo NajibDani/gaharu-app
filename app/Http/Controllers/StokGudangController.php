@@ -1111,61 +1111,138 @@ class StokGudangController extends Controller
 
                 foreach ($details as $detail) {
                     $bId = $detail->barang_id;
-                    $qty = (float) $detail->qty;
-                    $totalHarga = (float) ($detail->total_harga ?: ($detail->hpp_total ?: ($qty * (float) $detail->harga_satuan)));
-                    
-                    // Deteksi jika harga satuan transaksi terdistorsi oleh harga corrupted dummy (~233)
-                    $unitPrice = $qty > 0 ? ($totalHarga / $qty) : 0;
-                    if ($unitPrice > 0 && (abs($unitPrice - 233) <= 1 || abs($unitPrice - 25888.89) <= 1)) {
-                        $fifoService = app(\App\Services\FifoService::class);
-                        $realUnit = $fifoService->getHargaTerakhirBahan($bId, $gudangUtamaId);
-                        if ($realUnit > 0) {
-                            $totalHarga = round($qty * $realUnit, 2);
-                            $detail->update([
-                                'harga_satuan' => $realUnit,
-                                'total_harga'  => $totalHarga,
-                                'hpp_total'    => $totalHarga,
-                            ]);
-                        }
+                    $barang = \App\Models\MasterBarang::find($bId);
+                    if (!$barang) continue;
+
+                    $satuanMaster = strtolower(trim($barang->satuan ?: 'pcs'));
+                    $konversi = (float)($barang->konversi_pembelian ?: 1);
+                    if ($konversi <= 0) $konversi = 1;
+
+                    // 1. Dapatkan harga referensi modal satuan dasar yang valid
+                    $refUnit = 0;
+                    $paDetail = DB::table('persediaan_awal_detail as pad')
+                        ->join('persediaan_awal as pa', 'pa.id', '=', 'pad.persediaan_awal_id')
+                        ->where('pad.barang_id', $bId)
+                        ->where('pa.gudang_id', $gudangUtamaId)
+                        ->whereIn('pa.status', ['approved', 'posted'])
+                        ->where('pad.harga_satuan', '>', 0)
+                        ->orderBy('pa.tanggal', 'desc')
+                        ->select('pad.harga_satuan')
+                        ->first();
+                    if ($paDetail && (float)$paDetail->harga_satuan > 0) {
+                        $refUnit = (float)$paDetail->harga_satuan;
                     }
 
-                    // Deteksi jika detail PBK tersimpan kuantitas dalam gram sebelum master barang diubah ke PCS (cth: 4000 GR @ Rp 32 = Rp 128.000 menjadi 160 PCS @ Rp 800)
-                    $barang = \App\Models\MasterBarang::find($bId);
-                    if ($barang && strtolower($barang->satuan) === 'pcs' && $totalHarga > 0 && $unitPrice > 0) {
+                    if ($refUnit <= 0) {
                         $fifoService = app(\App\Services\FifoService::class);
                         $refUnit = $fifoService->getHargaTerakhirBahan($bId, $gudangUtamaId);
-                        if ($refUnit <= 0) {
-                            $refUnit = (float) ($barang->hpp_referensi ?: 0);
-                        }
-                        if ($refUnit > 0) {
-                            $ratio = $refUnit / $unitPrice;
-                            if (abs($ratio - 25) < 1.0) {
-                                $realQty = round($qty / 25, 2);
-                                $detail->update([
-                                    'qty'          => $realQty,
-                                    'satuan'       => 'pcs',
-                                    'harga_satuan' => $refUnit,
-                                    'total_harga'  => $totalHarga,
-                                    'hpp_total'    => $totalHarga,
-                                ]);
-                                $qty = $realQty;
-                                $unitPrice = $refUnit;
+                    }
+                    if ($refUnit <= 0 || abs($refUnit - 233) <= 1 || abs($refUnit - 25888.89) <= 1) {
+                        $refUnit = (float) ($barang->hpp_referensi ?: 0);
+                    }
 
-                                \App\Models\StokGudangBatch::where('barang_id', $bId)
-                                    ->where('gudang_id', $gudangUtamaId)
-                                    ->where('batch_number', 'like', 'SA-%')
-                                    ->where('qty_keluar', '>=', 4000)
-                                    ->each(function($b) use ($realQty) {
-                                        $newKeluar = min((float)$b->qty_masuk, $realQty);
-                                        $newSisa = max(0, (float)$b->qty_masuk - $newKeluar);
-                                        $b->update([
-                                            'qty_keluar' => $newKeluar,
-                                            'qty_sisa'   => $newSisa,
-                                            'is_habis'   => ($newSisa <= 0),
-                                        ]);
-                                    });
-                            }
+                    $qty = (float) $detail->qty;
+                    $totalHarga = (float) ($detail->total_harga ?: ($detail->hpp_total ?: ($qty * (float) $detail->harga_satuan)));
+                    $unitPrice = $qty > 0 ? ($totalHarga / $qty) : 0;
+                    $curPrice = (float) ($detail->harga_satuan ?: $unitPrice);
+
+                    // A. Deteksi jika harga satuan transaksi terdistorsi oleh harga dummy corrupt (~233)
+                    if ($unitPrice > 0 && (abs($unitPrice - 233) <= 1 || abs($unitPrice - 25888.89) <= 1) && $refUnit > 0) {
+                        $totalHarga = round($qty * $refUnit, 2);
+                        $detail->update([
+                            'harga_satuan' => $refUnit,
+                            'total_harga'  => $totalHarga,
+                            'hpp_total'    => $totalHarga,
+                        ]);
+                        $unitPrice = $refUnit;
+                    }
+
+                    // B. Deteksi jika satuan master adalah PCS, tetapi detail PBK tersimpan kuantitas dalam gram
+                    //    atau harga satuan PBK masih tertinggal harga gram lama (cth: Rp 32 vs Rp 800)
+                    $priceRatio = $curPrice > 0 ? ($refUnit / $curPrice) : 0;
+                    $isGramToPcsMismatch = ($satuanMaster === 'pcs' && $refUnit > 0 && $curPrice > 0 && (
+                        abs($priceRatio - 25) < 2.0 || 
+                        ($curPrice < ($refUnit * 0.25) && $curPrice > 0)
+                    ));
+
+                    if ($isGramToPcsMismatch) {
+                        // Jika qty >= 1000, berarti kuantitas masih dalam gram (cth: 4000 GR -> 160 PCS)
+                        if ($qty >= 1000) {
+                            $realQty = round($qty / 25, 2);
+                        } else {
+                            // Qty sudah dalam pcs (cth: 160 PCS), pertahankan qty dan cukup update harga!
+                            $realQty = $qty;
                         }
+                        $realUnitPrice = $refUnit; // Rp 800
+                        $realTotal = round($realQty * $refUnit, 2); // 160 * 800 = 128.000
+
+                        $detail->update([
+                            'qty'          => $realQty,
+                            'satuan'       => 'pcs',
+                            'harga_satuan' => $realUnitPrice,
+                            'total_harga'  => $realTotal,
+                            'hpp_total'    => $realTotal,
+                        ]);
+
+                        $qty = $realQty;
+                        $totalHarga = $realTotal;
+                        $unitPrice = $realUnitPrice;
+
+                        // Perbaiki batch di Gudang Utama:
+                        // Tutup batch lama September (sebelum cut-off) agar tidak digunakan oleh transaksi Oktober
+                        \App\Models\StokGudangBatch::where('barang_id', $bId)
+                            ->where('gudang_id', $gudangUtamaId)
+                            ->where('batch_number', 'like', 'SA-202609%')
+                            ->update([
+                                'qty_keluar' => 0,
+                                'qty_sisa'   => 0,
+                                'is_habis'   => 1,
+                            ]);
+
+                        // Perbarui batch Oktober agar menampung mutasi keluar yang valid
+                        \App\Models\StokGudangBatch::where('barang_id', $bId)
+                            ->where('gudang_id', $gudangUtamaId)
+                            ->where('batch_number', 'like', 'SA-202610%')
+                            ->each(function($b) use ($realQty) {
+                                $newKeluar = min((float)$b->qty_masuk, $realQty);
+                                $newSisa = max(0, (float)$b->qty_masuk - $newKeluar);
+                                $b->update([
+                                    'qty_keluar' => $newKeluar,
+                                    'qty_sisa'   => $newSisa,
+                                    'is_habis'   => ($newSisa <= 0),
+                                ]);
+                            });
+
+                        // Perbaiki batch mutasi di gudang tujuan
+                        if ($pbk->gudang_id) {
+                            \App\Models\StokGudangBatch::where('barang_id', $bId)
+                                ->where('gudang_id', $pbk->gudang_id)
+                                ->where('batch_number', 'like', '%-MUT%')
+                                ->where('batch_number', 'like', 'SA-202609%')
+                                ->update([
+                                    'qty_sisa' => 0,
+                                    'is_habis' => 1,
+                                ]);
+
+                            \App\Models\StokGudangBatch::where('barang_id', $bId)
+                                ->where('gudang_id', $pbk->gudang_id)
+                                ->where('batch_number', 'like', 'SA-202610%-MUT')
+                                ->each(function($b) use ($realQty, $realUnitPrice) {
+                                    $b->update([
+                                        'qty_masuk'     => $realQty,
+                                        'qty_sisa'      => max(0, $realQty - (float)$b->qty_keluar),
+                                        'harga_per_qty' => $realUnitPrice,
+                                    ]);
+                                });
+                        }
+                    } elseif ($refUnit > 0 && ($unitPrice <= 0 || $totalHarga <= 0)) {
+                        $totalHarga = round($qty * $refUnit, 2);
+                        $detail->update([
+                            'harga_satuan' => $refUnit,
+                            'total_harga'  => $totalHarga,
+                            'hpp_total'    => $totalHarga,
+                        ]);
+                        $unitPrice = $refUnit;
                     }
 
                     $tanggal = $pbk->tanggal ?? $pbk->created_at ?? now();
@@ -1252,6 +1329,37 @@ class StokGudangController extends Controller
                             }
                         }
                     }
+                }
+            }
+
+            // Pastikan batch persediaan awal aktif di Gudang Utama mencerminkan mutasi keluar PBK disetujui
+            if ($barangId) {
+                $targetBarangIds = [$barangId];
+            } else {
+                $targetBarangIds = $approvedPbks->pluck('details')->flatten()->pluck('barang_id')->unique()->toArray();
+            }
+
+            foreach ($targetBarangIds as $tBId) {
+                $tPbkKeluar = (float) \App\Models\TransaksiStok::where('barang_id', $tBId)
+                    ->where('gudang_asal_id', $gudangUtamaId)
+                    ->where('source_type', 'pengeluaran_bahan_baku')
+                    ->where('tipe', 'keluar')
+                    ->where('tanggal', '>=', '2026-10-01 00:00:00')
+                    ->sum('qty');
+
+                if ($tPbkKeluar > 0) {
+                    \App\Models\StokGudangBatch::where('barang_id', $tBId)
+                        ->where('gudang_id', $gudangUtamaId)
+                        ->where('batch_number', 'like', 'SA-202610%')
+                        ->each(function($b) use ($tPbkKeluar) {
+                            $newKeluar = min((float)$b->qty_masuk, $tPbkKeluar);
+                            $newSisa = max(0, (float)$b->qty_masuk - $newKeluar);
+                            $b->update([
+                                'qty_keluar' => $newKeluar,
+                                'qty_sisa'   => $newSisa,
+                                'is_habis'   => ($newSisa <= 0),
+                            ]);
+                        });
                 }
             }
         } catch (\Exception $e) {
