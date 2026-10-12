@@ -360,17 +360,28 @@ class FifoService
         $masterSatBeli = strtolower(trim($master->satuan_pembelian ?? ''));
         $masterKonv = (float)($master->konversi_pembelian ?? 1);
         $masterHppRef = (float)($master->hpp_referensi ?? 0);
+        $masterNama = strtolower($master->nama ?? '');
         $expectedMinPrice = 0.0;
-        if ($masterKonv > 1 && $masterHppRef > 0) {
+        if ($masterHppRef > 0) {
             $expectedMinPrice = $masterHppRef * 0.1;
         }
 
-        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv, $masterHppRef, $satDasar) {
+        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv, $masterHppRef, $satDasar, $masterNama) {
             $p = floatval($rawPrice);
             if ($p <= 0) return false;
             // Cegah harga rogue dummy yang sering mengontaminasi sistem
             if (abs($p - 233) <= 1 || abs($p - 25888.89) <= 1) {
                 return false;
+            }
+            // Cegah harga batch yang terlalu rendah (< 10% dari HPP referensi)
+            if ($expectedMinPrice > 0 && $p < $expectedMinPrice) {
+                return false;
+            }
+            // Cegah harga pecahan rupiah yang tidak masuk akal (< Rp 1/GR atau Rp 1/ML) untuk daging, protein, atau bahan ber-HPP
+            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $p < 1.0) {
+                if ($masterHppRef >= 5 || str_contains($masterNama, 'shortplate') || str_contains($masterNama, 'daging') || str_contains($masterNama, 'beef') || str_contains($masterNama, 'ayam') || str_contains($masterNama, 'dory')) {
+                    return false;
+                }
             }
             // Jika satuan dasar adalah GR / ML dan harga per GR/ML di atas Rp 1.000 (kecuali HPP referensi memang mahal)
             if (in_array($satDasar, ['gr', 'ml', 'gram'])) {
@@ -490,7 +501,12 @@ class FifoService
 
             // Deteksi apakah pQty dinyatakan dalam satuan pembelian (misal LOAFT, PAPAN, PCS) atau satuan dasar (misal GR)
             $isSatuanBeli = false;
-            if (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
+            if ($effectiveKonv > 1 && $pQty >= $effectiveKonv && $pHarga > 0 && ($pHarga / $pQty) >= 10.0 && ($pHarga / ($pQty * $effectiveKonv)) < 1.0) {
+                // Heuristik: Qty besar (misal 31.520) di mana total/qty sudah wajar sebagai harga dasar (Rp 128/gr),
+                // tetapi jika dikalikan konversi (5000) harganya anjlok tidak masuk akal (< Rp 1/gr).
+                // Maka pQty sudah merupakan satuan dasar (GR), BUKAN satuan pembelian!
+                $isSatuanBeli = false;
+            } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
                 $isSatuanBeli = true;
             } elseif (!empty($masterSatBeli) && !empty($satDasar) && $masterSatBeli !== $satDasar && $satBeli === $masterSatBeli) {
                 $isSatuanBeli = true;

@@ -262,7 +262,9 @@ class PersediaanAwalController extends Controller
         $hargaUtamaMap = $this->getHargaGudangUtamaMap();
 
         $query = MasterBarang::with('kategori')
-            ->where('is_active', true);
+            ->where('is_active', true)
+            ->where('is_barang_jadi', false)
+            ->where('is_operational', false);
 
         if ($kategoriId) {
             $query->where('kategori_id', $kategoriId);
@@ -278,7 +280,7 @@ class PersediaanAwalController extends Controller
         // Filter barang sesuai gudang & tagging divisi
         if ($gudangId) {
             if ($isGudangUtama) {
-                // Khusus Gudang Utama: Reload SEMUA bahan baku tanpa filter tagging
+                // Khusus Gudang Utama: Reload SEMUA barang dengan jenis BAHAN BAKU tanpa kecuali (tanpa filter tagging, baik ada stok maupun stok 0)
                 $query->where('is_bahan_baku', true);
             } else {
                 // HANYA memuat barang dengan jenis bahan baku dan bahan setengah jadi

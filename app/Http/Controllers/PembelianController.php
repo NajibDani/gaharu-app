@@ -518,6 +518,11 @@ class PembelianController extends Controller
                     ]);
                 }
 
+                // Proteksi jika user memasukkan qty dalam satuan dasar (misal 31.520 GR) bukan satuan beli (LOAFT)
+                if ($konversi > 1 && $qtyBaruInput >= $konversi && floatval($detail->harga_per_qty) >= 10.0 && (floatval($detail->harga_per_qty) / $konversi) < 1.0) {
+                    $konversi = 1.0;
+                }
+
                 $qtyMasukStok = $qtyBaruInput * $konversi;
                 $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
 
@@ -941,6 +946,9 @@ class PembelianController extends Controller
                     // Update stok_gudang_batch & stok_gudang jika batch sudah dibuat
                     $batch = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->first();
                     if ($batch) {
+                        if ($konversi > 1 && $qtyInput >= $konversi && floatval($hargaPerQty) >= 10.0 && (floatval($hargaPerQty) / $konversi) < 1.0) {
+                            $konversi = 1.0;
+                        }
                         $diffQtyKonv = $diffQty * $konversi;
                         if ($diffQty != 0) {
                             $batch->qty_masuk = max(0, (float)$batch->qty_masuk + $diffQtyKonv);
@@ -986,6 +994,9 @@ class PembelianController extends Controller
                     $detail->update(['batch_number' => $batchNo]);
 
                     if ($pembelian->is_diterima) {
+                        if ($konversi > 1 && $qtyInput >= $konversi && floatval($hargaPerQty) >= 10.0 && (floatval($hargaPerQty) / $konversi) < 1.0) {
+                            $konversi = 1.0;
+                        }
                         $qtyMasukStok = $qtyInput * $konversi;
                         $hargaPerQtyStok = $hargaPerQty / $konversi;
 

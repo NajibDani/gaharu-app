@@ -697,6 +697,23 @@ class LaporanCustomController extends Controller
 
             foreach ($prodTx as $pt) {
                 $pt->details = $pt->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
+                foreach ($pt->details as $d) {
+                    $qtyD = floatval($d->qty ?? ($d->jumlah ?? 0));
+                    $unitPriceD = $qtyD > 0 ? (floatval($d->hpp_total) / $qtyD) : 0;
+                    if ($qtyD > 0 && ($hppRecalculated || !$d->hpp_total || $unitPriceD < 1.0)) {
+                        $pId = $d->produk_id ?? ($d->barang_id ?? null);
+                        if ($pId) {
+                            $harga = $fifoService->getHppResepBsj($pId);
+                            if ($harga <= 0) {
+                                $pObj = $d->produk ?? $d->barang;
+                                $harga = (float)($pObj->hpp_referensi ?? 0);
+                            }
+                            if ($harga > 0) {
+                                $d->hpp_total = $qtyD * $harga;
+                            }
+                        }
+                    }
+                }
                 $transactions->push($pt);
             }
         }

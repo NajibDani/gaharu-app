@@ -59,6 +59,7 @@
                             <option value="">-- Semua Status --</option>
                             <option value="draft" {{ request('status') === 'draft' ? 'selected' : '' }}>Draft (Belum Approved)</option>
                             <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approved (Disetujui)</option>
+                            <option value="wasted" {{ request('status') === 'wasted' ? 'selected' : '' }}>Wasted / Busuk</option>
                         </select>
                     </div>
                     <div class="col-lg-2 col-md-4">
@@ -171,11 +172,11 @@
     </div>
 
     <!-- STATISTIK -->
-    <div class="row mb-4">
+    <div class="row g-3 mb-4">
 
-        <div class="col-md-4">
+        <div class="col-lg-3 col-md-6">
 
-            <div class="card shadow-sm">
+            <div class="card shadow-sm h-100">
 
                 <div class="card-body">
 
@@ -191,9 +192,9 @@
 
         </div>
 
-        <div class="col-md-4">
+        <div class="col-lg-3 col-md-6">
 
-            <div class="card shadow-sm">
+            <div class="card shadow-sm h-100">
 
                 <div class="card-body">
 
@@ -209,9 +210,9 @@
 
         </div>
 
-        <div class="col-md-4">
+        <div class="col-lg-3 col-md-6">
 
-            <div class="card shadow-sm">
+            <div class="card shadow-sm h-100">
 
                 <div class="card-body">
 
@@ -220,6 +221,28 @@
                     <h2 class="fw-bold text-success">
                         {{ $approvedCount ?? 0 }}
                     </h2>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+
+            <div class="card shadow-sm h-100">
+
+                <div class="card-body">
+
+                    <h6>Total Wasted / Busuk</h6>
+
+                    <h2 class="fw-bold text-danger mb-1" style="font-size: 1.5rem; word-break: break-word;">
+                        Rp {{ number_format($wastedNominal ?? 0, 0, ',', '.') }}
+                    </h2>
+
+                    <div class="small text-muted">
+                        {{ number_format($wastedCount ?? 0, 0, ',', '.') }} Dokumen ({{ number_format($wastedTotalQty ?? 0, 0, ',', '.') }} Qty)
+                    </div>
 
                 </div>
 
@@ -316,6 +339,11 @@
                                 <div>{{ $item->kode_pengeluaran }}</div>
                                 @if(($item->jenis_pengeluaran ?? '') === 'wasted' || str_starts_with($item->kode_pengeluaran, 'PBK-WST-'))
                                     <span class="badge bg-danger" style="font-size:0.7rem;"><i class="bi bi-trash3 me-1"></i>Wasted / Busuk</span>
+                                    @if(isset($item->total_nominal) && $item->total_nominal > 0)
+                                        <div class="text-danger small fw-bold mt-1" title="Estimasi Total Nilai Wasted">
+                                            Rp {{ number_format($item->total_nominal, 0, ',', '.') }}
+                                        </div>
+                                    @endif
                                 @elseif(str_starts_with($item->kode_pengeluaran, 'PBK-SO-'))
                                     <span class="badge bg-secondary" style="font-size:0.7rem;"><i class="bi bi-clipboard-check me-1"></i>Stock Opname</span>
                                 @else

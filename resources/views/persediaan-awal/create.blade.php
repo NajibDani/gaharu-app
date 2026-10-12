@@ -85,8 +85,11 @@
                 <!-- SECTION 2: TOOLBAR MUAT BARANG MASTER -->
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <button type="button" class="btn btn-sm text-white rounded-2 px-3" id="btnLoadAllBarang" style="background-color: #d88656; border: none;">
+                        <button type="button" class="btn btn-sm text-white rounded-2 px-3" id="btnLoadAllBarang" style="background-color: #d88656; border: none;" title="Muat ulang seluruh daftar barang master">
                             <i class="bi bi-cloud-arrow-down-fill me-1"></i> Muat Semua Barang Master
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary rounded-2 px-3" id="btnRefreshStokPA" onclick="refreshStokSaatIniPA()" title="Sinkronkan angka stok saat ini tanpa mereset input qty Anda">
+                            <i class="bi bi-arrow-repeat me-1"></i> Refresh Stock Saat Ini
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-secondary rounded-2 px-3" id="btnResetQty">
                             <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Nilai Qty
@@ -311,6 +314,67 @@
         }
 
         btnLoadAllBarang.addEventListener('click', loadMasterBarang);
+
+        function refreshStokSaatIniPA() {
+            const gudangId = gudangSelect.value;
+            const divisiId = divisiSelect.value;
+
+            const btn = document.getElementById('btnRefreshStokPA');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Menyinkronkan...';
+            }
+
+            fetch("{{ route('persediaan-awal.load-barang') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    gudang_id: gudangId,
+                    divisi_id: divisiId
+                })
+            })
+            .then(res => res.json())
+            .then(response => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh Stock Saat Ini';
+                }
+
+                if (response.status === 'success' && response.data) {
+                    const freshMap = {};
+                    response.data.forEach(it => { freshMap[it.id] = it; });
+
+                    // Update stok saat ini pada tabel tanpa mereset input qty
+                    document.querySelectorAll('#tbodyBarang tr[data-id]').forEach(tr => {
+                        const bId = tr.getAttribute('data-id');
+                        if (freshMap[bId]) {
+                            const newStok = freshMap[bId].stok_sekarang || 0;
+                            const stokBadge = tr.querySelector('td:nth-child(6) .badge');
+                            if (stokBadge) {
+                                const satuanStok = tr.getAttribute('data-satuan-stok') || 'pcs';
+                                stokBadge.textContent = `${Number(newStok).toLocaleString('id-ID')} ${satuanStok}`;
+                            }
+                        }
+                    });
+
+                    if (typeof window.showToast === 'function') {
+                        window.showToast('success', 'Stok saat ini berhasil diperbarui.');
+                    } else {
+                        alert('Stok saat ini berhasil diperbarui.');
+                    }
+                }
+            })
+            .catch(err => {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh Stock Saat Ini';
+                }
+                alert('Gagal memperbarui stok: ' + err.message);
+            });
+        }
 
         // 3. Render Tabel Barang
         function renderTable(items) {

@@ -151,12 +151,22 @@ class StockOpnameController extends Controller
             })
             ->where('master_barang.is_active', true)
             ->where('master_barang.is_barang_jadi', 0)
-            ->where('master_barang.is_operational', 0)
-            ->where(function ($q) {
+            ->where('master_barang.is_operational', 0);
+
+        $gudang = MasterGudang::find($gudangId);
+        $isGudangUtama = $gudang ? (strtolower($gudang->kategori) === 'utama' || $gudang->id == 2) : false;
+
+        if ($isGudangUtama) {
+            // HANYA Gudang Utama yang memuat SEMUA barang dengan jenis BAHAN BAKU tanpa kecuali (baik ada stok maupun tidak)
+            $barang->where('master_barang.is_bahan_baku', 1);
+        } else {
+            // Untuk divisi/gudang lain: memuat barang jenis Bahan Baku & BSJ sesuai tagging divisinya
+            $barang->where(function ($q) {
                 $q->where('master_barang.is_bahan_baku', 1)
                   ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
-            })
-            ->where(function($q) use ($gudangId, $divisiId, $opnameId) {
+            });
+
+            $barang->where(function($q) use ($gudangId, $divisiId, $opnameId) {
                 if ($divisiId) {
                     // Ketika SO dilakukan per divisi:
                     // Bahan Baku & Bahan Setengah Jadi HANYA muncul jika tagging divisinya aktif (ON) untuk divisi tersebut
@@ -171,14 +181,14 @@ class StockOpnameController extends Controller
                         }
                     });
                 } else {
-                    // Jika SO gudang umum / tanpa divisi (misal Gudang Utama):
-                    // Semua Bahan Baku & Bahan Setengah Jadi muncul kecuali yang dinonaktifkan eksplisit untuk gudang tersebut
-                    $q->whereNotExists(function($notExistsQuery) use ($gudangId) {
-                        $notExistsQuery->select(DB::raw(1))
+                    // Jika SO gudang umum selain Gudang Utama tanpa divisi:
+                    // Muncul jika ditagging aktif untuk gudang tersebut
+                    $q->whereExists(function($existsQuery) use ($gudangId) {
+                        $existsQuery->select(DB::raw(1))
                             ->from('barang_minimum_stock')
                             ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
                             ->where('barang_minimum_stock.gudang_id', $gudangId)
-                            ->where('barang_minimum_stock.is_active', false)
+                            ->where('barang_minimum_stock.is_active', true)
                             ->whereNull('barang_minimum_stock.divisi_id');
                     });
                 }
@@ -192,8 +202,10 @@ class StockOpnameController extends Controller
                             ->where('stock_opname_detail.stock_opname_id', $opnameId);
                     });
                 }
-            })
-            ->select(
+            });
+        }
+
+        $barang = $barang->select(
                 'master_barang.id',
                 'master_barang.kode_barang',
                 'master_barang.nama',
@@ -220,11 +232,21 @@ class StockOpnameController extends Controller
         $barangIds = $barang->pluck('id')->toArray();
 
         $tanggal = $request->tanggal;
-        if ($tanggal && $tanggal !== date('Y-m-d') && !empty($barangIds)) {
-            $cutoff = $tanggal . ' 23:59:59';
-            $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($barangIds, $gudangId, $divisiId, $cutoff);
-            foreach ($barang as $item) {
-                $item->stok = max(0, (float)($bulkStok[$item->id] ?? 0));
+        if (!$tanggal && $opnameId) {
+            $opnameObj = StockOpname::find($opnameId);
+            if ($opnameObj && $opnameObj->tanggal) {
+                $tanggal = $opnameObj->tanggal;
+            }
+        }
+
+        if ($tanggal && !empty($barangIds)) {
+            $tglOnly = date('Y-m-d', strtotime($tanggal));
+            if ($tglOnly < date('Y-m-d')) {
+                $cutoff = $tglOnly . ' 23:59:59';
+                $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($barangIds, $gudangId, $divisiId, $cutoff);
+                foreach ($barang as $item) {
+                    $item->stok = (float)($bulkStok[$item->id] ?? 0);
+                }
             }
         }
 
@@ -590,12 +612,21 @@ class StockOpnameController extends Controller
                 })
                 ->where('master_barang.is_active', true)
                 ->where('master_barang.is_barang_jadi', 0)
-                ->where('master_barang.is_operational', 0)
-                ->where(function ($q) {
+                ->where('master_barang.is_operational', 0);
+
+            $gudang = MasterGudang::find($gudangId);
+            $isGudangUtama = $gudang ? (strtolower($gudang->kategori) === 'utama' || $gudang->id == 2) : false;
+
+            if ($isGudangUtama) {
+                // HANYA Gudang Utama yang memuat SEMUA barang dengan jenis BAHAN BAKU tanpa kecuali
+                $barangList->where('master_barang.is_bahan_baku', 1);
+            } else {
+                $barangList->where(function ($q) {
                     $q->where('master_barang.is_bahan_baku', 1)
                       ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
-                })
-                ->where(function($q) use ($gudangId, $divisiId, $opname) {
+                });
+
+                $barangList->where(function($q) use ($gudangId, $divisiId, $opname) {
                     if ($divisiId) {
                         $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
                             $existsQuery->select(DB::raw(1))
@@ -608,12 +639,12 @@ class StockOpnameController extends Controller
                             }
                         });
                     } else {
-                        $q->whereNotExists(function($notExistsQuery) use ($gudangId) {
-                            $notExistsQuery->select(DB::raw(1))
+                        $q->whereExists(function($existsQuery) use ($gudangId) {
+                            $existsQuery->select(DB::raw(1))
                                 ->from('barang_minimum_stock')
                                 ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
                                 ->where('barang_minimum_stock.gudang_id', $gudangId)
-                                ->where('barang_minimum_stock.is_active', false)
+                                ->where('barang_minimum_stock.is_active', true)
                                 ->whereNull('barang_minimum_stock.divisi_id');
                         });
                     }
@@ -626,8 +657,10 @@ class StockOpnameController extends Controller
                                 ->where('stock_opname_detail.stock_opname_id', $opname->id);
                         });
                     }
-                })
-                ->select(
+                });
+            }
+
+            $barangList = $barangList->select(
                     'master_barang.id',
                     DB::raw('COALESCE(stok_gudang.jumlah, 0) as stok')
                 )
@@ -650,7 +683,7 @@ class StockOpnameController extends Controller
             }
             if ($bulkStokCutoff !== null) {
                 foreach ($barangList as $item) {
-                    $item->stok = max(0, (float) ($bulkStokCutoff[$item->id] ?? 0));
+                    $item->stok = (float) ($bulkStokCutoff[$item->id] ?? 0);
                 }
             }
 
@@ -663,23 +696,16 @@ class StockOpnameController extends Controller
 
                 if ($existingDetails->has($item->id)) {
                     $detail = $existingDetails->get($item->id);
+                    // PENTING: Stok fisik yang sudah diisi TIDAK diubah sama sekali.
+                    // Hanya perbarui stok sistem dan hitung ulang selisih serta nilai selisih.
                     $stokFisik = (float) $detail->stok_fisik;
-
-                    // Jika sebelumnya item ini tidak memiliki selisih (stok_fisik == stok_sistem),
-                    // maka pertahankan kondisi imbang dengan mengikuti stok sistem baru.
-                    if (abs((float)$detail->stok_fisik - (float)$detail->stok_sistem) < 0.0001) {
-                        $stokFisik = $stokSistemBaru;
-                        $selisihBaru = 0;
-                        $nilaiSelisihBaru = 0;
-                    } else {
-                        $selisihBaru = $stokFisik - $stokSistemBaru;
-                        $nilaiSelisihBaru = $this->hitungNilaiOpname(
-                            $gudangId,
-                            $item->id,
-                            $selisihBaru,
-                            $divisiId
-                        );
-                    }
+                    $selisihBaru = $stokFisik - $stokSistemBaru;
+                    $nilaiSelisihBaru = $this->hitungNilaiOpname(
+                        $gudangId,
+                        $item->id,
+                        $selisihBaru,
+                        $divisiId
+                    );
 
                     $detail->update([
                         'stok_sistem'   => $stokSistemBaru,
@@ -1883,38 +1909,46 @@ class StockOpnameController extends Controller
         // Load items using same query as loadBarang logic
         $query = \App\Models\MasterBarang::with('kategori')->where('is_active', true);
 
-        // Filter HANYA bahan baku & bahan setengah jadi
+        // Filter HANYA bahan baku / BSJ
         $query->where('is_barang_jadi', false)
-              ->where('is_operational', false)
-              ->where(function ($q) {
-                  $q->where('is_bahan_baku', true)
-                    ->orWhere('is_bahan_setengah_jadi', true);
-              });
+              ->where('is_operational', false);
 
-        // Filter sesuai alokasi/tagging divisi & gudang
-        $query->where(function ($q) use ($gudangId, $divisiId) {
-            if ($divisiId) {
-                $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
-                    $existsQuery->select(DB::raw(1))
-                        ->from('barang_minimum_stock')
-                        ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
-                        ->where('barang_minimum_stock.divisi_id', $divisiId)
-                        ->where('barang_minimum_stock.is_active', true);
-                    if ($gudangId) {
-                        $existsQuery->where('barang_minimum_stock.gudang_id', $gudangId);
-                    }
-                });
-            } else {
-                $q->whereNotExists(function ($notExistsQuery) use ($gudangId) {
-                    $notExistsQuery->select(DB::raw(1))
-                        ->from('barang_minimum_stock')
-                        ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
-                        ->where('barang_minimum_stock.gudang_id', $gudangId)
-                        ->where('barang_minimum_stock.is_active', false)
-                        ->whereNull('barang_minimum_stock.divisi_id');
-                });
-            }
-        });
+        $isGudangUtama = $gudang ? (strtolower($gudang->kategori) === 'utama' || $gudang->id == 2) : false;
+
+        if ($isGudangUtama) {
+            // HANYA Gudang Utama yang memuat SEMUA barang dengan jenis BAHAN BAKU tanpa kecuali
+            $query->where('is_bahan_baku', true);
+        } else {
+            $query->where(function ($q) {
+                $q->where('is_bahan_baku', true)
+                  ->orWhere('is_bahan_setengah_jadi', true);
+            });
+
+            // Filter sesuai alokasi/tagging divisi & gudang
+            $query->where(function ($q) use ($gudangId, $divisiId) {
+                if ($divisiId) {
+                    $q->whereExists(function($existsQuery) use ($gudangId, $divisiId) {
+                        $existsQuery->select(DB::raw(1))
+                            ->from('barang_minimum_stock')
+                            ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                            ->where('barang_minimum_stock.divisi_id', $divisiId)
+                            ->where('barang_minimum_stock.is_active', true);
+                        if ($gudangId) {
+                            $existsQuery->where('barang_minimum_stock.gudang_id', $gudangId);
+                        }
+                    });
+                } else {
+                    $q->whereExists(function ($existsQuery) use ($gudangId) {
+                        $existsQuery->select(DB::raw(1))
+                            ->from('barang_minimum_stock')
+                            ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                            ->where('barang_minimum_stock.gudang_id', $gudangId)
+                            ->where('barang_minimum_stock.is_active', true)
+                            ->whereNull('barang_minimum_stock.divisi_id');
+                    });
+                }
+            });
+        }
 
         $barangs = $query->orderBy('kode_barang', 'asc')->get();
 

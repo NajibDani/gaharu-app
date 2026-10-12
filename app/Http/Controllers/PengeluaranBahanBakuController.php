@@ -97,6 +97,11 @@ class PengeluaranBahanBakuController extends Controller
             $query->where('pengeluaran_bahan_baku.status', 'draft');
         } elseif ($statusFilter === 'approved' || $statusFilter === 'disetujui') {
             $query->whereIn('pengeluaran_bahan_baku.status', ['approved', 'disetujui']);
+        } elseif ($statusFilter === 'wasted') {
+            $query->where(function($q) {
+                $q->where('pengeluaran_bahan_baku.jenis_pengeluaran', 'wasted')
+                  ->orWhere('pengeluaran_bahan_baku.kode_pengeluaran', 'like', 'PBK-WST-%');
+            });
         }
         if ($dari) {
             $query->whereDate('pengeluaran_bahan_baku.tanggal', '>=', $dari);
@@ -132,12 +137,61 @@ class PengeluaranBahanBakuController extends Controller
         $stats = (clone $countQuery)->selectRaw("
             COUNT(*) as total_count,
             COUNT(CASE WHEN pengeluaran_bahan_baku.status = 'draft' THEN 1 END) as draft_count,
-            COUNT(CASE WHEN pengeluaran_bahan_baku.status IN ('approved', 'disetujui') THEN 1 END) as approved_count
+            COUNT(CASE WHEN pengeluaran_bahan_baku.status IN ('approved', 'disetujui') THEN 1 END) as approved_count,
+            COUNT(CASE WHEN pengeluaran_bahan_baku.jenis_pengeluaran = 'wasted' OR pengeluaran_bahan_baku.kode_pengeluaran LIKE 'PBK-WST-%' THEN 1 END) as wasted_count
         ")->first();
 
-        $totalCount = $stats->total_count ?? 0;
         $draftCount = $stats->draft_count ?? 0;
         $approvedCount = $stats->approved_count ?? 0;
+        $wastedCount = $stats->wasted_count ?? 0;
+
+        // Akumulasi statistik nominal rupiah wasted sesuai filter
+        $wastedQuery = DB::table('pengeluaran_bahan_baku')
+            ->join('pengeluaran_bahan_baku_detail', 'pengeluaran_bahan_baku.id', '=', 'pengeluaran_bahan_baku_detail.pengeluaran_id')
+            ->leftJoin('master_barang', 'pengeluaran_bahan_baku_detail.barang_id', '=', 'master_barang.id')
+            ->where(function($q) {
+                $q->where('pengeluaran_bahan_baku.jenis_pengeluaran', 'wasted')
+                  ->orWhere('pengeluaran_bahan_baku.kode_pengeluaran', 'like', 'PBK-WST-%');
+            });
+
+        if ($search) {
+            $wastedQuery->where(function($q) use ($search) {
+                $q->where('pengeluaran_bahan_baku.kode_pengeluaran', 'like', '%' . $search . '%')
+                  ->orWhere('pengeluaran_bahan_baku.keterangan', 'like', '%' . $search . '%');
+            });
+        }
+        if ($gudangId) {
+            $wastedQuery->where('pengeluaran_bahan_baku.gudang_id', $gudangId);
+        }
+        if ($divisiId) {
+            $wastedQuery->where('pengeluaran_bahan_baku.divisi_id', $divisiId);
+        }
+        if ($dari) {
+            $wastedQuery->whereDate('pengeluaran_bahan_baku.tanggal', '>=', $dari);
+        }
+        if ($sampai) {
+            $wastedQuery->whereDate('pengeluaran_bahan_baku.tanggal', '<=', $sampai);
+        }
+        if ($statusFilter === 'draft' || $statusFilter === 'belum_approved') {
+            $wastedQuery->where('pengeluaran_bahan_baku.status', 'draft');
+        } elseif ($statusFilter === 'approved' || $statusFilter === 'disetujui') {
+            $wastedQuery->whereIn('pengeluaran_bahan_baku.status', ['approved', 'disetujui']);
+        }
+
+        $wastedStats = $wastedQuery->selectRaw('
+            COALESCE(SUM(COALESCE(
+                NULLIF(pengeluaran_bahan_baku_detail.hpp_total, 0),
+                NULLIF(pengeluaran_bahan_baku_detail.total_harga, 0),
+                pengeluaran_bahan_baku_detail.qty * COALESCE(master_barang.hpp_referensi, 0),
+                0
+            )), 0) as total_nominal,
+            COALESCE(SUM(pengeluaran_bahan_baku_detail.qty), 0) as total_qty,
+            COUNT(pengeluaran_bahan_baku_detail.id) as total_items
+        ')->first();
+
+        $wastedNominal = (float) ($wastedStats->total_nominal ?? 0);
+        $wastedTotalQty = (float) ($wastedStats->total_qty ?? 0);
+        $wastedTotalItems = (int) ($wastedStats->total_items ?? 0);
 
         if ($sort === 'terlama') {
             $query->orderBy('pengeluaran_bahan_baku.tanggal', 'asc')
@@ -148,6 +202,33 @@ class PengeluaranBahanBakuController extends Controller
         }
 
         $data = $query->paginate(10)->withQueryString();
+        $totalCount = $statusFilter ? $data->total() : ($stats->total_count ?? 0);
+
+        // Pre-fetch total nominal & qty untuk item pada halaman ini
+        $dataIds = collect($data->items())->pluck('id');
+        if ($dataIds->isNotEmpty()) {
+            $rowNominals = DB::table('pengeluaran_bahan_baku_detail')
+                ->leftJoin('master_barang', 'pengeluaran_bahan_baku_detail.barang_id', '=', 'master_barang.id')
+                ->whereIn('pengeluaran_bahan_baku_detail.pengeluaran_id', $dataIds)
+                ->groupBy('pengeluaran_bahan_baku_detail.pengeluaran_id')
+                ->selectRaw('
+                    pengeluaran_bahan_baku_detail.pengeluaran_id,
+                    SUM(COALESCE(
+                        NULLIF(pengeluaran_bahan_baku_detail.hpp_total, 0),
+                        NULLIF(pengeluaran_bahan_baku_detail.total_harga, 0),
+                        pengeluaran_bahan_baku_detail.qty * COALESCE(master_barang.hpp_referensi, 0),
+                        0
+                    )) as total_nominal,
+                    SUM(pengeluaran_bahan_baku_detail.qty) as total_qty
+                ')
+                ->get()
+                ->keyBy('pengeluaran_id');
+
+            foreach ($data->items() as $item) {
+                $item->total_nominal = (float) ($rowNominals[$item->id]->total_nominal ?? 0);
+                $item->total_qty = (float) ($rowNominals[$item->id]->total_qty ?? 0);
+            }
+        }
 
         $divisiList = \App\Models\GudangDivisi::with('gudang')->orderBy('nama', 'asc')->get();
 
@@ -228,7 +309,7 @@ class PengeluaranBahanBakuController extends Controller
 
         return view(
             'pengeluaran-bahan-baku.index',
-            compact('data', 'outletSuggestionsSummary', 'gudangList', 'divisiList', 'totalCount', 'draftCount', 'approvedCount', 'statusFilter')
+            compact('data', 'outletSuggestionsSummary', 'gudangList', 'divisiList', 'totalCount', 'draftCount', 'approvedCount', 'wastedCount', 'wastedNominal', 'wastedTotalQty', 'wastedTotalItems', 'statusFilter')
         );
     }
 

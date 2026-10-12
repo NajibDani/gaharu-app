@@ -1377,5 +1377,230 @@ public function resepBahanBakuAlternatif()
                     'subtotal' => 0.00,
                 ]);
         }
+
+        // 11. Normalisasi Master Data, Resep, HPP & Batch SHORTPLATE LOAFT (MENTAH) & SHORTPLATE SLICE 60GR
+        // A. Normalisasi Master Bahan Baku BBB554: SHORTPLATE LOAFT (MENTAH)
+        // Harga beli riil Rp 4.034.580 untuk 31.520 GR = Rp 128,00 / GR (Rp 128.000 / KG).
+        // Satuan diselaraskan ke GR (konversi 1.00) seperti komoditas daging mentah lainnya.
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB554')
+                  ->orWhere('nama', 'like', '%SHORTPLATE LOAFT%');
+            })
+            ->update([
+                'satuan'             => 'GR',
+                'satuan_pembelian'   => 'GR',
+                'konversi_pembelian' => 1.00,
+                'hpp_referensi'      => 128.00,
+            ]);
+
+        $shortplateMentah = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB554')
+                  ->orWhere('nama', 'like', '%SHORTPLATE LOAFT%');
+            })
+            ->first();
+
+        // B. Normalisasi Master Bahan Setengah Jadi BSJ044: SHORTPLATE SLICE 60GR
+        // HPP transfer produksi CK = Rp 128,00 x 1.30 = Rp 166,40 / GR (Rp 9.984 / porsi 60 GR).
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BSJ044')
+                  ->orWhere('nama', 'like', '%SHORTPLATE SLICE 60GR%')
+                  ->orWhere('nama', 'like', '%SHORTPLATE SLICE%');
+            })
+            ->update([
+                'satuan'                 => 'GR',
+                'satuan_pembelian'       => 'PACK',
+                'konversi_pembelian'     => 1.00,
+                'is_bahan_setengah_jadi' => 1,
+                'is_bahan_baku'          => 0,
+                'hpp_referensi'          => 166.40,
+            ]);
+
+        $shortplateSlice = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BSJ044')
+                  ->orWhere('nama', 'like', '%SHORTPLATE SLICE%');
+            })
+            ->first();
+
+        // C. Pastikan Resep BSJ SHORTPLATE SLICE 60GR terhubung dan valid (output 60 GR, bahan mentah 60 GR)
+        if ($shortplateSlice && $shortplateMentah) {
+            $resepBtkl = \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
+                ->where('produk_id', $shortplateSlice->id)
+                ->first();
+
+            if (!$resepBtkl && !empty($shortplateSlice->resep_id)) {
+                $resepBtkl = \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
+                    ->where('id', $shortplateSlice->resep_id)
+                    ->first();
+            }
+
+            if (!$resepBtkl) {
+                $resepId = \Illuminate\Support\Facades\DB::table('resep_btkl_bop')->insertGetId([
+                    'produk_id'      => $shortplateSlice->id,
+                    'output_qty'     => 60.00,
+                    'satuan_output'  => 'GR',
+                    'btkl_per_batch' => 0.00,
+                    'bop_per_batch'  => 0.00,
+                ]);
+            } else {
+                $resepId = $resepBtkl->id;
+                \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
+                    ->where('id', $resepId)
+                    ->update([
+                        'output_qty'    => 60.00,
+                        'satuan_output' => 'GR',
+                    ]);
+            }
+
+            \Illuminate\Support\Facades\DB::table('master_barang')
+                ->where('id', $shortplateSlice->id)
+                ->update(['resep_id' => $resepId]);
+
+            // Resep bahan: SHORTPLATE LOAFT (MENTAH) 60 GR
+            $hasResepBahan = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->where('resep_id', $resepId)
+                ->where('bahan_id', $shortplateMentah->id)
+                ->exists();
+
+            if (!$hasResepBahan) {
+                \Illuminate\Support\Facades\DB::table('resep_bahanbaku')->insert([
+                    'resep_id'   => $resepId,
+                    'bahan_id'   => $shortplateMentah->id,
+                    'qty_bahan'  => 60.00,
+                    'satuan'     => 'GR',
+                ]);
+            } else {
+                \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                    ->where('resep_id', $resepId)
+                    ->where('bahan_id', $shortplateMentah->id)
+                    ->update([
+                        'qty_bahan' => 60.00,
+                        'satuan'    => 'GR',
+                    ]);
+            }
+        }
+
+        // D. Perbaiki record pembelian_detail anomali untuk SHORTPLATE LOAFT (konversi 5000 dengan qty 31520)
+        if ($shortplateMentah) {
+            \Illuminate\Support\Facades\DB::table('pembelian_detail')
+                ->where('barang_id', $shortplateMentah->id)
+                ->where('konversi_pembelian', '>', 1)
+                ->update([
+                    'konversi_pembelian' => 1.00,
+                    'satuan_pembelian'   => 'GR',
+                    'harga_per_qty'      => 128.00,
+                ]);
+
+            // E. Normalisasi stok_gudang_batch yang terkorupsi (misal batch 157 juta gram @ Rp 0,03)
+            $corruptedBatches = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('barang_id', $shortplateMentah->id)
+                ->where(function($q) {
+                    $q->where('harga_per_qty', '<', 10.0)
+                      ->orWhere('qty_masuk', '>', 1000000);
+                })
+                ->get();
+
+            foreach ($corruptedBatches as $cb) {
+                $fixedQtyMasuk = $cb->qty_masuk > 1000000 ? round($cb->qty_masuk / 5000, 2) : $cb->qty_masuk;
+                $fixedQtySisa = $cb->qty_sisa > 1000000 ? round($cb->qty_sisa / 5000, 2) : min($fixedQtyMasuk, $cb->qty_sisa);
+
+                \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                    ->where('id', $cb->id)
+                    ->update([
+                        'qty_masuk'     => $fixedQtyMasuk,
+                        'qty_sisa'      => $fixedQtySisa,
+                        'harga_per_qty' => 128.00,
+                    ]);
+            }
+
+            // Normalisasi stok_gudang jika jumlahnya membengkak ratusan juta akibat konversi salah
+            \Illuminate\Support\Facades\DB::table('stok_gudang')
+                ->where('barang_id', $shortplateMentah->id)
+                ->where('jumlah', '>', 1000000)
+                ->update([
+                    'jumlah' => 31520.00,
+                ]);
+        }
+
+        // F. Normalisasi batch & detail transaksi untuk SHORTPLATE SLICE 60GR (BSJ044)
+        if ($shortplateSlice) {
+            \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('barang_id', $shortplateSlice->id)
+                ->where('harga_per_qty', '<', 10.0)
+                ->update([
+                    'harga_per_qty' => 166.40,
+                ]);
+
+            // Perbaiki produksi_detail yang hpp_total / qty < 1.0
+            $corruptedProdDetails = \Illuminate\Support\Facades\DB::table('produksi_detail')
+                ->where('produk_id', $shortplateSlice->id)
+                ->where(\Illuminate\Support\Facades\DB::raw('COALESCE(hpp_total, 0) / GREATEST(COALESCE(qty, 1), 1)'), '<', 1.0)
+                ->get();
+
+            foreach ($corruptedProdDetails as $cpd) {
+                $qVal = floatval($cpd->qty ?? 0);
+                \Illuminate\Support\Facades\DB::table('produksi_detail')
+                    ->where('id', $cpd->id)
+                    ->update([
+                        'hpp_total' => round($qVal * 166.40, 2),
+                    ]);
+            }
+
+            // Perbaiki pesanan_detail yang harga atau subtotal / qty < 1.0
+            $corruptedPesDetails = \Illuminate\Support\Facades\DB::table('pesanan_detail')
+                ->where('produk_id', $shortplateSlice->id)
+                ->where(function($q) {
+                    $q->where('harga', '<', 1.0)
+                      ->orWhere(\Illuminate\Support\Facades\DB::raw('COALESCE(subtotal, 0) / GREATEST(COALESCE(qty, 1), 1)'), '<', 1.0);
+                })
+                ->get();
+
+            foreach ($corruptedPesDetails as $cpd) {
+                $qVal = floatval($cpd->qty ?? 0);
+                \Illuminate\Support\Facades\DB::table('pesanan_detail')
+                    ->where('id', $cpd->id)
+                    ->update([
+                        'harga'     => 166.40,
+                        'subtotal'  => round($qVal * 166.40, 2),
+                    ]);
+            }
+
+            // Perbaiki alokasi_produksi_pesanan yang hpp_per_unit < 1.0
+            \Illuminate\Support\Facades\DB::table('alokasi_produksi_pesanan')
+                ->where('produk_id', $shortplateSlice->id)
+                ->where('hpp_per_unit', '<', 1.0)
+                ->update([
+                    'hpp_per_unit'      => 166.40,
+                    'total_hpp_alokasi' => \Illuminate\Support\Facades\DB::raw('qty_alokasi * 166.40'),
+                ]);
+        }
+
+        // 12. Rekonsiliasi NATA DE COCO 250 GR (BBB729)
+        // Saldo riil Gudang Utama: 10.000 (masuk PB202609080010) - 1 (wasted) - 249 (SO) - 1.000 (PBK-1791212375) = 8.750 GR (35 PACK).
+        $nataDeCoco = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where(function($q) {
+                $q->where('kode_barang', 'BBB729')
+                  ->orWhere('nama', 'like', '%NATA DE COCO 250 GR%');
+            })
+            ->first();
+
+        if ($nataDeCoco) {
+            \Illuminate\Support\Facades\DB::table('master_barang')
+                ->where('id', $nataDeCoco->id)
+                ->update([
+                    'satuan'             => 'GR',
+                    'satuan_pembelian'   => 'PACK',
+                    'konversi_pembelian' => 250.00,
+                    'hpp_referensi'      => 19.20,
+                ]);
+
+            $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
+            if ($gudangUtamaId) {
+                \App\Models\StokGudang::reconcileStockSummary($nataDeCoco->id, $gudangUtamaId);
+            }
+        }
     }
 }

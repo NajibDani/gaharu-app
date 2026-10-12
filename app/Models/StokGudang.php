@@ -40,8 +40,9 @@ class StokGudang extends Model
         $date = $date ?: date('Y-m-d');
         $cutoff = $date . ' 23:59:59';
 
-        // Cari tanggal persediaan awal disetujui terbaru untuk gudang/divisi ini pada atau sebelum tanggal cutoff
+        // Cari tanggal persediaan awal disetujui terbaru untuk barang ini pada gudang/divisi ini pada atau sebelum tanggal cutoff
         $saQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
             ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
             ->where('tanggal', '<=', $cutoff);
 
@@ -99,22 +100,6 @@ class StokGudang extends Model
         $date = $date ?: date('Y-m-d');
         $cutoff = strlen($date) <= 10 ? ($date . ' 23:59:59') : $date;
 
-        // Ambil baseline tanggal persediaan awal per gudang/divisi
-        $whSaQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
-            ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
-            ->where('tanggal', '<=', $cutoff);
-
-        if ($gudangId && $divisiId) {
-            $whSaQuery->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
-        } elseif ($gudangId) {
-            $whSaQuery->where('gudang_tujuan_id', $gudangId);
-        } elseif ($divisiId) {
-            $whSaQuery->where('divisi_tujuan_id', $divisiId);
-        }
-
-        $latestWhSa = $whSaQuery->max('tanggal');
-        $defaultMinTgl = $latestWhSa ? (date('Y-m-d', strtotime($latestWhSa)) . ' 00:00:00') : 'none';
-
         // Ambil baseline tanggal persediaan awal per barang jika ada yang lebih spesifik
         $saMapQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->whereIn('barang_id', $barangIds)
@@ -134,10 +119,10 @@ class StokGudang extends Model
             ->pluck('max_tanggal', 'barang_id')
             ->toArray();
 
-        // Kelompokkan barang_id berdasarkan minTanggal
+        // Kelompokkan barang_id berdasarkan minTanggal per barang (jika barang tidak punya SA, jangan gunakan tanggal SA barang lain)
         $groupedBarangs = [];
         foreach ($barangIds as $bId) {
-            $minTgl = isset($saMap[$bId]) ? (date('Y-m-d', strtotime($saMap[$bId])) . ' 00:00:00') : $defaultMinTgl;
+            $minTgl = isset($saMap[$bId]) ? (date('Y-m-d', strtotime($saMap[$bId])) . ' 00:00:00') : 'none';
             $groupedBarangs[$minTgl][] = $bId;
         }
 
@@ -197,6 +182,7 @@ class StokGudang extends Model
                 (SELECT DATE_FORMAT(MAX(sa.tanggal), '%Y-%m-%d 00:00:00')
                  FROM transaksi_stok sa
                  WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
+                   AND sa.barang_id = transaksi_stok.barang_id
                    AND sa.gudang_tujuan_id = transaksi_stok.gudang_tujuan_id
                    AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_tujuan_id, 0)),
                 '1970-01-01 00:00:00'
@@ -215,6 +201,7 @@ class StokGudang extends Model
                 (SELECT DATE_FORMAT(MAX(sa.tanggal), '%Y-%m-%d 00:00:00')
                  FROM transaksi_stok sa
                  WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
+                   AND sa.barang_id = transaksi_stok.barang_id
                    AND sa.gudang_tujuan_id = transaksi_stok.gudang_asal_id
                    AND COALESCE(sa.divisi_tujuan_id, 0) = COALESCE(transaksi_stok.divisi_asal_id, 0)),
                 '1970-01-01 00:00:00'

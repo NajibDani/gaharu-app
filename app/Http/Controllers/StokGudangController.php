@@ -311,8 +311,9 @@ class StokGudangController extends Controller
         $saQty = 0;
         $saNilai = 0;
 
-        // Cari tanggal persediaan awal disetujui terbaru untuk gudang/divisi ini (Cut-off Baseline Refresh Inventory)
+        // Cari tanggal persediaan awal disetujui terbaru untuk barang ini pada gudang/divisi ini (Cut-off Baseline Refresh Inventory)
         $saQuery = DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
             ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
             ->where('tanggal', '<=', $endDate . ' 23:59:59');
 

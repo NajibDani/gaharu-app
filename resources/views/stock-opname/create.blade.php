@@ -22,15 +22,21 @@
 
         </div>
 
-        <div class="d-flex align-items-center gap-2">
-            <button type="button" class="btn btn-success text-white fw-bold" onclick="downloadExcelTemplate()">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-primary text-white fw-bold shadow-sm" onclick="refreshStokSaatIni()" id="btnRefreshStok" title="Sinkronkan angka Stok Sistem dengan kondisi gudang terkini tanpa menghapus input fisik Anda">
+                <i class="bi bi-arrow-repeat me-1"></i> Refresh Stock Saat Ini
+            </button>
+            <button type="button" class="btn btn-outline-primary fw-bold shadow-sm bg-white" onclick="refreshListBarang()" id="btnRefreshList" title="Muat ulang seluruh daftar barang master dari database">
+                <i class="bi bi-arrow-clockwise me-1"></i> Refresh List Barang
+            </button>
+            <button type="button" class="btn btn-success text-white fw-bold shadow-sm" onclick="downloadExcelTemplate()">
                 <i class="bi bi-file-earmark-excel me-1"></i> Download Template Excel
             </button>
-            <button type="button" class="btn btn-outline-success fw-bold" onclick="triggerImportExcel()">
+            <button type="button" class="btn btn-outline-success fw-bold shadow-sm bg-white" onclick="triggerImportExcel()">
                 <i class="bi bi-file-earmark-arrow-up me-1"></i> Import Excel Hasil Opname
             </button>
             <input type="file" id="fileExcelInput" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleExcelImport(this)">
-            <a href="{{ route('stock-opname.index') }}" class="btn btn-secondary">
+            <a href="{{ route('stock-opname.index') }}" class="btn btn-secondary shadow-sm">
                 <i class="bi bi-arrow-left me-1"></i> Kembali
             </a>
         </div>
@@ -357,7 +363,7 @@ let currentPage = 1;
 const rowsPerPage = 20;
 let userValues = {}; // Menyimpan input { [barangId]: { fisik, selisih, nilai } }
 
-function loadBarang()
+function loadBarang(isExplicitRefresh = false)
 {
     let gudangId = document.getElementById('gudang_id').value;
     let divisiId = document.getElementById('divisi_id').value;
@@ -377,6 +383,12 @@ function loadBarang()
             </td>
         </tr>
     `;
+
+    let btnRefreshList = document.getElementById('btnRefreshList');
+    if (btnRefreshList) {
+        btnRefreshList.disabled = true;
+        btnRefreshList.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Memuat...';
+    }
 
     fetch(
         "{{ route('stock-opname.load-barang') }}",
@@ -398,24 +410,180 @@ function loadBarang()
         rawItems = data || [];
         document.getElementById('totalItem').innerText = rawItems.length;
 
-        // Inisialisasi default nilai untuk semua barang
+        // Simpan nilai input user sebelumnya jika ada (misal saat refresh list barang)
+        let prevUserValues = { ...userValues };
+
         rawItems.forEach(item => {
             let stokSistem = parseFloat(item.stok || 0);
-            userValues[item.id] = {
-                stok_fisik: stokSistem,
-                selisih: 0,
-                nilai: 0,
-                harga_fifo: parseFloat(item.harga_fifo || 0)
-            };
+            if (prevUserValues[item.id] !== undefined && prevUserValues[item.id].stok_fisik !== undefined && prevUserValues[item.id].stok_fisik !== null && prevUserValues[item.id].stok_fisik !== '') {
+                let prevFisik = parseFloat(prevUserValues[item.id].stok_fisik);
+                let selisih = prevFisik - stokSistem;
+                userValues[item.id] = {
+                    stok_fisik: prevFisik,
+                    stok_sistem: stokSistem,
+                    selisih: selisih,
+                    nilai: Math.abs(selisih) * parseFloat(item.harga_fifo || 0),
+                    harga_fifo: parseFloat(item.harga_fifo || 0),
+                    is_manual: prevUserValues[item.id].is_manual || false
+                };
+            } else {
+                userValues[item.id] = {
+                    stok_fisik: stokSistem,
+                    stok_sistem: stokSistem,
+                    selisih: 0,
+                    nilai: 0,
+                    harga_fifo: parseFloat(item.harga_fifo || 0),
+                    is_manual: false
+                };
+            }
         });
 
         filteredItems = [...rawItems];
         currentPage = 1;
         renderPagination();
+        hitungGrandTotal();
+
+        if (btnRefreshList) {
+            btnRefreshList.disabled = false;
+            btnRefreshList.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Refresh List Barang';
+        }
+
+        if (isExplicitRefresh) {
+            if (typeof window.showToast === 'function') {
+                window.showToast('success', `Daftar barang berhasil dimuat ulang (${rawItems.length} item).`);
+            } else {
+                alert(`Daftar barang berhasil dimuat ulang (${rawItems.length} item).`);
+            }
+        }
     })
     .catch(function(error){
         console.error(error);
         alert('Gagal memuat data barang');
+        if (btnRefreshList) {
+            btnRefreshList.disabled = false;
+            btnRefreshList.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> Refresh List Barang';
+        }
+    });
+}
+
+function refreshListBarang() {
+    loadBarang(true);
+}
+
+function refreshStokSaatIni() {
+    let gudangId = document.getElementById('gudang_id').value;
+    let divisiId = document.getElementById('divisi_id').value;
+
+    if (!gudangId) {
+        alert('Pilih gudang terlebih dahulu');
+        return;
+    }
+
+    let btn = document.getElementById('btnRefreshStok');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Menyinkronkan...';
+    }
+
+    fetch(
+        "{{ route('stock-opname.load-barang') }}",
+        {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gudang_id: gudangId,
+                divisi_id: divisiId || null,
+                tanggal: document.getElementById('tanggal') ? document.getElementById('tanggal').value : null
+            })
+        }
+    )
+    .then(response => response.json())
+    .then(data => {
+        let freshMap = {};
+        (data || []).forEach(it => {
+            freshMap[it.id] = it;
+        });
+
+        let updatedCount = 0;
+        rawItems.forEach(item => {
+            if (freshMap[item.id]) {
+                let fresh = freshMap[item.id];
+                let oldStokSistem = parseFloat(item.stok || 0);
+                let newStokSistem = parseFloat(fresh.stok || 0);
+
+                item.stok = newStokSistem;
+                item.harga_fifo = parseFloat(fresh.harga_fifo || item.harga_fifo || 0);
+
+                if (!userValues[item.id]) {
+                    userValues[item.id] = {
+                        stok_fisik: newStokSistem,
+                        stok_sistem: newStokSistem,
+                        selisih: 0,
+                        nilai: 0,
+                        harga_fifo: item.harga_fifo,
+                        is_manual: false
+                    };
+                } else {
+                    let uv = userValues[item.id];
+                    // PENTING: Jangan ubah stok fisik yang sudah terisi!
+                    let fisik = (uv.stok_fisik !== undefined && uv.stok_fisik !== null && uv.stok_fisik !== '')
+                        ? parseFloat(uv.stok_fisik)
+                        : newStokSistem;
+                    let selisih = fisik - newStokSistem;
+                    uv.stok_sistem = newStokSistem;
+                    uv.stok_fisik = fisik;
+                    uv.selisih = selisih;
+                    uv.nilai = Math.abs(selisih) * item.harga_fifo;
+                    uv.harga_fifo = item.harga_fifo;
+                }
+                updatedCount++;
+            }
+        });
+
+        // Tambahkan item baru jika ada yang baru ditambahkan di master
+        (data || []).forEach(it => {
+            if (!rawItems.some(existing => existing.id === it.id)) {
+                rawItems.push(it);
+                let stokSistem = parseFloat(it.stok || 0);
+                userValues[it.id] = {
+                    stok_fisik: stokSistem,
+                    stok_sistem: stokSistem,
+                    selisih: 0,
+                    nilai: 0,
+                    harga_fifo: parseFloat(it.harga_fifo || 0),
+                    is_manual: false
+                };
+                updatedCount++;
+            }
+        });
+        document.getElementById('totalItem').innerText = rawItems.length;
+
+        applyFilters();
+        hitungGrandTotal();
+
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh Stock Saat Ini';
+        }
+
+        let tanggalVal = document.getElementById('tanggal') ? document.getElementById('tanggal').value : '';
+        let infoTgl = tanggalVal ? ` (posisi stok per ${tanggalVal})` : '';
+        if (typeof window.showToast === 'function') {
+            window.showToast('success', `Stok sistem berhasil disinkronkan${infoTgl}. Stok fisik yang sudah diisi tetap dipertahankan.`);
+        } else {
+            alert(`Stok sistem berhasil disinkronkan${infoTgl}. Stok fisik yang sudah diisi tetap dipertahankan.`);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Gagal menyinkronkan stok saat ini');
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Refresh Stock Saat Ini';
+        }
     });
 }
 
@@ -711,6 +879,7 @@ document.addEventListener('input', function(e){
     }
     userValues[barangId].stok_fisik = stokFisik;
     userValues[barangId].selisih = selisih;
+    userValues[barangId].is_manual = true;
 
     // Update live conversion helper under input
     let konvFisikEl = document.getElementById(`konv_fisik_${barangId}`);
