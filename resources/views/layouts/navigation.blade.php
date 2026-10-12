@@ -369,6 +369,9 @@
                         <a href="{{ route('laporan.stock-opname') }}" class="{{ request()->routeIs('laporan.stock-opname') ? 'active' : '' }}">
                             <i class="bi bi-clipboard-check me-2" style="font-size:12px;"></i>Laporan Stock Opname
                         </a>
+                        <a href="{{ route('laporan.wasted') }}" class="{{ request()->routeIs('laporan.wasted*') ? 'active' : '' }}">
+                            <i class="bi bi-trash3-fill me-2" style="font-size:12px;"></i>Laporan Wasted
+                        </a>
                     @endif
 
                     @if($canRole(['Management', 'Direktur Keuangan']))

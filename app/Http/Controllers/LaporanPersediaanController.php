@@ -552,4 +552,271 @@ class LaporanPersediaanController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | LAPORAN WASTED / PEMBOROSAN BAHAN BAKU
+    |--------------------------------------------------------------------------
+    */
+    public function wasted(Request $request)
+    {
+        $roleName = auth()->user()->role->nama ?? '';
+
+        $dari   = $request->filled('dari') ? $request->dari : date('Y-m-01');
+        $sampai = $request->filled('sampai') ? $request->sampai : date('Y-m-d');
+
+        // Master dropdowns
+        $gudangs   = MasterGudang::with('divisi')->orderBy('nama')->get();
+        $divisis   = \App\Models\GudangDivisi::with('gudang')->orderBy('nama')->get();
+        $kategoris = \App\Models\Kategori::orderBy('nama')->get();
+
+        $gudangId   = $request->gudang_id;
+        $divisiId   = $request->divisi_id;
+        $kategoriId = $request->kategori_id;
+        $search     = $request->search;
+        $status     = $request->filled('status') ? $request->status : 'approved'; // default approved
+
+        // 1. Query Dokumen PBK Wasted
+        $wastedQuery = PengeluaranBahanBaku::where(function($q) {
+                $q->where('jenis_pengeluaran', 'wasted')
+                  ->orWhere('kode_pengeluaran', 'like', 'PBK-WST-%');
+            })
+            ->whereBetween('tanggal', [$dari . ' 00:00:00', $sampai . ' 23:59:59'])
+            ->with(['gudang', 'divisi', 'details.barang.kategori']);
+
+        if ($status !== 'all') {
+            if ($status === 'draft') {
+                $wastedQuery->where('status', 'draft');
+            } else {
+                $wastedQuery->whereIn('status', ['approved', 'disetujui']);
+            }
+        }
+
+        if ($gudangId) {
+            $wastedQuery->where('gudang_id', $gudangId);
+        }
+        if ($divisiId) {
+            $wastedQuery->where('divisi_id', $divisiId);
+        }
+
+        $wastedDocs = $wastedQuery->get();
+
+        // 2. Agregasi Wasted per Barang
+        $itemsMap = [];
+        foreach ($wastedDocs as $doc) {
+            $lokasiNama = ($doc->gudang->nama ?? 'Tanpa Gudang') . ($doc->divisi ? ' - ' . $doc->divisi->nama : '');
+            
+            foreach ($doc->details as $d) {
+                $b = $d->barang;
+                if (!$b) continue;
+
+                // Filter kategori jika ada
+                if ($kategoriId && $b->kategori_id != $kategoriId) {
+                    continue;
+                }
+
+                // Filter search jika ada
+                if ($search) {
+                    $sLower = strtolower($search);
+                    $matchName = str_contains(strtolower($b->nama ?? ''), $sLower);
+                    $matchCode = str_contains(strtolower($b->kode_barang ?? ''), $sLower);
+                    if (!$matchName && !$matchCode) {
+                        continue;
+                    }
+                }
+
+                $bId = $b->id;
+                if (!isset($itemsMap[$bId])) {
+                    $itemsMap[$bId] = [
+                        'barang_id'            => $bId,
+                        'kode_barang'          => $b->kode_barang ?? '-',
+                        'nama_barang'          => $b->nama ?? 'Unknown',
+                        'kategori'             => $b->kategori->nama ?? '-',
+                        'satuan'               => $b->satuan ?: 'pcs',
+                        'satuan_pembelian'     => $b->satuan_pembelian ?: $b->satuan,
+                        'konversi_pembelian'   => (float)($b->konversi_pembelian ?: 1),
+                        'total_qty_wasted'     => 0,
+                        'total_nominal_wasted' => 0,
+                        'alokasi'              => [],
+                        'transaksi_list'       => [],
+                    ];
+                }
+
+                $qty = (float) $d->qty;
+                $nominal = (float) ($d->hpp_total ?: ($d->total_harga ?: ($qty * (float) $d->harga_satuan)));
+
+                $itemsMap[$bId]['total_qty_wasted'] += $qty;
+                $itemsMap[$bId]['total_nominal_wasted'] += $nominal;
+
+                // Alokasi per lokasi (Gudang / Divisi)
+                if (!isset($itemsMap[$bId]['alokasi'][$lokasiNama])) {
+                    $itemsMap[$bId]['alokasi'][$lokasiNama] = [
+                        'lokasi'    => $lokasiNama,
+                        'gudang_id' => $doc->gudang_id,
+                        'divisi_id' => $doc->divisi_id,
+                        'qty'       => 0,
+                        'nominal'   => 0,
+                        'count'     => 0,
+                    ];
+                }
+                $itemsMap[$bId]['alokasi'][$lokasiNama]['qty'] += $qty;
+                $itemsMap[$bId]['alokasi'][$lokasiNama]['nominal'] += $nominal;
+                $itemsMap[$bId]['alokasi'][$lokasiNama]['count']++;
+
+                // Simpan transaksi untuk rincian modal
+                $itemsMap[$bId]['transaksi_list'][] = [
+                    'kode'         => $doc->kode_pengeluaran,
+                    'tanggal'      => Carbon::parse($doc->tanggal)->format('d/m/Y H:i'),
+                    'lokasi'       => $lokasiNama,
+                    'qty'          => $qty,
+                    'harga_satuan' => (float) ($d->harga_satuan ?: ($qty > 0 ? $nominal / $qty : 0)),
+                    'nominal'      => $nominal,
+                    'keterangan'   => $doc->keterangan ?: '-',
+                ];
+            }
+        }
+
+        // 3. Ambil data Pembelian untuk barang-barang ini
+        $barangIds = array_keys($itemsMap);
+        
+        $pembelianQuery = DB::table('pembelian_detail as pd')
+            ->join('pembelian as p', 'p.id', '=', 'pd.pembelian_id')
+            ->whereBetween('p.tanggal', [$dari . ' 00:00:00', $sampai . ' 23:59:59']);
+
+        if (!empty($barangIds)) {
+            $pembelianQuery->whereIn('pd.barang_id', $barangIds);
+        }
+
+        $pembelianRows = $pembelianQuery->select(
+            'pd.barang_id',
+            'pd.qty',
+            'pd.konversi_pembelian',
+            'pd.harga',
+            'pd.harga_per_qty'
+        )->get();
+
+        $pembelianAgg = [];
+        foreach ($pembelianRows as $pr) {
+            $bId = $pr->barang_id;
+            if (!isset($pembelianAgg[$bId])) {
+                $pembelianAgg[$bId] = [
+                    'qty'     => 0,
+                    'nominal' => 0,
+                ];
+            }
+            $konv = (float) ($pr->konversi_pembelian ?: 1);
+            $qtyDasar = (float) $pr->qty * $konv;
+            $nom = (float) ($pr->harga ?: ($pr->qty * $pr->harga_per_qty));
+
+            $pembelianAgg[$bId]['qty'] += $qtyDasar;
+            $pembelianAgg[$bId]['nominal'] += $nom;
+        }
+
+        // 4. Hitung persentase wasted dan siapkan list akhir
+        $items = collect($itemsMap)->map(function ($item) use ($pembelianAgg) {
+            $bId = $item['barang_id'];
+            $totalBeliQty = (float) ($pembelianAgg[$bId]['qty'] ?? 0);
+            $totalBeliNom = (float) ($pembelianAgg[$bId]['nominal'] ?? 0);
+
+            $item['total_qty_beli']     = $totalBeliQty;
+            $item['total_nominal_beli'] = $totalBeliNom;
+
+            $item['persen_qty'] = $totalBeliQty > 0
+                ? round(($item['total_qty_wasted'] / $totalBeliQty) * 100, 2)
+                : null;
+
+            $item['persen_nominal'] = $totalBeliNom > 0
+                ? round(($item['total_nominal_wasted'] / $totalBeliNom) * 100, 2)
+                : null;
+
+            return $item;
+        })
+        ->sortByDesc('total_nominal_wasted')
+        ->values();
+
+        // 5. Hitung Summary Cards / KPI
+        $summary = [
+            'total_items_wasted'   => $items->count(),
+            'total_qty_wasted'     => $items->sum('total_qty_wasted'),
+            'total_nominal_wasted' => $items->sum('total_nominal_wasted'),
+            'total_nominal_beli'   => $items->sum('total_nominal_beli'),
+            'global_persen_nominal'=> $items->sum('total_nominal_beli') > 0
+                ? round(($items->sum('total_nominal_wasted') / $items->sum('total_nominal_beli')) * 100, 2)
+                : 0,
+            'total_dokumen'        => $wastedDocs->count(),
+        ];
+
+        // Format PDF
+        if ($request->format === 'pdf') {
+            $pdf = app('dompdf.wrapper');
+            $pdf->loadView('laporanpersediaan.wasted-pdf', compact('items', 'summary', 'request', 'dari', 'sampai'));
+            return $pdf->download('laporan-wasted-' . now()->format('Ymd') . '.pdf');
+        }
+
+        // Format Excel / CSV
+        if ($request->format === 'excel') {
+            return $this->exportExcelWasted($items, $summary, $request);
+        }
+
+        return view('laporanpersediaan.wasted', compact(
+            'items', 'summary', 'gudangs', 'divisis', 'kategoris',
+            'dari', 'sampai', 'request'
+        ));
+    }
+
+    public function wastedExportExcel(Request $request)
+    {
+        $request->merge(['format' => 'excel']);
+        return $this->wasted($request);
+    }
+
+    public function wastedPdf(Request $request)
+    {
+        $request->merge(['format' => 'pdf']);
+        return $this->wasted($request);
+    }
+
+    private function exportExcelWasted($items, $summary, $request)
+    {
+        $filename = 'laporan-wasted-' . now()->format('Ymd') . '.csv';
+        $headers  = [
+            'Content-Type'        => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        ];
+
+        $callback = function () use ($items) {
+            $f = fopen('php://output', 'w');
+            fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fputcsv($f, [
+                'No', 'Kode Barang', 'Nama Barang', 'Kategori', 'Satuan Dasar',
+                'Total Qty Wasted', 'Total Nilai Wasted (Rp)', 'Alokasi Outlet & Divisi',
+                'Total Qty Beli', 'Total Nilai Beli (Rp)', '% Wasted (Qty)', '% Wasted (Nilai)'
+            ]);
+
+            $no = 1;
+            foreach ($items as $item) {
+                $alokasiStr = collect($item['alokasi'])->map(function($a) use ($item) {
+                    return $a['lokasi'] . ': ' . number_format($a['qty'], 2, ',', '.') . ' ' . $item['satuan'] . ' (Rp ' . number_format($a['nominal'], 0, ',', '.') . ')';
+                })->implode(' | ');
+
+                fputcsv($f, [
+                    $no++,
+                    $item['kode_barang'],
+                    $item['nama_barang'],
+                    $item['kategori'],
+                    $item['satuan'],
+                    $item['total_qty_wasted'],
+                    $item['total_nominal_wasted'],
+                    $alokasiStr,
+                    $item['total_qty_beli'],
+                    $item['total_nominal_beli'],
+                    $item['persen_qty'] !== null ? $item['persen_qty'] . '%' : 'Tanpa Pembelian',
+                    $item['persen_nominal'] !== null ? $item['persen_nominal'] . '%' : 'Tanpa Pembelian',
+                ]);
+            }
+            fclose($f);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }

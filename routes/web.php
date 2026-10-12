@@ -402,6 +402,9 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::get('/stok-gudang', [LaporanPersediaanController::class, 'stokGudang'])->name('stok-gudang');
         Route::get('/pengeluaran-bahan-baku', [LaporanPersediaanController::class, 'pengeluaranBahanBaku'])->name('pengeluaran-bahan-baku');
         Route::get('/stock-opname', [LaporanPersediaanController::class, 'stockOpname'])->name('stock-opname');
+        Route::get('/wasted', [LaporanPersediaanController::class, 'wasted'])->name('wasted');
+        Route::get('/wasted/export-excel', [LaporanPersediaanController::class, 'wastedExportExcel'])->name('wasted.export-excel');
+        Route::get('/wasted/pdf', [LaporanPersediaanController::class, 'wastedPdf'])->name('wasted.pdf');
         // =========================================================================
         // LAPORAN CUSTOM
         // =========================================================================
