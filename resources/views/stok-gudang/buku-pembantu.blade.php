@@ -429,10 +429,12 @@
                         const satuanDasar = bInfo.satuan || activeBarangSatuan;
                         const satuanBeliRes = bInfo.satuan_pembelian || activeSatBeli;
                         const konvFaktor = parseFloat(bInfo.konversi_pembelian) || activeKonversi;
-                        const isConverted = satuanBeliRes && konvFaktor > 1;
+                        const isConverted = Boolean(satuanBeliRes && konvFaktor > 1 && satuanBeliRes.trim().toLowerCase() !== satuanDasar.trim().toLowerCase());
 
                         if (isConverted) {
                             infoSatuanBeli.innerHTML = `${satuanBeliRes} <br><small class="text-muted fw-normal" style="font-size:11px;">(1 ${satuanBeliRes} = ${formatNumber(konvFaktor, 0)} ${satuanDasar})</small>`;
+                        } else {
+                            infoSatuanBeli.innerText = satuanBeliRes || satuanDasar;
                         }
 
                         // Helper Qty Cell

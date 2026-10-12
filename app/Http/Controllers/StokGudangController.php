@@ -286,6 +286,7 @@ class StokGudangController extends Controller
 
         // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
         MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
+        MasterBarang::autoHealSaldoAwalBatches($barangId);
 
         // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
         self::autoHealMissingDivisiInTransaksiStok($barangId);
@@ -306,7 +307,9 @@ class StokGudangController extends Controller
         $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
         $satuanBeliDefault = $barang ? ($barang->satuan_pembelian ?: $satuanStok) : $satuanStok;
         $konversiBarang = $barang ? (float)($barang->konversi_pembelian ?: 1.0) : 1.0;
-        if ($konversiBarang <= 0) $konversiBarang = 1.0;
+        if ($konversiBarang <= 0 || strtolower(trim($satuanBeliDefault)) === strtolower(trim($satuanStok))) {
+            $konversiBarang = 1.0;
+        }
 
         $saQty = 0;
         $saNilai = 0;
@@ -484,11 +487,12 @@ class StokGudangController extends Controller
 
             if (in_array(strtolower($row->source_type ?? ''), ['pembelian', 'penerimaan_pembelian', 'pembelian_batal'])) {
                 $pDetailInfo = $this->getPembelianDetailInfo($row, $barangId);
-                $konversiRow = (isset($pDetailInfo['konversi']) && $pDetailInfo['konversi'] > 1) ? $pDetailInfo['konversi'] : $konversiBarang;
                 $satBeliRow = $pDetailInfo['satuan_pembelian'] ?: $satuanBeliDefault;
+                $isSameUnit = strtolower(trim($satBeliRow)) === strtolower(trim($satuanStok));
+                $konversiRow = (!$isSameUnit && isset($pDetailInfo['konversi']) && $pDetailInfo['konversi'] > 1) ? $pDetailInfo['konversi'] : 1.0;
                 $qtyBeliInput = $pDetailInfo['qty_input'];
 
-                if ($konversiRow > 1 && $qtyBeliInput > 0) {
+                if (!$isSameUnit && $konversiRow > 1 && $qtyBeliInput > 0) {
                     $keteranganExtra = " (setara {$qtyBeliInput} {$satBeliRow} @ 1 {$satBeliRow} = " . (float)$konversiRow . " {$satuanStok})";
                 }
             }
@@ -651,15 +655,19 @@ class StokGudangController extends Controller
         }
 
         $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
-        $masterKonv = $barang ? (float)($barang->konversi_pembelian ?? 1) : 1.0;
+        $satuanDasar = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
         $masterSatBeli = $barang ? $barang->satuan_pembelian : null;
+        $isSameAsMaster = ($masterSatBeli && strtolower(trim($masterSatBeli)) === strtolower(trim($satuanDasar)));
+        $masterKonv = ($barang && !$isSameAsMaster) ? (float)($barang->konversi_pembelian ?? 1) : 1.0;
 
         if ($pDetail) {
-            $detailKonv = (float) ($pDetail->konversi_pembelian ?? 1);
+            $detailSatBeli = $pDetail->satuan_pembelian ?: $masterSatBeli;
+            $isSameDetail = ($detailSatBeli && strtolower(trim($detailSatBeli)) === strtolower(trim($satuanDasar)));
+            $detailKonv = !$isSameDetail ? (float) ($pDetail->konversi_pembelian ?? 1) : 1.0;
             $finalKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
             return [
                 'konversi'          => $finalKonv,
-                'satuan_pembelian' => $pDetail->satuan_pembelian ?: $masterSatBeli,
+                'satuan_pembelian' => $detailSatBeli,
                 'qty_input'         => (float) ($pDetail->qty ?? 0),
             ];
         }

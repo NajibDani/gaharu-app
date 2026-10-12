@@ -252,6 +252,37 @@ public function resepBahanBakuAlternatif()
      */
     public static function autoHealUnconvertedPembelianBatches($targetBarangId = null): void
     {
+        // Normalisasi barang yang satuan dasarnya sama persis dengan satuan pembelian (misal BOTOL == BOTOL),
+        // konversi_pembelian harus 1.0 agar tidak terjadi perkalian stok ganda.
+        \Illuminate\Support\Facades\DB::table('master_barang')
+            ->whereRaw('LOWER(TRIM(satuan)) = LOWER(TRIM(satuan_pembelian))')
+            ->where('konversi_pembelian', '!=', 1)
+            ->when($targetBarangId, function($q) use ($targetBarangId) {
+                $q->where('id', $targetBarangId);
+            })
+            ->update(['konversi_pembelian' => 1.0]);
+
+        \Illuminate\Support\Facades\DB::table('pembelian_detail')
+            ->join('master_barang', 'pembelian_detail.barang_id', '=', 'master_barang.id')
+            ->whereRaw('LOWER(TRIM(pembelian_detail.satuan_pembelian)) = LOWER(TRIM(master_barang.satuan))')
+            ->where('pembelian_detail.konversi_pembelian', '!=', 1)
+            ->when($targetBarangId, function($q) use ($targetBarangId) {
+                $q->where('pembelian_detail.barang_id', $targetBarangId);
+            })
+            ->update(['pembelian_detail.konversi_pembelian' => 1.0]);
+
+        \Illuminate\Support\Facades\DB::table('persediaan_awal_detail')
+            ->join('master_barang', 'persediaan_awal_detail.barang_id', '=', 'master_barang.id')
+            ->where(function($q) {
+                $q->whereRaw('LOWER(TRIM(COALESCE(persediaan_awal_detail.satuan_pembelian, persediaan_awal_detail.satuan))) = LOWER(TRIM(master_barang.satuan))')
+                  ->orWhereNull('persediaan_awal_detail.satuan_pembelian');
+            })
+            ->where('persediaan_awal_detail.konversi_pembelian', '!=', 1)
+            ->when($targetBarangId, function($q) use ($targetBarangId) {
+                $q->where('persediaan_awal_detail.barang_id', $targetBarangId);
+            })
+            ->update(['persediaan_awal_detail.konversi_pembelian' => 1.0]);
+
         // 1. Sinkronisasi master_barang jika satuan_pembelian / konversi_pembelian belum terisi di master namun ada di pembelian_detail
         $unfilledMasters = \Illuminate\Support\Facades\DB::table('master_barang')
             ->where(function($q) {
@@ -275,11 +306,13 @@ public function resepBahanBakuAlternatif()
                 ->unique('barang_id');
 
             foreach ($latestPds as $lpd) {
+                $mSatuan = \Illuminate\Support\Facades\DB::table('master_barang')->where('id', $lpd->barang_id)->value('satuan');
+                $isSameUnit = strtolower(trim($mSatuan ?? '')) === strtolower(trim($lpd->satuan_pembelian ?? ''));
                 \Illuminate\Support\Facades\DB::table('master_barang')
                     ->where('id', $lpd->barang_id)
                     ->update([
                         'satuan_pembelian'   => $lpd->satuan_pembelian,
-                        'konversi_pembelian' => $lpd->konversi_pembelian,
+                        'konversi_pembelian' => $isSameUnit ? 1.0 : $lpd->konversi_pembelian,
                     ]);
             }
         }
@@ -322,7 +355,11 @@ public function resepBahanBakuAlternatif()
             $isSatuanBeli = false;
             $konversi = 1.0;
 
-            if ($detailKonv > 1) {
+            if (!empty($satBeli) && !empty($satDasar) && $satBeli === $satDasar) {
+                // Satuan pembelian sama dengan satuan stok dasar (misal BOTOL == BOTOL, PCS == PCS)
+                $isSatuanBeli = false;
+                $konversi = 1.0;
+            } elseif ($detailKonv > 1) {
                 $isSatuanBeli = true;
                 $konversi = $detailKonv;
             } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar && $masterKonv > 1) {
@@ -369,8 +406,8 @@ public function resepBahanBakuAlternatif()
                 $needsUpdate = false;
                 $updateData = [];
 
-                // Konversi kuantitas jika masih dalam format qty pembelian
-                if ($isSatuanBeli && abs((float)$batch->qty_masuk - $pQty) < 0.01 && abs((float)$batch->qty_masuk - $correctBaseQty) > 0.01) {
+                // Sinkronisasi kuantitas jika tidak sesuai dengan correctBaseQty
+                if (abs((float)$batch->qty_masuk - $correctBaseQty) > 0.01) {
                     $newMasuk = $correctBaseQty;
                     $qtyKeluar = (float)$batch->qty_keluar;
                     $newSisa = max(0, $newMasuk - $qtyKeluar);
@@ -535,7 +572,10 @@ public function resepBahanBakuAlternatif()
     public static function autoHealSaldoAwalBatches($targetBarangId = null): void
     {
         $mismatched = \Illuminate\Support\Facades\DB::table('stok_gudang_batch as b')
-            ->join('persediaan_awal_detail as sad', 'b.barang_id', '=', 'sad.barang_id')
+            ->join('persediaan_awal_detail as sad', function($j) {
+                $j->on('b.barang_id', '=', 'sad.barang_id')
+                  ->whereRaw("REPLACE(b.batch_number, '-MUT', '') = sad.batch_number");
+            })
             ->join('persediaan_awal as pa', function($j) {
                 $j->on('pa.id', '=', 'sad.persediaan_awal_id')
                   ->on('pa.gudang_id', '=', 'b.gudang_id');

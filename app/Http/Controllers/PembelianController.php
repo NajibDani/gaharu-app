@@ -390,12 +390,19 @@ class PembelianController extends Controller
                     : 0;
 
                 $barang = MasterBarang::withoutGlobalScopes()->find($item['barang_id']);
+                $satBeli = $barang ? $barang->satuan_pembelian : null;
+                $satDasar = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
+                $konv = (float)($barang->konversi_pembelian ?? 1.0);
+                if ($satBeli && strtolower(trim($satBeli)) === strtolower(trim($satDasar))) {
+                    $konv = 1.00;
+                }
+                if ($konv <= 0) $konv = 1.00;
 
                 // Simpan detail dulu — FIFO & stok masuk saat "Terima"
                 $detail = $pembelian->details()->create([
                     'barang_id'          => $item['barang_id'],
-                    'satuan_pembelian'   => $barang->satuan_pembelian,
-                    'konversi_pembelian' => $barang->konversi_pembelian ?? 1.00,
+                    'satuan_pembelian'   => $satBeli,
+                    'konversi_pembelian' => $konv,
                     'qty'                => $item['qty'],
                     'harga'              => $item['harga'],
                     'harga_per_qty'      => $hargaPerQty,
@@ -504,17 +511,21 @@ class PembelianController extends Controller
 
                 // Create StokGudangBatch
                 $suffix = rand(10, 99) . '-' . date('His');
-                $detailKonv = floatval($detail->konversi_pembelian ?? 1);
-                $barangKonv = floatval($detail->barang->konversi_pembelian ?? 1);
+                $satBeli = $detail->satuan_pembelian ?: ($detail->barang->satuan_pembelian ?? null);
+                $satDasar = $detail->barang->satuan ?? 'pcs';
+                $isSameUnit = ($satBeli && strtolower(trim($satBeli)) === strtolower(trim($satDasar)));
+
+                $detailKonv = !$isSameUnit ? floatval($detail->konversi_pembelian ?? 1) : 1.0;
+                $barangKonv = !$isSameUnit ? floatval($detail->barang->konversi_pembelian ?? 1) : 1.0;
                 $konversi = $detailKonv > 1 ? $detailKonv : ($barangKonv > 1 ? $barangKonv : 1.0);
-                if ($konversi <= 0) {
+                if ($isSameUnit || $konversi <= 0) {
                     $konversi = 1.0;
                 }
 
                 if ($detailKonv <= 1 && $konversi > 1) {
                     $detail->update([
                         'konversi_pembelian' => $konversi,
-                        'satuan_pembelian'   => $detail->satuan_pembelian ?: ($detail->barang->satuan_pembelian ?? null),
+                        'satuan_pembelian'   => $satBeli,
                     ]);
                 }
 
@@ -919,10 +930,12 @@ class PembelianController extends Controller
                 $hargaPerQty = $qtyInput > 0 ? $hargaInput / $qtyInput : 0;
 
                 $barang = \App\Models\MasterBarang::withoutGlobalScopes()->find($barangId);
-                $konversi = (float) ($barang->konversi_pembelian ?? 1.0);
-                if ($konversi <= 0) $konversi = 1.0;
-
                 $oldDet = $existingDetails->get($barangId);
+                $satBeli = $oldDet ? ($oldDet->satuan_pembelian ?: ($barang->satuan_pembelian ?? null)) : ($barang->satuan_pembelian ?? null);
+                $satDasar = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
+                $isSameUnit = ($satBeli && strtolower(trim($satBeli)) === strtolower(trim($satDasar)));
+                $konversi = !$isSameUnit ? (float) ($barang->konversi_pembelian ?? 1.0) : 1.0;
+                if ($konversi <= 0) $konversi = 1.0;
 
                 if ($oldDet) {
                     // Update detail yang sudah ada tanpa menghapus ID-nya
@@ -935,7 +948,7 @@ class PembelianController extends Controller
                     }
 
                     $oldDet->update([
-                        'satuan_pembelian'   => $oldDet->satuan_pembelian ?: ($barang->satuan_pembelian ?? null),
+                        'satuan_pembelian'   => $satBeli,
                         'konversi_pembelian' => $konversi,
                         'qty'                => $qtyInput,
                         'qty_diterima'       => $newQtyDiterima,
