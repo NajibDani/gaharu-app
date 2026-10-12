@@ -40,7 +40,23 @@ class StokGudang extends Model
         $date = $date ?: date('Y-m-d');
         $cutoff = $date . ' 23:59:59';
 
-        // Cari tanggal persediaan awal disetujui terbaru untuk barang ini pada gudang/divisi ini pada atau sebelum tanggal cutoff
+        // 1. Cari tanggal cut-off persediaan awal gudang/divisi disetujui terbaru pada atau sebelum cutoff
+        $paCutoffQuery = \Illuminate\Support\Facades\DB::table('persediaan_awal')
+            ->whereIn('status', ['approved', 'posted'])
+            ->where('tanggal', '<=', $date);
+
+        if ($gudangId && $divisiId) {
+            $paCutoffQuery->where('gudang_id', $gudangId)->where('divisi_id', $divisiId);
+        } elseif ($gudangId) {
+            $paCutoffQuery->where('gudang_id', $gudangId)->whereNull('divisi_id');
+        } elseif ($divisiId) {
+            $paCutoffQuery->where('divisi_id', $divisiId);
+        }
+
+        $latestPa = $paCutoffQuery->max('tanggal');
+        $minGudangTanggal = $latestPa ? date('Y-m-d', strtotime($latestPa)) . ' 00:00:00' : null;
+
+        // 2. Cari tanggal persediaan awal disetujui terbaru untuk barang ini pada gudang/divisi ini
         $saQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
             ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
@@ -55,7 +71,16 @@ class StokGudang extends Model
         }
 
         $latestSa = $saQuery->max('tanggal');
-        $minTanggal = $latestSa ? date('Y-m-d', strtotime($latestSa)) . ' 00:00:00' : null;
+        $minBarangTanggal = $latestSa ? date('Y-m-d', strtotime($latestSa)) . ' 00:00:00' : null;
+
+        $minTanggal = null;
+        if ($minGudangTanggal && $minBarangTanggal) {
+            $minTanggal = max($minGudangTanggal, $minBarangTanggal);
+        } elseif ($minGudangTanggal) {
+            $minTanggal = $minGudangTanggal;
+        } else {
+            $minTanggal = $minBarangTanggal;
+        }
 
         $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
@@ -119,11 +144,33 @@ class StokGudang extends Model
             ->pluck('max_tanggal', 'barang_id')
             ->toArray();
 
-        // Kelompokkan barang_id berdasarkan minTanggal per barang (jika barang tidak punya SA, jangan gunakan tanggal SA barang lain)
+        $paCutoffQuery = \Illuminate\Support\Facades\DB::table('persediaan_awal')
+            ->whereIn('status', ['approved', 'posted'])
+            ->where('tanggal', '<=', $date);
+
+        if ($gudangId && $divisiId) {
+            $paCutoffQuery->where('gudang_id', $gudangId)->where('divisi_id', $divisiId);
+        } elseif ($gudangId) {
+            $paCutoffQuery->where('gudang_id', $gudangId)->whereNull('divisi_id');
+        } elseif ($divisiId) {
+            $paCutoffQuery->where('divisi_id', $divisiId);
+        }
+
+        $latestPa = $paCutoffQuery->max('tanggal');
+        $minGudangTanggal = $latestPa ? date('Y-m-d', strtotime($latestPa)) . ' 00:00:00' : 'none';
+
+        // Kelompokkan barang_id berdasarkan minTanggal per barang. Jika barang tidak punya SA, gunakan minGudangTanggal cut-off
         $groupedBarangs = [];
         foreach ($barangIds as $bId) {
-            $minTgl = isset($saMap[$bId]) ? (date('Y-m-d', strtotime($saMap[$bId])) . ' 00:00:00') : 'none';
-            $groupedBarangs[$minTgl][] = $bId;
+            $minBarangTgl = isset($saMap[$bId]) ? (date('Y-m-d', strtotime($saMap[$bId])) . ' 00:00:00') : null;
+            if ($minGudangTanggal !== 'none' && $minBarangTgl) {
+                $effectiveMin = max($minGudangTanggal, $minBarangTgl);
+            } elseif ($minGudangTanggal !== 'none') {
+                $effectiveMin = $minGudangTanggal;
+            } else {
+                $effectiveMin = $minBarangTgl ?: 'none';
+            }
+            $groupedBarangs[$effectiveMin][] = $bId;
         }
 
         $result = [];
@@ -179,6 +226,11 @@ class StokGudang extends Model
         $inQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->whereNotNull('gudang_tujuan_id')
             ->whereRaw("transaksi_stok.tanggal >= COALESCE(
+                (SELECT DATE_FORMAT(MAX(pa.tanggal), '%Y-%m-%d 00:00:00')
+                 FROM persediaan_awal pa
+                 WHERE pa.status IN ('approved', 'posted')
+                   AND pa.gudang_id = transaksi_stok.gudang_tujuan_id
+                   AND COALESCE(pa.divisi_id, 0) = COALESCE(transaksi_stok.divisi_tujuan_id, 0)),
                 (SELECT DATE_FORMAT(MAX(sa.tanggal), '%Y-%m-%d 00:00:00')
                  FROM transaksi_stok sa
                  WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')
@@ -198,6 +250,11 @@ class StokGudang extends Model
         $outQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->whereNotNull('gudang_asal_id')
             ->whereRaw("transaksi_stok.tanggal >= COALESCE(
+                (SELECT DATE_FORMAT(MAX(pa.tanggal), '%Y-%m-%d 00:00:00')
+                 FROM persediaan_awal pa
+                 WHERE pa.status IN ('approved', 'posted')
+                   AND pa.gudang_id = transaksi_stok.gudang_asal_id
+                   AND COALESCE(pa.divisi_id, 0) = COALESCE(transaksi_stok.divisi_asal_id, 0)),
                 (SELECT DATE_FORMAT(MAX(sa.tanggal), '%Y-%m-%d 00:00:00')
                  FROM transaksi_stok sa
                  WHERE sa.source_type IN ('saldo_awal', 'persediaan_awal')

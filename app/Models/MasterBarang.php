@@ -610,6 +610,39 @@ public function resepBahanBakuAlternatif()
                     'updated_at'          => now(),
                 ]);
         }
+
+        // Nonaktifkan batch-batch usang yang berasal dari periode sebelum cut-off persediaan awal disetujui terbaru
+        $approvedPas = \Illuminate\Support\Facades\DB::table('persediaan_awal')
+            ->whereIn('status', ['approved', 'posted'])
+            ->select('gudang_id', 'divisi_id', \Illuminate\Support\Facades\DB::raw('MAX(tanggal) as max_tanggal'))
+            ->groupBy('gudang_id', 'divisi_id')
+            ->get();
+
+        foreach ($approvedPas as $apa) {
+            $prefixCurrentMonth = date('Ym', strtotime($apa->max_tanggal)); // e.g. '202610'
+            $oldBatchQuery = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('gudang_id', $apa->gudang_id)
+                ->where('qty_sisa', '>', 0)
+                ->where('batch_number', 'not like', 'SA-' . $prefixCurrentMonth . '%')
+                ->where('batch_number', 'not like', $prefixCurrentMonth . '%')
+                ->where('batch_number', 'not like', 'SO-%-' . $prefixCurrentMonth . '%');
+
+            if ($apa->divisi_id) {
+                $oldBatchQuery->where('divisi_id', $apa->divisi_id);
+            } else {
+                $oldBatchQuery->whereNull('divisi_id');
+            }
+
+            if ($targetBarangId) {
+                $oldBatchQuery->where('barang_id', $targetBarangId);
+            }
+
+            $oldBatchQuery->update([
+                'qty_sisa'   => 0,
+                'is_habis'   => 1,
+                'updated_at' => now(),
+            ]);
+        }
     }
 
     /**

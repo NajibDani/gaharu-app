@@ -194,9 +194,9 @@ class PersediaanAwalController extends Controller
             ->join('persediaan_awal as pa', 'pa.id', '=', 'pad.persediaan_awal_id')
             ->where('pa.gudang_id', $gudangUtamaId)
             ->where('pad.harga_satuan', '>', 0)
-            ->orderByRaw("CASE WHEN pa.status IN ('approved', 'posted') THEN 1 ELSE 2 END ASC")
-            ->orderBy('pa.tanggal', 'desc')
-            ->orderBy('pad.id', 'desc')
+            ->orderByRaw("CASE WHEN pa.status IN ('approved', 'posted') THEN 2 ELSE 1 END ASC")
+            ->orderBy('pa.tanggal', 'asc')
+            ->orderBy('pad.id', 'asc')
             ->pluck('pad.harga_satuan', 'pad.barang_id')
             ->toArray();
 
@@ -204,7 +204,7 @@ class PersediaanAwalController extends Controller
         $batchPrices = DB::table('stok_gudang_batch')
             ->where('gudang_id', $gudangUtamaId)
             ->where('harga_per_qty', '>', 0)
-            ->orderBy('id', 'desc')
+            ->orderBy('id', 'asc')
             ->pluck('harga_per_qty', 'barang_id')
             ->toArray();
 
@@ -212,22 +212,22 @@ class PersediaanAwalController extends Controller
         $latestPurchases = DB::table('pembelian_detail as pd')
             ->join('pembelian as p', 'p.id', '=', 'pd.pembelian_id')
             ->where('pd.harga_per_qty', '>', 0)
-            ->orderBy('p.tanggal', 'desc')
-            ->orderBy('pd.id', 'desc')
+            ->orderBy('p.tanggal', 'asc')
+            ->orderBy('pd.id', 'asc')
             ->pluck('pd.harga_per_qty', 'pd.barang_id')
             ->toArray();
 
         // 4. Ambil dari batch stok gudang manapun
         $batchAnyPrices = DB::table('stok_gudang_batch')
             ->where('harga_per_qty', '>', 0)
-            ->orderBy('id', 'desc')
+            ->orderBy('id', 'asc')
             ->pluck('harga_per_qty', 'barang_id')
             ->toArray();
 
         // 5. Ambil dari persediaan awal gudang manapun
         $paAnyPrices = DB::table('persediaan_awal_detail as pad')
             ->where('pad.harga_satuan', '>', 0)
-            ->orderBy('pad.id', 'desc')
+            ->orderBy('pad.id', 'asc')
             ->pluck('pad.harga_satuan', 'pad.barang_id')
             ->toArray();
 
@@ -689,11 +689,12 @@ class PersediaanAwalController extends Controller
             $barang = $d->barang;
             if (!$barang) continue;
 
-            $konv = (float)($d->konversi_pembelian ?: ($barang->konversi_pembelian ?: 1.00));
-            if ($konv <= 0) $konv = 1.00;
-
-            $satStok = $d->satuan ?: ($barang->satuan ?: 'pcs');
-            $satBeli = $d->satuan_pembelian ?: ($barang->satuan_pembelian ?: $satStok);
+            $satStok = $barang->satuan ?: 'pcs';
+            $satBeli = $barang->satuan_pembelian ?: $satStok;
+            $konv = (float)($barang->konversi_pembelian ?: 1.00);
+            if ($konv <= 0 || strtolower(trim($satBeli)) === strtolower(trim($satStok))) {
+                $konv = 1.00;
+            }
 
             $hasKonv = $satBeli && $konv > 1 && ($satBeli !== $satStok);
 
@@ -704,15 +705,9 @@ class PersediaanAwalController extends Controller
 
             if ($hasKonv) {
                 if ($d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
-                    if (abs(((float)$d->qty_pembelian * $konv) - (float)$d->qty) < 0.05) {
-                        $isSavedInPembelian = true;
-                        $qtyInput = (float)$d->qty_pembelian;
-                        $hargaInput = (float)($d->harga_pembelian ?: round((float)$d->harga_satuan * $konv, 2));
-                    } else {
-                        $isSavedInPembelian = false;
-                        $qtyInput = (float)$d->qty;
-                        $hargaInput = (float)$d->harga_satuan;
-                    }
+                    $isSavedInPembelian = true;
+                    $qtyInput = (float)$d->qty_pembelian;
+                    $hargaInput = (float)($d->harga_pembelian ?: round((float)$d->harga_satuan * $konv, 2));
                 }
             }
 
@@ -1682,24 +1677,51 @@ class PersediaanAwalController extends Controller
             $barang = $d->barang;
             if (!$barang) continue;
 
-            $konv = (float)($d->konversi_pembelian ?: ($barang->konversi_pembelian ?? 1.00));
+            $masterSatStok = $barang->satuan ?: 'pcs';
+            $masterSatBeli = $barang->satuan_pembelian ?: $masterSatStok;
+            $masterKonv = (float)($barang->konversi_pembelian ?: 1.00);
+            if ($masterKonv <= 0 || strtolower(trim($masterSatBeli)) === strtolower(trim($masterSatStok))) {
+                $masterKonv = 1.00;
+            }
+
+            $dChanged = false;
+
+            // 1. Deteksi dan sinkronkan jika ada perbedaan satuan dasar atau rasio konversi dengan Master Barang
+            $isUnitMismatch = ($d->satuan !== $masterSatStok) || (abs((float)$d->konversi_pembelian - $masterKonv) > 0.001);
+            if ($isUnitMismatch) {
+                $d->satuan = $masterSatStok;
+                $d->satuan_pembelian = ($masterKonv > 1) ? $masterSatBeli : null;
+                $d->konversi_pembelian = $masterKonv;
+
+                if ($d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
+                    $d->qty = round((float)$d->qty_pembelian * $masterKonv, 4);
+                    if ((float)$d->harga_pembelian > 0) {
+                        $d->harga_satuan = round((float)$d->harga_pembelian / $masterKonv, 4);
+                    }
+                } elseif ($masterKonv > 1 && (float)$d->qty > 0) {
+                    $d->qty_pembelian = round((float)$d->qty / $masterKonv, 4);
+                    $d->harga_pembelian = round((float)$d->harga_satuan * $masterKonv, 2);
+                }
+                $dChanged = true;
+            }
+
+            $konv = (float)($d->konversi_pembelian ?: $masterKonv);
             if ($konv <= 0) $konv = 1.00;
 
-            $satStok = $barang->satuan ?: 'pcs';
-            $satBeli = $barang->satuan_pembelian ?: $satStok;
+            $satStok = $masterSatStok;
+            $satBeli = $d->satuan_pembelian ?: $satStok;
 
             $refHargaStok = (float) ($gudangUtamaMap[$d->barang_id] ?? ($barang->hpp_referensi ?? 0));
             $refHargaBeli = round($refHargaStok * $konv, 2);
 
-            $dChanged = false;
-
             if ($satBeli !== $satStok && $konv > 1) {
-                // Jika harga_satuan (harga per stok dasar) bernilai besar (setara harga per PACK),
-                // maka secara otomatis dikoreksi kembali menjadi harga per stok dasar (GR/PCS)
-                if ((float)$d->harga_satuan > 0 && $refHargaStok > 0 && (float)$d->harga_satuan >= ($refHargaStok * ($konv / 2))) {
-                    $d->harga_pembelian = (float)$d->harga_satuan;
-                    $d->harga_satuan = round((float)$d->harga_satuan / $konv, 4);
-                    $dChanged = true;
+                // Hanya koreksi jika harga_satuan salah diisi setara harga pack (terdeteksi ketika harga_pembelian belum ada atau sama persis dengan harga_satuan)
+                if ((float)$d->harga_satuan > 0 && ((float)$d->harga_pembelian <= 0 || abs((float)$d->harga_pembelian - (float)$d->harga_satuan) < 0.01)) {
+                    if ($refHargaStok > 0 && (float)$d->harga_satuan >= ($refHargaStok * ($konv / 2))) {
+                        $d->harga_pembelian = (float)$d->harga_satuan;
+                        $d->harga_satuan = round((float)$d->harga_satuan / $konv, 4);
+                        $dChanged = true;
+                    }
                 }
             }
 
@@ -1719,14 +1741,46 @@ class PersediaanAwalController extends Controller
 
             if ($dChanged) {
                 $d->save();
+
+                // Sinkronkan TransaksiStok saldo_awal terkait
+                TransaksiStok::whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
+                    ->where('source_id', $persediaanAwal->id)
+                    ->where('barang_id', $d->barang_id)
+                    ->update([
+                        'qty'         => $d->qty,
+                        'total_harga' => $d->total_nilai,
+                    ]);
+
+                // Sinkronkan StokGudangBatch saldo awal terkait
+                if ($d->batch_number) {
+                    $batches = StokGudangBatch::where('batch_number', $d->batch_number)
+                        ->where('barang_id', $d->barang_id)
+                        ->where('gudang_id', $persediaanAwal->gudang_id)
+                        ->get();
+
+                    foreach ($batches as $b) {
+                        $used = (float)$b->qty_keluar;
+                        $newSisa = max(0, (float)$d->qty - $used);
+                        $b->update([
+                            'qty_masuk'     => (float)$d->qty,
+                            'harga_per_qty' => (float)$d->harga_satuan,
+                            'qty_sisa'      => $newSisa,
+                            'is_habis'      => ($newSisa <= 0),
+                        ]);
+                    }
+                }
+
+                \App\Models\StokGudang::reconcileStockSummary($d->barang_id, $persediaanAwal->gudang_id, $persediaanAwal->divisi_id);
             }
 
             $totalNilaiCalculated += (float)$d->total_nilai;
         }
 
-        if (abs((float)$persediaanAwal->total_nilai - $totalNilaiCalculated) > 0.01) {
-            $persediaanAwal->update(['total_nilai' => $totalNilaiCalculated]);
-        }
+        $totalQtyCalculated = $persediaanAwal->details()->sum('qty');
+        $persediaanAwal->update([
+            'total_qty'   => $totalQtyCalculated,
+            'total_nilai' => $totalNilaiCalculated,
+        ]);
     }
 
     /*

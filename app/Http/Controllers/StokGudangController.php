@@ -314,7 +314,23 @@ class StokGudangController extends Controller
         $saQty = 0;
         $saNilai = 0;
 
-        // Cari tanggal persediaan awal disetujui terbaru untuk barang ini pada gudang/divisi ini (Cut-off Baseline Refresh Inventory)
+        // 1. Cari tanggal cut-off persediaan awal gudang/divisi disetujui terbaru pada atau sebelum endDate
+        $paCutoffQuery = DB::table('persediaan_awal')
+            ->whereIn('status', ['approved', 'posted'])
+            ->where('tanggal', '<=', $endDate);
+
+        if ($gudangId && $divisiId) {
+            $paCutoffQuery->where('gudang_id', $gudangId)->where('divisi_id', $divisiId);
+        } elseif ($gudangId) {
+            $paCutoffQuery->where('gudang_id', $gudangId)->whereNull('divisi_id');
+        } elseif ($divisiId) {
+            $paCutoffQuery->where('divisi_id', $divisiId);
+        }
+
+        $latestPaTanggal = $paCutoffQuery->max('tanggal');
+        $minGudangTanggal = $latestPaTanggal ? (date('Y-m-d', strtotime($latestPaTanggal)) . ' 00:00:00') : null;
+
+        // 2. Cari tanggal saldo awal spesifik barang ini pada gudang/divisi ini
         $saQuery = DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
             ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
@@ -329,7 +345,17 @@ class StokGudangController extends Controller
         }
 
         $latestSaTanggal = $saQuery->max('tanggal');
-        $minTanggal = $latestSaTanggal ? (date('Y-m-d', strtotime($latestSaTanggal)) . ' 00:00:00') : null;
+        $minBarangTanggal = $latestSaTanggal ? (date('Y-m-d', strtotime($latestSaTanggal)) . ' 00:00:00') : null;
+
+        // Persediaan awal berfungsi sebagai refresh & cut-off baseline persediaan
+        $minTanggal = null;
+        if ($minGudangTanggal && $minBarangTanggal) {
+            $minTanggal = max($minGudangTanggal, $minBarangTanggal);
+        } elseif ($minGudangTanggal) {
+            $minTanggal = $minGudangTanggal;
+        } else {
+            $minTanggal = $minBarangTanggal;
+        }
 
         $rawBefore = DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
@@ -341,6 +367,9 @@ class StokGudangController extends Controller
 
         if ($minTanggal) {
             $rawBefore->where('tanggal', '>=', $minTanggal);
+            if ($minTanggal > ($startDate . ' 00:00:00')) {
+                $rawPeriod->where('tanggal', '>=', $minTanggal);
+            }
         }
 
         if ($gudangId && $divisiId) {
@@ -1054,9 +1083,18 @@ class StokGudangController extends Controller
             $approvedPbks = $pbkQuery->get();
 
             foreach ($approvedPbks as $pbk) {
+                $isPosOrSales = str_starts_with($pbk->kode_pengeluaran ?? '', 'OUT-MOKA-')
+                    || str_starts_with($pbk->kode_pengeluaran ?? '', 'AUTO_POS')
+                    || str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-POS-')
+                    || $pbk->jenis_pengeluaran === 'penjualan';
+
                 $isOpnameOrWasted = str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-SO-')
                     || $pbk->jenis_pengeluaran === 'wasted'
-                    || str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-WST-');
+                    || str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-WST-')
+                    || $isPosOrSales;
+
+                $isTransferFromUtama = ($pbk->jenis_pengeluaran === 'transfer' || str_starts_with($pbk->kode_pengeluaran ?? '', 'PBK-'))
+                    && !$isOpnameOrWasted;
 
                 $details = $pbk->details;
                 if ($barangId) {
@@ -1085,7 +1123,7 @@ class StokGudangController extends Controller
 
                     $tanggal = $pbk->tanggal ?? $pbk->created_at ?? now();
 
-                    if (!$isOpnameOrWasted && $pbk->gudang_id) {
+                    if ($isTransferFromUtama && $pbk->gudang_id) {
                         // 1. Mutasi Masuk di Gudang/Divisi Tujuan (e.g. Kejingga)
                         $txMasuk = \App\Models\TransaksiStok::where('source_type', 'pengeluaran_bahan_baku')
                             ->where('source_id', $pbk->id)
@@ -1117,6 +1155,10 @@ class StokGudangController extends Controller
                             }
                             if ($txMasuk->divisi_tujuan_id != $pbk->divisi_id) {
                                 $upMasuk['divisi_tujuan_id'] = $pbk->divisi_id;
+                                $needsUpdate = true;
+                            }
+                            if (abs((float)$txMasuk->qty - $qty) > 0.01) {
+                                $upMasuk['qty'] = $qty;
                                 $needsUpdate = true;
                             }
                             if (abs((float)$txMasuk->total_harga - $totalHarga) > 0.01) {
@@ -1151,8 +1193,15 @@ class StokGudangController extends Controller
                                 'created_by'       => $pbk->approved_by ?? $pbk->created_by ?? 1,
                             ]);
                         } else {
+                            $upKeluar = [];
+                            if (abs((float)$txKeluar->qty - $qty) > 0.01) {
+                                $upKeluar['qty'] = $qty;
+                            }
                             if (abs((float)$txKeluar->total_harga - $totalHarga) > 0.01) {
-                                $txKeluar->update(['total_harga' => $totalHarga]);
+                                $upKeluar['total_harga'] = $totalHarga;
+                            }
+                            if (!empty($upKeluar)) {
+                                $txKeluar->update($upKeluar);
                             }
                         }
                     }
