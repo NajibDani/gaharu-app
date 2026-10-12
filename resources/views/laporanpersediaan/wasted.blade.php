@@ -80,6 +80,17 @@
                             <option value="draft"    {{ request('status') === 'draft' ? 'selected' : '' }}>Hanya Draft</option>
                         </select>
                     </div>
+                    <div class="col-12 col-md-2">
+                        <label class="form-label fw-semibold text-muted small mb-1">URUTKAN</label>
+                        <select name="sort" class="form-select form-select-sm">
+                            <option value="nominal_desc" {{ request('sort', 'nominal_desc') === 'nominal_desc' ? 'selected' : '' }}>Nominal Wasted Tertinggi</option>
+                            <option value="nominal_asc"  {{ request('sort') === 'nominal_asc' ? 'selected' : '' }}>Nominal Wasted Terendah</option>
+                            <option value="qty_desc"     {{ request('sort') === 'qty_desc' ? 'selected' : '' }}>Qty Wasted Tertinggi</option>
+                            <option value="qty_asc"      {{ request('sort') === 'qty_asc' ? 'selected' : '' }}>Qty Wasted Terendah</option>
+                            <option value="persen_desc"  {{ request('sort') === 'persen_desc' ? 'selected' : '' }}>% Wasted Tertinggi</option>
+                            <option value="persen_asc"   {{ request('sort') === 'persen_asc' ? 'selected' : '' }}>% Wasted Terendah</option>
+                        </select>
+                    </div>
                     <div class="col-12 col-md-2 d-flex gap-2">
                         <button type="submit" class="btn btn-sm text-white fw-semibold flex-grow-1 shadow-sm" style="background-color: #d88656; border: none; border-radius: 8px;">
                             <i class="bi bi-filter me-1"></i> Terapkan
@@ -192,17 +203,41 @@
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
                         <thead>
+                            @php
+                                $currentSort = request('sort', 'nominal_desc');
+                                $sortLink = function($col) use ($currentSort) {
+                                    $next = ($currentSort === "{$col}_desc") ? "{$col}_asc" : "{$col}_desc";
+                                    return request()->fullUrlWithQuery(['sort' => $next]);
+                                };
+                                $sortIcon = function($col) use ($currentSort) {
+                                    if ($currentSort === "{$col}_desc") return '<i class="bi bi-arrow-down-short ms-1 text-danger"></i>';
+                                    if ($currentSort === "{$col}_asc")  return '<i class="bi bi-arrow-up-short ms-1 text-danger"></i>';
+                                    return '<i class="bi bi-arrow-down-up ms-1 text-muted opacity-50" style="font-size: 11px;"></i>';
+                                };
+                            @endphp
                             <tr>
                                 <th class="text-center py-3" style="width: 45px;">No</th>
                                 <th class="py-3" style="min-width: 180px;">Nama Barang / Bahan</th>
                                 <th class="text-center py-3" style="width: 70px;">Satuan</th>
-                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 110px;">Qty Wasted</th>
-                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 125px;">Nominal Wasted</th>
+                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 110px;">
+                                    <a href="{{ $sortLink('qty') }}" class="text-danger text-decoration-none d-inline-flex align-items-center justify-content-end" title="Urutkan Qty Wasted">
+                                        Qty Wasted {!! $sortIcon('qty') !!}
+                                    </a>
+                                </th>
+                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 125px;">
+                                    <a href="{{ $sortLink('nominal') }}" class="text-danger text-decoration-none d-inline-flex align-items-center justify-content-end" title="Urutkan Nominal Wasted">
+                                        Nominal Wasted {!! $sortIcon('nominal') !!}
+                                    </a>
+                                </th>
                                 <th class="text-center py-3" style="min-width: 130px;">Alokasi Divisi</th>
                                 <th class="text-end py-3" style="min-width: 110px;">Qty Beli</th>
                                 <th class="text-end py-3" style="min-width: 125px;">Nominal Beli</th>
                                 <th class="text-center py-3" style="min-width: 100px;">% Wasted (Qty)</th>
-                                <th class="text-center py-3" style="min-width: 100px;">% Wasted (Rp)</th>
+                                <th class="text-center py-3" style="min-width: 105px;">
+                                    <a href="{{ $sortLink('persen') }}" class="text-dark text-decoration-none d-inline-flex align-items-center justify-content-center" title="Urutkan % Wasted">
+                                        % Wasted (Rp) {!! $sortIcon('persen') !!}
+                                    </a>
+                                </th>
                                 <th class="text-center py-3" style="width: 90px;">Aksi</th>
                             </tr>
                         </thead>

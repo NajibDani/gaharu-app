@@ -157,6 +157,23 @@
                 {{ request('status') === 'all' ? 'Semua Status' : (request('status') === 'draft' ? 'Hanya Draft' : 'Hanya Approved (Sah)') }}
             </td>
         </tr>
+        <tr>
+            <td><strong>Urutan Data</strong></td>
+            <td>:</td>
+            <td colspan="4">
+                @php
+                    $sortLabels = [
+                        'nominal_desc' => 'Nominal Wasted Tertinggi (Z-A)',
+                        'nominal_asc'  => 'Nominal Wasted Terendah (A-Z)',
+                        'qty_desc'     => 'Kuantitas Wasted Tertinggi (Z-A)',
+                        'qty_asc'      => 'Kuantitas Wasted Terendah (A-Z)',
+                        'persen_desc'  => 'Persentase Wasted Tertinggi (Z-A)',
+                        'persen_asc'   => 'Persentase Wasted Terendah (A-Z)',
+                    ];
+                @endphp
+                {{ $sortLabels[request('sort', 'nominal_desc')] ?? 'Nominal Wasted Tertinggi' }}
+            </td>
+        </tr>
     </table>
 
     <table class="summary-box">

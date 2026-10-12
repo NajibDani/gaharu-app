@@ -730,9 +730,19 @@ class LaporanPersediaanController extends Controller
                 : null;
 
             return $item;
-        })
-        ->sortByDesc('total_nominal_wasted')
-        ->values();
+        });
+
+        // 4b. Pengurutan data (Sort) berdasarkan request
+        $sort = $request->get('sort', 'nominal_desc');
+        $sorted = match ($sort) {
+            'nominal_asc' => $items->sortBy('total_nominal_wasted'),
+            'qty_desc'    => $items->sortByDesc('total_qty_wasted'),
+            'qty_asc'     => $items->sortBy('total_qty_wasted'),
+            'persen_desc' => $items->sortByDesc(fn($i) => $i['persen_nominal'] ?? -1),
+            'persen_asc'  => $items->sortBy(fn($i) => $i['persen_nominal'] ?? 999999),
+            default       => $items->sortByDesc('total_nominal_wasted'),
+        };
+        $items = $sorted->values();
 
         // 5. Hitung Summary Cards / KPI
         $summary = [
