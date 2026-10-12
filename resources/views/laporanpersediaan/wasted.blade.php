@@ -3,14 +3,14 @@
 
     <div class="container-fluid py-2">
 
-        {{-- ── TITLE & BREADCRUMB ── --}}
+        {{-- ── TITLE & ACTIONS ── --}}
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h4 class="fw-bold mb-1" style="color: #2c3e50;">
                     <i class="bi bi-trash3-fill text-danger me-2"></i>Laporan Wasted / Pemborosan Bahan Baku
                 </h4>
                 <p class="text-muted small mb-0">
-                    Memuat total pemborosan (wasted/busuk) tiap barang, alokasi per outlet/divisi, dan rasio perbandingannya terhadap total pembelian.
+                    Ringkasan pemborosan bahan baku tiap barang, rasio terhadap pembelian, dan alokasi divisi/outlet.
                 </p>
             </div>
             <div class="d-flex gap-2 align-items-center">
@@ -154,7 +154,7 @@
                     <div class="card-body p-3">
                         <div class="d-flex justify-content-between align-items-center mb-1">
                             <span class="text-uppercase fw-semibold text-muted" style="font-size: 11px; letter-spacing: 0.5px;">Bahan Terdampak Wasted</span>
-                            <i class="bi bi-boxes text-purple fs-5" style="color: #6c5ce7;"></i>
+                            <i class="bi bi-boxes fs-5" style="color: #6c5ce7;"></i>
                         </div>
                         <div class="fw-bold text-dark" style="font-size: 22px;">
                             {{ $summary['total_items_wasted'] }} <span style="font-size: 14px; font-weight: normal; color: #6c757d;">Item</span>
@@ -167,38 +167,43 @@
             </div>
         </div>
 
-        {{-- ── TABEL UTAMA LAPORAN WASTED ── --}}
+        {{-- ── TABEL UTAMA LAPORAN WASTED (RINGKAS & USER FRIENDLY) ── --}}
         <div class="card shadow-sm border-0 mb-4" style="border-radius: 12px; overflow: hidden;">
-            <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center border-bottom">
+            <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center border-bottom flex-wrap gap-2">
                 <div>
                     <h6 class="fw-bold mb-0 text-dark">
-                        <i class="bi bi-table me-2 text-primary"></i>Rincian Wasted Tiap Barang &amp; Alokasi Outlet
+                        <i class="bi bi-table me-2 text-primary"></i>Ringkasan Wasted Bahan Baku &amp; Rasio Pembelian
                     </h6>
                     <small class="text-muted">
                         Periode: {{ \Carbon\Carbon::parse($dari)->format('d/m/Y') }} s/d {{ \Carbon\Carbon::parse($sampai)->format('d/m/Y') }}
                     </small>
                 </div>
-                <span class="badge bg-light text-dark border px-3 py-2 fw-semibold" style="font-size: 12px;">
-                    Total: {{ $items->count() }} Jenis Bahan
-                </span>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-light text-secondary border px-2 py-1 small">
+                        <i class="bi bi-info-circle me-1"></i>Klik "Detail" untuk melihat rincian divisi &amp; dokumen
+                    </span>
+                    <span class="badge bg-light text-dark border px-3 py-2 fw-semibold" style="font-size: 12px;">
+                        Total: {{ $items->count() }} Bahan
+                    </span>
+                </div>
             </div>
 
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0" style="font-size: 13px;">
-                        <thead class="table-light text-muted small text-uppercase" style="letter-spacing: 0.5px; border-bottom: 2px solid #e9ecef;">
+                        <thead>
                             <tr>
-                                <th class="text-center py-3" style="width: 40px;">No</th>
-                                <th class="py-3" style="min-width: 200px;">Nama Barang / Bahan</th>
-                                <th class="text-center py-3" style="width: 80px;">Satuan</th>
-                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 130px; background-color: #fff5f5;">Qty Wasted</th>
-                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 140px; background-color: #fff5f5;">Nominal Wasted</th>
-                                <th class="py-3" style="min-width: 280px;">Alokasi Outlet &amp; Divisi</th>
-                                <th class="text-end py-3" style="min-width: 120px; background-color: #f8fafc;">Qty Beli</th>
-                                <th class="text-end py-3" style="min-width: 130px; background-color: #f8fafc;">Nominal Beli</th>
-                                <th class="text-center py-3" style="min-width: 110px;">% Wasted (Qty)</th>
-                                <th class="text-center py-3" style="min-width: 110px;">% Wasted (Rp)</th>
-                                <th class="text-center py-3" style="width: 80px;">Aksi</th>
+                                <th class="text-center py-3" style="width: 45px;">No</th>
+                                <th class="py-3" style="min-width: 180px;">Nama Barang / Bahan</th>
+                                <th class="text-center py-3" style="width: 70px;">Satuan</th>
+                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 110px;">Qty Wasted</th>
+                                <th class="text-end py-3 text-danger fw-bold" style="min-width: 125px;">Nominal Wasted</th>
+                                <th class="text-center py-3" style="min-width: 130px;">Alokasi Divisi</th>
+                                <th class="text-end py-3" style="min-width: 110px;">Qty Beli</th>
+                                <th class="text-end py-3" style="min-width: 125px;">Nominal Beli</th>
+                                <th class="text-center py-3" style="min-width: 100px;">% Wasted (Qty)</th>
+                                <th class="text-center py-3" style="min-width: 100px;">% Wasted (Rp)</th>
+                                <th class="text-center py-3" style="width: 90px;">Aksi</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -206,8 +211,10 @@
                                 @php
                                     $pQty = $item['persen_qty'];
                                     $pNom = $item['persen_nominal'];
+                                    $locCount = count($item['alokasi']);
+                                    $firstLoc = $locCount > 0 ? reset($item['alokasi']) : null;
 
-                                    // Helper style untuk badge persentase
+                                    // Helper style badge persentase
                                     $getBadgeClass = function($val) {
                                         if ($val === null) return 'bg-secondary text-white';
                                         if ($val > 15) return 'bg-danger text-white';
@@ -233,45 +240,67 @@
                                     </td>
 
                                     {{-- Qty & Nominal Wasted --}}
-                                    <td class="text-end fw-bold text-danger" style="background-color: #fffdfd;">
+                                    <td class="text-end fw-bold text-danger">
                                         {{ number_format($item['total_qty_wasted'], 2, ',', '.') }}
                                     </td>
-                                    <td class="text-end fw-bold text-danger" style="background-color: #fffdfd;">
+                                    <td class="text-end fw-bold text-danger">
                                         Rp {{ number_format($item['total_nominal_wasted'], 0, ',', '.') }}
                                     </td>
 
-                                    {{-- Alokasi Outlet / Divisi --}}
-                                    <td>
-                                        <div class="d-flex flex-column gap-1">
-                                            @foreach($item['alokasi'] as $loc)
-                                                @php
-                                                    $locPercent = $item['total_qty_wasted'] > 0 
-                                                        ? round(($loc['qty'] / $item['total_qty_wasted']) * 100, 1) 
-                                                        : 0;
-                                                @endphp
-                                                <div class="d-flex justify-content-between align-items-center bg-light px-2 py-1 rounded border" style="font-size: 11px;">
-                                                    <span class="fw-semibold text-dark">
-                                                        <i class="bi bi-geo-alt-fill me-1 text-danger" style="font-size: 10px;"></i>{{ $loc['lokasi'] }}
-                                                    </span>
-                                                    <span class="text-end">
-                                                        <strong>{{ number_format($loc['qty'], 2, ',', '.') }}</strong> {{ $item['satuan'] }}
-                                                        <span class="text-muted">({{ $locPercent }}%)</span>
-                                                        &bull; <span class="text-danger">Rp {{ number_format($loc['nominal'], 0, ',', '.') }}</span>
-                                                    </span>
-                                                </div>
-                                            @endforeach
-                                        </div>
+                                    {{-- Ringkasan Alokasi Lokasi (Singkat & User-Friendly) --}}
+                                    <td class="text-center">
+                                        @if($locCount === 1)
+                                            <button type="button" 
+                                                    class="btn btn-sm btn-light border py-1 px-2 rounded-pill text-dark fw-semibold btn-show-detail-wasted shadow-none" 
+                                                    style="font-size: 11px;"
+                                                    data-barang-nama="{{ $item['nama_barang'] }}"
+                                                    data-barang-kode="{{ $item['kode_barang'] }}"
+                                                    data-barang-kategori="{{ $item['kategori'] }}"
+                                                    data-barang-satuan="{{ $item['satuan'] }}"
+                                                    data-total-qty="{{ number_format($item['total_qty_wasted'], 2, ',', '.') }}"
+                                                    data-total-nominal="Rp {{ number_format($item['total_nominal_wasted'], 0, ',', '.') }}"
+                                                    data-total-beli-qty="{{ number_format($item['total_qty_beli'], 2, ',', '.') }}"
+                                                    data-total-beli-nominal="Rp {{ number_format($item['total_nominal_beli'], 0, ',', '.') }}"
+                                                    data-persen-qty="{{ $pQty !== null ? number_format($pQty, 2, ',', '.') . '%' : 'Tanpa Pembelian' }}"
+                                                    data-persen-nominal="{{ $pNom !== null ? number_format($pNom, 2, ',', '.') . '%' : 'Tanpa Pembelian' }}"
+                                                    data-alokasi="{{ json_encode(array_values($item['alokasi'])) }}"
+                                                    data-transaksi="{{ json_encode($item['transaksi_list']) }}"
+                                                    title="Klik untuk melihat rincian alokasi">
+                                                <i class="bi bi-geo-alt-fill text-danger me-1"></i>{{ $firstLoc['lokasi'] }}
+                                            </button>
+                                        @elseif($locCount > 1)
+                                            <button type="button" 
+                                                    class="btn btn-sm btn-outline-danger py-1 px-2 rounded-pill fw-semibold btn-show-detail-wasted" 
+                                                    style="font-size: 11px;"
+                                                    data-barang-nama="{{ $item['nama_barang'] }}"
+                                                    data-barang-kode="{{ $item['kode_barang'] }}"
+                                                    data-barang-kategori="{{ $item['kategori'] }}"
+                                                    data-barang-satuan="{{ $item['satuan'] }}"
+                                                    data-total-qty="{{ number_format($item['total_qty_wasted'], 2, ',', '.') }}"
+                                                    data-total-nominal="Rp {{ number_format($item['total_nominal_wasted'], 0, ',', '.') }}"
+                                                    data-total-beli-qty="{{ number_format($item['total_qty_beli'], 2, ',', '.') }}"
+                                                    data-total-beli-nominal="Rp {{ number_format($item['total_nominal_beli'], 0, ',', '.') }}"
+                                                    data-persen-qty="{{ $pQty !== null ? number_format($pQty, 2, ',', '.') . '%' : 'Tanpa Pembelian' }}"
+                                                    data-persen-nominal="{{ $pNom !== null ? number_format($pNom, 2, ',', '.') . '%' : 'Tanpa Pembelian' }}"
+                                                    data-alokasi="{{ json_encode(array_values($item['alokasi'])) }}"
+                                                    data-transaksi="{{ json_encode($item['transaksi_list']) }}"
+                                                    title="Tersebar di {{ $locCount }} divisi/outlet. Klik untuk rincian.">
+                                                <i class="bi bi-geo-alt-fill me-1"></i>{{ $locCount }} Divisi / Outlet <i class="bi bi-chevron-right ms-1" style="font-size: 9px;"></i>
+                                            </button>
+                                        @else
+                                            <span class="text-muted small">—</span>
+                                        @endif
                                     </td>
 
                                     {{-- Total Pembelian --}}
-                                    <td class="text-end text-muted font-monospace" style="background-color: #fbfcfd;">
+                                    <td class="text-end text-muted font-monospace">
                                         @if($item['total_qty_beli'] > 0)
                                             {{ number_format($item['total_qty_beli'], 2, ',', '.') }}
                                         @else
                                             <span class="text-muted fst-italic">0</span>
                                         @endif
                                     </td>
-                                    <td class="text-end fw-semibold text-dark" style="background-color: #fbfcfd;">
+                                    <td class="text-end fw-semibold text-dark">
                                         @if($item['total_nominal_beli'] > 0)
                                             Rp {{ number_format($item['total_nominal_beli'], 0, ',', '.') }}
                                         @else
@@ -303,18 +332,25 @@
                                         @endif
                                     </td>
 
-                                    {{-- Aksi Rincian --}}
+                                    {{-- Tombol Detail --}}
                                     <td class="text-center">
                                         <button type="button" 
-                                                class="btn btn-sm btn-outline-primary p-1 px-2 btn-show-detail-wasted shadow-sm"
+                                                class="btn btn-sm btn-outline-primary px-2 py-1 fw-semibold btn-show-detail-wasted shadow-sm"
+                                                style="border-radius: 6px; font-size: 12px;"
                                                 data-barang-nama="{{ $item['nama_barang'] }}"
                                                 data-barang-kode="{{ $item['kode_barang'] }}"
+                                                data-barang-kategori="{{ $item['kategori'] }}"
                                                 data-barang-satuan="{{ $item['satuan'] }}"
                                                 data-total-qty="{{ number_format($item['total_qty_wasted'], 2, ',', '.') }}"
                                                 data-total-nominal="Rp {{ number_format($item['total_nominal_wasted'], 0, ',', '.') }}"
+                                                data-total-beli-qty="{{ number_format($item['total_qty_beli'], 2, ',', '.') }}"
+                                                data-total-beli-nominal="Rp {{ number_format($item['total_nominal_beli'], 0, ',', '.') }}"
+                                                data-persen-qty="{{ $pQty !== null ? number_format($pQty, 2, ',', '.') . '%' : 'Tanpa Pembelian' }}"
+                                                data-persen-nominal="{{ $pNom !== null ? number_format($pNom, 2, ',', '.') . '%' : 'Tanpa Pembelian' }}"
+                                                data-alokasi="{{ json_encode(array_values($item['alokasi'])) }}"
                                                 data-transaksi="{{ json_encode($item['transaksi_list']) }}"
-                                                title="Lihat Rincian Transaksi PBK Wasted">
-                                            <i class="bi bi-info-circle me-1"></i> Rincian
+                                                title="Lihat Rincian Alokasi Divisi &amp; Riwayat Dokumen PBK Wasted">
+                                            <i class="bi bi-eye me-1"></i>Detail
                                         </button>
                                     </td>
                                 </tr>
@@ -323,7 +359,7 @@
                                     <td colspan="11" class="text-center py-5 text-muted">
                                         <i class="bi bi-check-circle-fill text-success fs-1 d-block mb-2"></i>
                                         <strong>Tidak ada transaksi wasted tercatat pada periode ini.</strong>
-                                        <p class="small text-muted mb-0">Coba ubah filter rentang tanggal, gudang, atau status dokumen.</p>
+                                        <p class="small text-muted mb-0">Coba sesuaikan filter rentang tanggal atau gudang.</p>
                                     </td>
                                 </tr>
                             @endforelse
@@ -332,17 +368,17 @@
                             <tfoot class="table-light fw-bold text-dark border-top">
                                 <tr>
                                     <td colspan="3" class="text-end py-3 text-uppercase">TOTAL KESELURUHAN:</td>
-                                    <td class="text-end py-3 text-danger fw-bold" style="background-color: #fff5f5;">
+                                    <td class="text-end py-3 text-danger fw-bold">
                                         {{ number_format($summary['total_qty_wasted'], 2, ',', '.') }}
                                     </td>
-                                    <td class="text-end py-3 text-danger fw-bold" style="background-color: #fff5f5;">
+                                    <td class="text-end py-3 text-danger fw-bold">
                                         Rp {{ number_format($summary['total_nominal_wasted'], 0, ',', '.') }}
                                     </td>
-                                    <td class="py-3 text-muted small">
-                                        Akumulasi seluruh outlet &amp; divisi
+                                    <td class="text-center py-3 text-muted small">
+                                        {{ $summary['total_items_wasted'] }} Item
                                     </td>
-                                    <td class="text-end py-3" style="background-color: #f8fafc;">—</td>
-                                    <td class="text-end py-3 text-dark fw-bold" style="background-color: #f8fafc;">
+                                    <td class="text-end py-3 text-muted">—</td>
+                                    <td class="text-end py-3 text-dark fw-bold">
                                         Rp {{ number_format($summary['total_nominal_beli'], 0, ',', '.') }}
                                     </td>
                                     <td class="text-center py-3">—</td>
@@ -362,49 +398,101 @@
 
     </div>
 
-    {{-- ── MODAL RINCIAN DOKUMEN WASTED ── --}}
+    {{-- ── MODAL DETAIL RINCIAN ALOKASI DIVISI & DOKUMEN WASTED ── --}}
     <div class="modal fade" id="modalDetailWasted" tabindex="-1" aria-labelledby="modalDetailWastedLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header text-white" style="background-color: #d88656;">
+            <div class="modal-content border-0 shadow" style="border-radius: 12px;">
+                <div class="modal-header text-white" style="background-color: #d88656; border-top-left-radius: 12px; border-top-right-radius: 12px;">
                     <div>
                         <h5 class="modal-title fw-bold" id="modalDetailWastedLabel">
-                            <i class="bi bi-trash3-fill me-2"></i>Rincian Dokumen Wasted
+                            <i class="bi bi-geo-alt-fill me-2"></i>Rincian Alokasi Divisi &amp; Riwayat Wasted
                         </h5>
-                        <small id="modalBarangSub" class="opacity-75"></small>
+                        <div id="modalBarangSub" class="opacity-90 small mt-1 font-monospace"></div>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body p-4">
-                    <div class="row g-2 mb-3 p-3 bg-light rounded border">
-                        <div class="col-6">
-                            <span class="text-muted small d-block">Total Kuantitas Wasted:</span>
-                            <span id="modalTotalQty" class="fw-bold fs-6 text-danger"></span>
+                    {{-- Mini KPI Card inside Modal --}}
+                    <div class="row g-2 mb-4">
+                        <div class="col-6 col-md-3">
+                            <div class="p-2 rounded border bg-light text-center h-100">
+                                <span class="text-muted d-block" style="font-size: 11px;">Total Qty Wasted</span>
+                                <span id="modalTotalQty" class="fw-bold text-danger fs-6"></span>
+                            </div>
                         </div>
-                        <div class="col-6 text-end">
-                            <span class="text-muted small d-block">Total Nominal Kerugian:</span>
-                            <span id="modalTotalNominal" class="fw-bold fs-6 text-danger"></span>
+                        <div class="col-6 col-md-3">
+                            <div class="p-2 rounded border bg-light text-center h-100">
+                                <span class="text-muted d-block" style="font-size: 11px;">Total Kerugian Wasted</span>
+                                <span id="modalTotalNominal" class="fw-bold text-danger fs-6"></span>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="p-2 rounded border bg-light text-center h-100">
+                                <span class="text-muted d-block" style="font-size: 11px;">Total Pembelian Terkait</span>
+                                <span id="modalTotalBeliNominal" class="fw-bold text-dark fs-6"></span>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="p-2 rounded border bg-light text-center h-100">
+                                <span class="text-muted d-block" style="font-size: 11px;">Rasio Wasted / Beli</span>
+                                <span id="modalPersenNominal" class="fw-bold fs-6"></span>
+                            </div>
                         </div>
                     </div>
 
-                    <h6 class="fw-bold text-dark mb-2" style="font-size: 13px;">Daftar Transaksi PBK Wasted:</h6>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered table-hover align-middle mb-0" style="font-size: 12px;">
-                            <thead class="table-light text-muted small">
-                                <tr>
-                                    <th>No. PBK</th>
-                                    <th>Tanggal</th>
-                                    <th>Lokasi (Gudang - Divisi)</th>
-                                    <th class="text-end">Qty</th>
-                                    <th class="text-end">Harga Satuan</th>
-                                    <th class="text-end">Total HPP</th>
-                                    <th>Keterangan / Alasan</th>
-                                </tr>
-                            </thead>
-                            <tbody id="modalTableBody">
-                                <!-- Populated by JS -->
-                            </tbody>
-                        </table>
+                    {{-- SECTION 1: RINCIAN ALOKASI OUTLET & DIVISI --}}
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold text-dark mb-0" style="font-size: 13px;">
+                                <i class="bi bi-diagram-3-fill me-1 text-danger"></i> 1. Alokasi Wasted pada Outlet &amp; Divisi
+                            </h6>
+                            <small class="text-muted" style="font-size: 11px;">Distribusi tempat terjadinya pemborosan</small>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered align-middle mb-0" style="font-size: 12px;">
+                                <thead class="table-light text-muted small">
+                                    <tr>
+                                        <th style="width: 40px;" class="text-center">No</th>
+                                        <th>Outlet &amp; Divisi Terkait</th>
+                                        <th class="text-end" style="width: 140px;">Kuantitas Wasted</th>
+                                        <th class="text-center" style="width: 90px;">Porsi (%)</th>
+                                        <th class="text-end" style="width: 150px;">Nominal Kerugian</th>
+                                        <th class="text-center" style="width: 80px;">Transaksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modalAlokasiBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {{-- SECTION 2: RIWAYAT DOKUMEN TRANSAKSI PBK WASTED --}}
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="fw-bold text-dark mb-0" style="font-size: 13px;">
+                                <i class="bi bi-file-earmark-text-fill me-1 text-primary"></i> 2. Riwayat Dokumen Transaksi PBK Wasted
+                            </h6>
+                            <small class="text-muted" style="font-size: 11px;">Daftar dokumen fisik PBK-WST</small>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered table-hover align-middle mb-0" style="font-size: 12px;">
+                                <thead class="table-light text-muted small">
+                                    <tr>
+                                        <th>No. PBK</th>
+                                        <th>Tanggal</th>
+                                        <th>Lokasi Dokumen</th>
+                                        <th class="text-end">Qty</th>
+                                        <th class="text-end">Harga Satuan</th>
+                                        <th class="text-end">Total HPP</th>
+                                        <th>Keterangan / Alasan</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modalTransaksiBody">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-0 py-2">
@@ -473,34 +561,89 @@
         const modalBarangSub = document.getElementById('modalBarangSub');
         const modalTotalQty = document.getElementById('modalTotalQty');
         const modalTotalNominal = document.getElementById('modalTotalNominal');
-        const modalTableBody = document.getElementById('modalTableBody');
+        const modalTotalBeliNominal = document.getElementById('modalTotalBeliNominal');
+        const modalPersenNominal = document.getElementById('modalPersenNominal');
+        const modalAlokasiBody = document.getElementById('modalAlokasiBody');
+        const modalTransaksiBody = document.getElementById('modalTransaksiBody');
 
         document.querySelectorAll('.btn-show-detail-wasted').forEach(btn => {
             btn.addEventListener('click', function() {
                 const nama = this.dataset.barangNama;
                 const kode = this.dataset.barangKode;
-                const satuan = this.dataset.barangSatuan;
+                const kategori = this.dataset.barangKategori || '';
+                const satuan = (this.dataset.barangSatuan || '').toUpperCase();
                 const totalQty = this.dataset.totalQty;
                 const totalNominal = this.dataset.totalNominal;
+                const totalBeliNominal = this.dataset.totalBeliNominal;
+                const persenNominal = this.dataset.persenNominal;
+                const alokasiList = JSON.parse(this.dataset.alokasi || '[]');
                 const transaksiList = JSON.parse(this.dataset.transaksi || '[]');
 
-                modalBarangSub.textContent = `${nama} (${kode})`;
-                modalTotalQty.textContent = `${totalQty} ${satuan.toUpperCase()}`;
+                modalBarangSub.textContent = `${nama} (${kode}) — ${kategori} [${satuan}]`;
+                modalTotalQty.textContent = `${totalQty} ${satuan}`;
                 modalTotalNominal.textContent = totalNominal;
+                modalTotalBeliNominal.textContent = totalBeliNominal;
 
-                let rowsHtml = '';
+                // Colorize rasio badge
+                modalPersenNominal.textContent = persenNominal;
+                if (persenNominal.includes('%')) {
+                    const numVal = parseFloat(persenNominal);
+                    if (numVal > 15) {
+                        modalPersenNominal.className = 'fw-bold fs-6 text-danger';
+                    } else if (numVal > 5) {
+                        modalPersenNominal.className = 'fw-bold fs-6 text-warning';
+                    } else {
+                        modalPersenNominal.className = 'fw-bold fs-6 text-success';
+                    }
+                } else {
+                    modalPersenNominal.className = 'fw-bold fs-6 text-secondary';
+                }
+
+                // Populate Alokasi Table
+                let alokasiHtml = '';
+                if (alokasiList.length > 0) {
+                    const rawTotalQty = alokasiList.reduce((acc, curr) => acc + Number(curr.qty || 0), 0);
+                    alokasiList.forEach((loc, i) => {
+                        const locQty = Number(loc.qty || 0);
+                        const locNom = Number(loc.nominal || 0);
+                        const porsi = rawTotalQty > 0 ? ((locQty / rawTotalQty) * 100).toFixed(1) : '0';
+                        const qtyFmt = locQty.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        const nomFmt = locNom.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+                        alokasiHtml += `
+                            <tr>
+                                <td class="text-center text-muted fw-semibold">${i + 1}</td>
+                                <td>
+                                    <span class="fw-bold text-dark"><i class="bi bi-geo-alt-fill text-danger me-1"></i>${loc.lokasi}</span>
+                                </td>
+                                <td class="text-end fw-bold text-danger">${qtyFmt} ${satuan}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-light text-dark border px-2 py-1">${porsi}%</span>
+                                </td>
+                                <td class="text-end fw-bold text-danger">Rp ${nomFmt}</td>
+                                <td class="text-center text-muted">${loc.count || 1} dok</td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    alokasiHtml = '<tr><td colspan="6" class="text-center py-3 text-muted">Tidak ada data alokasi</td></tr>';
+                }
+                modalAlokasiBody.innerHTML = alokasiHtml;
+
+                // Populate Transaksi Table
+                let transHtml = '';
                 if (transaksiList.length > 0) {
                     transaksiList.forEach(t => {
                         const hrgSat = Number(t.harga_satuan).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                         const nom = Number(t.nominal).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-                        const qtyFmt = Number(t.qty).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                        const qtyFmt = Number(t.qty).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-                        rowsHtml += `
+                        transHtml += `
                             <tr>
                                 <td class="font-monospace fw-bold text-dark">${t.kode}</td>
                                 <td>${t.tanggal}</td>
                                 <td><span class="badge bg-light text-dark border">${t.lokasi}</span></td>
-                                <td class="text-end fw-semibold text-danger">${qtyFmt} ${satuan.toUpperCase()}</td>
+                                <td class="text-end fw-semibold text-danger">${qtyFmt} ${satuan}</td>
                                 <td class="text-end text-muted">Rp ${hrgSat}</td>
                                 <td class="text-end fw-bold text-danger">Rp ${nom}</td>
                                 <td class="text-muted small">${t.keterangan || '-'}</td>
@@ -508,10 +651,10 @@
                         `;
                     });
                 } else {
-                    rowsHtml = '<tr><td colspan="7" class="text-center py-3 text-muted">Tidak ada rincian transaksi</td></tr>';
+                    transHtml = '<tr><td colspan="7" class="text-center py-3 text-muted">Tidak ada riwayat dokumen transaksi</td></tr>';
                 }
+                modalTransaksiBody.innerHTML = transHtml;
 
-                modalTableBody.innerHTML = rowsHtml;
                 modal.show();
             });
         });
