@@ -186,10 +186,40 @@
                 <span><i class="bi bi-boxes me-1"></i> Detail Stock Opname</span>
                 <span class="badge bg-white text-dark" id="showOpnameItemCount">{{ $stockOpname->details->count() }} Item</span>
             </div>
-            <div style="min-width: 260px; max-width: 360px;" class="w-100 w-md-auto">
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" id="showOpnameSearchInput" class="form-control border-0 shadow-none" placeholder="Cari nama atau kode barang..." onkeyup="filterShowOpname(this.value)">
+            <div class="d-flex align-items-center flex-wrap gap-2 w-100 w-md-auto">
+                <div style="min-width: 220px; max-width: 280px;" class="flex-grow-1 flex-md-grow-0">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="showOpnameSearchInput" class="form-control border-0 shadow-none" placeholder="Cari nama atau kode barang..." oninput="applyShowOpnameFilterSort()">
+                        <button class="btn btn-outline-light border-0 btn-sm" type="button" onclick="document.getElementById('showOpnameSearchInput').value=''; applyShowOpnameFilterSort();" title="Reset">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div style="min-width: 170px;">
+                    <select id="showOpnameSelisihFilter" class="form-select form-select-sm" onchange="applyShowOpnameFilterSort()" title="Filter berdasarkan selisih">
+                        <option value="all">Semua Status Selisih</option>
+                        <option value="minus">Selisih Minus (Shortage)</option>
+                        <option value="plus">Selisih Plus (Surplus)</option>
+                        <option value="selisih">Ada Selisih (&ne; 0)</option>
+                        <option value="zero">Selisih Nol (Cocok)</option>
+                    </select>
+                </div>
+                <div style="min-width: 205px;">
+                    <select id="showOpnameQuickSort" class="form-select form-select-sm" onchange="handleShowQuickSortChange(this.value)" title="Urutkan dari besar ke terkecil atau sebaliknya">
+                        <option value="">Urutkan Kolom (Besar &rarr; Kecil)...</option>
+                        <option value="nilai_desc">Nilai Selisih: Besar &rarr; Kecil</option>
+                        <option value="nilai_asc">Nilai Selisih: Kecil &rarr; Besar</option>
+                        <option value="selisih_desc">Selisih: Terbesar (+ Surplus)</option>
+                        <option value="selisih_asc">Selisih: Terkecil (- Shortage)</option>
+                        <option value="sistem_desc">Stok Sistem: Besar &rarr; Kecil</option>
+                        <option value="sistem_asc">Stok Sistem: Kecil &rarr; Besar</option>
+                        <option value="fisik_desc">Stok Fisik: Besar &rarr; Kecil</option>
+                        <option value="fisik_asc">Stok Fisik: Kecil &rarr; Besar</option>
+                        <option value="nama_asc">Nama Barang: A &rarr; Z</option>
+                        <option value="nama_desc">Nama Barang: Z &rarr; A</option>
+                        <option value="default">Reset ke Urutan Awal</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -204,12 +234,24 @@
 
                     <tr style="background:#7A4517;color:white">
 
-                        <th style="width: 50px;">No</th>
-                        <th>Barang</th>
-                        <th>Stok Sistem</th>
-                        <th>Stok Fisik</th>
-                        <th>Selisih</th>
-                        <th>Nilai Selisih</th>
+                        <th class="text-white text-center show-sortable-th" data-col="0" data-type="num" onclick="sortShowOpnameTable(0, 'num')" style="width: 60px; cursor: pointer; user-select: none;" title="Klik untuk mengurutkan No">
+                            <span>No</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white show-sortable-th" data-col="1" data-type="str" onclick="sortShowOpnameTable(1, 'str')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Nama Barang (A-Z / Z-A)">
+                            <span>Barang</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white show-sortable-th" data-col="2" data-type="num" onclick="sortShowOpnameTable(2, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Stok Sistem (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Stok Sistem</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white show-sortable-th" data-col="3" data-type="num" onclick="sortShowOpnameTable(3, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Stok Fisik (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Stok Fisik</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white show-sortable-th" data-col="4" data-type="num" onclick="sortShowOpnameTable(4, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Selisih (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white show-sortable-th" data-col="5" data-type="num" onclick="sortShowOpnameTable(5, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Nilai Selisih (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Nilai Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
 
                     </tr>
 
@@ -240,13 +282,18 @@
 
                         <tr class="opname-show-row"
                             data-name="{{ strtolower($detail->barang->nama ?? '') }}"
-                            data-code="{{ strtolower($detail->barang->kode_barang ?? '') }}">
+                            data-code="{{ strtolower($detail->barang->kode_barang ?? '') }}"
+                            data-index="{{ $loop->iteration }}"
+                            data-stok-sistem="{{ (float)$detail->stok_sistem }}"
+                            data-stok-fisik="{{ (float)$detail->stok_fisik }}"
+                            data-selisih="{{ (float)$detail->selisih }}"
+                            data-nilai-selisih="{{ (float)$detail->nilai_selisih }}">
 
-                            <td class="text-muted row-index">
+                            <td class="text-muted row-index text-center" data-val="{{ $loop->iteration }}">
                                 {{ $loop->iteration }}
                             </td>
 
-                            <td>
+                            <td data-val="{{ strtolower($detail->barang->nama ?? '') }}">
                                 <div class="fw-bold">{{ $detail->barang->nama }}</div>
                                 <small class="text-muted font-monospace">{{ $detail->barang->kode_barang ?? '-' }}</small>
                                 @if($hasKonversi)
@@ -254,7 +301,7 @@
                                 @endif
                             </td>
 
-                            <td>
+                            <td data-val="{{ (float)$detail->stok_sistem }}">
                                 <div><span class="fw-semibold">{{ number_format($detail->stok_sistem, 2, ',', '.') }}</span> <span class="text-muted small">{{ $satuan }}</span></div>
                                 @if($hasKonversi)
                                     <div class="small text-primary mt-1" style="font-size:0.75rem;">
@@ -263,7 +310,7 @@
                                 @endif
                             </td>
 
-                            <td>
+                            <td data-val="{{ (float)$detail->stok_fisik }}">
                                 <div><span class="fw-bold">{{ number_format($detail->stok_fisik, 2, ',', '.') }}</span> <span class="text-muted small">{{ $satuan }}</span></div>
                                 @if($hasKonversi)
                                     <div class="small text-primary mt-1" style="font-size:0.75rem;">
@@ -272,7 +319,7 @@
                                 @endif
                             </td>
 
-                            <td>
+                            <td data-val="{{ (float)$detail->selisih }}">
                                 @if($detail->selisih < 0)
                                     <span class="badge bg-danger">
                                         {{ number_format($detail->selisih, 2, ',', '.') }} {{ $satuan }}
@@ -298,7 +345,7 @@
                                 @endif
                             </td>
 
-                            <td class="fw-bold">
+                            <td class="fw-bold" data-val="{{ (float)$detail->nilai_selisih }}">
                                 Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
                             </td>
 
@@ -308,7 +355,7 @@
 
                         <tr id="showOpnameNoResults" style="display: none;">
                             <td colspan="6" class="text-center py-4 text-muted">
-                                <i class="bi bi-search me-1"></i> Tidak ada barang yang cocok dengan pencarian.
+                                <i class="bi bi-search me-1"></i> Tidak ada barang yang cocok dengan filter / pencarian.
                             </td>
                         </tr>
 
@@ -319,7 +366,7 @@
                             <th colspan="5" class="text-end py-3">
                                 TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small>
                             </th>
-                            <th class="py-3 {{ $grandTotal > 0 ? 'text-success' : ($grandTotal < 0 ? 'text-danger' : 'text-muted') }}">
+                            <th id="showOpnameGrandTotal" class="py-3 {{ $grandTotal > 0 ? 'text-success' : ($grandTotal < 0 ? 'text-danger' : 'text-muted') }}">
                                 {{ $grandTotal > 0 ? '+' : '' }}Rp {{ number_format($grandTotal, 0, ',', '.') }}
                                 @if($grandTotal > 0)
                                     <div class="fw-normal small text-success"><i class="bi bi-arrow-up-circle me-1"></i>Surplus bersih</div>
@@ -386,38 +433,211 @@
 </div>
 
 <script>
-function filterShowOpname(query) {
-    const q = (query || '').toLowerCase().trim();
-    const rows = document.querySelectorAll('.opname-show-row');
-    const noResults = document.getElementById('showOpnameNoResults');
-    const countBadge = document.getElementById('showOpnameItemCount');
+let showOpnameSortState = {
+    col: -1,
+    dir: 'desc'
+};
+
+function sortShowOpnameTable(colIndex, type) {
+    if (showOpnameSortState.col === colIndex) {
+        showOpnameSortState.dir = (showOpnameSortState.dir === 'desc') ? 'asc' : 'desc';
+    } else {
+        showOpnameSortState.col = colIndex;
+        // Kolom numerik default dari BESAR KE KECIL ('desc')
+        showOpnameSortState.dir = (type === 'num' && colIndex !== 0) ? 'desc' : 'asc';
+    }
+
+    applyShowOpnameFilterSort();
+}
+
+function handleShowQuickSortChange(val) {
+    switch (val) {
+        case 'nilai_desc':
+            showOpnameSortState.col = 5;
+            showOpnameSortState.dir = 'desc';
+            break;
+        case 'nilai_asc':
+            showOpnameSortState.col = 5;
+            showOpnameSortState.dir = 'asc';
+            break;
+        case 'selisih_desc':
+            showOpnameSortState.col = 4;
+            showOpnameSortState.dir = 'desc';
+            break;
+        case 'selisih_asc':
+            showOpnameSortState.col = 4;
+            showOpnameSortState.dir = 'asc';
+            break;
+        case 'sistem_desc':
+            showOpnameSortState.col = 2;
+            showOpnameSortState.dir = 'desc';
+            break;
+        case 'sistem_asc':
+            showOpnameSortState.col = 2;
+            showOpnameSortState.dir = 'asc';
+            break;
+        case 'fisik_desc':
+            showOpnameSortState.col = 3;
+            showOpnameSortState.dir = 'desc';
+            break;
+        case 'fisik_asc':
+            showOpnameSortState.col = 3;
+            showOpnameSortState.dir = 'asc';
+            break;
+        case 'nama_asc':
+            showOpnameSortState.col = 1;
+            showOpnameSortState.dir = 'asc';
+            break;
+        case 'nama_desc':
+            showOpnameSortState.col = 1;
+            showOpnameSortState.dir = 'desc';
+            break;
+        case 'default':
+            showOpnameSortState.col = 0;
+            showOpnameSortState.dir = 'asc';
+            break;
+        default:
+            return;
+    }
+
+    applyShowOpnameFilterSort();
+}
+
+function applyShowOpnameFilterSort() {
+    const searchInput = document.getElementById('showOpnameSearchInput');
+    const selisihFilter = document.getElementById('showOpnameSelisihFilter');
+    const tbody = document.getElementById('showOpnameTableBody');
+    if (!tbody) return;
+
+    const q = searchInput ? (searchInput.value || '').toLowerCase().trim() : '';
+    const sFilter = selisihFilter ? (selisihFilter.value || 'all') : 'all';
+
+    const colIndex = showOpnameSortState.col;
+    const isAsc = (showOpnameSortState.dir === 'asc');
+
+    // 1. Sort semua baris jika kolom sort aktif
+    let rows = Array.from(tbody.querySelectorAll('.opname-show-row'));
+    if (colIndex >= 0) {
+        rows.sort((rowA, rowB) => {
+            const cellA = rowA.children[colIndex];
+            const cellB = rowB.children[colIndex];
+
+            const valA = cellA ? (cellA.getAttribute('data-val') ?? cellA.textContent.trim()) : '';
+            const valB = cellB ? (cellB.getAttribute('data-val') ?? cellB.textContent.trim()) : '';
+
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
+
+            let cmp = 0;
+            if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
+                cmp = numA - numB;
+            } else {
+                cmp = String(valA).localeCompare(String(valB), 'id', { numeric: true, sensitivity: 'base' });
+            }
+
+            return isAsc ? cmp : -cmp;
+        });
+
+        // Masukkan kembali ke tbody dalam urutan baru
+        const noResults = document.getElementById('showOpnameNoResults');
+        rows.forEach(r => tbody.appendChild(r));
+        if (noResults) tbody.appendChild(noResults);
+    }
+
+    // 2. Filter baris berdasarkan pencarian & status selisih
     let visibleCount = 0;
+    let netGrandTotal = 0;
 
     rows.forEach(row => {
         const name = row.getAttribute('data-name') || '';
         const code = row.getAttribute('data-code') || '';
+        const selisih = parseFloat(row.getAttribute('data-selisih') || 0);
+        const nilaiSelisih = parseFloat(row.getAttribute('data-nilai-selisih') || 0);
 
-        if (!q || name.includes(q) || code.includes(q)) {
+        let matchSearch = (!q || name.includes(q) || code.includes(q));
+        let matchFilter = true;
+
+        if (sFilter === 'minus') {
+            matchFilter = (selisih < 0);
+        } else if (sFilter === 'plus') {
+            matchFilter = (selisih > 0);
+        } else if (sFilter === 'selisih') {
+            matchFilter = (Math.abs(selisih) > 0.0001);
+        } else if (sFilter === 'zero') {
+            matchFilter = (Math.abs(selisih) < 0.0001);
+        }
+
+        if (matchSearch && matchFilter) {
             row.style.display = '';
             visibleCount++;
-            const idxCol = row.querySelector('.row-index');
-            if (idxCol) idxCol.textContent = visibleCount;
+            const idxCell = row.querySelector('.row-index');
+            if (idxCell) idxCell.innerText = visibleCount;
+
+            if (selisih >= 0) {
+                netGrandTotal += nilaiSelisih;
+            } else {
+                netGrandTotal -= nilaiSelisih;
+            }
         } else {
             row.style.display = 'none';
         }
     });
 
+    // 3. Update counter & empty message
+    const noResults = document.getElementById('showOpnameNoResults');
     if (noResults) {
         noResults.style.display = visibleCount === 0 ? '' : 'none';
     }
 
+    const countBadge = document.getElementById('showOpnameItemCount');
     if (countBadge) {
-        if (q) {
+        if (q || sFilter !== 'all') {
             countBadge.textContent = visibleCount + ' dari {{ $stockOpname->details->count() }} Item';
         } else {
             countBadge.textContent = '{{ $stockOpname->details->count() }} Item';
         }
     }
+
+    // 4. Update grand total display
+    const grandTotalEl = document.getElementById('showOpnameGrandTotal');
+    if (grandTotalEl) {
+        grandTotalEl.className = `py-3 ${netGrandTotal > 0 ? 'text-success' : (netGrandTotal < 0 ? 'text-danger' : 'text-muted')}`;
+        let subText = '';
+        if (netGrandTotal > 0) {
+            subText = '<div class="fw-normal small text-success"><i class="bi bi-arrow-up-circle me-1"></i>Surplus bersih</div>';
+        } else if (netGrandTotal < 0) {
+            subText = '<div class="fw-normal small text-danger"><i class="bi bi-arrow-down-circle me-1"></i>Shortage bersih</div>';
+        }
+        grandTotalEl.innerHTML = `${netGrandTotal > 0 ? '+' : ''}Rp ${netGrandTotal.toLocaleString('id-ID')} ${subText}`;
+    }
+
+    // 5. Update icon dan highlight pada header
+    const headers = document.querySelectorAll('#showOpnameTable .show-sortable-th');
+    headers.forEach(h => {
+        const col = parseInt(h.getAttribute('data-col'));
+        const icon = h.querySelector('.sort-icon');
+        const badgeOld = h.querySelector('.sort-badge');
+        if (badgeOld) badgeOld.remove();
+
+        if (col === colIndex) {
+            h.style.backgroundColor = '#5c3210';
+            if (icon) {
+                icon.className = isAsc
+                    ? 'bi bi-sort-up text-warning ms-1 sort-icon'
+                    : 'bi bi-sort-down-alt text-warning ms-1 sort-icon';
+            }
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-warning text-dark py-0 px-1 ms-1 sort-badge';
+            badge.style.fontSize = '0.62rem';
+            badge.innerText = isAsc ? 'Kecil→Besar' : 'Besar→Kecil';
+            h.appendChild(badge);
+        } else {
+            h.style.backgroundColor = '';
+            if (icon) {
+                icon.className = 'bi bi-arrow-down-up text-white-50 ms-1 sort-icon';
+            }
+        }
+    });
 }
 </script>
 

@@ -514,26 +514,33 @@ function renderDetailOpname(data) {
         let safeKode = (detail.kode_barang || '').replace(/"/g, '&quot;');
 
         rows += `
-            <tr class="opname-detail-item-row" data-name="${safeNama.toLowerCase()}" data-code="${safeKode.toLowerCase()}">
-                <td class="opname-row-index">${index + 1}</td>
-                <td>
+            <tr class="opname-detail-item-row" 
+                data-name="${safeNama.toLowerCase()}" 
+                data-code="${safeKode.toLowerCase()}"
+                data-index="${index + 1}"
+                data-stok-sistem="${detail.stok_sistem}"
+                data-stok-fisik="${detail.stok_fisik}"
+                data-selisih="${detail.selisih}"
+                data-nilai-selisih="${detail.nilai_selisih}">
+                <td class="opname-row-index text-center" data-val="${index + 1}">${index + 1}</td>
+                <td data-val="${safeNama.toLowerCase()}">
                     <div class="fw-bold">${detail.nama_barang}</div>
                     <small class="text-muted font-monospace">${detail.kode_barang}</small>
                     ${konvHeader}
                 </td>
-                <td>
+                <td data-val="${detail.stok_sistem}">
                     <div>${detail.stok_sistem.toLocaleString('id-ID')} <span class="text-muted small">${detail.satuan}</span></div>
                     ${konvSistem}
                 </td>
-                <td>
+                <td data-val="${detail.stok_fisik}">
                     <div>${detail.stok_fisik.toLocaleString('id-ID')} <span class="text-muted small">${detail.satuan}</span></div>
                     ${konvFisik}
                 </td>
-                <td>
+                <td data-val="${detail.selisih}">
                     ${selisihBadge}
                     ${konvSelisih}
                 </td>
-                <td class="fw-bold">Rp ${detail.nilai_selisih.toLocaleString('id-ID')}</td>
+                <td class="fw-bold" data-val="${detail.nilai_selisih}">Rp ${detail.nilai_selisih.toLocaleString('id-ID')}</td>
             </tr>
         `;
     });
@@ -614,15 +621,42 @@ function renderDetailOpname(data) {
             <p class="mb-0">${data.keterangan || '-'}</p>
         </div>
 
-        {{-- SEARCH BAR DALAM MODAL DETAIL --}}
+        {{-- FILTER & SEARCH BAR DALAM MODAL DETAIL --}}
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div style="min-width: 280px; max-width: 380px;">
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" id="opnameModalSearchInput" class="form-control border-start-0" placeholder="Cari nama barang atau kode barang..." oninput="filterOpnameDetailModal(this.value)">
-                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('opnameModalSearchInput').value=''; filterOpnameDetailModal('');" title="Reset">
-                        <i class="bi bi-x"></i>
-                    </button>
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <div style="min-width: 240px; max-width: 300px;">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" id="opnameModalSearchInput" class="form-control border-start-0" placeholder="Cari nama atau kode barang..." oninput="applyOpnameModalFilterSort()">
+                        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="document.getElementById('opnameModalSearchInput').value=''; applyOpnameModalFilterSort();" title="Reset Pencarian">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div style="min-width: 175px;">
+                    <select id="opnameModalSelisihFilter" class="form-select form-select-sm" onchange="applyOpnameModalFilterSort()" title="Filter berdasarkan selisih">
+                        <option value="all">Semua Status Selisih</option>
+                        <option value="minus">Selisih Minus (Shortage)</option>
+                        <option value="plus">Selisih Plus (Surplus)</option>
+                        <option value="selisih">Ada Selisih (&ne; 0)</option>
+                        <option value="zero">Selisih Nol (Cocok)</option>
+                    </select>
+                </div>
+                <div style="min-width: 215px;">
+                    <select id="opnameModalQuickSort" class="form-select form-select-sm" onchange="handleModalQuickSortChange(this.value)" title="Urutkan dari besar ke terkecil atau sebaliknya">
+                        <option value="">Urutkan Kolom (Besar &rarr; Kecil)...</option>
+                        <option value="nilai_desc">Nilai Selisih: Besar &rarr; Kecil</option>
+                        <option value="nilai_asc">Nilai Selisih: Kecil &rarr; Besar</option>
+                        <option value="selisih_desc">Selisih: Terbesar (+ Surplus)</option>
+                        <option value="selisih_asc">Selisih: Terkecil (- Shortage)</option>
+                        <option value="sistem_desc">Stok Sistem: Besar &rarr; Kecil</option>
+                        <option value="sistem_asc">Stok Sistem: Kecil &rarr; Besar</option>
+                        <option value="fisik_desc">Stok Fisik: Besar &rarr; Kecil</option>
+                        <option value="fisik_asc">Stok Fisik: Kecil &rarr; Besar</option>
+                        <option value="nama_asc">Nama Barang: A &rarr; Z</option>
+                        <option value="nama_desc">Nama Barang: Z &rarr; A</option>
+                        <option value="default">Reset ke Urutan Awal</option>
+                    </select>
                 </div>
             </div>
             <div class="text-muted small">
@@ -631,15 +665,27 @@ function renderDetailOpname(data) {
         </div>
 
         <div class="table-responsive">
-            <table class="table align-middle mb-0">
+            <table class="table align-middle mb-0" id="opnameModalTable">
                 <thead>
                     <tr style="background-color:#715745;color:white">
-                        <th class="text-white">No</th>
-                        <th class="text-white">Barang</th>
-                        <th class="text-white">Stok Sistem</th>
-                        <th class="text-white">Stok Fisik</th>
-                        <th class="text-white">Selisih</th>
-                        <th class="text-white">Nilai Selisih</th>
+                        <th class="text-white text-center opname-sortable-th" data-col="0" data-type="num" onclick="sortOpnameModalTable(0, 'num')" style="cursor:pointer; user-select:none; width: 60px;" title="Klik untuk mengurutkan No">
+                            <span>No</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white opname-sortable-th" data-col="1" data-type="str" onclick="sortOpnameModalTable(1, 'str')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Nama Barang (A-Z / Z-A)">
+                            <span>Barang</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white opname-sortable-th" data-col="2" data-type="num" onclick="sortOpnameModalTable(2, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Stok Sistem (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Stok Sistem</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white opname-sortable-th" data-col="3" data-type="num" onclick="sortOpnameModalTable(3, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Stok Fisik (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Stok Fisik</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white opname-sortable-th" data-col="4" data-type="num" onclick="sortOpnameModalTable(4, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Selisih (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white opname-sortable-th" data-col="5" data-type="num" onclick="sortOpnameModalTable(5, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Nilai Selisih (Besar ke Kecil / Kecil ke Besar)">
+                            <span>Nilai Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
                     </tr>
                 </thead>
                 <tbody id="opnameDetailTableBody">
@@ -647,14 +693,14 @@ function renderDetailOpname(data) {
                     <tr id="opnameEmptySearchRow" style="display:none;">
                         <td colspan="6" class="text-center py-4 text-muted">
                             <i class="bi bi-search fs-4 d-block mb-1 text-muted"></i>
-                            Tidak ada barang yang cocok dengan pencarian.
+                            Tidak ada barang yang cocok dengan filter / pencarian.
                         </td>
                     </tr>
                 </tbody>
                 <tfoot>
                     <tr>
                         <th colspan="5" class="text-end">TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small></th>
-                        <th class="fw-bold ${grandTotal > 0 ? 'text-success' : (grandTotal < 0 ? 'text-danger' : '')}">
+                        <th id="opnameModalGrandTotal" class="fw-bold ${grandTotal > 0 ? 'text-success' : (grandTotal < 0 ? 'text-danger' : '')}">
                             ${grandTotal > 0 ? '+' : ''}Rp ${grandTotal.toLocaleString('id-ID')}
                         </th>
                     </tr>
@@ -666,33 +712,211 @@ function renderDetailOpname(data) {
             ${approveButton}
         </div>
     `;
+
+    // Inisialisasi state sorting modal
+    window.opnameModalSortState = {
+        col: -1,
+        dir: 'desc'
+    };
 }
 
-function filterOpnameDetailModal(query) {
-    let q = (query || '').toLowerCase().trim();
-    let rows = document.querySelectorAll('.opname-detail-item-row');
+function sortOpnameModalTable(colIndex, type) {
+    if (!window.opnameModalSortState) {
+        window.opnameModalSortState = { col: -1, dir: 'desc' };
+    }
+
+    if (window.opnameModalSortState.col === colIndex) {
+        window.opnameModalSortState.dir = (window.opnameModalSortState.dir === 'desc') ? 'asc' : 'desc';
+    } else {
+        window.opnameModalSortState.col = colIndex;
+        // Kolom numerik (stok sistem, fisik, selisih, nilai) default pertama kali dari BESAR KE KECIL ('desc')
+        window.opnameModalSortState.dir = (type === 'num' && colIndex !== 0) ? 'desc' : 'asc';
+    }
+
+    applyOpnameModalFilterSort();
+}
+
+function handleModalQuickSortChange(val) {
+    if (!window.opnameModalSortState) {
+        window.opnameModalSortState = { col: -1, dir: 'desc' };
+    }
+
+    switch (val) {
+        case 'nilai_desc':
+            window.opnameModalSortState.col = 5;
+            window.opnameModalSortState.dir = 'desc';
+            break;
+        case 'nilai_asc':
+            window.opnameModalSortState.col = 5;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        case 'selisih_desc':
+            window.opnameModalSortState.col = 4;
+            window.opnameModalSortState.dir = 'desc';
+            break;
+        case 'selisih_asc':
+            window.opnameModalSortState.col = 4;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        case 'sistem_desc':
+            window.opnameModalSortState.col = 2;
+            window.opnameModalSortState.dir = 'desc';
+            break;
+        case 'sistem_asc':
+            window.opnameModalSortState.col = 2;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        case 'fisik_desc':
+            window.opnameModalSortState.col = 3;
+            window.opnameModalSortState.dir = 'desc';
+            break;
+        case 'fisik_asc':
+            window.opnameModalSortState.col = 3;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        case 'nama_asc':
+            window.opnameModalSortState.col = 1;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        case 'nama_desc':
+            window.opnameModalSortState.col = 1;
+            window.opnameModalSortState.dir = 'desc';
+            break;
+        case 'default':
+            window.opnameModalSortState.col = 0;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        default:
+            return;
+    }
+
+    applyOpnameModalFilterSort();
+}
+
+function applyOpnameModalFilterSort() {
+    const searchInput = document.getElementById('opnameModalSearchInput');
+    const selisihFilter = document.getElementById('opnameModalSelisihFilter');
+    const tbody = document.getElementById('opnameDetailTableBody');
+    if (!tbody) return;
+
+    const q = searchInput ? (searchInput.value || '').toLowerCase().trim() : '';
+    const sFilter = selisihFilter ? (selisihFilter.value || 'all') : 'all';
+
+    const sortState = window.opnameModalSortState || { col: -1, dir: 'desc' };
+    const colIndex = sortState.col;
+    const isAsc = (sortState.dir === 'asc');
+
+    // 1. Sort semua baris jika kolom sort aktif
+    let rows = Array.from(tbody.querySelectorAll('.opname-detail-item-row'));
+    if (colIndex >= 0) {
+        rows.sort((rowA, rowB) => {
+            const cellA = rowA.children[colIndex];
+            const cellB = rowB.children[colIndex];
+
+            const valA = cellA ? (cellA.getAttribute('data-val') ?? cellA.textContent.trim()) : '';
+            const valB = cellB ? (cellB.getAttribute('data-val') ?? cellB.textContent.trim()) : '';
+
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
+
+            let cmp = 0;
+            if (!isNaN(numA) && !isNaN(numB) && valA !== '' && valB !== '') {
+                cmp = numA - numB;
+            } else {
+                cmp = String(valA).localeCompare(String(valB), 'id', { numeric: true, sensitivity: 'base' });
+            }
+
+            return isAsc ? cmp : -cmp;
+        });
+
+        // Masukkan kembali ke tbody dalam urutan baru
+        const emptyRow = document.getElementById('opnameEmptySearchRow');
+        rows.forEach(r => tbody.appendChild(r));
+        if (emptyRow) tbody.appendChild(emptyRow);
+    }
+
+    // 2. Filter baris berdasarkan pencarian & status selisih
     let visibleCount = 0;
+    let netGrandTotal = 0;
 
     rows.forEach(row => {
-        let name = row.getAttribute('data-name') || '';
-        let code = row.getAttribute('data-code') || '';
-        if (!q || name.includes(q) || code.includes(q)) {
+        const name = row.getAttribute('data-name') || '';
+        const code = row.getAttribute('data-code') || '';
+        const selisih = parseFloat(row.getAttribute('data-selisih') || 0);
+        const nilaiSelisih = parseFloat(row.getAttribute('data-nilai-selisih') || 0);
+
+        let matchSearch = (!q || name.includes(q) || code.includes(q));
+        let matchFilter = true;
+
+        if (sFilter === 'minus') {
+            matchFilter = (selisih < 0);
+        } else if (sFilter === 'plus') {
+            matchFilter = (selisih > 0);
+        } else if (sFilter === 'selisih') {
+            matchFilter = (Math.abs(selisih) > 0.0001);
+        } else if (sFilter === 'zero') {
+            matchFilter = (Math.abs(selisih) < 0.0001);
+        }
+
+        if (matchSearch && matchFilter) {
             row.style.display = '';
             visibleCount++;
-            let indexCell = row.querySelector('.opname-row-index');
-            if (indexCell) indexCell.innerText = visibleCount;
+            const idxCell = row.querySelector('.opname-row-index');
+            if (idxCell) idxCell.innerText = visibleCount;
+
+            if (selisih >= 0) {
+                netGrandTotal += nilaiSelisih;
+            } else {
+                netGrandTotal -= nilaiSelisih;
+            }
         } else {
             row.style.display = 'none';
         }
     });
 
-    let countEl = document.getElementById('opnameVisibleCount');
+    // 3. Update counter & empty message
+    const countEl = document.getElementById('opnameVisibleCount');
     if (countEl) countEl.innerText = visibleCount;
 
-    let emptyRow = document.getElementById('opnameEmptySearchRow');
+    const emptyRow = document.getElementById('opnameEmptySearchRow');
     if (emptyRow) {
         emptyRow.style.display = visibleCount === 0 ? '' : 'none';
     }
+
+    // 4. Update grand total display
+    const grandTotalEl = document.getElementById('opnameModalGrandTotal');
+    if (grandTotalEl) {
+        grandTotalEl.className = `fw-bold ${netGrandTotal > 0 ? 'text-success' : (netGrandTotal < 0 ? 'text-danger' : '')}`;
+        grandTotalEl.innerText = `${netGrandTotal > 0 ? '+' : ''}Rp ${netGrandTotal.toLocaleString('id-ID')}`;
+    }
+
+    // 5. Update icon dan highlight pada header
+    const headers = document.querySelectorAll('#opnameModalTable .opname-sortable-th');
+    headers.forEach(h => {
+        const col = parseInt(h.getAttribute('data-col'));
+        const icon = h.querySelector('.sort-icon');
+        const badgeOld = h.querySelector('.sort-badge');
+        if (badgeOld) badgeOld.remove();
+
+        if (col === colIndex) {
+            h.style.backgroundColor = '#5c4535';
+            if (icon) {
+                icon.className = isAsc
+                    ? 'bi bi-sort-up text-warning ms-1 sort-icon'
+                    : 'bi bi-sort-down-alt text-warning ms-1 sort-icon';
+            }
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-warning text-dark py-0 px-1 ms-1 sort-badge';
+            badge.style.fontSize = '0.62rem';
+            badge.innerText = isAsc ? 'Kecil→Besar' : 'Besar→Kecil';
+            h.appendChild(badge);
+        } else {
+            h.style.backgroundColor = '';
+            if (icon) {
+                icon.className = 'bi bi-arrow-down-up text-white-50 ms-1 sort-icon';
+            }
+        }
+    });
 }
 
 function refreshStokOpname(id) {

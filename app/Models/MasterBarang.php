@@ -1372,6 +1372,40 @@ public function resepBahanBakuAlternatif()
                         ]);
                 }
             }
+
+            // Update draft SO KeJingga Barista (gudang 5, divisi 5)
+            $draftSoKejingga = \Illuminate\Support\Facades\DB::table('stock_opname')
+                ->where('gudang_id', 5)
+                ->where('divisi_id', 5)
+                ->where('status', 'draft')
+                ->pluck('id');
+
+            if ($draftSoKejingga->isNotEmpty()) {
+                $stokRealFmgKejingga = (float) (\Illuminate\Support\Facades\DB::table('stok_gudang')
+                    ->where('barang_id', $freshMilk->id)
+                    ->where('gudang_id', 5)
+                    ->where('divisi_id', 5)
+                    ->value('jumlah') ?? 0);
+
+                if ($stokRealFmgKejingga > 0) {
+                    $soDetailsFmgKj = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                        ->whereIn('stock_opname_id', $draftSoKejingga)
+                        ->where('barang_id', $freshMilk->id)
+                        ->get();
+
+                    foreach ($soDetailsFmgKj as $sod) {
+                        $fisik = (float) $sod->stok_fisik;
+                        $selisih = $fisik - $stokRealFmgKejingga;
+                        \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                            ->where('id', $sod->id)
+                            ->update([
+                                'stok_sistem'   => $stokRealFmgKejingga,
+                                'selisih'       => $selisih,
+                                'nilai_selisih' => round(abs($selisih) * 19.74, 2),
+                            ]);
+                    }
+                }
+            }
         }
 
         // 8. Normalisasi pemakaian biji kopi ARABICA ROCKNROLL (BBB022) di Gaharu Barista (gudang 3, divisi 2)
@@ -1431,6 +1465,38 @@ public function resepBahanBakuAlternatif()
                         ->where('id', $sod->id)
                         ->update([
                             'stok_sistem'   => $sistem,
+                            'selisih'       => $selisih,
+                            'nilai_selisih' => round(abs($selisih) * 170.00, 2),
+                        ]);
+                }
+            }
+
+            // Update draft SO KeJingga Barista (gudang 5, divisi 5)
+            $draftSoKejinggaRnR = \Illuminate\Support\Facades\DB::table('stock_opname')
+                ->where('gudang_id', 5)
+                ->where('divisi_id', 5)
+                ->where('status', 'draft')
+                ->pluck('id');
+
+            if ($draftSoKejinggaRnR->isNotEmpty()) {
+                $stokRealRnRKejingga = (float) (\Illuminate\Support\Facades\DB::table('stok_gudang')
+                    ->where('barang_id', $arabicaRnR->id)
+                    ->where('gudang_id', 5)
+                    ->where('divisi_id', 5)
+                    ->value('jumlah') ?? 0);
+
+                $soDetailsRnRKj = \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                    ->whereIn('stock_opname_id', $draftSoKejinggaRnR)
+                    ->where('barang_id', $arabicaRnR->id)
+                    ->get();
+
+                foreach ($soDetailsRnRKj as $sod) {
+                    $fisik = (float) $sod->stok_fisik;
+                    $selisih = $fisik - $stokRealRnRKejingga;
+                    \Illuminate\Support\Facades\DB::table('stock_opname_detail')
+                        ->where('id', $sod->id)
+                        ->update([
+                            'stok_sistem'   => $stokRealRnRKejingga,
                             'selisih'       => $selisih,
                             'nilai_selisih' => round(abs($selisih) * 170.00, 2),
                         ]);

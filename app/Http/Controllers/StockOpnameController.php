@@ -241,12 +241,10 @@ class StockOpnameController extends Controller
 
         if ($tanggal && !empty($barangIds)) {
             $tglOnly = date('Y-m-d', strtotime($tanggal));
-            if ($tglOnly < date('Y-m-d')) {
-                $cutoff = $tglOnly . ' 23:59:59';
-                $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($barangIds, $gudangId, $divisiId, $cutoff);
-                foreach ($barang as $item) {
-                    $item->stok = (float)($bulkStok[$item->id] ?? 0);
-                }
+            $cutoff = $tglOnly . ' 23:59:59';
+            $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($barangIds, $gudangId, $divisiId, $cutoff);
+            foreach ($barang as $item) {
+                $item->stok = (float)($bulkStok[$item->id] ?? 0);
             }
         }
 
@@ -357,11 +355,15 @@ class StockOpnameController extends Controller
             ]);
 
         StockOpnameDetail::ensureHargaColumn();
-        $isSuperAdmin = $this->isSuperAdminUser();
+        $cutoff = $tanggal . ' 23:59:59';
+        $barangIdsToFetch = array_column($items, 'barang_id');
+        $bulkStokCutoff = !empty($barangIdsToFetch)
+            ? \App\Models\StokGudang::getBulkStokBukuPembantu($barangIdsToFetch, $request->gudang_id, $request->divisi_id, $cutoff)
+            : [];
 
         foreach ($items as $item) {
             $barangId     = $item['barang_id'];
-            $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
+            $stokSistem   = isset($bulkStokCutoff[$barangId]) ? (float)$bulkStokCutoff[$barangId] : (float) ($item['stok_sistem'] ?? 0);
             $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
             $selisih      = $stokFisik - $stokSistem;
             
@@ -421,15 +423,7 @@ class StockOpnameController extends Controller
         ])->findOrFail($id);
 
         if ($stockOpname->status === 'draft') {
-            StockOpnameDetail::where('stock_opname_id', $stockOpname->id)
-                ->whereHas('barang', function($bq) {
-                    $bq->where('is_barang_jadi', 1)
-                       ->orWhere('is_operational', 1)
-                       ->orWhere(function($bq2) {
-                           $bq2->where('is_bahan_baku', 0)->where('is_bahan_setengah_jadi', 0);
-                       });
-                })
-                ->delete();
+            self::syncDraftOpname($stockOpname);
             $stockOpname->load(['details.barang']);
         }
 
@@ -455,6 +449,11 @@ class StockOpnameController extends Controller
             'user',
             'details.barang',
         ])->findOrFail($id);
+
+        if ($opname->status === 'draft') {
+            self::syncDraftOpname($opname);
+            $opname->load(['details.barang']);
+        }
 
         $isSuperAdmin = $this->isSuperAdminUser();
 
@@ -560,6 +559,77 @@ class StockOpnameController extends Controller
 
     /*
     |--------------------------------------------------------------------------
+    | SYNC DRAFT OPNAME SYSTEM STOCK WITH BUKU PEMBANTU LEDGER
+    |--------------------------------------------------------------------------
+    */
+
+    public static function syncDraftOpname(StockOpname $opname): void
+    {
+        if ($opname->status !== 'draft') {
+            return;
+        }
+
+        try {
+            \App\Models\MasterBarang::healConflictingJenisFlags();
+
+            // Bersihkan item non-bahan baku / non-BSJ yang mungkin sebelumnya tersimpan di draft SO
+            StockOpnameDetail::where('stock_opname_id', $opname->id)
+                ->whereHas('barang', function($bq) {
+                    $bq->where('is_barang_jadi', 1)
+                       ->orWhere('is_operational', 1)
+                       ->orWhere(function($bq2) {
+                           $bq2->where('is_bahan_baku', 0)->where('is_bahan_setengah_jadi', 0);
+                       });
+                })
+                ->delete();
+
+            $gudangId = $opname->gudang_id;
+            $divisiId = $opname->divisi_id;
+            $tanggalSo = $opname->tanggal ? date('Y-m-d', strtotime($opname->tanggal)) : date('Y-m-d');
+            $cutoff = $tanggalSo . ' 23:59:59';
+
+            \App\Models\StokGudang::reconcileStockSummary(null, $gudangId, $divisiId);
+
+            $details = StockOpnameDetail::where('stock_opname_id', $opname->id)->get();
+            $barangIds = $details->pluck('barang_id')->unique()->all();
+
+            if (!empty($barangIds)) {
+                $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu(
+                    $barangIds, $gudangId, $divisiId, $cutoff
+                );
+
+                $controller = new self();
+                foreach ($details as $d) {
+                    $stokSistemBaru = (float)($bulkStok[$d->barang_id] ?? 0);
+                    $stokFisik = (float)$d->stok_fisik;
+                    $selisihBaru = $stokFisik - $stokSistemBaru;
+
+                    if ($d->harga_satuan !== null && is_numeric($d->harga_satuan)) {
+                        $nilaiSelisihBaru = round(abs($selisihBaru) * (float)$d->harga_satuan, 2);
+                    } else {
+                        $nilaiSelisihBaru = $controller->hitungNilaiOpname(
+                            $gudangId,
+                            $d->barang_id,
+                            $selisihBaru,
+                            $divisiId
+                        );
+                    }
+
+                    $d->update([
+                        'stok_sistem'   => $stokSistemBaru,
+                        'stok_fisik'    => $stokFisik,
+                        'selisih'       => $selisihBaru,
+                        'nilai_selisih' => $nilaiSelisihBaru,
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("syncDraftOpname error for SO {$opname->id}: " . $e->getMessage());
+        }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | REFRESH / SINKRONKAN STOK SISTEM (DRAFT ONLY)
     |--------------------------------------------------------------------------
     */
@@ -583,6 +653,12 @@ class StockOpnameController extends Controller
         try {
             \App\Models\MasterBarang::healConflictingJenisFlags();
 
+            $gudangId = $opname->gudang_id;
+            $divisiId = $opname->divisi_id;
+
+            \App\Http\Controllers\StokGudangController::autoHealApprovedPosStockMutations();
+            \App\Models\StokGudang::reconcileStockSummary(null, $gudangId, $divisiId);
+
             // Bersihkan item non-bahan baku / non-BSJ yang mungkin sebelumnya tersimpan di draft SO
             StockOpnameDetail::where('stock_opname_id', $opname->id)
                 ->whereHas('barang', function($bq) {
@@ -595,9 +671,6 @@ class StockOpnameController extends Controller
                 ->delete();
 
             $opname->load(['details.barang']);
-
-            $gudangId = $opname->gudang_id;
-            $divisiId = $opname->divisi_id;
 
             // Ambil semua barang aktif beserta stok sistem terkini di gudang/divisi ini (HANYA Bahan Baku & Bahan Setengah Jadi)
             $barangList = DB::table('master_barang')
@@ -669,22 +742,18 @@ class StockOpnameController extends Controller
             // Stok sistem harus mengikuti posisi stok per TANGGAL SO (cut-off 23:59:59),
             // agar transaksi setelah tanggal SO tidak ikut terhitung.
             $tanggalSo = $opname->tanggal ? date('Y-m-d', strtotime($opname->tanggal)) : date('Y-m-d');
-            $bulkStokCutoff = null;
-            if ($tanggalSo < date('Y-m-d')) {
-                $idsCutoff = array_unique(array_merge(
-                    $barangList->pluck('id')->all(),
-                    $opname->details->pluck('barang_id')->all()
-                ));
-                if (!empty($idsCutoff)) {
-                    $bulkStokCutoff = \App\Models\StokGudang::getBulkStokBukuPembantu(
-                        $idsCutoff, $gudangId, $divisiId, $tanggalSo . ' 23:59:59'
-                    );
-                }
-            }
-            if ($bulkStokCutoff !== null) {
-                foreach ($barangList as $item) {
-                    $item->stok = (float) ($bulkStokCutoff[$item->id] ?? 0);
-                }
+            $idsCutoff = array_unique(array_merge(
+                $barangList->pluck('id')->all(),
+                $opname->details->pluck('barang_id')->all()
+            ));
+            $bulkStokCutoff = !empty($idsCutoff)
+                ? \App\Models\StokGudang::getBulkStokBukuPembantu(
+                    $idsCutoff, $gudangId, $divisiId, $tanggalSo . ' 23:59:59'
+                )
+                : [];
+
+            foreach ($barangList as $item) {
+                $item->stok = (float) ($bulkStokCutoff[$item->id] ?? 0);
             }
 
             $existingDetails = $opname->details->keyBy('barang_id');
@@ -748,7 +817,7 @@ class StockOpnameController extends Controller
                         })
                         ->value('jumlah') ?? 0);
 
-                    if ($bulkStokCutoff !== null) {
+                    if (!empty($bulkStokCutoff) && isset($bulkStokCutoff[$barangId])) {
                         $stokAktual = max(0, (float) ($bulkStokCutoff[$barangId] ?? 0));
                     }
 
@@ -966,15 +1035,7 @@ class StockOpnameController extends Controller
         \App\Models\MasterBarang::healConflictingJenisFlags();
 
         if ($opname->status === 'draft') {
-            StockOpnameDetail::where('stock_opname_id', $opname->id)
-                ->whereHas('barang', function($bq) {
-                    $bq->where('is_barang_jadi', 1)
-                       ->orWhere('is_operational', 1)
-                       ->orWhere(function($bq2) {
-                           $bq2->where('is_bahan_baku', 0)->where('is_bahan_setengah_jadi', 0);
-                       });
-                })
-                ->delete();
+            self::syncDraftOpname($opname);
             $opname->load(['details.barang']);
         }
 
@@ -1087,9 +1148,15 @@ class StockOpnameController extends Controller
                 // Hapus detail lama dan perbarui dengan detail terbaru
                 StockOpnameDetail::where('stock_opname_id', $opname->id)->delete();
 
+                $cutoff = $tanggal . ' 23:59:59';
+                $barangIdsToFetch = array_column($items, 'barang_id');
+                $bulkStokCutoff = !empty($barangIdsToFetch)
+                    ? \App\Models\StokGudang::getBulkStokBukuPembantu($barangIdsToFetch, $opname->gudang_id, $opname->divisi_id, $cutoff)
+                    : [];
+
                 foreach ($items as $item) {
                     $barangId     = $item['barang_id'];
-                    $stokSistem   = (float) ($item['stok_sistem'] ?? 0);
+                    $stokSistem   = isset($bulkStokCutoff[$barangId]) ? (float)$bulkStokCutoff[$barangId] : (float) ($item['stok_sistem'] ?? 0);
                     $stokFisik    = (float) ($item['stok_fisik'] ?? 0);
                     $selisih      = $stokFisik - $stokSistem;
                     
