@@ -479,6 +479,16 @@ class StockOpnameController extends Controller
                 $konversi = (float) ($d->barang->konversi_pembelian ?? 1);
                 $hasKonversi = !empty($d->barang->satuan_pembelian) && $konversi > 1;
 
+                $stokSistem = (float) $d->stok_sistem;
+                $stokFisik = (float) $d->stok_fisik;
+                $selisih = (float) $d->selisih;
+                $persenSelisih = 0.0;
+                if (abs($stokSistem) > 0.00001) {
+                    $persenSelisih = round(($selisih / abs($stokSistem)) * 100, 2);
+                } elseif (abs($selisih) > 0.00001) {
+                    $persenSelisih = $selisih > 0 ? 100.0 : -100.0;
+                }
+
                 return [
                     'nama_barang'       => $d->barang->nama ?? '-',
                     'kode_barang'       => $d->barang->kode_barang ?? '-',
@@ -486,13 +496,14 @@ class StockOpnameController extends Controller
                     'satuan_pembelian'  => $d->barang->satuan_pembelian ?? null,
                     'konversi_pembelian'=> $konversi,
                     'has_konversi'      => $hasKonversi,
-                    'stok_sistem'       => (float) $d->stok_sistem,
-                    'stok_fisik'        => (float) $d->stok_fisik,
-                    'selisih'           => (float) $d->selisih,
+                    'stok_sistem'       => $stokSistem,
+                    'stok_fisik'        => $stokFisik,
+                    'selisih'           => $selisih,
+                    'persen_selisih'    => $persenSelisih,
                     'nilai_selisih'     => (float) $d->nilai_selisih,
-                    'stok_sistem_konv'  => $hasKonversi ? ((float)$d->stok_sistem / $konversi) : null,
-                    'stok_fisik_konv'   => $hasKonversi ? ((float)$d->stok_fisik / $konversi) : null,
-                    'selisih_konv'      => $hasKonversi ? ((float)$d->selisih / $konversi) : null,
+                    'stok_sistem_konv'  => $hasKonversi ? ($stokSistem / $konversi) : null,
+                    'stok_fisik_konv'   => $hasKonversi ? ($stokFisik / $konversi) : null,
+                    'selisih_konv'      => $hasKonversi ? ($selisih / $konversi) : null,
                 ];
             }),
         ]);

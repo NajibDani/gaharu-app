@@ -203,15 +203,18 @@
                         <option value="plus">Selisih Plus (Surplus)</option>
                         <option value="selisih">Ada Selisih (&ne; 0)</option>
                         <option value="zero">Selisih Nol (Cocok)</option>
+                        <option value="extreme">Selisih Ekstrem (&ge; 20% / &le; -20%)</option>
                     </select>
                 </div>
-                <div style="min-width: 205px;">
+                <div style="min-width: 225px;">
                     <select id="showOpnameQuickSort" class="form-select form-select-sm" onchange="handleShowQuickSortChange(this.value)" title="Urutkan dari besar ke terkecil atau sebaliknya">
                         <option value="">Urutkan Kolom (Besar &rarr; Kecil)...</option>
+                        <option value="persen_desc">% Selisih: Terbesar (+ Surplus)</option>
+                        <option value="persen_asc">% Selisih: Terkecil (- Shortage)</option>
                         <option value="nilai_desc">Nilai Selisih: Besar &rarr; Kecil</option>
                         <option value="nilai_asc">Nilai Selisih: Kecil &rarr; Besar</option>
-                        <option value="selisih_desc">Selisih: Terbesar (+ Surplus)</option>
-                        <option value="selisih_asc">Selisih: Terkecil (- Shortage)</option>
+                        <option value="selisih_desc">Selisih Qty: Terbesar (+ Surplus)</option>
+                        <option value="selisih_asc">Selisih Qty: Terkecil (- Shortage)</option>
                         <option value="sistem_desc">Stok Sistem: Besar &rarr; Kecil</option>
                         <option value="sistem_asc">Stok Sistem: Kecil &rarr; Besar</option>
                         <option value="fisik_desc">Stok Fisik: Besar &rarr; Kecil</option>
@@ -249,7 +252,10 @@
                         <th class="text-white show-sortable-th" data-col="4" data-type="num" onclick="sortShowOpnameTable(4, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Selisih (Besar ke Kecil / Kecil ke Besar)">
                             <span>Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
                         </th>
-                        <th class="text-white show-sortable-th" data-col="5" data-type="num" onclick="sortShowOpnameTable(5, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Nilai Selisih (Besar ke Kecil / Kecil ke Besar)">
+                        <th class="text-white text-center show-sortable-th" data-col="5" data-type="num" onclick="sortShowOpnameTable(5, 'num')" style="width: 105px; cursor: pointer; user-select: none;" title="Klik untuk mengurutkan % Selisih (Besar ke Kecil / Kecil ke Besar)">
+                            <span>% Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white show-sortable-th" data-col="6" data-type="num" onclick="sortShowOpnameTable(6, 'num')" style="cursor: pointer; user-select: none;" title="Klik untuk mengurutkan Nilai Selisih (Besar ke Kecil / Kecil ke Besar)">
                             <span>Nilai Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
                         </th>
 
@@ -278,6 +284,14 @@
                             $hasKonversi = !empty($detail->barang->satuan_pembelian) && $konversi > 1;
                             $satuan = $detail->barang->satuan ?? 'pcs';
                             $satuanBeli = $detail->barang->satuan_pembelian ?? '';
+
+                            $stokSistemVal = (float) $detail->stok_sistem;
+                            $selisihVal = (float) $detail->selisih;
+                            if (abs($stokSistemVal) > 0.0001) {
+                                $persenSelisih = round(($selisihVal / abs($stokSistemVal)) * 100, 2);
+                            } else {
+                                $persenSelisih = $selisihVal > 0 ? 100 : ($selisihVal < 0 ? -100 : 0);
+                            }
                         @endphp
 
                         <tr class="opname-show-row"
@@ -287,6 +301,7 @@
                             data-stok-sistem="{{ (float)$detail->stok_sistem }}"
                             data-stok-fisik="{{ (float)$detail->stok_fisik }}"
                             data-selisih="{{ (float)$detail->selisih }}"
+                            data-persen="{{ $persenSelisih }}"
                             data-nilai-selisih="{{ (float)$detail->nilai_selisih }}">
 
                             <td class="text-muted row-index text-center" data-val="{{ $loop->iteration }}">
@@ -345,6 +360,22 @@
                                 @endif
                             </td>
 
+                            <td class="text-center" data-val="{{ $persenSelisih }}">
+                                @if($persenSelisih > 0)
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle fw-bold">
+                                        +{{ number_format($persenSelisih, 1, ',', '.') }}%
+                                    </span>
+                                @elseif($persenSelisih < 0)
+                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold">
+                                        {{ number_format($persenSelisih, 1, ',', '.') }}%
+                                    </span>
+                                @else
+                                    <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                                        0%
+                                    </span>
+                                @endif
+                            </td>
+
                             <td class="fw-bold" data-val="{{ (float)$detail->nilai_selisih }}">
                                 Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
                             </td>
@@ -354,7 +385,7 @@
                     @endforeach
 
                         <tr id="showOpnameNoResults" style="display: none;">
-                            <td colspan="6" class="text-center py-4 text-muted">
+                            <td colspan="7" class="text-center py-4 text-muted">
                                 <i class="bi bi-search me-1"></i> Tidak ada barang yang cocok dengan filter / pencarian.
                             </td>
                         </tr>
@@ -363,7 +394,7 @@
 
                     <tfoot>
                         <tr>
-                            <th colspan="5" class="text-end py-3">
+                            <th colspan="6" class="text-end py-3">
                                 TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small>
                             </th>
                             <th id="showOpnameGrandTotal" class="py-3 {{ $grandTotal > 0 ? 'text-success' : ($grandTotal < 0 ? 'text-danger' : 'text-muted') }}">
@@ -452,12 +483,20 @@ function sortShowOpnameTable(colIndex, type) {
 
 function handleShowQuickSortChange(val) {
     switch (val) {
-        case 'nilai_desc':
+        case 'persen_desc':
             showOpnameSortState.col = 5;
             showOpnameSortState.dir = 'desc';
             break;
-        case 'nilai_asc':
+        case 'persen_asc':
             showOpnameSortState.col = 5;
+            showOpnameSortState.dir = 'asc';
+            break;
+        case 'nilai_desc':
+            showOpnameSortState.col = 6;
+            showOpnameSortState.dir = 'desc';
+            break;
+        case 'nilai_asc':
+            showOpnameSortState.col = 6;
             showOpnameSortState.dir = 'asc';
             break;
         case 'selisih_desc':
@@ -552,6 +591,7 @@ function applyShowOpnameFilterSort() {
         const name = row.getAttribute('data-name') || '';
         const code = row.getAttribute('data-code') || '';
         const selisih = parseFloat(row.getAttribute('data-selisih') || 0);
+        const persen = parseFloat(row.getAttribute('data-persen') || 0);
         const nilaiSelisih = parseFloat(row.getAttribute('data-nilai-selisih') || 0);
 
         let matchSearch = (!q || name.includes(q) || code.includes(q));
@@ -565,6 +605,8 @@ function applyShowOpnameFilterSort() {
             matchFilter = (Math.abs(selisih) > 0.0001);
         } else if (sFilter === 'zero') {
             matchFilter = (Math.abs(selisih) < 0.0001);
+        } else if (sFilter === 'extreme') {
+            matchFilter = (Math.abs(persen) >= 20);
         }
 
         if (matchSearch && matchFilter) {

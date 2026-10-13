@@ -510,6 +510,19 @@ function renderDetailOpname(data) {
             grandTotal -= detail.nilai_selisih;
         }
 
+        let persen = typeof detail.persen_selisih !== 'undefined' && detail.persen_selisih !== null
+            ? parseFloat(detail.persen_selisih)
+            : (Math.abs(detail.stok_sistem) > 0.0001
+                ? ((detail.selisih / Math.abs(detail.stok_sistem)) * 100)
+                : (detail.selisih > 0 ? 100 : (detail.selisih < 0 ? -100 : 0)));
+
+        let persenBadge = `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">0%</span>`;
+        if (persen > 0) {
+            persenBadge = `<span class="badge bg-success-subtle text-success border border-success-subtle fw-bold">+${persen.toLocaleString('id-ID', {minimumFractionDigits: 1, maximumFractionDigits: 2})}%</span>`;
+        } else if (persen < 0) {
+            persenBadge = `<span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold">${persen.toLocaleString('id-ID', {minimumFractionDigits: 1, maximumFractionDigits: 2})}%</span>`;
+        }
+
         let safeNama = (detail.nama_barang || '').replace(/"/g, '&quot;');
         let safeKode = (detail.kode_barang || '').replace(/"/g, '&quot;');
 
@@ -521,6 +534,7 @@ function renderDetailOpname(data) {
                 data-stok-sistem="${detail.stok_sistem}"
                 data-stok-fisik="${detail.stok_fisik}"
                 data-selisih="${detail.selisih}"
+                data-persen="${persen}"
                 data-nilai-selisih="${detail.nilai_selisih}">
                 <td class="opname-row-index text-center" data-val="${index + 1}">${index + 1}</td>
                 <td data-val="${safeNama.toLowerCase()}">
@@ -539,6 +553,9 @@ function renderDetailOpname(data) {
                 <td data-val="${detail.selisih}">
                     ${selisihBadge}
                     ${konvSelisih}
+                </td>
+                <td class="text-center" data-val="${persen}">
+                    ${persenBadge}
                 </td>
                 <td class="fw-bold" data-val="${detail.nilai_selisih}">Rp ${detail.nilai_selisih.toLocaleString('id-ID')}</td>
             </tr>
@@ -640,15 +657,18 @@ function renderDetailOpname(data) {
                         <option value="plus">Selisih Plus (Surplus)</option>
                         <option value="selisih">Ada Selisih (&ne; 0)</option>
                         <option value="zero">Selisih Nol (Cocok)</option>
+                        <option value="extreme">Selisih Ekstrem (&ge; 20% / &le; -20%)</option>
                     </select>
                 </div>
-                <div style="min-width: 215px;">
+                <div style="min-width: 225px;">
                     <select id="opnameModalQuickSort" class="form-select form-select-sm" onchange="handleModalQuickSortChange(this.value)" title="Urutkan dari besar ke terkecil atau sebaliknya">
                         <option value="">Urutkan Kolom (Besar &rarr; Kecil)...</option>
+                        <option value="persen_desc">% Selisih: Terbesar (+ Surplus)</option>
+                        <option value="persen_asc">% Selisih: Terkecil (- Shortage)</option>
                         <option value="nilai_desc">Nilai Selisih: Besar &rarr; Kecil</option>
                         <option value="nilai_asc">Nilai Selisih: Kecil &rarr; Besar</option>
-                        <option value="selisih_desc">Selisih: Terbesar (+ Surplus)</option>
-                        <option value="selisih_asc">Selisih: Terkecil (- Shortage)</option>
+                        <option value="selisih_desc">Selisih Qty: Terbesar (+ Surplus)</option>
+                        <option value="selisih_asc">Selisih Qty: Terkecil (- Shortage)</option>
                         <option value="sistem_desc">Stok Sistem: Besar &rarr; Kecil</option>
                         <option value="sistem_asc">Stok Sistem: Kecil &rarr; Besar</option>
                         <option value="fisik_desc">Stok Fisik: Besar &rarr; Kecil</option>
@@ -668,7 +688,7 @@ function renderDetailOpname(data) {
             <table class="table align-middle mb-0" id="opnameModalTable">
                 <thead>
                     <tr style="background-color:#715745;color:white">
-                        <th class="text-white text-center opname-sortable-th" data-col="0" data-type="num" onclick="sortOpnameModalTable(0, 'num')" style="cursor:pointer; user-select:none; width: 60px;" title="Klik untuk mengurutkan No">
+                        <th class="text-white text-center opname-sortable-th" data-col="0" data-type="num" onclick="sortOpnameModalTable(0, 'num')" style="cursor:pointer; user-select:none; width: 50px;" title="Klik untuk mengurutkan No">
                             <span>No</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
                         </th>
                         <th class="text-white opname-sortable-th" data-col="1" data-type="str" onclick="sortOpnameModalTable(1, 'str')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Nama Barang (A-Z / Z-A)">
@@ -683,7 +703,10 @@ function renderDetailOpname(data) {
                         <th class="text-white opname-sortable-th" data-col="4" data-type="num" onclick="sortOpnameModalTable(4, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Selisih (Besar ke Kecil / Kecil ke Besar)">
                             <span>Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
                         </th>
-                        <th class="text-white opname-sortable-th" data-col="5" data-type="num" onclick="sortOpnameModalTable(5, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Nilai Selisih (Besar ke Kecil / Kecil ke Besar)">
+                        <th class="text-white text-center opname-sortable-th" data-col="5" data-type="num" onclick="sortOpnameModalTable(5, 'num')" style="cursor:pointer; user-select:none; width: 105px;" title="Klik untuk mengurutkan % Selisih (Besar ke Kecil / Kecil ke Besar)">
+                            <span>% Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
+                        </th>
+                        <th class="text-white opname-sortable-th" data-col="6" data-type="num" onclick="sortOpnameModalTable(6, 'num')" style="cursor:pointer; user-select:none;" title="Klik untuk mengurutkan Nilai Selisih (Besar ke Kecil / Kecil ke Besar)">
                             <span>Nilai Selisih</span> <i class="bi bi-arrow-down-up text-white-50 ms-1 sort-icon" style="font-size:0.75rem;"></i>
                         </th>
                     </tr>
@@ -691,7 +714,7 @@ function renderDetailOpname(data) {
                 <tbody id="opnameDetailTableBody">
                     ${rows}
                     <tr id="opnameEmptySearchRow" style="display:none;">
-                        <td colspan="6" class="text-center py-4 text-muted">
+                        <td colspan="7" class="text-center py-4 text-muted">
                             <i class="bi bi-search fs-4 d-block mb-1 text-muted"></i>
                             Tidak ada barang yang cocok dengan filter / pencarian.
                         </td>
@@ -699,7 +722,7 @@ function renderDetailOpname(data) {
                 </tbody>
                 <tfoot>
                     <tr>
-                        <th colspan="5" class="text-end">TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small></th>
+                        <th colspan="6" class="text-end">TOTAL NILAI SELISIH <small class="text-muted fw-normal">(Surplus - Shortage)</small></th>
                         <th id="opnameModalGrandTotal" class="fw-bold ${grandTotal > 0 ? 'text-success' : (grandTotal < 0 ? 'text-danger' : '')}">
                             ${grandTotal > 0 ? '+' : ''}Rp ${grandTotal.toLocaleString('id-ID')}
                         </th>
@@ -729,7 +752,7 @@ function sortOpnameModalTable(colIndex, type) {
         window.opnameModalSortState.dir = (window.opnameModalSortState.dir === 'desc') ? 'asc' : 'desc';
     } else {
         window.opnameModalSortState.col = colIndex;
-        // Kolom numerik (stok sistem, fisik, selisih, nilai) default pertama kali dari BESAR KE KECIL ('desc')
+        // Kolom numerik (stok sistem, fisik, selisih, persen, nilai) default pertama kali dari BESAR KE KECIL ('desc')
         window.opnameModalSortState.dir = (type === 'num' && colIndex !== 0) ? 'desc' : 'asc';
     }
 
@@ -742,12 +765,20 @@ function handleModalQuickSortChange(val) {
     }
 
     switch (val) {
-        case 'nilai_desc':
+        case 'persen_desc':
             window.opnameModalSortState.col = 5;
             window.opnameModalSortState.dir = 'desc';
             break;
-        case 'nilai_asc':
+        case 'persen_asc':
             window.opnameModalSortState.col = 5;
+            window.opnameModalSortState.dir = 'asc';
+            break;
+        case 'nilai_desc':
+            window.opnameModalSortState.col = 6;
+            window.opnameModalSortState.dir = 'desc';
+            break;
+        case 'nilai_asc':
+            window.opnameModalSortState.col = 6;
             window.opnameModalSortState.dir = 'asc';
             break;
         case 'selisih_desc':
@@ -843,6 +874,7 @@ function applyOpnameModalFilterSort() {
         const name = row.getAttribute('data-name') || '';
         const code = row.getAttribute('data-code') || '';
         const selisih = parseFloat(row.getAttribute('data-selisih') || 0);
+        const persen = parseFloat(row.getAttribute('data-persen') || 0);
         const nilaiSelisih = parseFloat(row.getAttribute('data-nilai-selisih') || 0);
 
         let matchSearch = (!q || name.includes(q) || code.includes(q));
@@ -856,6 +888,8 @@ function applyOpnameModalFilterSort() {
             matchFilter = (Math.abs(selisih) > 0.0001);
         } else if (sFilter === 'zero') {
             matchFilter = (Math.abs(selisih) < 0.0001);
+        } else if (sFilter === 'extreme') {
+            matchFilter = (Math.abs(persen) >= 20);
         }
 
         if (matchSearch && matchFilter) {
