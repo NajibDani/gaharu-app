@@ -182,6 +182,20 @@ public function firstFifoLayer()
             return ResepBahanBaku::where('resep_id', $rawResepId)->exists();
         }
 
+        // Cek counterpart produk dengan nama sama jika ada (misal produk POS Kejingga memakai resep POS Gaharu)
+        if (!empty($this->nama)) {
+            $counterpartResepId = \Illuminate\Support\Facades\DB::table('master_barang')
+                ->where('is_barang_jadi', 1)
+                ->whereNotNull('resep_id')
+                ->where('id', '!=', $this->id)
+                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($this->nama))])
+                ->value('resep_id');
+            if ($counterpartResepId && ResepBahanBaku::where('resep_id', $counterpartResepId)->exists()) {
+                $this->update(['resep_id' => $counterpartResepId]);
+                return true;
+            }
+        }
+
         return false;
     }
 public function stockOpnameDetails()
@@ -217,6 +231,7 @@ public function resepBahanBakuAlternatif()
      */
     public static function syncAllResepIds(): void
     {
+        // 1. Direct link by resep_btkl_bop.produk_id
         \Illuminate\Support\Facades\DB::table('master_barang')
             ->join('resep_btkl_bop', 'master_barang.id', '=', 'resep_btkl_bop.produk_id')
             ->where(function ($q) {
@@ -224,6 +239,27 @@ public function resepBahanBakuAlternatif()
                   ->orWhereColumn('master_barang.resep_id', '!=', 'resep_btkl_bop.id');
             })
             ->update(['master_barang.resep_id' => \Illuminate\Support\Facades\DB::raw('resep_btkl_bop.id')]);
+
+        // 2. Cross-link antar produk POS Kejingga dan POS Gaharu yang memiliki nama sama persis
+        $itemsWithoutRecipe = \Illuminate\Support\Facades\DB::table('master_barang')
+            ->where('is_barang_jadi', 1)
+            ->whereNull('resep_id')
+            ->get();
+
+        foreach ($itemsWithoutRecipe as $noRecipeItem) {
+            $matchingRecipe = \Illuminate\Support\Facades\DB::table('master_barang')
+                ->where('is_barang_jadi', 1)
+                ->whereNotNull('resep_id')
+                ->where('id', '!=', $noRecipeItem->id)
+                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($noRecipeItem->nama))])
+                ->value('resep_id');
+
+            if ($matchingRecipe) {
+                \Illuminate\Support\Facades\DB::table('master_barang')
+                    ->where('id', $noRecipeItem->id)
+                    ->update(['resep_id' => $matchingRecipe]);
+            }
+        }
     }
 
     /**

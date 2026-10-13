@@ -75,6 +75,16 @@ class FifoService
 
             $stok = (float) ($query->sum('jumlah') ?? 0);
 
+            // Jika stok divisi 0 tapi ada stok di gudang yang belum dialokasikan ke divisi, hitung juga
+            if ($stok <= 0 && $divisiId) {
+                $stokGudangTotal = (float) (StokGudang::where('gudang_id', $gudangId)
+                    ->where('barang_id', $candidate['bahan_id'])
+                    ->sum('jumlah') ?? 0);
+                if ($stokGudangTotal > 0) {
+                    $stok = $stokGudangTotal;
+                }
+            }
+
             // Jika stok cukup penuh, langsung gunakan kandidat ini
             if ($stok >= $qtyButuh) {
                 return $candidate;
@@ -243,13 +253,34 @@ class FifoService
 
         $batches = $query->orderBy('id')->lockForUpdate()->get();
 
+        // Jika stok pada divisi kurang, tapi di gudang ini ada batch yang belum dialokasikan ke divisi (divisi_id IS NULL),
+        // gunakan batch unallocated tersebut dan tandai sebagai milik divisi ini agar stok riil tidak terabaikan
+        $totalSisa = $batches->sum('qty_sisa');
+        if ($divisiId && $totalSisa < $qtyKeluar) {
+            $unallocatedBatches = StokGudangBatch::where('barang_id', $barangId)
+                ->where('gudang_id', $gudangId)
+                ->whereNull('divisi_id')
+                ->where('qty_sisa', '>', 0)
+                ->where('is_habis', false)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($unallocatedBatches->isNotEmpty()) {
+                foreach ($unallocatedBatches as $ub) {
+                    $ub->divisi_id = $divisiId;
+                    $ub->save();
+                }
+                $batches = $batches->merge($unallocatedBatches);
+                $totalSisa = $batches->sum('qty_sisa');
+            }
+        }
+
         /*
         |--------------------------------------------------------------------------
         | VALIDASI STOK FIFO
         |--------------------------------------------------------------------------
         */
-
-        $totalSisa = $batches->sum('qty_sisa');
 
         if ($totalSisa < $qtyKeluar && !$allowNegative) {
             throw new \Exception(

@@ -695,11 +695,13 @@ class PenjualanPosController extends Controller
             $tanggalTrans = $penjualan->tanggal;
             $gudangId = $penjualan->gudang_id;
 
-            // Pastikan gudang pemotongan stok adalah gudang outlet operasional, BUKAN Gudang Utama / Produksi!
-            $gudangObj = MasterGudang::find($gudangId);
-            if (!$gudangObj || !$gudangObj->isOutlet()) {
-                $gudangId = MasterGudang::resolveOutletId($kodePos);
-                $penjualan->update(['gudang_id' => $gudangId]);
+            // Pastikan gudang pemotongan stok adalah gudang outlet operasional (KeJingga vs Gaharu)
+            $correctOutletId = \App\Http\Controllers\StokGudangController::resolveOutletForPos($penjualan);
+            if ($penjualan->gudang_id != $correctOutletId) {
+                $gudangId = $correctOutletId;
+                $penjualan->update(['gudang_id' => $correctOutletId]);
+            } else {
+                $gudangId = $penjualan->gudang_id;
             }
 
             // Jika ada item yang belum memiliki resep, pisahkan ke transaksi Draft baru (tertinggal)
@@ -838,20 +840,34 @@ class PenjualanPosController extends Controller
             // Resolusi divisi operasional berdasarkan kategori produk yang dijual:
             // - Kategori MAKANAN (eksklusif) → potong dari divisi Kitchen di gudang outlet
             // - Kategori MINUMAN (eksklusif) → potong dari divisi Barista di gudang outlet
-            // - Kategori lain (MAKANAN & MINUMAN dll.) → tidak filter divisi (null)
+            // - Kategori lain (MAKANAN & MINUMAN dll.) → ditargetkan berdasarkan kepemilikan bahan baku
             $divisiGudang = DB::table('gudang_divisi')->where('gudang_id', $gudangId)->get();
-            $divisiKitchenId = optional($divisiGudang->first(fn($d) => stripos($d->nama, 'kitchen') !== false))->id;
-            $divisiBaristaId = optional($divisiGudang->first(fn($d) => stripos($d->nama, 'barista') !== false || (stripos($d->nama, 'bar') !== false && stripos($d->nama, 'barista') !== false)))->id
-                ?? optional($divisiGudang->first(fn($d) => stripos($d->nama, 'barista') !== false))->id;
+            $divisiKitchenId = optional($divisiGudang->first(fn($d) => stripos($d->nama, 'kitchen') !== false || stripos($d->nama, 'dapur') !== false))->id;
+            $divisiBaristaId = optional($divisiGudang->first(fn($d) => stripos($d->nama, 'barista') !== false || stripos($d->nama, 'bar') !== false))->id;
 
             $kategoriMakananIds = DB::table('kategori')
-                ->whereRaw('LOWER(nama) LIKE ?', ['makanan'])
-                ->orWhereRaw('LOWER(nama) LIKE ? AND LOWER(nama) NOT LIKE ?', ['makanan%', '%minuman%'])
+                ->where(function($q) {
+                    $q->whereRaw('LOWER(nama) LIKE ?', ['%makanan%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%food%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%pastry%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%bakery%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%snack%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%kitchen%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%dapur%']);
+                })
+                ->whereRaw('LOWER(nama) NOT LIKE ?', ['%minuman%'])
                 ->pluck('id')->toArray();
 
             $kategoriMinumanIds = DB::table('kategori')
-                ->whereRaw('LOWER(nama) LIKE ?', ['minuman'])
-                ->orWhereRaw('LOWER(nama) LIKE ? AND LOWER(nama) NOT LIKE ?', ['%minuman', '%makanan%'])
+                ->where(function($q) {
+                    $q->whereRaw('LOWER(nama) LIKE ?', ['%minuman%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%kopi%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%coffee%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%drink%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%beverage%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%tea%'])
+                      ->orWhereRaw('LOWER(nama) LIKE ?', ['%bar%']);
+                })
                 ->pluck('id')->toArray();
 
             // Mapping bahan_id => divisi_id untuk pemotongan stok yang tepat
@@ -874,12 +890,13 @@ class PenjualanPosController extends Controller
                 }
 
                 $kategoriId = $barangJadi ? $barangJadi->kategori_id : null;
+                $targetDivisiId = null;
                 if ($kategoriId && in_array($kategoriId, $kategoriMakananIds) && $divisiKitchenId) {
                     $targetDivisiId = $divisiKitchenId;
                 } elseif ($kategoriId && in_array($kategoriId, $kategoriMinumanIds) && $divisiBaristaId) {
                     $targetDivisiId = $divisiBaristaId;
                 } else {
-                    $targetDivisiId = null;
+                    $targetDivisiId = $divisiBaristaId ?: $divisiKitchenId;
                 }
                 
                 if ($resepUtama && $resepUtama->bahanbaku && $resepUtama->bahanbaku->count() > 0) {
@@ -888,17 +905,21 @@ class PenjualanPosController extends Controller
                         $kebutuhanPerPcs = floatval($bahanItem->qty_bahan) / $outputQtyUtama;
                         $butuh = $kebutuhanPerPcs * $qtyTerjual;
 
+                        // Resolusi divisi spesifik bahan baku (cek tagging, riwayat, atau kategori bahan)
+                        $divisiBahanSpesifik = \App\Models\MasterGudang::resolveDivisiIdForBarang($gudangId, $bahanItem->bahan_id)
+                            ?: ($targetDivisiId ?: ($divisiBaristaId ?: $divisiKitchenId));
+
                         // Otomatis cek dan gunakan bahan substitusi jika bahan utama habis / tidak cukup
-                        $resolved = $fifoService->resolveAlternativeBahan($bahanItem, $butuh, $gudangId, $targetDivisiId);
+                        $resolved = $fifoService->resolveAlternativeBahan($bahanItem, $butuh, $gudangId, $divisiBahanSpesifik);
                         $bahanDipakaiId = (int) ($resolved['bahan_id'] ?? $bahanItem->bahan_id);
 
                         $resolveBahan($bahanDipakaiId, $butuh);
 
-                        if (!array_key_exists($bahanDipakaiId, $bahanDivisiMap)) {
-                            $bahanDivisiMap[$bahanDipakaiId] = $targetDivisiId;
-                        } elseif ($bahanDivisiMap[$bahanDipakaiId] !== $targetDivisiId) {
-                            $bahanDivisiMap[$bahanDipakaiId] = null;
-                        }
+                        // Tentukan divisi pemotongan final untuk bahan yang dipakai
+                        $finalDivisiBahan = \App\Models\MasterGudang::resolveDivisiIdForBarang($gudangId, $bahanDipakaiId)
+                            ?: ($divisiBahanSpesifik ?: ($targetDivisiId ?: ($divisiBaristaId ?: $divisiKitchenId)));
+
+                        $bahanDivisiMap[$bahanDipakaiId] = $finalDivisiBahan;
                     }
                 }
             }
@@ -941,38 +962,30 @@ class PenjualanPosController extends Controller
                 // Tentukan divisi target: Makanan -> Kitchen, Minuman -> Barista
                 $targetDivisiBahan = $bahanDivisiMap[$bahanId] ?? null;
 
-                // Jika divisi tidak bisa ditentukan dari kategori produk (null), jangan potong ke "tanpa divisi"
-                // karena stok bahan di gudang outlet tercatat per divisi (Kitchen/Barista). Pilih divisi yang
-                // benar-benar memiliki stok bahan tersebut agar stok sistem pada Stock Opname ikut berkurang.
+                if (!$targetDivisiBahan) {
+                    $targetDivisiBahan = \App\Models\MasterGudang::resolveDivisiIdForBarang($gudangId, $bahanId);
+                }
+
                 if (!$targetDivisiBahan && $divisiGudang->isNotEmpty()) {
-                    $adaStokTanpaDivisi = DB::table('stok_gudang_batch')
+                    $divisiStok = DB::table('stok_gudang_batch')
                         ->where('gudang_id', $gudangId)
                         ->where('barang_id', $bahanId)
-                        ->whereNull('divisi_id')
+                        ->whereNotNull('divisi_id')
                         ->where('qty_sisa', '>', 0)
-                        ->exists();
+                        ->groupBy('divisi_id')
+                        ->orderByRaw('SUM(qty_sisa) DESC')
+                        ->value('divisi_id');
 
-                    if (!$adaStokTanpaDivisi) {
-                        $divisiStok = DB::table('stok_gudang_batch')
+                    if (!$divisiStok) {
+                        $divisiStok = DB::table('stok_gudang')
                             ->where('gudang_id', $gudangId)
                             ->where('barang_id', $bahanId)
                             ->whereNotNull('divisi_id')
-                            ->where('qty_sisa', '>', 0)
-                            ->groupBy('divisi_id')
-                            ->orderByRaw('SUM(qty_sisa) DESC')
+                            ->orderByDesc('jumlah')
                             ->value('divisi_id');
-
-                        if (!$divisiStok) {
-                            $divisiStok = DB::table('stok_gudang')
-                                ->where('gudang_id', $gudangId)
-                                ->where('barang_id', $bahanId)
-                                ->whereNotNull('divisi_id')
-                                ->orderByDesc('jumlah')
-                                ->value('divisi_id');
-                        }
-
-                        $targetDivisiBahan = $divisiStok ?: $divisiKitchenId;
                     }
+
+                    $targetDivisiBahan = $divisiStok ?: ($divisiBaristaId ?: $divisiKitchenId);
                 }
 
                 // Potong Batch (FIFO) dengan fallback harga terbaru di gudang POS jika stok tidak cukup (allowNegative = true)
@@ -997,7 +1010,7 @@ class PenjualanPosController extends Controller
                     ]);
 
                     $batchModel = isset($layer['batch_id']) && $layer['batch_id'] > 0 ? \App\Models\StokGudangBatch::find($layer['batch_id']) : null;
-                    $divisiAsalId = $batchModel ? $batchModel->divisi_id : $targetDivisiBahan;
+                    $divisiAsalId = ($batchModel && $batchModel->divisi_id) ? $batchModel->divisi_id : $targetDivisiBahan;
 
                     // Global Stok Pengurang (bisa negatif jika stok fisik belum opname)
                     $stokGudang = \App\Models\StokGudang::firstOrCreate(

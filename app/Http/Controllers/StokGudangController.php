@@ -291,6 +291,9 @@ class StokGudangController extends Controller
         // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
         self::autoHealMissingDivisiInTransaksiStok($barangId);
 
+        // Auto-heal mutasi Penjualan POS disetujui / Moka import
+        self::autoHealApprovedPosStockMutations($barangId);
+
         // Auto-heal mutasi Persediaan Awal disetujui
         self::autoHealApprovedPaTransaksiStok($barangId);
 
@@ -791,6 +794,7 @@ class StokGudangController extends Controller
                 return "Stock Opname (ID: {$id})";
 
             case 'penjualan_pos':
+            case 'pos':
                 $pos = \App\Models\PenjualanPos::find($id);
                 if ($pos) {
                     $kode = $pos->kode_transaksi ?? $pos->kode_penjualan ?? "ID: {$id}";
@@ -978,6 +982,44 @@ class StokGudangController extends Controller
                             ->where('gudang_id', $pTx->gudang_tujuan_id)
                             ->whereNull('divisi_id')
                             ->update(['divisi_id' => $divId]);
+                    }
+                }
+            }
+
+            // 7. Backfill & sinkronkan divisi_asal_id dan gudang_asal_id untuk Penjualan POS (penjualan_pos & pos)
+            $q7 = DB::table('transaksi_stok as ts')
+                ->whereIn('ts.source_type', ['penjualan_pos', 'pos'])
+                ->where('ts.tipe', 'keluar');
+            if ($barangId) {
+                $q7->where('ts.barang_id', $barangId);
+            }
+            $posTxs = $q7->get();
+
+            foreach ($posTxs as $pTx) {
+                $posHeader = DB::table('penjualan_pos')->where('id', $pTx->source_id)->first();
+                $actualGudangId = $posHeader
+                    ? self::resolveOutletForPos($posHeader)
+                    : ($pTx->gudang_asal_id && in_array($pTx->gudang_asal_id, $outletIds) ? $pTx->gudang_asal_id : \App\Models\MasterGudang::resolveOutletId());
+
+                $targetDivId = \App\Models\MasterGudang::resolveDivisiIdForBarang($actualGudangId, $pTx->barang_id);
+
+                $upData = [];
+                if ($pTx->gudang_asal_id != $actualGudangId) {
+                    $upData['gudang_asal_id'] = $actualGudangId;
+                }
+                if ($targetDivId && $pTx->divisi_asal_id != $targetDivId) {
+                    $upData['divisi_asal_id'] = $targetDivId;
+                }
+
+                if (!empty($upData)) {
+                    DB::table('transaksi_stok')->where('id', $pTx->id)->update($upData);
+
+                    // Sinkronkan ringkasan stok_gudang
+                    if ($pTx->divisi_asal_id) {
+                        \App\Models\StokGudang::reconcileStockSummary($pTx->barang_id, $pTx->gudang_asal_id, $pTx->divisi_asal_id);
+                    }
+                    if ($targetDivId) {
+                        \App\Models\StokGudang::reconcileStockSummary($pTx->barang_id, $actualGudangId, $targetDivId);
                     }
                 }
             }
@@ -1255,6 +1297,8 @@ class StokGudangController extends Controller
                             ->where('tipe', 'masuk')
                             ->first();
 
+                        $targetMasukDivisiId = $pbk->divisi_id ?: \App\Models\MasterGudang::resolveDivisiIdForBarang($pbk->gudang_id, $bId);
+
                         if (!$txMasuk) {
                             \App\Models\TransaksiStok::create([
                                 'tanggal'          => $tanggal,
@@ -1264,7 +1308,7 @@ class StokGudangController extends Controller
                                 'gudang_asal_id'   => null,
                                 'divisi_asal_id'   => null,
                                 'gudang_tujuan_id' => $pbk->gudang_id,
-                                'divisi_tujuan_id' => $pbk->divisi_id,
+                                'divisi_tujuan_id' => $targetMasukDivisiId,
                                 'barang_id'        => $bId,
                                 'qty'              => $qty,
                                 'total_harga'      => $totalHarga,
@@ -1277,8 +1321,8 @@ class StokGudangController extends Controller
                                 $upMasuk['gudang_tujuan_id'] = $pbk->gudang_id;
                                 $needsUpdate = true;
                             }
-                            if ($txMasuk->divisi_tujuan_id != $pbk->divisi_id) {
-                                $upMasuk['divisi_tujuan_id'] = $pbk->divisi_id;
+                            if ($targetMasukDivisiId && $txMasuk->divisi_tujuan_id != $targetMasukDivisiId) {
+                                $upMasuk['divisi_tujuan_id'] = $targetMasukDivisiId;
                                 $needsUpdate = true;
                             }
                             if (abs((float)$txMasuk->qty - $qty) > 0.01) {
@@ -1364,6 +1408,204 @@ class StokGudangController extends Controller
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoHealApprovedPbkTransaksiStok error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Auto-heal mutasi pemotongan stok untuk transaksi Penjualan POS (Moka) yang disetujui / di-import.
+     * Memastikan:
+     * 1. Penjualan POS berstatus Draft (misal dari import Moka) yang memiliki formulasi resep di-approve otomatis.
+     * 2. Penjualan POS yang berstatus Approved/Disetujui tetapi belum memiliki catatan transaksi_stok dijalankan pemotongan FIFO-nya.
+     * 3. Penjualan POS yang produknya menggunakan barangId tertentu namun pemotongan stok bahan tersebut belum tercatat di transaksi_stok diproses ulang.
+     * 4. Transaksi_stok penjualan POS yang divisi_asal_id nya null / salah gudang disinkronkan ke divisi operasional yang tepat (Barista / Kitchen).
+     */
+    /**
+     * Resolusi gudang outlet yang akurat untuk transaksi Penjualan POS.
+     * Memeriksa tipe_penjualan pada produk-produk yang dijual (POS Kejingga vs POS Gaharu),
+     * prefix kode transaksi, serta kepemilikan gudang outlet.
+     */
+    public static function resolveOutletForPos($pos): int
+    {
+        $kejinggaId = \App\Models\MasterGudang::resolveOutletId('kejingga');
+        $gaharuId   = \App\Models\MasterGudang::resolveOutletId('gaharu');
+
+        if (!$pos) return $gaharuId;
+
+        // 1. Cek dari produk di dalam detail transaksi POS
+        $posId = is_object($pos) ? ($pos->id ?? null) : (int) $pos;
+        if ($posId) {
+            $details = \App\Models\PenjualanPosDetail::where('penjualan_id', $posId)->get();
+            foreach ($details as $d) {
+                $prod = \App\Models\MasterBarang::find($d->produk_id);
+                if ($prod) {
+                    if (stripos($prod->tipe_penjualan ?? '', 'kejingga') !== false) {
+                        return $kejinggaId;
+                    }
+                    if (stripos($prod->tipe_penjualan ?? '', 'gaharu') !== false) {
+                        return $gaharuId;
+                    }
+                }
+            }
+        }
+
+        // 2. Cek kode_transaksi
+        $kode = is_object($pos) ? ($pos->kode_transaksi ?? '') : '';
+        if (!empty($kode)) {
+            if (stripos($kode, 'kj') !== false || stripos($kode, 'kejingga') !== false) {
+                return $kejinggaId;
+            }
+        }
+
+        // 3. Jika pos->gudang_id sudah valid gudang outlet, pertahankan
+        $gId = is_object($pos) ? ($pos->gudang_id ?? null) : null;
+        if ($gId && in_array($gId, [$kejinggaId, $gaharuId])) {
+            return $gId;
+        }
+
+        return $gaharuId;
+    }
+
+    /**
+     * Auto-heal mutasi pemotongan stok untuk transaksi Penjualan POS (Moka) yang disetujui / di-import.
+     * Memastikan:
+     * 1. Penjualan POS berstatus Draft (misal dari import Moka) yang memiliki formulasi resep di-approve otomatis.
+     * 2. Penjualan POS yang berstatus Approved/Disetujui tetapi belum memiliki catatan transaksi_stok dijalankan pemotongan FIFO-nya.
+     * 3. Penjualan POS yang produknya menggunakan barangId tertentu namun pemotongan stok bahan tersebut belum tercatat di transaksi_stok diproses ulang.
+     * 4. Transaksi_stok penjualan POS yang divisi_asal_id nya null / salah gudang disinkronkan ke divisi operasional yang tepat (Barista / Kitchen).
+     */
+    public static function autoHealApprovedPosStockMutations($barangId = null)
+    {
+        try {
+            $outletIds = \App\Models\MasterGudang::getOutletGudangIds();
+            $posController = app(\App\Http\Controllers\PenjualanPosController::class);
+
+            // 0. Pastikan setiap header Penjualan POS terhubung ke gudang outlet yang benar sesuai produk yang dijual
+            $allPos = \App\Models\PenjualanPos::all();
+            foreach ($allPos as $pHeader) {
+                $correctOutletId = self::resolveOutletForPos($pHeader);
+                if ($correctOutletId && $pHeader->gudang_id != $correctOutletId) {
+                    $pHeader->update(['gudang_id' => $correctOutletId]);
+                    DB::table('transaksi_stok')
+                        ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                        ->where('source_id', $pHeader->id)
+                        ->update(['gudang_asal_id' => $correctOutletId]);
+                }
+            }
+
+            // 1. Penjualan POS yang masih berstatus 'Draft' (hasil import Moka)
+            $draftPosList = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['draft'])
+                ->whereIn('gudang_id', $outletIds)
+                ->get();
+
+            foreach ($draftPosList as $draftPos) {
+                $hasRecipeProduct = false;
+                foreach ($draftPos->details as $d) {
+                    if ($d->produk && $d->produk->hasResep()) {
+                        $hasRecipeProduct = true;
+                        break;
+                    }
+                }
+                if ($hasRecipeProduct) {
+                    try {
+                        $posController->approve($draftPos->id, true);
+                    } catch (\Exception $exApprove) {
+                        \Illuminate\Support\Facades\Log::warning("Auto-approve draft POS {$draftPos->id} failed: " . $exApprove->getMessage());
+                    }
+                }
+            }
+
+            // 2a. Penjualan POS berstatus Approved / Disetujui / Sukses tapi TIDAK memiliki transaksi_stok pemotongan sama sekali
+            $approvedPosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
+                ->whereIn('gudang_id', $outletIds)
+                ->whereNotExists(function($q) {
+                    $q->select(DB::raw(1))
+                      ->from('transaksi_stok')
+                      ->whereIn('transaksi_stok.source_type', ['penjualan_pos', 'pos'])
+                      ->whereColumn('transaksi_stok.source_id', 'penjualan_pos.id');
+                });
+
+            $missingStockPosList = $approvedPosQuery->get();
+            foreach ($missingStockPosList as $mPos) {
+                try {
+                    // Bersihkan pengeluaran_bahan_baku AUTO_POS sisa jika ada
+                    DB::table('pengeluaran_bahan_baku')
+                        ->where('keterangan', 'like', 'AUTO_POS:' . $mPos->kode_transaksi . '%')
+                        ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $mPos->kode_transaksi . '%')
+                        ->delete();
+
+                    $mPos->update(['status' => 'Draft']);
+                    $posController->approve($mPos->id, true);
+                } catch (\Exception $exApprove) {
+                    \Illuminate\Support\Facades\Log::warning("Auto-heal approved POS {$mPos->id} failed: " . $exApprove->getMessage());
+                }
+            }
+
+            // 2b. Periksa jika ada Penjualan POS yang disetujui, tetapi barangId tertentu (misal Fresh Milk / Arabica) belum tercatat potong di transaksi_stok
+            if ($barangId) {
+                $targetPosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
+                    ->whereIn('gudang_id', $outletIds)
+                    ->whereNotExists(function($q) use ($barangId) {
+                        $q->select(DB::raw(1))
+                          ->from('transaksi_stok')
+                          ->whereIn('transaksi_stok.source_type', ['penjualan_pos', 'pos'])
+                          ->whereColumn('transaksi_stok.source_id', 'penjualan_pos.id')
+                          ->where('transaksi_stok.barang_id', $barangId);
+                    });
+
+                $targetPosList = $targetPosQuery->with(['details.produk'])->get();
+                foreach ($targetPosList as $tPos) {
+                    $usesIngredient = false;
+                    foreach ($tPos->details as $d) {
+                        $p = $d->produk;
+                        if (!$p) continue;
+                        $resepId = $p->resep_id;
+                        if (!$resepId && !empty($p->nama)) {
+                            $resepId = DB::table('master_barang')
+                                ->where('is_barang_jadi', 1)
+                                ->whereNotNull('resep_id')
+                                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($p->nama))])
+                                ->value('resep_id');
+                        }
+                        if ($resepId) {
+                            $hasBahan = DB::table('resep_bahanbaku')
+                                ->where('resep_id', $resepId)
+                                ->where('bahan_id', $barangId)
+                                ->exists()
+                                || DB::table('resep_bahanbaku_alternatif')
+                                ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
+                                ->where('resep_bahanbaku.resep_id', $resepId)
+                                ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
+                                ->exists();
+
+                            if ($hasBahan) {
+                                $usesIngredient = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if ($usesIngredient) {
+                        try {
+                            DB::table('transaksi_stok')->whereIn('source_type', ['penjualan_pos', 'pos'])->where('source_id', $tPos->id)->delete();
+                            DB::table('pengeluaran_bahan_baku')
+                                ->where('keterangan', 'like', 'AUTO_POS:' . $tPos->kode_transaksi . '%')
+                                ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $tPos->kode_transaksi . '%')
+                                ->delete();
+
+                            $tPos->update(['status' => 'Draft']);
+                            $posController->approve($tPos->id, true);
+                        } catch (\Exception $exApprove) {
+                            \Illuminate\Support\Facades\Log::warning("Re-approve POS {$tPos->id} for missing ingredient {$barangId} failed: " . $exApprove->getMessage());
+                        }
+                    }
+                }
+            }
+
+            // 3. Pastikan divisi_asal_id dan gudang_asal_id pada transaksi_stok terisi dengan divisi operasional yang benar
+            self::autoHealMissingDivisiInTransaksiStok($barangId);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoHealApprovedPosStockMutations error: ' . $e->getMessage());
         }
     }
 
@@ -1803,7 +2045,7 @@ class StokGudangController extends Controller
             // 5a. Pastikan seluruh header PenjualanPos tersimpan di gudang outlet
             $misplacedPosHeaders = \App\Models\PenjualanPos::whereNotIn('gudang_id', $outletIds)->get();
             foreach ($misplacedPosHeaders as $posHeader) {
-                $targetOutletId = \App\Models\MasterGudang::resolveOutletId($posHeader->kode_transaksi);
+                $targetOutletId = self::resolveOutletForPos($posHeader);
                 $posHeader->update(['gudang_id' => $targetOutletId]);
             }
 
@@ -1878,14 +2120,17 @@ class StokGudangController extends Controller
             $misplacedPosTxs = $misplacedPosTxQuery->get();
 
             foreach ($misplacedPosTxs as $tx) {
-                $targetOutletId = $gudangGaharuId;
                 $pos = \App\Models\PenjualanPos::find($tx->source_id);
                 if ($pos) {
-                    $targetOutletId = \App\Models\MasterGudang::resolveOutletId($pos->kode_transaksi);
+                    $targetOutletId = self::resolveOutletForPos($pos);
                 } else {
                     $pbk = \App\Models\PengeluaranBahanBaku::find($tx->source_id);
                     if ($pbk) {
-                        $targetOutletId = \App\Models\MasterGudang::resolveOutletId($pbk->keterangan ?? $pbk->kode_pengeluaran);
+                        $targetOutletId = ($pbk->gudang_id && in_array($pbk->gudang_id, $outletIds))
+                            ? $pbk->gudang_id
+                            : \App\Models\MasterGudang::resolveOutletId($pbk->keterangan ?? $pbk->kode_pengeluaran);
+                    } else {
+                        $targetOutletId = $gudangGaharuId;
                     }
                 }
 
@@ -2381,6 +2626,9 @@ class StokGudangController extends Controller
 
             // 2. Auto-heal missing divisi in transaksi_stok
             self::autoHealMissingDivisiInTransaksiStok($barangId);
+
+            // 2-POS. Auto-heal mutasi Penjualan POS disetujui / Moka import
+            self::autoHealApprovedPosStockMutations($barangId);
 
             // 2a. Auto-heal missing Persediaan Awal transactions
             self::autoHealApprovedPaTransaksiStok($barangId);
