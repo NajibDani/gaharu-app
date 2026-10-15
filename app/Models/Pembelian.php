@@ -12,6 +12,7 @@ class Pembelian extends Model
         'kode_pembelian',
         'supplier_id',
         'gudang_id',
+        'divisi_id',
         'tanggal',
         'total',
         'keterangan',
@@ -104,6 +105,50 @@ class Pembelian extends Model
     public function gudang()
     {
         return $this->belongsTo(MasterGudang::class, 'gudang_id');
+    }
+
+    public function getDivisiIdAttribute(): ?int
+    {
+        if (isset($this->attributes['divisi_id']) && !is_null($this->attributes['divisi_id'])) {
+            return (int) $this->attributes['divisi_id'];
+        }
+        $keterangan = (string) ($this->attributes['keterangan'] ?? '');
+        if (!empty($keterangan) && str_starts_with(trim($keterangan), '{')) {
+            $decoded = json_decode($keterangan, true);
+            if (is_array($decoded) && isset($decoded['divisi_id'])) {
+                return (int) $decoded['divisi_id'];
+            }
+        }
+        return null;
+    }
+
+    public function setDivisiIdAttribute($value): void
+    {
+        $meta = [];
+        $keterangan = (string) ($this->attributes['keterangan'] ?? '');
+        if (!empty($keterangan)) {
+            $decoded = json_decode($keterangan, true);
+            if (is_array($decoded)) {
+                $meta = $decoded;
+            } elseif (!str_starts_with(trim($keterangan), '{')) {
+                $meta['note'] = $keterangan;
+            }
+        }
+        if ($value) {
+            $meta['divisi_id'] = (int) $value;
+        } else {
+            unset($meta['divisi_id']);
+        }
+        $this->attributes['keterangan'] = !empty($meta) ? json_encode($meta) : null;
+    }
+
+    public function getDivisiAttribute()
+    {
+        $divId = $this->getDivisiIdAttribute();
+        if (!$divId) {
+            return null;
+        }
+        return \App\Models\GudangDivisi::find($divId);
     }
 
     public function details()

@@ -293,6 +293,15 @@ class PenjualanPosController extends Controller
                         $hargaBahan = (float) ($item->bahan->hpp_referensi ?: 0);
                     }
 
+                    // Pengaman jika harga satuan bahan per GR / ML masih mencerminkan harga satuan beli (> 500)
+                    if ($item->bahan) {
+                        $satDasar = strtolower(trim($item->bahan->satuan ?? ''));
+                        $konvBhn = (float) ($item->bahan->konversi_pembelian ?? 1);
+                        if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konvBhn > 1 && $hargaBahan > 500) {
+                            $hargaBahan = round($hargaBahan / $konvBhn, 4);
+                        }
+                    }
+
                     // Qty bahan resep POS adalah takaran kebutuhan per 1 unit porsi menu terjual
                     $subtotal = $qtyBahan * $hargaBahan;
                     $biayaPerUnit = $subtotal;
@@ -1225,6 +1234,16 @@ class PenjualanPosController extends Controller
                             if ($hargaBahan <= 0 && $bhn) {
                                 $hargaBahan = (float) ($bhn->hpp_referensi ?: 0);
                             }
+
+                            // Pengaman jika harga satuan bahan per GR / ML masih mencerminkan harga satuan beli (> 500)
+                            if ($bhn) {
+                                $satDasar = strtolower(trim($bhn->satuan ?? ''));
+                                $konvBhn = (float) ($bhn->konversi_pembelian ?? 1);
+                                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konvBhn > 1 && $hargaBahan > 500) {
+                                    $hargaBahan = round($hargaBahan / $konvBhn, 4);
+                                }
+                            }
+
                             $totalHppBahan += ($kebutuhanPerPcs * $hargaBahan);
                         }
                         $totalBtklBop = $totalHppBahan * 0.30;
@@ -1684,11 +1703,15 @@ class PenjualanPosController extends Controller
 
             if ($isSummaryFormat) {
                 $prefixGudang = ($gudangId == 4 || stripos($gudangNama, 'kejingga') !== false) ? 'KJ' : 'GH';
-                $receiptCode = "MOKA-SUM-{$prefixGudang}-" . date('Ymd', strtotime($selectedDate));
+                $batchInputRaw = trim((string) $request->input('id_batch_pos', ''));
+                $batchClean = preg_replace('/[^a-zA-Z0-9_\-]/', '', $batchInputRaw);
+                $batchSuffix = ($batchClean !== '' && $batchClean !== '1') ? "-B{$batchClean}" : "";
+                $receiptCode = "MOKA-SUM-{$prefixGudang}-" . date('Ymd', strtotime($selectedDate)) . $batchSuffix;
                 
                 $exists = DB::table('penjualan_pos')->where('kode_transaksi', $receiptCode)->exists();
                 if ($exists) {
-                    return back()->with('error', "Laporan Moka POS untuk outlet {$gudangNama} tanggal " . date('d/m/Y', strtotime($selectedDate)) . " sudah pernah di-import.");
+                    $batchLabel = $batchClean !== '' ? " (Batch: {$batchClean})" : "";
+                    return back()->with('error', "Laporan Moka POS untuk outlet {$gudangNama} tanggal " . date('d/m/Y', strtotime($selectedDate)) . "{$batchLabel} sudah pernah di-import. Jika ada transaksi tambahan di hari yang sama, gunakan ID Batch yang berbeda (misalnya Batch 2).");
                 }
 
                 $itemsToImport = [];

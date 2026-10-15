@@ -131,7 +131,12 @@
         </tr>
         <tr>
             <td class="info-label">Outlet Pemesan</td>
-            <td class="info-value"><strong style="color: {{ $accentColor }}; font-size: 12px;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
+            <td class="info-value">
+                <strong style="color: {{ $accentColor }}; font-size: 12px;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong>
+                @if($pembelian->divisi)
+                    <span style="font-size: 10px; color: #475569; display: block; margin-top: 2px;">(Alokasi: <strong>{{ $pembelian->divisi->nama }}</strong>)</span>
+                @endif
+            </td>
             <td class="info-label">Gudang Sumber</td>
             <td class="info-value"><strong>{{ $pembelian->supplier->nama ?? '-' }}</strong> <span style="font-size: 10px; color: #64748b;">(Supplier / Vendor)</span></td>
         </tr>

@@ -283,8 +283,12 @@
                                     <span class="badge bg-secondary font-normal" style="font-size:11px;">Draft Permintaan Staff</span>
                                 @endif
                                 <div class="text-muted small" style="font-size: 11px;">{{ $details->count() }} jenis barang</div>
+                            <td data-label="Gudang">
+                                <span class="badge bg-warning text-dark">{{ $item->gudang->nama ?? 'Gudang KeJingga' }}</span>
+                                @if($item->divisi)
+                                    <div class="mt-1"><span class="badge bg-light text-dark border border-secondary font-monospace" style="font-size:10.5px;"><i class="bi bi-geo-alt-fill text-primary me-1"></i>{{ $item->divisi->nama }}</span></div>
+                                @endif
                             </td>
-                            <td data-label="Gudang"><span class="badge bg-warning text-dark">{{ $item->gudang->nama ?? 'Gudang KeJingga' }}</span></td>
 
                             {{-- TOTAL PO --}}
                             <td data-label="Total PO" class="text-end fw-semibold">

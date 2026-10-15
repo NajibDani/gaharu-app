@@ -55,7 +55,12 @@
                         </tr>
                         <tr>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Outlet Pemesan</td>
-                            <td><strong class="fs-6" style="color: #10b981;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong></td>
+                            <td>
+                                <strong class="fs-6" style="color: #10b981;">{{ $pembelian->gudang->nama ?? 'Gudang KeJingga' }}</strong>
+                                @if($pembelian->divisi)
+                                    <div class="small text-muted font-monospace mt-1"><i class="bi bi-geo-alt-fill text-primary"></i> Alokasi: <strong>{{ $pembelian->divisi->nama }}</strong></div>
+                                @endif
+                            </td>
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Gudang Sumber</td>
                             <td><strong>{{ $pembelian->supplier->nama ?? 'Draft (Belum Ada Supplier)' }}</strong> <span class="text-muted small">(Supplier / Pemasok)</span></td>
                         </tr>

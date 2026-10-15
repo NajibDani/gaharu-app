@@ -321,13 +321,26 @@ function loadBarang(isExplicitRefresh = false) {
                 isManual = false;
             }
 
-            let sist = currentStok;
+            // Gunakan stok_sistem yang tersimpan dari draft SO jika ada
+            let sist = (saved && saved.stok_sistem !== undefined && saved.stok_sistem !== null)
+                ? parseFloat(saved.stok_sistem)
+                : currentStok;
             let sel = fis - sist;
+
+            // Jika stok fisik tidak berubah dari yang tersimpan di database, gunakan nilai_selisih dan harga_satuan historis
+            let nilai;
+            let isUnchangedSaved = saved && Math.abs(fis - parseFloat(saved.stok_fisik)) < 0.0001;
+            if (isUnchangedSaved && saved.nilai !== undefined && saved.nilai !== null) {
+                nilai = parseFloat(saved.nilai);
+            } else {
+                nilai = Math.abs(sel) * parseFloat(item.harga_fifo || 0);
+            }
+
             userValues[item.id] = {
                 stok_fisik: fis,
                 stok_sistem: sist,
                 selisih: sel,
-                nilai: Math.abs(sel) * parseFloat(item.harga_fifo || 0),
+                nilai: nilai,
                 harga_fifo: parseFloat(item.harga_fifo || 0),
                 is_manual: isManual
             };

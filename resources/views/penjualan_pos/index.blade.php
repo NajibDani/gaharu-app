@@ -189,10 +189,17 @@
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <label for="tanggal_transaksi" class="form-label fw-bold text-secondary">Tanggal Transaksi Jurnal <span class="text-danger">*</span></label>
-                        <input type="date" name="tanggal_transaksi" id="tanggal_transaksi" class="form-control" value="{{ date('Y-m-d') }}" required>
-                        <div class="form-text mt-1 small text-muted">Tanggal pembukuan transaksi & jurnal yang di-import.</div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-7">
+                            <label for="tanggal_transaksi" class="form-label fw-bold text-secondary">Tanggal Transaksi Jurnal <span class="text-danger">*</span></label>
+                            <input type="date" name="tanggal_transaksi" id="tanggal_transaksi" class="form-control" value="{{ date('Y-m-d') }}" required>
+                            <div class="form-text mt-1 small text-muted">Tanggal pembukuan transaksi &amp; jurnal.</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="id_batch_pos" class="form-label fw-bold text-secondary">ID Batch / Sesi POS MOKA</label>
+                            <input type="text" name="id_batch_pos" id="id_batch_pos" class="form-control" placeholder="1 / Sesi 1 / Shift 1" value="1">
+                            <div class="form-text mt-1 small text-muted">Bisa diinput lebih dari 1x/hari dengan ID Batch berbeda.</div>
+                        </div>
                     </div>
 
                     <div class="mb-3">

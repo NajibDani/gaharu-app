@@ -74,14 +74,27 @@
             <div class="card form-card p-3 mb-3">
                 <div class="row g-3">
                     {{-- GUDANG --}}
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-4">
                         <label class="form-label fw-bold small text-dark mb-1">Gudang Tujuan Stok</label>
                         <input type="text" class="form-control bg-light fw-bold text-warning" value="{{ $gudangKejingga->nama ?? 'Gudang KeJingga' }}" readonly>
                         <input type="hidden" name="gudang_id" value="5">
                     </div>
 
+                    {{-- ALOKASI GUDANG / DEPARTEMEN TUJUAN --}}
+                    <div class="col-12 col-md-4">
+                        <label class="form-label fw-bold small text-dark mb-1">Alokasi Gudang / Departemen Tujuan <span class="text-danger">*</span></label>
+                        <select name="divisi_id" id="divisi_id" class="form-select" required>
+                            @foreach($divisiList as $div)
+                                <option value="{{ $div->id }}" {{ old('divisi_id', 5) == $div->id ? 'selected' : '' }}>
+                                    {{ $div->nama }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <small class="text-muted" style="font-size: 11px;">Stok barang yang dibeli otomatis masuk ke departemen ini.</small>
+                    </div>
+
                     {{-- TANGGAL --}}
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-4">
                         <label class="form-label fw-bold small text-dark mb-1">Tanggal Transaksi <span class="text-danger">*</span></label>
                         <input type="date" name="tanggal" id="tanggal" class="form-control" value="{{ old('tanggal', date('Y-m-d')) }}" required>
                     </div>

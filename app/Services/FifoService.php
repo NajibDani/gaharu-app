@@ -647,20 +647,26 @@ class FifoService
                 }
             }
 
-            // 8. Fallback ke HPP referensi master barang
+            // 8. Fallback ke HPP referensi master barang (dengan validasi konversi satuan dasar)
             if (isset($barang->hpp_referensi) && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1 && $res > 500) {
+                    $res = round($res / $masterKonv, 4);
                 }
-                return $res;
+                if ($isValidBatchPrice($res)) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                    return $res;
+                }
             }
             if (isset($barang->harga_satuan_terkecil) && floatval($barang->harga_satuan_terkecil) > 0) {
                 $res = (float) $barang->harga_satuan_terkecil;
-                if (true) {
-                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1 && $res > 500) {
+                    $res = round($res / $masterKonv, 4);
                 }
-                return $res;
+                if ($isValidBatchPrice($res)) {
+                    self::$hargaTerakhirCache[$cacheKey] = $res;
+                    return $res;
+                }
             }
         }
 
@@ -805,7 +811,22 @@ class FifoService
                         $hargaBahan = $this->getHargaTerakhirBahan((int) $subBahan->bahan_id, $gudangUtamaId);
                     }
                     if ($hargaBahan <= 0 && $subBhn) {
-                        $hargaBahan = (float) ($subBhn->hpp_referensi ?: 0);
+                        $refPrice = (float) ($subBhn->hpp_referensi ?: 0);
+                        $subSatDasar = strtolower(trim($subBhn->satuan ?? ''));
+                        $subKonv = (float) ($subBhn->konversi_pembelian ?? 1);
+                        if (in_array($subSatDasar, ['gr', 'ml', 'gram']) && $subKonv > 1 && $refPrice > 500) {
+                            $refPrice = round($refPrice / $subKonv, 4);
+                        }
+                        $hargaBahan = $refPrice;
+                    }
+
+                    // Pengaman: Jika satuan adalah GR / ML dan harga per satuan dasar > 500, cek apakah masih harga satuan beli
+                    if ($subBhn) {
+                        $subSatDasar = strtolower(trim($subBhn->satuan ?? ''));
+                        $subKonv = (float) ($subBhn->konversi_pembelian ?? 1);
+                        if (in_array($subSatDasar, ['gr', 'ml', 'gram']) && $subKonv > 1 && $hargaBahan > 500) {
+                            $hargaBahan = round($hargaBahan / $subKonv, 4);
+                        }
                     }
 
                     $totalBbb += floatval($subBahan->qty_bahan) * $hargaBahan;
@@ -840,6 +861,12 @@ class FifoService
                 ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($barang->nama))])
                 ->where('hpp_referensi', '>', 0)
                 ->value('hpp_referensi') ?: 0);
+        }
+
+        $satDasar = strtolower(trim($barang->satuan ?? ''));
+        $konv = (float) ($barang->konversi_pembelian ?? 1);
+        if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konv > 1 && $hppRef > 500) {
+            $hppRef = round($hppRef / $konv, 4);
         }
 
         return $hppRef;

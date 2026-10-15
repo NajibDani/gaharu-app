@@ -309,8 +309,9 @@ class PembelianKejinggaController extends Controller
             });
 
         $gudangKejingga = MasterGudang::find(5);
+        $divisiList = \App\Models\GudangDivisi::where('gudang_id', 5)->orderBy('nama')->get();
 
-        return view('pembelian-kejingga.create', compact('suppliers', 'barangs', 'gudangKejingga'));
+        return view('pembelian-kejingga.create', compact('suppliers', 'barangs', 'gudangKejingga', 'divisiList'));
     }
 
     public function store(Request $request)
@@ -319,6 +320,7 @@ class PembelianKejinggaController extends Controller
 
         $request->validate([
             'tanggal'                 => 'required|date',
+            'divisi_id'               => 'nullable|exists:gudang_divisi,id',
             'items'                   => 'required|array|min:1',
             'items.*.barang_id'       => 'required|exists:master_barang,id',
             'items.*.supplier_id'     => 'nullable|exists:suppliers,id',
@@ -331,6 +333,7 @@ class PembelianKejinggaController extends Controller
         }
 
         $gudangId = 5; // Gudang Kejingga
+        $targetDivisiId = $request->filled('divisi_id') ? (int) $request->divisi_id : null;
 
         DB::beginTransaction();
         try {
@@ -386,6 +389,7 @@ class PembelianKejinggaController extends Controller
                 'kode_pembelian'    => $kodePembelian,
                 'supplier_id'       => $resolvedSupplierId,
                 'gudang_id'         => $gudangId,
+                'divisi_id'         => $targetDivisiId,
                 'tanggal'           => $request->tanggal,
                 'total'             => $grandTotal,
                 'tax_service'       => $taxService,
@@ -475,9 +479,12 @@ class PembelianKejinggaController extends Controller
                 $qtyMasukStok = floatval($detail->qty) * $konversi;
                 $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
 
+                // Tentukan divisi tujuan stok: Gunakan divisi yang dipilih user, atau fallback resolveDivisiIdForBarang
+                $itemDivisiId = $targetDivisiId ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang($gudangId, $detail->barang_id) ?: $divisiUtamaId);
+
                 StokGudangBatch::create([
                     'gudang_id'           => $gudangId,
-                    'divisi_id'           => $divisiUtamaId,
+                    'divisi_id'           => $itemDivisiId,
                     'supplier_id'         => $detail->supplier_id ?: $pembelian->supplier_id,
                     'barang_id'           => $detail->barang_id,
                     'pembelian_id'        => $pembelian->id,
@@ -493,7 +500,7 @@ class PembelianKejinggaController extends Controller
                 $this->stockService->stockIn([
                     'barang_id'       => $detail->barang_id,
                     'gudang_tujuan_id'=> $gudangId,
-                    'divisi_tujuan_id'=> $divisiUtamaId,
+                    'divisi_tujuan_id'=> $itemDivisiId,
                     'qty'             => $qtyMasukStok,
                     'total_harga'     => $totalHargaDiterima,
                     'source_type'     => 'pembelian_kejingga',
@@ -574,8 +581,9 @@ class PembelianKejinggaController extends Controller
             });
 
         $gudangKejingga = MasterGudang::find(5);
+        $divisiList = \App\Models\GudangDivisi::where('gudang_id', 5)->orderBy('nama')->get();
 
-        return view('pembelian-kejingga.edit', compact('pembelian', 'suppliers', 'barangs', 'gudangKejingga'));
+        return view('pembelian-kejingga.edit', compact('pembelian', 'suppliers', 'barangs', 'gudangKejingga', 'divisiList'));
     }
 
     public function update(Request $request, $id)
@@ -586,6 +594,7 @@ class PembelianKejinggaController extends Controller
 
         $request->validate([
             'tanggal'                 => 'required|date',
+            'divisi_id'               => 'nullable|exists:gudang_divisi,id',
             'items'                   => 'required|array|min:1',
             'items.*.barang_id'       => 'required|exists:master_barang,id',
             'items.*.supplier_id'     => 'nullable|exists:suppliers,id',
@@ -596,6 +605,8 @@ class PembelianKejinggaController extends Controller
         if (\App\Models\Journal::isPeriodClosed($request->tanggal)) {
             return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku.')->withInput();
         }
+
+        $targetDivisiId = $request->filled('divisi_id') ? (int) $request->divisi_id : $pembelian->divisi_id;
 
         DB::beginTransaction();
         try {
@@ -640,6 +651,7 @@ class PembelianKejinggaController extends Controller
 
             $pembelian->update([
                 'supplier_id' => $resolvedSupplierId,
+                'divisi_id'   => $targetDivisiId,
                 'tanggal'     => $request->tanggal,
                 'total'       => $grandTotal,
                 'tax_service' => $taxService,
@@ -710,6 +722,8 @@ class PembelianKejinggaController extends Controller
                 $qtyMasukStok = $qtyInput * $konversi;
                 $hargaPerQtyStok = $hargaPerQty / $konversi;
 
+                $itemDivisiId = $targetDivisiId ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $barangId) ?: 4);
+
                 if ($oldDet) {
                     $oldQty = (float) $oldDet->qty;
                     $diffQty = $qtyInput - $oldQty;
@@ -729,6 +743,7 @@ class PembelianKejinggaController extends Controller
 
                     $batch = \App\Models\StokGudangBatch::where('pembelian_detail_id', $oldDet->id)->first();
                     if ($batch) {
+                        $oldBatchDivisiId = $batch->divisi_id;
                         if ($diffQty != 0) {
                             $batch->qty_masuk = max(0, (float)$batch->qty_masuk + $diffQtyKonv);
                             $batch->qty_sisa  = max(0, (float)$batch->qty_sisa + $diffQtyKonv);
@@ -736,11 +751,29 @@ class PembelianKejinggaController extends Controller
                         }
                         $batch->harga_per_qty = $hargaPerQtyStok;
                         $batch->supplier_id   = $it['supplier_id'] ?: $resolvedSupplierId;
+                        if ($targetDivisiId && $batch->divisi_id != $targetDivisiId) {
+                            $batch->divisi_id = $targetDivisiId;
+                        }
                         $batch->save();
 
-                        if ($diffQty != 0) {
+                        // Update stok gudang per divisi jika divisi berubah atau qty berubah
+                        if ($targetDivisiId && $oldBatchDivisiId != $targetDivisiId) {
+                            // Pindahkan qty_masuk lama ke divisi baru
+                            $stokLama = \App\Models\StokGudang::where('barang_id', $barangId)->where('gudang_id', 5)
+                                ->when($oldBatchDivisiId, fn($q) => $q->where('divisi_id', $oldBatchDivisiId), fn($q) => $q->whereNull('divisi_id'))
+                                ->lockForUpdate()->first();
+                            if ($stokLama) {
+                                $stokLama->decrement('jumlah', (float) ($batch->qty_masuk - $diffQtyKonv));
+                            }
+                            $stokBaru = \App\Models\StokGudang::firstOrCreate(
+                                ['barang_id' => $barangId, 'gudang_id' => 5, 'divisi_id' => $targetDivisiId],
+                                ['jumlah' => 0]
+                            );
+                            $stokBaru->increment('jumlah', (float) $batch->qty_masuk);
+                        } elseif ($diffQty != 0) {
                             $stokGudang = \App\Models\StokGudang::where('barang_id', $barangId)
                                 ->where('gudang_id', 5)
+                                ->when($batch->divisi_id, fn($q) => $q->where('divisi_id', $batch->divisi_id), fn($q) => $q->whereNull('divisi_id'))
                                 ->lockForUpdate()
                                 ->first();
 
@@ -755,7 +788,7 @@ class PembelianKejinggaController extends Controller
                     } else {
                         \App\Models\StokGudangBatch::create([
                             'gudang_id'           => 5,
-                            'divisi_id'           => 4,
+                            'divisi_id'           => $itemDivisiId,
                             'supplier_id'         => $it['supplier_id'] ?: $resolvedSupplierId,
                             'barang_id'           => $barangId,
                             'pembelian_id'        => $pembelian->id,
@@ -769,7 +802,7 @@ class PembelianKejinggaController extends Controller
                         ]);
 
                         $stokGudang = \App\Models\StokGudang::firstOrCreate(
-                            ['barang_id' => $barangId, 'gudang_id' => 5],
+                            ['barang_id' => $barangId, 'gudang_id' => 5, 'divisi_id' => $itemDivisiId],
                             ['jumlah' => 0]
                         );
                         $stokGudang->increment('jumlah', $qtyMasukStok);
@@ -801,7 +834,7 @@ class PembelianKejinggaController extends Controller
 
                     \App\Models\StokGudangBatch::create([
                         'gudang_id'           => 5,
-                        'divisi_id'           => 4,
+                        'divisi_id'           => $itemDivisiId,
                         'supplier_id'         => $it['supplier_id'] ?: $resolvedSupplierId,
                         'barang_id'           => $barangId,
                         'pembelian_id'        => $pembelian->id,
@@ -815,7 +848,7 @@ class PembelianKejinggaController extends Controller
                     ]);
 
                     $stokGudang = \App\Models\StokGudang::firstOrCreate(
-                        ['barang_id' => $barangId, 'gudang_id' => 5],
+                        ['barang_id' => $barangId, 'gudang_id' => 5, 'divisi_id' => $itemDivisiId],
                         ['jumlah' => 0]
                     );
                     $stokGudang->increment('jumlah', $qtyMasukStok);
@@ -1443,8 +1476,11 @@ class PembelianKejinggaController extends Controller
             $qtyMasukStok = $qtyBaruInput * $konversi;
             $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
 
+            $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $detail->barang_id) ?: 4);
+
             StokGudangBatch::create([
                 'gudang_id'           => 5, // Gudang Kejingga
+                'divisi_id'           => $targetDivisiId,
                 'supplier_id'         => $detail->supplier_id ?: $pembelian->supplier_id,
                 'barang_id'           => $detail->barang_id,
                 'pembelian_id'        => $pembelian->id,
@@ -1460,11 +1496,12 @@ class PembelianKejinggaController extends Controller
             $this->stockService->stockIn([
                 'barang_id'       => $detail->barang_id,
                 'gudang_tujuan_id'=> 5,
+                'divisi_tujuan_id'=> $targetDivisiId,
                 'qty'             => $qtyMasukStok,
                 'total_harga'     => $totalHargaDiterima,
                 'source_type'     => 'pembelian_kejingga',
                 'source_id'       => $pembelian->id,
-                'user_id'         => auth()->id(),
+                'user_id'         => auth()->id() ?? 1,
             ]);
 
             // Sinkronisasi HPP barang sesuai FIFO
@@ -1563,8 +1600,11 @@ class PembelianKejinggaController extends Controller
                 $qtyMasukStok = $qtyBaruInput * $konversi;
                 $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
 
+                $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang($gudangId, $detail->barang_id) ?: 4);
+
                 StokGudangBatch::create([
                     'gudang_id'           => $gudangId,
+                    'divisi_id'           => $targetDivisiId,
                     'supplier_id'         => $detail->supplier_id ?: $pembelian->supplier_id,
                     'barang_id'           => $detail->barang_id,
                     'pembelian_id'        => $pembelian->id,
@@ -1580,6 +1620,7 @@ class PembelianKejinggaController extends Controller
                 $this->stockService->stockIn([
                     'barang_id'       => $detail->barang_id,
                     'gudang_tujuan_id'=> $gudangId,
+                    'divisi_tujuan_id'=> $targetDivisiId,
                     'qty'             => $qtyMasukStok,
                     'total_harga'     => $totalHargaDiterima,
                     'source_type'     => 'pembelian_kejingga',
