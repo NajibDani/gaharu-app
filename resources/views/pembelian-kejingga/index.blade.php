@@ -955,14 +955,25 @@
                     <div class="modal-body p-3 p-md-4" style="overflow-y: auto;">
                         <div class="row g-3 mb-4">
                             {{-- GUDANG --}}
-                            <div class="col-12 col-md-6">
+                            <div class="col-12 col-md-4">
                                 <label class="form-label fw-bold small text-dark mb-1">Gudang Tujuan Stok</label>
                                 <input type="text" class="form-control bg-light fw-bold text-warning" value="{{ $gudangKejingga->nama ?? 'Gudang KeJingga' }}" readonly>
                                 <input type="hidden" name="gudang_id" value="5">
                             </div>
 
+                            {{-- ALOKASI GUDANG / DEPARTEMEN TUJUAN --}}
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-bold small text-dark mb-1">Alokasi Gudang / Departemen Tujuan <span class="text-danger">*</span></label>
+                                <select name="divisi_id" id="edit_divisi_id" class="form-select" required>
+                                    @foreach($divisiList ?? [] as $div)
+                                        <option value="{{ $div->id }}">{{ $div->nama }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted" style="font-size: 11px;">Stok barang yang dibeli otomatis masuk ke departemen ini.</small>
+                            </div>
+
                             {{-- TANGGAL --}}
-                            <div class="col-12 col-md-6">
+                            <div class="col-12 col-md-4">
                                 <label class="form-label fw-bold small text-dark mb-1">Tanggal Transaksi <span class="text-danger">*</span></label>
                                 <input type="date" name="tanggal" id="edit_tanggal" class="form-control" required>
                             </div>
@@ -2279,6 +2290,10 @@
         document.getElementById('formEditModal').action = `/pembelian-kejingga/${id}`;
 
         document.getElementById('edit_tanggal').value = item.tanggal_raw;
+        const divisiSelect = document.getElementById('edit_divisi_id');
+        if (divisiSelect) {
+            divisiSelect.value = item.divisi_id || 5;
+        }
         document.getElementById('edit_tax_service').value = item.tax_service > 0 ? formatNumberDisplay(item.tax_service) : '';
 
         const tbody = document.querySelector('#table-edit-items tbody');

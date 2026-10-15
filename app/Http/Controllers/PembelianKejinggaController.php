@@ -193,6 +193,7 @@ class PembelianKejinggaController extends Controller
                 'supplier_nama'       => $item->supplier->nama ?? 'Multi Supplier / Per Item',
                 'gudang_id'           => $item->gudang_id,
                 'gudang_nama'         => $item->gudang->nama ?? 'Gudang KeJingga',
+                'divisi_id'           => $item->divisi_id ?? 5,
                 'tanggal'             => \Carbon\Carbon::parse($item->tanggal)->format('d M Y'),
                 'tanggal_raw'         => \Carbon\Carbon::parse($item->tanggal)->format('Y-m-d'),
                 'tax_service'         => (float) ($item->tax_service ?? 0),
@@ -284,8 +285,9 @@ class PembelianKejinggaController extends Controller
         $barangs   = MasterBarang::where('is_active', true)->orderBy('nama')->get();
         $gudangs   = MasterGudang::all();
         $gudangKejingga = MasterGudang::find(5);
+        $divisiList = \App\Models\GudangDivisi::where('gudang_id', 5)->orderBy('nama')->get();
 
-        return view('pembelian-kejingga.index', compact('pembelian', 'dataPembayaran', 'suppliers', 'barangs', 'gudangs', 'gudangKejingga', 'totalBelanja'));
+        return view('pembelian-kejingga.index', compact('pembelian', 'dataPembayaran', 'suppliers', 'barangs', 'gudangs', 'gudangKejingga', 'divisiList', 'totalBelanja'));
     }
 
     public function create()
