@@ -1094,6 +1094,18 @@
         });
     }
 
+    function initSupplierTomSelect(el) {
+        if (!el || el.tomselect) return;
+        new TomSelect(el, {
+            create: false,
+            sortField: { field: "text", direction: "asc" },
+            placeholder: el.getAttribute('placeholder') || "-- Pilih / Cari Supplier --",
+            allowEmptyOption: true,
+            dropdownParent: 'body',
+            maxOptions: 500
+        });
+    }
+
     function updateEditRowBarang(tr, barangId) {
         const b = barangsMap[barangId];
         const badgeDiv = tr.querySelector('.stok-info-badge');
@@ -1239,6 +1251,8 @@
 
         const sel = tr.querySelector('.barang-select');
         initTomSelect(sel);
+        const selSup = tr.querySelector('.supplier-select');
+        initSupplierTomSelect(selSup);
 
         if (d && d.barang_id) {
             updateEditRowBarang(tr, d.barang_id);
@@ -1876,10 +1890,14 @@
         // Prefill Supplier: if all selected have same supplier_id, select it
         const supplierIds = Array.from(new Set(selectedDetails.map(d => d.supplier_id).filter(Boolean)));
         const supplierSelect = document.getElementById('input_supplier_id');
-        if (supplierIds.length === 1) {
-            supplierSelect.value = supplierIds[0];
-        } else {
-            supplierSelect.value = po.supplier_id || '';
+        initSupplierTomSelect(supplierSelect);
+        const targetSupplierVal = (supplierIds.length === 1) ? supplierIds[0] : (po.supplier_id || '');
+        if (supplierSelect) {
+            if (supplierSelect.tomselect) {
+                supplierSelect.tomselect.setValue(targetSupplierVal);
+            } else {
+                supplierSelect.value = targetSupplierVal;
+            }
         }
 
         // Prefill Nota

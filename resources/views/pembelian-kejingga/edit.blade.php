@@ -305,6 +305,18 @@
             });
         }
 
+        function initSupplierTomSelect(el) {
+            if (!el || el.tomselect) return;
+            new TomSelect(el, {
+                create: false,
+                sortField: { field: "text", direction: "asc" },
+                placeholder: "-- Draft (Kosong) --",
+                allowEmptyOption: true,
+                dropdownParent: 'body',
+                maxOptions: 500
+            });
+        }
+
         function updateRowBarang(tr, barangId) {
             const b = barangsMap[barangId];
             const badgeDiv = tr.querySelector('.stok-info-badge');
@@ -393,6 +405,7 @@
         }
 
         document.querySelectorAll('.barang-select').forEach(initTomSelect);
+        document.querySelectorAll('.supplier-select').forEach(initSupplierTomSelect);
 
         document.addEventListener('input', function(e) {
             if (e.target.classList.contains('qty-input') || e.target.classList.contains('harga-input')) {
@@ -463,6 +476,7 @@
             tbody.appendChild(tr);
             tr.querySelectorAll('.mask-number').forEach(maskInput);
             initTomSelect(tr.querySelector('.barang-select'));
+            initSupplierTomSelect(tr.querySelector('.supplier-select'));
             rowIndex++;
         });
 
