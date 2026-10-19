@@ -902,14 +902,14 @@ class StockOpnameController extends Controller
         DB::beginTransaction();
 
         try {
-            $pbk = $this->createOrUpdateDraftPbk($opname);
+            $this->executeApprovalEffects($opname);
             $opname->update(['status' => 'approved']);
 
             DB::commit();
 
             return back()->with(
                 'success',
-                'Stock Opname (' . $opname->kode_opname . ') berhasil disetujui. Dokumen pengajuan persetujuan stok (' . $pbk->kode_pengeluaran . ') telah dibuat di menu Permintaan / Transfer Bahan dengan status Draft. Stok gudang akan terpotong/bertambah secara otomatis setelah dokumen tersebut disetujui di menu tersebut.'
+                'Stock Opname (' . $opname->kode_opname . ') berhasil disetujui. Stok gudang, mutasi FIFO, dan jurnal penyesuaian telah disinkronkan secara permanen.'
             );
 
         } catch (\Exception $e) {
@@ -1008,7 +1008,18 @@ class StockOpnameController extends Controller
         DB::beginTransaction();
         try {
             if ($opname->status === 'approved') {
-                $this->revertApprovalEffects($opname);
+                $this->revertApprovalEffects($opname, true);
+            } else {
+                PengeluaranBahanBaku::where('kode_pengeluaran', 'like', '%' . $opname->kode_opname . '%')
+                    ->orWhere(function($q) use ($opname) {
+                        $q->where('jenis_pengeluaran', 'stock_opname')
+                          ->where('keterangan', 'like', '%' . $opname->kode_opname . '%');
+                    })
+                    ->each(function($p) {
+                        \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $p->id)->delete();
+                        $p->details()->delete();
+                        $p->delete();
+                    });
             }
 
             $opname->details()->delete();
@@ -1274,13 +1285,16 @@ class StockOpnameController extends Controller
     |--------------------------------------------------------------------------
     */
 
-    public function revertApprovalEffects(StockOpname $opname): void
+    public function revertApprovalEffects(StockOpname $opname, bool $deletePbk = false): void
     {
         // 1. Revert Shortage (Pengeluaran Bahan Baku & FIFO consumption)
-        $pengeluaranList = PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
-            ->orWhere(function($q) use ($opname) {
+        $cleanKode = $opname->kode_opname;
+        $pengeluaranList = PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $cleanKode)
+            ->orWhere('kode_pengeluaran', 'PBK-' . $cleanKode)
+            ->orWhere('kode_pengeluaran', 'PBK-SO-SO-' . substr($cleanKode, 3))
+            ->orWhere(function($q) use ($cleanKode) {
                 $q->where('jenis_pengeluaran', 'stock_opname')
-                  ->where('keterangan', 'like', '%' . $opname->kode_opname . '%');
+                  ->where('keterangan', 'like', '%' . $cleanKode . '%');
             })
             ->get();
 
@@ -1298,7 +1312,9 @@ class StockOpnameController extends Controller
             }
             \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->delete();
             $pengeluaran->details()->delete();
-            $pengeluaran->delete();
+            if ($deletePbk) {
+                $pengeluaran->delete();
+            }
         }
 
         // 2. Revert Surplus (Batch SO-SURPLUS-... & stock increment)
@@ -1362,44 +1378,15 @@ class StockOpnameController extends Controller
             ->first();
 
         foreach ($opname->details as $detail) {
-            // Hitung stok sistem aktual di lokasi (gudang & divisi) sebelum waktu SO (10:29:00)
-            $queryIn = DB::table('transaksi_stok')
-                ->where('barang_id', $detail->barang_id)
-                ->where('tanggal', '<', $tanggalTx);
-            $queryOut = DB::table('transaksi_stok')
-                ->where('barang_id', $detail->barang_id)
-                ->where('tanggal', '<', $tanggalTx);
+            $selisih = (float) $detail->selisih;
 
-            if ($opname->gudang_id && $opname->divisi_id) {
-                $queryIn->where('gudang_tujuan_id', $opname->gudang_id)->where('divisi_tujuan_id', $opname->divisi_id);
-                $queryOut->where('gudang_asal_id', $opname->gudang_id)->where('divisi_asal_id', $opname->divisi_id);
-            } elseif ($opname->gudang_id) {
-                $queryIn->where('gudang_tujuan_id', $opname->gudang_id);
-                $queryOut->where('gudang_asal_id', $opname->gudang_id);
-            } elseif ($opname->divisi_id) {
-                $queryIn->where('divisi_tujuan_id', $opname->divisi_id);
-                $queryOut->where('divisi_asal_id', $opname->divisi_id);
-            }
-
-            $stokSistemAktual = max(0, (float)($queryIn->sum('qty') - $queryOut->sum('qty')));
-            $stokFisik = (float)$detail->stok_fisik;
-
-            if ($stokFisik < $stokSistemAktual) {
-                $qtyKurang = max(0, min($stokSistemAktual, $stokSistemAktual - $stokFisik));
-                $selisih = -$qtyKurang;
+            if ($selisih < 0) {
+                $qtyKurang  = abs($selisih);
                 $qtySurplus = 0;
             } else {
-                $qtySurplus = $stokFisik - $stokSistemAktual;
-                $selisih = $qtySurplus;
-                $qtyKurang = 0;
+                $qtySurplus = $selisih;
+                $qtyKurang  = 0;
             }
-
-            $detail->update([
-                'stok_sistem' => $stokSistemAktual,
-                'selisih'     => $selisih,
-            ]);
-
-            $pbkDet = $pbk ? $pbk->details->firstWhere('barang_id', $detail->barang_id) : null;
 
             if ($selisih < 0 && $qtyKurang > 0) {
                 $qtyKurang = abs((float) $selisih);
@@ -1425,18 +1412,6 @@ class StockOpnameController extends Controller
                         'harga_per_qty' => $fifo['harga_per_qty'],
                         'total_harga'   => $layerTotal,
                     ];
-
-                    if ($pbk && $pbkDet && !empty($fifo['batch_id'])) {
-                        \App\Models\PengeluaranBahanBakuFifo::create([
-                            'pengeluaran_id' => $pbk->id,
-                            'detail_id'      => $pbkDet->id,
-                            'batch_id'       => $fifo['batch_id'],
-                            'batch_number'   => $fifo['batch_number'],
-                            'qty_keluar'     => $fifo['qty_keluar'],
-                            'harga_per_qty'  => $fifo['harga_per_qty'],
-                            'total_harga'    => $layerTotal,
-                        ]);
-                    }
                 }
 
                 // Fallback jika belum ada batch masuk sebelumnya: pakai harga terakhir barang
@@ -1594,10 +1569,17 @@ class StockOpnameController extends Controller
         }
 
         // ── Update Pengeluaran Bahan Baku otomatis jika ada PBK ──
-        if (!empty($itemSelisihNegatif) && !$pbk) {
-            $kode = 'PBK-SO-' . $opname->kode_opname;
+        $cleanKode = $opname->kode_opname;
+        $kode = str_starts_with($cleanKode, 'SO-') ? 'PBK-' . $cleanKode : 'PBK-SO-' . $cleanKode;
 
-            $pengeluaran = PengeluaranBahanBaku::where('kode_pengeluaran', $kode)->first();
+        $pengeluaran = $pbk ?: PengeluaranBahanBaku::where('kode_pengeluaran', $kode)
+            ->orWhere('kode_pengeluaran', 'PBK-SO-' . $cleanKode)
+            ->orWhere('kode_pengeluaran', 'PBK-' . $cleanKode)
+            ->orWhere('kode_pengeluaran', 'PBK-SO-SO-' . substr($cleanKode, 3))
+            ->orWhere('keterangan', 'like', '%' . $cleanKode . '%')
+            ->first();
+
+        if (!empty($itemSelisihNegatif)) {
             if (!$pengeluaran) {
                 $pengeluaran = PengeluaranBahanBaku::create([
                     'kode_pengeluaran'  => $kode,
@@ -1606,19 +1588,21 @@ class StockOpnameController extends Controller
                     'divisi_id'         => $opname->divisi_id,
                     'jenis_pengeluaran' => 'stock_opname',
                     'status'            => 'approved',
-                    'keterangan'        => 'Auto dari Stock Opname: ' . $opname->kode_opname,
+                    'keterangan'        => 'Auto dari Stock Opname: ' . $cleanKode,
                     'created_by'        => Auth::id() ?? 1,
                     'approved_by'       => Auth::id() ?? 1,
                     'approved_at'       => now(),
                 ]);
             } else {
                 $pengeluaran->update([
+                    'kode_pengeluaran'  => $kode,
                     'status'            => 'approved',
                     'jenis_pengeluaran' => 'stock_opname',
                     'approved_by'       => Auth::id() ?? 1,
                     'approved_at'       => now(),
                 ]);
                 $pengeluaran->details()->delete();
+                \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->delete();
             }
 
             foreach ($itemSelisihNegatif as $item) {
@@ -1646,6 +1630,10 @@ class StockOpnameController extends Controller
                     }
                 }
             }
+        } elseif ($pengeluaran) {
+            $pengeluaran->details()->delete();
+            \App\Models\PengeluaranBahanBakuFifo::where('pengeluaran_id', $pengeluaran->id)->delete();
+            $pengeluaran->delete();
         }
 
         \App\Models\StokGudang::reconcileStockSummary(null, $opname->gudang_id, $opname->divisi_id);

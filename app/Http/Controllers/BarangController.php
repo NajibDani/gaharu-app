@@ -246,15 +246,25 @@ class BarangController extends Controller
                 $harga_b2b = 0;
                 $harga_pos = 0;
             }
-    
+
+            $satuanPembelian = !empty(trim($request->satuan_pembelian ?? '')) ? trim($request->satuan_pembelian) : null;
+            $konversiPembelian = (!empty($satuanPembelian) && floatval($request->konversi_pembelian) > 0) ? floatval($request->konversi_pembelian) : 1.00;
+            if ($satuanPembelian && strtolower($satuanPembelian) === strtolower(trim($request->satuan ?? ''))) {
+                $satuanPembelian = null;
+                $konversiPembelian = 1.00;
+            }
+            if (!$satuanPembelian) {
+                $konversiPembelian = 1.00;
+            }
+
             $barang = MasterBarang::create([
                 'kategori_id'           => $request->kategori_id,
                 'resep_id'              => $request->resep_id, 
                 'kode_barang'           => $request->kode_barang,
                 'nama'                  => $request->nama,
                 'satuan'                => $request->satuan,
-                'satuan_pembelian'      => $request->satuan_pembelian,
-                'konversi_pembelian'    => $request->konversi_pembelian ?? 1.00,
+                'satuan_pembelian'      => $satuanPembelian,
+                'konversi_pembelian'    => $konversiPembelian,
                 'is_bahan_baku'         => $request->jenis_utama == 'BAHAN_BAKU',
                 'is_bahan_setengah_jadi' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI',
                 'is_barang_jadi'        => $request->jenis_utama == 'BARANG_JADI',
@@ -430,15 +440,25 @@ class BarangController extends Controller
         $harga_b2b = $this->cleanPriceInput($harga_b2b ?? 0);
         $harga_pos = $this->cleanPriceInput($harga_pos ?? 0);
         $hpp       = $this->cleanPriceInput($hpp ?? 0);
-    
+
+        $satuanPembelian = !empty(trim($request->satuan_pembelian ?? '')) ? trim($request->satuan_pembelian) : null;
+        $konversiPembelian = (!empty($satuanPembelian) && floatval($request->konversi_pembelian) > 0) ? floatval($request->konversi_pembelian) : 1.00;
+        if ($satuanPembelian && strtolower($satuanPembelian) === strtolower(trim($request->satuan ?? ''))) {
+            $satuanPembelian = null;
+            $konversiPembelian = 1.00;
+        }
+        if (!$satuanPembelian) {
+            $konversiPembelian = 1.00;
+        }
+
         $data->update([
             'kategori_id'    => (int) $request->kategori_id,
             'resep_id'       => $request->has('resep_id') ? $request->resep_id : $data->resep_id,
             'kode_barang'    => $request->kode_barang,
             'nama'           => $request->nama,
             'satuan'         => $request->satuan,
-            'satuan_pembelian' => $request->satuan_pembelian,
-            'konversi_pembelian' => $request->konversi_pembelian ?? 1.00,
+            'satuan_pembelian' => $satuanPembelian,
+            'konversi_pembelian' => $konversiPembelian,
             'is_bahan_baku'  => $request->jenis_utama == 'BAHAN_BAKU',
             'is_bahan_setengah_jadi' => $request->jenis_utama == 'BAHAN_SETENGAH_JADI',
             'is_barang_jadi' => $request->jenis_utama == 'BARANG_JADI',

@@ -854,44 +854,55 @@ class StokGudangController extends Controller
             $opname = $pbk->findAssociatedStockOpname();
 
             if ($opname) {
-                $txQuery = \App\Models\TransaksiStok::where('source_type', 'stock_opname')
-                    ->where('source_id', $opname->id);
-                if ($barangId) {
-                    $txQuery->where('barang_id', $barangId);
+                // Jika stock opname sudah approved, pastikan PBK-nya juga tersinkron approved
+                if ($opname->status === 'approved') {
+                    $pbk->update([
+                        'status'      => 'approved',
+                        'approved_by' => \Illuminate\Support\Facades\Auth::id() ?? 1,
+                        'approved_at' => now(),
+                    ]);
+                    continue;
                 }
-                $txs = $txQuery->get();
 
-                foreach ($txs as $tx) {
-                    $qty = (float) $tx->qty;
-                    if ($tx->tipe === 'keluar') {
-                        $stok = \App\Models\StokGudang::where('barang_id', $tx->barang_id)
-                            ->where('gudang_id', $tx->gudang_asal_id)
-                            ->when($tx->divisi_asal_id, fn($q) => $q->where('divisi_id', $tx->divisi_asal_id), fn($q) => $q->whereNull('divisi_id'))
-                            ->first();
-                        if ($stok) {
-                            $stok->increment('jumlah', $qty);
-                        }
-                    } elseif ($tx->tipe === 'masuk') {
-                        $stok = \App\Models\StokGudang::where('barang_id', $tx->barang_id)
-                            ->where('gudang_id', $tx->gudang_tujuan_id)
-                            ->when($tx->divisi_tujuan_id, fn($q) => $q->where('divisi_id', $tx->divisi_tujuan_id), fn($q) => $q->whereNull('divisi_id'))
-                            ->first();
-                        if ($stok) {
-                            $stok->decrement('jumlah', $qty);
-                        }
+                // Hanya jika stock opname masih berstatus draft, bersihkan mutasi prematur jika ada
+                if ($opname->status === 'draft') {
+                    $txQuery = \App\Models\TransaksiStok::where('source_type', 'stock_opname')
+                        ->where('source_id', $opname->id);
+                    if ($barangId) {
+                        $txQuery->where('barang_id', $barangId);
                     }
-                    $tx->delete();
+                    $txs = $txQuery->get();
+
+                    foreach ($txs as $tx) {
+                        $qty = (float) $tx->qty;
+                        if ($tx->tipe === 'keluar') {
+                            $stok = \App\Models\StokGudang::where('barang_id', $tx->barang_id)
+                                ->where('gudang_id', $tx->gudang_asal_id)
+                                ->when($tx->divisi_asal_id, fn($q) => $q->where('divisi_id', $tx->divisi_asal_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->first();
+                            if ($stok) {
+                                $stok->increment('jumlah', $qty);
+                            }
+                        } elseif ($tx->tipe === 'masuk') {
+                            $stok = \App\Models\StokGudang::where('barang_id', $tx->barang_id)
+                                ->where('gudang_id', $tx->gudang_tujuan_id)
+                                ->when($tx->divisi_tujuan_id, fn($q) => $q->where('divisi_id', $tx->divisi_tujuan_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->first();
+                            if ($stok) {
+                                $stok->decrement('jumlah', $qty);
+                            }
+                        }
+                        $tx->delete();
+                    }
+
+                    \App\Models\StokGudangBatch::where('batch_number', 'SO-SURPLUS-' . $opname->kode_opname)->delete();
+
+                    $jps = DB::table('jurnal_penyesuaian')->where('source_type', 'stock_opname')->where('source_id', $opname->id)->get();
+                    foreach ($jps as $jp) {
+                        DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_penyesuaian')->delete();
+                        DB::table('jurnal_penyesuaian')->where('id', $jp->id)->delete();
+                    }
                 }
-
-                \App\Models\StokGudangBatch::where('batch_number', 'SO-SURPLUS-' . $opname->kode_opname)->delete();
-
-                $jps = DB::table('jurnal_penyesuaian')->where('source_type', 'stock_opname')->where('source_id', $opname->id)->get();
-                foreach ($jps as $jp) {
-                    DB::table('journal_items')->where('journal_id', $jp->id)->where('journal_type', 'jurnal_penyesuaian')->delete();
-                    DB::table('jurnal_penyesuaian')->where('id', $jp->id)->delete();
-                }
-
-                $opname->update(['status' => 'draft']);
             }
         }
     }

@@ -821,38 +821,10 @@ public function resepBahanBakuAlternatif()
             ->update([
                 'is_bahan_baku' => 0,
             ]);
-
-        // 4. Normalisasi master data Tempe (BBB633) konversi 50 GR per PAPAN @ Rp 140/GR
-        self::healTempeAndCaramelData();
     }
 
     public static function healTempeAndCaramelData(): void
     {
-        // 1. Normalisasi master Tempe (BBB633): 50 GR / PAPAN, konversi = 50, hpp_referensi = 140
-        \Illuminate\Support\Facades\DB::table('master_barang')
-            ->where(function($q) {
-                $q->where('kode_barang', 'BBB633')
-                  ->orWhere('nama', 'TEMPE');
-            })
-            ->update([
-                'satuan'             => 'GR',
-                'satuan_pembelian'   => 'PAPAN',
-                'konversi_pembelian' => 50.00,
-                'hpp_referensi'      => 140.00,
-            ]);
-
-        $tempe = \Illuminate\Support\Facades\DB::table('master_barang')
-            ->where('kode_barang', 'BBB633')
-            ->orWhere('nama', 'TEMPE')
-            ->first();
-        if ($tempe) {
-            \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
-                ->where('barang_id', $tempe->id)
-                ->where('harga_per_qty', '>=', 1000)
-                ->update([
-                    'harga_per_qty' => 140.00,
-                ]);
-        }
 
         // 2. Mapping substitusi Caramel Monin (BBB113) & Caramel Drip (BBB112)
         $monin = \Illuminate\Support\Facades\DB::table('master_barang')->where('kode_barang', 'BBB113')->first();

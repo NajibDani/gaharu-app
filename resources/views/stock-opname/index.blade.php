@@ -191,6 +191,14 @@
                                            title="Download Excel Document">
                                             <i class="bi bi-file-earmark-excel me-1"></i> Excel
                                         </a>
+                                        @if($row->status === 'draft')
+                                            <a href="{{ route('stock-opname.approve', $row->id) }}"
+                                               class="btn btn-sm btn-outline-success fw-medium"
+                                               onclick="return confirm('Apakah Anda yakin ingin menyetujui Stock Opname {{ $row->kode_opname }}? Stok gudang, mutasi FIFO, dan jurnal penyesuaian akan disinkronkan secara permanen.')"
+                                               title="Approve Stock Opname">
+                                                <i class="bi bi-check-circle me-1"></i> Approve
+                                            </a>
+                                        @endif
                                         @if($row->status === 'draft' || ($row->status === 'approved' && $isSuperAdmin))
                                             <a href="{{ route('stock-opname.edit', $row->id) }}"
                                                class="btn btn-sm btn-outline-warning text-dark fw-medium"
@@ -574,7 +582,7 @@ function renderDetailOpname(data) {
                 <i class="bi bi-pencil me-1"></i>
                 Edit Stock Opname
             </a>
-            <a href="/stock-opname/${data.id}/approve" class="btn btn-success me-2" onclick="return confirm('Approve stock opname ini? Selisih negatif akan otomatis membuat pengeluaran bahan baku.')">
+            <a href="/stock-opname/${data.id}/approve" class="btn btn-success me-2" onclick="return confirm('Apakah Anda yakin ingin menyetujui Stock Opname ${data.kode_opname}? Stok gudang, mutasi FIFO, dan jurnal penyesuaian akan disinkronkan secara permanen.')">
                 <i class="bi bi-check-circle me-1"></i>
                 Approve Stock Opname
             </a>
