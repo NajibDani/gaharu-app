@@ -93,4 +93,22 @@ class User extends Authenticatable
     {
         return $this->isSuperAdmin() || $this->isGaharu() || $this->isGudang() || $this->isCentralKitchen();
     }
+
+    public function canApprovePreparation(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        $roleName = $this->role->nama ?? '';
+        return in_array($roleName, [
+            'Kepala Gudang', 'Gudang', 'Staff Gudang', 'Admin Gudang',
+            'Central Kitchen', 'Cold Kitchen', 'Bagian Produksi', 'Produksi',
+            'Operasional Gaharu', 'Kepala Outlet Gaharu', 'Kepala Outlet Kejingga', 'Operasional Kejingga'
+        ])
+            || str_contains(strtolower($roleName), 'kitchen')
+            || str_contains(strtolower($roleName), 'admin')
+            || str_contains(strtolower($roleName), 'kepala')
+            || str_contains(strtolower($roleName), 'manager');
+    }
 }

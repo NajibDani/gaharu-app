@@ -32,6 +32,7 @@ use App\Http\Controllers\HargaBarangPosController;
 use App\Http\Controllers\StokGudangBatchController;
 use App\Http\Controllers\LaporanController;
 use App\Http\Controllers\LaporanPenjualanController;
+use App\Http\Controllers\PreparationController;
 use App\Http\Controllers\LaporanPenjualanPosController;
 use App\Http\Controllers\LaporanProduksiController;
 use App\Http\Controllers\LaporanPersediaanController;
@@ -199,6 +200,15 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     Route::get('pengeluaran-bahan-baku/{id}/approve', [PengeluaranBahanBakuController::class, 'approve'])->name('pengeluaran-bahan-baku.approve');
     Route::delete('pengeluaran-bahan-baku/{id}/detail/{detailId}', [PengeluaranBahanBakuController::class, 'destroyDetail'])->name('pengeluaran-bahan-baku.detail.destroy');
     Route::resource('pengeluaran-bahan-baku', PengeluaranBahanBakuController::class);
+
+    // Preparation Bahan (Operasional)
+    Route::get('preparation-bahan/stock', [PreparationController::class, 'getStock'])->name('preparation-bahan.stock');
+    Route::get('preparation-bahan/{id}/stock-check', [PreparationController::class, 'stockCheck'])->name('preparation-bahan.stock-check');
+    Route::get('preparation-bahan/{id}/detail-json', [PreparationController::class, 'detailJson'])->name('preparation-bahan.detail-json');
+    Route::get('preparation-bahan/{id}/edit-json', [PreparationController::class, 'editJson'])->name('preparation-bahan.edit-json');
+    Route::post('preparation-bahan/{id}/approve', [PreparationController::class, 'approve'])->name('preparation-bahan.approve');
+    Route::post('preparation-bahan/{id}/reject', [PreparationController::class, 'reject'])->name('preparation-bahan.reject');
+    Route::resource('preparation-bahan', PreparationController::class);
 
     Route::get('pembelian/suggestions', [PembelianController::class, 'suggestions'])->name('pembelian.suggestions');
     Route::get('pembelian/{id}/cetak-pdf', [PembelianController::class, 'cetakPoPdf'])->name('pembelian.cetak-pdf');

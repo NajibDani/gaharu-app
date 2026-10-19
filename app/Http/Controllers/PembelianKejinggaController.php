@@ -1308,6 +1308,55 @@ class PembelianKejinggaController extends Controller
                 }
 
                 $detail->update($updateData);
+
+                // Sinkronisasi batch dan transaksi stok penerimaan jika item ini telah diterima di Gudang Kejingga
+                $konversi = floatval($detail->konversi_pembelian ?? 1);
+                if ($konversi <= 0) $konversi = 1.0;
+                $effectiveQty = $qtyDiterimaInput > 0 ? $qtyDiterimaInput : $qty;
+                $qtyMasukStok = round($effectiveQty * $konversi, 4);
+                $hargaPerQtyStok = ($qtyMasukStok > 0 && $harga > 0) ? round($harga / $qtyMasukStok, 4) : ($konversi > 0 ? round($hargaPerQty / $konversi, 4) : $hargaPerQty);
+
+                // Update transaksi_stok penerimaan / pembelian_kejingga
+                $txList = \App\Models\TransaksiStok::where('barang_id', $detail->barang_id)
+                    ->where('source_id', $pembelian->id)
+                    ->whereIn('source_type', ['pembelian_kejingga', 'pembelian', 'penerimaan_pembelian'])
+                    ->get();
+
+                foreach ($txList as $tx) {
+                    $tx->update([
+                        'qty'         => $qtyMasukStok,
+                        'total_harga' => $harga,
+                    ]);
+                }
+
+                // Update atau sinkronkan batch di stok_gudang_batch
+                $batches = \App\Models\StokGudangBatch::where('pembelian_detail_id', $detail->id)->get();
+                if ($batches->isEmpty()) {
+                    $batches = \App\Models\StokGudangBatch::where('pembelian_id', $pembelian->id)
+                        ->where('barang_id', $detail->barang_id)
+                        ->get();
+                }
+
+                foreach ($batches as $batch) {
+                    $newSisa = max(0, $qtyMasukStok - (float)$batch->qty_keluar);
+                    $batch->update([
+                        'supplier_id'   => $request->supplier_id,
+                        'qty_masuk'     => $qtyMasukStok,
+                        'qty_sisa'      => $newSisa,
+                        'harga_per_qty' => $hargaPerQtyStok,
+                        'is_habis'      => ($newSisa <= 0),
+                    ]);
+                }
+            }
+
+            // Sinkronisasi ringkasan stok & HPP FIFO untuk semua item yang diperbarui
+            foreach ($selectedDetailIds as $detailId) {
+                $det = PembelianDetail::find($detailId);
+                if ($det) {
+                    \App\Models\StokGudang::reconcileStockSummary($det->barang_id, 5);
+                    $fifoService = app(\App\Services\FifoService::class);
+                    $fifoService->syncBarangHpp((int) $det->barang_id);
+                }
             }
 
             // Sinkronisasi HPP jika ada barang yang diganti

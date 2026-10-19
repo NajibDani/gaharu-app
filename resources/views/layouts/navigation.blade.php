@@ -34,7 +34,7 @@
     $stokActive = request()->routeIs([
         'stok-gudang.index', 'stok-gudang.detail', 'stok-gudang-batch.*',
         'pembelian.*', 'pembelian-kejingga.*', 'pengeluaran-bahan-baku.*',
-        'stock-opname.*', 'pengiriman.*', 'persediaan-awal.*',
+        'preparation-bahan.*', 'stock-opname.*', 'pengiriman.*', 'persediaan-awal.*',
     ]);
 
     $financeActive = request()->routeIs([
@@ -213,6 +213,9 @@
                     @endif
                     <a href="{{ route('pengeluaran-bahan-baku.index') }}" class="{{ request()->routeIs('pengeluaran-bahan-baku.*') ? 'active' : '' }}">
                         <i class="bi bi-arrow-right-circle me-2" style="font-size:12px;"></i>Permintaan / Transfer Bahan
+                    </a>
+                    <a href="{{ route('preparation-bahan.index') }}" class="{{ request()->routeIs('preparation-bahan.*') ? 'active' : '' }}">
+                        <i class="bi bi-fire me-2" style="font-size:12px;"></i>Preparation Bahan
                     </a>
                     <a href="{{ route('stock-opname.index') }}" class="{{ request()->routeIs('stock-opname.*') ? 'active' : '' }}">
                         <i class="bi bi-clipboard-check me-2" style="font-size:12px;"></i>Stock Opname (Cek Fisik)

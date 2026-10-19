@@ -671,7 +671,7 @@ class StokGudangController extends Controller
         $pDetail = null;
         $sourceType = strtolower($row->source_type ?? '');
 
-        if ($sourceType === 'pembelian') {
+        if (in_array($sourceType, ['pembelian', 'pembelian_kejingga'])) {
             $pDetail = DB::table('pembelian_detail')
                 ->where('pembelian_id', $row->source_id)
                 ->where('barang_id', $barangId)
@@ -724,12 +724,14 @@ class StokGudangController extends Controller
 
         switch (strtolower($type)) {
             case 'pembelian':
+            case 'pembelian_kejingga':
                 $p = \App\Models\Pembelian::with('supplier')->find($id);
                 if ($p) {
                     $supplierName = $p->supplier->nama ?? '-';
-                    return "Pembelian: {$p->kode_pembelian} [Supplier: {$supplierName}]";
+                    $prefixLabel = ($type === 'pembelian_kejingga') ? 'Pembelian Kejingga' : 'Pembelian';
+                    return "{$prefixLabel}: {$p->kode_pembelian} [Supplier: {$supplierName}]";
                 }
-                return "Pembelian (ID: {$id})";
+                return ($type === 'pembelian_kejingga') ? "Pembelian Kejingga (ID: {$id})" : "Pembelian (ID: {$id})";
 
             case 'pembelian_batal':
                 $p = \App\Models\Pembelian::with('supplier')->find($id);
@@ -777,6 +779,23 @@ class StokGudangController extends Controller
                     return "Produksi: {$prod->kode_produksi}";
                 }
                 return "Produksi (ID: {$id})";
+
+            case 'preparation_bahan':
+                $prep = \App\Models\Preparation::with(['gudang', 'divisi'])->find($id);
+                if ($prep) {
+                    $kode = $prep->kode ?? "ID: {$id}";
+                    $gudang = $prep->gudang->nama ?? '';
+                    $divisi = $prep->divisi->nama ?? '';
+                    $info = [];
+                    if ($gudang) $info[] = $gudang;
+                    if ($divisi) $info[] = $divisi;
+                    $infoStr = !empty($info) ? ' [' . implode(' - ', $info) . ']' : '';
+                    if ($isMasuk) {
+                        return "Hasil Preparation: {$kode}{$infoStr}";
+                    }
+                    return "Bahan Preparation: {$kode}{$infoStr}";
+                }
+                return $isMasuk ? "Hasil Preparation (ID: {$id})" : "Bahan Preparation (ID: {$id})";
 
             case 'pengiriman':
                 $del = \App\Models\Pengiriman::find($id);
@@ -1882,7 +1901,7 @@ class StokGudangController extends Controller
 
             // 1. Orphan Pembelian / Pembelian Batal (source_id tidak ada di tabel pembelian, dibatalkan/dihapus, ATAU detail item sudah dihapus)
             $orphanPembelianQuery = DB::table('transaksi_stok')
-                ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                ->whereIn('source_type', ['pembelian', 'pembelian_batal', 'pembelian_kejingga'])
                 ->whereNotNull('source_id')
                 ->where(function($q) use ($hasIsDeletedCol) {
                     $q->whereNotExists(function($sub) {
@@ -2272,8 +2291,8 @@ class StokGudangController extends Controller
 
         try {
             DB::transaction(function () use ($tx, $targetBarangId, $sourceType, $sourceId) {
-                // Skenario 1: Pembelian / Penerimaan Pembelian
-                if (in_array($sourceType, ['pembelian', 'pembelian_batal', 'penerimaan_pembelian'])) {
+                // Skenario 1: Pembelian / Penerimaan Pembelian / Pembelian Kejingga
+                if (in_array($sourceType, ['pembelian', 'pembelian_batal', 'penerimaan_pembelian', 'pembelian_kejingga'])) {
                     $pembelianId = $sourceId;
                     if ($sourceType === 'penerimaan_pembelian') {
                         $rcv = \App\Models\PenerimaanPembelian::find($sourceId);
@@ -2319,10 +2338,10 @@ class StokGudangController extends Controller
                             }
                         }
 
-                        // Hapus transaksi stok pembelian & pembelian_batal terkait
+                        // Hapus transaksi stok pembelian, pembelian_batal, & pembelian_kejingga terkait
                         \App\Models\TransaksiStok::where('barang_id', $targetBarangId)
                             ->where('source_id', $pembelian->id)
-                            ->whereIn('source_type', ['pembelian', 'pembelian_batal'])
+                            ->whereIn('source_type', ['pembelian', 'pembelian_batal', 'pembelian_kejingga'])
                             ->delete();
 
                         // Hapus jurnal & pembayaran terkait pembelian ini

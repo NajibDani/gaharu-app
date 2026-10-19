@@ -413,7 +413,7 @@ public function resepBahanBakuAlternatif()
             $txList = \Illuminate\Support\Facades\DB::table('transaksi_stok')
                 ->where('barang_id', $pd->barang_id)
                 ->where('source_id', $pd->pembelian_id)
-                ->whereIn('source_type', ['pembelian', 'penerimaan_pembelian'])
+                ->whereIn('source_type', ['pembelian', 'penerimaan_pembelian', 'pembelian_kejingga'])
                 ->get();
 
             foreach ($txList as $tx) {
