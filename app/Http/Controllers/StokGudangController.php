@@ -998,10 +998,9 @@ class StokGudangController extends Controller
             // 6. Backfill divisi_tujuan_id untuk Pembelian ke Outlet (Kejingga / Luar) sesuai ketentuan tagging divisi
             $outletIds = \App\Models\MasterGudang::getOutletGudangIds();
             $q6 = DB::table('transaksi_stok as ts')
-                ->whereIn('ts.source_type', ['pembelian', 'penerimaan_pembelian'])
+                ->whereIn('ts.source_type', ['pembelian', 'penerimaan_pembelian', 'pembelian_kejingga'])
                 ->where('ts.tipe', 'masuk')
-                ->whereIn('ts.gudang_tujuan_id', $outletIds)
-                ->whereNull('ts.divisi_tujuan_id');
+                ->whereIn('ts.gudang_tujuan_id', $outletIds);
             if ($barangId) {
                 $q6->where('ts.barang_id', $barangId);
             }
@@ -1009,14 +1008,13 @@ class StokGudangController extends Controller
 
             foreach ($pembelianOutletTxs as $pTx) {
                 $divId = \App\Models\MasterGudang::resolveDivisiIdForBarang($pTx->gudang_tujuan_id, $pTx->barang_id);
-                if ($divId) {
+                if ($divId && $pTx->divisi_tujuan_id != $divId) {
                     DB::table('transaksi_stok')->where('id', $pTx->id)->update(['divisi_tujuan_id' => $divId]);
                     if ($pTx->source_id) {
                         DB::table('stok_gudang_batch')
                             ->where('pembelian_id', $pTx->source_id)
                             ->where('barang_id', $pTx->barang_id)
                             ->where('gudang_id', $pTx->gudang_tujuan_id)
-                            ->whereNull('divisi_id')
                             ->update(['divisi_id' => $divId]);
                     }
                 }
@@ -1515,64 +1513,66 @@ class StokGudangController extends Controller
             $outletIds = \App\Models\MasterGudang::getOutletGudangIds();
             $posController = app(\App\Http\Controllers\PenjualanPosController::class);
 
-            // 0. Pastikan setiap header Penjualan POS terhubung ke gudang outlet yang benar sesuai produk yang dijual
-            $allPos = \App\Models\PenjualanPos::all();
-            foreach ($allPos as $pHeader) {
-                $correctOutletId = self::resolveOutletForPos($pHeader);
-                if ($correctOutletId && $pHeader->gudang_id != $correctOutletId) {
-                    $pHeader->update(['gudang_id' => $correctOutletId]);
-                    DB::table('transaksi_stok')
-                        ->whereIn('source_type', ['penjualan_pos', 'pos'])
-                        ->where('source_id', $pHeader->id)
-                        ->update(['gudang_asal_id' => $correctOutletId]);
-                }
-            }
-
-            // 1. Penjualan POS yang masih berstatus 'Draft' (hasil import Moka)
-            $draftPosList = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['draft'])
-                ->whereIn('gudang_id', $outletIds)
-                ->get();
-
-            foreach ($draftPosList as $draftPos) {
-                $hasRecipeProduct = false;
-                foreach ($draftPos->details as $d) {
-                    if ($d->produk && $d->produk->hasResep()) {
-                        $hasRecipeProduct = true;
-                        break;
+            if (!$barangId) {
+                // 0. Pastikan setiap header Penjualan POS terhubung ke gudang outlet yang benar sesuai produk yang dijual
+                $allPos = \App\Models\PenjualanPos::all();
+                foreach ($allPos as $pHeader) {
+                    $correctOutletId = self::resolveOutletForPos($pHeader);
+                    if ($correctOutletId && $pHeader->gudang_id != $correctOutletId) {
+                        $pHeader->update(['gudang_id' => $correctOutletId]);
+                        DB::table('transaksi_stok')
+                            ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                            ->where('source_id', $pHeader->id)
+                            ->update(['gudang_asal_id' => $correctOutletId]);
                     }
                 }
-                if ($hasRecipeProduct) {
+
+                // 1. Penjualan POS yang masih berstatus 'Draft' (hasil import Moka)
+                $draftPosList = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['draft'])
+                    ->whereIn('gudang_id', $outletIds)
+                    ->get();
+
+                foreach ($draftPosList as $draftPos) {
+                    $hasRecipeProduct = false;
+                    foreach ($draftPos->details as $d) {
+                        if ($d->produk && $d->produk->hasResep()) {
+                            $hasRecipeProduct = true;
+                            break;
+                        }
+                    }
+                    if ($hasRecipeProduct) {
+                        try {
+                            $posController->approve($draftPos->id, true);
+                        } catch (\Exception $exApprove) {
+                            \Illuminate\Support\Facades\Log::warning("Auto-approve draft POS {$draftPos->id} failed: " . $exApprove->getMessage());
+                        }
+                    }
+                }
+
+                // 2a. Penjualan POS berstatus Approved / Disetujui / Sukses tapi TIDAK memiliki transaksi_stok pemotongan sama sekali
+                $approvedPosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
+                    ->whereIn('gudang_id', $outletIds)
+                    ->whereNotExists(function($q) {
+                        $q->select(DB::raw(1))
+                          ->from('transaksi_stok')
+                          ->whereIn('transaksi_stok.source_type', ['penjualan_pos', 'pos'])
+                          ->whereColumn('transaksi_stok.source_id', 'penjualan_pos.id');
+                    });
+
+                $missingStockPosList = $approvedPosQuery->get();
+                foreach ($missingStockPosList as $mPos) {
                     try {
-                        $posController->approve($draftPos->id, true);
+                        // Bersihkan pengeluaran_bahan_baku AUTO_POS sisa jika ada
+                        DB::table('pengeluaran_bahan_baku')
+                            ->where('keterangan', 'like', 'AUTO_POS:' . $mPos->kode_transaksi . '%')
+                            ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $mPos->kode_transaksi . '%')
+                            ->delete();
+
+                        $mPos->update(['status' => 'Draft']);
+                        $posController->approve($mPos->id, true);
                     } catch (\Exception $exApprove) {
-                        \Illuminate\Support\Facades\Log::warning("Auto-approve draft POS {$draftPos->id} failed: " . $exApprove->getMessage());
+                        \Illuminate\Support\Facades\Log::warning("Auto-heal approved POS {$mPos->id} failed: " . $exApprove->getMessage());
                     }
-                }
-            }
-
-            // 2a. Penjualan POS berstatus Approved / Disetujui / Sukses tapi TIDAK memiliki transaksi_stok pemotongan sama sekali
-            $approvedPosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
-                ->whereIn('gudang_id', $outletIds)
-                ->whereNotExists(function($q) {
-                    $q->select(DB::raw(1))
-                      ->from('transaksi_stok')
-                      ->whereIn('transaksi_stok.source_type', ['penjualan_pos', 'pos'])
-                      ->whereColumn('transaksi_stok.source_id', 'penjualan_pos.id');
-                });
-
-            $missingStockPosList = $approvedPosQuery->get();
-            foreach ($missingStockPosList as $mPos) {
-                try {
-                    // Bersihkan pengeluaran_bahan_baku AUTO_POS sisa jika ada
-                    DB::table('pengeluaran_bahan_baku')
-                        ->where('keterangan', 'like', 'AUTO_POS:' . $mPos->kode_transaksi . '%')
-                        ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $mPos->kode_transaksi . '%')
-                        ->delete();
-
-                    $mPos->update(['status' => 'Draft']);
-                    $posController->approve($mPos->id, true);
-                } catch (\Exception $exApprove) {
-                    \Illuminate\Support\Facades\Log::warning("Auto-heal approved POS {$mPos->id} failed: " . $exApprove->getMessage());
                 }
             }
 
@@ -1581,6 +1581,13 @@ class StokGudangController extends Controller
                 $bRow = DB::table('master_barang')->where('id', $barangId)->first();
                 $bSatDasar = strtolower(trim($bRow->satuan ?? ''));
                 $bKonv = floatval($bRow->konversi_pembelian ?? 1);
+
+                $isUsedInBsj = DB::table('resep_bahanbaku')
+                    ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                    ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+                    ->where('resep_bahanbaku.bahan_id', $barangId)
+                    ->where('master_barang.is_bahan_setengah_jadi', 1)
+                    ->exists();
 
                 // Cari resep yang menggunakan barang ini
                 $resepIdsUsingBarang = DB::table('resep_bahanbaku')
@@ -1599,21 +1606,54 @@ class StokGudangController extends Controller
                     ->pluck('source_id')
                     ->unique()->toArray();
 
-                $candidatePosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
-                    ->whereIn('gudang_id', $outletIds);
+                $productIds = !empty($resepIdsUsingBarang)
+                    ? DB::table('master_barang')->whereIn('resep_id', $resepIdsUsingBarang)->pluck('id')->toArray()
+                    : [];
+                $posIdsWithProducts = !empty($productIds)
+                    ? DB::table('penjualanpos_detail')->whereIn('produk_id', $productIds)->pluck('penjualan_id')->unique()->toArray()
+                    : [];
 
-                $candidatePosQuery->where(function($q) use ($resepIdsUsingBarang, $posIdsWithBarangMutasi) {
-                    if (!empty($posIdsWithBarangMutasi)) {
-                        $q->whereIn('id', $posIdsWithBarangMutasi);
-                    }
-                    if (!empty($resepIdsUsingBarang)) {
-                        $q->orWhereHas('details.produk', function($pq) use ($resepIdsUsingBarang) {
-                            $pq->whereIn('resep_id', $resepIdsUsingBarang);
-                        });
-                    }
-                });
+                $allCandidatePosIds = array_unique(array_merge($posIdsWithBarangMutasi, $posIdsWithProducts));
 
-                $candidatePosList = $candidatePosQuery->with(['details.produk'])->get();
+                if (empty($allCandidatePosIds)) {
+                    return;
+                }
+
+                // Pre-fetch resep info and ingredient usage in memory for instant lookups (O(1))
+                $resepBahanMap = DB::table('resep_bahanbaku')
+                    ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                    ->where('resep_bahanbaku.bahan_id', $barangId)
+                    ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
+                    ->get()
+                    ->keyBy('resep_id');
+
+                $altBahanMap = DB::table('resep_bahanbaku_alternatif')
+                    ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
+                    ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                    ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
+                    ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku_alternatif.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
+                    ->get()
+                    ->keyBy('resep_id');
+
+                $fallbackNamaResepMap = DB::table('master_barang')
+                    ->where('is_barang_jadi', 1)
+                    ->whereNotNull('resep_id')
+                    ->pluck('resep_id', DB::raw('LOWER(TRIM(nama))'))
+                    ->toArray();
+
+                // Pre-fetch all transaksi_stok for candidate POS transactions in 1 single query
+                $currentStokTxsByPosId = DB::table('transaksi_stok')
+                    ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                    ->whereIn('source_id', $allCandidatePosIds)
+                    ->where('barang_id', $barangId)
+                    ->get()
+                    ->groupBy('source_id');
+
+                $candidatePosList = \App\Models\PenjualanPos::whereIn('id', $allCandidatePosIds)
+                    ->whereIn('gudang_id', $outletIds)
+                    ->whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
+                    ->with(['details.produk'])
+                    ->get();
 
                 foreach ($candidatePosList as $tPos) {
                     $expectedQtyNeeded = 0.0;
@@ -1624,23 +1664,14 @@ class StokGudangController extends Controller
                         if (!$p) continue;
                         $resepId = $p->resep_id;
                         if (!$resepId && !empty($p->nama)) {
-                            $resepId = DB::table('master_barang')
-                                ->where('is_barang_jadi', 1)
-                                ->whereNotNull('resep_id')
-                                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($p->nama))])
-                                ->value('resep_id');
+                            $namaKey = strtolower(trim($p->nama));
+                            $resepId = $fallbackNamaResepMap[$namaKey] ?? null;
                         }
                         if ($resepId) {
-                            $resepHeader = DB::table('resep_btkl_bop')->where('id', $resepId)->first();
-                            $outQty = ($resepHeader && floatval($resepHeader->output_qty) > 0) ? floatval($resepHeader->output_qty) : 1.0;
-
-                            $rawBahan = DB::table('resep_bahanbaku')
-                                ->where('resep_id', $resepId)
-                                ->where('bahan_id', $barangId)
-                                ->first();
-
+                            $rawBahan = $resepBahanMap->get($resepId);
                             if ($rawBahan) {
                                 $usesThisIngredient = true;
+                                $outQty = floatval($rawBahan->output_qty) > 0 ? floatval($rawBahan->output_qty) : 1.0;
                                 $bQty = floatval($rawBahan->qty_bahan);
                                 if ($bKonv > 1 && !empty($rawBahan->satuan) && !empty($bRow->satuan_pembelian)) {
                                     if (strcasecmp(trim($rawBahan->satuan), trim($bRow->satuan_pembelian)) === 0 && strcasecmp(trim($rawBahan->satuan), trim($bRow->satuan)) !== 0) {
@@ -1649,13 +1680,10 @@ class StokGudangController extends Controller
                                 }
                                 $expectedQtyNeeded += ($bQty / $outQty) * floatval($d->qty);
                             } else {
-                                $altBahan = DB::table('resep_bahanbaku_alternatif')
-                                    ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
-                                    ->where('resep_bahanbaku.resep_id', $resepId)
-                                    ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
-                                    ->first();
+                                $altBahan = $altBahanMap->get($resepId);
                                 if ($altBahan) {
                                     $usesThisIngredient = true;
+                                    $outQty = floatval($altBahan->output_qty) > 0 ? floatval($altBahan->output_qty) : 1.0;
                                     $bQty = floatval($altBahan->qty_bahan);
                                     if ($bKonv > 1 && !empty($altBahan->satuan) && !empty($bRow->satuan_pembelian)) {
                                         if (strcasecmp(trim($altBahan->satuan), trim($bRow->satuan_pembelian)) === 0 && strcasecmp(trim($altBahan->satuan), trim($bRow->satuan)) !== 0) {
@@ -1668,21 +1696,16 @@ class StokGudangController extends Controller
                         }
                     }
 
-                    // Ambil mutasi transaksi_stok yang sudah tercatat untuk barang ini di POS ini
-                    $currentStokTxs = DB::table('transaksi_stok')
-                        ->whereIn('source_type', ['penjualan_pos', 'pos'])
-                        ->where('source_id', $tPos->id)
-                        ->where('barang_id', $barangId)
-                        ->get();
-
+                    // Ambil mutasi transaksi_stok dari map in-memory
+                    $currentStokTxs = $currentStokTxsByPosId->get($tPos->id, collect());
                     $actualDeductedQty = (float) $currentStokTxs->sum('qty');
                     $needsResync = false;
 
                     if ($usesThisIngredient && $currentStokTxs->isEmpty()) {
                         // Belum tercatat potong sama sekali
                         $needsResync = true;
-                    } elseif ($usesThisIngredient && abs($actualDeductedQty - $expectedQtyNeeded) > 0.001) {
-                        // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya
+                    } elseif (!$isUsedInBsj && $usesThisIngredient && abs($actualDeductedQty - $expectedQtyNeeded) > 0.001) {
+                        // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya (hanya untuk barang yang bukan BSJ)
                         $needsResync = true;
                     } elseif (!$usesThisIngredient && $currentStokTxs->isNotEmpty()) {
                         // Resep sudah tidak lagi menggunakan bahan ini, tapi mutasi masih ada

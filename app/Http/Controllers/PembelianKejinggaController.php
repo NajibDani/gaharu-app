@@ -497,6 +497,7 @@ class PembelianKejinggaController extends Controller
                     'qty_sisa'            => $qtyMasukStok,
                     'harga_per_qty'       => $hargaPerQtyStok,
                     'is_habis'            => false,
+                    'created_at'          => $request->tanggal ? date('Y-m-d H:i:s', strtotime($request->tanggal)) : now(),
                 ]);
 
                 $this->stockService->stockIn([
@@ -508,6 +509,7 @@ class PembelianKejinggaController extends Controller
                     'source_type'     => 'pembelian_kejingga',
                     'source_id'       => $pembelian->id,
                     'user_id'         => auth()->id() ?? 1,
+                    'tanggal'         => $request->tanggal ?: now(),
                 ]);
 
                 app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
@@ -878,6 +880,19 @@ class PembelianKejinggaController extends Controller
             $fifoService = app(\App\Services\FifoService::class);
             foreach ($allAffectedBarangIds as $bId) {
                 $fifoService->syncBarangHpp((int) $bId);
+            }
+
+            // Sinkronisasi tanggal dan divisi transaksi_stok sesuai pembelian
+            foreach ($pembelian->details as $pDet) {
+                $targetTxTanggal = $pDet->tanggal_diterima ?: $pembelian->tanggal;
+                $targetDivId = $targetDivisiId ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $pDet->barang_id) ?: 5);
+                \App\Models\TransaksiStok::where('barang_id', $pDet->barang_id)
+                    ->where('source_id', $pembelian->id)
+                    ->whereIn('source_type', ['pembelian_kejingga', 'pembelian', 'penerimaan_pembelian'])
+                    ->update([
+                        'tanggal'          => $targetTxTanggal,
+                        'divisi_tujuan_id' => $targetDivId,
+                    ]);
             }
 
             DB::commit();
@@ -1316,6 +1331,9 @@ class PembelianKejinggaController extends Controller
                 $qtyMasukStok = round($effectiveQty * $konversi, 4);
                 $hargaPerQtyStok = ($qtyMasukStok > 0 && $harga > 0) ? round($harga / $qtyMasukStok, 4) : ($konversi > 0 ? round($hargaPerQty / $konversi, 4) : $hargaPerQty);
 
+                $targetTxTanggal = $tanggalDiterima ?: ($detail->tanggal_diterima ?: $pembelian->tanggal);
+                $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $detail->barang_id) ?: 5);
+
                 // Update transaksi_stok penerimaan / pembelian_kejingga
                 $txList = \App\Models\TransaksiStok::where('barang_id', $detail->barang_id)
                     ->where('source_id', $pembelian->id)
@@ -1323,10 +1341,17 @@ class PembelianKejinggaController extends Controller
                     ->get();
 
                 foreach ($txList as $tx) {
-                    $tx->update([
+                    $upData = [
                         'qty'         => $qtyMasukStok,
                         'total_harga' => $harga,
-                    ]);
+                    ];
+                    if ($targetTxTanggal) {
+                        $upData['tanggal'] = $targetTxTanggal;
+                    }
+                    if ($targetDivisiId) {
+                        $upData['divisi_tujuan_id'] = $targetDivisiId;
+                    }
+                    $tx->update($upData);
                 }
 
                 // Update atau sinkronkan batch di stok_gudang_batch
@@ -1339,13 +1364,20 @@ class PembelianKejinggaController extends Controller
 
                 foreach ($batches as $batch) {
                     $newSisa = max(0, $qtyMasukStok - (float)$batch->qty_keluar);
-                    $batch->update([
+                    $bUp = [
                         'supplier_id'   => $request->supplier_id,
                         'qty_masuk'     => $qtyMasukStok,
                         'qty_sisa'      => $newSisa,
                         'harga_per_qty' => $hargaPerQtyStok,
                         'is_habis'      => ($newSisa <= 0),
-                    ]);
+                    ];
+                    if ($targetDivisiId) {
+                        $bUp['divisi_id'] = $targetDivisiId;
+                    }
+                    if ($targetTxTanggal) {
+                        $bUp['created_at'] = date('Y-m-d H:i:s', strtotime($targetTxTanggal));
+                    }
+                    $batch->update($bUp);
                 }
             }
 
@@ -1529,6 +1561,8 @@ class PembelianKejinggaController extends Controller
 
             $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $detail->barang_id) ?: 4);
 
+            $targetTxTanggal = $tglDiterima ?: ($detail->tanggal_diterima ?: $pembelian->tanggal);
+
             StokGudangBatch::create([
                 'gudang_id'           => 5, // Gudang Kejingga
                 'divisi_id'           => $targetDivisiId,
@@ -1542,6 +1576,7 @@ class PembelianKejinggaController extends Controller
                 'qty_sisa'            => $qtyMasukStok,
                 'harga_per_qty'       => $hargaPerQtyStok,
                 'is_habis'            => false,
+                'created_at'          => $targetTxTanggal ? date('Y-m-d H:i:s', strtotime($targetTxTanggal)) : now(),
             ]);
 
             $this->stockService->stockIn([
@@ -1553,6 +1588,7 @@ class PembelianKejinggaController extends Controller
                 'source_type'     => 'pembelian_kejingga',
                 'source_id'       => $pembelian->id,
                 'user_id'         => auth()->id() ?? 1,
+                'tanggal'         => $targetTxTanggal,
             ]);
 
             // Sinkronisasi HPP barang sesuai FIFO
@@ -1652,6 +1688,7 @@ class PembelianKejinggaController extends Controller
                 $hargaPerQtyStok = floatval($detail->harga_per_qty) / $konversi;
 
                 $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang($gudangId, $detail->barang_id) ?: 4);
+                $targetTxTanggal = $tglDiterima ?: ($detail->tanggal_diterima ?: $pembelian->tanggal);
 
                 StokGudangBatch::create([
                     'gudang_id'           => $gudangId,
@@ -1666,6 +1703,7 @@ class PembelianKejinggaController extends Controller
                     'qty_sisa'            => $qtyMasukStok,
                     'harga_per_qty'       => $hargaPerQtyStok,
                     'is_habis'            => false,
+                    'created_at'          => $targetTxTanggal ? date('Y-m-d H:i:s', strtotime($targetTxTanggal)) : now(),
                 ]);
 
                 $this->stockService->stockIn([
@@ -1677,6 +1715,7 @@ class PembelianKejinggaController extends Controller
                     'source_type'     => 'pembelian_kejingga',
                     'source_id'       => $pembelian->id,
                     'user_id'         => auth()->id() ?? 1,
+                    'tanggal'         => $targetTxTanggal,
                 ]);
 
                 // Sinkronisasi HPP barang sesuai FIFO

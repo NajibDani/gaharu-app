@@ -356,8 +356,12 @@ public function resepBahanBakuAlternatif()
         // 2. Ambil detail pembelian untuk divalidasi dan disinkronkan kuantitas serta harga batch-nya
         $query = \Illuminate\Support\Facades\DB::table('pembelian_detail')
             ->join('master_barang', 'pembelian_detail.barang_id', '=', 'master_barang.id')
+            ->join('pembelian', 'pembelian_detail.pembelian_id', '=', 'pembelian.id')
             ->select(
                 'pembelian_detail.*',
+                'pembelian.tanggal as pembelian_tanggal',
+                'pembelian.gudang_id as pembelian_gudang_id',
+                'pembelian.keterangan as pembelian_keterangan',
                 'master_barang.satuan as master_satuan',
                 'master_barang.satuan_pembelian as master_satuan_pembelian',
                 'master_barang.konversi_pembelian as master_konversi'
@@ -409,7 +413,19 @@ public function resepBahanBakuAlternatif()
             $correctBaseQty = $isSatuanBeli ? round($pQty * $konversi, 4) : $pQty;
             $correctHargaPerQty = $correctBaseQty > 0 ? round($pHarga / $correctBaseQty, 4) : ($pHargaPerQty > 0 ? ($isSatuanBeli ? round($pHargaPerQty / $konversi, 4) : $pHargaPerQty) : 0);
 
-            // Perbaiki transaksi_stok jika tidak sesuai dengan correctBaseQty atau pHarga
+            // Tentukan tanggal, gudang, dan divisi tujuan yang valid untuk transaksi ini
+            $expectedDate = !empty($pd->tanggal_diterima) ? $pd->tanggal_diterima : $pd->pembelian_tanggal;
+            $targetGudangId = $pd->pembelian_gudang_id ?: 5;
+            $pembDivId = null;
+            if (!empty($pd->pembelian_keterangan) && str_starts_with(trim($pd->pembelian_keterangan), '{')) {
+                $dec = json_decode($pd->pembelian_keterangan, true);
+                if (is_array($dec) && isset($dec['divisi_id'])) {
+                    $pembDivId = (int) $dec['divisi_id'];
+                }
+            }
+            $targetDivId = $pembDivId ?: \App\Models\MasterGudang::resolveDivisiIdForBarang($targetGudangId, $pd->barang_id);
+
+            // Perbaiki transaksi_stok jika tidak sesuai dengan correctBaseQty, pHarga, tanggal, atau divisi
             $txList = \Illuminate\Support\Facades\DB::table('transaksi_stok')
                 ->where('barang_id', $pd->barang_id)
                 ->where('source_id', $pd->pembelian_id)
@@ -417,13 +433,32 @@ public function resepBahanBakuAlternatif()
                 ->get();
 
             foreach ($txList as $tx) {
-                if (abs((float)$tx->qty - $correctBaseQty) > 0.01 || abs((float)$tx->total_harga - $pHarga) > 0.01) {
+                $txUpdate = [];
+                if (abs((float)$tx->qty - $correctBaseQty) > 0.01) {
+                    $txUpdate['qty'] = $correctBaseQty;
+                }
+                if (abs((float)$tx->total_harga - $pHarga) > 0.01) {
+                    $txUpdate['total_harga'] = $pHarga;
+                }
+                if ($expectedDate) {
+                    $expYmd = date('Y-m-d', strtotime($expectedDate));
+                    $curYmd = date('Y-m-d', strtotime($tx->tanggal));
+                    if ($expYmd !== $curYmd) {
+                        $txTime = date('H:i:s', strtotime($tx->tanggal));
+                        $txUpdate['tanggal'] = $expYmd . ' ' . ($txTime !== '00:00:00' ? $txTime : '08:00:00');
+                    }
+                }
+                if ($targetDivId && $tx->divisi_tujuan_id != $targetDivId) {
+                    $txUpdate['divisi_tujuan_id'] = $targetDivId;
+                }
+                if ($targetGudangId && $tx->gudang_tujuan_id != $targetGudangId) {
+                    $txUpdate['gudang_tujuan_id'] = $targetGudangId;
+                }
+
+                if (!empty($txUpdate)) {
                     \Illuminate\Support\Facades\DB::table('transaksi_stok')
                         ->where('id', $tx->id)
-                        ->update([
-                            'qty' => $correctBaseQty,
-                            'total_harga' => $pHarga,
-                        ]);
+                        ->update($txUpdate);
                 }
             }
 
@@ -457,6 +492,20 @@ public function resepBahanBakuAlternatif()
                 if ($correctHargaPerQty > 0 && abs((float)$batch->harga_per_qty - $correctHargaPerQty) > 0.001) {
                     $updateData['harga_per_qty'] = $correctHargaPerQty;
                     $needsUpdate = true;
+                }
+
+                if ($targetDivId && $batch->divisi_id != $targetDivId) {
+                    $updateData['divisi_id'] = $targetDivId;
+                    $needsUpdate = true;
+                }
+
+                if ($expectedDate) {
+                    $expYmd = date('Y-m-d', strtotime($expectedDate));
+                    $batchYmd = date('Y-m-d', strtotime($batch->created_at));
+                    if ($expYmd !== $batchYmd) {
+                        $updateData['created_at'] = $expYmd . ' ' . date('H:i:s', strtotime($batch->created_at));
+                        $needsUpdate = true;
+                    }
                 }
 
                 if ($needsUpdate) {

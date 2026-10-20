@@ -1386,7 +1386,9 @@
         inputEl.max = qtyPesan;
         const tglEl = document.getElementById('terima_detail_tanggal');
         if (tglEl) {
-            tglEl.value = new Date().toISOString().split('T')[0];
+            const poItem = (typeof currentDetailPoId !== 'undefined' && dataPembayaranMap[currentDetailPoId]) ? dataPembayaranMap[currentDetailPoId] : null;
+            const detItem = poItem ? poItem.details.find(d => d.id === detailId) : null;
+            tglEl.value = (detItem && detItem.tanggal_diterima_raw) ? detItem.tanggal_diterima_raw : ((poItem && poItem.tanggal_raw) ? poItem.tanggal_raw : new Date().toISOString().split('T')[0]);
         }
         document.getElementById('formTerimaDetail').action = `/pembelian-kejingga/detail/${detailId}/terima`;
         new bootstrap.Modal(document.getElementById('modalTerimaDetail')).show();
@@ -1401,7 +1403,7 @@
         
         const tglEl = document.getElementById('terima_po_tanggal');
         if (tglEl) {
-            tglEl.value = new Date().toISOString().split('T')[0];
+            tglEl.value = item.tanggal_raw ? item.tanggal_raw : new Date().toISOString().split('T')[0];
         }
 
         const tbody = document.getElementById('terima_po_items_tbody');
@@ -1923,7 +1925,7 @@
         const tglDiterimas = Array.from(new Set(selectedDetails.map(d => d.tanggal_diterima_raw).filter(Boolean)));
         const tglInput = document.getElementById('input_tanggal_diterima');
         if (tglInput) {
-            tglInput.value = tglDiterimas.length === 1 ? tglDiterimas[0] : new Date().toISOString().split('T')[0];
+            tglInput.value = tglDiterimas.length === 1 ? tglDiterimas[0] : (po.tanggal_raw || new Date().toISOString().split('T')[0]);
         }
 
         // Prefill Tax: HANYA jumlah tax_service dari barang-barang yang dipilih (tidak mengambil tax PO keseluruhan)
