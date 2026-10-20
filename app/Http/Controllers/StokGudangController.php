@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\DB;
 
 class StokGudangController extends Controller
 {
+    private static array $sourceDescCache = [];
+    private static array $pembelianDetailCache = [];
+    private static array $gudangNamaCache = [];
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -247,11 +251,13 @@ class StokGudangController extends Controller
         // Hitung stok akhir untuk 20 barang pada halaman aktif secara bulk dalam 1 query agregat
         $itemIds = $items->pluck('id')->toArray();
         if (!empty($itemIds)) {
-            foreach ($itemIds as $bId) {
-                self::autoCleanOrphanMutations($bId);
-                self::autoHealMissingDivisiInTransaksiStok($bId);
-                self::autoHealApprovedPaTransaksiStok($bId);
-                self::autoHealApprovedPbkTransaksiStok($bId);
+            if ($request->has('refresh')) {
+                foreach ($itemIds as $bId) {
+                    self::autoCleanOrphanMutations($bId);
+                    self::autoHealMissingDivisiInTransaksiStok($bId);
+                    self::autoHealApprovedPaTransaksiStok($bId);
+                    self::autoHealApprovedPbkTransaksiStok($bId);
+                }
             }
             $bulkStok = \App\Models\StokGudang::getBulkStokBukuPembantu($itemIds, $gudangId, $divisiId, $endDate);
             foreach ($items as $item) {
@@ -281,36 +287,39 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Auto-clean mutasi orphan untuk barang ini sebelum perhitungan mutasi
-        self::autoCleanOrphanMutations($barangId);
+        // Jalankan auto-healing mendalam hanya jika tombol refresh ditekan atau diminta secara eksplisit
+        if ($request->boolean('refresh')) {
+            // Auto-clean mutasi orphan untuk barang ini sebelum perhitungan mutasi
+            self::autoCleanOrphanMutations($barangId);
 
-        // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
-        MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
-        MasterBarang::autoHealSaldoAwalBatches($barangId);
+            // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
+            MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
+            MasterBarang::autoHealSaldoAwalBatches($barangId);
 
-        // Bersihkan resep duplikat agar pemotongan resep akurat
-        self::autoCleanDuplicateResepBahanBaku($barangId);
+            // Bersihkan resep duplikat agar pemotongan resep akurat
+            self::autoCleanDuplicateResepBahanBaku($barangId);
 
-        // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
-        self::autoHealMissingDivisiInTransaksiStok($barangId);
+            // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
+            self::autoHealMissingDivisiInTransaksiStok($barangId);
 
-        // Auto-heal timestamp mutasi stock opname agar berada di penutupan hari (23:59:00) setelah transaksi harian
-        self::autoHealStockOpnameTimestamp($barangId);
+            // Auto-heal timestamp mutasi stock opname agar berada di penutupan hari (23:59:00) setelah transaksi harian
+            self::autoHealStockOpnameTimestamp($barangId);
 
-        // Auto-heal mutasi Penjualan POS disetujui / Moka import
-        self::autoHealApprovedPosStockMutations($barangId);
+            // Auto-heal mutasi Penjualan POS disetujui / Moka import
+            self::autoHealApprovedPosStockMutations($barangId);
 
-        // Auto-heal mutasi Persediaan Awal disetujui
-        self::autoHealApprovedPaTransaksiStok($barangId);
+            // Auto-heal mutasi Persediaan Awal disetujui
+            self::autoHealApprovedPaTransaksiStok($barangId);
 
-        // Auto-heal mutasi PBK disetujui yang belum tercatat atau belum lengkap di transaksi_stok
-        self::autoHealApprovedPbkTransaksiStok($barangId);
+            // Auto-heal mutasi PBK disetujui yang belum tercatat atau belum lengkap di transaksi_stok
+            self::autoHealApprovedPbkTransaksiStok($barangId);
 
-        // Auto-heal mutasi stok opname prematur yang PBK-nya masih berstatus Draft
-        $this->autoHealPrematureDraftSoMutations($barangId);
+            // Auto-heal mutasi stok opname prematur yang PBK-nya masih berstatus Draft
+            $this->autoHealPrematureDraftSoMutations($barangId);
 
-        // Rekonsiliasi ringkasan stok gudang agar 100% selaras dengan batch aktif & transaksi stok
-        \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);
+            // Rekonsiliasi ringkasan stok gudang agar 100% selaras dengan batch aktif & transaksi stok
+            \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangId, $divisiId);
+        }
 
         $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
         $satuanStok = $barang ? ($barang->satuan ?: 'pcs') : 'pcs';
@@ -319,6 +328,8 @@ class StokGudangController extends Controller
         if ($konversiBarang <= 0 || strtolower(trim($satuanBeliDefault)) === strtolower(trim($satuanStok))) {
             $konversiBarang = 1.0;
         }
+
+        $cachedFallbackPrice = null;
 
         $saQty = 0;
         $saNilai = 0;
@@ -498,15 +509,18 @@ class StokGudangController extends Controller
             }
 
             if ($saQty > 0 && $saNilai <= 0) {
-                $fifoService = app(\App\Services\FifoService::class);
-                $fallbackPrice = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
-                if ($fallbackPrice <= 0 || abs($fallbackPrice - 233) <= 1 || abs($fallbackPrice - 25888.89) <= 1) {
-                    $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
-                    if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
-                        $fallbackPrice = $refHpp;
+                if ($cachedFallbackPrice === null) {
+                    $fifoService = app(\App\Services\FifoService::class);
+                    $fallbackPrice = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
+                    if ($fallbackPrice <= 0 || abs($fallbackPrice - 233) <= 1 || abs($fallbackPrice - 25888.89) <= 1) {
+                        $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
+                        if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
+                            $fallbackPrice = $refHpp;
+                        }
                     }
+                    $cachedFallbackPrice = (float) $fallbackPrice;
                 }
-                $saNilai = round($saQty * (float) $fallbackPrice, 2);
+                $saNilai = round($saQty * $cachedFallbackPrice, 2);
             }
         }
 
@@ -610,23 +624,26 @@ class StokGudangController extends Controller
                 }
 
                 if ($runningQty > 0 && $runningNilai <= 0) {
-                    $fifoService = app(\App\Services\FifoService::class);
-                    $fallbackPrice = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
-                    if ($fallbackPrice <= 0 || abs($fallbackPrice - 233) <= 1 || abs($fallbackPrice - 25888.89) <= 1) {
-                        $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
-                        if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
-                            $fallbackPrice = $refHpp;
+                    if ($cachedFallbackPrice === null) {
+                        $fifoService = app(\App\Services\FifoService::class);
+                        $fallbackPrice = $fifoService->getHargaTerakhirBahan($barangId, $gudangId);
+                        if ($fallbackPrice <= 0 || abs($fallbackPrice - 233) <= 1 || abs($fallbackPrice - 25888.89) <= 1) {
+                            $refHpp = (float)(\Illuminate\Support\Facades\DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
+                            if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
+                                $fallbackPrice = $refHpp;
+                            }
                         }
+                        $cachedFallbackPrice = (float) $fallbackPrice;
                     }
-                    $runningNilai = round($runningQty * (float) $fallbackPrice, 2);
+                    $runningNilai = round($runningQty * $cachedFallbackPrice, 2);
                 }
 
                 $hargaSatuan = $qty > 0 ? ($totalHarga / $qty) : 0;
 
                 $keterangan = $this->formatSourceDescription($row->source_type, $row->source_id, $isMasuk) . $keteranganExtra;
                 if ($row->tipe === 'transfer') {
-                    $gAsal = DB::table('master_gudang')->where('id', $row->gudang_asal_id)->value('nama');
-                    $gTujuan = DB::table('master_gudang')->where('id', $row->gudang_tujuan_id)->value('nama');
+                    $gAsal = self::$gudangNamaCache[$row->gudang_asal_id] ??= DB::table('master_gudang')->where('id', $row->gudang_asal_id)->value('nama');
+                    $gTujuan = self::$gudangNamaCache[$row->gudang_tujuan_id] ??= DB::table('master_gudang')->where('id', $row->gudang_tujuan_id)->value('nama');
                     $keterangan = "Transfer: dari {$gAsal} ke {$gTujuan}";
                 }
 
@@ -674,8 +691,13 @@ class StokGudangController extends Controller
 
     private function getPembelianDetailInfo($row, $barangId)
     {
-        $pDetail = null;
         $sourceType = strtolower($row->source_type ?? '');
+        $cacheKey = "{$sourceType}_{$row->source_id}_{$barangId}";
+        if (isset(self::$pembelianDetailCache[$cacheKey])) {
+            return self::$pembelianDetailCache[$cacheKey];
+        }
+
+        $pDetail = null;
 
         if (in_array($sourceType, ['pembelian', 'pembelian_kejingga'])) {
             $pDetail = DB::table('pembelian_detail')
@@ -703,14 +725,14 @@ class StokGudangController extends Controller
             $isSameDetail = ($detailSatBeli && strtolower(trim($detailSatBeli)) === strtolower(trim($satuanDasar)));
             $detailKonv = !$isSameDetail ? (float) ($pDetail->konversi_pembelian ?? 1) : 1.0;
             $finalKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
-            return [
+            return self::$pembelianDetailCache[$cacheKey] = [
                 'konversi'          => $finalKonv,
                 'satuan_pembelian' => $detailSatBeli,
                 'qty_input'         => (float) ($pDetail->qty ?? 0),
             ];
         }
 
-        return [
+        return self::$pembelianDetailCache[$cacheKey] = [
             'konversi'          => $masterKonv > 1 ? $masterKonv : 1.0,
             'satuan_pembelian' => $masterSatBeli,
             'qty_input'         => 0.0,
@@ -728,6 +750,17 @@ class StokGudangController extends Controller
             return 'Manual / Saldo Awal';
         }
 
+        $cacheKey = "{$type}_{$id}_" . ($isMasuk ? '1' : '0');
+        if (isset(self::$sourceDescCache[$cacheKey])) {
+            return self::$sourceDescCache[$cacheKey];
+        }
+
+        $desc = $this->resolveSourceDescription($type, $id, $isMasuk);
+        return self::$sourceDescCache[$cacheKey] = $desc;
+    }
+
+    private function resolveSourceDescription($type, $id, $isMasuk = false)
+    {
         switch (strtolower($type)) {
             case 'pembelian':
             case 'pembelian_kejingga':
