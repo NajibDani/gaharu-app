@@ -2420,7 +2420,7 @@ class StokGudangController extends Controller
             }
 
             // 6. Duplicate & Orphan Saldo Awal (Persediaan Awal)
-            // 6a. Hapus transaksi_stok saldo awal yang dokumen persediaan_awal nya sudah tidak ada ATAU masih berstatus draft
+            // 6a. Hapus transaksi_stok saldo awal yang dokumen persediaan_awal nya sudah tidak ada, masih berstatus draft, ATAU detail itemnya sudah dihapus
             $orphanSaldoAwalQuery = DB::table('transaksi_stok')
                 ->whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
                 ->whereNotNull('source_id')
@@ -2434,6 +2434,11 @@ class StokGudangController extends Controller
                           ->from('persediaan_awal')
                           ->whereColumn('persediaan_awal.id', 'transaksi_stok.source_id')
                           ->whereNotIn(DB::raw('LOWER(persediaan_awal.status)'), ['approved', 'posted']);
+                    })->orWhereNotExists(function($sub) {
+                        $sub->select(DB::raw(1))
+                          ->from('persediaan_awal_detail')
+                          ->whereColumn('persediaan_awal_detail.persediaan_awal_id', 'transaksi_stok.source_id')
+                          ->whereColumn('persediaan_awal_detail.barang_id', 'transaksi_stok.barang_id');
                     });
                 });
             if ($barangId) {
@@ -2694,6 +2699,57 @@ class StokGudangController extends Controller
                             ->first();
                         if ($stokOutlet) {
                             $stokOutlet->increment('jumlah', (float)$tx->qty);
+                        }
+                    }
+                }
+                // Skenario 4: Saldo Awal / Persediaan Awal
+                elseif (in_array($sourceType, ['saldo_awal', 'persediaan_awal'])) {
+                    if ($sourceId) {
+                        $pa = \App\Models\PersediaanAwal::find($sourceId);
+                        if ($pa) {
+                            $paDetail = \App\Models\PersediaanAwalDetail::where('persediaan_awal_id', $pa->id)
+                                ->where('barang_id', $targetBarangId)
+                                ->first();
+
+                            if ($paDetail) {
+                                // Hapus atau kurangi batch FIFO terkait saldo awal ini
+                                if ($paDetail->batch_number) {
+                                    $batch = \App\Models\StokGudangBatch::where('gudang_id', $pa->gudang_id)
+                                        ->where('barang_id', $targetBarangId)
+                                        ->where('batch_number', $paDetail->batch_number)
+                                        ->first();
+                                    if ($batch) {
+                                        if ($batch->qty_keluar > 0) {
+                                            $batch->update([
+                                                'qty_masuk' => $batch->qty_keluar,
+                                                'qty_sisa'  => 0,
+                                                'is_habis'  => true,
+                                            ]);
+                                        } else {
+                                            $batch->delete();
+                                        }
+                                    }
+                                }
+
+                                // Kurangi jumlah di stok_gudang
+                                $stokGudang = \App\Models\StokGudang::where('barang_id', $targetBarangId)
+                                    ->where('gudang_id', $pa->gudang_id)
+                                    ->when($pa->divisi_id, fn($q) => $q->where('divisi_id', $pa->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                    ->first();
+                                if ($stokGudang) {
+                                    $stokGudang->decrement('jumlah', min((float)$stokGudang->jumlah, (float)$paDetail->qty));
+                                }
+
+                                // Hapus detail item dari Persediaan Awal
+                                $paDetail->delete();
+
+                                // Update header Persediaan Awal
+                                $pa->update([
+                                    'total_item'  => $pa->details()->count(),
+                                    'total_qty'   => (float) $pa->details()->sum('qty'),
+                                    'total_nilai' => (float) $pa->details()->sum('total_nilai'),
+                                ]);
+                            }
                         }
                     }
                 }
