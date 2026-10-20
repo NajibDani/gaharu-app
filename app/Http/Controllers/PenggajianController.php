@@ -1069,8 +1069,8 @@ class PenggajianController extends Controller
     {
         $payroll = Penggajian::findOrFail($id);
 
-        if ($payroll->status === 'approved') {
-            return redirect()->back()->with('error', 'Perubahan ditolak karena periode sudah dikunci.');
+        if ($payroll->status === 'approved' && $payroll->status_jurnal) {
+            return redirect()->back()->with('error', 'Perubahan ditolak karena penggajian sudah dibayar dan dijurnal.');
         }
 
         $request->validate([
@@ -1877,7 +1877,7 @@ class PenggajianController extends Controller
                     ->first();
             }
 
-            if ($payroll && $payroll->status === 'approved') continue;
+            if ($payroll && $payroll->status === 'approved' && $payroll->status_jurnal) continue;
 
             $karyawan = $payroll ? $payroll->karyawan : ($karyawanId ? Karyawan::find($karyawanId) : null);
             if (!$karyawan) continue;

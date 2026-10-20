@@ -2208,19 +2208,69 @@
                                         </div>
                                     </template>
 
-                                    {{-- Mode Create: Dropdown Karyawan --}}
+                                    {{-- Mode Create: Dropdown Karyawan Searchable --}}
                                     <template x-if="!isEditMode">
-                                        <div>
+                                        <div style="position: relative;" @click.away="searchDropdownOpen = false">
                                             <label style="display: block; font-size: 11px; font-weight: 700; color: #1e293b; text-transform: uppercase; margin-bottom: 5px;">
                                                 Pilih Karyawan <span style="color: #dc2626;">*</span>
                                             </label>
-                                            <select name="karyawan_id" x-model="karyawanId" @change="onKaryawanChange()" required
-                                                    style="width: 100%; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff;">
-                                                <option value="">-- Pilih Karyawan (Outlet {{ $selectedOutlet }}) --</option>
-                                                @foreach($availableKaryawans as $ak)
-                                                    <option value="{{ $ak->id }}">{{ $ak->nama_karyawan }} &mdash; {{ $ak->jabatan ?? 'Karyawan' }} ({{ $ak->departemen ?? 'Umum' }})</option>
-                                                @endforeach
-                                            </select>
+                                            
+                                            <input type="hidden" name="karyawan_id" :value="karyawanId" required>
+
+                                            {{-- Trigger Box --}}
+                                            <div @click="searchDropdownOpen = !searchDropdownOpen; if(searchDropdownOpen) $nextTick(() => $refs.karyawanSearchInput.focus())"
+                                                 style="width: 100%; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 600; color: #0f172a; background: #ffffff; cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
+                                                <span x-text="selectedKaryawanObj ? (selectedKaryawanObj.nama_karyawan + ' — ' + (selectedKaryawanObj.jabatan || 'Karyawan') + ' (' + (selectedKaryawanObj.departemen || 'Umum') + ')') : '-- Pilih / Cari Karyawan (Outlet {{ $selectedOutlet }}) --'"
+                                                      :style="selectedKaryawanObj ? 'color: #0f172a; font-weight: 700;' : 'color: #64748b; font-weight: 500;'"></span>
+                                                <span style="font-size: 11px; color: #64748b; margin-left: 8px;">▼</span>
+                                            </div>
+
+                                            {{-- Searchable Dropdown Panel --}}
+                                            <div x-show="searchDropdownOpen"
+                                                 x-transition:enter="transition ease-out duration-100"
+                                                 x-transition:enter-start="opacity-0 scale-95"
+                                                 x-transition:enter-end="opacity-100 scale-100"
+                                                 x-transition:leave="transition ease-in duration-75"
+                                                 x-transition:leave-start="opacity-100 scale-100"
+                                                 x-transition:leave-end="opacity-0 scale-95"
+                                                 style="position: absolute; top: 100%; left: 0; width: 100%; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15); z-index: 100005; margin-top: 4px; overflow: hidden;">
+                                                
+                                                {{-- Search Input inside panel --}}
+                                                <div style="padding: 8px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+                                                    <div style="position: relative; display: flex; align-items: center;">
+                                                        <span style="position: absolute; left: 10px; font-size: 13px; color: #94a3b8;">🔍</span>
+                                                        <input type="text"
+                                                               x-ref="karyawanSearchInput"
+                                                               x-model="karyawanSearchQuery"
+                                                               placeholder="Ketik nama / jabatan karyawan..."
+                                                               style="width: 100%; padding: 6px 10px 6px 30px; font-size: 12.5px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 500;"
+                                                               @keydown.escape="searchDropdownOpen = false"
+                                                               @click.stop>
+                                                        <button type="button" x-show="karyawanSearchQuery" @click="karyawanSearchQuery = ''; $refs.karyawanSearchInput.focus()"
+                                                                style="position: absolute; right: 8px; background: none; border: none; font-size: 13px; color: #94a3b8; cursor: pointer;">✕</button>
+                                                    </div>
+                                                </div>
+
+                                                {{-- List of Options --}}
+                                                <div style="max-height: 220px; overflow-y: auto;">
+                                                    <template x-for="ak in filteredAvailableKaryawans()" :key="ak.id">
+                                                        <div @click="selectKaryawan(ak)"
+                                                             style="padding: 8px 12px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; transition: background 0.1s;"
+                                                             :style="karyawanId == ak.id ? 'background: #fef3c7; font-weight: 700;' : 'background: #ffffff;'"
+                                                             onmouseover="if(this.style.background !== 'rgb(254, 243, 199)') this.style.background='#f8fafc'"
+                                                             onmouseout="if(this.style.background !== 'rgb(254, 243, 199)') this.style.background='#ffffff'">
+                                                            <div>
+                                                                <span x-text="ak.nama_karyawan" style="font-weight: 700; color: #0f172a;"></span>
+                                                                <span style="color: #64748b; font-size: 11.5px; margin-left: 4px;" x-text="'— ' + (ak.jabatan || 'Karyawan') + ' (' + (ak.departemen || 'Umum') + ')'"></span>
+                                                            </div>
+                                                            <span x-show="karyawanId == ak.id" style="color: #7A4517; font-size: 12px;">✓</span>
+                                                        </div>
+                                                    </template>
+                                                    <div x-show="filteredAvailableKaryawans().length === 0" style="padding: 12px; text-align: center; color: #94a3b8; font-size: 12px; font-style: italic;">
+                                                        Tidak ada karyawan yang sesuai pencarian
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </template>
 
@@ -2843,12 +2893,38 @@
                 allKaryawans: @json($allKaryawans),
                 availableKaryawans: @json($availableKaryawans),
                 
+                // Searchable Dropdown State
+                searchDropdownOpen: false,
+                karyawanSearchQuery: '',
+                
+                filteredAvailableKaryawans() {
+                    if (!this.karyawanSearchQuery || !this.karyawanSearchQuery.trim()) {
+                        return this.availableKaryawans;
+                    }
+                    const q = this.karyawanSearchQuery.toLowerCase().trim();
+                    return this.availableKaryawans.filter(k => {
+                        const nama = (k.nama_karyawan || '').toLowerCase();
+                        const jabatan = (k.jabatan || '').toLowerCase();
+                        const dept = (k.departemen || '').toLowerCase();
+                        return nama.includes(q) || jabatan.includes(q) || dept.includes(q);
+                    });
+                },
+                
+                selectKaryawan(k) {
+                    this.karyawanId = String(k.id);
+                    this.searchDropdownOpen = false;
+                    this.karyawanSearchQuery = '';
+                    this.onKaryawanChange();
+                },
+                
                 openCreateModal() {
                     this.isEditMode = false;
                     this.formAction = '{{ route("penggajian.store") }}';
                     this.modalTitle = 'Input Gaji Pokok & Presensi';
                     this.karyawanId = '';
                     this.selectedKaryawanObj = null;
+                    this.searchDropdownOpen = false;
+                    this.karyawanSearchQuery = '';
                     this.tanggalMulai = '';
                     this.tanggalSelesai = '';
                     this.hariKerja = 0;
