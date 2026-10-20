@@ -24,6 +24,11 @@ class BarangController extends Controller
             MasterBarang::syncAllResepIds();
             MasterBarang::autoHealUnconvertedPembelianBatches();
             \App\Models\StokGudang::reconcileStockSummary();
+            if ($request->query('barang_id')) {
+                app(\App\Services\FifoService::class)->syncBarangHpp((int) $request->query('barang_id'));
+            } elseif ($request->query('sync') === 'all' || $request->query('sync') === 'hpp') {
+                app(\App\Services\FifoService::class)->syncAllBarangHpp();
+            }
         }
 
         $user = auth()->user();
