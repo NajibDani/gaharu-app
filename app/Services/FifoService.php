@@ -352,6 +352,15 @@ class FifoService
                 }
             }
 
+            $bRow = DB::table('master_barang')->where('id', $barangId)->first();
+            if ($bRow) {
+                $bSatDasar = strtolower(trim($bRow->satuan ?? ''));
+                $bKonv = floatval($bRow->konversi_pembelian ?? 1);
+                if (in_array($bSatDasar, ['gr', 'ml', 'gram']) && $bKonv > 1 && $hargaFallback >= 500) {
+                    $hargaFallback = round($hargaFallback / $bKonv, 4);
+                }
+            }
+
             $result[] = [
                 'batch_id'      => null,
                 'batch_number'  => 'OVERRIDE-HARGA-TERAKHIR',
@@ -714,6 +723,15 @@ class FifoService
                 $refHpp = (float)(DB::table('master_barang')->where('id', $barangId)->value('hpp_referensi') ?? 0);
                 if ($refHpp > 0 && abs($refHpp - 233) > 1 && abs($refHpp - 25888.89) > 1) {
                     $hargaFallback = $refHpp;
+                }
+            }
+
+            $bRow = DB::table('master_barang')->where('id', $barangId)->first();
+            if ($bRow) {
+                $bSatDasar = strtolower(trim($bRow->satuan ?? ''));
+                $bKonv = floatval($bRow->konversi_pembelian ?? 1);
+                if (in_array($bSatDasar, ['gr', 'ml', 'gram']) && $bKonv > 1 && $hargaFallback >= 500) {
+                    $hargaFallback = round($hargaFallback / $bKonv, 4);
                 }
             }
 

@@ -1570,21 +1570,21 @@ class StokGudangController extends Controller
                 }
             }
 
-            // 2b. Periksa jika ada Penjualan POS yang disetujui, tetapi barangId tertentu (misal Fresh Milk / Arabica) belum tercatat potong di transaksi_stok
+            // 2b. Periksa Penjualan POS yang disetujui untuk sinkronisasi pemotongan resep bahan baku terbaru
             if ($barangId) {
-                $targetPosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
-                    ->whereIn('gudang_id', $outletIds)
-                    ->whereNotExists(function($q) use ($barangId) {
-                        $q->select(DB::raw(1))
-                          ->from('transaksi_stok')
-                          ->whereIn('transaksi_stok.source_type', ['penjualan_pos', 'pos'])
-                          ->whereColumn('transaksi_stok.source_id', 'penjualan_pos.id')
-                          ->where('transaksi_stok.barang_id', $barangId);
-                    });
+                $bRow = DB::table('master_barang')->where('id', $barangId)->first();
+                $bSatDasar = strtolower(trim($bRow->satuan ?? ''));
+                $bKonv = floatval($bRow->konversi_pembelian ?? 1);
 
-                $targetPosList = $targetPosQuery->with(['details.produk'])->get();
-                foreach ($targetPosList as $tPos) {
-                    $usesIngredient = false;
+                $candidatePosList = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
+                    ->whereIn('gudang_id', $outletIds)
+                    ->with(['details.produk'])
+                    ->get();
+
+                foreach ($candidatePosList as $tPos) {
+                    $expectedQtyNeeded = 0.0;
+                    $usesThisIngredient = false;
+
                     foreach ($tPos->details as $d) {
                         $p = $d->produk;
                         if (!$p) continue;
@@ -1597,35 +1597,101 @@ class StokGudangController extends Controller
                                 ->value('resep_id');
                         }
                         if ($resepId) {
-                            $hasBahan = DB::table('resep_bahanbaku')
+                            $resepHeader = DB::table('resep_btkl_bop')->where('id', $resepId)->first();
+                            $outQty = ($resepHeader && floatval($resepHeader->output_qty) > 0) ? floatval($resepHeader->output_qty) : 1.0;
+
+                            $rawBahan = DB::table('resep_bahanbaku')
                                 ->where('resep_id', $resepId)
                                 ->where('bahan_id', $barangId)
-                                ->exists()
-                                || DB::table('resep_bahanbaku_alternatif')
-                                ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
-                                ->where('resep_bahanbaku.resep_id', $resepId)
-                                ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
-                                ->exists();
+                                ->first();
 
-                            if ($hasBahan) {
-                                $usesIngredient = true;
+                            if ($rawBahan) {
+                                $usesThisIngredient = true;
+                                $expectedQtyNeeded += (floatval($rawBahan->qty_bahan) / $outQty) * floatval($d->qty);
+                            } else {
+                                $altBahan = DB::table('resep_bahanbaku_alternatif')
+                                    ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
+                                    ->where('resep_bahanbaku.resep_id', $resepId)
+                                    ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
+                                    ->first();
+                                if ($altBahan) {
+                                    $usesThisIngredient = true;
+                                    $expectedQtyNeeded += (floatval($altBahan->qty_bahan) / $outQty) * floatval($d->qty);
+                                }
+                            }
+                        }
+                    }
+
+                    // Ambil mutasi transaksi_stok yang sudah tercatat untuk barang ini di POS ini
+                    $currentStokTxs = DB::table('transaksi_stok')
+                        ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                        ->where('source_id', $tPos->id)
+                        ->where('barang_id', $barangId)
+                        ->get();
+
+                    $actualDeductedQty = (float) $currentStokTxs->sum('qty');
+                    $needsResync = false;
+
+                    if ($usesThisIngredient && $currentStokTxs->isEmpty()) {
+                        // Belum tercatat potong sama sekali
+                        $needsResync = true;
+                    } elseif ($usesThisIngredient && abs($actualDeductedQty - $expectedQtyNeeded) > 0.001) {
+                        // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya
+                        $needsResync = true;
+                    } elseif (!$usesThisIngredient && $currentStokTxs->isNotEmpty()) {
+                        // Resep sudah tidak lagi menggunakan bahan ini, tapi mutasi masih ada
+                        $needsResync = true;
+                    } elseif ($currentStokTxs->isNotEmpty() && in_array($bSatDasar, ['gr', 'ml', 'gram']) && $bKonv > 1) {
+                        // Cek anomali harga satuan (misal harga per kemasan tersimpan sebagai harga per gram)
+                        foreach ($currentStokTxs as $ctx) {
+                            $unitPrice = $ctx->qty > 0 ? ((float)$ctx->total_harga / (float)$ctx->qty) : 0;
+                            if ($unitPrice >= 500) {
+                                $needsResync = true;
                                 break;
                             }
                         }
                     }
 
-                    if ($usesIngredient) {
+                    if ($needsResync) {
                         try {
-                            DB::table('transaksi_stok')->whereIn('source_type', ['penjualan_pos', 'pos'])->where('source_id', $tPos->id)->delete();
-                            DB::table('pengeluaran_bahan_baku')
+                            // 1. Kembalikan sisa batch FIFO yang sebelumnya dikonsumsi oleh AUTO_POS ini
+                            $oldPbkIds = DB::table('pengeluaran_bahan_baku')
                                 ->where('keterangan', 'like', 'AUTO_POS:' . $tPos->kode_transaksi . '%')
                                 ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $tPos->kode_transaksi . '%')
+                                ->pluck('id');
+
+                            if ($oldPbkIds->isNotEmpty()) {
+                                $oldFifos = DB::table('pengeluaran_bahan_baku_fifo')
+                                    ->whereIn('pengeluaran_id', $oldPbkIds)
+                                    ->get();
+
+                                foreach ($oldFifos as $of) {
+                                    if ($of->batch_id && (float)$of->qty_keluar > 0) {
+                                        $b = \App\Models\StokGudangBatch::find($of->batch_id);
+                                        if ($b) {
+                                            $b->increment('qty_sisa', (float)$of->qty_keluar);
+                                            $b->decrement('qty_keluar', min((float)$b->qty_keluar, (float)$of->qty_keluar));
+                                            $b->update(['is_habis' => false]);
+                                        }
+                                    }
+                                }
+
+                                DB::table('pengeluaran_bahan_baku_fifo')->whereIn('pengeluaran_id', $oldPbkIds)->delete();
+                                DB::table('pengeluaran_bahan_baku_detail')->whereIn('pengeluaran_id', $oldPbkIds)->delete();
+                                DB::table('pengeluaran_bahan_baku')->whereIn('id', $oldPbkIds)->delete();
+                            }
+
+                            // 2. Hapus mutasi transaksi_stok lama untuk POS ini
+                            DB::table('transaksi_stok')
+                                ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                                ->where('source_id', $tPos->id)
                                 ->delete();
 
+                            // 3. Re-approve POS agar memotong bahan sesuai formulasi resep terbaru
                             $tPos->update(['status' => 'Draft']);
                             $posController->approve($tPos->id, true);
                         } catch (\Exception $exApprove) {
-                            \Illuminate\Support\Facades\Log::warning("Re-approve POS {$tPos->id} for missing ingredient {$barangId} failed: " . $exApprove->getMessage());
+                            \Illuminate\Support\Facades\Log::warning("Re-approve POS {$tPos->id} for recipe update {$barangId} failed: " . $exApprove->getMessage());
                         }
                     }
                 }

@@ -346,6 +346,12 @@ class ResepBtklBopController extends Controller
             }
         }
 
+        // Sinkronkan pemotongan stok POS dan rekonsiliasi stok untuk seluruh bahan baku yang diupdate di resep ini
+        foreach (array_unique($allBahanIds) as $bId) {
+            \App\Http\Controllers\StokGudangController::autoHealApprovedPosStockMutations($bId);
+            \App\Models\StokGudang::reconcileStockSummary($bId);
+        }
+
         $page = $request->query('page', 1);
         return redirect()->route('resep.index', ['page' => $page])->with('success', 'Resep dan koneksi produk berhasil diupdate');
     }
