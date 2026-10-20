@@ -44,7 +44,7 @@ class StorePembelianRequest extends FormRequest
      */
     private function parseNumericValue(mixed $value): float
     {
-        if (is_numeric($value)) {
+        if (is_int($value) || is_float($value)) {
             return (float) $value;
         }
 
@@ -57,21 +57,29 @@ class StorePembelianRequest extends FormRequest
             return 0.0;
         }
 
-        // Jika terdapat titik dan koma, misal: 1.250,50
+        // Jika string integer murni tanpa titik atau koma (misal: "60000")
+        if (ctype_digit($str)) {
+            return (float) $str;
+        }
+
+        // Bersihkan spasi atau simbol mata uang non-numerik jika ada
+        $str = preg_replace('/[^\d.,]/', '', $str);
+
+        // Jika terdapat titik dan koma, misal: 1.250,50 atau 1.250.000,00
         if (str_contains($str, '.') && str_contains($str, ',')) {
             $str = str_replace('.', '', $str);
             $str = str_replace(',', '.', $str);
             return (float) $str;
         }
 
-        // Jika hanya terdapat koma, misal: 4,65
+        // Jika hanya terdapat koma, misal: 4,65 atau 1250,5
         if (str_contains($str, ',')) {
             $str = str_replace(',', '.', $str);
             return (float) $str;
         }
 
         // Jika hanya terdapat titik:
-        // Cek apakah format ribuan (misal 1.000 atau 1.000.000) atau desimal standar (misal 4.65 atau 4.6500)
+        // Cek apakah format ribuan (misal 1.000 atau 60.000 atau 1.000.000) atau desimal standar (misal 4.65 atau 0.5)
         if (str_contains($str, '.')) {
             $parts = explode('.', $str);
             // Lebih dari satu titik pasti pemisah ribuan, misal: 1.000.000
@@ -80,11 +88,11 @@ class StorePembelianRequest extends FormRequest
             }
 
             // Tepat 1 titik: cek panjang bagian desimal
-            // Jika tepat 3 digit dan bukan diawali 0 (misal 1.000 atau 25.000), anggap ribuan KECUALI bagian depan 0 (0.125)
+            // Jika tepat 3 digit dan bukan diawali 0 (misal 1.000, 25.000, 60.000, 200.000, 5.010), anggap ribuan
             $integerPart = $parts[0];
             $decimalPart = $parts[1];
             if (strlen($decimalPart) === 3 && $integerPart !== '0' && strlen($integerPart) <= 3) {
-                // Pola ribuan Indonesia (contoh: 1.000, 25.000, 100.000)
+                // Pola ribuan Indonesia (contoh: 1.000, 25.000, 60.000, 100.000)
                 return (float) str_replace('.', '', $str);
             }
 

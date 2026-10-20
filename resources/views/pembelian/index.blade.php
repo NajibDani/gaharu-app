@@ -1271,17 +1271,34 @@
             const currentSelectedSatuan = satuanSelect.dataset.initialSatuan || satuanSelect.value || 'pembelian';
             delete satuanSelect.dataset.initialSatuan;
 
-            // Generate options untuk dropdown satuan
-            let optsHtml = '';
-            if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
-                optsHtml += `<option value="pembelian" ${currentSelectedSatuan === 'pembelian' ? 'selected' : ''}>${satuanPembelian}</option>`;
-                optsHtml += `<option value="utama" ${currentSelectedSatuan === 'utama' ? 'selected' : ''}>${satuanUtama}</option>`;
-            } else {
-                optsHtml += `<option value="pembelian" selected>${satuanPembelian || satuanUtama}</option>`;
+            // Generate options untuk dropdown satuan jika options belum ada atau barang berubah
+            if (satuanSelect.dataset.lastBarangId !== select.value) {
+                let optsHtml = '';
+                if (satuanPembelian && konversi > 1 && satuanPembelian !== satuanUtama) {
+                    optsHtml += `<option value="pembelian" ${currentSelectedSatuan === 'pembelian' ? 'selected' : ''}>${satuanPembelian}</option>`;
+                    optsHtml += `<option value="utama" ${currentSelectedSatuan === 'utama' ? 'selected' : ''}>${satuanUtama}</option>`;
+                } else {
+                    optsHtml += `<option value="pembelian" selected>${satuanPembelian || satuanUtama}</option>`;
+                }
+                satuanSelect.innerHTML = optsHtml;
+                satuanSelect.dataset.lastBarangId = select.value;
             }
-            satuanSelect.innerHTML = optsHtml;
 
-            const userQtyVal = getCleanNumber(qtyUserInput.value);
+            let userQtyVal = getCleanNumber(qtyUserInput.value);
+
+            // Jika user baru saja mengubah dropdown satuan dari pembelian -> utama atau sebaliknya,
+            // lakukan konversi otomatis pada nilai yang tampil di input agar konsisten
+            if (satuanSelect.dataset.currentSatuan && satuanSelect.dataset.currentSatuan !== satuanSelect.value && konversi > 1) {
+                if (satuanSelect.value === 'utama' && satuanSelect.dataset.currentSatuan === 'pembelian' && userQtyVal > 0) {
+                    userQtyVal = Math.round(userQtyVal * konversi);
+                    qtyUserInput.value = formatNumberIndonesian(String(userQtyVal));
+                } else if (satuanSelect.value === 'pembelian' && satuanSelect.dataset.currentSatuan === 'utama' && userQtyVal > 0) {
+                    userQtyVal = Number((userQtyVal / konversi).toFixed(2));
+                    qtyUserInput.value = formatNumberIndonesian(String(userQtyVal).replace('.', ','));
+                }
+            }
+            satuanSelect.dataset.currentSatuan = satuanSelect.value;
+
             const isSatuanUtama = satuanSelect.value === 'utama';
             
             let finalQtyForPurchase = userQtyVal;
@@ -1534,11 +1551,13 @@
         });
 
         document.getElementById('formEditPembelian').addEventListener('submit', function (e) {
-            reindexEditRows();
-            document.querySelectorAll('#tbodyEditItems tr.item-row').forEach(row => {
-                updateModalQtyHint(row);
-            });
-            document.querySelectorAll('#modalEditPembelian .mask-number').forEach(input => {
+            try {
+                reindexEditRows();
+                document.querySelectorAll('#tbodyEditItems tr.item-row').forEach(row => {
+                    try { updateModalQtyHint(row); } catch(err) {}
+                });
+            } catch(e) {}
+            document.querySelectorAll('#formEditPembelian .mask-number, #tbodyEditItems .harga-input, #formEditPembelian input[name*="[harga]"]').forEach(input => {
                 input.value = getCleanNumber(input.value);
             });
         });

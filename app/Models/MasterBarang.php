@@ -471,6 +471,9 @@ public function resepBahanBakuAlternatif()
         // Heal corrupted rogue prices (233 / 25888.89 / dummy fallback) in batches and master_barang
         self::autoHealCorruptedDummyBatches($targetBarangId);
 
+        // Heal corrupted pembelian prices (terbagi 1.000 akibat format titik ribuan)
+        self::autoHealCorruptedPembelianPrices();
+
         // Jalankan juga healing untuk saldo awal dan mutasi agar data selalu sinkron
         self::autoHealSaldoAwalBatches($targetBarangId);
         self::autoHealMutasiBatches($targetBarangId);
@@ -480,6 +483,121 @@ public function resepBahanBakuAlternatif()
                 app(\App\Services\FifoService::class)->syncBarangHpp((int)$targetBarangId);
             } catch (\Throwable $e) {
                 // Ignore if service fails during migration/testing
+            }
+        }
+    }
+
+    /**
+     * Memperbaiki transaksi pembelian yang harganya terbagi 1.000 akibat bug pemformatan angka ribuan (cth: PB202610080001)
+     */
+    public static function autoHealCorruptedPembelianPrices(): void
+    {
+        // Target spesifik PB202610080001 dan setiap pembelian yang harga detailnya < 1000 secara tidak wajar
+        $corruptedPbs = \Illuminate\Support\Facades\DB::table('pembelian')
+            ->where('kode_pembelian', 'PB202610080001')
+            ->orWhere(function($q) {
+                $q->where('total', '>', 0)
+                  ->where('total', '<', 1000)
+                  ->whereExists(function($sub) {
+                      $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                          ->from('pembelian_detail')
+                          ->whereColumn('pembelian_detail.pembelian_id', 'pembelian.id')
+                          ->where('pembelian_detail.harga', '>', 0)
+                          ->where('pembelian_detail.harga', '<', 500);
+                  });
+            })
+            ->get();
+
+        foreach ($corruptedPbs as $pb) {
+            $details = \Illuminate\Support\Facades\DB::table('pembelian_detail')
+                ->where('pembelian_id', $pb->id)
+                ->get();
+
+            $newPbTotal = 0;
+            $barangIdsToSync = [];
+
+            foreach ($details as $d) {
+                $pHarga = (float) $d->harga;
+                $pQty = (float) $d->qty;
+                if ($pHarga <= 0 || $pQty <= 0) {
+                    continue;
+                }
+
+                // Jika harga terdeteksi terbagi 1.000 (harga < 1000 pada nota pasar/grosir bahan baku)
+                if ($pHarga < 1000) {
+                    $newHarga = round($pHarga * 1000, 2);
+                    $newHargaPerQty = round($newHarga / $pQty, 2);
+
+                    \Illuminate\Support\Facades\DB::table('pembelian_detail')
+                        ->where('id', $d->id)
+                        ->update([
+                            'harga' => $newHarga,
+                            'harga_per_qty' => $newHargaPerQty,
+                        ]);
+
+                    // Update penerimaan_pembelian_detail jika ada
+                    \Illuminate\Support\Facades\DB::table('penerimaan_pembelian_detail')
+                        ->where('pembelian_detail_id', $d->id)
+                        ->update([
+                            'harga_per_qty' => $newHargaPerQty,
+                        ]);
+
+                    // Update stok_gudang_batch terkait
+                    $batches = \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                        ->where('pembelian_detail_id', $d->id)
+                        ->get();
+
+                    $konv = (float) ($d->konversi_pembelian ?? 1);
+                    if ($konv <= 0) $konv = 1.0;
+                    $batchHargaPerQty = round($newHargaPerQty / $konv, 4);
+
+                    foreach ($batches as $b) {
+                        \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                            ->where('id', $b->id)
+                            ->update([
+                                'harga_per_qty' => $batchHargaPerQty,
+                            ]);
+                    }
+
+                    // Update transaksi_stok
+                    \Illuminate\Support\Facades\DB::table('transaksi_stok')
+                        ->where('barang_id', $d->barang_id)
+                        ->where('source_id', $pb->id)
+                        ->whereIn('source_type', ['pembelian', 'penerimaan_pembelian'])
+                        ->update([
+                            'total_harga' => $newHarga,
+                        ]);
+
+                    $newPbTotal += $newHarga;
+                    $barangIdsToSync[] = $d->barang_id;
+                } else {
+                    $newPbTotal += $pHarga;
+                }
+            }
+
+            $taxService = (float) ($pb->tax_service ?? 0);
+            $grandTotal = $newPbTotal + $taxService;
+
+            $updateData = ['total' => $grandTotal];
+            if ($pb->is_lunas) {
+                $updateData['nominal_pelunasan'] = $grandTotal;
+            }
+            \Illuminate\Support\Facades\DB::table('pembelian')
+                ->where('id', $pb->id)
+                ->update($updateData);
+
+            // Update pembayaran jika ada
+            \Illuminate\Support\Facades\DB::table('pembayaran')
+                ->where('pembelian_id', $pb->id)
+                ->whereIn('metode_pembayaran', ['COD', 'Pelunasan'])
+                ->update(['jumlah_bayar' => $grandTotal]);
+
+            // Sinkronisasi HPP FIFO untuk setiap barang
+            foreach (array_unique($barangIdsToSync) as $bId) {
+                try {
+                    app(\App\Services\FifoService::class)->syncBarangHpp((int) $bId);
+                } catch (\Throwable $e) {
+                }
             }
         }
     }

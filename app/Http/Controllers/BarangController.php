@@ -995,10 +995,13 @@ class BarangController extends Controller
         if (is_null($val) || $val === '') {
             return 0.0;
         }
-        if (is_numeric($val)) {
+        if (is_int($val) || is_float($val)) {
             return (float) $val;
         }
         $str = trim((string) $val);
+        if (ctype_digit($str)) {
+            return (float) $str;
+        }
         if (strpos($str, '.') !== false && strpos($str, ',') !== false) {
             $str = str_replace('.', '', $str);
             $str = str_replace(',', '.', $str);

@@ -42,6 +42,9 @@ class PembelianController extends Controller
             MasterBarang::autoHealUnconvertedPembelianBatches();
         }
 
+        // Auto-heal jika ada transaksi pembelian yang harganya terkorupsi (cth: PB202610080001)
+        MasterBarang::autoHealCorruptedPembelianPrices();
+
         $search            = $request->query('search');
         $sort              = $request->query('sort', 'terbaru');
         $statusPembayaran  = $request->query('status_pembayaran');
