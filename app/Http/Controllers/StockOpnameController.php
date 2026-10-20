@@ -1874,8 +1874,35 @@ class StockOpnameController extends Controller
         return (float) $nilai;
     }
 
-    public function getHargaTerakhirBarang($barangId): float
+    public function getHargaTerakhirBarang($barangId, $gudangId = null, $divisiId = null): float
     {
+        $hppRef = (float) (DB::table('master_barang')
+            ->where('id', $barangId)
+            ->value('hpp_referensi') ?? 0);
+
+        // 1. Cek batch spesifik gudang & divisi jika diberikan
+        if ($gudangId) {
+            $qBatch = DB::table('stok_gudang_batch')
+                ->where('barang_id', $barangId)
+                ->where('gudang_id', $gudangId)
+                ->where('harga_per_qty', '>', 0);
+            if ($divisiId) {
+                $qBatch->where('divisi_id', $divisiId);
+            }
+            $hargaBatch = $qBatch->orderBy('id', 'desc')->value('harga_per_qty');
+            if ($hargaBatch && (float)$hargaBatch > 0) {
+                $h = (float)$hargaBatch;
+                // Lindungi jika harga batch anomalus (misal input beli salah satuan 1 pack vs 1 gram)
+                if ($hppRef > 0 && $h > ($hppRef * 20)) {
+                    // Cek apakah ada batch lebih lama yang wajar atau gunakan hppRef
+                    $wajarBatch = (clone $qBatch)->where('harga_per_qty', '<=', $hppRef * 20)->orderBy('id', 'desc')->value('harga_per_qty');
+                    return (float) ($wajarBatch ?: $hppRef);
+                }
+                return $h;
+            }
+        }
+
+        // 2. Cek batch aktif/terakhir global
         $hargaBatch = DB::table('stok_gudang_batch')
             ->where('barang_id', $barangId)
             ->where('harga_per_qty', '>', 0)
@@ -1883,7 +1910,17 @@ class StockOpnameController extends Controller
             ->value('harga_per_qty');
 
         if ($hargaBatch && (float)$hargaBatch > 0) {
-            return (float) $hargaBatch;
+            $h = (float)$hargaBatch;
+            if ($hppRef > 0 && $h > ($hppRef * 20)) {
+                $wajarBatch = DB::table('stok_gudang_batch')
+                    ->where('barang_id', $barangId)
+                    ->where('harga_per_qty', '>', 0)
+                    ->where('harga_per_qty', '<=', $hppRef * 20)
+                    ->orderBy('id', 'desc')
+                    ->value('harga_per_qty');
+                return (float) ($wajarBatch ?: $hppRef);
+            }
+            return $h;
         }
 
         $hargaBeli = DB::table('pembelian_detail')
@@ -1909,12 +1946,12 @@ class StockOpnameController extends Controller
         }
 
         if ($hargaBeli && (float)$hargaBeli > 0) {
-            return (float) $hargaBeli;
+            $h = (float)$hargaBeli;
+            if ($hppRef > 0 && $h > ($hppRef * 20)) {
+                return $hppRef;
+            }
+            return $h;
         }
-
-        $hppRef = DB::table('master_barang')
-            ->where('id', $barangId)
-            ->value('hpp_referensi');
 
         return (float) ($hppRef ?? 0);
     }
@@ -1941,11 +1978,15 @@ class StockOpnameController extends Controller
             if ($nilaiFifo > 0) {
                 return round($nilaiFifo, 2);
             }
-            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
+            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId, $gudangId, $divisiId);
             return round(abs($selisih) * $hargaTerakhir, 2);
         } else {
-            $hargaTerakhir = $this->getHargaTerakhirBarang($barangId);
-            return round($selisih * $hargaTerakhir, 2);
+            // Untuk selisih lebih (surplus), gunakan harga FIFO batch aktif di gudang & divisi tersebut
+            $hargaSatuan = $this->getHargaFIFO($gudangId, $barangId, $divisiId);
+            if ($hargaSatuan <= 0) {
+                $hargaSatuan = $this->getHargaTerakhirBarang($barangId, $gudangId, $divisiId);
+            }
+            return round($selisih * $hargaSatuan, 2);
         }
     }
 
