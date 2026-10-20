@@ -1622,6 +1622,9 @@ class StokGudangController extends Controller
                     ->where('master_barang.is_bahan_setengah_jadi', 1)
                     ->exists();
 
+                // Pastikan pemetaan resep_id pada master_barang tersinkronisasi
+                \App\Models\MasterBarang::syncAllResepIds();
+
                 // Cari resep yang menggunakan barang ini
                 $resepIdsUsingBarang = DB::table('resep_bahanbaku')
                     ->where('bahan_id', $barangId)
@@ -1639,9 +1642,24 @@ class StokGudangController extends Controller
                     ->pluck('source_id')
                     ->unique()->toArray();
 
-                $productIds = !empty($resepIdsUsingBarang)
-                    ? DB::table('master_barang')->whereIn('resep_id', $resepIdsUsingBarang)->pluck('id')->toArray()
-                    : [];
+                // Cari produk jadi yang menggunakan resep ini, baik melalui resep_id langsung, resep_btkl_bop.produk_id, maupun nama produk
+                $productIds = [];
+                if (!empty($resepIdsUsingBarang)) {
+                    $directProductIds = DB::table('master_barang')->whereIn('resep_id', $resepIdsUsingBarang)->pluck('id')->toArray();
+                    $resepProdukIds = DB::table('resep_btkl_bop')->whereIn('id', $resepIdsUsingBarang)->whereNotNull('produk_id')->pluck('produk_id')->toArray();
+                    $allMatchedProdIds = array_unique(array_merge($directProductIds, $resepProdukIds));
+
+                    // Ambil nama-nama produk untuk mencari padanan antar-outlet (mis. POS Gaharu vs POS Kejingga)
+                    $prodNames = DB::table('master_barang')->whereIn('id', $allMatchedProdIds)->pluck('nama')->toArray();
+                    $cleanNames = array_unique(array_filter(array_map('trim', $prodNames)));
+
+                    $counterpartProductIds = !empty($cleanNames)
+                        ? DB::table('master_barang')->whereIn('nama', $cleanNames)->pluck('id')->toArray()
+                        : [];
+
+                    $productIds = array_unique(array_merge($allMatchedProdIds, $counterpartProductIds));
+                }
+
                 $posIdsWithProducts = !empty($productIds)
                     ? DB::table('penjualanpos_detail')->whereIn('produk_id', $productIds)->pluck('penjualan_id')->unique()->toArray()
                     : [];
@@ -1804,6 +1822,18 @@ class StokGudangController extends Controller
 
             // 3. Pastikan divisi_asal_id dan gudang_asal_id pada transaksi_stok terisi dengan divisi operasional yang benar
             self::autoHealMissingDivisiInTransaksiStok($barangId);
+
+            // 4. Sinkronkan seluruh draft Stock Opname yang memuat bahan ini agar stok sistemnya langsung ter-update
+            if ($barangId) {
+                $openDraftSos = \App\Models\StockOpname::whereIn(DB::raw('LOWER(status)'), ['draft', 'menunggu_persetujuan'])
+                    ->whereHas('details', function($q) use ($barangId) {
+                        $q->where('barang_id', $barangId);
+                    })
+                    ->get();
+                foreach ($openDraftSos as $draftSo) {
+                    \App\Http\Controllers\StockOpnameController::syncDraftOpname($draftSo);
+                }
+            }
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoHealApprovedPosStockMutations error: ' . $e->getMessage());

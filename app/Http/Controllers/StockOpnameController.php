@@ -202,6 +202,31 @@ class StockOpnameController extends Controller
                             ->where('stock_opname_detail.stock_opname_id', $opnameId);
                     });
                 }
+
+                // Item yang memiliki stok aktif atau riwayat transaksi di gudang & divisi ini juga harus muncul
+                $q->orWhere(function($subQ) use ($gudangId, $divisiId) {
+                    $subQ->whereExists(function($sq) use ($gudangId, $divisiId) {
+                        $sq->select(DB::raw(1))
+                            ->from('stok_gudang')
+                            ->whereColumn('stok_gudang.barang_id', 'master_barang.id')
+                            ->where('stok_gudang.gudang_id', $gudangId)
+                            ->when($divisiId, fn($qDiv) => $qDiv->where('stok_gudang.divisi_id', $divisiId), fn($qDiv) => $qDiv->whereNull('stok_gudang.divisi_id'))
+                            ->where('stok_gudang.jumlah', '!=', 0);
+                    })->orWhereExists(function($tq) use ($gudangId, $divisiId) {
+                        $tq->select(DB::raw(1))
+                            ->from('transaksi_stok')
+                            ->whereColumn('transaksi_stok.barang_id', 'master_barang.id')
+                            ->where(function($wh) use ($gudangId, $divisiId) {
+                                $wh->where(function($wh1) use ($gudangId, $divisiId) {
+                                    $wh1->where('transaksi_stok.gudang_asal_id', $gudangId)
+                                        ->when($divisiId, fn($qD) => $qD->where('transaksi_stok.divisi_asal_id', $divisiId));
+                                })->orWhere(function($wh2) use ($gudangId, $divisiId) {
+                                    $wh2->where('transaksi_stok.gudang_tujuan_id', $gudangId)
+                                        ->when($divisiId, fn($qD) => $qD->where('transaksi_stok.divisi_tujuan_id', $divisiId));
+                                });
+                            });
+                    });
+                });
             });
         }
 
@@ -741,6 +766,31 @@ class StockOpnameController extends Controller
                                 ->where('stock_opname_detail.stock_opname_id', $opname->id);
                         });
                     }
+
+                    // Item yang memiliki stok aktif atau riwayat transaksi di gudang & divisi ini juga harus muncul
+                    $q->orWhere(function($subQ) use ($gudangId, $divisiId) {
+                        $subQ->whereExists(function($sq) use ($gudangId, $divisiId) {
+                            $sq->select(DB::raw(1))
+                                ->from('stok_gudang')
+                                ->whereColumn('stok_gudang.barang_id', 'master_barang.id')
+                                ->where('stok_gudang.gudang_id', $gudangId)
+                                ->when($divisiId, fn($qDiv) => $qDiv->where('stok_gudang.divisi_id', $divisiId), fn($qDiv) => $qDiv->whereNull('stok_gudang.divisi_id'))
+                                ->where('stok_gudang.jumlah', '!=', 0);
+                        })->orWhereExists(function($tq) use ($gudangId, $divisiId) {
+                            $tq->select(DB::raw(1))
+                                ->from('transaksi_stok')
+                                ->whereColumn('transaksi_stok.barang_id', 'master_barang.id')
+                                ->where(function($wh) use ($gudangId, $divisiId) {
+                                    $wh->where(function($wh1) use ($gudangId, $divisiId) {
+                                        $wh1->where('transaksi_stok.gudang_asal_id', $gudangId)
+                                            ->when($divisiId, fn($qD) => $qD->where('transaksi_stok.divisi_asal_id', $divisiId));
+                                    })->orWhere(function($wh2) use ($gudangId, $divisiId) {
+                                        $wh2->where('transaksi_stok.gudang_tujuan_id', $gudangId)
+                                            ->when($divisiId, fn($qD) => $qD->where('transaksi_stok.divisi_tujuan_id', $divisiId));
+                                    });
+                                });
+                        });
+                    });
                 });
             }
 
