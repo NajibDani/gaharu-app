@@ -817,7 +817,15 @@ class PenjualanPosController extends Controller
                         $multiplier = $qtyRemaining / $outputQty;
 
                         foreach ($resepBahan as $subBahan) {
-                            $subQtyNeeded = floatval($subBahan->qty_bahan) * $multiplier;
+                            $subMaster = DB::table('master_barang')->where('id', $subBahan->bahan_id)->first();
+                            $subKonv = floatval($subMaster->konversi_pembelian ?? 1);
+                            $subQtyBahan = floatval($subBahan->qty_bahan);
+                            if ($subMaster && $subKonv > 1 && !empty($subBahan->satuan) && !empty($subMaster->satuan_pembelian)) {
+                                if (strcasecmp(trim($subBahan->satuan), trim($subMaster->satuan_pembelian)) === 0 && strcasecmp(trim($subBahan->satuan), trim($subMaster->satuan)) !== 0) {
+                                    $subQtyBahan *= $subKonv;
+                                }
+                            }
+                            $subQtyNeeded = $subQtyBahan * $multiplier;
                             $resolveBahan($subBahan->bahan_id, $subQtyNeeded);
                         }
                     } else {
@@ -911,7 +919,17 @@ class PenjualanPosController extends Controller
                 if ($resepUtama && $resepUtama->bahanbaku && $resepUtama->bahanbaku->count() > 0) {
                     $outputQtyUtama = floatval($resepUtama->output_qty) > 0 ? floatval($resepUtama->output_qty) : 1.0;
                     foreach ($resepUtama->bahanbaku as $bahanItem) {
-                        $kebutuhanPerPcs = floatval($bahanItem->qty_bahan) / $outputQtyUtama;
+                        $bahanMaster = DB::table('master_barang')->where('id', $bahanItem->bahan_id)->first();
+                        $bKonv = floatval($bahanMaster->konversi_pembelian ?? 1);
+                        $qtyBahan = floatval($bahanItem->qty_bahan);
+
+                        if ($bahanMaster && $bKonv > 1 && !empty($bahanItem->satuan) && !empty($bahanMaster->satuan_pembelian)) {
+                            if (strcasecmp(trim($bahanItem->satuan), trim($bahanMaster->satuan_pembelian)) === 0 && strcasecmp(trim($bahanItem->satuan), trim($bahanMaster->satuan)) !== 0) {
+                                $qtyBahan *= $bKonv;
+                            }
+                        }
+
+                        $kebutuhanPerPcs = $qtyBahan / $outputQtyUtama;
                         $butuh = $kebutuhanPerPcs * $qtyTerjual;
 
                         // Resolusi divisi spesifik bahan baku (cek tagging, riwayat, atau kategori bahan)
@@ -1028,17 +1046,20 @@ class PenjualanPosController extends Controller
                     );
                     $stokGudang->decrement('jumlah', $diambil);
 
-                    // Catat mutasi pengeluaran ke TransaksiStok agar Buku Pembantu Persediaan selalu sinkron 100%
+                }
+
+                // Catat mutasi pengeluaran ke TransaksiStok agar Buku Pembantu Persediaan selalu sinkron 100% dan rapi sesuai resep
+                if ($totalDipotong > 0) {
                     \App\Models\TransaksiStok::create([
                         'tanggal'        => $tanggalTrans,
                         'tipe'           => 'keluar',
                         'source_type'    => 'penjualan_pos',
                         'source_id'      => $penjualan->id,
                         'gudang_asal_id' => $gudangId,
-                        'divisi_asal_id' => $divisiAsalId,
+                        'divisi_asal_id' => $targetDivisiBahan,
                         'barang_id'      => $bahanId,
-                        'qty'            => $diambil,
-                        'total_harga'    => $nilaiHppDiambil,
+                        'qty'            => $totalDipotong,
+                        'total_harga'    => $totalHppBahanGrup,
                         'created_by'     => auth()->id() ?? 1,
                     ]);
                 }

@@ -288,8 +288,14 @@ class StokGudangController extends Controller
         MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
         MasterBarang::autoHealSaldoAwalBatches($barangId);
 
+        // Bersihkan resep duplikat agar pemotongan resep akurat
+        self::autoCleanDuplicateResepBahanBaku($barangId);
+
         // Auto-heal mutasi yang divisi-nya belum tersinkronisasi di transaksi_stok
         self::autoHealMissingDivisiInTransaksiStok($barangId);
+
+        // Auto-heal timestamp mutasi stock opname agar berada di penutupan hari (23:59:00) setelah transaksi harian
+        self::autoHealStockOpnameTimestamp($barangId);
 
         // Auto-heal mutasi Penjualan POS disetujui / Moka import
         self::autoHealApprovedPosStockMutations($barangId);
@@ -1576,10 +1582,38 @@ class StokGudangController extends Controller
                 $bSatDasar = strtolower(trim($bRow->satuan ?? ''));
                 $bKonv = floatval($bRow->konversi_pembelian ?? 1);
 
-                $candidatePosList = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
-                    ->whereIn('gudang_id', $outletIds)
-                    ->with(['details.produk'])
-                    ->get();
+                // Cari resep yang menggunakan barang ini
+                $resepIdsUsingBarang = DB::table('resep_bahanbaku')
+                    ->where('bahan_id', $barangId)
+                    ->pluck('resep_id')
+                    ->merge(
+                        DB::table('resep_bahanbaku_alternatif')
+                            ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
+                            ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
+                            ->pluck('resep_bahanbaku.resep_id')
+                    )->unique()->toArray();
+
+                $posIdsWithBarangMutasi = DB::table('transaksi_stok')
+                    ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                    ->where('barang_id', $barangId)
+                    ->pluck('source_id')
+                    ->unique()->toArray();
+
+                $candidatePosQuery = \App\Models\PenjualanPos::whereIn(DB::raw('LOWER(status)'), ['approved', 'disetujui', 'sukses'])
+                    ->whereIn('gudang_id', $outletIds);
+
+                $candidatePosQuery->where(function($q) use ($resepIdsUsingBarang, $posIdsWithBarangMutasi) {
+                    if (!empty($posIdsWithBarangMutasi)) {
+                        $q->whereIn('id', $posIdsWithBarangMutasi);
+                    }
+                    if (!empty($resepIdsUsingBarang)) {
+                        $q->orWhereHas('details.produk', function($pq) use ($resepIdsUsingBarang) {
+                            $pq->whereIn('resep_id', $resepIdsUsingBarang);
+                        });
+                    }
+                });
+
+                $candidatePosList = $candidatePosQuery->with(['details.produk'])->get();
 
                 foreach ($candidatePosList as $tPos) {
                     $expectedQtyNeeded = 0.0;
@@ -1607,7 +1641,13 @@ class StokGudangController extends Controller
 
                             if ($rawBahan) {
                                 $usesThisIngredient = true;
-                                $expectedQtyNeeded += (floatval($rawBahan->qty_bahan) / $outQty) * floatval($d->qty);
+                                $bQty = floatval($rawBahan->qty_bahan);
+                                if ($bKonv > 1 && !empty($rawBahan->satuan) && !empty($bRow->satuan_pembelian)) {
+                                    if (strcasecmp(trim($rawBahan->satuan), trim($bRow->satuan_pembelian)) === 0 && strcasecmp(trim($rawBahan->satuan), trim($bRow->satuan)) !== 0) {
+                                        $bQty *= $bKonv;
+                                    }
+                                }
+                                $expectedQtyNeeded += ($bQty / $outQty) * floatval($d->qty);
                             } else {
                                 $altBahan = DB::table('resep_bahanbaku_alternatif')
                                     ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
@@ -1616,7 +1656,13 @@ class StokGudangController extends Controller
                                     ->first();
                                 if ($altBahan) {
                                     $usesThisIngredient = true;
-                                    $expectedQtyNeeded += (floatval($altBahan->qty_bahan) / $outQty) * floatval($d->qty);
+                                    $bQty = floatval($altBahan->qty_bahan);
+                                    if ($bKonv > 1 && !empty($altBahan->satuan) && !empty($bRow->satuan_pembelian)) {
+                                        if (strcasecmp(trim($altBahan->satuan), trim($bRow->satuan_pembelian)) === 0 && strcasecmp(trim($altBahan->satuan), trim($bRow->satuan)) !== 0) {
+                                            $bQty *= $bKonv;
+                                        }
+                                    }
+                                    $expectedQtyNeeded += ($bQty / $outQty) * floatval($d->qty);
                                 }
                             }
                         }
@@ -1640,6 +1686,9 @@ class StokGudangController extends Controller
                         $needsResync = true;
                     } elseif (!$usesThisIngredient && $currentStokTxs->isNotEmpty()) {
                         // Resep sudah tidak lagi menggunakan bahan ini, tapi mutasi masih ada
+                        $needsResync = true;
+                    } elseif ($currentStokTxs->count() > 1) {
+                        // Jika mutasi terpecah menjadi lebih dari 1 baris untuk 1 transaksi POS (akibat layer FIFO), satukan kembali
                         $needsResync = true;
                     } elseif ($currentStokTxs->isNotEmpty() && in_array($bSatDasar, ['gr', 'ml', 'gram']) && $bKonv > 1) {
                         // Cek anomali harga satuan (misal harga per kemasan tersimpan sebagai harga per gram)
@@ -1702,6 +1751,54 @@ class StokGudangController extends Controller
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoHealApprovedPosStockMutations error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Bersihkan duplikat resep_bahanbaku untuk menjaga keakuratan pemotongan bahan baku POS.
+     */
+    public static function autoCleanDuplicateResepBahanBaku($barangId = null)
+    {
+        try {
+            $q = DB::table('resep_bahanbaku')
+                ->select('resep_id', 'bahan_id', DB::raw('MAX(id) as keep_id'), DB::raw('COUNT(*) as cnt'))
+                ->groupBy('resep_id', 'bahan_id')
+                ->having('cnt', '>', 1);
+            if ($barangId) {
+                $q->where('bahan_id', $barangId);
+            }
+            $duplicates = $q->get();
+
+            foreach ($duplicates as $dupe) {
+                DB::table('resep_bahanbaku')
+                    ->where('resep_id', $dupe->resep_id)
+                    ->where('bahan_id', $dupe->bahan_id)
+                    ->where('id', '!=', $dupe->keep_id)
+                    ->delete();
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoCleanDuplicateResepBahanBaku error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Pastikan mutasi stock opname tercatat pada penutupan hari (23:59:00) agar seluruh transaksi operasional
+     * harian (POS, PBK) tercatat terlebih dahulu sebelum penyesuaian fisik opname.
+     */
+    public static function autoHealStockOpnameTimestamp($barangId = null)
+    {
+        try {
+            $q = DB::table('transaksi_stok')
+                ->where('source_type', 'stock_opname')
+                ->whereRaw("TIME(tanggal) = '10:29:00'");
+            if ($barangId) {
+                $q->where('barang_id', $barangId);
+            }
+            $q->update([
+                'tanggal' => DB::raw("CONCAT(DATE(tanggal), ' 23:59:00')")
+            ]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoHealStockOpnameTimestamp error: ' . $e->getMessage());
         }
     }
 

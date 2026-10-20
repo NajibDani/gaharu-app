@@ -1371,7 +1371,7 @@ class StockOpnameController extends Controller
             ?? 44;
 
         $tanggalBase = \Carbon\Carbon::parse($opname->tanggal)->format('Y-m-d');
-        $tanggalTx = $tanggalBase . ' 10:29:00';
+        $tanggalTx = $tanggalBase . ' 23:59:00';
 
         $pbk = $pbkParam ?: PengeluaranBahanBaku::where('kode_pengeluaran', 'PBK-SO-' . $opname->kode_opname)
             ->orWhere('keterangan', 'like', '%' . $opname->kode_opname . '%')
