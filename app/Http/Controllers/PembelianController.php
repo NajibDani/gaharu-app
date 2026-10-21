@@ -45,6 +45,9 @@ class PembelianController extends Controller
         // Auto-heal jika ada transaksi pembelian yang harganya terkorupsi (cth: PB202610080001)
         MasterBarang::autoHealCorruptedPembelianPrices();
 
+        // Auto-heal sinkronisasi tanggal penerimaan barang dan mutasi stok ke tanggal transaksi pembelian
+        self::autoHealHistoricalPembelianPenerimaanTanggal();
+
         $search            = $request->query('search');
         $sort              = $request->query('sort', 'terbaru');
         $statusPembayaran  = $request->query('status_pembayaran');
@@ -350,7 +353,7 @@ class PembelianController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | STORE — stok TIDAK langsung masuk, tunggu konfirmasi terima
+    | STORE — otomatis mencatat penerimaan barang tepat pada tanggal transaksi
     |--------------------------------------------------------------------------
     */
 
@@ -365,18 +368,22 @@ class PembelianController extends Controller
         DB::transaction(function () use ($data, $request) {
 
             $taxService = (float) ($data['tax_service'] ?? 0);
-
             $total = collect($data['items'])->sum(fn($item) => (float) $item['harga']) + $taxService;
 
+            $txDate = $data['tanggal'];
+            $txDateTime = $txDate . ' ' . date('H:i:s');
+
             $createData = [
-                'kode_pembelian' => $this->generateKodePembelian($data['tanggal']),
+                'kode_pembelian' => $this->generateKodePembelian($txDate),
                 'supplier_id'    => $data['supplier_id'],
                 'gudang_id'      => $data['gudang_id'],
-                'tanggal'        => $data['tanggal'],
+                'tanggal'        => $txDate,
                 'total'          => $total,
                 'tax_service'    => $taxService,
                 'created_by'     => auth()->id(),
-                'is_diterima'    => false,
+                'is_diterima'    => true, // Otomatis diterima pada tanggal transaksi
+                'diterima_at'    => $txDateTime,
+                'diterima_oleh'  => auth()->id(),
                 'is_lunas'       => false,
             ];
 
@@ -386,11 +393,28 @@ class PembelianController extends Controller
 
             $pembelian = Pembelian::create($createData);
 
+            // Buat header penerimaan_pembelian otomatis pada tanggal transaksi
+            $supplier = Supplier::find($data['supplier_id']);
+            $prefix = strtoupper($supplier->prefix ?? 'SUP');
+            $noPenerimaan = 'RCV-' . $prefix . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
+            while (DB::table('penerimaan_pembelian')->where('no_penerimaan', $noPenerimaan)->exists()) {
+                $noPenerimaan = 'RCV-' . $prefix . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
+            }
+
+            $penerimaan = \App\Models\PenerimaanPembelian::create([
+                'pembelian_id'  => $pembelian->id,
+                'no_penerimaan' => $noPenerimaan,
+                'tanggal'       => $txDate,
+                'created_by'    => auth()->id(),
+                'created_at'    => $txDateTime,
+                'updated_at'    => $txDateTime,
+            ]);
+
             foreach ($data['items'] as $item) {
 
-                $hargaPerQty = (float) $item['qty'] > 0
-                    ? (float) $item['harga'] / (float) $item['qty']
-                    : 0;
+                $qtyInput = (float) $item['qty'];
+                $hargaTotalItem = (float) $item['harga'];
+                $hargaPerQty = $qtyInput > 0 ? $hargaTotalItem / $qtyInput : 0;
 
                 $barang = MasterBarang::withoutGlobalScopes()->find($item['barang_id']);
                 $satBeli = $barang ? $barang->satuan_pembelian : null;
@@ -401,26 +425,79 @@ class PembelianController extends Controller
                 }
                 if ($konv <= 0) $konv = 1.00;
 
-                // Simpan detail dulu — FIFO & stok masuk saat "Terima"
+                // Simpan detail pembelian langsung dengan qty_diterima penuh
                 $detail = $pembelian->details()->create([
                     'barang_id'          => $item['barang_id'],
                     'satuan_pembelian'   => $satBeli,
                     'konversi_pembelian' => $konv,
-                    'qty'                => $item['qty'],
-                    'harga'              => $item['harga'],
+                    'qty'                => $qtyInput,
+                    'qty_diterima'       => $qtyInput,
+                    'harga'              => $hargaTotalItem,
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => 'TEMP',
                 ]);
 
+                $batchNumber = date('Ymd', strtotime($txDate)) . '-PB' . $detail->id;
                 $detail->update([
-                    'batch_number' => date('Ymd') . '-PB' . $detail->id,
+                    'batch_number' => $batchNumber,
                 ]);
+
+                // Buat detail penerimaan_pembelian_detail
+                $penerimaan->details()->create([
+                    'pembelian_detail_id' => $detail->id,
+                    'barang_id'           => $detail->barang_id,
+                    'qty'                 => $qtyInput,
+                    'harga_per_qty'       => $hargaPerQty,
+                    'created_at'          => $txDateTime,
+                    'updated_at'          => $txDateTime,
+                ]);
+
+                $qtyMasukStok = $qtyInput * $konv;
+                $hargaPerQtyStok = $konv > 0 ? ($hargaPerQty / $konv) : $hargaPerQty;
+                $targetDivisiId = MasterGudang::resolveDivisiIdForBarang($pembelian->gudang_id, $detail->barang_id);
+
+                // Buat batch persediaan FIFO dengan tanggal persis tanggal transaksi pembelian
+                \App\Models\StokGudangBatch::create([
+                    'gudang_id'           => $pembelian->gudang_id,
+                    'divisi_id'           => $targetDivisiId,
+                    'supplier_id'         => $pembelian->supplier_id,
+                    'barang_id'           => $detail->barang_id,
+                    'pembelian_id'        => $pembelian->id,
+                    'pembelian_detail_id' => $detail->id,
+                    'batch_number'        => $batchNumber . '-RCV-' . rand(10, 99) . '-' . date('His'),
+                    'qty_masuk'           => $qtyMasukStok,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qtyMasukStok,
+                    'harga_per_qty'       => $hargaPerQtyStok,
+                    'is_habis'            => false,
+                    'created_at'          => $txDateTime,
+                    'updated_at'          => $txDateTime,
+                ]);
+
+                // Tambahkan mutasi masuk ke transaksi_stok tepat pada tanggal transaksi pembelian
+                $this->stockService->stockIn([
+                    'tanggal'          => $txDateTime,
+                    'barang_id'        => $detail->barang_id,
+                    'gudang_tujuan_id' => $pembelian->gudang_id,
+                    'divisi_tujuan_id' => $targetDivisiId,
+                    'qty'              => $qtyMasukStok,
+                    'total_harga'      => $hargaTotalItem,
+                    'source_type'      => 'pembelian',
+                    'source_id'        => $pembelian->id,
+                    'user_id'          => auth()->id(),
+                ]);
+
+                // Sinkronisasi HPP barang sesuai FIFO
+                app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
+
+                // Rekonsiliasi ringkasan stok gudang
+                \App\Models\StokGudang::reconcileStockSummary($detail->barang_id, $pembelian->gudang_id, $targetDivisiId);
             }
         });
 
         return redirect()
             ->route('pembelian.index')
-            ->with('success', 'Pembelian berhasil disimpan. Klik Terima setelah barang tiba.');
+            ->with('success', 'Pembelian berhasil disimpan dan penerimaan barang otomatis dicatat tepat pada tanggal transaksi.');
     }
 
     /*
@@ -476,18 +553,23 @@ class PembelianController extends Controller
         }
 
         DB::transaction(function () use ($request, $pembelian) {
+            $txDate = $pembelian->tanggal;
+            $txDateTime = $txDate . ' ' . date('H:i:s');
+
             // Create PenerimaanPembelian header
-            $noPenerimaan = 'RCV-' . strtoupper($pembelian->supplier->prefix ?? 'SUP') . '-' . date('Ymd') . '-' . rand(100, 999);
+            $noPenerimaan = 'RCV-' . strtoupper($pembelian->supplier->prefix ?? 'SUP') . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
             // Ensure uniqueness of no_penerimaan
             while (DB::table('penerimaan_pembelian')->where('no_penerimaan', $noPenerimaan)->exists()) {
-                $noPenerimaan = 'RCV-' . strtoupper($pembelian->supplier->prefix ?? 'SUP') . '-' . date('Ymd') . '-' . rand(100, 999);
+                $noPenerimaan = 'RCV-' . strtoupper($pembelian->supplier->prefix ?? 'SUP') . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
             }
 
             $penerimaan = \App\Models\PenerimaanPembelian::create([
-                'pembelian_id' => $pembelian->id,
+                'pembelian_id'  => $pembelian->id,
                 'no_penerimaan' => $noPenerimaan,
-                'tanggal' => now(),
-                'created_by' => auth()->id()
+                'tanggal'       => $txDate,
+                'created_by'    => auth()->id(),
+                'created_at'    => $txDateTime,
+                'updated_at'    => $txDateTime,
             ]);
 
             foreach ($pembelian->details as $detail) {
@@ -505,9 +587,11 @@ class PembelianController extends Controller
                 // Create PenerimaanPembelianDetail
                 $penerimaan->details()->create([
                     'pembelian_detail_id' => $detail->id,
-                    'barang_id' => $detail->barang_id,
-                    'qty' => $qtyBaruInput,
-                    'harga_per_qty' => floatval($detail->harga_per_qty)
+                    'barang_id'           => $detail->barang_id,
+                    'qty'                 => $qtyBaruInput,
+                    'harga_per_qty'       => floatval($detail->harga_per_qty),
+                    'created_at'          => $txDateTime,
+                    'updated_at'          => $txDateTime,
                 ]);
 
                 $totalHargaDiterima = round($qtyBaruInput * floatval($detail->harga_per_qty), 2);
@@ -543,35 +627,40 @@ class PembelianController extends Controller
                 $targetDivisiId = MasterGudang::resolveDivisiIdForBarang($pembelian->gudang_id, $detail->barang_id);
 
                 \App\Models\StokGudangBatch::create([
-                    'gudang_id' => $pembelian->gudang_id,
-                    'divisi_id' => $targetDivisiId,
-                    'supplier_id' => $pembelian->supplier_id,
-                    'barang_id' => $detail->barang_id,
-                    'pembelian_id' => $pembelian->id,
+                    'gudang_id'           => $pembelian->gudang_id,
+                    'divisi_id'           => $targetDivisiId,
+                    'supplier_id'         => $pembelian->supplier_id,
+                    'barang_id'           => $detail->barang_id,
+                    'pembelian_id'        => $pembelian->id,
                     'pembelian_detail_id' => $detail->id,
-                    'batch_number' => $detail->batch_number . '-RCV-' . $suffix,
-                    'qty_masuk' => $qtyMasukStok,
-                    'qty_keluar' => 0,
-                    'qty_sisa' => $qtyMasukStok,
-                    'harga_per_qty' => $hargaPerQtyStok,
-                    'is_habis' => false,
+                    'batch_number'        => $detail->batch_number . '-RCV-' . $suffix,
+                    'qty_masuk'           => $qtyMasukStok,
+                    'qty_keluar'          => 0,
+                    'qty_sisa'            => $qtyMasukStok,
+                    'harga_per_qty'       => $hargaPerQtyStok,
+                    'is_habis'            => false,
+                    'created_at'          => $txDateTime,
+                    'updated_at'          => $txDateTime,
                 ]);
 
                 // Tambah stok gudang
                 $this->stockService->stockIn([
-                    'tanggal'         => $pembelian->tanggal,
-                    'barang_id'       => $detail->barang_id,
-                    'gudang_tujuan_id'=> $pembelian->gudang_id,
-                    'divisi_tujuan_id'=> $targetDivisiId,
-                    'qty'             => $qtyMasukStok,
-                    'total_harga'     => $totalHargaDiterima,
-                    'source_type'     => 'pembelian',
-                    'source_id'       => $pembelian->id,
-                    'user_id'         => auth()->id(),
+                    'tanggal'          => $txDateTime,
+                    'barang_id'        => $detail->barang_id,
+                    'gudang_tujuan_id' => $pembelian->gudang_id,
+                    'divisi_tujuan_id' => $targetDivisiId,
+                    'qty'              => $qtyMasukStok,
+                    'total_harga'      => $totalHargaDiterima,
+                    'source_type'      => 'pembelian',
+                    'source_id'        => $pembelian->id,
+                    'user_id'          => auth()->id(),
                 ]);
 
                 // Sinkronisasi HPP barang sesuai FIFO
                 app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
+
+                // Rekonsiliasi ringkasan stok gudang
+                \App\Models\StokGudang::reconcileStockSummary($detail->barang_id, $pembelian->gudang_id, $targetDivisiId);
             }
 
             // Check if all items are fully received
@@ -585,8 +674,8 @@ class PembelianController extends Controller
 
             // Update status pembelian. Jika sudah semua diterima, is_diterima = true
             $pembelian->update([
-                'is_diterima' => $allFullyReceived,
-                'diterima_at' => now(),
+                'is_diterima'   => $allFullyReceived,
+                'diterima_at'   => $txDateTime,
                 'diterima_oleh' => auth()->id()
             ]);
 
@@ -748,9 +837,23 @@ class PembelianController extends Controller
                 'created_by' => auth()->id()
             ]);
 
-            // Auto-post Jurnal DP jika metodenya DP
+            // Auto-post Jurnal Pembelian sesuai metode pembayaran
+            $penerimaan = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelian->id)->first();
+            $penerimaanId = $penerimaan?->id;
+
             if ($validated['metode_pembayaran'] === 'dp') {
                 \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'dp');
+                if ($pembelian->is_diterima) {
+                    \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'reklas_lunas', $penerimaanId);
+                }
+            } elseif ($validated['metode_pembayaran'] === 'cod') {
+                if ($pembelian->is_diterima) {
+                    \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'cod', $penerimaanId);
+                }
+            } elseif ($validated['metode_pembayaran'] === 'termin') {
+                if ($pembelian->is_diterima) {
+                    \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'termin', $penerimaanId);
+                }
             }
         });
 
@@ -1220,5 +1323,262 @@ class PembelianController extends Controller
         $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
         $pdf->loadView('pembelian.po-pdf', compact('pembelian'));
         return $pdf->stream('Purchase-Order-' . $pembelian->kode_pembelian . '.pdf');
+    }
+
+    /**
+     * Koreksi dan sinkronisasi seluruh data historis transaksi pembelian:
+     * - Menyamakan tanggal penerimaan barang ke tanggal transaksi pembelian
+     * - Menyamakan timestamp batch FIFO dan transaksi_stok ke tanggal transaksi pembelian
+     * - Memastikan seluruh pembelian aktif berstatus diterima penuh
+     * - Menghitung ulang mutasi stok dan buku pembantu persediaan agar saldo berjalan kembali akurat.
+     */
+    public static function autoHealHistoricalPembelianPenerimaanTanggal($targetBarangId = null)
+    {
+        try {
+            $hasIsDeletedCol = Schema::hasColumn('pembelian', 'is_deleted');
+
+            $pembelianQuery = Pembelian::withoutGlobalScopes()
+                ->where(function ($q) use ($hasIsDeletedCol) {
+                    if ($hasIsDeletedCol) {
+                        $q->where('is_deleted', false)->orWhereNull('is_deleted');
+                    }
+                })
+                ->where(function ($q) {
+                    $q->whereNull('catatan_pembayaran')
+                      ->orWhere(function ($sub) {
+                          $sub->where('catatan_pembayaran', 'not like', '[DELETED]%')
+                              ->where('catatan_pembayaran', 'not like', '[BATAL]%');
+                      });
+                })
+                ->where(function ($q) {
+                    $q->whereNull('keterangan')
+                      ->orWhere('keterangan', 'not like', '[BATAL]%');
+                })
+                ->with(['details.barang', 'supplier']);
+
+            if ($targetBarangId) {
+                $pembelianQuery->whereHas('details', function ($q) use ($targetBarangId) {
+                    $q->where('barang_id', $targetBarangId);
+                });
+            }
+
+            $pembelians = $pembelianQuery->get();
+            $affectedItems = [];
+
+            foreach ($pembelians as $pb) {
+                $txDate = date('Y-m-d', strtotime($pb->tanggal));
+                $txTime = '08:00:00';
+                if ($pb->created_at) {
+                    $createdTime = date('H:i:s', strtotime($pb->created_at));
+                    if ($createdTime && $createdTime !== '00:00:00') {
+                        $txTime = $createdTime;
+                    }
+                }
+                $txDateTime = $txDate . ' ' . $txTime;
+
+                // 1. Pastikan pembelian ditandai diterima dan tanggal terima selaras dengan tanggal pembelian
+                $needsPbUpdate = false;
+                $pbUpdate = [];
+                if (!$pb->is_diterima) {
+                    $pbUpdate['is_diterima'] = true;
+                    $needsPbUpdate = true;
+                }
+                if (!$pb->diterima_at || date('Y-m-d', strtotime($pb->diterima_at)) !== $txDate) {
+                    $pbUpdate['diterima_at'] = $txDateTime;
+                    $needsPbUpdate = true;
+                }
+                if (!$pb->diterima_oleh) {
+                    $pbUpdate['diterima_oleh'] = $pb->created_by ?: 1;
+                    $needsPbUpdate = true;
+                }
+                if ($needsPbUpdate) {
+                    $pb->update($pbUpdate);
+                }
+
+                // 2. Pastikan header penerimaan_pembelian ada dan tanggalnya selaras
+                $penerimaan = DB::table('penerimaan_pembelian')->where('pembelian_id', $pb->id)->first();
+                if ($penerimaan) {
+                    $penerimaanDate = date('Y-m-d', strtotime($penerimaan->tanggal));
+                    if ($penerimaanDate !== $txDate || date('Y-m-d', strtotime($penerimaan->created_at)) !== $txDate) {
+                        DB::table('penerimaan_pembelian')->where('id', $penerimaan->id)->update([
+                            'tanggal'    => $txDate,
+                            'created_at' => $txDateTime,
+                            'updated_at' => $txDateTime,
+                        ]);
+                    }
+                    $penerimaanId = $penerimaan->id;
+                } else {
+                    $prefix = strtoupper($pb->supplier->prefix ?? 'SUP');
+                    $noPenerimaan = 'RCV-' . $prefix . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
+                    $penerimaanId = DB::table('penerimaan_pembelian')->insertGetId([
+                        'pembelian_id'  => $pb->id,
+                        'no_penerimaan' => $noPenerimaan,
+                        'tanggal'       => $txDate,
+                        'created_by'    => $pb->created_by ?: 1,
+                        'created_at'    => $txDateTime,
+                        'updated_at'    => $txDateTime,
+                    ]);
+                }
+
+                // 3. Proses detail pembelian
+                $details = $pb->details;
+                if ($targetBarangId) {
+                    $details = $details->where('barang_id', $targetBarangId);
+                }
+
+                foreach ($details as $detail) {
+                    $bId = $detail->barang_id;
+                    $gId = $pb->gudang_id;
+                    $targetDivisiId = MasterGudang::resolveDivisiIdForBarang($gId, $bId);
+
+                    $satBeli = $detail->satuan_pembelian ?: ($detail->barang->satuan_pembelian ?? null);
+                    $satDasar = $detail->barang->satuan ?? 'pcs';
+                    $isSameUnit = ($satBeli && strtolower(trim($satBeli)) === strtolower(trim($satDasar)));
+
+                    $detailKonv = !$isSameUnit ? floatval($detail->konversi_pembelian ?? 1) : 1.0;
+                    $barangKonv = !$isSameUnit ? floatval($detail->barang->konversi_pembelian ?? 1) : 1.0;
+                    $konversi = $detailKonv > 1 ? $detailKonv : ($barangKonv > 1 ? $barangKonv : 1.0);
+                    if ($isSameUnit || $konversi <= 0) {
+                        $konversi = 1.0;
+                    }
+
+                    $qtyDetail = floatval($detail->qty);
+                    $qtyMasukStok = $qtyDetail * $konversi;
+                    $hargaPerQty = floatval($detail->harga_per_qty ?: ($qtyDetail > 0 ? (floatval($detail->harga) / $qtyDetail) : 0));
+                    $hargaPerQtyStok = $konversi > 0 ? ($hargaPerQty / $konversi) : $hargaPerQty;
+                    $totalHargaDiterima = floatval($detail->harga ?: ($qtyDetail * $hargaPerQty));
+
+                    // Pastikan qty_diterima pada detail pembelian selaras
+                    if (floatval($detail->qty_diterima) < $qtyDetail) {
+                        $detail->update(['qty_diterima' => $qtyDetail]);
+                    }
+
+                    // Pastikan penerimaan_pembelian_detail ada
+                    $rcvDetail = DB::table('penerimaan_pembelian_detail')
+                        ->where('penerimaan_pembelian_id', $penerimaanId)
+                        ->where('pembelian_detail_id', $detail->id)
+                        ->first();
+                    if (!$rcvDetail) {
+                        DB::table('penerimaan_pembelian_detail')->insert([
+                            'penerimaan_pembelian_id' => $penerimaanId,
+                            'pembelian_detail_id'     => $detail->id,
+                            'barang_id'               => $bId,
+                            'qty'                     => $qtyDetail,
+                            'harga_per_qty'           => $hargaPerQty,
+                            'created_at'              => $txDateTime,
+                            'updated_at'              => $txDateTime,
+                        ]);
+                    }
+
+                    // Pastikan batch FIFO tercipta dan timestamp-nya tepat pada tanggal pembelian
+                    $batches = DB::table('stok_gudang_batch')
+                        ->where('pembelian_id', $pb->id)
+                        ->where('barang_id', $bId)
+                        ->get();
+
+                    if ($batches->isEmpty()) {
+                        $suffix = rand(10, 99) . '-' . date('His');
+                        DB::table('stok_gudang_batch')->insert([
+                            'gudang_id'           => $gId,
+                            'divisi_id'           => $targetDivisiId,
+                            'supplier_id'         => $pb->supplier_id,
+                            'barang_id'           => $bId,
+                            'pembelian_id'        => $pb->id,
+                            'pembelian_detail_id' => $detail->id,
+                            'batch_number'        => ($detail->batch_number ?: (date('Ymd', strtotime($txDate)) . '-PB' . $detail->id)) . '-RCV-' . $suffix,
+                            'qty_masuk'           => $qtyMasukStok,
+                            'qty_keluar'          => 0,
+                            'qty_sisa'            => $qtyMasukStok,
+                            'harga_per_qty'       => $hargaPerQtyStok,
+                            'is_habis'            => false,
+                            'created_at'          => $txDateTime,
+                            'updated_at'          => $txDateTime,
+                        ]);
+                    } else {
+                        foreach ($batches as $b) {
+                            if (date('Y-m-d', strtotime($b->created_at)) !== $txDate) {
+                                DB::table('stok_gudang_batch')->where('id', $b->id)->update([
+                                    'created_at' => $txDateTime,
+                                    'updated_at' => $txDateTime,
+                                ]);
+                            }
+                        }
+                    }
+
+                    // Pastikan transaksi_stok tercatat tepat pada tanggal pembelian
+                    $stokTxs = DB::table('transaksi_stok')
+                        ->where('barang_id', $bId)
+                        ->where(function ($q) use ($pb, $penerimaanId) {
+                            $q->where(fn($s) => $s->whereIn('source_type', ['pembelian', 'pembelian_kejingga'])->where('source_id', $pb->id))
+                              ->orWhere(fn($s) => $s->where('source_type', 'penerimaan_pembelian')->whereIn('source_id', [$pb->id, $penerimaanId]));
+                        })
+                        ->get();
+
+                    if ($stokTxs->isEmpty()) {
+                        DB::table('transaksi_stok')->insert([
+                            'tanggal'          => $txDateTime,
+                            'tipe'             => 'masuk',
+                            'source_type'      => 'pembelian',
+                            'source_id'        => $pb->id,
+                            'gudang_asal_id'   => null,
+                            'divisi_asal_id'   => null,
+                            'gudang_tujuan_id' => $gId,
+                            'divisi_tujuan_id' => $targetDivisiId,
+                            'barang_id'        => $bId,
+                            'qty'              => $qtyMasukStok,
+                            'total_harga'      => $totalHargaDiterima,
+                            'created_by'       => $pb->created_by ?: 1,
+                            'created_at'       => $txDateTime,
+                            'updated_at'       => $txDateTime,
+                        ]);
+                    } else {
+                        foreach ($stokTxs as $stx) {
+                            $needsTxUp = false;
+                            $txUp = [];
+                            if (date('Y-m-d', strtotime($stx->tanggal)) !== $txDate) {
+                                $txUp['tanggal'] = $txDateTime;
+                                $txUp['updated_at'] = $txDateTime;
+                                $needsTxUp = true;
+                            }
+                            if ($targetDivisiId && $stx->divisi_tujuan_id != $targetDivisiId) {
+                                $txUp['divisi_tujuan_id'] = $targetDivisiId;
+                                $needsTxUp = true;
+                            }
+                            if ($needsTxUp) {
+                                DB::table('transaksi_stok')->where('id', $stx->id)->update($txUp);
+                            }
+                        }
+                    }
+
+                    $affectedItems[$bId] = [
+                        'barang_id' => $bId,
+                        'gudang_id' => $gId,
+                        'divisi_id' => $targetDivisiId
+                    ];
+                }
+
+                // 4. Samakan tanggal jurnal_pembelian (kecuali pelunasan yang memang dicatat di tanggal pelunasan)
+                $jurnals = DB::table('jurnal_pembelian')
+                    ->where('source_type', 'pembelian')
+                    ->where('source_id', $pb->id)
+                    ->get();
+
+                foreach ($jurnals as $jp) {
+                    if ($jp->tahap !== 'pelunasan' && date('Y-m-d', strtotime($jp->tanggal)) !== $txDate) {
+                        DB::table('jurnal_pembelian')->where('id', $jp->id)->update([
+                            'tanggal' => $txDate
+                        ]);
+                    }
+                }
+            }
+
+            // 5. Rekonsiliasi ringkasan stok & sync FIFO untuk semua barang yang terpengaruh
+            foreach ($affectedItems as $aff) {
+                StokGudang::reconcileStockSummary($aff['barang_id'], $aff['gudang_id'], $aff['divisi_id']);
+                app(\App\Services\FifoService::class)->syncBarangHpp((int)$aff['barang_id']);
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('autoHealHistoricalPembelianPenerimaanTanggal error: ' . $e->getMessage());
+        }
     }
 }

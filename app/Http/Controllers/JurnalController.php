@@ -2420,7 +2420,10 @@ class JurnalController extends Controller
 
             $descJurnal .= ' [Supplier: ' . ($pembelian->supplier->nama ?? '-') . ']';
 
-            $tanggalJurnal = date('Y-m-d');
+            $tanggalJurnal = ($tahap === 'pelunasan')
+                ? ($pembelian->lunas_at ? date('Y-m-d', strtotime($pembelian->lunas_at)) : date('Y-m-d'))
+                : ($pembelian->tanggal ?? date('Y-m-d'));
+
             if (\App\Models\Journal::isPeriodClosed($tanggalJurnal)) {
                 throw new \Exception("Periode akuntansi tanggal " . date('d/m/Y', strtotime($tanggalJurnal)) . " sudah ditutup buku.");
             }

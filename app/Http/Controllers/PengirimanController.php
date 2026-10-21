@@ -242,8 +242,16 @@ class PengirimanController extends Controller
 
                 // Masukkan stok & batch ke Gudang Outlet Pemesan (berlaku untuk Central Kitchen & Cold Kitchen)
                 if ($gudangTujuanOutlet) {
+                    $kitchenDivId = DB::table('gudang_divisi')
+                        ->where('gudang_id', $gudangTujuanOutlet->id)
+                        ->where(function($q) {
+                            $q->where('nama', 'like', '%kitchen%')->orWhere('nama', 'like', '%dapur%');
+                        })
+                        ->value('id') ?? MasterGudang::resolveDivisiIdForBarang($gudangTujuanOutlet->id, $barangId);
+
                     $stokOutlet = DB::table('stok_gudang')
                         ->where('gudang_id', $gudangTujuanOutlet->id)
+                        ->where('divisi_id', $kitchenDivId)
                         ->where('barang_id', $barangId)
                         ->first();
 
@@ -252,6 +260,7 @@ class PengirimanController extends Controller
                     } else {
                         \App\Models\StokGudang::create([
                             'gudang_id' => $gudangTujuanOutlet->id,
+                            'divisi_id' => $kitchenDivId,
                             'barang_id' => $barangId,
                             'jumlah'    => $qtyKirim,
                         ]);
@@ -263,6 +272,7 @@ class PengirimanController extends Controller
 
                     \App\Models\StokGudangBatch::create([
                         'gudang_id'           => $gudangTujuanOutlet->id,
+                        'divisi_id'           => $kitchenDivId,
                         'supplier_id'         => $supplierId,
                         'barang_id'           => $barangId,
                         'pembelian_id'        => null,
@@ -280,12 +290,16 @@ class PengirimanController extends Controller
                         'tipe'             => 'masuk',
                         'source_type'      => 'transfer_ck',
                         'source_id'        => $pengiriman->id,
+                        'gudang_asal_id'   => $gudangB2B->id,
                         'gudang_tujuan_id' => $gudangTujuanOutlet->id,
+                        'divisi_tujuan_id' => $kitchenDivId,
                         'barang_id'        => $barangId,
                         'qty'              => $qtyKirim,
                         'total_harga'      => $totalHppKirim,
                         'created_by'       => auth()->id() ?? 1,
                     ]);
+
+                    \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangTujuanOutlet->id, $kitchenDivId);
                 }
             }
 
@@ -546,8 +560,16 @@ class PengirimanController extends Controller
 
                 // JIKA CENTRAL KITCHEN: Masukkan stok & batch ke Gudang Outlet Pemesan dengan nilai HPP
                 if ($isCentralKitchen && $gudangTujuanOutlet) {
+                    $kitchenDivId = DB::table('gudang_divisi')
+                        ->where('gudang_id', $gudangTujuanOutlet->id)
+                        ->where(function($q) {
+                            $q->where('nama', 'like', '%kitchen%')->orWhere('nama', 'like', '%dapur%');
+                        })
+                        ->value('id') ?? MasterGudang::resolveDivisiIdForBarang($gudangTujuanOutlet->id, $barangId);
+
                     $stokOutlet = DB::table('stok_gudang')
                         ->where('gudang_id', $gudangTujuanOutlet->id)
+                        ->where('divisi_id', $kitchenDivId)
                         ->where('barang_id', $barangId)
                         ->first();
 
@@ -556,6 +578,7 @@ class PengirimanController extends Controller
                     } else {
                         \App\Models\StokGudang::create([
                             'gudang_id' => $gudangTujuanOutlet->id,
+                            'divisi_id' => $kitchenDivId,
                             'barang_id' => $barangId,
                             'jumlah'    => $qtyKirim,
                         ]);
@@ -567,6 +590,7 @@ class PengirimanController extends Controller
 
                     \App\Models\StokGudangBatch::create([
                         'gudang_id'           => $gudangTujuanOutlet->id,
+                        'divisi_id'           => $kitchenDivId,
                         'supplier_id'         => $supplierId,
                         'barang_id'           => $barangId,
                         'pembelian_id'        => null,
@@ -584,12 +608,16 @@ class PengirimanController extends Controller
                         'tipe'             => 'masuk',
                         'source_type'      => 'transfer_ck',
                         'source_id'        => $pengiriman->id,
+                        'gudang_asal_id'   => $gudangB2B->id,
                         'gudang_tujuan_id' => $gudangTujuanOutlet->id,
+                        'divisi_tujuan_id' => $kitchenDivId,
                         'barang_id'        => $barangId,
                         'qty'              => $qtyKirim,
                         'total_harga'      => $totalHppKirim,
                         'created_by'       => auth()->id() ?? 1,
                     ]);
+
+                    \App\Models\StokGudang::reconcileStockSummary($barangId, $gudangTujuanOutlet->id, $kitchenDivId);
                 }
             }
 

@@ -392,44 +392,15 @@
     
                             {{-- BARANG DITERIMA --}}
                             <td class="text-center">
-                                @php
-                                    $totalQty = $item->details->sum('qty');
-                                    $totalReceived = $item->details->sum('qty_diterima');
-                                    $isPartiallyReceived = $totalReceived > 0 && $totalReceived < $totalQty;
-                                @endphp
-
                                 @if($item->is_deleted)
                                     <span class="badge bg-secondary" style="font-size:11px;">Dibatalkan</span>
-                                @elseif($item->is_diterima)
+                                @else
                                     <div class="d-flex flex-column align-items-center">
                                         <span class="badge bg-success">✓ Diterima</span>
                                         <small class="text-muted mt-1" style="font-size:10px;">
-                                            {{ \Carbon\Carbon::parse($item->diterima_at)->format('d M Y') }}
+                                            {{ \Carbon\Carbon::parse($item->diterima_at ?: $item->tanggal)->format('d M Y') }}
                                         </small>
                                     </div>
-                                @else
-                                    @if($isPartiallyReceived)
-                                        <div class="mb-1">
-                                            <span class="badge bg-info text-white">Parsial ({{ number_format($totalReceived, 0) }}/{{ number_format($totalQty, 0) }})</span>
-                                        </div>
-                                    @endif
-
-                                    @if(!$item->metode_pembayaran)
-                                        <button type="button"
-                                                class="btn btn-sm"
-                                                disabled
-                                                title="Metode pembayaran belum dicatat. Silakan catat metode pembayaran terlebih dahulu."
-                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
-                                            Terima Barang
-                                        </button>
-                                    @else
-                                        <button type="button"
-                                                class="btn btn-sm text-white"
-                                                style="background:#0284c7; font-size:11px; padding:2px 10px;"
-                                                onclick="bukaModalTerimaBarang({{ $item->id }})">
-                                            Terima Barang
-                                        </button>
-                                    @endif
                                 @endif
                             </td>
     
@@ -907,8 +878,8 @@
                     <div class="row justify-content-between align-items-center g-3">
                         <div class="col-12 col-md-6">
                             <div class="d-flex align-items-center gap-2 p-2 px-3 rounded-3 bg-light border text-muted small" style="font-size: 0.78rem;">
-                                <i class="bi bi-info-circle-fill text-primary fs-6 flex-shrink-0"></i>
-                                <span>Stok gudang &amp; antrean FIFO akan otomatis ditambahkan setelah Anda mengonfirmasi <strong>"Terima Barang"</strong> pada tabel data pembelian.</span>
+                                <i class="bi bi-check-circle-fill text-success fs-6 flex-shrink-0"></i>
+                                <span>Penerimaan barang, stok gudang, dan kartu mutasi FIFO akan <strong>otomatis langsung dicatat tepat pada tanggal transaksi pembelian</strong> tanpa perlu konfirmasi manual lagi.</span>
                             </div>
                         </div>
 
