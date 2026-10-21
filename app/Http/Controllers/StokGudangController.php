@@ -224,6 +224,9 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
+        // Pastikan seluruh BSJ hasil produksi Central Kitchen yang sudah disetujui sinkron ke divisi kitchen outlet
+        self::autoHealApprovedCkProductionTransfers();
+
         $query = MasterBarang::query()->with('kategori');
 
         if ($search) {
@@ -1167,9 +1170,11 @@ class StokGudangController extends Controller
     {
         try {
             $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
-            $gudangCkId = $gudangCk ? $gudangCk->id : 5;
+            $gudangCkId = $gudangCk ? $gudangCk->id : 1;
 
-            // 1. Perbaiki transaksi transfer_ck atau pengiriman yang sudah ada tetapi divisi_tujuan_id-nya belum ke Kitchen
+            $affectedItems = [];
+
+            // 1. Perbaiki transaksi transfer_ck, pengiriman, atau produksi yang sudah ada tetapi divisi_tujuan_id-nya belum ke Kitchen
             $qExist = DB::table('transaksi_stok as ts')
                 ->whereIn('ts.source_type', ['transfer_ck', 'pengiriman'])
                 ->where('ts.tipe', 'masuk')
@@ -1199,9 +1204,61 @@ class StokGudangController extends Controller
                         })
                         ->update(['divisi_id' => $kDivId]);
 
-                    \App\Models\StokGudang::reconcileStockSummary($tr->barang_id, $tr->gudang_tujuan_id, $kDivId);
+                    $affectedItems[] = ['barang_id' => $tr->barang_id, 'gudang_id' => $tr->gudang_tujuan_id, 'divisi_id' => $kDivId];
                 }
             }
+
+            // Helper resolver untuk outlet gudang dan divisi kitchen
+            $resolveOutletInfo = function($pesananGudangId, $pesananDivisiId, $customerNama, $customerId, $produkId) use ($gudangCkId) {
+                $custNama = strtolower($customerNama ?? '');
+                if (!$custNama && $customerId) {
+                    $custNama = strtolower(DB::table('customers')->where('id', $customerId)->value('nama') ?? '');
+                }
+
+                if (str_contains($custNama, 'central kitchen')) {
+                    return [null, null];
+                }
+
+                $outletGudangId = null;
+                if ($pesananGudangId && $pesananGudangId != $gudangCkId) {
+                    $outletGudangId = $pesananGudangId;
+                }
+                if (!$outletGudangId) {
+                    if (str_contains($custNama, 'kejingga') || str_contains($custNama, 'kj')) {
+                        $outletGudangId = MasterGudang::where(function($q) {
+                            $q->where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%');
+                        })->value('id') ?? 5;
+                    } elseif (str_contains($custNama, 'gaharu')) {
+                        $outletGudangId = MasterGudang::where('nama', 'like', '%Gaharu%')
+                            ->where('kategori', 'Operasional')
+                            ->value('id') ?? MasterGudang::where('nama', 'like', '%Gaharu%')->value('id') ?? 4;
+                    }
+                }
+
+                if (!$outletGudangId) {
+                    return [null, null];
+                }
+
+                // Cari ID divisi Kitchen pada gudang outlet
+                $kitchenDivId = null;
+                if ($pesananDivisiId) {
+                    $validDiv = DB::table('gudang_divisi')->where('id', $pesananDivisiId)->where('gudang_id', $outletGudangId)->value('id');
+                    if ($validDiv) $kitchenDivId = $validDiv;
+                }
+                if (!$kitchenDivId) {
+                    $kitchenDivId = DB::table('gudang_divisi')
+                        ->where('gudang_id', $outletGudangId)
+                        ->where(function($q) {
+                            $q->where('nama', 'like', '%kitchen%')->orWhere('nama', 'like', '%dapur%');
+                        })
+                        ->value('id') ?? MasterGudang::resolveDivisiIdForBarang($outletGudangId, $produkId);
+                }
+                if (!$kitchenDivId) {
+                    $kitchenDivId = DB::table('gudang_divisi')->where('gudang_id', $outletGudangId)->value('id');
+                }
+
+                return [$outletGudangId, $kitchenDivId];
+            };
 
             // 2. Cari seluruh alokasi pesanan dari produksi CK berstatus Selesai yang belum tercatat di outlet kitchen
             $allocQuery = DB::table('alokasi_produksi_pesanan as app')
@@ -1213,12 +1270,14 @@ class StokGudangController extends Controller
                     'app.*',
                     'p.kode_produksi',
                     'p.tanggal_selesai',
-                    'p.tanggal_produksi',
+                    'p.tanggal_mulai',
                     'p.gudang_hasil_id',
                     'pes.customer_id',
                     'pes.customer_nama',
                     'pes.gudang_id as pesanan_gudang_id',
-                    'pes.kode_pesanan'
+                    'pes.divisi_id as pesanan_divisi_id',
+                    'pes.kode_pesanan',
+                    'pes.tanggal as pesanan_tanggal'
                 );
 
             if ($barangId) {
@@ -1228,44 +1287,17 @@ class StokGudangController extends Controller
             $allocations = $allocQuery->get();
 
             foreach ($allocations as $al) {
-                $custNama = strtolower($al->customer_nama ?? '');
-                if (!$custNama && $al->customer_id) {
-                    $custNama = strtolower(DB::table('customers')->where('id', $al->customer_id)->value('nama') ?? '');
-                }
+                [$outletGudangId, $kitchenDivId] = $resolveOutletInfo(
+                    $al->pesanan_gudang_id,
+                    $al->pesanan_divisi_id,
+                    $al->customer_nama,
+                    $al->customer_id,
+                    $al->produk_id
+                );
 
-                // Abaikan jika pesanan internal Central Kitchen
-                if (str_contains($custNama, 'central kitchen')) {
+                if (!$outletGudangId || !$kitchenDivId) {
                     continue;
                 }
-
-                // Tentukan gudang tujuan outlet
-                $outletGudangId = null;
-                if ($al->pesanan_gudang_id && $al->pesanan_gudang_id != $gudangCkId) {
-                    $outletGudangId = $al->pesanan_gudang_id;
-                }
-                if (!$outletGudangId) {
-                    if (str_contains($custNama, 'kejingga') || str_contains($custNama, 'kj')) {
-                        $outletGudangId = MasterGudang::where(function($q) {
-                            $q->where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%');
-                        })->value('id');
-                    } elseif (str_contains($custNama, 'gaharu')) {
-                        $outletGudangId = MasterGudang::where('nama', 'like', '%Gaharu%')
-                            ->where('kategori', 'Operasional')
-                            ->value('id') ?? MasterGudang::where('nama', 'like', '%Gaharu%')->value('id');
-                    }
-                }
-
-                if (!$outletGudangId) {
-                    continue;
-                }
-
-                // Tentukan Divisi Kitchen di outlet
-                $kitchenDivId = DB::table('gudang_divisi')
-                    ->where('gudang_id', $outletGudangId)
-                    ->where(function($q) {
-                        $q->where('nama', 'like', '%kitchen%')->orWhere('nama', 'like', '%dapur%');
-                    })
-                    ->value('id') ?? MasterGudang::resolveDivisiIdForBarang($outletGudangId, $al->produk_id);
 
                 // Cek apakah mutasi masuk ke outlet sudah pernah dicatat
                 $existingTxOutlet = DB::table('transaksi_stok')
@@ -1299,7 +1331,7 @@ class StokGudangController extends Controller
                             })
                             ->update(['divisi_id' => $kitchenDivId]);
 
-                        \App\Models\StokGudang::reconcileStockSummary($al->produk_id, $outletGudangId, $kitchenDivId);
+                        $affectedItems[] = ['barang_id' => $al->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
                     }
                     continue;
                 }
@@ -1308,7 +1340,7 @@ class StokGudangController extends Controller
                 $qtyTransfer = floatval($al->qty_alokasi);
                 $hppPerUnit  = floatval($al->hpp_per_unit);
                 $totalHpp    = $qtyTransfer * $hppPerUnit;
-                $txDate      = $al->tanggal_selesai ?: ($al->tanggal_produksi ?: now());
+                $txDate      = $al->tanggal_selesai ?: ($al->tanggal_mulai ?: ($al->pesanan_tanggal ?: now()));
 
                 // 1. Kurangi sisa stok dan batch di CK
                 $stokCk = DB::table('stok_gudang')
@@ -1330,20 +1362,28 @@ class StokGudangController extends Controller
                     $batchCk->save();
                 }
 
-                // 2. Transaksi keluar dari Central Kitchen
-                TransaksiStok::create([
-                    'tanggal'          => $txDate,
-                    'tipe'             => 'keluar',
-                    'source_type'      => 'transfer_ck',
-                    'source_id'        => $al->produksi_id,
-                    'gudang_asal_id'   => $gudangCkId,
-                    'gudang_tujuan_id' => $outletGudangId,
-                    'divisi_tujuan_id' => $kitchenDivId,
-                    'barang_id'        => $al->produk_id,
-                    'qty'              => $qtyTransfer,
-                    'total_harga'      => $totalHpp,
-                    'created_by'       => 1,
-                ]);
+                // 2. Transaksi keluar dari Central Kitchen (jika belum tercatat)
+                $existingTxKeluar = DB::table('transaksi_stok')
+                    ->where('source_type', 'transfer_ck')
+                    ->where('source_id', $al->produksi_id)
+                    ->where('tipe', 'keluar')
+                    ->where('barang_id', $al->produk_id)
+                    ->first();
+                if (!$existingTxKeluar) {
+                    TransaksiStok::create([
+                        'tanggal'          => $txDate,
+                        'tipe'             => 'keluar',
+                        'source_type'      => 'transfer_ck',
+                        'source_id'        => $al->produksi_id,
+                        'gudang_asal_id'   => $gudangCkId,
+                        'gudang_tujuan_id' => $outletGudangId,
+                        'divisi_tujuan_id' => $kitchenDivId,
+                        'barang_id'        => $al->produk_id,
+                        'qty'              => $qtyTransfer,
+                        'total_harga'      => $totalHpp,
+                        'created_by'       => 1,
+                    ]);
+                }
 
                 // 3. Tambah stok gudang outlet pada divisi Kitchen
                 $stokOutlet = DB::table('stok_gudang')
@@ -1365,20 +1405,31 @@ class StokGudangController extends Controller
 
                 // 4. Buat batch di outlet divisi Kitchen
                 $supplierId = DB::table('suppliers')->value('id') ?? 1;
-                StokGudangBatch::create([
-                    'gudang_id'           => $outletGudangId,
-                    'divisi_id'           => $kitchenDivId,
-                    'supplier_id'         => $supplierId,
-                    'barang_id'           => $al->produk_id,
-                    'pembelian_id'        => null,
-                    'pembelian_detail_id' => null,
-                    'batch_number'        => 'TRANSFER-CK-' . $al->kode_produksi . '-' . $al->pesanan_id,
-                    'qty_masuk'           => $qtyTransfer,
-                    'qty_keluar'          => 0,
-                    'qty_sisa'            => $qtyTransfer,
-                    'harga_per_qty'       => $hppPerUnit,
-                    'is_habis'            => false,
-                ]);
+                $batchNumber = 'TRANSFER-CK-' . $al->kode_produksi . '-' . $al->pesanan_id;
+                $existingBatch = StokGudangBatch::where('gudang_id', $outletGudangId)
+                    ->where('barang_id', $al->produk_id)
+                    ->where('batch_number', $batchNumber)
+                    ->first();
+
+                if ($existingBatch) {
+                    $existingBatch->divisi_id = $kitchenDivId;
+                    $existingBatch->save();
+                } else {
+                    StokGudangBatch::create([
+                        'gudang_id'           => $outletGudangId,
+                        'divisi_id'           => $kitchenDivId,
+                        'supplier_id'         => $supplierId,
+                        'barang_id'           => $al->produk_id,
+                        'pembelian_id'        => null,
+                        'pembelian_detail_id' => null,
+                        'batch_number'        => $batchNumber,
+                        'qty_masuk'           => $qtyTransfer,
+                        'qty_keluar'          => 0,
+                        'qty_sisa'            => $qtyTransfer,
+                        'harga_per_qty'       => $hppPerUnit,
+                        'is_habis'            => false,
+                    ]);
+                }
 
                 // 5. Transaksi masuk ke Outlet Kitchen
                 TransaksiStok::create([
@@ -1398,18 +1449,19 @@ class StokGudangController extends Controller
                 // 6. Buat Surat Jalan otomatis dengan status Selesai jika belum ada
                 $existingPengiriman = Pengiriman::where('pesanan_id', $al->pesanan_id)->first();
                 if (!$existingPengiriman) {
-                    $newPengiriman = Pengiriman::create([
-                        'no_pengiriman'      => 'DO-CK-' . $al->kode_produksi . '-' . $al->pesanan_id,
-                        'pesanan_id'         => $al->pesanan_id,
-                        'tanggal_pengiriman' => $txDate,
-                        'kurir'              => 'Internal CK Transfer',
-                        'status_pengiriman'  => 'Selesai',
-                    ]);
-                    PengirimanDetail::create([
-                        'pengiriman_id' => $newPengiriman->id,
-                        'barang_id'     => $al->produk_id,
-                        'qty_kirim'     => $qtyTransfer,
-                    ]);
+                    $newPengiriman = Pengiriman::firstOrCreate(
+                        ['no_pengiriman' => 'DO-CK-' . $al->kode_produksi . '-' . $al->pesanan_id],
+                        [
+                            'pesanan_id'         => $al->pesanan_id,
+                            'tanggal_pengiriman' => $txDate,
+                            'kurir'              => 'Internal CK Transfer',
+                            'status_pengiriman'  => 'Selesai',
+                        ]
+                    );
+                    PengirimanDetail::firstOrCreate(
+                        ['pengiriman_id' => $newPengiriman->id, 'barang_id' => $al->produk_id],
+                        ['qty_kirim' => $qtyTransfer]
+                    );
                 } else {
                     $existingPengiriman->update(['status_pengiriman' => 'Selesai']);
                 }
@@ -1422,12 +1474,265 @@ class StokGudangController extends Controller
                     'status_pesanan' => 'Selesai',
                 ]);
 
-                // 8. Sinkronkan ringkasan stok
-                \App\Models\StokGudang::reconcileStockSummary($al->produk_id, $gudangCkId);
-                \App\Models\StokGudang::reconcileStockSummary($al->produk_id, $outletGudangId, $kitchenDivId);
+                $affectedItems[] = ['barang_id' => $al->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
+                $affectedItems[] = ['barang_id' => $al->produk_id, 'gudang_id' => $gudangCkId, 'divisi_id' => null];
+            }
+
+            // 3. Periksa langsung dari tabel produksi & produksi_detail jika ada produksi Selesai yang belum dialokasikan
+            $prodDetailQuery = DB::table('produksi_detail as pd')
+                ->join('produksi as p', 'pd.produksi_id', '=', 'p.id')
+                ->leftJoin('pesanan as pes', 'p.pesanan_id', '=', 'pes.id')
+                ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
+                ->where('pd.qty', '>', 0)
+                ->select(
+                    'pd.*',
+                    'p.kode_produksi',
+                    'p.tanggal_selesai',
+                    'p.tanggal_mulai',
+                    'p.pesanan_id',
+                    'p.gudang_hasil_id',
+                    'pes.customer_id',
+                    'pes.customer_nama',
+                    'pes.gudang_id as pesanan_gudang_id',
+                    'pes.divisi_id as pesanan_divisi_id',
+                    'pes.kode_pesanan',
+                    'pes.tanggal as pesanan_tanggal'
+                );
+
+            if ($barangId) {
+                $prodDetailQuery->where('pd.produk_id', $barangId);
+            }
+
+            $prodDetails = $prodDetailQuery->get();
+
+            foreach ($prodDetails as $pdet) {
+                // Jika pesanan_id kosong, coba cari dari work_order_detail
+                $pesananId = $pdet->pesanan_id;
+                $custNama = $pdet->customer_nama;
+                $custId = $pdet->customer_id;
+                $pesGudangId = $pdet->pesanan_gudang_id;
+                $pesDivId = $pdet->pesanan_divisi_id;
+                $pesTanggal = $pdet->pesanan_tanggal;
+
+                if (!$pesananId) {
+                    $wod = DB::table('work_order_detail as wod')
+                        ->join('pesanan as ps', 'wod.pesanan_id', '=', 'ps.id')
+                        ->where('wod.produk_id', $pdet->produk_id)
+                        ->select('wod.pesanan_id', 'ps.customer_nama', 'ps.customer_id', 'ps.gudang_id', 'ps.divisi_id', 'ps.tanggal')
+                        ->first();
+                    if ($wod) {
+                        $pesananId = $wod->pesanan_id;
+                        $custNama = $wod->customer_nama;
+                        $custId = $wod->customer_id;
+                        $pesGudangId = $wod->gudang_id;
+                        $pesDivId = $wod->divisi_id;
+                        $pesTanggal = $wod->tanggal;
+                    }
+                }
+
+                if (!$pesananId) {
+                    continue;
+                }
+
+                [$outletGudangId, $kitchenDivId] = $resolveOutletInfo(
+                    $pesGudangId,
+                    $pesDivId,
+                    $custNama,
+                    $custId,
+                    $pdet->produk_id
+                );
+
+                if (!$outletGudangId || !$kitchenDivId) {
+                    continue;
+                }
+
+                // Cek apakah sudah tercatat transaksi masuk ke outlet
+                $hasTxMasuk = DB::table('transaksi_stok')
+                    ->where('barang_id', $pdet->produk_id)
+                    ->where('gudang_tujuan_id', $outletGudangId)
+                    ->where('tipe', 'masuk')
+                    ->where(function($q) use ($pdet, $pesananId) {
+                        $q->where(function($sub) use ($pdet) {
+                            $sub->where('source_type', 'transfer_ck')
+                                ->where('source_id', $pdet->produksi_id);
+                        })->orWhere(function($sub) use ($pesananId) {
+                            $sub->whereIn('source_type', ['transfer_ck', 'pengiriman'])
+                                ->whereIn('source_id', function($sq) use ($pesananId) {
+                                    $sq->select('id')->from('pengiriman')->where('pesanan_id', $pesananId);
+                                });
+                        });
+                    })
+                    ->first();
+
+                if ($hasTxMasuk) {
+                    if ($hasTxMasuk->divisi_tujuan_id != $kitchenDivId) {
+                        DB::table('transaksi_stok')->where('id', $hasTxMasuk->id)->update(['divisi_tujuan_id' => $kitchenDivId]);
+                        DB::table('stok_gudang_batch')
+                            ->where('gudang_id', $outletGudangId)
+                            ->where('barang_id', $pdet->produk_id)
+                            ->where(function($q) use ($pdet) {
+                                $q->where('batch_number', 'like', "%{$pdet->kode_produksi}%")
+                                  ->orWhere('batch_number', 'like', 'TRANSFER-CK-%');
+                            })
+                            ->update(['divisi_id' => $kitchenDivId]);
+                        $affectedItems[] = ['barang_id' => $pdet->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
+                    }
+                    continue;
+                }
+
+                // Catat transaksi transfer masuk jika belum ada
+                $qtyTransfer = floatval($pdet->qty);
+                $totalHpp    = floatval($pdet->hpp_total);
+                $hppPerUnit  = $qtyTransfer > 0 ? ($totalHpp / $qtyTransfer) : 0;
+                $txDate      = $pdet->tanggal_selesai ?: ($pdet->tanggal_mulai ?: ($pesTanggal ?: now()));
+
+                // Kurangi stok CK
+                $stokCk = DB::table('stok_gudang')
+                    ->where('gudang_id', $gudangCkId)
+                    ->where('barang_id', $pdet->produk_id)
+                    ->first();
+                if ($stokCk) {
+                    DB::table('stok_gudang')->where('id', $stokCk->id)->decrement('jumlah', min(floatval($stokCk->jumlah), $qtyTransfer));
+                }
+
+                $batchCk = StokGudangBatch::where('gudang_id', $gudangCkId)
+                    ->where('barang_id', $pdet->produk_id)
+                    ->where('batch_number', 'like', '%' . $pdet->kode_produksi . '%')
+                    ->first();
+                if ($batchCk) {
+                    $batchCk->increment('qty_keluar', $qtyTransfer);
+                    $batchCk->decrement('qty_sisa', min(floatval($batchCk->qty_sisa), $qtyTransfer));
+                    if ($batchCk->qty_sisa <= 0) $batchCk->is_habis = true;
+                    $batchCk->save();
+                }
+
+                // Transaksi keluar CK
+                TransaksiStok::create([
+                    'tanggal'          => $txDate,
+                    'tipe'             => 'keluar',
+                    'source_type'      => 'transfer_ck',
+                    'source_id'        => $pdet->produksi_id,
+                    'gudang_asal_id'   => $gudangCkId,
+                    'gudang_tujuan_id' => $outletGudangId,
+                    'divisi_tujuan_id' => $kitchenDivId,
+                    'barang_id'        => $pdet->produk_id,
+                    'qty'              => $qtyTransfer,
+                    'total_harga'      => $totalHpp,
+                    'created_by'       => 1,
+                ]);
+
+                // Tambah stok gudang outlet Kitchen
+                $stokOutlet = DB::table('stok_gudang')
+                    ->where('gudang_id', $outletGudangId)
+                    ->where('divisi_id', $kitchenDivId)
+                    ->where('barang_id', $pdet->produk_id)
+                    ->first();
+
+                if ($stokOutlet) {
+                    DB::table('stok_gudang')->where('id', $stokOutlet->id)->increment('jumlah', $qtyTransfer);
+                } else {
+                    DB::table('stok_gudang')->insert([
+                        'gudang_id' => $outletGudangId,
+                        'divisi_id' => $kitchenDivId,
+                        'barang_id' => $pdet->produk_id,
+                        'jumlah'    => $qtyTransfer,
+                    ]);
+                }
+
+                // Batch outlet
+                $supplierId = DB::table('suppliers')->value('id') ?? 1;
+                $batchNumber = 'TRANSFER-CK-' . $pdet->kode_produksi . '-' . $pesananId;
+                $existingBatch = StokGudangBatch::where('gudang_id', $outletGudangId)
+                    ->where('barang_id', $pdet->produk_id)
+                    ->where('batch_number', $batchNumber)
+                    ->first();
+
+                if ($existingBatch) {
+                    $existingBatch->divisi_id = $kitchenDivId;
+                    $existingBatch->save();
+                } else {
+                    StokGudangBatch::create([
+                        'gudang_id'           => $outletGudangId,
+                        'divisi_id'           => $kitchenDivId,
+                        'supplier_id'         => $supplierId,
+                        'barang_id'           => $pdet->produk_id,
+                        'pembelian_id'        => null,
+                        'pembelian_detail_id' => null,
+                        'batch_number'        => $batchNumber,
+                        'qty_masuk'           => $qtyTransfer,
+                        'qty_keluar'          => 0,
+                        'qty_sisa'            => $qtyTransfer,
+                        'harga_per_qty'       => $hppPerUnit,
+                        'is_habis'            => false,
+                    ]);
+                }
+
+                // Transaksi masuk ke outlet Kitchen
+                TransaksiStok::create([
+                    'tanggal'          => $txDate,
+                    'tipe'             => 'masuk',
+                    'source_type'      => 'transfer_ck',
+                    'source_id'        => $pdet->produksi_id,
+                    'gudang_asal_id'   => $gudangCkId,
+                    'gudang_tujuan_id' => $outletGudangId,
+                    'divisi_tujuan_id' => $kitchenDivId,
+                    'barang_id'        => $pdet->produk_id,
+                    'qty'              => $qtyTransfer,
+                    'total_harga'      => $totalHpp,
+                    'created_by'       => 1,
+                ]);
+
+                // Buat Pengiriman jika belum ada
+                $existingPengiriman = Pengiriman::where('pesanan_id', $pesananId)->first();
+                if (!$existingPengiriman) {
+                    $newPengiriman = Pengiriman::firstOrCreate(
+                        ['no_pengiriman' => 'DO-CK-' . $pdet->kode_produksi . '-' . $pesananId],
+                        [
+                            'pesanan_id'         => $pesananId,
+                            'tanggal_pengiriman' => $txDate,
+                            'kurir'              => 'Internal CK Transfer',
+                            'status_pengiriman'  => 'Selesai',
+                        ]
+                    );
+                    PengirimanDetail::firstOrCreate(
+                        ['pengiriman_id' => $newPengiriman->id, 'barang_id' => $pdet->produk_id],
+                        ['qty_kirim' => $qtyTransfer]
+                    );
+                } else {
+                    $existingPengiriman->update(['status_pengiriman' => 'Selesai']);
+                }
+
+                // Pastikan record di alokasi_produksi_pesanan ada
+                ProduksiPesanan::updateOrCreate(
+                    [
+                        'produksi_id' => $pdet->produksi_id,
+                        'pesanan_id'  => $pesananId,
+                        'produk_id'   => $pdet->produk_id,
+                    ],
+                    [
+                        'qty_alokasi'       => $qtyTransfer,
+                        'qty_terkirim'      => $qtyTransfer,
+                        'hpp_per_unit'      => $hppPerUnit,
+                        'total_hpp_alokasi' => $totalHpp,
+                    ]
+                );
+
+                DB::table('pesanan')->where('id', $pesananId)->update(['status_pesanan' => 'Selesai']);
+
+                $affectedItems[] = ['barang_id' => $pdet->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
+                $affectedItems[] = ['barang_id' => $pdet->produk_id, 'gudang_id' => $gudangCkId, 'divisi_id' => null];
+            }
+
+            // 4. Sinkronkan ringkasan stok untuk seluruh item yang terpengaruh
+            $uniqueAffected = collect($affectedItems)->unique(function($item) {
+                return $item['barang_id'] . '-' . $item['gudang_id'] . '-' . ($item['divisi_id'] ?? 'null');
+            });
+
+            foreach ($uniqueAffected as $aff) {
+                \App\Models\StokGudang::reconcileStockSummary($aff['barang_id'], $aff['gudang_id'], $aff['divisi_id']);
             }
         } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::warning('autoHealApprovedCkProductionTransfers error: ' . $e->getMessage());
+            \Illuminate\Support\Facades\Log::warning('autoHealApprovedCkProductionTransfers error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
         }
     }
 

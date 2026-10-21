@@ -1537,8 +1537,6 @@ class PembelianController extends Controller
                             'qty'              => $qtyMasukStok,
                             'total_harga'      => $totalHargaDiterima,
                             'created_by'       => $pb->created_by ?: 1,
-                            'created_at'       => $txDateTime,
-                            'updated_at'       => $txDateTime,
                         ]);
                     } else {
                         foreach ($stokTxs as $stx) {
@@ -1546,7 +1544,6 @@ class PembelianController extends Controller
                             $txUp = [];
                             if (date('Y-m-d', strtotime($stx->tanggal)) !== $txDate) {
                                 $txUp['tanggal'] = $txDateTime;
-                                $txUp['updated_at'] = $txDateTime;
                                 $needsTxUp = true;
                             }
                             if ($targetDivisiId && $stx->divisi_tujuan_id != $targetDivisiId) {
