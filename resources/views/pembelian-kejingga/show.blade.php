@@ -16,7 +16,7 @@
                 <a href="{{ route('pembelian.cetak-pdf', $pembelian->id) }}" target="_blank" class="btn btn-danger btn-sm fw-semibold px-3">
                     <i class="bi bi-printer me-1"></i> Cetak PDF
                 </a>
-                @if(!$pembelian->isTerkunci())
+                @if(!$pembelian->isTerkunci() || (auth()->user() && auth()->user()->isSuperAdmin()))
                     <a href="{{ route('pembelian-kejingga.edit', $pembelian->id) }}" class="btn btn-warning btn-sm text-dark fw-semibold px-3">
                         <i class="bi bi-pencil-square me-1"></i> Edit PO
                     </a>

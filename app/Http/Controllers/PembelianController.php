@@ -1448,9 +1448,18 @@ class PembelianController extends Controller
                     $hargaPerQtyStok = $konversi > 0 ? ($hargaPerQty / $konversi) : $hargaPerQty;
                     $totalHargaDiterima = floatval($detail->harga ?: ($qtyDetail * $hargaPerQty));
 
-                    // Pastikan qty_diterima pada detail pembelian selaras
+                    // Pastikan qty_diterima dan tanggal_diterima pada detail pembelian selaras
+                    $detUpdateData = [];
                     if (floatval($detail->qty_diterima) < $qtyDetail) {
-                        $detail->update(['qty_diterima' => $qtyDetail]);
+                        $detUpdateData['qty_diterima'] = $qtyDetail;
+                    }
+                    if (Schema::hasColumn('pembelian_detail', 'tanggal_diterima')) {
+                        if (!$detail->tanggal_diterima || date('Y-m-d', strtotime($detail->tanggal_diterima)) !== $txDate) {
+                            $detUpdateData['tanggal_diterima'] = $txDate;
+                        }
+                    }
+                    if (!empty($detUpdateData)) {
+                        $detail->update($detUpdateData);
                     }
 
                     // Pastikan penerimaan_pembelian_detail ada

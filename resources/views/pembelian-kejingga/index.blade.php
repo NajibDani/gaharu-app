@@ -624,7 +624,7 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow rounded-4">
                 <div class="modal-header border-bottom-0 pb-0">
-                    <h5 class="modal-title fw-bold text-dark">Terima Stok Item Barang</h5>
+                    <h5 class="modal-title fw-bold text-dark" id="modalTerimaDetailTitle">Terima Stok Item Barang</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form id="formTerimaDetail" method="POST">
@@ -645,17 +645,23 @@
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small text-dark fw-bold mb-1">Tanggal Diterima Barang <span class="text-danger">*</span></label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label small text-dark fw-bold mb-0">Tanggal Diterima Barang <span class="text-danger">*</span></label>
+                                <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 text-primary fw-semibold" style="font-size: 11px;" onclick="samakanTglDetailKePo()">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Samakan ke Tgl PO (<span id="terima_detail_tgl_po_label">-</span>)
+                                </button>
+                            </div>
                             <input type="date" name="tanggal_diterima" id="terima_detail_tanggal" class="form-control fw-bold" value="{{ date('Y-m-d') }}" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small text-dark fw-bold mb-1">Input Qty Terima Saat Ini <span class="text-danger">*</span></label>
+                            <label class="form-label small text-dark fw-bold mb-1">Input Qty Diterima <span class="text-danger">*</span></label>
                             <input type="number" name="qty_diterima" id="terima_detail_input" class="form-control fw-bold text-primary" step="any" min="0.01" required>
+                            <div class="form-text small text-muted" style="font-size: 11px;">Bisa diselaraskan jika ada salah input kuantitas sebelumnya.</div>
                         </div>
                     </div>
                     <div class="modal-footer border-top-0">
                         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-success btn-sm fw-bold"><i class="bi bi-box-arrow-in-down me-1"></i>Proses Terima Stok</button>
+                        <button type="submit" id="btnSubmitTerimaDetail" class="btn btn-success btn-sm fw-bold"><i class="bi bi-box-arrow-in-down me-1"></i>Proses Terima Stok</button>
                     </div>
                 </form>
             </div>
@@ -736,9 +742,14 @@
                                 <i class="bi bi-printer me-1"></i> Cetak PDF
                             </a>
                         </div>
-                        <div class="d-flex gap-2">
-                            <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold px-3 shadow-sm" id="btnEditPoModal" onclick="bukaModalEditFromDetail(currentDetailPoId)" title="Kelola / Tambah / Hapus baris barang pada draft PO ini">
-                                <i class="bi bi-sliders me-1"></i> Kelola Baris PO (Draft)
+                        <div class="d-flex gap-2 flex-wrap">
+                            @if($isSuperAdmin)
+                                <button type="button" class="btn btn-outline-primary btn-sm fw-semibold px-2 shadow-sm" id="btnSyncTanggalTerimaModal" onclick="syncTanggalTerimaPo(currentDetailPoId)" title="Selaraskan tanggal terima seluruh barang di PO ini ke tanggal PO">
+                                    <i class="bi bi-calendar-check me-1"></i> Selaraskan Tgl Terima ke PO
+                                </button>
+                            @endif
+                            <button type="button" class="btn btn-outline-secondary btn-sm fw-semibold px-3 shadow-sm" id="btnEditPoModal" onclick="bukaModalEditFromDetail(currentDetailPoId)" title="Kelola / Tambah / Hapus baris barang pada PO ini">
+                                <i class="bi bi-sliders me-1"></i> Kelola Baris PO
                             </button>
                             <button type="button" class="btn btn-warning btn-sm text-dark fw-bold px-3 shadow-sm" id="btnInputBarangTerpilihModal" onclick="bukaModalInputBarangTerpilih()" disabled>
                                 <i class="bi bi-pencil-square me-1"></i> Input / Edit Barang Terpilih (<span id="footer-count-terpilih">0</span>)
@@ -1383,15 +1394,64 @@
         document.getElementById('terima_detail_qty_diterima').value = (qtyDiterima > 0 ? qtyDiterima : qtyPesan) + ' ' + satuan;
         const inputEl = document.getElementById('terima_detail_input');
         inputEl.value = qtyDiterima > 0 ? qtyDiterima : qtyPesan;
-        inputEl.max = qtyPesan;
+        inputEl.removeAttribute('max');
+
+        const poItem = (typeof currentDetailPoId !== 'undefined' && dataPembayaranMap[currentDetailPoId]) ? dataPembayaranMap[currentDetailPoId] : null;
+        const detItem = poItem ? poItem.details.find(d => d.id === detailId) : null;
+
+        const titleEl = document.getElementById('modalTerimaDetailTitle');
+        const submitBtn = document.getElementById('btnSubmitTerimaDetail');
+        if (qtyDiterima > 0) {
+            if (titleEl) titleEl.innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i>Edit / Selaraskan Penerimaan Barang';
+            if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Simpan Perubahan Penerimaan';
+        } else {
+            if (titleEl) titleEl.innerHTML = '<i class="bi bi-box-arrow-in-down text-success me-2"></i>Terima Stok Item Barang';
+            if (submitBtn) submitBtn.innerHTML = '<i class="bi bi-box-arrow-in-down me-1"></i>Proses Terima Stok';
+        }
+
         const tglEl = document.getElementById('terima_detail_tanggal');
         if (tglEl) {
-            const poItem = (typeof currentDetailPoId !== 'undefined' && dataPembayaranMap[currentDetailPoId]) ? dataPembayaranMap[currentDetailPoId] : null;
-            const detItem = poItem ? poItem.details.find(d => d.id === detailId) : null;
             tglEl.value = (detItem && detItem.tanggal_diterima_raw) ? detItem.tanggal_diterima_raw : ((poItem && poItem.tanggal_raw) ? poItem.tanggal_raw : new Date().toISOString().split('T')[0]);
         }
+        const lblPo = document.getElementById('terima_detail_tgl_po_label');
+        if (lblPo && poItem) {
+            lblPo.innerText = poItem.tanggal || poItem.tanggal_raw;
+        }
+
         document.getElementById('formTerimaDetail').action = `/pembelian-kejingga/detail/${detailId}/terima`;
         new bootstrap.Modal(document.getElementById('modalTerimaDetail')).show();
+    }
+
+    function samakanTglDetailKePo() {
+        const poItem = (typeof currentDetailPoId !== 'undefined' && dataPembayaranMap[currentDetailPoId]) ? dataPembayaranMap[currentDetailPoId] : null;
+        if (poItem && poItem.tanggal_raw) {
+            const tglEl = document.getElementById('terima_detail_tanggal');
+            if (tglEl) tglEl.value = poItem.tanggal_raw;
+        }
+    }
+
+    function syncTanggalTerimaPo(poId) {
+        if (!poId) return;
+        const poItem = dataPembayaranMap[poId];
+        const poKode = poItem ? poItem.kode : `#${poId}`;
+        const poTgl = poItem ? (poItem.tanggal || poItem.tanggal_raw) : 'tanggal PO';
+
+        if (!confirm(`Apakah Anda yakin ingin menyelaraskan tanggal penerimaan semua item pada PO ${poKode} agar tepat sama dengan tanggal transaksi PO (${poTgl})?\n\nSemua tanggal terima item, batch stok, dan mutasi persediaan akan diselaraskan ke tanggal PO.`)) {
+            return;
+        }
+
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/pembelian-kejingga/${poId}/sync-tanggal-terima`;
+
+        const csrf = document.createElement('input');
+        csrf.type = 'hidden';
+        csrf.name = '_token';
+        csrf.value = '{{ csrf_token() }}';
+        form.appendChild(csrf);
+
+        document.body.appendChild(form);
+        form.submit();
     }
 
     function bukaModalTerimaPo(poId) {
@@ -1576,9 +1636,10 @@
         const item = dataPembayaranMap[id];
         if (!item) return;
 
+        const isSuperAdminUser = {{ $isSuperAdmin ? 'true' : 'false' }};
         const btnEditPo = document.getElementById('btnEditPoModal');
         if (btnEditPo) {
-            btnEditPo.style.display = item.is_terkunci ? 'none' : 'inline-block';
+            btnEditPo.style.display = (item.is_terkunci && !isSuperAdminUser) ? 'none' : 'inline-block';
         }
 
         let detailsHtml = '';
@@ -1645,7 +1706,8 @@
                 : `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-circle me-1"></i>Belum Diisi</span>`;
 
             let aksiHtml = '';
-            if (!item.is_terkunci && !d.is_diterima_item) {
+            const canEditItem = isSuperAdminUser || (!item.is_terkunci && !d.is_diterima_item);
+            if (canEditItem) {
                 aksiHtml = `
                     <div class="d-flex justify-content-center align-items-center gap-1">
                         ${btnTerimaAction}
