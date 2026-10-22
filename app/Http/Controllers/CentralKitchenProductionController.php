@@ -1252,7 +1252,7 @@ class CentralKitchenProductionController extends Controller
             $pesanan = Pesanan::find($pesananIdUtama);
 
             $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
-            $gudangCkId = $gudangCk ? $gudangCk->id : 5;
+            $gudangCkId = $gudangCk ? $gudangCk->id : 1;
 
             $inputSatuanList = $request->input('satuan_input', []);
 
@@ -1588,7 +1588,10 @@ class CentralKitchenProductionController extends Controller
                     $pesananItem = Pesanan::find($wod->pesanan_id);
                     $isInternalCk = false;
                     if ($pesananItem) {
-                        $custNama = strtolower($pesananItem->customer_nama ?? $pesananItem->customer->nama ?? '');
+                        $custNama = strtolower($pesananItem->customer_nama ?? ($pesananItem->customer->nama ?? ''));
+                        if (!$custNama && $pesananItem->customer_id) {
+                            $custNama = strtolower(DB::table('customers')->where('id', $pesananItem->customer_id)->value('nama') ?? '');
+                        }
                         if (str_contains($custNama, 'central kitchen')) {
                             $isInternalCk = true;
                         }
@@ -1657,6 +1660,52 @@ class CentralKitchenProductionController extends Controller
                         ]);
 
                     $qtySisaAlokasi -= $porsi;
+                }
+
+                if ($totalWodCount === 0 && $pesananIdUtama) {
+                    $pesananItem = Pesanan::find($pesananIdUtama);
+                    $isInternalCk = false;
+                    if ($pesananItem) {
+                        $custNama = strtolower($pesananItem->customer_nama ?? ($pesananItem->customer->nama ?? ''));
+                        if (!$custNama && $pesananItem->customer_id) {
+                            $custNama = strtolower(DB::table('customers')->where('id', $pesananItem->customer_id)->value('nama') ?? '');
+                        }
+                        if (str_contains($custNama, 'central kitchen')) {
+                            $isInternalCk = true;
+                        }
+                    }
+
+                    ProduksiPesanan::updateOrCreate(
+                        [
+                            'produksi_id' => $produksiId,
+                            'pesanan_id'  => $pesananIdUtama,
+                            'produk_id'   => $produkId,
+                        ],
+                        [
+                            'qty_alokasi'       => $qtyHasil,
+                            'qty_terkirim'      => $qtyHasil,
+                            'hpp_per_unit'      => $hppPerUnit,
+                            'total_hpp_alokasi' => $hppPerUnit * $qtyHasil,
+                        ]
+                    );
+
+                    if (!$isInternalCk && $qtyHasil > 0 && $pesananItem) {
+                        [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananItem);
+                        if ($outletGudangId) {
+                            $this->transferBsjToOutletKitchen(
+                                $produksiId,
+                                $kodeProduksi,
+                                $pesananItem,
+                                $produkId,
+                                $qtyHasil,
+                                $hppPerUnit,
+                                $gudangCkId,
+                                $outletGudangId,
+                                $kitchenDivId,
+                                $request->tanggal_produksi ?: now()
+                            );
+                        }
+                    }
                 }
             }
 
@@ -2367,28 +2416,62 @@ class CentralKitchenProductionController extends Controller
                 }
 
                 // Jika pesanan berasal dari Outlet (bukan internal CK), langsung transfer ke Divisi Kitchen outlet terkait
-                if (!$isInternalCk && $qtyHasil > 0) {
-                    $targetPesananId = $produksi->pesanan_id;
-                    if (!$targetPesananId && $workOrderId) {
-                        $targetPesananId = DB::table('work_order_detail')->where('work_order_id', $workOrderId)->where('produk_id', $produkId)->value('pesanan_id');
-                    }
-                    if ($targetPesananId) {
-                        $pesananModel = Pesanan::find($targetPesananId);
-                        if ($pesananModel) {
-                            [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananModel);
-                            if ($outletGudangId) {
-                                $this->transferBsjToOutletKitchen(
-                                    $produksi->id,
-                                    $produksi->kode_produksi,
-                                    $pesananModel,
-                                    $produkId,
-                                    $qtyHasil,
-                                    $hppPerUnit,
-                                    $gudangHasilId,
-                                    $outletGudangId,
-                                    $kitchenDivId,
-                                    $produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now())
-                                );
+                if ($qtyHasil > 0) {
+                    $allocations = ProduksiPesanan::where('produksi_id', $produksi->id)
+                        ->where('produk_id', $produkId)
+                        ->where('qty_alokasi', '>', 0)
+                        ->get();
+
+                    if ($allocations->isNotEmpty()) {
+                        foreach ($allocations as $al) {
+                            $pItem = Pesanan::find($al->pesanan_id);
+                            if ($pItem) {
+                                $cName = strtolower($pItem->customer_nama ?? ($pItem->customer->nama ?? ''));
+                                if (!$cName && $pItem->customer_id) {
+                                    $cName = strtolower(DB::table('customers')->where('id', $pItem->customer_id)->value('nama') ?? '');
+                                }
+                                if (!str_contains($cName, 'central kitchen')) {
+                                    [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pItem);
+                                    if ($outletGudangId) {
+                                        $this->transferBsjToOutletKitchen(
+                                            $produksi->id,
+                                            $produksi->kode_produksi,
+                                            $pItem,
+                                            $produkId,
+                                            floatval($al->qty_alokasi),
+                                            $hppPerUnit,
+                                            $gudangHasilId,
+                                            $outletGudangId,
+                                            $kitchenDivId,
+                                            $produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now())
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    } elseif (!$isInternalCk) {
+                        $targetPesananId = $produksi->pesanan_id;
+                        if (!$targetPesananId && $workOrderId) {
+                            $targetPesananId = DB::table('work_order_detail')->where('work_order_id', $workOrderId)->where('produk_id', $produkId)->value('pesanan_id');
+                        }
+                        if ($targetPesananId) {
+                            $pesananModel = Pesanan::find($targetPesananId);
+                            if ($pesananModel) {
+                                [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananModel);
+                                if ($outletGudangId) {
+                                    $this->transferBsjToOutletKitchen(
+                                        $produksi->id,
+                                        $produksi->kode_produksi,
+                                        $pesananModel,
+                                        $produkId,
+                                        $qtyHasil,
+                                        $hppPerUnit,
+                                        $gudangHasilId,
+                                        $outletGudangId,
+                                        $kitchenDivId,
+                                        $produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now())
+                                    );
+                                }
                             }
                         }
                     }
@@ -3157,7 +3240,7 @@ class CentralKitchenProductionController extends Controller
                 } elseif (str_contains($custNama, 'gaharu')) {
                     $outletGudangId = MasterGudang::where('nama', 'like', '%Gaharu%')
                         ->where('kategori', 'Operasional')
-                        ->value('id') ?? MasterGudang::where('nama', 'like', '%Gaharu%')->value('id') ?? 4;
+                        ->value('id') ?? MasterGudang::where('nama', 'like', '%Gaharu%')->value('id') ?? 3;
                 }
             }
         }

@@ -407,6 +407,18 @@ class CentralKitchenOrderController extends Controller
             $isKejingga = str_contains($custNama, 'kejingga');
             $statusBayar = 'Belum Bayar'; // Semua pesanan CK dimulai dari Belum Bayar, Lunas hanya setelah klik Bayar
 
+            $targetDivisiId = $request->divisi_id;
+            if ($gudangId) {
+                $divValid = DB::table('gudang_divisi')->where('id', $targetDivisiId)->where('gudang_id', $gudangId)->exists();
+                if (!$divValid) {
+                    $targetDivisiId = DB::table('gudang_divisi')
+                        ->where('gudang_id', $gudangId)
+                        ->where(function($q) {
+                            $q->where('nama', 'like', '%kitchen%')->orWhere('nama', 'like', '%dapur%');
+                        })->value('id') ?? DB::table('gudang_divisi')->where('gudang_id', $gudangId)->value('id');
+                }
+            }
+
             $pesanan = Pesanan::create([
                 'kode_pesanan'      => $request->kode_pesanan ?? $kode,
                 'tipe_pesanan'      => 'central_kitchen',
@@ -421,7 +433,7 @@ class CentralKitchenOrderController extends Controller
                 'status_pembayaran' => $statusBayar,
                 'created_by'        => auth()->id(),
                 'gudang_id'         => $gudangId,
-                'divisi_id'         => $request->divisi_id,
+                'divisi_id'         => $targetDivisiId,
             ]);
 
             $orderModes = $request->input('order_mode', []);
@@ -559,13 +571,25 @@ class CentralKitchenOrderController extends Controller
             }
             $gudangId = $gudangOutlet ? $gudangOutlet->id : $pesanan->gudang_id;
 
+            $targetDivisiId = $request->divisi_id ?? $pesanan->divisi_id;
+            if ($gudangId) {
+                $divValid = DB::table('gudang_divisi')->where('id', $targetDivisiId)->where('gudang_id', $gudangId)->exists();
+                if (!$divValid) {
+                    $targetDivisiId = DB::table('gudang_divisi')
+                        ->where('gudang_id', $gudangId)
+                        ->where(function($q) {
+                            $q->where('nama', 'like', '%kitchen%')->orWhere('nama', 'like', '%dapur%');
+                        })->value('id') ?? DB::table('gudang_divisi')->where('gudang_id', $gudangId)->value('id');
+                }
+            }
+
             $pesanan->update([
                 'customer_id'       => $request->customer_id,
                 'tanggal'           => $request->tanggal,
                 'estimasi_kirim'    => $request->estimasi_kirim,
                 'estimasi_produksi' => $request->estimasi_produksi,
                 'gudang_id'         => $gudangId,
-                'divisi_id'         => $request->divisi_id ?? $pesanan->divisi_id,
+                'divisi_id'         => $targetDivisiId,
             ]);
 
             // Hapus detail lama dan masukkan detail baru

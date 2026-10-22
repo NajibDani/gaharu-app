@@ -300,7 +300,34 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Jalankan auto-healing hanya jika tombol refresh ditekan atau diminta secara eksplisit
+        // Cek cepat jika ada transfer produksi CK selesai yang belum tercatat untuk barang ini
+        if ($barangId && !$request->boolean('refresh')) {
+            $hasUnrecordedCk = DB::table('alokasi_produksi_pesanan as app')
+                ->join('produksi as p', 'app.produksi_id', '=', 'p.id')
+                ->join('pesanan as pes', 'app.pesanan_id', '=', 'pes.id')
+                ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
+                ->where('app.qty_alokasi', '>', 0)
+                ->where('app.produk_id', $barangId)
+                ->when($gudangId, function($q) use ($gudangId) {
+                    $q->where('pes.gudang_id', $gudangId);
+                })
+                ->whereNotExists(function($sq) {
+                    $sq->select(DB::raw(1))
+                       ->from('transaksi_stok')
+                       ->whereRaw('transaksi_stok.barang_id = app.produk_id')
+                       ->whereRaw('transaksi_stok.gudang_tujuan_id = pes.gudang_id')
+                       ->where('tipe', 'masuk')
+                       ->where('source_type', 'transfer_ck')
+                       ->whereRaw('transaksi_stok.source_id = app.produksi_id');
+                })
+                ->exists();
+
+            if ($hasUnrecordedCk) {
+                self::autoHealApprovedCkProductionTransfers($barangId);
+            }
+        }
+
+        // Jalankan auto-healing penuh jika tombol refresh ditekan atau diminta secara eksplisit
         if ($request->boolean('refresh')) {
             if ($barangId) {
                 self::autoHealApprovedCkProductionTransfers($barangId);
@@ -1266,6 +1293,7 @@ class StokGudangController extends Controller
             $allocQuery = DB::table('alokasi_produksi_pesanan as app')
                 ->join('produksi as p', 'app.produksi_id', '=', 'p.id')
                 ->join('pesanan as pes', 'app.pesanan_id', '=', 'pes.id')
+                ->leftJoin('customers as cust', 'pes.customer_id', '=', 'cust.id')
                 ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
                 ->where('app.qty_alokasi', '>', 0)
                 ->select(
@@ -1275,7 +1303,7 @@ class StokGudangController extends Controller
                     'p.tanggal_mulai',
                     'p.gudang_hasil_id',
                     'pes.customer_id',
-                    'pes.customer_nama',
+                    'cust.nama as customer_nama',
                     'pes.gudang_id as pesanan_gudang_id',
                     'pes.divisi_id as pesanan_divisi_id',
                     'pes.kode_pesanan',
@@ -1495,6 +1523,7 @@ class StokGudangController extends Controller
             $prodDetailQuery = DB::table('produksi_detail as pd')
                 ->join('produksi as p', 'pd.produksi_id', '=', 'p.id')
                 ->leftJoin('pesanan as pes', 'p.pesanan_id', '=', 'pes.id')
+                ->leftJoin('customers as cust', 'pes.customer_id', '=', 'cust.id')
                 ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
                 ->where('pd.qty', '>', 0)
                 ->select(
@@ -1505,7 +1534,7 @@ class StokGudangController extends Controller
                     'p.pesanan_id',
                     'p.gudang_hasil_id',
                     'pes.customer_id',
-                    'pes.customer_nama',
+                    'cust.nama as customer_nama',
                     'pes.gudang_id as pesanan_gudang_id',
                     'pes.divisi_id as pesanan_divisi_id',
                     'pes.kode_pesanan',
@@ -1530,8 +1559,9 @@ class StokGudangController extends Controller
                 if (!$pesananId) {
                     $wod = DB::table('work_order_detail as wod')
                         ->join('pesanan as ps', 'wod.pesanan_id', '=', 'ps.id')
+                        ->leftJoin('customers as cust', 'ps.customer_id', '=', 'cust.id')
                         ->where('wod.produk_id', $pdet->produk_id)
-                        ->select('wod.pesanan_id', 'ps.customer_nama', 'ps.customer_id', 'ps.gudang_id', 'ps.divisi_id', 'ps.tanggal')
+                        ->select('wod.pesanan_id', 'cust.nama as customer_nama', 'ps.customer_id', 'ps.gudang_id', 'ps.divisi_id', 'ps.tanggal')
                         ->first();
                     if ($wod) {
                         $pesananId = $wod->pesanan_id;
