@@ -37,9 +37,12 @@ class StockService
     public function stockOut(array $data)
     {
         return DB::transaction(function () use ($data) {
+            $allowNegative = !empty($data['allow_negative']);
 
             // Validasi stok
-            $this->validateStock($data);
+            if (!$allowNegative) {
+                $this->validateStock($data);
+            }
 
             // Kurangi stok
             $this->decreaseStock($data);
@@ -190,12 +193,22 @@ class StockService
         }
 
         $stok = $query->lockForUpdate()->first();
+        $allowNegative = !empty($data['allow_negative']);
 
         if (!$stok) {
+            if ($allowNegative) {
+                StokGudang::create([
+                    'barang_id' => $data['barang_id'],
+                    'gudang_id' => $gudangId,
+                    'divisi_id' => $divisiId,
+                    'jumlah'    => -$data['qty'],
+                ]);
+                return;
+            }
             throw new RuntimeException('Stok tidak ditemukan');
         }
 
-        if ($stok->jumlah < $data['qty']) {
+        if ($stok->jumlah < $data['qty'] && !$allowNegative) {
             throw new RuntimeException('Stok tidak cukup');
         }
 

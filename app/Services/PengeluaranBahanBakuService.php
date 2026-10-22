@@ -149,6 +149,7 @@ class PengeluaranBahanBakuService
                     'source_id'       => $pengeluaran->id,
                     'user_id'         => $userId,
                     'tanggal'         => $pengeluaran->tanggal ?? now(),
+                    'allow_negative'  => true,
                 ]);
 
                 /*
