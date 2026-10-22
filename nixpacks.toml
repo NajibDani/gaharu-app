@@ -10,8 +10,9 @@ cmds = [
 [phases.build]
 cmds = [
   "npm run build",
-  "php artisan package:discover --ansi"
+  "php artisan package:discover --ansi",
+  "php artisan view:cache"
 ]
 
 [start]
-cmd = "php artisan migrate --force && php -S 0.0.0.0:80 -t public"
+cmd = "export PHP_CLI_SERVER_WORKERS=8 && php artisan migrate --force && php -d opcache.enable_cli=1 -d opcache.memory_consumption=128 -d opcache.max_accelerated_files=10000 -S 0.0.0.0:80 -t public"

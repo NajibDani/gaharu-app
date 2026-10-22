@@ -19,6 +19,7 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $table = 'users';
+    protected $with = ['role'];
     protected $fillable = ['nama', 'username', 'password', 'role_id', 'gudang_id', 'name', 'email', 'email_verified_at']; // <--- Added name, email, email_verified_at
     public function role()
     {

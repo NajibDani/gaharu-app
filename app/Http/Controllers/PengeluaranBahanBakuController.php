@@ -705,16 +705,18 @@ class PengeluaranBahanBakuController extends Controller
         $gudangUtama = MasterGudang::getGudangUtama();
         $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
-        FifoService::clearHargaCache();
-        foreach ($pengeluaran->details as $dItem) {
-            \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
-            \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
-            MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
-            if ($pengeluaran->gudang_id) {
-                StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
-            }
-            if ($gudangUtamaId) {
-                StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+        if (request()->has('refresh') || request()->has('sync')) {
+            FifoService::clearHargaCache();
+            foreach ($pengeluaran->details as $dItem) {
+                \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
+                \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
+                MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
+                if ($pengeluaran->gudang_id) {
+                    StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+                }
+                if ($gudangUtamaId) {
+                    StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+                }
             }
         }
 
@@ -822,22 +824,24 @@ class PengeluaranBahanBakuController extends Controller
             $gudangUtama = MasterGudang::getGudangUtama();
             $gudangUtamaId = MasterGudang::getGudangUtamaId();
 
-            FifoService::clearHargaCache();
-            // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
-            foreach ($pengeluaran->details as $dItem) {
-                if (!$dItem->barang_id) continue;
-                try {
-                    \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
-                    \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
-                    MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
-                    if ($pengeluaran->gudang_id) {
-                        StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+            if (request()->has('refresh') || request()->has('sync')) {
+                FifoService::clearHargaCache();
+                // Rekonsiliasi ringkasan stok gudang per item agar 100% selaras dengan batch aktif & transaksi stok
+                foreach ($pengeluaran->details as $dItem) {
+                    if (!$dItem->barang_id) continue;
+                    try {
+                        \App\Http\Controllers\StokGudangController::autoCleanOrphanMutations($dItem->barang_id);
+                        \App\Http\Controllers\StokGudangController::autoHealMissingDivisiInTransaksiStok($dItem->barang_id);
+                        MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
+                        if ($pengeluaran->gudang_id) {
+                            StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+                        }
+                        if ($gudangUtamaId) {
+                            StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+                        }
+                    } catch (\Throwable $eReconcile) {
+                        Log::warning("Reconcile error in detailJson for item {$dItem->barang_id}: " . $eReconcile->getMessage());
                     }
-                    if ($gudangUtamaId) {
-                        StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
-                    }
-                } catch (\Throwable $eReconcile) {
-                    Log::warning("Reconcile error in detailJson for item {$dItem->barang_id}: " . $eReconcile->getMessage());
                 }
             }
 
@@ -1053,14 +1057,16 @@ class PengeluaranBahanBakuController extends Controller
 
         $isApproved = in_array(strtolower($pengeluaran->status), ['approved', 'disetujui']);
 
-        FifoService::clearHargaCache();
-        foreach ($pengeluaran->details as $dItem) {
-            MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
-            if ($pengeluaran->gudang_id) {
-                StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
-            }
-            if ($gudangUtamaId) {
-                StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+        if (request()->has('refresh') || request()->has('sync')) {
+            FifoService::clearHargaCache();
+            foreach ($pengeluaran->details as $dItem) {
+                MasterBarang::autoHealUnconvertedPembelianBatches($dItem->barang_id);
+                if ($pengeluaran->gudang_id) {
+                    StokGudang::reconcileStockSummary($dItem->barang_id, $pengeluaran->gudang_id, $pengeluaran->divisi_id);
+                }
+                if ($gudangUtamaId) {
+                    StokGudang::reconcileStockSummary($dItem->barang_id, $gudangUtamaId);
+                }
             }
         }
 

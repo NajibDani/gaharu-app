@@ -3334,21 +3334,34 @@ class CentralKitchenProductionController extends Controller
 
         // 6. Buat Surat Jalan / Pengiriman otomatis dengan status Selesai
         $noPengiriman = 'DO-CK-' . $kodeProduksi . '-' . $pesanan->id;
-        $pengiriman = Pengiriman::where('no_pengiriman', $noPengiriman)->first();
+        $pengiriman = Pengiriman::where('no_pengiriman', $noPengiriman)
+            ->orWhere('pesanan_id', $pesanan->id)
+            ->first();
+
         if (!$pengiriman) {
-            $pengiriman = Pengiriman::create([
-                'no_pengiriman'      => $noPengiriman,
-                'pesanan_id'         => $pesanan->id,
-                'tanggal_pengiriman' => $transactionDate,
-                'kurir'              => 'Internal CK Transfer',
-                'status_pengiriman'  => 'Selesai',
-            ]);
-            PengirimanDetail::firstOrCreate(
-                ['pengiriman_id' => $pengiriman->id, 'barang_id' => $produkId],
-                ['qty_kirim' => $qty]
-            );
-        } else {
+            try {
+                $pengiriman = Pengiriman::create([
+                    'no_pengiriman'      => $noPengiriman,
+                    'pesanan_id'         => $pesanan->id,
+                    'tanggal_pengiriman' => $transactionDate,
+                    'kurir'              => 'Internal CK Transfer',
+                    'status_pengiriman'  => 'Selesai',
+                ]);
+            } catch (\Exception $e) {
+                $pengiriman = Pengiriman::where('no_pengiriman', $noPengiriman)
+                    ->orWhere('pesanan_id', $pesanan->id)
+                    ->first();
+                if (!$pengiriman) {
+                    throw $e;
+                }
+            }
+        }
+
+        if ($pengiriman && $pengiriman->status_pengiriman !== 'Selesai') {
             $pengiriman->update(['status_pengiriman' => 'Selesai']);
+        }
+
+        if ($pengiriman) {
             PengirimanDetail::firstOrCreate(
                 ['pengiriman_id' => $pengiriman->id, 'barang_id' => $produkId],
                 ['qty_kirim' => $qty]

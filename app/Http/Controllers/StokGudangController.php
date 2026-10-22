@@ -122,10 +122,12 @@ class StokGudangController extends Controller
         $itemIds   = $stokGudang->pluck('id')->unique()->toArray();
         $gudangIds = $stokGudang->pluck('gudang_id')->unique()->toArray();
 
-        // Rekonsiliasi mutasi orphan dan ringkasan stok untuk 20 item pada halaman aktif
-        foreach ($itemIds as $bId) {
-            self::autoCleanOrphanMutations($bId);
-            \App\Models\StokGudang::reconcileStockSummary($bId);
+        // Rekonsiliasi mutasi orphan dan ringkasan stok untuk 20 item pada halaman aktif hanya jika diminta secara eksplisit
+        if ($request->has('refresh') || $request->has('sync')) {
+            foreach ($itemIds as $bId) {
+                self::autoCleanOrphanMutations($bId);
+                \App\Models\StokGudang::reconcileStockSummary($bId);
+            }
         }
 
         // 1. Ambil harga rata-rata dari batch aktif
@@ -224,8 +226,10 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Pastikan seluruh BSJ hasil produksi Central Kitchen yang sudah disetujui sinkron ke divisi kitchen outlet
-        self::autoHealApprovedCkProductionTransfers();
+        // Pastikan seluruh BSJ hasil produksi Central Kitchen sinkron hanya saat refresh diminta
+        if ($request->has('refresh') || $request->has('sync')) {
+            self::autoHealApprovedCkProductionTransfers();
+        }
 
         $query = MasterBarang::query()->with('kategori');
 
@@ -258,10 +262,10 @@ class StokGudangController extends Controller
         // Hitung stok akhir untuk 20 barang pada halaman aktif secara bulk dalam 1 query agregat
         $itemIds = $items->pluck('id')->toArray();
         if (!empty($itemIds)) {
-            \App\Http\Controllers\PembelianController::autoHealHistoricalPembelianPenerimaanTanggal();
-            foreach ($itemIds as $bId) {
-                self::autoHealApprovedCkProductionTransfers($bId);
-                if ($request->has('refresh')) {
+            if ($request->has('refresh') || $request->has('sync')) {
+                \App\Http\Controllers\PembelianController::autoHealHistoricalPembelianPenerimaanTanggal();
+                foreach ($itemIds as $bId) {
+                    self::autoHealApprovedCkProductionTransfers($bId);
                     self::autoCleanOrphanMutations($bId);
                     self::autoHealMissingDivisiInTransaksiStok($bId);
                     self::autoHealApprovedPaTransaksiStok($bId);
@@ -296,14 +300,12 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Pastikan mutasi transfer BSJ dari Central Kitchen tersinkronisasi ke divisi kitchen outlet
-        if ($barangId) {
-            self::autoHealApprovedCkProductionTransfers($barangId);
-            \App\Http\Controllers\PembelianController::autoHealHistoricalPembelianPenerimaanTanggal($barangId);
-        }
-
-        // Jalankan auto-healing mendalam hanya jika tombol refresh ditekan atau diminta secara eksplisit
+        // Jalankan auto-healing hanya jika tombol refresh ditekan atau diminta secara eksplisit
         if ($request->boolean('refresh')) {
+            if ($barangId) {
+                self::autoHealApprovedCkProductionTransfers($barangId);
+                \App\Http\Controllers\PembelianController::autoHealHistoricalPembelianPenerimaanTanggal($barangId);
+            }
             // Auto-clean mutasi orphan untuk barang ini sebelum perhitungan mutasi
             self::autoCleanOrphanMutations($barangId);
 
@@ -1447,23 +1449,34 @@ class StokGudangController extends Controller
                 ]);
 
                 // 6. Buat Surat Jalan otomatis dengan status Selesai jika belum ada
-                $existingPengiriman = Pengiriman::where('pesanan_id', $al->pesanan_id)->first();
+                $existingPengiriman = Pengiriman::where('pesanan_id', $al->pesanan_id)
+                    ->orWhere('no_pengiriman', 'DO-CK-' . $al->kode_produksi . '-' . $al->pesanan_id)
+                    ->first();
                 if (!$existingPengiriman) {
-                    $newPengiriman = Pengiriman::firstOrCreate(
-                        ['no_pengiriman' => 'DO-CK-' . $al->kode_produksi . '-' . $al->pesanan_id],
-                        [
-                            'pesanan_id'         => $al->pesanan_id,
-                            'tanggal_pengiriman' => $txDate,
-                            'kurir'              => 'Internal CK Transfer',
-                            'status_pengiriman'  => 'Selesai',
-                        ]
-                    );
-                    PengirimanDetail::firstOrCreate(
-                        ['pengiriman_id' => $newPengiriman->id, 'barang_id' => $al->produk_id],
-                        ['qty_kirim' => $qtyTransfer]
-                    );
+                    try {
+                        $existingPengiriman = Pengiriman::firstOrCreate(
+                            ['no_pengiriman' => 'DO-CK-' . $al->kode_produksi . '-' . $al->pesanan_id],
+                            [
+                                'pesanan_id'         => $al->pesanan_id,
+                                'tanggal_pengiriman' => $txDate,
+                                'kurir'              => 'Internal CK Transfer',
+                                'status_pengiriman'  => 'Selesai',
+                            ]
+                        );
+                    } catch (\Exception $e) {
+                        $existingPengiriman = Pengiriman::where('pesanan_id', $al->pesanan_id)
+                            ->orWhere('no_pengiriman', 'DO-CK-' . $al->kode_produksi . '-' . $al->pesanan_id)
+                            ->first();
+                    }
                 } else {
                     $existingPengiriman->update(['status_pengiriman' => 'Selesai']);
+                }
+
+                if ($existingPengiriman) {
+                    PengirimanDetail::firstOrCreate(
+                        ['pengiriman_id' => $existingPengiriman->id, 'barang_id' => $al->produk_id],
+                        ['qty_kirim' => $qtyTransfer]
+                    );
                 }
 
                 // 7. Update alokasi & status pesanan
@@ -1683,23 +1696,34 @@ class StokGudangController extends Controller
                 ]);
 
                 // Buat Pengiriman jika belum ada
-                $existingPengiriman = Pengiriman::where('pesanan_id', $pesananId)->first();
+                $existingPengiriman = Pengiriman::where('pesanan_id', $pesananId)
+                    ->orWhere('no_pengiriman', 'DO-CK-' . $pdet->kode_produksi . '-' . $pesananId)
+                    ->first();
                 if (!$existingPengiriman) {
-                    $newPengiriman = Pengiriman::firstOrCreate(
-                        ['no_pengiriman' => 'DO-CK-' . $pdet->kode_produksi . '-' . $pesananId],
-                        [
-                            'pesanan_id'         => $pesananId,
-                            'tanggal_pengiriman' => $txDate,
-                            'kurir'              => 'Internal CK Transfer',
-                            'status_pengiriman'  => 'Selesai',
-                        ]
-                    );
-                    PengirimanDetail::firstOrCreate(
-                        ['pengiriman_id' => $newPengiriman->id, 'barang_id' => $pdet->produk_id],
-                        ['qty_kirim' => $qtyTransfer]
-                    );
+                    try {
+                        $existingPengiriman = Pengiriman::firstOrCreate(
+                            ['no_pengiriman' => 'DO-CK-' . $pdet->kode_produksi . '-' . $pesananId],
+                            [
+                                'pesanan_id'         => $pesananId,
+                                'tanggal_pengiriman' => $txDate,
+                                'kurir'              => 'Internal CK Transfer',
+                                'status_pengiriman'  => 'Selesai',
+                            ]
+                        );
+                    } catch (\Exception $e) {
+                        $existingPengiriman = Pengiriman::where('pesanan_id', $pesananId)
+                            ->orWhere('no_pengiriman', 'DO-CK-' . $pdet->kode_produksi . '-' . $pesananId)
+                            ->first();
+                    }
                 } else {
                     $existingPengiriman->update(['status_pengiriman' => 'Selesai']);
+                }
+
+                if ($existingPengiriman) {
+                    PengirimanDetail::firstOrCreate(
+                        ['pengiriman_id' => $existingPengiriman->id, 'barang_id' => $pdet->produk_id],
+                        ['qty_kirim' => $qtyTransfer]
+                    );
                 }
 
                 // Pastikan record di alokasi_produksi_pesanan ada

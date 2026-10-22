@@ -38,15 +38,11 @@ class PembelianController extends Controller
 
     public function index(Request $request)
     {
-        if ($request->has('heal')) {
+        if ($request->has('heal') || $request->has('sync')) {
             MasterBarang::autoHealUnconvertedPembelianBatches();
+            MasterBarang::autoHealCorruptedPembelianPrices();
+            self::autoHealHistoricalPembelianPenerimaanTanggal();
         }
-
-        // Auto-heal jika ada transaksi pembelian yang harganya terkorupsi (cth: PB202610080001)
-        MasterBarang::autoHealCorruptedPembelianPrices();
-
-        // Auto-heal sinkronisasi tanggal penerimaan barang dan mutasi stok ke tanggal transaksi pembelian
-        self::autoHealHistoricalPembelianPenerimaanTanggal();
 
         $search            = $request->query('search');
         $sort              = $request->query('sort', 'terbaru');
