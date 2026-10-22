@@ -84,10 +84,12 @@ class StokGudang extends Model
 
         $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
+            ->where('tipe', 'masuk')
             ->where('tanggal', '<=', $cutoff);
 
         $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
+            ->where('tipe', 'keluar')
             ->where('tanggal', '<=', $cutoff);
 
         if ($minTanggal) {
@@ -104,9 +106,6 @@ class StokGudang extends Model
         } elseif ($divisiId) {
             $qIn->where('divisi_tujuan_id', $divisiId);
             $qOut->where('divisi_asal_id', $divisiId);
-        } else {
-            $qIn->where('tipe', 'masuk');
-            $qOut->where('tipe', 'keluar');
         }
 
         $totalIn = (float) $qIn->sum('qty');
@@ -178,12 +177,14 @@ class StokGudang extends Model
         foreach ($groupedBarangs as $minTanggal => $subIds) {
             $qIn = \Illuminate\Support\Facades\DB::table('transaksi_stok')
                 ->whereIn('barang_id', $subIds)
+                ->where('tipe', 'masuk')
                 ->where('tanggal', '<=', $cutoff)
                 ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_in'))
                 ->groupBy('barang_id');
 
             $qOut = \Illuminate\Support\Facades\DB::table('transaksi_stok')
                 ->whereIn('barang_id', $subIds)
+                ->where('tipe', 'keluar')
                 ->where('tanggal', '<=', $cutoff)
                 ->select('barang_id', \Illuminate\Support\Facades\DB::raw('SUM(qty) as total_out'))
                 ->groupBy('barang_id');
@@ -202,9 +203,6 @@ class StokGudang extends Model
             } elseif ($divisiId) {
                 $qIn->where('divisi_tujuan_id', $divisiId);
                 $qOut->where('divisi_asal_id', $divisiId);
-            } else {
-                $qIn->where('tipe', 'masuk');
-                $qOut->where('tipe', 'keluar');
             }
 
             $ins = $qIn->pluck('total_in', 'barang_id');
@@ -224,6 +222,7 @@ class StokGudang extends Model
     public static function reconcileStockSummary($barangId = null, $gudangId = null, $divisiId = null)
     {
         $inQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->where('tipe', 'masuk')
             ->whereNotNull('gudang_tujuan_id')
             ->whereRaw("transaksi_stok.tanggal >= COALESCE(
                 (SELECT DATE_FORMAT(MAX(pa.tanggal), '%Y-%m-%d 00:00:00')
@@ -248,6 +247,7 @@ class StokGudang extends Model
             ->groupBy('gudang_tujuan_id', \Illuminate\Support\Facades\DB::raw('COALESCE(divisi_tujuan_id, 0)'), 'barang_id');
 
         $outQuery = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->where('tipe', 'keluar')
             ->whereNotNull('gudang_asal_id')
             ->whereRaw("transaksi_stok.tanggal >= COALESCE(
                 (SELECT DATE_FORMAT(MAX(pa.tanggal), '%Y-%m-%d 00:00:00')

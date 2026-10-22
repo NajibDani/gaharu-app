@@ -93,19 +93,20 @@ class MasterGudang extends Model
     {
         if (!$gudangId || !$barangId) return null;
 
-        // 1. Tagging spesifik divisi pada master barang / barang_minimum_stock
+        // 1. Tagging spesifik divisi pada barang_minimum_stock (hanya yang memiliki threshold positif)
         $minStockDivisi = \Illuminate\Support\Facades\DB::table('barang_minimum_stock')
             ->where('gudang_id', $gudangId)
             ->where('barang_id', $barangId)
             ->where('is_active', true)
             ->whereNotNull('divisi_id')
+            ->where('minimum_stock', '>', 0)
             ->value('divisi_id');
 
         if ($minStockDivisi) {
             return $minStockDivisi;
         }
 
-        // 2. Tagging riwayat transaksi (persediaan awal / saldo awal / PBK / stock opname) ke divisi di gudang ini
+        // 2. Tagging riwayat transaksi masuk (persediaan awal / saldo awal / PBK masuk / stock opname) ke divisi di gudang ini
         $recentDivisi = \Illuminate\Support\Facades\DB::table('transaksi_stok')
             ->where('barang_id', $barangId)
             ->where('gudang_tujuan_id', $gudangId)
@@ -116,18 +117,6 @@ class MasterGudang extends Model
 
         if ($recentDivisi) {
             return $recentDivisi;
-        }
-
-        // Cek juga dari riwayat divisi asal di transaksi stok (misal pernah dipotong dari divisi tertentu)
-        $recentAsalDivisi = \Illuminate\Support\Facades\DB::table('transaksi_stok')
-            ->where('barang_id', $barangId)
-            ->where('gudang_asal_id', $gudangId)
-            ->whereNotNull('divisi_asal_id')
-            ->latest('tanggal')
-            ->value('divisi_asal_id');
-
-        if ($recentAsalDivisi) {
-            return $recentAsalDivisi;
         }
 
         // 3. Cek batch aktif di stok_gudang_batch yang memiliki sisa stok
@@ -155,6 +144,18 @@ class MasterGudang extends Model
 
         if ($stokGudangDivisi) {
             return $stokGudangDivisi;
+        }
+
+        // 5. Cek dari riwayat divisi asal di transaksi stok (misal pernah dipotong dari divisi tertentu)
+        $recentAsalDivisi = \Illuminate\Support\Facades\DB::table('transaksi_stok')
+            ->where('barang_id', $barangId)
+            ->where('gudang_asal_id', $gudangId)
+            ->whereNotNull('divisi_asal_id')
+            ->latest('tanggal')
+            ->value('divisi_asal_id');
+
+        if ($recentAsalDivisi) {
+            return $recentAsalDivisi;
         }
 
         // 5. Ketentuan tagging divisi berdasarkan Kategori Master Barang & Nama Barang

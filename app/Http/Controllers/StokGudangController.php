@@ -439,35 +439,47 @@ class StokGudangController extends Controller
         if ($gudangId && $divisiId) {
             $rawBefore->where(function ($q) use ($gudangId, $divisiId) {
                 $q->where(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+                    $sub->where('tipe', 'keluar')->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
                 })->orWhere(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                    $sub->where('tipe', 'masuk')->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
                 });
             });
             $rawPeriod->where(function ($q) use ($gudangId, $divisiId) {
                 $q->where(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
+                    $sub->where('tipe', 'keluar')->where('gudang_asal_id', $gudangId)->where('divisi_asal_id', $divisiId);
                 })->orWhere(function($sub) use ($gudangId, $divisiId) {
-                    $sub->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
+                    $sub->where('tipe', 'masuk')->where('gudang_tujuan_id', $gudangId)->where('divisi_tujuan_id', $divisiId);
                 });
             });
         } elseif ($gudangId) {
             $rawBefore->where(function ($q) use ($gudangId) {
-                $q->where('gudang_asal_id', $gudangId)
-                  ->orWhere('gudang_tujuan_id', $gudangId);
+                $q->where(function($sub) use ($gudangId) {
+                    $sub->where('tipe', 'keluar')->where('gudang_asal_id', $gudangId);
+                })->orWhere(function($sub) use ($gudangId) {
+                    $sub->where('tipe', 'masuk')->where('gudang_tujuan_id', $gudangId);
+                });
             });
             $rawPeriod->where(function ($q) use ($gudangId) {
-                $q->where('gudang_asal_id', $gudangId)
-                  ->orWhere('gudang_tujuan_id', $gudangId);
+                $q->where(function($sub) use ($gudangId) {
+                    $sub->where('tipe', 'keluar')->where('gudang_asal_id', $gudangId);
+                })->orWhere(function($sub) use ($gudangId) {
+                    $sub->where('tipe', 'masuk')->where('gudang_tujuan_id', $gudangId);
+                });
             });
         } elseif ($divisiId) {
             $rawBefore->where(function ($q) use ($divisiId) {
-                $q->where('divisi_asal_id', $divisiId)
-                  ->orWhere('divisi_tujuan_id', $divisiId);
+                $q->where(function($sub) use ($divisiId) {
+                    $sub->where('tipe', 'keluar')->where('divisi_asal_id', $divisiId);
+                })->orWhere(function($sub) use ($divisiId) {
+                    $sub->where('tipe', 'masuk')->where('divisi_tujuan_id', $divisiId);
+                });
             });
             $rawPeriod->where(function ($q) use ($divisiId) {
-                $q->where('divisi_asal_id', $divisiId)
-                  ->orWhere('divisi_tujuan_id', $divisiId);
+                $q->where(function($sub) use ($divisiId) {
+                    $sub->where('tipe', 'keluar')->where('divisi_asal_id', $divisiId);
+                })->orWhere(function($sub) use ($divisiId) {
+                    $sub->where('tipe', 'masuk')->where('divisi_tujuan_id', $divisiId);
+                });
             });
         }
 
@@ -497,9 +509,9 @@ class StokGudangController extends Controller
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
                 }
 
-                if ($matchTujuan && !$matchAsal) {
+                if ($row->tipe === 'masuk' && $matchTujuan) {
                     $isMasuk = true;
-                } elseif ($matchAsal && !$matchTujuan) {
+                } elseif ($row->tipe === 'keluar' && $matchAsal) {
                     $isKeluar = true;
                 }
             } else {
@@ -609,9 +621,9 @@ class StokGudangController extends Controller
                     $matchAsal   = $matchAsal   && ($row->divisi_asal_id   == $divisiId);
                 }
 
-                if ($matchTujuan && !$matchAsal) {
+                if ($row->tipe === 'masuk' && $matchTujuan) {
                     $isMasuk = true;
-                } elseif ($matchAsal && !$matchTujuan) {
+                } elseif ($row->tipe === 'keluar' && $matchAsal) {
                     $isKeluar = true;
                 }
             } else {

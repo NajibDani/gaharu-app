@@ -1334,9 +1334,15 @@ class PengeluaranBahanBakuController extends Controller
                     );
                 }
 
+                /*
+                |----------------------------------------------------------------------
+                | SIMPAN MAP QTY LAMA SEBELUM ROLLBACK
+                |----------------------------------------------------------------------
+                */
+                $oldQtyMap = [];
                 if ($isApproved) {
-                    // 1. Rollback alokasi stok lama
                     foreach ($data->details as $oldDetail) {
+                        $oldQtyMap[$oldDetail->barang_id] = ($oldQtyMap[$oldDetail->barang_id] ?? 0) + (float) $oldDetail->qty;
                         $this->rollbackApprovedDetail($data, $oldDetail);
                     }
 
@@ -1403,11 +1409,19 @@ class PengeluaranBahanBakuController extends Controller
                     if ($isFromOpname || $isWasted) {
                         $this->executeApproveWastedOrOpname($data);
                     } else {
-                        // Validasi stok Gudang Utama
+                        // Validasi stok Gudang Utama hanya untuk item baru atau item yang qty-nya bertambah
                         $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
                         $gudangAsalId = $gudangUtama ? $gudangUtama->id : 2;
 
                         foreach ($data->details as $detail) {
+                            $oldQty = (float) ($oldQtyMap[$detail->barang_id] ?? 0);
+                            $deltaQty = (float) $detail->qty - $oldQty;
+
+                            // Jika qty barang tidak bertambah (sama atau berkurang), tidak perlu memblokir simpan
+                            if ($deltaQty <= 0) {
+                                continue;
+                            }
+
                             $stokTersedia = (float) (StokGudang::where('barang_id', $detail->barang_id)
                                 ->where('gudang_id', $gudangAsalId)
                                 ->sum('jumlah') ?? 0);
