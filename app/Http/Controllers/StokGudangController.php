@@ -1399,7 +1399,15 @@ class StokGudangController extends Controller
                         ->value('wo_dt.tanggal_wo');
                 }
 
-                $txDate = $woDate ?: ($al->pesanan_tanggal ?: ($al->tanggal_selesai ?: ($al->tanggal_mulai ?: now())));
+                $candidateDate = $woDate ?: ($al->tanggal_selesai ?: ($al->tanggal_mulai ?: now()));
+                $mintaDate = $al->pesanan_tanggal ? date('Y-m-d', strtotime($al->pesanan_tanggal)) : null;
+                $mintaDateH1 = $mintaDate ? date('Y-m-d 23:59:59', strtotime($mintaDate . ' +1 day')) : null;
+
+                if ($mintaDateH1 && $candidateDate > $mintaDateH1) {
+                    $txDate = date('Y-m-d 12:00:00', strtotime($mintaDate . ' +1 day'));
+                } else {
+                    $txDate = $candidateDate;
+                }
 
                 // 1. Kurangi sisa stok dan batch di CK
                 $stokCk = DB::table('stok_gudang')

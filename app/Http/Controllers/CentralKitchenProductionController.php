@@ -1645,7 +1645,18 @@ class CentralKitchenProductionController extends Controller
                                     ->value('wo_dt.tanggal_wo');
                             }
 
-                            $finalTransferDate = $woDate ?: ($pesananItem->tanggal ?: ($request->tanggal_produksi ?: now()));
+                            $mintaDate = $pesananItem->tanggal ? date('Y-m-d', strtotime($pesananItem->tanggal)) : null;
+                            $mintaDateH1 = $mintaDate ? date('Y-m-d 23:59:59', strtotime($mintaDate . ' +1 day')) : null;
+
+                            // Default ke tanggal WO atau tanggal produksi aktual
+                            $candidateDate = $woDate ?: ($request->tanggal_produksi ?: now());
+
+                            // Jika tanggal pesanan/permintaan ada dan kandidat melebihi H+1 tanggal permintaan, batasi maksimal H+1
+                            if ($mintaDateH1 && $candidateDate > $mintaDateH1) {
+                                $finalTransferDate = date('Y-m-d 12:00:00', strtotime($mintaDate . ' +1 day'));
+                            } else {
+                                $finalTransferDate = $candidateDate;
+                            }
 
                             $this->transferBsjToOutletKitchen(
                                 $produksiId,
