@@ -662,12 +662,8 @@ class PenjualanPosController extends Controller
                 return redirect()->route('penjualan_pos.index')->with('error', $msgClosed);
             }
 
-            if ($penjualan->status !== 'Draft') {
+            if ($penjualan->status !== 'Draft' && !$isInternal) {
                 $msgNotDraft = 'Transaksi ini sudah pernah diproses sebelumnya.';
-                if ($isInternal) {
-                    DB::rollBack();
-                    return ['status' => 'error', 'message' => $msgNotDraft];
-                }
                 return redirect()->route('penjualan_pos.index')->with('error', $msgNotDraft);
             }
 
@@ -719,11 +715,24 @@ class PenjualanPosController extends Controller
                 ->orWhere('keterangan', 'AUTO_POS:' . $kodePos)
                 ->pluck('id');
             if ($oldPengList->isNotEmpty()) {
+                $oldFifos = DB::table('pengeluaran_bahan_baku_fifo')->whereIn('pengeluaran_id', $oldPengList)->get();
+                foreach ($oldFifos as $of) {
+                    if ($of->batch_id && (float)$of->qty_keluar > 0) {
+                        $b = \App\Models\StokGudangBatch::find($of->batch_id);
+                        if ($b) {
+                            $b->increment('qty_sisa', (float)$of->qty_keluar);
+                            $b->decrement('qty_keluar', min((float)$b->qty_keluar, (float)$of->qty_keluar));
+                            $b->update(['is_habis' => false]);
+                        }
+                    }
+                }
                 DB::table('pengeluaran_bahan_baku_fifo')->whereIn('pengeluaran_id', $oldPengList)->delete();
                 DB::table('pengeluaran_bahan_baku_detail')->whereIn('pengeluaran_id', $oldPengList)->delete();
                 DB::table('pengeluaran_bahan_baku')->whereIn('id', $oldPengList)->delete();
                 DB::table('transaksi_stok')->where('source_type', 'penjualan_pos')->whereIn('source_id', $oldPengList)->delete();
             }
+            // Hapus juga mutasi transaksi_stok yang source_id nya adalah ID penjualan POS itu sendiri
+            DB::table('transaksi_stok')->whereIn('source_type', ['penjualan_pos', 'pos'])->where('source_id', $penjualan->id)->delete();
 
             // Jika ada item yang belum memiliki resep, pisahkan ke transaksi Draft baru (tertinggal)
             $pendingPenjualan = null;
@@ -774,11 +783,16 @@ class PenjualanPosController extends Controller
                 $allocated = $allocatedStock[$barangId] ?? 0;
 
                 // Check available stock of this item in this warehouse minus already allocated in this transaction
-                $stokTersediaTotal = (float) DB::table('stok_gudang_batch')
+                $stokBatch = (float) DB::table('stok_gudang_batch')
                     ->where('gudang_id', $gudangId)
                     ->where('barang_id', $barangId)
                     ->where('qty_sisa', '>', 0)
                     ->sum('qty_sisa');
+                $stokSummary = (float) DB::table('stok_gudang')
+                    ->where('gudang_id', $gudangId)
+                    ->where('barang_id', $barangId)
+                    ->sum('jumlah');
+                $stokTersediaTotal = max($stokBatch, $stokSummary);
                 $stokTersedia = max(0, $stokTersediaTotal - $allocated);
 
                 $resep = null;

@@ -2358,6 +2358,17 @@ class StokGudangController extends Controller
                     $resepProdukIds = DB::table('resep_btkl_bop')->whereIn('id', $resepIdsUsingBarang)->whereNotNull('produk_id')->pluck('produk_id')->toArray();
                     $allMatchedProdIds = array_unique(array_merge($directProductIds, $resepProdukIds));
 
+                    // Jika bahan ini digunakan oleh BSJ, cari juga produk akhir yang menggunakan BSJ tersebut
+                    if ($isUsedInBsj) {
+                        $parentBsjIds = DB::table('master_barang')->whereIn('id', $allMatchedProdIds)->where('is_bahan_setengah_jadi', 1)->pluck('id')->toArray();
+                        if (!empty($parentBsjIds)) {
+                            $parentResepIds = DB::table('resep_bahanbaku')->whereIn('bahan_id', $parentBsjIds)->pluck('resep_id')->toArray();
+                            $finishedProdIds = DB::table('master_barang')->whereIn('resep_id', $parentResepIds)->pluck('id')->toArray();
+                            $finishedResepProdIds = DB::table('resep_btkl_bop')->whereIn('id', $parentResepIds)->whereNotNull('produk_id')->pluck('produk_id')->toArray();
+                            $allMatchedProdIds = array_unique(array_merge($allMatchedProdIds, $finishedProdIds, $finishedResepProdIds));
+                        }
+                    }
+
                     // Ambil nama-nama produk untuk mencari padanan antar-outlet (mis. POS Gaharu vs POS Kejingga)
                     $prodNames = DB::table('master_barang')->whereIn('id', $allMatchedProdIds)->pluck('nama')->toArray();
                     $cleanNames = array_unique(array_filter(array_map('trim', $prodNames)));
@@ -2467,6 +2478,30 @@ class StokGudangController extends Controller
                     } elseif (!$isUsedInBsj && $usesThisIngredient && abs($actualDeductedQty - $expectedQtyNeeded) > 0.001) {
                         // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya (hanya untuk barang yang bukan BSJ)
                         $needsResync = true;
+                    } elseif ($isUsedInBsj && $currentStokTxs->isNotEmpty()) {
+                        // Jika bahan mentah ini terpotong oleh POS karena turunan BSJ, periksa apakah BSJ terkait sekarang sudah memiliki stok di gudang POS
+                        // Jika BSJ sudah memiliki stok di gudang ini, POS harus diproses ulang agar memotong BSJ terlebih dahulu
+                        $bsjIds = DB::table('resep_bahanbaku')
+                            ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                            ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+                            ->where('resep_bahanbaku.bahan_id', $barangId)
+                            ->where('master_barang.is_bahan_setengah_jadi', 1)
+                            ->pluck('master_barang.id');
+
+                        $bsjHasStock = DB::table('stok_gudang_batch')
+                            ->where('gudang_id', $tPos->gudang_id)
+                            ->whereIn('barang_id', $bsjIds)
+                            ->where('qty_sisa', '>', 0)
+                            ->exists()
+                            || DB::table('stok_gudang')
+                            ->where('gudang_id', $tPos->gudang_id)
+                            ->whereIn('barang_id', $bsjIds)
+                            ->where('jumlah', '>', 0)
+                            ->exists();
+
+                        if ($bsjHasStock) {
+                            $needsResync = true;
+                        }
                     } elseif (!$usesThisIngredient && $currentStokTxs->isNotEmpty()) {
                         // Resep sudah tidak lagi menggunakan bahan ini, tapi mutasi masih ada
                         $needsResync = true;

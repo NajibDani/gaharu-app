@@ -162,6 +162,25 @@ class PengeluaranBahanBaku extends Model
     }
 
     /**
+     * Mengambil catatan/keterangan bersih tanpa string JSON metadata pembayaran
+     */
+    public function getCatatanBersihAttribute(): string
+    {
+        $raw = $this->attributes['keterangan'] ?? '';
+        if (empty($raw)) {
+            return '-';
+        }
+
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            $note = $decoded['note'] ?? ($decoded['catatan'] ?? ($decoded['keterangan'] ?? ''));
+            return !empty(trim($note)) ? trim($note) : '-';
+        }
+
+        return $raw;
+    }
+
+    /**
      * Cari objek StockOpname terkait dari dokumen PBK ini.
      */
     public function findAssociatedStockOpname(): ?StockOpname

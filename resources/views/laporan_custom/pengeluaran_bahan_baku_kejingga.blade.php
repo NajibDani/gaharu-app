@@ -160,7 +160,7 @@
                                             </span>
                                         @endif
                                     </td>
-                                    <td>{{ $row->keterangan ?? '-' }}</td>
+                                    <td>{{ $row->catatan_bersih ?? '-' }}</td>
                                     <td class="text-center">
                                         @if($row->status === 'approved' || $row->status === 'disetujui')
                                             <span class="badge bg-success">Approved</span>
@@ -242,6 +242,9 @@
                                                             <span class="badge {{ $isLunas ? 'bg-success' : 'bg-warning text-dark' }}">
                                                                 {{ $isLunas ? 'Lunas' : 'Belum Dibayar' }}
                                                             </span>
+                                                            @if($row->catatan_bersih && $row->catatan_bersih !== '-')
+                                                                &nbsp;|&nbsp; <strong>Catatan:</strong> <span class="text-dark">{{ $row->catatan_bersih }}</span>
+                                                            @endif
                                                         </div>
                                                         <div class="table-responsive">
                                                             <table class="table align-middle mb-0" style="font-size:13px;">
