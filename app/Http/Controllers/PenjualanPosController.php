@@ -713,6 +713,18 @@ class PenjualanPosController extends Controller
                 $gudangId = $penjualan->gudang_id;
             }
 
+            // Bersihkan dokumen pengeluaran_bahan_baku AUTO_POS lama jika ada untuk kode transaksi ini
+            $oldPengList = DB::table('pengeluaran_bahan_baku')
+                ->where('kode_pengeluaran', 'OUT-' . $kodePos)
+                ->orWhere('keterangan', 'AUTO_POS:' . $kodePos)
+                ->pluck('id');
+            if ($oldPengList->isNotEmpty()) {
+                DB::table('pengeluaran_bahan_baku_fifo')->whereIn('pengeluaran_id', $oldPengList)->delete();
+                DB::table('pengeluaran_bahan_baku_detail')->whereIn('pengeluaran_id', $oldPengList)->delete();
+                DB::table('pengeluaran_bahan_baku')->whereIn('id', $oldPengList)->delete();
+                DB::table('transaksi_stok')->where('source_type', 'penjualan_pos')->whereIn('source_id', $oldPengList)->delete();
+            }
+
             // Jika ada item yang belum memiliki resep, pisahkan ke transaksi Draft baru (tertinggal)
             $pendingPenjualan = null;
             $pendingCode = null;

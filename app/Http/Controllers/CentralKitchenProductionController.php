@@ -71,29 +71,35 @@ class CentralKitchenProductionController extends Controller
             });
         }
 
-        if ($startDate) {
-            $queryWo->where(function($q) use ($startDate) {
-                $q->whereDate('tanggal_wo', '>=', $startDate)
-                  ->orWhere(function($sub) use ($startDate) {
-                      $sub->whereNull('tanggal_wo')->whereDate('created_at', '>=', $startDate);
-                  })
-                  ->orWhereHas('details.pesanan', function($pq) use ($startDate) {
-                      $pq->whereDate('tanggal', '>=', $startDate)
-                         ->orWhereDate('estimasi_kirim', '>=', $startDate);
-                  });
+        if ($startDate && $endDate) {
+            $queryWo->where(function($q) use ($startDate, $endDate) {
+                $q->whereHas('details.pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhereBetween('tanggal_wo', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+                ->orWhere(function($sub) use ($startDate, $endDate) {
+                    $sub->whereNull('tanggal_wo')->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                });
             });
-        }
-
-        if ($endDate) {
+        } elseif ($startDate) {
+            $queryWo->where(function($q) use ($startDate) {
+                $q->whereHas('details.pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhereDate('tanggal_wo', '>=', $startDate)
+                ->orWhere(function($sub) use ($startDate) {
+                    $sub->whereNull('tanggal_wo')->whereDate('created_at', '>=', $startDate);
+                });
+            });
+        } elseif ($endDate) {
             $queryWo->where(function($q) use ($endDate) {
-                $q->whereDate('tanggal_wo', '<=', $endDate)
-                  ->orWhere(function($sub) use ($endDate) {
-                      $sub->whereNull('tanggal_wo')->whereDate('created_at', '<=', $endDate);
-                  })
-                  ->orWhereHas('details.pesanan', function($pq) use ($endDate) {
-                      $pq->whereDate('tanggal', '<=', $endDate)
-                         ->orWhereDate('estimasi_kirim', '<=', $endDate);
-                  });
+                $q->whereHas('details.pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhereDate('tanggal_wo', '<=', $endDate)
+                ->orWhere(function($sub) use ($endDate) {
+                    $sub->whereNull('tanggal_wo')->whereDate('created_at', '<=', $endDate);
+                });
             });
         }
 
@@ -375,19 +381,20 @@ class CentralKitchenProductionController extends Controller
             });
         }
 
-        if ($startDate) {
+        if ($startDate && $endDate) {
+            $pesananCkQuery->where(function($q) use ($startDate, $endDate) {
+                $q->whereBetween('tanggal', [$startDate, $endDate])
+                  ->orWhereBetween('estimasi_kirim', [$startDate, $endDate]);
+            });
+        } elseif ($startDate) {
             $pesananCkQuery->where(function($q) use ($startDate) {
                 $q->whereDate('tanggal', '>=', $startDate)
-                  ->orWhereDate('estimasi_kirim', '>=', $startDate)
-                  ->orWhereDate('created_at', '>=', $startDate);
+                  ->orWhereDate('estimasi_kirim', '>=', $startDate);
             });
-        }
-
-        if ($endDate) {
+        } elseif ($endDate) {
             $pesananCkQuery->where(function($q) use ($endDate) {
                 $q->whereDate('tanggal', '<=', $endDate)
-                  ->orWhereDate('estimasi_kirim', '<=', $endDate)
-                  ->orWhereDate('created_at', '<=', $endDate);
+                  ->orWhereDate('estimasi_kirim', '<=', $endDate);
             });
         }
 
@@ -497,35 +504,35 @@ class CentralKitchenProductionController extends Controller
             });
         }
 
-        if ($startDate) {
-            $queryProduksi->where(function($q) use ($startDate) {
-                $q->whereDate('tanggal_mulai', '>=', $startDate)
-                  ->orWhereDate('tanggal_selesai', '>=', $startDate)
-                  ->orWhereDate('created_at', '>=', $startDate)
-                  ->orWhereHas('pesanan', function($pq) use ($startDate) {
-                      $pq->whereDate('tanggal', '>=', $startDate)
-                         ->orWhereDate('estimasi_kirim', '>=', $startDate);
-                  })
-                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate) {
-                      $pq->whereDate('tanggal', '>=', $startDate)
-                         ->orWhereDate('estimasi_kirim', '>=', $startDate);
-                  });
+        if ($startDate && $endDate) {
+            $queryProduksi->where(function($q) use ($startDate, $endDate) {
+                $q->whereHas('pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhereBetween('tanggal_mulai', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
             });
-        }
-
-        if ($endDate) {
+        } elseif ($startDate) {
+            $queryProduksi->where(function($q) use ($startDate) {
+                $q->whereHas('pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhereDate('tanggal_mulai', '>=', $startDate);
+            });
+        } elseif ($endDate) {
             $queryProduksi->where(function($q) use ($endDate) {
-                $q->whereDate('tanggal_mulai', '<=', $endDate)
-                  ->orWhereDate('tanggal_selesai', '<=', $endDate)
-                  ->orWhereDate('created_at', '<=', $endDate)
-                  ->orWhereHas('pesanan', function($pq) use ($endDate) {
-                      $pq->whereDate('tanggal', '<=', $endDate)
-                         ->orWhereDate('estimasi_kirim', '<=', $endDate);
-                  })
-                  ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($endDate) {
-                      $pq->whereDate('tanggal', '<=', $endDate)
-                         ->orWhereDate('estimasi_kirim', '<=', $endDate);
-                  });
+                $q->whereHas('pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhereDate('tanggal_mulai', '<=', $endDate);
             });
         }
 
@@ -3281,34 +3288,53 @@ class CentralKitchenProductionController extends Controller
         $totalHpp = $qty * $hppPerUnit;
         $transactionDate = $txDate ?: now();
 
-        // 1. Kurangi stok di Central Kitchen
-        $stokCk = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $produkId)->first();
-        if ($stokCk) {
-            $stokCk->decrement('jumlah', min(floatval($stokCk->jumlah), $qty));
-        }
-
-        $batchCk = StokGudangBatch::where('gudang_id', $gudangCkId)
-            ->where('barang_id', $produkId)
-            ->where(function($q) use ($kodeProduksi) {
-                $q->where('batch_number', 'like', "%{$kodeProduksi}%")
-                  ->orWhere('batch_number', 'like', 'CK-%');
-            })
-            ->latest('id')
-            ->first();
-        if ($batchCk) {
-            $batchCk->increment('qty_keluar', $qty);
-            $batchCk->decrement('qty_sisa', min(floatval($batchCk->qty_sisa), $qty));
-            if ($batchCk->qty_sisa <= 0) $batchCk->is_habis = true;
-            $batchCk->save();
-        }
-
-        // 2. Transaksi keluar dari Central Kitchen (hindari duplikasi)
+        // 1. Cek apakah transaksi keluar & masuk untuk produksi ini sudah pernah dibuat sebelumnya
         $existingTxKeluar = TransaksiStok::where('source_type', 'transfer_ck')
             ->where('source_id', $produksiId)
             ->where('tipe', 'keluar')
             ->where('barang_id', $produkId)
             ->first();
 
+        $existingTxMasuk = TransaksiStok::where('source_type', 'transfer_ck')
+            ->where('source_id', $produksiId)
+            ->where('tipe', 'masuk')
+            ->where('gudang_tujuan_id', $outletGudangId)
+            ->where('barang_id', $produkId)
+            ->first();
+
+        $oldQty = $existingTxMasuk ? floatval($existingTxMasuk->qty) : 0;
+        $qtyDiff = $qty - $oldQty;
+
+        // 2. Sesuaikan stok dan batch di Central Kitchen hanya untuk selisih (qtyDiff)
+        if ($qtyDiff > 0) {
+            $stokCk = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $produkId)->first();
+            if ($stokCk) {
+                $stokCk->decrement('jumlah', min(floatval($stokCk->jumlah), $qtyDiff));
+            }
+
+            $batchCk = StokGudangBatch::where('gudang_id', $gudangCkId)
+                ->where('barang_id', $produkId)
+                ->where(function($q) use ($kodeProduksi) {
+                    $q->where('batch_number', 'like', "%{$kodeProduksi}%")
+                      ->orWhere('batch_number', 'like', 'CK-%');
+                })
+                ->latest('id')
+                ->first();
+            if ($batchCk) {
+                $batchCk->increment('qty_keluar', $qtyDiff);
+                $batchCk->decrement('qty_sisa', min(floatval($batchCk->qty_sisa), $qtyDiff));
+                if ($batchCk->qty_sisa <= 0) $batchCk->is_habis = true;
+                $batchCk->save();
+            }
+        } elseif ($qtyDiff < 0) {
+            $returnQty = abs($qtyDiff);
+            $stokCk = StokGudang::where('gudang_id', $gudangCkId)->where('barang_id', $produkId)->first();
+            if ($stokCk) {
+                $stokCk->increment('jumlah', $returnQty);
+            }
+        }
+
+        // 3. Transaksi keluar dari Central Kitchen (hindari duplikasi)
         if ($existingTxKeluar) {
             $existingTxKeluar->update([
                 'tanggal'          => $transactionDate,
@@ -3334,13 +3360,17 @@ class CentralKitchenProductionController extends Controller
             ]);
         }
 
-        // 3. Tambah stok gudang outlet pada divisi Kitchen
+        // 4. Tambah/sesuaikan stok gudang outlet pada divisi Kitchen hanya selisihnya
         $stokOutlet = StokGudang::where('gudang_id', $outletGudangId)
             ->where('divisi_id', $kitchenDivId)
             ->where('barang_id', $produkId)
             ->first();
         if ($stokOutlet) {
-            $stokOutlet->increment('jumlah', $qty);
+            if ($qtyDiff > 0) {
+                $stokOutlet->increment('jumlah', $qtyDiff);
+            } elseif ($qtyDiff < 0) {
+                $stokOutlet->decrement('jumlah', min(floatval($stokOutlet->jumlah), abs($qtyDiff)));
+            }
         } else {
             StokGudang::create([
                 'gudang_id' => $outletGudangId,
@@ -3350,7 +3380,7 @@ class CentralKitchenProductionController extends Controller
             ]);
         }
 
-        // 4. Buat batch di outlet divisi Kitchen (idempotent)
+        // 5. Buat batch di outlet divisi Kitchen (idempotent)
         $batchNo = 'TRANSFER-CK-' . $kodeProduksi . '-' . $pesanan->id;
         $batchOutlet = StokGudangBatch::where('gudang_id', $outletGudangId)
             ->where('barang_id', $produkId)
@@ -3360,9 +3390,9 @@ class CentralKitchenProductionController extends Controller
         if ($batchOutlet) {
             $batchOutlet->divisi_id = $kitchenDivId;
             $batchOutlet->qty_masuk = $qty;
-            $batchOutlet->qty_sisa  = $qty;
+            $batchOutlet->qty_sisa  = max(0, floatval($batchOutlet->qty_sisa) + $qtyDiff);
             $batchOutlet->harga_per_qty = $hppPerUnit;
-            $batchOutlet->is_habis = false;
+            $batchOutlet->is_habis = ($batchOutlet->qty_sisa <= 0);
             $batchOutlet->save();
         } else {
             $supplierId = DB::table('suppliers')->value('id') ?? 1;
@@ -3382,14 +3412,7 @@ class CentralKitchenProductionController extends Controller
             ]);
         }
 
-        // 5. Transaksi masuk ke Outlet Kitchen (hindari duplikasi)
-        $existingTxMasuk = TransaksiStok::where('source_type', 'transfer_ck')
-            ->where('source_id', $produksiId)
-            ->where('tipe', 'masuk')
-            ->where('gudang_tujuan_id', $outletGudangId)
-            ->where('barang_id', $produkId)
-            ->first();
-
+        // 6. Transaksi masuk ke Outlet Kitchen (hindari duplikasi)
         if ($existingTxMasuk) {
             $existingTxMasuk->update([
                 'tanggal'          => $transactionDate,

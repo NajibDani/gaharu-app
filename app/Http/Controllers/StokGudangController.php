@@ -900,13 +900,15 @@ class StokGudangController extends Controller
                 return "Pengiriman (ID: {$id})";
 
             case 'transfer_ck':
+                $prod = \App\Models\Produksi::find($id);
+                if ($prod) {
+                    $doNumber = \App\Models\Pengiriman::where('pesanan_id', $prod->pesanan_id)->value('no_pengiriman');
+                    $batchDesc = $doNumber ?: $prod->kode_produksi;
+                    return $isMasuk ? "Transfer Masuk dari CK: {$batchDesc}" : "Transfer Keluar ke Outlet: {$batchDesc}";
+                }
                 $del = \App\Models\Pengiriman::find($id);
                 if ($del) {
                     return $isMasuk ? "Transfer Masuk dari CK: {$del->no_pengiriman}" : "Transfer Keluar ke Outlet: {$del->no_pengiriman}";
-                }
-                $prod = \App\Models\Produksi::find($id);
-                if ($prod) {
-                    return $isMasuk ? "Transfer Masuk dari CK: {$prod->kode_produksi}" : "Transfer Keluar ke Outlet: {$prod->kode_produksi}";
                 }
                 return $isMasuk ? "Transfer Masuk dari Central Kitchen (ID: {$id})" : "Transfer Keluar ke Outlet (ID: {$id})";
 
