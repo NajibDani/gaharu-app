@@ -1384,7 +1384,22 @@ class StokGudangController extends Controller
                 $qtyTransfer = floatval($al->qty_alokasi);
                 $hppPerUnit  = floatval($al->hpp_per_unit);
                 $totalHpp    = $qtyTransfer * $hppPerUnit;
-                $txDate      = $al->tanggal_selesai ?: ($al->tanggal_mulai ?: ($al->pesanan_tanggal ?: now()));
+
+                // Ambil tanggal WO jika ada agar transfer tercatat sesuai tanggal WO dibuat
+                $woDate = DB::table('work_order_detail as wod_dt')
+                    ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
+                    ->where('wod_dt.pesanan_id', $al->pesanan_id)
+                    ->where('wod_dt.produk_id', $al->produk_id)
+                    ->value('wo_dt.tanggal_wo');
+
+                if (!$woDate) {
+                    $woDate = DB::table('work_order_detail as wod_dt')
+                        ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
+                        ->where('wod_dt.pesanan_id', $al->pesanan_id)
+                        ->value('wo_dt.tanggal_wo');
+                }
+
+                $txDate = $woDate ?: ($al->pesanan_tanggal ?: ($al->tanggal_selesai ?: ($al->tanggal_mulai ?: now())));
 
                 // 1. Kurangi sisa stok dan batch di CK
                 $stokCk = DB::table('stok_gudang')
@@ -1457,6 +1472,7 @@ class StokGudangController extends Controller
 
                 if ($existingBatch) {
                     $existingBatch->divisi_id = $kitchenDivId;
+                    $existingBatch->created_at = $txDate;
                     $existingBatch->save();
                 } else {
                     StokGudangBatch::create([
@@ -1472,6 +1488,7 @@ class StokGudangController extends Controller
                         'qty_sisa'            => $qtyTransfer,
                         'harga_per_qty'       => $hppPerUnit,
                         'is_habis'            => false,
+                        'created_at'          => $txDate,
                     ]);
                 }
 

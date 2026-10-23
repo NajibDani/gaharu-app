@@ -1632,6 +1632,21 @@ class CentralKitchenProductionController extends Controller
                     if (!$isInternalCk && $porsi > 0 && $pesananItem) {
                         [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananItem);
                         if ($outletGudangId) {
+                            $woDate = DB::table('work_order_detail as wod_dt')
+                                ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
+                                ->where('wod_dt.pesanan_id', $wod->pesanan_id)
+                                ->where('wod_dt.produk_id', $produkId)
+                                ->value('wo_dt.tanggal_wo');
+
+                            if (!$woDate) {
+                                $woDate = DB::table('work_order_detail as wod_dt')
+                                    ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
+                                    ->where('wod_dt.pesanan_id', $wod->pesanan_id)
+                                    ->value('wo_dt.tanggal_wo');
+                            }
+
+                            $finalTransferDate = $woDate ?: ($pesananItem->tanggal ?: ($request->tanggal_produksi ?: now()));
+
                             $this->transferBsjToOutletKitchen(
                                 $produksiId,
                                 $kodeProduksi,
@@ -1642,7 +1657,7 @@ class CentralKitchenProductionController extends Controller
                                 $gudangCkId,
                                 $outletGudangId,
                                 $kitchenDivId,
-                                $request->tanggal_produksi ?: now()
+                                $finalTransferDate
                             );
                         }
                     }
@@ -3393,6 +3408,7 @@ class CentralKitchenProductionController extends Controller
             $batchOutlet->qty_sisa  = max(0, floatval($batchOutlet->qty_sisa) + $qtyDiff);
             $batchOutlet->harga_per_qty = $hppPerUnit;
             $batchOutlet->is_habis = ($batchOutlet->qty_sisa <= 0);
+            $batchOutlet->created_at = $transactionDate;
             $batchOutlet->save();
         } else {
             $supplierId = DB::table('suppliers')->value('id') ?? 1;
@@ -3409,6 +3425,7 @@ class CentralKitchenProductionController extends Controller
                 'qty_sisa'            => $qty,
                 'harga_per_qty'       => $hppPerUnit,
                 'is_habis'            => false,
+                'created_at'          => $transactionDate,
             ]);
         }
 
