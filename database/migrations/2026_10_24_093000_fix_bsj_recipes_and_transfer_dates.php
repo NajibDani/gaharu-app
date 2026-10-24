@@ -15,72 +15,67 @@ return new class extends Migration
     public function up(): void
     {
         // 1. UPDATE RECIPES TO USE BSJ INSTEAD OF RAW MATERIALS
-        // Roasted Iga BBQ Sauce (FNB468) -> use IGA 150 GR (BSJ163) instead of IGA (BBB250)
-        $iga150gr = DB::table('master_barang')->where('kode_barang', 'BSJ163')->first();
-        $igaRaw   = DB::table('master_barang')->where('kode_barang', 'BBB250')->first();
-        $pahaGrill = DB::table('master_barang')->where('kode_barang', 'BSJ029')->first();
+        $iga150gr   = DB::table('master_barang')->where('kode_barang', 'BSJ163')->first();
+        $igaRaw     = DB::table('master_barang')->where('kode_barang', 'BBB250')->first();
+        $pahaGrill  = DB::table('master_barang')->where('kode_barang', 'BSJ029')->first();
         $filletPaha = DB::table('master_barang')->where('kode_barang', 'BBB187')->first();
-        $sateLilit = DB::table('master_barang')->where('kode_barang', 'BSJ124')->first();
+        $sateLilit  = DB::table('master_barang')->where('kode_barang', 'BSJ124')->first();
 
-        // 1a. Roasted Iga BBQ Sauce (id: 1294 / FNB468)
+        // 1a. Roasted Iga BBQ Sauce (FNB468) -> use IGA 150 GR (BSJ163) instead of IGA (BBB250)
         $menuIga = DB::table('master_barang')->where('kode_barang', 'FNB468')->first();
-        if ($menuIga && $iga150gr) {
-            if ($igaRaw) {
-                DB::table('resep_bahanbaku')
-                    ->where('barang_id', $menuIga->id)
-                    ->where('bahan_baku_id', $igaRaw->id)
-                    ->update([
-                        'bahan_baku_id' => $iga150gr->id,
-                        'jumlah' => 150,
-                        'satuan' => 'GR'
-                    ]);
-            }
-        }
-
-        // 1b. Chicken Burger (id: 804 / FNB038) -> use PAHA GRILL (BSJ029) instead of FILLET PAHA (BBB187)
-        $menuBurger = DB::table('master_barang')->where('kode_barang', 'FNB038')->first();
-        if ($menuBurger && $pahaGrill) {
-            if ($filletPaha) {
-                DB::table('resep_bahanbaku')
-                    ->where('barang_id', $menuBurger->id)
-                    ->where('bahan_baku_id', $filletPaha->id)
-                    ->update([
-                        'bahan_baku_id' => $pahaGrill->id,
-                        'jumlah' => 150,
-                        'satuan' => 'GR'
-                    ]);
-            }
-        }
-
-        // 1c. Balinese Mix Rice With Satay (id: 1156 / FNB330) -> use PAHA GRILL (BSJ029) instead of SATE LILIT (BSJ124)
-        $menuBali = DB::table('master_barang')->where('kode_barang', 'FNB330')->first();
-        if ($menuBali && $pahaGrill && $sateLilit) {
+        if ($menuIga && $menuIga->resep_id && $iga150gr && $igaRaw) {
             DB::table('resep_bahanbaku')
-                ->where('barang_id', $menuBali->id)
-                ->where('bahan_baku_id', $sateLilit->id)
+                ->where('resep_id', $menuIga->resep_id)
+                ->where('bahan_id', $igaRaw->id)
                 ->update([
-                    'bahan_baku_id' => $pahaGrill->id,
-                    'jumlah' => 150,
-                    'satuan' => 'GR'
+                    'bahan_id'  => $iga150gr->id,
+                    'qty_bahan' => 150,
+                    'satuan'    => 'GR'
                 ]);
         }
 
-        // 2. DEDUPLICATE resep_bahanbaku (keep highest ID per barang_id + bahan_baku_id)
+        // 1b. Chicken Burger (FNB038) -> use PAHA GRILL (BSJ029) instead of FILLET PAHA (BBB187)
+        $menuBurger = DB::table('master_barang')->where('kode_barang', 'FNB038')->first();
+        if ($menuBurger && $menuBurger->resep_id && $pahaGrill && $filletPaha) {
+            DB::table('resep_bahanbaku')
+                ->where('resep_id', $menuBurger->resep_id)
+                ->where('bahan_id', $filletPaha->id)
+                ->update([
+                    'bahan_id'  => $pahaGrill->id,
+                    'qty_bahan' => 150,
+                    'satuan'    => 'GR'
+                ]);
+        }
+
+        // 1c. Balinese Mix Rice With Satay (FNB330) -> use PAHA GRILL (BSJ029) instead of SATE LILIT (BSJ124)
+        $menuBali = DB::table('master_barang')->where('kode_barang', 'FNB330')->first();
+        if ($menuBali && $menuBali->resep_id && $pahaGrill && $sateLilit) {
+            DB::table('resep_bahanbaku')
+                ->where('resep_id', $menuBali->resep_id)
+                ->where('bahan_id', $sateLilit->id)
+                ->update([
+                    'bahan_id'  => $pahaGrill->id,
+                    'qty_bahan' => 150,
+                    'satuan'    => 'GR'
+                ]);
+        }
+
+        // 2. DEDUPLICATE resep_bahanbaku (keep highest ID per resep_id + bahan_id)
         $duplicates = DB::table('resep_bahanbaku')
-            ->select('barang_id', 'bahan_baku_id', DB::raw('COUNT(*) as total'))
-            ->groupBy('barang_id', 'bahan_baku_id')
+            ->select('resep_id', 'bahan_id', DB::raw('COUNT(*) as total'))
+            ->groupBy('resep_id', 'bahan_id')
             ->having('total', '>', 1)
             ->get();
 
         foreach ($duplicates as $dup) {
             $keepId = DB::table('resep_bahanbaku')
-                ->where('barang_id', $dup->barang_id)
-                ->where('bahan_baku_id', $dup->bahan_baku_id)
+                ->where('resep_id', $dup->resep_id)
+                ->where('bahan_id', $dup->bahan_id)
                 ->max('id');
 
             DB::table('resep_bahanbaku')
-                ->where('barang_id', $dup->barang_id)
-                ->where('bahan_baku_id', $dup->bahan_baku_id)
+                ->where('resep_id', $dup->resep_id)
+                ->where('bahan_id', $dup->bahan_id)
                 ->where('id', '!=', $keepId)
                 ->delete();
         }
@@ -90,7 +85,7 @@ return new class extends Migration
             $controller = new StokGudangController();
             $posController = new PosController();
 
-            // Run CK production transfers auto-heal (this aligns transfer timestamps to WO / H+1)
+            // Run CK production transfers auto-heal
             $controller->autoHealApprovedCkProductionTransfers();
 
             // Clean orphan POS mutations
