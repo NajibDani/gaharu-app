@@ -1361,30 +1361,6 @@ class StokGudangController extends Controller
                     })
                     ->first();
 
-                if ($existingTxOutlet) {
-                    if ($kitchenDivId && $existingTxOutlet->divisi_tujuan_id != $kitchenDivId) {
-                        DB::table('transaksi_stok')->where('id', $existingTxOutlet->id)->update([
-                            'divisi_tujuan_id' => $kitchenDivId
-                        ]);
-                        DB::table('stok_gudang_batch')
-                            ->where('gudang_id', $outletGudangId)
-                            ->where('barang_id', $al->produk_id)
-                            ->where(function($q) use ($al) {
-                                $q->where('batch_number', 'like', "%{$al->kode_produksi}%")
-                                  ->orWhere('batch_number', 'like', 'TRANSFER-CK-%');
-                            })
-                            ->update(['divisi_id' => $kitchenDivId]);
-
-                        $affectedItems[] = ['barang_id' => $al->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
-                    }
-                    continue;
-                }
-
-                // JIKA BELUM ADA SAMA SEKALI: Catat transfer masuk ke divisi Kitchen outlet & keluar dari CK
-                $qtyTransfer = floatval($al->qty_alokasi);
-                $hppPerUnit  = floatval($al->hpp_per_unit);
-                $totalHpp    = $qtyTransfer * $hppPerUnit;
-
                 // Ambil tanggal WO jika ada agar transfer tercatat sesuai tanggal WO dibuat
                 $woDate = DB::table('work_order_detail as wod_dt')
                     ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
@@ -1408,6 +1384,51 @@ class StokGudangController extends Controller
                 } else {
                     $txDate = $candidateDate;
                 }
+
+                if ($existingTxOutlet) {
+                    $updatePayload = [];
+                    if ($kitchenDivId && $existingTxOutlet->divisi_tujuan_id != $kitchenDivId) {
+                        $updatePayload['divisi_tujuan_id'] = $kitchenDivId;
+                    }
+                    if ($existingTxOutlet->tanggal != $txDate) {
+                        $updatePayload['tanggal'] = $txDate;
+                    }
+
+                    if (!empty($updatePayload)) {
+                        DB::table('transaksi_stok')->where('id', $existingTxOutlet->id)->update($updatePayload);
+                        
+                        // Perbarui juga transaksi keluar terkait di CK jika tanggalnya berubah
+                        if (isset($updatePayload['tanggal'])) {
+                            DB::table('transaksi_stok')
+                                ->where('source_type', 'transfer_ck')
+                                ->where('source_id', $al->produksi_id)
+                                ->where('tipe', 'keluar')
+                                ->where('barang_id', $al->produk_id)
+                                ->update(['tanggal' => $txDate]);
+                        }
+
+                        $batchUpdate = [];
+                        if ($kitchenDivId) $batchUpdate['divisi_id'] = $kitchenDivId;
+                        if (isset($updatePayload['tanggal'])) $batchUpdate['created_at'] = $txDate;
+
+                        DB::table('stok_gudang_batch')
+                            ->where('gudang_id', $outletGudangId)
+                            ->where('barang_id', $al->produk_id)
+                            ->where(function($q) use ($al) {
+                                $q->where('batch_number', 'like', "%{$al->kode_produksi}%")
+                                  ->orWhere('batch_number', 'like', 'TRANSFER-CK-%');
+                            })
+                            ->update($batchUpdate);
+
+                        $affectedItems[] = ['barang_id' => $al->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
+                    }
+                    continue;
+                }
+
+                // JIKA BELUM ADA SAMA SEKALI: Catat transfer masuk ke divisi Kitchen outlet & keluar dari CK
+                $qtyTransfer = floatval($al->qty_alokasi);
+                $hppPerUnit  = floatval($al->hpp_per_unit);
+                $totalHpp    = $qtyTransfer * $hppPerUnit;
 
                 // 1. Kurangi sisa stok dan batch di CK
                 $stokCk = DB::table('stok_gudang')
