@@ -16,8 +16,12 @@ class ResepBtklBopController extends Controller
 {
     public function index(Request $request)
     {
-        MasterBarang::syncAllResepIds();
-        MasterBarang::syncAllResepSatuan();
+        try {
+            MasterBarang::syncAllResepIds();
+            MasterBarang::syncAllResepSatuan();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Resep index sync warning: ' . $e->getMessage());
+        }
 
         $search      = $request->query('search');
         $searchBahan = $request->query('search_bahan');

@@ -231,34 +231,47 @@ public function resepBahanBakuAlternatif()
      */
     public static function syncAllResepIds(): void
     {
-        // 1. Direct link by resep_btkl_bop.produk_id
-        \Illuminate\Support\Facades\DB::table('master_barang')
-            ->join('resep_btkl_bop', 'master_barang.id', '=', 'resep_btkl_bop.produk_id')
-            ->where(function ($q) {
-                $q->whereNull('master_barang.resep_id')
-                  ->orWhereColumn('master_barang.resep_id', '!=', 'resep_btkl_bop.id');
-            })
-            ->update(['master_barang.resep_id' => \Illuminate\Support\Facades\DB::raw('resep_btkl_bop.id')]);
+        try {
+            // 1. Cek produk yang resep_id nya belum sesuai dengan resep_btkl_bop.produk_id
+            $mismatched = \Illuminate\Support\Facades\DB::table('master_barang')
+                ->join('resep_btkl_bop', 'master_barang.id', '=', 'resep_btkl_bop.produk_id')
+                ->where(function ($q) {
+                    $q->whereNull('master_barang.resep_id')
+                      ->orWhereColumn('master_barang.resep_id', '!=', 'resep_btkl_bop.id');
+                })
+                ->select('master_barang.id', 'resep_btkl_bop.id as target_resep_id')
+                ->get();
 
-        // 2. Cross-link antar produk POS Kejingga dan POS Gaharu yang memiliki nama sama persis
-        $itemsWithoutRecipe = \Illuminate\Support\Facades\DB::table('master_barang')
-            ->where('is_barang_jadi', 1)
-            ->whereNull('resep_id')
-            ->get();
-
-        foreach ($itemsWithoutRecipe as $noRecipeItem) {
-            $matchingRecipe = \Illuminate\Support\Facades\DB::table('master_barang')
-                ->where('is_barang_jadi', 1)
-                ->whereNotNull('resep_id')
-                ->where('id', '!=', $noRecipeItem->id)
-                ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($noRecipeItem->nama))])
-                ->value('resep_id');
-
-            if ($matchingRecipe) {
-                \Illuminate\Support\Facades\DB::table('master_barang')
-                    ->where('id', $noRecipeItem->id)
-                    ->update(['resep_id' => $matchingRecipe]);
+            if ($mismatched->isNotEmpty()) {
+                foreach ($mismatched as $item) {
+                    \Illuminate\Support\Facades\DB::table('master_barang')
+                        ->where('id', $item->id)
+                        ->update(['resep_id' => $item->target_resep_id]);
+                }
             }
+
+            // 2. Cross-link antar produk POS Kejingga dan POS Gaharu yang memiliki nama sama persis
+            $itemsWithoutRecipe = \Illuminate\Support\Facades\DB::table('master_barang')
+                ->where('is_barang_jadi', 1)
+                ->whereNull('resep_id')
+                ->get();
+
+            foreach ($itemsWithoutRecipe as $noRecipeItem) {
+                $matchingRecipe = \Illuminate\Support\Facades\DB::table('master_barang')
+                    ->where('is_barang_jadi', 1)
+                    ->whereNotNull('resep_id')
+                    ->where('id', '!=', $noRecipeItem->id)
+                    ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($noRecipeItem->nama))])
+                    ->value('resep_id');
+
+                if ($matchingRecipe) {
+                    \Illuminate\Support\Facades\DB::table('master_barang')
+                        ->where('id', $noRecipeItem->id)
+                        ->update(['resep_id' => $matchingRecipe]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('syncAllResepIds safe auto-heal warning: ' . $e->getMessage());
         }
     }
 
@@ -267,19 +280,43 @@ public function resepBahanBakuAlternatif()
      */
     public static function syncAllResepSatuan(): void
     {
-        \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
-            ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
-            ->whereNotNull('master_barang.satuan')
-            ->where('master_barang.satuan', '!=', '')
-            ->whereColumn('resep_btkl_bop.satuan_output', '!=', 'master_barang.satuan')
-            ->update(['resep_btkl_bop.satuan_output' => \Illuminate\Support\Facades\DB::raw('master_barang.satuan')]);
+        try {
+            // 1. Cek output resep_btkl_bop yang satuannya belum sinkron dengan master_barang
+            $mismatchedOutput = \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
+                ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+                ->whereNotNull('master_barang.satuan')
+                ->where('master_barang.satuan', '!=', '')
+                ->whereColumn('resep_btkl_bop.satuan_output', '!=', 'master_barang.satuan')
+                ->select('resep_btkl_bop.id', 'master_barang.satuan as target_satuan')
+                ->get();
 
-        \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
-            ->join('master_barang', 'resep_bahanbaku.bahan_id', '=', 'master_barang.id')
-            ->whereNotNull('master_barang.satuan')
-            ->where('master_barang.satuan', '!=', '')
-            ->whereColumn('resep_bahanbaku.satuan', '!=', 'master_barang.satuan')
-            ->update(['resep_bahanbaku.satuan' => \Illuminate\Support\Facades\DB::raw('master_barang.satuan')]);
+            if ($mismatchedOutput->isNotEmpty()) {
+                foreach ($mismatchedOutput as $mo) {
+                    \Illuminate\Support\Facades\DB::table('resep_btkl_bop')
+                        ->where('id', $mo->id)
+                        ->update(['satuan_output' => $mo->target_satuan]);
+                }
+            }
+
+            // 2. Cek satuan resep_bahanbaku yang belum sinkron dengan master_barang
+            $mismatchedBahan = \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                ->join('master_barang', 'resep_bahanbaku.bahan_id', '=', 'master_barang.id')
+                ->whereNotNull('master_barang.satuan')
+                ->where('master_barang.satuan', '!=', '')
+                ->whereColumn('resep_bahanbaku.satuan', '!=', 'master_barang.satuan')
+                ->select('resep_bahanbaku.id', 'master_barang.satuan as target_satuan')
+                ->get();
+
+            if ($mismatchedBahan->isNotEmpty()) {
+                foreach ($mismatchedBahan as $mb) {
+                    \Illuminate\Support\Facades\DB::table('resep_bahanbaku')
+                        ->where('id', $mb->id)
+                        ->update(['satuan' => $mb->target_satuan]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('syncAllResepSatuan safe auto-heal warning: ' . $e->getMessage());
+        }
     }
 
     /**
