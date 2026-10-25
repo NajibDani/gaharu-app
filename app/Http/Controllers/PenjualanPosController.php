@@ -822,7 +822,38 @@ class PenjualanPosController extends Controller
                     return;
                 }
 
-                // If it is a semi-finished good and stock is not enough (or 0):
+                // Cek apakah bahan baku penyusun BSJ ini tersedia di gudang outlet ini.
+                // Jika bahan baku penyusunnya TIDAK memiliki stok di gudang ini (misal IGA 150 GR yang dikirim siap pakai dari Central Kitchen,
+                // di mana gudang kitchen outlet TIDAK MEMILIKI stok daging mentah BBB250), maka BSJ TIDAK BOLEH diurai ke bahan baku.
+                // Pemotongan harus tetap dilakukan pada barang BSJ itu sendiri (allowNegative = true di FIFO).
+                $canExplodeToRaw = false;
+                if ($resep) {
+                    $subBahanIds = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->pluck('bahan_id')->toArray();
+                    if (!empty($subBahanIds)) {
+                        $canExplodeToRaw = DB::table('stok_gudang_batch')
+                            ->where('gudang_id', $gudangId)
+                            ->whereIn('barang_id', $subBahanIds)
+                            ->where('qty_sisa', '>', 0)
+                            ->exists();
+                    }
+                }
+
+                // Jika BSJ tidak dapat/tidak seharusnya diurai ke bahan mentah di gudang ini:
+                if (!$canExplodeToRaw) {
+                    $allocatedStock[$barangId] = $allocated + $qtyNeeded;
+                    if (isset($totalKebutuhanBahan[$barangId])) {
+                        $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyNeeded;
+                    } else {
+                        $totalKebutuhanBahan[$barangId] = [
+                            'nama'   => $barang->nama,
+                            'satuan' => $barang->satuan,
+                            'jumlah' => $qtyNeeded
+                        ];
+                    }
+                    return;
+                }
+
+                // If it is a semi-finished good and stock is not enough (or 0), and can explode:
                 // Consume whatever is available first
                 $qtyRemaining = $qtyNeeded;
                 if ($stokTersedia > 0) {
