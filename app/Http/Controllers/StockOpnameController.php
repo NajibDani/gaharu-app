@@ -672,6 +672,9 @@ class StockOpnameController extends Controller
 
     public function refreshStok(Request $request, string $id)
     {
+        @ini_set('max_execution_time', 300);
+        @set_time_limit(300);
+
         $opname = StockOpname::with('details')->findOrFail($id);
 
         if ($opname->status !== 'draft') {
@@ -692,7 +695,6 @@ class StockOpnameController extends Controller
             $gudangId = $opname->gudang_id;
             $divisiId = $opname->divisi_id;
 
-            \App\Http\Controllers\StokGudangController::autoHealApprovedPosStockMutations();
             \App\Models\StokGudang::reconcileStockSummary(null, $gudangId, $divisiId);
 
             // Bersihkan item non-bahan baku / non-BSJ yang mungkin sebelumnya tersimpan di draft SO
@@ -826,24 +828,29 @@ class StockOpnameController extends Controller
 
                 if ($existingDetails->has($item->id)) {
                     $detail = $existingDetails->get($item->id);
-                    // PENTING: Stok fisik yang sudah diisi TIDAK diubah sama sekali.
-                    // Hanya perbarui stok sistem dan hitung ulang selisih serta nilai selisih.
                     $stokFisik = (float) $detail->stok_fisik;
                     $selisihBaru = $stokFisik - $stokSistemBaru;
-                    $nilaiSelisihBaru = $this->hitungNilaiOpname(
-                        $gudangId,
-                        $item->id,
-                        $selisihBaru,
-                        $divisiId
-                    );
 
-                    $detail->update([
-                        'stok_sistem'   => $stokSistemBaru,
-                        'stok_fisik'    => $stokFisik,
-                        'selisih'       => $selisihBaru,
-                        'nilai_selisih' => $nilaiSelisihBaru,
-                    ]);
-                    $updatedCount++;
+                    $needsUpdate = abs((float)$detail->stok_sistem - $stokSistemBaru) > 0.0001
+                        || abs((float)$detail->selisih - $selisihBaru) > 0.0001
+                        || $detail->nilai_selisih === null;
+
+                    if ($needsUpdate) {
+                        $nilaiSelisihBaru = $this->hitungNilaiOpname(
+                            $gudangId,
+                            $item->id,
+                            $selisihBaru,
+                            $divisiId
+                        );
+
+                        $detail->update([
+                            'stok_sistem'   => $stokSistemBaru,
+                            'stok_fisik'    => $stokFisik,
+                            'selisih'       => $selisihBaru,
+                            'nilai_selisih' => $nilaiSelisihBaru,
+                        ]);
+                        $updatedCount++;
+                    }
                 } else {
                     // Barang baru di gudang yang belum tercatat pada draft opname
                     StockOpnameDetail::create([

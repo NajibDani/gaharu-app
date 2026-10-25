@@ -983,7 +983,13 @@ function refreshStokOpname(id) {
             'Accept': 'application/json'
         }
     })
-    .then(response => response.json())
+    .then(async response => {
+        const res = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(res.message || `Gagal memperbarui stok (HTTP ${response.status}).`);
+        }
+        return res;
+    })
     .then(res => {
         if (res.success) {
             // Re-fetch detail dan re-render modal
@@ -1001,6 +1007,12 @@ function refreshStokOpname(id) {
                             </div>
                         `;
                     }
+                })
+                .finally(() => {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
+                    }
                 });
         } else {
             alert(res.message || 'Gagal memperbarui stok.');
@@ -1012,7 +1024,7 @@ function refreshStokOpname(id) {
     })
     .catch(err => {
         console.error(err);
-        alert('Terjadi kesalahan koneksi saat memperbarui stok.');
+        alert(err.message || 'Terjadi kesalahan saat memperbarui stok.');
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = originalHtml;
