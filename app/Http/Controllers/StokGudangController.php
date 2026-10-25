@@ -2362,6 +2362,48 @@ class StokGudangController extends Controller
                         \Illuminate\Support\Facades\Log::warning("Auto-heal approved POS {$mPos->id} failed: " . $exApprove->getMessage());
                     }
                 }
+
+                // 2a-2. Periksa apakah ada mutasi POS di gudang outlet yang memotong bahan baku mentah (BBB) milik BSJ
+                // Central Kitchen (misal daging mentah BBB250 Iga atau BBB187 Fillet Paha).
+                // Jika ada, re-approve transaksi POS tersebut agar pemotongan beralih ke item BSJ yang benar.
+                $rawBahanInBsj = DB::table('resep_bahanbaku')
+                    ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                    ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+                    ->where('master_barang.is_bahan_setengah_jadi', 1)
+                    ->pluck('resep_bahanbaku.bahan_id')
+                    ->unique()
+                    ->toArray();
+
+                if (!empty($rawBahanInBsj)) {
+                    $posWithWrongRawMutations = DB::table('transaksi_stok')
+                        ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                        ->whereIn('gudang_asal_id', $outletIds)
+                        ->whereIn('barang_id', $rawBahanInBsj)
+                        ->pluck('source_id')
+                        ->unique()
+                        ->toArray();
+
+                    foreach ($posWithWrongRawMutations as $wrongPosId) {
+                        $wPos = \App\Models\PenjualanPos::find($wrongPosId);
+                        if ($wPos) {
+                            try {
+                                DB::table('pengeluaran_bahan_baku')
+                                    ->where('keterangan', 'like', 'AUTO_POS:' . $wPos->kode_transaksi . '%')
+                                    ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $wPos->kode_transaksi . '%')
+                                    ->delete();
+                                DB::table('transaksi_stok')
+                                    ->whereIn('source_type', ['penjualan_pos', 'pos'])
+                                    ->where('source_id', $wPos->id)
+                                    ->delete();
+
+                                $wPos->update(['status' => 'Draft']);
+                                $posController->approve($wPos->id, true);
+                            } catch (\Exception $exApprove) {
+                                \Illuminate\Support\Facades\Log::warning("Auto-heal wrong raw POS {$wPos->id} failed: " . $exApprove->getMessage());
+                            }
+                        }
+                    }
+                }
             }
 
             // 2b. Periksa Penjualan POS yang disetujui untuk sinkronisasi pemotongan resep bahan baku terbaru
@@ -2448,7 +2490,7 @@ class StokGudangController extends Controller
                     ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
                     ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
                     ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
-                    ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku_alternatif.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
+                    ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
                     ->get()
                     ->keyBy('resep_id');
 

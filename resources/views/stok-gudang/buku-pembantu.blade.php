@@ -414,9 +414,9 @@
                     tableState.classList.add('d-none');
                 }
 
-                const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${activeBarangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}`;
+                const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${activeBarangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}&refresh=1&_t=${Date.now()}`;
 
-                fetch(url)
+                fetch(url, { cache: 'no-store' })
                     .then(response => {
                         if (!response.ok) throw new Error('Gagal mengambil data mutasi.');
                         return response.json();
@@ -667,10 +667,21 @@
                 const gudangId = gudangSelect ? gudangSelect.value : '';
                 const divisiId = divisiSelect ? divisiSelect.value : '';
 
-                const btn = this;
-                const orig = btn.innerHTML;
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Sinkronisasi...';
+                const origHeader = btnRefreshMutasi ? btnRefreshMutasi.innerHTML : '';
+                const origFooter = btnRefreshMutasiFooter ? btnRefreshMutasiFooter.innerHTML : '';
+
+                if (btnRefreshMutasi) {
+                    btnRefreshMutasi.disabled = true;
+                    btnRefreshMutasi.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Mengkalkulasi...';
+                }
+                if (btnRefreshMutasiFooter) {
+                    btnRefreshMutasiFooter.disabled = true;
+                    btnRefreshMutasiFooter.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Mengkalkulasi...';
+                }
+
+                // Tampilkan loading spinner di tabel modal
+                loadingState.classList.remove('d-none');
+                tableState.classList.add('d-none');
 
                 fetch("{{ route('stok-gudang.buku-pembantu.sync-refresh') }}", {
                     method: 'POST',
@@ -687,14 +698,52 @@
                 })
                 .then(res => res.json())
                 .then(resData => {
-                    btn.disabled = false;
-                    btn.innerHTML = orig;
-                    loadMutasiData(false);
+                    if (btnRefreshMutasi) {
+                        btnRefreshMutasi.disabled = false;
+                        btnRefreshMutasi.innerHTML = origHeader;
+                    }
+                    if (btnRefreshMutasiFooter) {
+                        btnRefreshMutasiFooter.disabled = false;
+                        btnRefreshMutasiFooter.innerHTML = origFooter;
+                    }
+
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            toast: true,
+                            position: 'top-end',
+                            icon: resData.success ? 'success' : 'error',
+                            title: resData.message || (resData.success ? 'Kalkulasi & sinkronisasi mutasi selesai 100%' : 'Gagal sinkronisasi.'),
+                            showConfirmButton: false,
+                            timer: 3500,
+                            timerProgressBar: true
+                        });
+                    }
+
+                    loadMutasiData(true);
                 })
                 .catch(err => {
-                    btn.disabled = false;
-                    btn.innerHTML = orig;
-                    loadMutasiData(false);
+                    if (btnRefreshMutasi) {
+                        btnRefreshMutasi.disabled = false;
+                        btnRefreshMutasi.innerHTML = origHeader;
+                    }
+                    if (btnRefreshMutasiFooter) {
+                        btnRefreshMutasiFooter.disabled = false;
+                        btnRefreshMutasiFooter.innerHTML = origFooter;
+                    }
+
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            toast: true,
+                            position: 'top-end',
+                            icon: 'error',
+                            title: 'Terjadi kesalahan jaringan saat menyinkronkan data.',
+                            showConfirmButton: false,
+                            timer: 3500,
+                            timerProgressBar: true
+                        });
+                    }
+
+                    loadMutasiData(true);
                 });
             };
 

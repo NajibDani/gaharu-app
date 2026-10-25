@@ -822,10 +822,28 @@ class PenjualanPosController extends Controller
                     return;
                 }
 
-                // Cek apakah bahan baku penyusun BSJ ini tersedia di gudang outlet ini.
-                // Jika bahan baku penyusunnya TIDAK memiliki stok di gudang ini (misal IGA 150 GR yang dikirim siap pakai dari Central Kitchen,
-                // di mana gudang kitchen outlet TIDAK MEMILIKI stok daging mentah BBB250), maka BSJ TIDAK BOLEH diurai ke bahan baku.
-                // Pemotongan harus tetap dilakukan pada barang BSJ itu sendiri (allowNegative = true di FIFO).
+                // Di gudang outlet (Resto/Cafe), bahan setengah jadi (BSJ) disuplai langsung dari Central Kitchen (CK)
+                // melalui transfer produksi pesanan. Gudang outlet TIDAK MEMPRODUKSI BSJ dari bahan mentah di tempat.
+                // Oleh karena itu, pemotongan stok untuk penjualan POS di outlet SELALU memotong barang BSJ itu sendiri,
+                // dan TIDAK BOLEH diurai (explode) ke bahan baku mentah penyusunnya, bahkan jika stok BSJ sedang 0/kurang.
+                // Biarkan FIFO memotong barang BSJ tersebut secara langsung (dengan allowNegative = true).
+                $isOutletGudang = in_array((int)$gudangId, \App\Models\MasterGudang::getOutletGudangIds());
+                if ($isOutletGudang) {
+                    $allocatedStock[$barangId] = $allocated + $qtyNeeded;
+                    if (isset($totalKebutuhanBahan[$barangId])) {
+                        $totalKebutuhanBahan[$barangId]['jumlah'] += $qtyNeeded;
+                    } else {
+                        $totalKebutuhanBahan[$barangId] = [
+                            'nama'   => $barang->nama,
+                            'satuan' => $barang->satuan,
+                            'jumlah' => $qtyNeeded
+                        ];
+                    }
+                    return;
+                }
+
+                // Untuk gudang non-outlet: Cek apakah bahan baku penyusun BSJ ini tersedia di gudang ini.
+                // Jika bahan baku penyusunnya TIDAK memiliki stok, maka BSJ TIDAK BOLEH diurai ke bahan baku.
                 $canExplodeToRaw = false;
                 if ($resep) {
                     $subBahanIds = DB::table('resep_bahanbaku')->where('resep_id', $resep->id)->pluck('bahan_id')->toArray();
