@@ -2525,8 +2525,11 @@ class StokGudangController extends Controller
                         // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya (hanya untuk barang yang bukan BSJ)
                         $needsResync = true;
                     } elseif ($isUsedInBsj && $currentStokTxs->isNotEmpty()) {
-                        // Jika bahan mentah ini terpotong oleh POS karena turunan BSJ, periksa apakah BSJ terkait sekarang sudah memiliki stok di gudang POS
-                        // Jika BSJ sudah memiliki stok di gudang ini, POS harus diproses ulang agar memotong BSJ terlebih dahulu
+                        // Jika bahan mentah (BBB) ini terpotong oleh POS karena BSJ-nya habis saat transaksi,
+                        // periksa apakah BSJ terkait sekarang punya stok batch yang CUKUP untuk memenuhi
+                        // total kebutuhan transaksi ini. Jika cukup → re-approve agar POS memotong BSJ dulu.
+                        // PENTING: Jangan trigger re-approve jika stok BSJ tidak cukup untuk semua kebutuhan
+                        // transaksi ini — ini akan menyebabkan loop re-approve dan BBB terpotong lagi.
                         $bsjIds = DB::table('resep_bahanbaku')
                             ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
                             ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
@@ -2534,18 +2537,34 @@ class StokGudangController extends Controller
                             ->where('master_barang.is_bahan_setengah_jadi', 1)
                             ->pluck('master_barang.id');
 
-                        $bsjHasStock = DB::table('stok_gudang_batch')
+                        // Hitung total kebutuhan BSJ untuk seluruh detail transaksi POS ini
+                        $totalBsjNeeded = 0.0;
+                        foreach ($tPos->details as $dBsj) {
+                            $pBsj = $dBsj->produk;
+                            if (!$pBsj) continue;
+                            $resepIdBsj = $pBsj->resep_id;
+                            if (!$resepIdBsj) continue;
+                            // Cari qty BSJ dalam resep produk ini
+                            $bsjInResep = DB::table('resep_bahanbaku')
+                                ->where('resep_id', $resepIdBsj)
+                                ->whereIn('bahan_id', $bsjIds->toArray())
+                                ->get(['bahan_id', 'qty_bahan']);
+                            $resepRow = DB::table('resep_btkl_bop')->where('id', $resepIdBsj)->first(['output_qty']);
+                            $outQtyBsj = $resepRow ? (floatval($resepRow->output_qty) > 0 ? floatval($resepRow->output_qty) : 1.0) : 1.0;
+                            foreach ($bsjInResep as $bsjItem) {
+                                $totalBsjNeeded += (floatval($bsjItem->qty_bahan) / $outQtyBsj) * floatval($dBsj->qty);
+                            }
+                        }
+
+                        // Cek apakah stok batch BSJ di gudang ini CUKUP untuk seluruh kebutuhan transaksi
+                        $totalBsjStokBatch = (float) DB::table('stok_gudang_batch')
                             ->where('gudang_id', $tPos->gudang_id)
                             ->whereIn('barang_id', $bsjIds)
                             ->where('qty_sisa', '>', 0)
-                            ->exists()
-                            || DB::table('stok_gudang')
-                            ->where('gudang_id', $tPos->gudang_id)
-                            ->whereIn('barang_id', $bsjIds)
-                            ->where('jumlah', '>', 0)
-                            ->exists();
+                            ->sum('qty_sisa');
 
-                        if ($bsjHasStock) {
+                        // Hanya re-sync jika BSJ sekarang punya stok batch >= kebutuhan total transaksi ini
+                        if ($totalBsjNeeded > 0 && $totalBsjStokBatch >= $totalBsjNeeded) {
                             $needsResync = true;
                         }
                     } elseif (!$usesThisIngredient && $currentStokTxs->isNotEmpty()) {

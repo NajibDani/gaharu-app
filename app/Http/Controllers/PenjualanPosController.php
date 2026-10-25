@@ -782,7 +782,9 @@ class PenjualanPosController extends Controller
 
                 $allocated = $allocatedStock[$barangId] ?? 0;
 
-                // Check available stock of this item in this warehouse minus already allocated in this transaction
+                // Check available stock of this item in this warehouse minus already allocated in this transaction.
+                // Prioritaskan stok_gudang_batch (lebih akurat & real-time) sebagai sumber utama.
+                // Gunakan stok_gudang sebagai fallback jika batch kosong.
                 $stokBatch = (float) DB::table('stok_gudang_batch')
                     ->where('gudang_id', $gudangId)
                     ->where('barang_id', $barangId)
@@ -791,8 +793,10 @@ class PenjualanPosController extends Controller
                 $stokSummary = (float) DB::table('stok_gudang')
                     ->where('gudang_id', $gudangId)
                     ->where('barang_id', $barangId)
+                    ->where('jumlah', '>', 0)
                     ->sum('jumlah');
-                $stokTersediaTotal = max($stokBatch, $stokSummary);
+                // Gunakan batch jika ada, fallback ke summary jika batch = 0
+                $stokTersediaTotal = $stokBatch > 0 ? $stokBatch : max(0, $stokSummary);
                 $stokTersedia = max(0, $stokTersediaTotal - $allocated);
 
                 $resep = null;
