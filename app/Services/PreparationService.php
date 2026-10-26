@@ -162,11 +162,14 @@ class PreparationService
     }
 
     /**
-     * Update an existing preparation draft
+     * Update an existing preparation draft (or approved preparation if performed by superadmin)
      */
     public function updateDraft(Preparation $prep, array $data, int $userId): Preparation
     {
-        if (!$prep->canEdit()) {
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
+        if (!$isSuperAdmin && !$prep->canEdit($user)) {
             throw ValidationException::withMessages([
                 'status' => ['Dokumen preparation dengan status "' . $prep->status . '" tidak dapat diubah.'],
             ]);
@@ -174,12 +177,20 @@ class PreparationService
 
         $this->validateData($data, $prep->id);
 
-        return DB::transaction(function () use ($prep, $data) {
+        return DB::transaction(function () use ($prep, $data, $userId, $isSuperAdmin) {
+            $wasApproved = ($prep->status === 'disetujui');
+
+            // If it was already approved, revert previous stock, FIFO, and batch effects
+            if ($wasApproved) {
+                $this->revertApprovalEffects($prep);
+            }
+
             $prep->update([
                 'tanggal'    => $data['tanggal'],
                 'gudang_id'  => $data['gudang_id'],
                 'divisi_id'  => !empty($data['divisi_id']) ? $data['divisi_id'] : null,
                 'keterangan' => $data['keterangan'] ?? null,
+                'status'     => $wasApproved ? 'menunggu' : $prep->status, // temporarily set to menunggu if re-approving
             ]);
 
             // Recreate inputs
@@ -220,6 +231,12 @@ class PreparationService
                     'hpp_satuan'      => 0,
                     'total_nilai'     => 0,
                 ]);
+            }
+
+            // If it was previously approved, re-run approval immediately with new items
+            if ($wasApproved) {
+                $prep->refresh();
+                return $this->approve($prep, $userId);
             }
 
             return $prep->fresh(['inputs.barang', 'outputs.barang', 'gudang', 'divisi', 'creator']);
@@ -452,17 +469,80 @@ class PreparationService
     }
 
     /**
-     * Delete preparation (allowed only if status is menunggu or ditolak)
+     * Revert approval effects (restore consumed raw material FIFO batches, remove created BSJ batches, remove TransaksiStok, and reconcile StokGudang)
      */
-    public function delete(Preparation $prep): bool
+    public function revertApprovalEffects(Preparation $prep): void
     {
-        if (!$prep->canDelete()) {
+        $prep->loadMissing(['inputs', 'outputs']);
+        $gudangId = $prep->gudang_id;
+        $divisiId = $prep->divisi_id;
+        $affectedBarangIds = [];
+
+        // 1. Revert consumed raw material FIFO batches for each input
+        foreach ($prep->inputs as $input) {
+            $affectedBarangIds[] = $input->barang_id;
+            $breakdown = $input->fifo_breakdown;
+            if (is_array($breakdown)) {
+                foreach ($breakdown as $layer) {
+                    $bId = $layer['batch_id'] ?? null;
+                    $qtyKeluar = (float)($layer['qty_keluar'] ?? 0);
+                    if ($bId && $qtyKeluar > 0) {
+                        $batch = StokGudangBatch::find($bId);
+                        if ($batch) {
+                            $batch->increment('qty_sisa', $qtyKeluar);
+                            $batch->decrement('qty_keluar', min((float)$batch->qty_keluar, $qtyKeluar));
+                            $batch->update(['is_habis' => false]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Remove generated BSJ batches in StokGudangBatch
+        foreach ($prep->outputs as $output) {
+            $affectedBarangIds[] = $output->barang_id;
+            if ($output->batch_id) {
+                StokGudangBatch::where('id', $output->batch_id)->delete();
+            }
+        }
+        // Fallback delete batches by batch_number pattern
+        StokGudangBatch::where('batch_number', 'like', $prep->kode . '-BSJ%')->delete();
+
+        // 3. Remove TransaksiStok records created by this preparation
+        TransaksiStok::where('source_type', 'preparation_bahan')
+            ->where('source_id', $prep->id)
+            ->delete();
+
+        // 4. Reconcile StokGudang for all affected barang
+        $affectedBarangIds = array_unique(array_filter($affectedBarangIds));
+        foreach ($affectedBarangIds as $bId) {
+            StokGudang::reconcileStockSummary($bId, $gudangId, $divisiId);
+        }
+    }
+
+    /**
+     * Delete preparation (allowed if status is menunggu/ditolak, or by superadmin)
+     */
+    public function delete(Preparation $prep, ?\App\Models\User $user = null): bool
+    {
+        $user = $user ?? auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
+        if (!$isSuperAdmin && !$prep->canDelete($user)) {
             throw ValidationException::withMessages([
                 'status' => ['Dokumen preparation dengan status "' . $prep->status . '" tidak dapat dihapus.'],
             ]);
         }
 
-        return (bool)$prep->delete();
+        return DB::transaction(function () use ($prep, $isSuperAdmin) {
+            if ($prep->status === 'disetujui') {
+                $this->revertApprovalEffects($prep);
+            }
+
+            $prep->inputs()->delete();
+            $prep->outputs()->delete();
+            return (bool)$prep->delete();
+        });
     }
 
     /**

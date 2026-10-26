@@ -259,12 +259,18 @@
                                         </button>
                                     @endif
 
-                                    {{-- 2. Edit (Hanya Menunggu) --}}
-                                    @if($prep->isMenunggu())
+                                    @php
+                                        $user = auth()->user();
+                                        $isSuperAdmin = $user && $user->isSuperAdmin();
+                                    @endphp
+
+                                    {{-- 2. Edit (Menunggu, atau Super Admin untuk status apapun) --}}
+                                    @if($prep->isMenunggu() || $isSuperAdmin)
                                         <button type="button" class="btn btn-sm btn-outline-warning text-dark rounded-2 p-0 d-inline-flex align-items-center justify-content-center" 
                                                 style="width: 32px; height: 32px; font-size: 13px; border-color: #f59e0b;"
                                                 onclick="openEditModal({{ $prep->id }})"
-                                                data-bs-toggle="tooltip" title="Edit Dokumen">
+                                                data-bs-toggle="tooltip" 
+                                                title="{{ $prep->isDisetujui() ? 'Edit Dokumen (Super Admin - Koreksi Bahan)' : 'Edit Dokumen' }}">
                                             <i class="bi bi-pencil-square text-dark"></i>
                                         </button>
                                     @endif
@@ -304,16 +310,17 @@
                                         </button>
                                     @endif
 
-                                    {{-- 5. Hapus (Hanya Menunggu atau Ditolak) --}}
-                                    @if($prep->canDelete())
+                                    {{-- 5. Hapus (Menunggu, Ditolak, atau Super Admin untuk status apapun) --}}
+                                    @if($prep->canDelete() || $isSuperAdmin)
                                         <form action="{{ route('preparation-bahan.destroy', $prep->id) }}" method="POST" 
-                                              onsubmit="return confirm('Apakah Anda yakin ingin menghapus dokumen Preparation Bahan {{ $prep->kode }}?');" 
+                                              onsubmit="return confirm('Apakah Anda yakin ingin menghapus dokumen Preparation Bahan {{ $prep->kode }}?{{ $prep->isDisetujui() ? ' PERINGATAN: Dokumen ini berstatus Disetujui, mutasi stok bahan baku dan bahan setengah jadi akan di-rollback ke kondisi semula!' : '' }}');" 
                                               class="d-inline m-0 p-0">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="btn btn-sm btn-outline-danger rounded-2 p-0 d-inline-flex align-items-center justify-content-center" 
                                                     style="width: 32px; height: 32px; font-size: 13px;"
-                                                    data-bs-toggle="tooltip" title="Hapus Dokumen">
+                                                    data-bs-toggle="tooltip" 
+                                                    title="{{ $prep->isDisetujui() ? 'Hapus Dokumen (Super Admin - Rollback Stok)' : 'Hapus Dokumen' }}">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </form>
@@ -467,6 +474,15 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body p-4">
+                    <div id="edit-approved-warning" class="alert alert-warning border border-warning-subtle rounded-3 py-2 px-3 mb-3 d-none">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-exclamation-triangle-fill text-warning fs-5 me-2"></i>
+                            <div>
+                                <strong class="text-dark d-block">Perhatian Super Admin (Koreksi Bahan Disetujui)</strong>
+                                <small class="text-secondary">Dokumen ini telah disetujui sebelumnya. Mengubah bahan baku atau hasil akan secara otomatis merevert pemotongan FIFO lama dan memotong ulang stok sesuai komposisi bahan terbaru.</small>
+                            </div>
+                        </div>
+                    </div>
 
                     {{-- Tanggal & Gudang --}}
                     <div class="row g-3 mb-4">
@@ -1419,6 +1435,15 @@
                 document.getElementById('edit_gudang_id').value = d.gudang_id;
                 populateDivisiOptions('edit', d.divisi_id || null);
                 document.getElementById('edit_keterangan').value = d.keterangan || '';
+
+                const approvedWarning = document.getElementById('edit-approved-warning');
+                if (approvedWarning) {
+                    if (d.status === 'disetujui') {
+                        approvedWarning.classList.remove('d-none');
+                    } else {
+                        approvedWarning.classList.add('d-none');
+                    }
+                }
 
                 // Populate Inputs
                 const inputTbody = document.querySelector('#table-edit-inputs tbody');

@@ -250,8 +250,10 @@ class PreparationController extends Controller
     public function editJson($id)
     {
         $prep = Preparation::with(['inputs', 'outputs'])->findOrFail($id);
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
 
-        if (!$prep->canEdit()) {
+        if (!$isSuperAdmin && !$prep->canEdit($user)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Dokumen dengan status "' . $prep->status . '" tidak dapat diedit.',
@@ -263,6 +265,7 @@ class PreparationController extends Controller
             'data'    => [
                 'id'         => $prep->id,
                 'kode'       => $prep->kode,
+                'status'     => $prep->status,
                 'tanggal'    => $prep->tanggal ? $prep->tanggal->format('Y-m-d') : '',
                 'gudang_id'  => $prep->gudang_id,
                 'divisi_id'  => $prep->divisi_id,
@@ -291,6 +294,14 @@ class PreparationController extends Controller
     public function update(Request $request, $id)
     {
         $prep = Preparation::findOrFail($id);
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
+        if (!$isSuperAdmin && !$prep->canEdit($user)) {
+            return redirect()
+                ->route('preparation-bahan.index')
+                ->with('error', 'Dokumen preparation dengan status "' . $prep->status . '" hanya dapat diedit oleh Super Admin.');
+        }
 
         $request->validate([
             'tanggal'   => 'required|date',
@@ -301,8 +312,15 @@ class PreparationController extends Controller
         ]);
 
         try {
+            $wasApproved = ($prep->status === 'disetujui');
             $this->service->updateDraft($prep, $request->all(), auth()->id() ?? 1);
             $prep->refresh();
+
+            if ($wasApproved) {
+                return redirect()
+                    ->route('preparation-bahan.index')
+                    ->with('success', "Preparation Bahan {$prep->kode} berhasil diperbarui oleh Super Admin. Stok bahan baku dan BSJ telah disinkronkan kembali secara otomatis.");
+            }
 
             $stockCheck = $prep->getStockCheckDetails();
             if (!$stockCheck['is_sufficient']) {
@@ -394,20 +412,27 @@ class PreparationController extends Controller
     public function destroy($id)
     {
         $prep = Preparation::findOrFail($id);
+        $user = auth()->user();
+        $isSuperAdmin = $user && $user->isSuperAdmin();
 
-        if (!$prep->canDelete()) {
+        if (!$isSuperAdmin && !$prep->canDelete($user)) {
             return redirect()
                 ->route('preparation-bahan.index')
-                ->with('error', 'Dokumen preparation yang sudah disetujui tidak dapat dihapus.');
+                ->with('error', 'Dokumen preparation yang sudah disetujui hanya dapat dihapus oleh Super Admin.');
         }
 
         try {
             $kode = $prep->kode;
-            $this->service->delete($prep);
+            $wasApproved = ($prep->status === 'disetujui');
+            $this->service->delete($prep, $user);
+
+            $msg = $wasApproved
+                ? "Preparation Bahan {$kode} berhasil dihapus oleh Super Admin dan mutasi stok telah di-rollback ke kondisi semula."
+                : "Preparation Bahan {$kode} berhasil dihapus.";
 
             return redirect()
                 ->route('preparation-bahan.index')
-                ->with('success', "Preparation Bahan {$kode} berhasil dihapus.");
+                ->with('success', $msg);
         } catch (\Throwable $e) {
             return redirect()
                 ->route('preparation-bahan.index')

@@ -76,13 +76,21 @@ class Preparation extends Model
         return $this->status === 'ditolak';
     }
 
-    public function canEdit(): bool
+    public function canEdit(?User $user = null): bool
     {
+        $user = $user ?? auth()->user();
+        if ($user && $user->isSuperAdmin()) {
+            return true;
+        }
         return $this->isMenunggu();
     }
 
-    public function canDelete(): bool
+    public function canDelete(?User $user = null): bool
     {
+        $user = $user ?? auth()->user();
+        if ($user && $user->isSuperAdmin()) {
+            return true;
+        }
         return $this->isMenunggu() || $this->isDitolak();
     }
 

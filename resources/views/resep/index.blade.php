@@ -1,7 +1,5 @@
 <x-app-layout>
 
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
 <div class="container py-4">
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -207,6 +205,8 @@
                                 <div class="d-flex align-items-center justify-content-center gap-1">
                                     <button type="button" 
                                             class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#modalDetailResep"
                                             data-id="{{ $r->id }}"
                                             data-produk-nama="{{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}"
                                             data-produk-kode="{{ $r->produk->kode_barang ?? '-' }}"
@@ -214,7 +214,7 @@
                                             data-output-qty="{{ (int) $r->output_qty }}"
                                             data-satuan-output="{{ $r->produk->satuan ?? $r->satuan_output }}"
                                             data-bahanbaku="{{ json_encode($r->bahanbaku) }}">
-                                        Lihat
+                                        <i class="fas fa-eye me-1"></i>Lihat
                                     </button>
                                     
                                     <button type="button" 
@@ -832,8 +832,6 @@
     }
 </style>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css">
 <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
 
@@ -1338,9 +1336,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const btn = e.target.closest('.btn-lihat-resep');
         if (!btn) return;
 
-        e.preventDefault();
-        e.stopPropagation();
-
+        // Populate detail modal data
         activeResepIdForEdit = btn.getAttribute('data-id') || btn.dataset.id;
         const produkNama = btn.getAttribute('data-produk-nama') || btn.dataset.produkNama || '-';
         const produkKode = btn.getAttribute('data-produk-kode') || btn.dataset.produkKode || '-';
@@ -1381,8 +1377,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
             let bahanList = [];
             try {
-                const rawBahan = btn.getAttribute('data-bahanbaku') || btn.dataset.bahanbaku || '[]';
-                bahanList = typeof rawBahan === 'string' ? JSON.parse(rawBahan) : (rawBahan || []);
+                let rawBahan = btn.getAttribute('data-bahanbaku') || btn.dataset.bahanbaku || '[]';
+                if (typeof rawBahan === 'string') {
+                    if (rawBahan.includes('&quot;') || rawBahan.includes('&#039;') || rawBahan.includes('&amp;')) {
+                        const txt = document.createElement('textarea');
+                        txt.innerHTML = rawBahan;
+                        rawBahan = txt.value;
+                    }
+                    bahanList = JSON.parse(rawBahan);
+                } else if (Array.isArray(rawBahan)) {
+                    bahanList = rawBahan;
+                }
             } catch (err) {
                 console.error('Failed to parse data-bahanbaku:', err);
                 bahanList = [];
@@ -1391,19 +1396,35 @@ document.addEventListener("DOMContentLoaded", function () {
             const elemTotalBadge = document.getElementById('detail-total-bahan-badge');
             if (elemTotalBadge) elemTotalBadge.innerText = `${bahanList.length} Bahan`;
 
-            if (bahanList.length === 0) {
+            const safeFormatBahan = (b) => {
+                if (!b) return 'Bahan Tidak Diketahui';
+                if (typeof formatBahanNama === 'function') {
+                    return formatBahanNama(b);
+                }
+                let extra = '';
+                if (b.is_barang_jadi) {
+                    extra = b.tipe_penjualan ? ` (${b.tipe_penjualan})` : ' (POS)';
+                } else if (b.is_bahan_setengah_jadi) {
+                    extra = ' (BSJ)';
+                }
+                return (b.nama || 'Bahan') + extra;
+            };
+
+            if (!bahanList || bahanList.length === 0) {
                 tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar.</td></tr>`;
             } else {
                 bahanList.forEach((b, idx) => {
-                    const primaryName = formatBahanNama(b.bahan);
-                    const primaryKode = b.bahan ? b.bahan.kode_barang : '';
+                    if (!b) return;
+                    const primaryName = safeFormatBahan(b.bahan);
+                    const primaryKode = b.bahan ? (b.bahan.kode_barang || '') : '';
                     const satuan = b.satuan || (b.bahan ? b.bahan.satuan : '-');
                     const qty = parseFloat(b.qty_bahan) || 0;
 
                     let altHtml = '';
                     if (b.alternatif && b.alternatif.length > 0) {
                         b.alternatif.forEach(alt => {
-                            const altName = formatBahanNama(alt.bahan);
+                            if (!alt) return;
+                            const altName = safeFormatBahan(alt.bahan);
                             const prio = alt.prioritas || 2;
                             altHtml += `
                                 <div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size: 11.5px;">
@@ -1437,9 +1458,22 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
 
-        if (modalDetailEl && typeof bootstrap !== 'undefined') {
-            const modalDetailInst = bootstrap.Modal.getOrCreateInstance(modalDetailEl);
-            modalDetailInst.show();
+        if (modalDetailEl) {
+            try {
+                if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                    const modalDetailInst = bootstrap.Modal.getOrCreateInstance(modalDetailEl);
+                    modalDetailInst.show();
+                } else if (window.jQuery && typeof window.jQuery(modalDetailEl).modal === 'function') {
+                    window.jQuery(modalDetailEl).modal('show');
+                }
+            } catch (err) {
+                console.warn('Bootstrap modal getOrCreateInstance failed, trying fallback:', err);
+                try {
+                    new bootstrap.Modal(modalDetailEl).show();
+                } catch(e2) {
+                    console.error('Failed to show detail modal:', e2);
+                }
+            }
         }
     });
 
