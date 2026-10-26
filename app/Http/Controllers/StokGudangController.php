@@ -6,6 +6,7 @@ use App\Models\MasterGudang;
 use App\Models\MasterBarang;
 use App\Models\Pengiriman;
 use App\Models\PengirimanDetail;
+use App\Models\ProduksiPesanan;
 use App\Models\StokGudangBatch;
 use App\Models\TransaksiStok;
 use Illuminate\Http\Request;
@@ -1258,15 +1259,15 @@ class StokGudangController extends Controller
                     $custNama = strtolower(DB::table('customers')->where('id', $customerId)->value('nama') ?? '');
                 }
 
-                if (str_contains($custNama, 'central kitchen')) {
-                    return [null, null];
-                }
-
                 $outletGudangId = null;
                 if ($pesananGudangId && $pesananGudangId != $gudangCkId) {
                     $outletGudangId = $pesananGudangId;
                 }
                 if (!$outletGudangId) {
+                    if (str_contains($custNama, 'central kitchen')) {
+                        return [null, null];
+                    }
+
                     if (str_contains($custNama, 'kejingga') || str_contains($custNama, 'kj')) {
                         $outletGudangId = MasterGudang::where(function($q) {
                             $q->where('nama', 'like', '%KeJingga%')->orWhere('nama', 'like', '%Kejingga%');
@@ -1274,7 +1275,7 @@ class StokGudangController extends Controller
                     } elseif (str_contains($custNama, 'gaharu')) {
                         $outletGudangId = MasterGudang::where('nama', 'like', '%Gaharu%')
                             ->where('kategori', 'Operasional')
-                            ->value('id') ?? MasterGudang::where('nama', 'like', '%Gaharu%')->value('id') ?? 4;
+                            ->value('id') ?? MasterGudang::where('nama', 'like', '%Gaharu%')->value('id') ?? 3;
                     }
                 }
 
@@ -1310,6 +1311,12 @@ class StokGudangController extends Controller
                 ->leftJoin('customers as cust', 'pes.customer_id', '=', 'cust.id')
                 ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
                 ->where('app.qty_alokasi', '>', 0)
+                ->whereExists(function($sq) {
+                    $sq->select(DB::raw(1))
+                       ->from('pesanan_detail as pd_chk')
+                       ->whereRaw('pd_chk.pesanan_id = app.pesanan_id')
+                       ->whereRaw('pd_chk.produk_id = app.produk_id');
+                })
                 ->select(
                     'app.*',
                     'p.kode_produksi',
@@ -1361,36 +1368,27 @@ class StokGudangController extends Controller
                     })
                     ->first();
 
-                // Ambil tanggal WO jika ada agar transfer tercatat sesuai tanggal WO dibuat
+                // Tanggal selesai produksi di CK
+                $prodDate = $al->tanggal_selesai ?: ($al->tanggal_mulai ?: now());
+
+                // Ambil tanggal WO jika ada
                 $woDate = DB::table('work_order_detail as wod_dt')
                     ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
                     ->where('wod_dt.pesanan_id', $al->pesanan_id)
                     ->where('wod_dt.produk_id', $al->produk_id)
                     ->value('wo_dt.tanggal_wo');
 
-                if (!$woDate) {
-                    $woDate = DB::table('work_order_detail as wod_dt')
-                        ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
-                        ->where('wod_dt.pesanan_id', $al->pesanan_id)
-                        ->value('wo_dt.tanggal_wo');
-                }
-
-                $candidateDate = $woDate ?: ($al->tanggal_selesai ?: ($al->tanggal_mulai ?: now()));
-                $mintaDate = $al->pesanan_tanggal ? date('Y-m-d', strtotime($al->pesanan_tanggal)) : null;
-                $mintaDateH1 = $mintaDate ? date('Y-m-d 23:59:59', strtotime($mintaDate . ' +1 day')) : null;
-
-                if ($mintaDateH1 && $candidateDate > $mintaDateH1) {
-                    $txDate = date('Y-m-d 12:00:00', strtotime($mintaDate . ' +1 day'));
-                } else {
-                    $txDate = $candidateDate;
-                }
+                // Tanggal transfer masuk outlet paling lambat H+1 setelah produksi selesai di WO
+                $txDate = $prodDate;
 
                 if ($existingTxOutlet) {
                     $updatePayload = [];
                     if ($kitchenDivId && $existingTxOutlet->divisi_tujuan_id != $kitchenDivId) {
                         $updatePayload['divisi_tujuan_id'] = $kitchenDivId;
                     }
-                    if ($existingTxOutlet->tanggal != $txDate) {
+                    // Jika tanggal transfer tercatat sebelum produksi selesai atau lebih dari H+1, perbaiki ke tanggal produksi
+                    $prodDateH1 = date('Y-m-d 23:59:59', strtotime($prodDate . ' +1 day'));
+                    if ($existingTxOutlet->tanggal < $prodDate || $existingTxOutlet->tanggal > $prodDateH1) {
                         $updatePayload['tanggal'] = $txDate;
                     }
 
@@ -1634,6 +1632,16 @@ class StokGudangController extends Controller
                 }
 
                 if (!$pesananId) {
+                    continue;
+                }
+
+                // Pastikan item produk ini memang dipesan dalam pesanan_detail (bukan alokasi anomali)
+                $pesananDetailExists = DB::table('pesanan_detail')
+                    ->where('pesanan_id', $pesananId)
+                    ->where('produk_id', $pdet->produk_id)
+                    ->exists();
+
+                if (!$pesananDetailExists) {
                     continue;
                 }
 
@@ -3422,6 +3430,36 @@ class StokGudangController extends Controller
                 }
 
                 $deleteQuery->delete();
+            }
+
+            // 7. Non-CK Incoming mutations for Barang Setengah Jadi (BSJ):
+            // Barang berstatus BSJ di divisi Kitchen hanya boleh masuk melalui produksi Central Kitchen (transfer_ck / produksi_ck)
+            // Mutasi masuk dari pengeluaran_bahan_baku / manual transfer ke gudang outlet dihapus/dibersihkan
+            $bsjItemIds = DB::table('master_barang')
+                ->where('is_bahan_setengah_jadi', 1)
+                ->when($barangId, fn($q) => $q->where('id', $barangId))
+                ->pluck('id')
+                ->toArray();
+
+            if (!empty($bsjItemIds)) {
+                $invalidBsjMasukQuery = DB::table('transaksi_stok')
+                    ->whereIn('barang_id', $bsjItemIds)
+                    ->where('tipe', 'masuk')
+                    ->whereIn('source_type', ['pengeluaran_bahan_baku', 'pengeluaran_wasted']);
+
+                $invalidTxs = $invalidBsjMasukQuery->get();
+                foreach ($invalidTxs as $invTx) {
+                    // Hapus juga transaksi keluar pasangannya jika ada (misal dari gudang bahan baku yang jadi minus)
+                    if ($invTx->source_id) {
+                        DB::table('transaksi_stok')
+                            ->where('source_type', $invTx->source_type)
+                            ->where('source_id', $invTx->source_id)
+                            ->where('barang_id', $invTx->barang_id)
+                            ->where('tipe', 'keluar')
+                            ->delete();
+                    }
+                    DB::table('transaksi_stok')->where('id', $invTx->id)->delete();
+                }
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('autoCleanOrphanMutations error: ' . $e->getMessage());

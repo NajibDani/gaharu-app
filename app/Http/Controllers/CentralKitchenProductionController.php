@@ -1593,15 +1593,12 @@ class CentralKitchenProductionController extends Controller
                     $porsi = min($porsi, $qtySisaAlokasi);
 
                     $pesananItem = Pesanan::find($wod->pesanan_id);
-                    $isInternalCk = false;
+                    $outletGudangId = null;
+                    $kitchenDivId = null;
+                    $isInternalCk = true;
                     if ($pesananItem) {
-                        $custNama = strtolower($pesananItem->customer_nama ?? ($pesananItem->customer->nama ?? ''));
-                        if (!$custNama && $pesananItem->customer_id) {
-                            $custNama = strtolower(DB::table('customers')->where('id', $pesananItem->customer_id)->value('nama') ?? '');
-                        }
-                        if (str_contains($custNama, 'central kitchen')) {
-                            $isInternalCk = true;
-                        }
+                        [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananItem);
+                        $isInternalCk = (!$outletGudangId || $outletGudangId == $gudangCkId);
                     }
 
                     // Gunakan find/update jika alokasi untuk (produksi_id, pesanan_id, produk_id) sudah ada
@@ -1629,34 +1626,23 @@ class CentralKitchenProductionController extends Controller
                     }
 
                     // Jika pesanan berasal dari Outlet (bukan internal CK), langsung transfer ke Divisi Kitchen outlet terkait
-                    if (!$isInternalCk && $porsi > 0 && $pesananItem) {
-                        [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananItem);
-                        if ($outletGudangId) {
+                    if (!$isInternalCk && $porsi > 0 && $pesananItem && $outletGudangId) {
+                        $woDate = DB::table('work_order_detail as wod_dt')
+                            ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
+                            ->where('wod_dt.pesanan_id', $wod->pesanan_id)
+                            ->where('wod_dt.produk_id', $produkId)
+                            ->value('wo_dt.tanggal_wo');
+
+                        if (!$woDate) {
                             $woDate = DB::table('work_order_detail as wod_dt')
                                 ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
                                 ->where('wod_dt.pesanan_id', $wod->pesanan_id)
-                                ->where('wod_dt.produk_id', $produkId)
                                 ->value('wo_dt.tanggal_wo');
+                        }
 
-                            if (!$woDate) {
-                                $woDate = DB::table('work_order_detail as wod_dt')
-                                    ->join('work_order as wo_dt', 'wod_dt.work_order_id', '=', 'wo_dt.id')
-                                    ->where('wod_dt.pesanan_id', $wod->pesanan_id)
-                                    ->value('wo_dt.tanggal_wo');
-                            }
-
-                            $mintaDate = $pesananItem->tanggal ? date('Y-m-d', strtotime($pesananItem->tanggal)) : null;
-                            $mintaDateH1 = $mintaDate ? date('Y-m-d 23:59:59', strtotime($mintaDate . ' +1 day')) : null;
-
-                            // Default ke tanggal WO atau tanggal produksi aktual
-                            $candidateDate = $woDate ?: ($request->tanggal_produksi ?: now());
-
-                            // Jika tanggal pesanan/permintaan ada dan kandidat melebihi H+1 tanggal permintaan, batasi maksimal H+1
-                            if ($mintaDateH1 && $candidateDate > $mintaDateH1) {
-                                $finalTransferDate = date('Y-m-d 12:00:00', strtotime($mintaDate . ' +1 day'));
-                            } else {
-                                $finalTransferDate = $candidateDate;
-                            }
+                        // Tanggal transfer masuk outlet paling lambat H+1 setelah produksi selesai di WO
+                        $prodDate = $request->tanggal_produksi ?: ($woDate ?: now());
+                        $finalTransferDate = $prodDate;
 
                             $this->transferBsjToOutletKitchen(
                                 $produksiId,
@@ -1697,15 +1683,12 @@ class CentralKitchenProductionController extends Controller
 
                 if ($totalWodCount === 0 && $pesananIdUtama) {
                     $pesananItem = Pesanan::find($pesananIdUtama);
-                    $isInternalCk = false;
+                    $outletGudangId = null;
+                    $kitchenDivId = null;
+                    $isInternalCk = true;
                     if ($pesananItem) {
-                        $custNama = strtolower($pesananItem->customer_nama ?? ($pesananItem->customer->nama ?? ''));
-                        if (!$custNama && $pesananItem->customer_id) {
-                            $custNama = strtolower(DB::table('customers')->where('id', $pesananItem->customer_id)->value('nama') ?? '');
-                        }
-                        if (str_contains($custNama, 'central kitchen')) {
-                            $isInternalCk = true;
-                        }
+                        [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananItem);
+                        $isInternalCk = (!$outletGudangId || $outletGudangId == $gudangCkId);
                     }
 
                     ProduksiPesanan::updateOrCreate(
@@ -1722,9 +1705,7 @@ class CentralKitchenProductionController extends Controller
                         ]
                     );
 
-                    if (!$isInternalCk && $qtyHasil > 0 && $pesananItem) {
-                        [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananItem);
-                        if ($outletGudangId) {
+                    if (!$isInternalCk && $qtyHasil > 0 && $pesananItem && $outletGudangId) {
                             $this->transferBsjToOutletKitchen(
                                 $produksiId,
                                 $kodeProduksi,
