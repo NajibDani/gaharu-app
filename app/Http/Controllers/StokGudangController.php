@@ -2370,6 +2370,9 @@ class StokGudangController extends Controller
                     ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
                     ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
                     ->where('master_barang.is_bahan_setengah_jadi', 1)
+                    ->whereNotIn('master_barang.id', [1489, 1488])
+                    ->where('master_barang.nama', 'not like', '%ACAR KOMPLIT%')
+                    ->where('master_barang.nama', 'not like', '%SAMBAL MATAH KOMPLIT%')
                     ->pluck('resep_bahanbaku.bahan_id')
                     ->unique()
                     ->toArray();
@@ -2443,6 +2446,9 @@ class StokGudangController extends Controller
                     ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
                     ->where('resep_bahanbaku.bahan_id', $barangId)
                     ->where('master_barang.is_bahan_setengah_jadi', 1)
+                    ->whereNotIn('master_barang.id', [1489, 1488])
+                    ->where('master_barang.nama', 'not like', '%ACAR KOMPLIT%')
+                    ->where('master_barang.nama', 'not like', '%SAMBAL MATAH KOMPLIT%')
                     ->exists();
 
                 // Pastikan pemetaan resep_id pada master_barang tersinkronisasi
@@ -2484,6 +2490,7 @@ class StokGudangController extends Controller
                     }
 
                     // Ambil nama-nama produk untuk mencari padanan antar-outlet (mis. POS Gaharu vs POS Kejingga)
+                    $prodNames = DB::table('master_barang')->whereIn('id', $allMatchedProdIds)->pluck('nama')->toArray();
                     $lowerNames = array_unique(array_filter(array_map(function($n) { return strtolower(trim($n)); }, $prodNames)));
 
                     $counterpartProductIds = !empty($lowerNames)
@@ -2503,21 +2510,64 @@ class StokGudangController extends Controller
                     return;
                 }
 
-                // Pre-fetch resep info and ingredient usage in memory for instant lookups (O(1))
-                $resepBahanMap = DB::table('resep_bahanbaku')
-                    ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
-                    ->where('resep_bahanbaku.bahan_id', $barangId)
-                    ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
-                    ->get()
-                    ->keyBy('resep_id');
+                // Cek apakah barang ini adalah produk rakitan outlet (assembled item seperti Acar Komplit)
+                $isAssembledBarang = \App\Http\Controllers\PenjualanPosController::isAssembledProduct($bRow);
 
-                $altBahanMap = DB::table('resep_bahanbaku_alternatif')
-                    ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
-                    ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
-                    ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
-                    ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
-                    ->get()
-                    ->keyBy('resep_id');
+                if ($isAssembledBarang) {
+                    // Produk rakitan di outlet tidak boleh dipotong barang jadinya di POS
+                    $resepBahanMap = collect();
+                    $altBahanMap = collect();
+                } else {
+                    // Pre-fetch resep info and ingredient usage in memory for instant lookups (O(1))
+                    $resepBahanMap = DB::table('resep_bahanbaku')
+                        ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                        ->where('resep_bahanbaku.bahan_id', $barangId)
+                        ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
+                        ->get()
+                        ->keyBy('resep_id');
+
+                    // Jika bahan ini digunakan di dalam produk rakitan outlet (cth: BASE ACAR, CUKA, SIMPLE SYRUP di ACAR KOMPLIT):
+                    // Map juga resep menu induk yang menggunakan produk rakitan tersebut
+                    $assembledUsages = DB::table('resep_bahanbaku')
+                        ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                        ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+                        ->where('resep_bahanbaku.bahan_id', $barangId)
+                        ->where(function($q) {
+                            $q->whereIn('master_barang.id', [1489, 1488])
+                              ->orWhere('master_barang.nama', 'like', '%ACAR KOMPLIT%')
+                              ->orWhere('master_barang.nama', 'like', '%SAMBAL MATAH KOMPLIT%');
+                        })
+                        ->select('master_barang.id as assembled_id', 'resep_bahanbaku.qty_bahan', 'resep_btkl_bop.output_qty')
+                        ->get();
+
+                    foreach ($assembledUsages as $au) {
+                        $subRatio = floatval($au->output_qty) > 0 ? (floatval($au->qty_bahan) / floatval($au->output_qty)) : floatval($au->qty_bahan);
+                        $parentRecipes = DB::table('resep_bahanbaku')
+                            ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                            ->where('resep_bahanbaku.bahan_id', $au->assembled_id)
+                            ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan as parent_qty', 'resep_btkl_bop.output_qty as parent_output')
+                            ->get();
+
+                        foreach ($parentRecipes as $pr) {
+                            $parentOutput = floatval($pr->parent_output) > 0 ? floatval($pr->parent_output) : 1.0;
+                            $effectiveQty = floatval($pr->parent_qty) * $subRatio;
+                            $resepBahanMap->put($pr->resep_id, (object)[
+                                'resep_id'   => $pr->resep_id,
+                                'qty_bahan'  => $effectiveQty,
+                                'satuan'     => $bSatDasar,
+                                'output_qty' => $parentOutput,
+                            ]);
+                        }
+                    }
+
+                    $altBahanMap = DB::table('resep_bahanbaku_alternatif')
+                        ->join('resep_bahanbaku', 'resep_bahanbaku_alternatif.resep_bahanbaku_id', '=', 'resep_bahanbaku.id')
+                        ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                        ->where('resep_bahanbaku_alternatif.bahan_id', $barangId)
+                        ->select('resep_bahanbaku.resep_id', 'resep_bahanbaku.qty_bahan', 'resep_bahanbaku.satuan', 'resep_btkl_bop.output_qty')
+                        ->get()
+                        ->keyBy('resep_id');
+                }
 
                 $fallbackNamaResepMap = [];
                 $mbList = DB::table('master_barang')
