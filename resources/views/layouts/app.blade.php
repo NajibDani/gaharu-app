@@ -1098,7 +1098,7 @@
                 let isInsideTable = !!form.closest('table, .table-responsive');
 
                 let isDeleteForm = formMethod === 'DELETE' || form.id.toLowerCase().includes('hapus') || form.id.toLowerCase().includes('delete');
-                let isEditModalForm = isInsideModal && (formMethod === 'PUT' || formMethod === 'PATCH' || (formMethod === 'POST' && form.id.toLowerCase().includes('edit')));
+                let isEditModalForm = isInsideModal && (formMethod === 'PUT' || formMethod === 'PATCH' || (formMethod === 'POST' && (form.id.toLowerCase().includes('edit') || form.getAttribute('data-ajax-modal') === 'true')));
 
                 // Jangan intercept form GET (filter/search) atau form create data baru biasa jika bukan modal
                 if (!isDeleteForm && !isEditModalForm) {

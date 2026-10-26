@@ -735,14 +735,17 @@ class PenjualanPosController extends Controller
             DB::table('transaksi_stok')->whereIn('source_type', ['penjualan_pos', 'pos'])->where('source_id', $penjualan->id)->delete();
 
             // Jika ada item yang belum memiliki resep, pisahkan ke transaksi Draft baru (tertinggal)
+            // KECUALI jika dipanggil secara internal (auto-heal / background sync), jangan memecah transaksi atau membuat -PENDING baru
             $pendingPenjualan = null;
             $pendingCode = null;
 
-            if ($itemsWithoutRecipe->isNotEmpty()) {
-                $basePendingCode = $kodePos . '-PENDING';
+            if ($itemsWithoutRecipe->isNotEmpty() && !$isInternal) {
+                // Bersihkan kode transaksi jika sudah ada sufiks -PENDING agar tidak bertumpuk (-PENDING-PENDING)
+                $cleanRootKode = preg_replace('/(-PENDING(-\d+)?)+$/i', '', $kodePos);
+                $basePendingCode = $cleanRootKode . '-PENDING';
                 $pendingCode = $basePendingCode;
                 $cnt = 1;
-                while (PenjualanPos::where('kode_transaksi', $pendingCode)->exists()) {
+                while (PenjualanPos::where('kode_transaksi', $pendingCode)->where('id', '!=', $penjualan->id)->exists()) {
                     $pendingCode = $basePendingCode . '-' . $cnt;
                     $cnt++;
                 }
@@ -982,6 +985,19 @@ class PenjualanPosController extends Controller
                     }
                     if (!$resepUtama) {
                         $resepUtama = \App\Models\ResepBtklBop::with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->where('produk_id', $barangJadi->id)->first();
+                    }
+                    // Fallback: Jika resep belum terhubung ke varian outlet ini, cari resep dari counterpart barang yang bernama sama
+                    if (!$resepUtama && !empty($barangJadi->nama)) {
+                        $counterpartResepId = DB::table('master_barang')
+                            ->where('is_barang_jadi', 1)
+                            ->whereNotNull('resep_id')
+                            ->where('id', '!=', $barangJadi->id)
+                            ->whereRaw('LOWER(TRIM(nama)) = ?', [strtolower(trim($barangJadi->nama))])
+                            ->value('resep_id');
+
+                        if ($counterpartResepId) {
+                            $resepUtama = \App\Models\ResepBtklBop::with(['bahanbaku.bahan', 'bahanbaku.alternatif.bahan'])->find($counterpartResepId);
+                        }
                     }
                 }
 

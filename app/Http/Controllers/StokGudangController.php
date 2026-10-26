@@ -2374,6 +2374,19 @@ class StokGudangController extends Controller
                     ->unique()
                     ->toArray();
 
+                // Jangan masukkan bahan mentah yang JUGA digunakan langsung di resep barang jadi (misal Matcha Diltea, susu, sirup, dll)
+                if (!empty($rawBahanInBsj)) {
+                    $rawBahanInFinishedGoods = DB::table('resep_bahanbaku')
+                        ->join('resep_btkl_bop', 'resep_bahanbaku.resep_id', '=', 'resep_btkl_bop.id')
+                        ->join('master_barang', 'resep_btkl_bop.produk_id', '=', 'master_barang.id')
+                        ->where('master_barang.is_barang_jadi', 1)
+                        ->pluck('resep_bahanbaku.bahan_id')
+                        ->unique()
+                        ->toArray();
+
+                    $rawBahanInBsj = array_values(array_diff($rawBahanInBsj, $rawBahanInFinishedGoods));
+                }
+
                 if (!empty($rawBahanInBsj)) {
                     $posWithWrongRawMutations = DB::table('transaksi_stok')
                         ->whereIn('source_type', ['penjualan_pos', 'pos'])
@@ -2386,7 +2399,10 @@ class StokGudangController extends Controller
                     foreach ($posWithWrongRawMutations as $wrongPosId) {
                         $wPos = \App\Models\PenjualanPos::find($wrongPosId);
                         if ($wPos) {
+                            $originalStatus = $wPos->status;
                             try {
+                                DB::beginTransaction();
+
                                 DB::table('pengeluaran_bahan_baku')
                                     ->where('keterangan', 'like', 'AUTO_POS:' . $wPos->kode_transaksi . '%')
                                     ->orWhere('kode_pengeluaran', 'like', 'OUT-' . $wPos->kode_transaksi . '%')
@@ -2397,8 +2413,18 @@ class StokGudangController extends Controller
                                     ->delete();
 
                                 $wPos->update(['status' => 'Draft']);
-                                $posController->approve($wPos->id, true);
+                                $appRes = $posController->approve($wPos->id, true);
+
+                                if (is_array($appRes) && isset($appRes['status']) && $appRes['status'] === 'success') {
+                                    DB::commit();
+                                } else {
+                                    DB::rollBack();
+                                    $wPos->update(['status' => $originalStatus]);
+                                    \Illuminate\Support\Facades\Log::warning("Auto-heal wrong raw POS {$wPos->id} not approved: " . json_encode($appRes));
+                                }
                             } catch (\Exception $exApprove) {
+                                DB::rollBack();
+                                $wPos->update(['status' => $originalStatus]);
                                 \Illuminate\Support\Facades\Log::warning("Auto-heal wrong raw POS {$wPos->id} failed: " . $exApprove->getMessage());
                             }
                         }
@@ -2458,11 +2484,10 @@ class StokGudangController extends Controller
                     }
 
                     // Ambil nama-nama produk untuk mencari padanan antar-outlet (mis. POS Gaharu vs POS Kejingga)
-                    $prodNames = DB::table('master_barang')->whereIn('id', $allMatchedProdIds)->pluck('nama')->toArray();
-                    $cleanNames = array_unique(array_filter(array_map('trim', $prodNames)));
+                    $lowerNames = array_unique(array_filter(array_map(function($n) { return strtolower(trim($n)); }, $prodNames)));
 
-                    $counterpartProductIds = !empty($cleanNames)
-                        ? DB::table('master_barang')->whereIn('nama', $cleanNames)->pluck('id')->toArray()
+                    $counterpartProductIds = !empty($lowerNames)
+                        ? DB::table('master_barang')->whereIn(DB::raw('LOWER(TRIM(nama))'), $lowerNames)->pluck('id')->toArray()
                         : [];
 
                     $productIds = array_unique(array_merge($allMatchedProdIds, $counterpartProductIds));
@@ -2494,11 +2519,18 @@ class StokGudangController extends Controller
                     ->get()
                     ->keyBy('resep_id');
 
-                $fallbackNamaResepMap = DB::table('master_barang')
+                $fallbackNamaResepMap = [];
+                $mbList = DB::table('master_barang')
                     ->where('is_barang_jadi', 1)
                     ->whereNotNull('resep_id')
-                    ->pluck('resep_id', DB::raw('LOWER(TRIM(nama))'))
-                    ->toArray();
+                    ->select('nama', 'resep_id')
+                    ->get();
+                foreach ($mbList as $mb) {
+                    $key = strtolower(trim($mb->nama ?? ''));
+                    if ($key !== '' && !isset($fallbackNamaResepMap[$key])) {
+                        $fallbackNamaResepMap[$key] = $mb->resep_id;
+                    }
+                }
 
                 // Pre-fetch all transaksi_stok for candidate POS transactions in 1 single query
                 $currentStokTxsByPosId = DB::table('transaksi_stok')
@@ -2560,16 +2592,18 @@ class StokGudangController extends Controller
                     $actualDeductedQty = (float) $currentStokTxs->sum('qty');
                     $needsResync = false;
 
-                    if ($usesThisIngredient && $currentStokTxs->isEmpty()) {
-                        // Belum tercatat potong sama sekali
-                        $needsResync = true;
-                    } elseif (!$isUsedInBsj && $usesThisIngredient && abs($actualDeductedQty - $expectedQtyNeeded) > 0.001) {
-                        // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya (hanya untuk barang yang bukan BSJ)
-                        $needsResync = true;
+                    if ($usesThisIngredient) {
+                        if ($currentStokTxs->isEmpty()) {
+                            // Belum tercatat potong sama sekali
+                            $needsResync = true;
+                        } elseif (abs($actualDeductedQty - $expectedQtyNeeded) > 0.001) {
+                            // Kuantitas di resep telah diupdate / berbeda dengan yang terpotong sebelumnya
+                            $needsResync = true;
+                        }
                     } elseif ($isUsedInBsj && $currentStokTxs->isNotEmpty()) {
-                        // Jika bahan mentah (BBB) ini pernah terpotong oleh POS karena BSJ-nya dulu sempat diurai,
-                        // selalu set needsResync = true agar transaksi POS dihitung ulang dan pemotongan stok
-                        // dialihkan ke barang BSJ itu sendiri (sesuai formulasi resep outlet yang benar).
+                        // Jika bahan mentah (BBB) ini TIDAK digunakan langsung di menu yang dipesan,
+                        // tapi pernah terpotong oleh POS karena BSJ-nya dulu sempat diurai di outlet,
+                        // set needsResync = true agar pemotongan stok dialihkan ke barang BSJ itu sendiri.
                         $needsResync = true;
                     } elseif (!$usesThisIngredient && $currentStokTxs->isNotEmpty()) {
                         // Resep sudah tidak lagi menggunakan bahan ini, tapi mutasi masih ada
@@ -2589,7 +2623,10 @@ class StokGudangController extends Controller
                     }
 
                     if ($needsResync) {
+                        $originalStatus = $tPos->status;
                         try {
+                            DB::beginTransaction();
+
                             // 1. Kembalikan sisa batch FIFO yang sebelumnya dikonsumsi oleh AUTO_POS ini
                             $oldPbkIds = DB::table('pengeluaran_bahan_baku')
                                 ->where('keterangan', 'like', 'AUTO_POS:' . $tPos->kode_transaksi . '%')
@@ -2625,8 +2662,18 @@ class StokGudangController extends Controller
 
                             // 3. Re-approve POS agar memotong bahan sesuai formulasi resep terbaru
                             $tPos->update(['status' => 'Draft']);
-                            $posController->approve($tPos->id, true);
+                            $appRes = $posController->approve($tPos->id, true);
+
+                            if (is_array($appRes) && isset($appRes['status']) && $appRes['status'] === 'success') {
+                                DB::commit();
+                            } else {
+                                DB::rollBack();
+                                $tPos->update(['status' => $originalStatus]);
+                                \Illuminate\Support\Facades\Log::warning("Re-approve POS {$tPos->id} not approved: " . json_encode($appRes));
+                            }
                         } catch (\Exception $exApprove) {
+                            DB::rollBack();
+                            $tPos->update(['status' => $originalStatus]);
                             \Illuminate\Support\Facades\Log::warning("Re-approve POS {$tPos->id} for recipe update {$barangId} failed: " . $exApprove->getMessage());
                         }
                     }

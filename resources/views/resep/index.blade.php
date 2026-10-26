@@ -260,18 +260,17 @@
     </div>
 </div>
 
-<form id="form-resep" action="{{ route('resep.store') }}" method="POST">
-    @csrf
-    <input type="hidden" name="_method" id="form-method" value="POST">
-
     <div class="modal fade" id="modalResep" data-bs-backdrop="static" tabindex="-1" aria-labelledby="modalResepTitle" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content border-0 shadow" style="border-radius: 14px; overflow: visible;">
-                
-                <div class="modal-header bg-light py-3" style="border-top-left-radius: 14px; border-top-right-radius: 14px;">
-                    <h5 class="modal-title fw-bold text-dark" id="modalResepTitle">Tambah Resep Baru</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
+            <form id="form-resep" action="{{ route('resep.store') }}" method="POST" data-ajax-modal="true">
+                @csrf
+                <input type="hidden" name="_method" id="form-method" value="POST">
+                <div class="modal-content border-0 shadow" style="border-radius: 14px; overflow: visible;">
+                    
+                    <div class="modal-header bg-light py-3" style="border-top-left-radius: 14px; border-top-right-radius: 14px;">
+                        <h5 class="modal-title fw-bold text-dark" id="modalResepTitle">Tambah Resep Baru</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
                 
                 <div class="modal-body px-4 py-3" style="overflow: visible;">
                     
@@ -413,11 +412,9 @@
                     <button type="button" class="btn btn-outline-secondary px-4 py-2" data-bs-dismiss="modal" style="border-radius: 8px; font-weight: 500;">Batal</button>
                     <button type="submit" class="btn btn-primary px-4 py-2" id="btn-submit-form" style="border-radius: 8px; font-weight: 500; background-color: #2563eb; border-color: #2563eb;">Simpan resep</button>
                 </div>
-
-            </div>
+            </form>
         </div>
     </div>
-</form>
 
 {{-- ================= MODAL BARANG TANPA RESEP ================= --}}
 <div class="modal fade" id="modalTanpaResep" tabindex="-1" aria-labelledby="modalTanpaResepLabel" aria-hidden="true">
@@ -1232,97 +1229,105 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // ============ MODAL EDIT ============
-    document.querySelectorAll('.btn-edit-resep').forEach(tombol => {
-        tombol.addEventListener('click', function() {
-            modalTitle.innerText = "Edit Resep Produk";
-            btnSubmit.innerText = "Update Resep";
-            btnSubmit.className = "btn btn-warning px-4 text-dark shadow-sm fw-semibold";
-            
-            const idResep = this.dataset.id;
-            const pageNum = this.dataset.page || 1;
-            formResep.action = `/resep/${idResep}?page=${pageNum}`; 
-            formMethod.value = "PUT";
+    document.addEventListener('click', function(e) {
+        const tombol = e.target.closest('.btn-edit-resep');
+        if (!tombol) return;
+        
+        modalTitle.innerText = "Edit Resep Produk";
+        btnSubmit.innerText = "Update Resep";
+        btnSubmit.className = "btn btn-warning px-4 text-dark shadow-sm fw-semibold";
+        
+        const idResep = tombol.dataset.id;
+        const pageNum = tombol.dataset.page || 1;
+        formResep.action = `/resep/${idResep}?page=${pageNum}`; 
+        formMethod.value = "PUT";
 
-            produkChoices.setChoiceByValue(this.dataset.produk_id);
-            produkChoices.disable();
-            warningProduk.classList.remove('d-none');
+        produkChoices.setChoiceByValue(tombol.dataset.produk_id);
+        produkChoices.disable();
+        warningProduk.classList.remove('d-none');
 
-            document.getElementById('output_qty').value = this.dataset.output_qty;
-            const selectedProdOption = selectProduk.querySelector(`option[value="${this.dataset.produk_id}"]`);
-            const currentProdSatuan = (selectedProdOption && selectedProdOption.dataset.satuan) ? selectedProdOption.dataset.satuan : this.dataset.satuan_output;
-            inputSatuanOutput.value = currentProdSatuan || this.dataset.satuan_output || '-';
+        document.getElementById('output_qty').value = tombol.dataset.output_qty;
+        const selectedProdOption = selectProduk.querySelector(`option[value="${tombol.dataset.produk_id}"]`);
+        const currentProdSatuan = (selectedProdOption && selectedProdOption.dataset.satuan) ? selectedProdOption.dataset.satuan : tombol.dataset.satuan_output;
+        inputSatuanOutput.value = currentProdSatuan || tombol.dataset.satuan_output || '-';
 
-            tbodyBahan.innerHTML = '';
-            
-            const arrayBahanBaku = JSON.parse(this.dataset.bahanbaku);
+        tbodyBahan.innerHTML = '';
+        
+        let arrayBahanBaku = [];
+        try {
+            const rawBahan = tombol.getAttribute('data-bahanbaku') || tombol.dataset.bahanbaku || '[]';
+            arrayBahanBaku = typeof rawBahan === 'string' ? JSON.parse(rawBahan) : (rawBahan || []);
+        } catch (err) {
+            console.error('Failed to parse bahanbaku:', err);
+            arrayBahanBaku = [];
+        }
 
-            const getMasterSatuan = (bahanId, fallback) => {
-                if (!bahanId) return fallback || '-';
-                const opt = rowBlueprint.querySelector(`select.search-select-alternatif option[value="${bahanId}"]`);
-                return (opt && opt.dataset.satuan) ? opt.dataset.satuan : (fallback || '-');
-            };
+        const getMasterSatuan = (bahanId, fallback) => {
+            if (!bahanId) return fallback || '-';
+            const opt = rowBlueprint.querySelector(`select.search-select-alternatif option[value="${bahanId}"]`);
+            return (opt && opt.dataset.satuan) ? opt.dataset.satuan : (fallback || '-');
+        };
 
-            if (arrayBahanBaku && arrayBahanBaku.length > 0) {
-                arrayBahanBaku.forEach((item, rowIndex) => {
-                    let barisEdit = rowBlueprint.cloneNode(true);
-                    const container = barisEdit.querySelector('.selected-alternatives-container');
-                    container.innerHTML = '';
-                    
-                    // Add Primary Ingredient
-                    const pBadge = document.createElement('span');
-                    pBadge.className = 'alt-chip';
-                    pBadge.dataset.value = item.bahan_id;
-                    pBadge.dataset.nama = formatBahanNama(item.bahan);
-                    const primarySatuan = (item.bahan && item.bahan.satuan) ? item.bahan.satuan : getMasterSatuan(item.bahan_id, item.satuan);
-                    pBadge.dataset.satuan = primarySatuan;
-                    container.appendChild(pBadge);
+        if (arrayBahanBaku && arrayBahanBaku.length > 0) {
+            arrayBahanBaku.forEach((item, rowIndex) => {
+                let barisEdit = rowBlueprint.cloneNode(true);
+                const container = barisEdit.querySelector('.selected-alternatives-container');
+                container.innerHTML = '';
+                
+                // Add Primary Ingredient
+                const pBadge = document.createElement('span');
+                pBadge.className = 'alt-chip';
+                pBadge.dataset.value = item.bahan_id;
+                pBadge.dataset.nama = formatBahanNama(item.bahan);
+                const primarySatuan = (item.bahan && item.bahan.satuan) ? item.bahan.satuan : getMasterSatuan(item.bahan_id, item.satuan);
+                pBadge.dataset.satuan = primarySatuan;
+                container.appendChild(pBadge);
 
-                    // Add Alternatives
-                    if (item.alternatif && item.alternatif.length > 0) {
-                        item.alternatif.forEach(alt => {
-                            const aBadge = document.createElement('span');
-                            aBadge.className = 'alt-chip';
-                            aBadge.dataset.value = alt.bahan_id;
-                            aBadge.dataset.nama = formatBahanNama(alt.bahan);
-                            const altSatuan = (alt.bahan && alt.bahan.satuan) ? alt.bahan.satuan : getMasterSatuan(alt.bahan_id, primarySatuan);
-                            aBadge.dataset.satuan = altSatuan;
-                            container.appendChild(aBadge);
-                        });
-                    }
-
-                    barisEdit.querySelector('input[name="qty_bahan[]"]').value = parseFloat(item.qty_bahan);
-                    
-                    tbodyBahan.appendChild(barisEdit);
-                    setupRowEvents(barisEdit);
-                    rebuildBadges(barisEdit, rowIndex);
-                });
-            } else {
-                let barisKosong = rowBlueprint.cloneNode(true);
-                barisKosong.querySelector('.selected-alternatives-container').innerHTML = '';
-                tbodyBahan.appendChild(barisKosong);
-                setupRowEvents(barisKosong);
-                updateAllRowIndexes();
-            }
-
-            // Check if output_qty equals sum of ingredients to automatically check the toggle
-            let sumBahan = 0;
-            if (arrayBahanBaku && arrayBahanBaku.length > 0) {
-                arrayBahanBaku.forEach(item => {
-                    sumBahan += parseFloat(item.qty_bahan) || 0;
-                });
-            }
-            if (checkboxAuto) {
-                if (Math.abs(sumBahan - parseFloat(this.dataset.output_qty)) < 0.0001 && sumBahan > 0) {
-                    checkboxAuto.checked = true;
-                    inputOutputQty.readOnly = true;
-                } else {
-                    checkboxAuto.checked = false;
-                    inputOutputQty.readOnly = false;
+                // Add Alternatives
+                if (item.alternatif && item.alternatif.length > 0) {
+                    item.alternatif.forEach(alt => {
+                        const aBadge = document.createElement('span');
+                        aBadge.className = 'alt-chip';
+                        aBadge.dataset.value = alt.bahan_id;
+                        aBadge.dataset.nama = formatBahanNama(alt.bahan);
+                        const altSatuan = (alt.bahan && alt.bahan.satuan) ? alt.bahan.satuan : getMasterSatuan(alt.bahan_id, primarySatuan);
+                        aBadge.dataset.satuan = altSatuan;
+                        container.appendChild(aBadge);
+                    });
                 }
-            }
 
-            bsModalInstance.show();
-        });
+                barisEdit.querySelector('input[name="qty_bahan[]"]').value = parseFloat(item.qty_bahan);
+                
+                tbodyBahan.appendChild(barisEdit);
+                setupRowEvents(barisEdit);
+                rebuildBadges(barisEdit, rowIndex);
+            });
+        } else {
+            let barisKosong = rowBlueprint.cloneNode(true);
+            barisKosong.querySelector('.selected-alternatives-container').innerHTML = '';
+            tbodyBahan.appendChild(barisKosong);
+            setupRowEvents(barisKosong);
+            updateAllRowIndexes();
+        }
+
+        // Check if output_qty equals sum of ingredients to automatically check the toggle
+        let sumBahan = 0;
+        if (arrayBahanBaku && arrayBahanBaku.length > 0) {
+            arrayBahanBaku.forEach(item => {
+                sumBahan += parseFloat(item.qty_bahan) || 0;
+            });
+        }
+        if (checkboxAuto) {
+            if (Math.abs(sumBahan - parseFloat(tombol.dataset.output_qty)) < 0.0001 && sumBahan > 0) {
+                checkboxAuto.checked = true;
+                inputOutputQty.readOnly = true;
+            } else {
+                checkboxAuto.checked = false;
+                inputOutputQty.readOnly = false;
+            }
+        }
+
+        bsModalInstance.show();
     });
 
     // ============ MODAL LIHAT DETAIL RESEP ============

@@ -640,23 +640,28 @@ class StockOpnameController extends Controller
                     $stokFisik = (float)$d->stok_fisik;
                     $selisihBaru = $stokFisik - $stokSistemBaru;
 
-                    if ($d->harga_satuan !== null && is_numeric($d->harga_satuan)) {
-                        $nilaiSelisihBaru = round(abs($selisihBaru) * (float)$d->harga_satuan, 2);
-                    } else {
-                        $nilaiSelisihBaru = $controller->hitungNilaiOpname(
-                            $gudangId,
-                            $d->barang_id,
-                            $selisihBaru,
-                            $divisiId
-                        );
-                    }
+                    $diffStok = abs((float)$d->stok_sistem - $stokSistemBaru);
+                    $diffSelisih = abs((float)$d->selisih - $selisihBaru);
 
-                    $d->update([
-                        'stok_sistem'   => $stokSistemBaru,
-                        'stok_fisik'    => $stokFisik,
-                        'selisih'       => $selisihBaru,
-                        'nilai_selisih' => $nilaiSelisihBaru,
-                    ]);
+                    if ($diffStok > 0.0001 || $diffSelisih > 0.0001 || $d->nilai_selisih === null) {
+                        if ($d->harga_satuan !== null && is_numeric($d->harga_satuan)) {
+                            $nilaiSelisihBaru = round(abs($selisihBaru) * (float)$d->harga_satuan, 2);
+                        } else {
+                            $nilaiSelisihBaru = $controller->hitungNilaiOpname(
+                                $gudangId,
+                                $d->barang_id,
+                                $selisihBaru,
+                                $divisiId
+                            );
+                        }
+
+                        $d->update([
+                            'stok_sistem'   => $stokSistemBaru,
+                            'stok_fisik'    => $stokFisik,
+                            'selisih'       => $selisihBaru,
+                            'nilai_selisih' => $nilaiSelisihBaru,
+                        ]);
+                    }
                 }
             }
         } catch (\Exception $e) {
