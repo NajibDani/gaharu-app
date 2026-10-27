@@ -324,6 +324,7 @@
 {{-- TomSelect JS for searchable select --}}
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
 
+<script>
 const allBarangData = @json($barangData ?? []);
 
 function getFilteredBarangData() {
