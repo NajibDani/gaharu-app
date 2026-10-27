@@ -331,7 +331,56 @@
 // =========================================================
 // Data barang untuk TomSelect (Searchable)
 // =========================================================
-const barangData = @json($barangData ?? []);
+const allBarangData = @json($barangData ?? []);
+
+function getFilteredBarangData() {
+    const selectGudang = document.getElementById('select-gudang');
+    const selectDivisi = document.getElementById('select-divisi');
+    const gudangId = selectGudang ? parseInt(selectGudang.value) : null;
+    const divisiId = selectDivisi && selectDivisi.value ? parseInt(selectDivisi.value) : null;
+
+    if (!gudangId) {
+        return allBarangData;
+    }
+
+    return allBarangData.filter(item => {
+        const tags = item.tagged_divisis || [];
+        if (tags.length === 0) {
+            // Jika belum ada konfigurasi tagging sama sekali, izinkan muncul
+            return true;
+        }
+
+        if (divisiId) {
+            // Jika gudang memiliki divisi: item harus aktif di divisi tersebut untuk gudang terkait
+            return tags.some(t => t.gudang_id === gudangId && t.divisi_id === divisiId && t.is_active);
+        } else {
+            // Jika gudang tanpa divisi: item harus aktif di gudang tersebut (divisi_id null)
+            return tags.some(t => t.gudang_id === gudangId && (t.divisi_id === null || t.divisi_id === undefined) && t.is_active);
+        }
+    });
+}
+
+function refreshAllBarangSelects() {
+    const filtered = getFilteredBarangData();
+    document.querySelectorAll('.barang-select').forEach(sel => {
+        if (sel.tomselect) {
+            const currentVal = sel.tomselect.getValue();
+            sel.tomselect.clearOptions();
+            sel.tomselect.addOptions(filtered);
+            if (currentVal) {
+                // Pertahankan jika item yang terpilih masih valid di divisi ini
+                if (filtered.some(f => f.value == currentVal)) {
+                    sel.tomselect.setValue(currentVal, true);
+                } else {
+                    sel.tomselect.clear();
+                    const row = sel.closest('tr');
+                    if (row) updateRowInfo(row, '');
+                }
+            }
+            sel.tomselect.refreshOptions(false);
+        }
+    });
+}
 
 function initTomSelect(selectEl) {
     if (!selectEl || selectEl.tomselect) return selectEl.tomselect;
@@ -340,14 +389,16 @@ function initTomSelect(selectEl) {
         selectEl.remove(1);
     }
 
+    const initialOptions = getFilteredBarangData();
+
     return new TomSelect(selectEl, {
-        options: barangData,
+        options: initialOptions,
         valueField: 'value',
         labelField: 'text',
         searchField: ['text', 'nama', 'kode'],
         create: false,
         allowEmptyOption: true,
-        placeholder: '-- Pilih / Cari Bahan Baku --',
+        placeholder: '-- Pilih / Cari Barang --',
         maxOptions: 500,
         dropdownParent: 'body',
         render: {
@@ -382,7 +433,7 @@ function calculateRowQty(row) {
     if (!select || !userInput || !satuanSelect || !qtyMainInput) return;
 
     let barangId = select.tomselect ? select.tomselect.getValue() : select.value;
-    let found = barangData.find(b => b.value == barangId);
+    let found = allBarangData.find(b => b.value == barangId);
     let valUser = parseFloat(userInput.value) || 0;
 
     if (!found || valUser <= 0) {
@@ -402,7 +453,7 @@ function calculateRowQty(row) {
 }
 
 function updateRowInfo(row, barangId) {
-    let found = barangData.find(b => b.value == barangId);
+    let found = allBarangData.find(b => b.value == barangId);
     let satuanSelect = row.querySelector('.satuan-select');
     let satuanEl = row.querySelector('.stok-satuan');
     let infoEl = row.querySelector('.stok-info');
@@ -437,7 +488,7 @@ function checkStok(row) {
     if (!select || !qtyInput || !warning) return;
 
     let barangId = select.tomselect ? select.tomselect.getValue() : select.value;
-    let found = barangData.find(b => b.value == barangId);
+    let found = allBarangData.find(b => b.value == barangId);
     let qty = parseFloat(qtyInput.value) || 0;
 
     if (found && qty > 0) {
@@ -621,10 +672,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     selectDivisi.innerHTML = '<option value="">-- Pilih Divisi --</option>';
                     selectDivisi.required = false;
                 }
+                refreshAllBarangSelects();
             })
             .catch(() => {
                 divisiWrapper.style.display = 'none';
                 selectDivisi.required = false;
+                refreshAllBarangSelects();
             });
     }
 
@@ -744,6 +797,7 @@ document.addEventListener('DOMContentLoaded', function () {
         selectGudang.addEventListener('change', function () {
             fetchDivisi(this.value);
             fetchSuggestions(this.value, selectDivisi ? selectDivisi.value : null);
+            refreshAllBarangSelects();
         });
         if (selectGudang.value) {
             fetchDivisi(selectGudang.value, oldDivisiId);
@@ -754,6 +808,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (selectDivisi) {
         selectDivisi.addEventListener('change', function () {
             fetchSuggestions(selectGudang ? selectGudang.value : null, this.value);
+            refreshAllBarangSelects();
         });
     }
 

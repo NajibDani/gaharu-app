@@ -74,6 +74,7 @@ class MasterBarang extends Model
                     $builder->where(function ($q) {
                         $q->where('is_bahan_baku', 1)
                           ->orWhere('is_bahan_setengah_jadi', 1)
+                          ->orWhere('is_operational', 1)
                           ->orWhere(function ($q2) {
                               $q2->where('is_barang_jadi', 1)
                                  ->whereIn('tipe_penjualan', ['POS Gaharu', 'B2B']);
@@ -83,6 +84,7 @@ class MasterBarang extends Model
                     $builder->where(function ($q) {
                         $q->where('is_bahan_baku', 1)
                           ->orWhere('is_bahan_setengah_jadi', 1)
+                          ->orWhere('is_operational', 1)
                           ->orWhere(function ($q2) {
                               $q2->where('is_barang_jadi', 1)
                                  ->where('tipe_penjualan', 'POS Kejingga');

@@ -239,8 +239,11 @@ class PengeluaranBahanBakuController extends Controller
 
         if ($outletGudangs->isNotEmpty()) {
             $items = MasterBarang::where('is_active', true)
-                ->where('is_bahan_baku', 1)
                 ->where('is_bahan_setengah_jadi', 0)
+                ->where(function ($q) {
+                    $q->where('is_barang_jadi', 0)
+                      ->orWhere('tipe_penjualan', 'B2B');
+                })
                 ->with(['minimumStocks'])
                 ->get();
 
@@ -352,8 +355,11 @@ class PengeluaranBahanBakuController extends Controller
         }
 
         $items = MasterBarang::where('is_active', true)
-            ->where('is_bahan_baku', 1)
             ->where('is_bahan_setengah_jadi', 0)
+            ->where(function ($q) {
+                $q->where('is_barang_jadi', 0)
+                  ->orWhere('tipe_penjualan', 'B2B');
+            })
             ->whereNotExists(function($notExistsQuery) use ($gudangId, $divisiId) {
                 $notExistsQuery->select(DB::raw(1))
                     ->from('barang_minimum_stock')
@@ -508,16 +514,18 @@ class PengeluaranBahanBakuController extends Controller
             ->where('master_barang.is_active', true);
 
         if ($jenis !== 'wasted') {
-            $queryBarang->where(function ($q) {
-                $q->where('master_barang.is_bahan_baku', 1)
-                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
-            });
+            $queryBarang->where('master_barang.is_bahan_setengah_jadi', 0)
+                ->where(function ($q) {
+                    $q->where('master_barang.is_barang_jadi', 0)
+                      ->orWhere('master_barang.tipe_penjualan', 'B2B');
+                });
         }
 
         $barang = $queryBarang->select([
                 'master_barang.*',
                 DB::raw('COALESCE(stok_gudang.jumlah,0) as stok')
             ])
+            ->with(['minimumStocks'])
             ->orderBy('master_barang.nama')
             ->get();
 
@@ -532,6 +540,15 @@ class PengeluaranBahanBakuController extends Controller
             $labelKonversi = ($b->satuan_pembelian && $konversi > 1) ? " [{$b->satuan_pembelian}]" : '';
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
 
+            // Map data tagging divisi & gudang untuk item ini
+            $taggedDivisis = $b->minimumStocks ? $b->minimumStocks->map(function ($ms) {
+                return [
+                    'gudang_id' => (int) $ms->gudang_id,
+                    'divisi_id' => $ms->divisi_id ? (int) $ms->divisi_id : null,
+                    'is_active' => (bool) $ms->is_active,
+                ];
+            })->values()->toArray() : [];
+
             return [
                 'value'              => (string) $b->id,
                 'text'               => "{$b->kode_barang} - {$b->nama} ({$satuan}){$labelKonversi} - Stok Utama: {$stok}{$labelHabis}",
@@ -542,6 +559,7 @@ class PengeluaranBahanBakuController extends Controller
                 'konversi_pembelian' => $konversi,
                 'stok'               => $stok,
                 'habis'              => $stok <= 0,
+                'tagged_divisis'     => $taggedDivisis,
             ];
         });
 
@@ -1185,20 +1203,22 @@ class PengeluaranBahanBakuController extends Controller
 
         if ($jenis !== 'wasted') {
             $existingBarangIds = $pengeluaran->details->pluck('barang_id')->filter()->toArray();
-            $queryBarang->where(function ($q) use ($existingBarangIds) {
-                $q->where('master_barang.is_bahan_baku', 1)
-                  ->orWhere('master_barang.is_bahan_setengah_jadi', 1);
+            $queryBarang->where('master_barang.is_bahan_setengah_jadi', 0)
+                ->where(function ($q) use ($existingBarangIds) {
+                    $q->where('master_barang.is_barang_jadi', 0)
+                      ->orWhere('master_barang.tipe_penjualan', 'B2B');
 
-                if (!empty($existingBarangIds)) {
-                    $q->orWhereIn('master_barang.id', $existingBarangIds);
-                }
-            });
+                    if (!empty($existingBarangIds)) {
+                        $q->orWhereIn('master_barang.id', $existingBarangIds);
+                    }
+                });
         }
 
         $barang = $queryBarang->select([
                 'master_barang.*',
                 DB::raw('COALESCE(stok_gudang.jumlah,0) as stok')
             ])
+            ->with(['minimumStocks'])
             ->orderBy('master_barang.nama')
             ->get();
 
@@ -1214,6 +1234,15 @@ class PengeluaranBahanBakuController extends Controller
             $labelHabis = ($stok <= 0) ? ' [HABIS]' : '';
             $labelStokPrefix = ($jenis === 'wasted') ? 'Stok Lokasi' : 'Stok Utama';
 
+            // Map data tagging divisi & gudang untuk item ini
+            $taggedDivisis = $b->minimumStocks ? $b->minimumStocks->map(function ($ms) {
+                return [
+                    'gudang_id' => (int) $ms->gudang_id,
+                    'divisi_id' => $ms->divisi_id ? (int) $ms->divisi_id : null,
+                    'is_active' => (bool) $ms->is_active,
+                ];
+            })->values()->toArray() : [];
+
             return [
                 'value'              => (string) $b->id,
                 'text'               => "{$b->kode_barang} - {$b->nama} ({$satuan}){$labelKonversi} - {$labelStokPrefix}: {$stok}{$labelHabis}",
@@ -1224,6 +1253,7 @@ class PengeluaranBahanBakuController extends Controller
                 'konversi_pembelian' => $konversi,
                 'stok'               => $stok,
                 'habis'              => $stok <= 0,
+                'tagged_divisis'     => $taggedDivisis,
             ];
         });
 
