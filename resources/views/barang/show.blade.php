@@ -93,9 +93,9 @@
                                 </div>
                             </div>
                         </div>
-                    @elseif($barang->is_bahan_baku)
+                    @elseif(($barang->minimumStocks && $barang->minimumStocks->count() > 0) || $barang->is_bahan_baku)
                         <div class="col-12 mb-3">
-                            <label class="fw-bold text-muted small uppercase d-block mb-1">Batas Minimum Stock per Outlet &amp; Divisi (Bahan Baku)</label>
+                            <label class="fw-bold text-muted small uppercase d-block mb-1">Alokasi &amp; Batas Minimum Stock per Outlet &amp; Divisi</label>
                             @if($barang->minimumStocks && $barang->minimumStocks->count() > 0)
                                 <div class="p-3 bg-light rounded border">
                                     <div class="row g-2">

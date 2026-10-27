@@ -376,17 +376,17 @@
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
-                        {{-- Tagging Divisi untuk Bahan Baku & Bahan Setengah Jadi --}}
-                        <div class="col-12 mb-3" id="group-tag-divisi" style="display: none;">
+                        {{-- Tagging Divisi untuk Semua Kategori & Jenis Barang --}}
+                        <div class="col-12 mb-3" id="group-tag-divisi">
                             <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
                                     <label class="custom-label fw-bold mb-0" style="color: #d88656;">
-                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi (Bahan Baku &amp; Bahan Setengah Jadi)
+                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi
                                     </label>
                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.7rem;">Pilih Divisi Pengguna</span>
                                 </div>
                                 <p class="text-muted small mb-3" style="font-size: 0.78rem;">
-                                    Aktifkan divisi tempat bahan baku / bahan setengah jadi ini digunakan. Item hanya akan muncul pada Stock Opname (SO) divisi yang aktif.
+                                    Aktifkan divisi tempat barang ini dialokasikan atau digunakan. Item hanya akan muncul pada Stock Opname (SO) dan pengelolaan divisi yang aktif.
                                 </p>
                                 <div class="row g-3">
                                     @foreach($gudangList as $g)
@@ -558,9 +558,9 @@
                         <label class="custom-label">Batas Minimum Stock</label>
                         <p class="fs-6 text-danger fw-bold mb-0" id="detailMinStock"></p>
                     </div>
-                    {{-- Detail Minimum Stock per Outlet & Divisi untuk Bahan Baku --}}
+                    {{-- Detail Minimum Stock & Alokasi per Outlet & Divisi --}}
                     <div class="col-12 mb-3" id="detailMinStockBbWrap" style="display: none;">
-                        <label class="custom-label text-danger fw-bold">Batas Minimum Stock per Outlet &amp; Divisi (Bahan Baku)</label>
+                        <label class="custom-label text-danger fw-bold">Alokasi / Batas Minimum Stock per Outlet &amp; Divisi</label>
                         <div class="p-3 bg-light rounded border small">
                             <div class="row g-2" id="detailMinStockBbContainer">
                                 <!-- Dynamic pills inserted via JS -->
@@ -678,17 +678,17 @@
                             @error('jenis_utama') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
 
-                        {{-- Tagging Divisi untuk Bahan Baku & Bahan Setengah Jadi --}}
-                        <div class="col-12 mb-3" id="editGroupTagDivisi" style="display: none;">
+                        {{-- Tagging Divisi untuk Semua Kategori & Jenis Barang --}}
+                        <div class="col-12 mb-3" id="editGroupTagDivisi">
                             <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
                                     <label class="custom-label fw-bold mb-0" style="color: #d88656;">
-                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi (Bahan Baku &amp; Bahan Setengah Jadi)
+                                        <i class="bi bi-diagram-3-fill me-1"></i> Alokasi / Tagging Divisi
                                     </label>
                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 0.7rem;">Pilih Divisi Pengguna</span>
                                 </div>
                                 <p class="text-muted small mb-3" style="font-size: 0.78rem;">
-                                    Aktifkan divisi tempat bahan baku / bahan setengah jadi ini digunakan. Item hanya akan muncul pada Stock Opname (SO) divisi yang aktif.
+                                    Aktifkan divisi tempat barang ini dialokasikan atau digunakan. Item hanya akan muncul pada Stock Opname (SO) dan pengelolaan divisi yang aktif.
                                 </p>
                                 <div class="row g-3">
                                     @foreach($gudangList as $g)
@@ -819,7 +819,7 @@
                         </div>
                     </div>
 
-                    {{-- Form Min Stock untuk Bahan Baku (per Gudang & Divisi) --}}
+                    {{-- Form Min Stock per Gudang & Divisi --}}
                     <div id="minStockSectionBb" style="display: none;">
                         <p class="text-muted small mb-3">
                             <i class="bi bi-info-circle text-primary me-1"></i>
@@ -1100,11 +1100,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (helpKonversiBeli) helpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         }
 
-        if (jenis.value === "BAHAN_BAKU" || jenis.value === "BAHAN_SETENGAH_JADI") {
-            if (groupTagDivisi) groupTagDivisi.style.display = "block";
-        } else {
-            if (groupTagDivisi) groupTagDivisi.style.display = "none";
-        }
+        if (groupTagDivisi) groupTagDivisi.style.display = "block";
 
         if (jenis.value === "BARANG_JADI") {
             groupTipePenjualan.style.display = "block";
@@ -1208,43 +1204,37 @@ document.addEventListener("DOMContentLoaded", function () {
         var minStockBsjWrap = document.getElementById('detailMinStockBsjWrap');
         var tipeWrap = document.getElementById('detailTipePenjualanWrap');
 
-        if (jenisVal === 'BAHAN_BAKU' || jenisVal === 'BAHAN_SETENGAH_JADI') {
-            minStockWrap.style.display = 'none';
-            minStockBsjWrap.style.display = 'none';
-            if (minStockBbWrap) {
-                minStockBbWrap.style.display = 'block';
-                var outletsRaw = button.getAttribute('data-min-stock-outlets');
-                var outlets = [];
-                try { outlets = JSON.parse(outletsRaw) || []; } catch(e){}
-                var container = document.getElementById('detailMinStockBbContainer');
-                if (container) {
-                    if (outlets.length > 0) {
-                        var html = '';
-                        outlets.forEach(function(item) {
-                            var statusBadge = item.is_active !== false 
-                                ? '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:0.65rem;">Aktif</span>'
-                                : '<span class="badge bg-secondary-subtle text-secondary border ms-1" style="font-size:0.65rem;">Non-Aktif</span>';
-                            
-                            html += '<div class="col-md-6 mb-2">' +
-                                        '<div class="p-2 bg-white rounded border d-flex justify-content-between align-items-center ' + (item.is_active === false ? 'opacity-75 bg-light' : '') + '">' +
-                                            '<div>' +
-                                                '<span class="fw-semibold text-secondary">' + item.gudang + (item.divisi ? ' (' + item.divisi + ')' : '') + '</span>' +
-                                                statusBadge +
-                                            '</div>' +
-                                            '<strong class="text-dark">' + (item.qty > 0 ? (Number(item.qty).toLocaleString('id-ID') + ' ' + (item.satuan || '')) : '—') + '</strong>' +
+        minStockWrap.style.display = 'none';
+        minStockBsjWrap.style.display = 'none';
+        if (minStockBbWrap) {
+            minStockBbWrap.style.display = 'block';
+            var outletsRaw = button.getAttribute('data-min-stock-outlets');
+            var outlets = [];
+            try { outlets = JSON.parse(outletsRaw) || []; } catch(e){}
+            var container = document.getElementById('detailMinStockBbContainer');
+            if (container) {
+                if (outlets.length > 0) {
+                    var html = '';
+                    outlets.forEach(function(item) {
+                        var statusBadge = item.is_active !== false 
+                            ? '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1" style="font-size:0.65rem;">Aktif</span>'
+                            : '<span class="badge bg-secondary-subtle text-secondary border ms-1" style="font-size:0.65rem;">Non-Aktif</span>';
+                        
+                        html += '<div class="col-md-6 mb-2">' +
+                                    '<div class="p-2 bg-white rounded border d-flex justify-content-between align-items-center ' + (item.is_active === false ? 'opacity-75 bg-light' : '') + '">' +
+                                        '<div>' +
+                                            '<span class="fw-semibold text-secondary">' + item.gudang + (item.divisi ? ' (' + item.divisi + ')' : '') + '</span>' +
+                                            statusBadge +
                                         '</div>' +
-                                    '</div>';
-                        });
-                        container.innerHTML = html;
-                    } else {
-                        container.innerHTML = '<div class="col-12 text-muted fst-italic">Semua outlet & divisi aktif (default), tanpa batas minimum stok.</div>';
-                    }
+                                        '<strong class="text-dark">' + (item.qty > 0 ? (Number(item.qty).toLocaleString('id-ID') + ' ' + (item.satuan || '')) : '—') + '</strong>' +
+                                    '</div>' +
+                                '</div>';
+                    });
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div class="col-12 text-muted fst-italic">Semua outlet & divisi aktif (default), tanpa batas minimum stok.</div>';
                 }
             }
-        } else {
-            minStockWrap.style.display = 'none';
-            if (minStockBbWrap) minStockBbWrap.style.display = 'none';
-            minStockBsjWrap.style.display = 'none';
         }
 
         if (jenisVal === 'BARANG_JADI') {
@@ -1292,11 +1282,7 @@ document.addEventListener("DOMContentLoaded", function () {
             if (editHelpKonversiBeli) editHelpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         }
 
-        if (editJenis.value === "BAHAN_BAKU" || editJenis.value === "BAHAN_SETENGAH_JADI") {
-            if (editGroupTagDivisi) editGroupTagDivisi.style.display = "block";
-        } else {
-            if (editGroupTagDivisi) editGroupTagDivisi.style.display = "none";
-        }
+        if (editGroupTagDivisi) editGroupTagDivisi.style.display = "block";
 
         if (editJenis.value === "BARANG_JADI") {
             editGroupTipePenjualan.style.display = "block";
@@ -1372,44 +1358,39 @@ document.addEventListener("DOMContentLoaded", function () {
             secBsj.style.display = 'none';
             secGeneral.style.display = 'none';
 
-            if (jenisVal === 'BAHAN_BAKU' || jenisVal === 'BAHAN_SETENGAH_JADI') {
-                secBb.style.display = 'block';
+            secBb.style.display = 'block';
 
-                // Reset all inputs
-                document.querySelectorAll('.modal-minstock-qty-input').forEach(function(inp) {
-                    inp.value = '';
-                    inp.disabled = false;
-                });
-                document.querySelectorAll('#modalAturMinStock .outlet-active-toggle').forEach(function(chk) {
-                    chk.checked = true;
-                });
+            // Reset all inputs
+            document.querySelectorAll('.modal-minstock-qty-input').forEach(function(inp) {
+                inp.value = '';
+                inp.disabled = false;
+            });
+            document.querySelectorAll('#modalAturMinStock .outlet-active-toggle').forEach(function(chk) {
+                chk.checked = true;
+            });
 
-                var mapRaw = button.getAttribute('data-min-stock-map');
-                if (mapRaw) {
-                    try {
-                        var map = JSON.parse(mapRaw);
-                        for (var key in map) {
-                            var inp = document.getElementById('minstock_qty_' + key);
-                            var chk = document.getElementById('minstock_active_' + key);
-                            var itemData = map[key];
+            var mapRaw = button.getAttribute('data-min-stock-map');
+            if (mapRaw) {
+                try {
+                    var map = JSON.parse(mapRaw);
+                    for (var key in map) {
+                        var inp = document.getElementById('minstock_qty_' + key);
+                        var chk = document.getElementById('minstock_active_' + key);
+                        var itemData = map[key];
 
-                            if (typeof itemData === 'object' && itemData !== null) {
-                                if (inp) inp.value = itemData.qty > 0 ? itemData.qty : '';
-                                if (chk) chk.checked = itemData.is_active;
-                            } else if (typeof itemData === 'number') {
-                                if (inp) inp.value = itemData > 0 ? itemData : '';
-                            }
+                        if (typeof itemData === 'object' && itemData !== null) {
+                            if (inp) inp.value = itemData.qty > 0 ? itemData.qty : '';
+                            if (chk) chk.checked = itemData.is_active;
+                        } else if (typeof itemData === 'number') {
+                            if (inp) inp.value = itemData > 0 ? itemData : '';
                         }
-                    } catch(e){}
-                }
-
-                document.querySelectorAll('#modalAturMinStock .outlet-active-toggle').forEach(function(chk) {
-                    updateBoxAppearance(chk);
-                });
-            } else {
-                secGeneral.style.display = 'block';
-                document.getElementById('minStockGeneralInput').value = button.getAttribute('data-min-stock') || '';
+                    }
+                } catch(e){}
             }
+
+            document.querySelectorAll('#modalAturMinStock .outlet-active-toggle').forEach(function(chk) {
+                updateBoxAppearance(chk);
+            });
         });
     }
 

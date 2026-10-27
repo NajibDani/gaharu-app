@@ -286,8 +286,8 @@ class BarangController extends Controller
                 'tipe_penjualan'        => $request->jenis_utama == 'BARANG_JADI' ? $request->tipe_penjualan : null,
             ]);
 
-            // Simpan alokasi/tagging divisi jika jenis BAHAN_BAKU atau BAHAN_SETENGAH_JADI
-            if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI']) && $request->has('divisi_tag')) {
+            // Simpan alokasi/tagging divisi untuk semua jenis & kategori barang
+            if ($request->has('divisi_tag')) {
                 $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
                 foreach ($gudangListAll as $g) {
                     if ($g->divisi->count() > 0) {
@@ -485,7 +485,7 @@ class BarangController extends Controller
         $msgSuccess = 'Data barang "' . $data->nama . '" & kategori (' . $kategoriNama . ') berhasil diperbarui.';
 
         // Simpan / update tagging divisi jika form mengirimkan divisi_tag
-        if (in_array($request->jenis_utama, ['BAHAN_BAKU', 'BAHAN_SETENGAH_JADI']) && $request->has('divisi_tag')) {
+        if ($request->has('divisi_tag')) {
             $existingMinStocks = \App\Models\BarangMinimumStock::where('barang_id', $data->id)->get();
             \App\Models\BarangMinimumStock::where('barang_id', $data->id)->delete();
 
@@ -549,7 +549,7 @@ class BarangController extends Controller
     {
         $barang = MasterBarang::withoutGlobalScopes()->findOrFail($id);
 
-        if ($barang->is_bahan_baku || $barang->is_bahan_setengah_jadi) {
+        if ($request->has('min_stock_outlet') || $request->has('min_stock_active')) {
             $gudangListAll = \App\Models\MasterGudang::with('divisi')->get();
             foreach ($gudangListAll as $g) {
                 if ($g->divisi->count() > 0) {

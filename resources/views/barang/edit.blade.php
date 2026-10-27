@@ -143,11 +143,11 @@
         $minStockMap = $data->minimumStocks ? $data->minimumStocks->mapWithKeys(fn($m) => [($m->gudang_id . '_' . ($m->divisi_id ?? 'none')) => ['qty' => (float)$m->minimum_stock, 'is_active' => (bool)$m->is_active]])->toArray() : [];
     @endphp
 
-    <div class="col-12 mb-3" id="group-min-stock-bb" style="display: none;">
+    <div class="col-12 mb-3" id="group-min-stock-bb">
         <div class="p-3 rounded-3" style="background-color: #f8fafc; border: 1.5px dashed #cbd5e1;">
             <div class="d-flex align-items-center justify-content-between mb-2">
                 <label class="fw-bold small text-danger mb-0">
-                    <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock per Outlet &amp; Divisi (Bahan Baku - Opsional)
+                    <i class="bi bi-shield-exclamation me-1"></i> Minimum Stock &amp; Tagging per Outlet &amp; Divisi (Opsional)
                 </label>
                 <span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 0.7rem;">Tidak Wajib Diisi</span>
             </div>
@@ -339,9 +339,10 @@ document.addEventListener("DOMContentLoaded",function(){
         const inpSatuanBeli = document.getElementById('satuan_pembelian');
         const inpKonversiBeli = document.getElementById('konversi_pembelian');
 
+        if(groupBb) groupBb.style.display="block";
+
         if(jenis.value==="BAHAN_SETENGAH_JADI"){
             group.style.display="none";
-            if(groupBb) groupBb.style.display="none";
             groupBsj.style.display="block";
             if(satuanHelper) satuanHelper.classList.remove('d-none');
 
@@ -351,24 +352,8 @@ document.addEventListener("DOMContentLoaded",function(){
             if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 100 (jika 1 PACK = 100 GR)';
             if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan takaran untuk resep/permintaan produksi (misal: PACK/PORSI).';
             if (helpKonversiBeli) helpKonversiBeli.textContent = 'Berapa gram, ml, atau porsi isi dalam 1 porsi/pack ini.';
-        }else if(jenis.value==="BAHAN_BAKU"){
-            group.style.display="none";
-            if(groupBb) groupBb.style.display="block";
-            groupBsj.style.display="none";
-            if(minStockCk) minStockCk.value="";
-            if(minStockKejingga) minStockKejingga.value="";
-            if(minStockGaharu) minStockGaharu.value="";
-            if(satuanHelper) satuanHelper.classList.add('d-none');
-
-            if (lblSatuanBeli) lblSatuanBeli.textContent = 'Satuan Pembelian (Opsional)';
-            if (lblKonversiBeli) lblKonversiBeli.textContent = 'Konversi Satuan Pembelian (Opsional)';
-            if (inpSatuanBeli) inpSatuanBeli.placeholder = 'Contoh: botol, dus, karton';
-            if (inpKonversiBeli) inpKonversiBeli.placeholder = 'Contoh: 1000';
-            if (helpSatuanBeli) helpSatuanBeli.textContent = 'Satuan kemasan saat beli dari supplier.';
-            if (helpKonversiBeli) helpKonversiBeli.textContent = '1 satuan pembelian = berapa satuan utama.';
         }else{
             group.style.display="none";
-            if(groupBb) groupBb.style.display="none";
             groupBsj.style.display="none";
             minimum.value="";
             if(minStockCk) minStockCk.value="";
