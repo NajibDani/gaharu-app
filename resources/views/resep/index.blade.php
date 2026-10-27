@@ -203,8 +203,11 @@
                             </td>
                             <td class="text-center">
                                 <div class="d-flex align-items-center justify-content-center gap-1">
+                                    <script type="application/json" id="resep-json-{{ $r->id }}">@json($r)</script>
                                     <button type="button" 
                                             class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#modalDetailResep"
                                             data-id="{{ $r->id }}">
                                         <i class="fas fa-eye me-1"></i>Lihat
                                     </button>
@@ -1212,7 +1215,21 @@ document.addEventListener("DOMContentLoaded", function () {
         return (b.nama || 'Bahan') + extra;
     }
 
-    const allResepData = @json($data->keyBy('id'));
+    function getResepData(resepId) {
+        if (!resepId) return null;
+        const scriptEl = document.getElementById('resep-json-' + resepId);
+        if (scriptEl && scriptEl.textContent) {
+            try {
+                return JSON.parse(scriptEl.textContent);
+            } catch (err) {
+                console.warn('Failed parsing resep-json script tag:', err);
+            }
+        }
+        if (typeof allResepData !== 'undefined' && allResepData && allResepData[resepId]) {
+            return allResepData[resepId];
+        }
+        return null;
+    }
 
     // ============ MODAL EDIT ============
     document.addEventListener('click', function(e) {
@@ -1228,7 +1245,7 @@ document.addEventListener("DOMContentLoaded", function () {
         formResep.action = `/resep/${idResep}?page=${pageNum}`; 
         formMethod.value = "PUT";
 
-        const resepItem = allResepData[idResep] || null;
+        const resepItem = getResepData(idResep);
         const produkId = resepItem ? resepItem.produk_id : (tombol.dataset.produk_id || '');
         const outputQty = resepItem ? resepItem.output_qty : (tombol.dataset.output_qty || '0');
         const satuanOutput = resepItem ? (resepItem.produk?.satuan || resepItem.satuan_output) : (tombol.dataset.satuan_output || '-');
@@ -1332,14 +1349,13 @@ document.addEventListener("DOMContentLoaded", function () {
     const modalDetailEl = document.getElementById('modalDetailResep');
     let activeResepIdForEdit = null;
 
-    document.addEventListener('click', function(e) {
-        const btn = e.target.closest('.btn-lihat-resep');
+    function populateResepDetail(btn) {
         if (!btn) return;
 
         const resepId = btn.getAttribute('data-id') || btn.dataset.id;
         activeResepIdForEdit = resepId;
 
-        const resepItem = allResepData[resepId] || null;
+        const resepItem = getResepData(resepId);
         const produkNama = resepItem?.produk?.nama || btn.getAttribute('data-produk-nama') || btn.dataset.produkNama || '-';
         const produkKode = resepItem?.produk?.kode_barang || btn.getAttribute('data-produk-kode') || btn.dataset.produkKode || '-';
         
@@ -1474,6 +1490,24 @@ document.addEventListener("DOMContentLoaded", function () {
                 });
             }
         }
+    }
+
+    // Tangani event Bootstrap native modal saat modal dibuka
+    if (modalDetailEl) {
+        modalDetailEl.addEventListener('show.bs.modal', function(e) {
+            const btn = e.relatedTarget || document.querySelector(`.btn-lihat-resep[data-id="${activeResepIdForEdit}"]`);
+            if (btn) {
+                populateResepDetail(btn);
+            }
+        });
+    }
+
+    // Tangani juga via click event fallback
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-lihat-resep');
+        if (!btn) return;
+
+        populateResepDetail(btn);
 
         if (modalDetailEl) {
             try {
@@ -1484,12 +1518,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     window.jQuery(modalDetailEl).modal('show');
                 }
             } catch (err) {
-                console.warn('Bootstrap modal getOrCreateInstance failed, trying fallback:', err);
-                try {
-                    new bootstrap.Modal(modalDetailEl).show();
-                } catch(e2) {
-                    console.error('Failed to show detail modal:', e2);
-                }
+                console.warn('Bootstrap modal show fallback:', err);
             }
         }
     });
