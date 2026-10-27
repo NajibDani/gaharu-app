@@ -1644,19 +1644,18 @@ class CentralKitchenProductionController extends Controller
                         $prodDate = $request->tanggal_produksi ?: ($woDate ?: now());
                         $finalTransferDate = $prodDate;
 
-                            $this->transferBsjToOutletKitchen(
-                                $produksiId,
-                                $kodeProduksi,
-                                $pesananItem,
-                                $produkId,
-                                $porsi,
-                                $hppPerUnit,
-                                $gudangCkId,
-                                $outletGudangId,
-                                $kitchenDivId,
-                                $finalTransferDate
-                            );
-                        }
+                        $this->transferBsjToOutletKitchen(
+                            $produksiId,
+                            $kodeProduksi,
+                            $pesananItem,
+                            $produkId,
+                            $porsi,
+                            $hppPerUnit,
+                            $gudangCkId,
+                            $outletGudangId,
+                            $kitchenDivId,
+                            $finalTransferDate
+                        );
                     }
 
                     $totalRealisasi = DB::table('alokasi_produksi_pesanan')
@@ -1706,19 +1705,18 @@ class CentralKitchenProductionController extends Controller
                     );
 
                     if (!$isInternalCk && $qtyHasil > 0 && $pesananItem && $outletGudangId) {
-                            $this->transferBsjToOutletKitchen(
-                                $produksiId,
-                                $kodeProduksi,
-                                $pesananItem,
-                                $produkId,
-                                $qtyHasil,
-                                $hppPerUnit,
-                                $gudangCkId,
-                                $outletGudangId,
-                                $kitchenDivId,
-                                $request->tanggal_produksi ?: now()
-                            );
-                        }
+                        $this->transferBsjToOutletKitchen(
+                            $produksiId,
+                            $kodeProduksi,
+                            $pesananItem,
+                            $produkId,
+                            $qtyHasil,
+                            $hppPerUnit,
+                            $gudangCkId,
+                            $outletGudangId,
+                            $kitchenDivId,
+                            $request->tanggal_produksi ?: now()
+                        );
                     }
                 }
             }
