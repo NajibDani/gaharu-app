@@ -436,9 +436,10 @@
                     <button type="button" class="btn btn-outline-secondary px-4 py-2" data-bs-dismiss="modal" style="border-radius: 8px; font-weight: 500;">Batal</button>
                     <button type="submit" class="btn btn-primary px-4 py-2" id="btn-submit-form" style="border-radius: 8px; font-weight: 500; background-color: #2563eb; border-color: #2563eb;">Simpan resep</button>
                 </div>
-            </form>
-        </div>
+            </div>
+        </form>
     </div>
+</div>
 
 {{-- ================= MODAL BARANG TANPA RESEP ================= --}}
 <div class="modal fade" id="modalTanpaResep" tabindex="-1" aria-labelledby="modalTanpaResepLabel" aria-hidden="true">
@@ -689,10 +690,18 @@
     function safeDecodeB64(str) {
         if (!str) return null;
         try {
-            // atob + decodeURIComponent handles UTF-8 encoded data
-            return JSON.parse(decodeURIComponent(escape(atob(str))));
+            var binary = atob(str);
+            var bytes = new Uint8Array(binary.length);
+            for (var i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return JSON.parse(new TextDecoder('utf-8').decode(bytes));
         } catch (e) {
-            try { return JSON.parse(atob(str)); } catch (e2) { return null; }
+            try {
+                return JSON.parse(decodeURIComponent(escape(atob(str))));
+            } catch (e2) {
+                try { return JSON.parse(atob(str)); } catch (e3) { return null; }
+            }
         }
     }
 
@@ -840,8 +849,12 @@
     function openDetailModal(btn) {
         currentDetailResepId = btn.getAttribute('data-id');
 
-        var data = getDataFromButton(btn);
-        populateModal(data);
+        try {
+            var data = getDataFromButton(btn);
+            populateModal(data);
+        } catch (err) {
+            console.error('Error populating modal detail:', err);
+        }
 
         var modalEl = document.getElementById('modalDetailResep');
         if (!modalEl) return;
