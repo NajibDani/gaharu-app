@@ -130,7 +130,7 @@
             </div>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <div class="table-responsive" id="resep-table-container">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-secondary text-uppercase fs-7 text-center">
                         <tr>
@@ -241,8 +241,6 @@
                                     <script type="application/json" id="resep-json-{{ $r->id }}">@json($r)</script>
                                     <button type="button" 
                                             class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#modalDetailResep"
                                             data-id="{{ $r->id }}"
                                             data-detail="{{ $detailB64 }}">
                                         <i class="fas fa-eye me-1"></i>Lihat
@@ -678,235 +676,206 @@
 
 <script>
 /**
- * Dedicated Standalone Handler for Modal Detail Resep
- * Self-contained, resilient to dynamic reloads and framework race conditions.
+ * Standalone Handler — Modal Detail Resep
+ * Runs immediately. No DOMContentLoaded wrapper needed (script is placed after modal HTML).
+ * Data is always filled BEFORE modal is shown to avoid empty modal.
  */
 (function() {
-    let currentDetailResepId = null;
-    let lastTriggerButton = null;
+    'use strict';
 
+    var currentDetailResepId = null;
+
+    /* ── Helper: safe Base64 → JSON ─────────────────────────────── */
     function safeDecodeB64(str) {
         if (!str) return null;
         try {
+            // atob + decodeURIComponent handles UTF-8 encoded data
             return JSON.parse(decodeURIComponent(escape(atob(str))));
         } catch (e) {
-            try {
-                return JSON.parse(atob(str));
-            } catch (e2) {
-                return null;
-            }
+            try { return JSON.parse(atob(str)); } catch (e2) { return null; }
         }
     }
 
-    function populateResepDetail(triggerEl) {
-        if (!triggerEl) return;
-        const btn = triggerEl.closest('.btn-lihat-resep') || triggerEl;
-        lastTriggerButton = btn;
+    /* ── Helper: get data from button ────────────────────────────── */
+    function getDataFromButton(btn) {
+        // Priority 1: pre-encoded Base64 payload
+        var data = safeDecodeB64(btn.getAttribute('data-detail'));
+        if (data) return data;
 
-        const resepId = btn.getAttribute('data-id') || btn.dataset.id;
-        currentDetailResepId = resepId;
-
-        let data = safeDecodeB64(btn.getAttribute('data-detail'));
-        if (!data) {
-            const scriptTag = document.getElementById('resep-json-' + resepId);
+        // Priority 2: script[type="application/json"] tag
+        var resepId = btn.getAttribute('data-id');
+        if (resepId) {
+            var scriptTag = document.getElementById('resep-json-' + resepId);
             if (scriptTag && scriptTag.textContent) {
                 try {
-                    const raw = JSON.parse(scriptTag.textContent);
+                    var raw = JSON.parse(scriptTag.textContent);
                     if (raw) {
-                        data = {
+                        var built = {
                             id: raw.id,
-                            produk_nama: raw.produk ? raw.produk.nama : 'Produk',
-                            produk_kode: raw.produk ? raw.produk.kode_barang : '-',
-                            tipe_badge: raw.produk ? (raw.produk.is_bahan_setengah_jadi ? 'BSJ' : (raw.produk.tipe_penjualan || 'Barang Jadi')) : '',
+                            produk_nama: raw.produk ? (raw.produk.nama || 'Produk') : 'Produk',
+                            produk_kode: raw.produk ? (raw.produk.kode_barang || '-') : '-',
+                            tipe_badge: raw.produk
+                                ? (raw.produk.is_bahan_setengah_jadi ? 'BSJ' : (raw.produk.tipe_penjualan || 'Barang Jadi'))
+                                : '',
                             output_qty: parseFloat(raw.output_qty) || 0,
-                            satuan_output: raw.produk ? (raw.produk.satuan || raw.satuan_output) : (raw.satuan_output || '-'),
+                            satuan_output: raw.produk ? (raw.produk.satuan || raw.satuan_output || '-') : (raw.satuan_output || '-'),
                             bahan: []
                         };
-                        if (raw.bahanbaku && Array.isArray(raw.bahanbaku)) {
-                            raw.bahanbaku.forEach(bb => {
-                                const alts = [];
-                                if (bb.alternatif && Array.isArray(bb.alternatif)) {
-                                    bb.alternatif.forEach(alt => {
+                        if (Array.isArray(raw.bahanbaku)) {
+                            raw.bahanbaku.forEach(function(bb) {
+                                var alts = [];
+                                if (Array.isArray(bb.alternatif)) {
+                                    bb.alternatif.forEach(function(alt) {
                                         alts.push({
-                                            nama: alt.bahan ? alt.bahan.nama : 'Bahan Alternatif',
-                                            kode: alt.bahan ? alt.bahan.kode_barang : '',
+                                            nama: alt.bahan ? (alt.bahan.nama || 'Bahan Alternatif') : 'Bahan Alternatif',
+                                            kode: alt.bahan ? (alt.bahan.kode_barang || '') : '',
                                             prioritas: alt.prioritas || 2
                                         });
                                     });
                                 }
-                                data.bahan.push({
-                                    nama: bb.bahan ? bb.bahan.nama : 'Bahan Utama',
-                                    kode: bb.bahan ? bb.bahan.kode_barang : '',
+                                built.bahan.push({
+                                    nama: bb.bahan ? (bb.bahan.nama || 'Bahan Utama') : 'Bahan Utama',
+                                    kode: bb.bahan ? (bb.bahan.kode_barang || '') : '',
                                     qty: parseFloat(bb.qty_bahan) || 0,
-                                    satuan: bb.satuan || (bb.bahan ? bb.bahan.satuan : '-'),
+                                    satuan: bb.satuan || (bb.bahan ? (bb.bahan.satuan || '-') : '-'),
                                     alternatif: alts
                                 });
                             });
                         }
+                        return built;
                     }
-                } catch (e) {
-                    console.warn('Fallback JSON parse failed:', e);
-                }
+                } catch (e) {}
             }
         }
+        return null;
+    }
 
-        if (!data) {
-            data = {
-                id: resepId,
-                produk_nama: btn.getAttribute('data-produk-nama') || '-',
-                produk_kode: btn.getAttribute('data-produk-kode') || '-',
-                tipe_badge: btn.getAttribute('data-tipe-badge') || '',
-                output_qty: parseFloat(btn.getAttribute('data-output-qty')) || 0,
-                satuan_output: btn.getAttribute('data-satuan-output') || '-',
-                bahan: []
-            };
+    /* ── Fill modal with recipe data ─────────────────────────────── */
+    function populateModal(data) {
+        if (!data) return;
+
+        var elNama = document.getElementById('detail-produk-nama');
+        if (elNama) elNama.textContent = data.produk_nama || '-';
+
+        var elKode = document.getElementById('detail-produk-kode');
+        if (elKode) elKode.textContent = data.produk_kode || '-';
+
+        var elOutput = document.getElementById('detail-output-qty');
+        if (elOutput) {
+            var qty = Number(data.output_qty || 0);
+            elOutput.textContent = qty.toLocaleString('id-ID') + ' ' + (data.satuan_output || '');
         }
 
-        // Set Nama Produk
-        const elemNama = document.getElementById('detail-produk-nama');
-        if (elemNama) elemNama.textContent = data.produk_nama || '-';
-
-        // Set Kode Produk
-        const elemKode = document.getElementById('detail-produk-kode');
-        if (elemKode) elemKode.textContent = data.produk_kode || '-';
-
-        // Set Output Qty
-        const elemOutput = document.getElementById('detail-output-qty');
-        if (elemOutput) {
-            const qtyNum = Number(data.output_qty || 0);
-            elemOutput.textContent = `${qtyNum.toLocaleString('id-ID')} ${data.satuan_output || ''}`.trim();
-        }
-
-        // Set Tipe Badge
-        const badgeContainer = document.getElementById('detail-produk-badge');
-        if (badgeContainer) {
-            const tb = data.tipe_badge || '';
+        var elBadge = document.getElementById('detail-produk-badge');
+        if (elBadge) {
+            var tb = data.tipe_badge || '';
             if (tb === 'BSJ') {
-                badgeContainer.innerHTML = `<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 11px;"><i class="bi bi-gear me-1"></i>Bahan Setengah Jadi</span>`;
+                elBadge.innerHTML = '<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:11px;"><i class="bi bi-gear me-1"></i>Bahan Setengah Jadi</span>';
             } else if (tb === 'POS Kejingga') {
-                badgeContainer.innerHTML = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Kejingga</span>`;
+                elBadge.innerHTML = '<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size:11px;"><i class="bi bi-shop me-1"></i>POS Kejingga</span>';
             } else if (tb === 'POS Gaharu') {
-                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Gaharu</span>`;
+                elBadge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:11px;"><i class="bi bi-shop me-1"></i>POS Gaharu</span>';
             } else if (tb === 'B2B') {
-                badgeContainer.innerHTML = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 11px;"><i class="bi bi-building me-1"></i>B2B</span>`;
+                elBadge.innerHTML = '<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size:11px;"><i class="bi bi-building me-1"></i>B2B</span>';
             } else if (tb) {
-                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;">${tb}</span>`;
+                elBadge.innerHTML = '<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:11px;">' + tb + '</span>';
             } else {
-                badgeContainer.innerHTML = '';
+                elBadge.innerHTML = '';
             }
         }
 
-        // Set Total Bahan Badge
-        const elemTotalBadge = document.getElementById('detail-total-bahan-badge');
-        const bahanList = Array.isArray(data.bahan) ? data.bahan : [];
-        if (elemTotalBadge) elemTotalBadge.textContent = `${bahanList.length} Bahan`;
+        var bahanList = Array.isArray(data.bahan) ? data.bahan : [];
+        var elTotalBadge = document.getElementById('detail-total-bahan-badge');
+        if (elTotalBadge) elTotalBadge.textContent = bahanList.length + ' Bahan';
 
-        // Render Tabel Bahan
-        const tbodyDetail = document.getElementById('tbody-detail-resep');
-        if (tbodyDetail) {
-            tbodyDetail.innerHTML = '';
-            if (bahanList.length === 0) {
-                tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar pada resep ini.</td></tr>`;
-            } else {
-                bahanList.forEach((b, idx) => {
-                    const primaryName = b.nama || 'Bahan Baku';
-                    const primaryKode = b.kode ? `(${b.kode})` : '';
-                    const satuan = b.satuan || '-';
-                    const qty = Number(b.qty || 0);
+        var tbody = document.getElementById('tbody-detail-resep');
+        if (!tbody) return;
+        tbody.innerHTML = '';
 
-                    let altHtml = '';
-                    if (b.alternatif && b.alternatif.length > 0) {
-                        b.alternatif.forEach(alt => {
-                            const altName = alt.nama || 'Bahan Alternatif';
-                            const altKode = alt.kode ? `(${alt.kode})` : '';
-                            const prio = alt.prioritas || 2;
-                            altHtml += `
-                                <div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size: 11.5px;">
-                                    <span class="badge bg-secondary rounded-pill" style="font-size: 9px; padding: 2px 6px;">${prio}</span>
-                                    <span>${altName}</span>
-                                    ${altKode ? `<span class="font-monospace text-muted small" style="font-size: 10px;">${altKode}</span>` : ''}
-                                    <span class="text-warning-emphasis fst-italic ms-1" style="font-size: 11px;">(substitusi)</span>
-                                </div>
-                            `;
-                        });
-                    }
+        if (bahanList.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar pada resep ini.</td></tr>';
+            return;
+        }
 
-                    const rowHtml = `
-                        <tr>
-                            <td class="text-center text-muted fw-semibold">${idx + 1}</td>
-                            <td>
-                                <div class="fw-semibold text-dark d-flex align-items-center gap-1">
-                                    <span class="badge bg-primary rounded-pill" style="font-size: 10px; padding: 3px 7px;">1</span>
-                                    <span>${primaryName}</span>
-                                    ${primaryKode ? `<span class="font-monospace text-muted small ms-1" style="font-size: 11px;">${primaryKode}</span>` : ''}
-                                </div>
-                                ${altHtml}
-                            </td>
-                            <td class="text-center fw-bold text-dark fs-6">${qty.toLocaleString('id-ID')}</td>
-                            <td class="text-center">
-                                <span class="badge bg-light text-secondary border px-2 py-1">${satuan}</span>
-                            </td>
-                        </tr>
-                    `;
-                    tbodyDetail.insertAdjacentHTML('beforeend', rowHtml);
+        bahanList.forEach(function(b, idx) {
+            var pName = b.nama || 'Bahan Baku';
+            var pKode = b.kode ? ('(' + b.kode + ')') : '';
+            var satuan = b.satuan || '-';
+            var qty = Number(b.qty || 0);
+
+            var altHtml = '';
+            if (Array.isArray(b.alternatif) && b.alternatif.length > 0) {
+                b.alternatif.forEach(function(alt) {
+                    var aName = alt.nama || 'Bahan Alternatif';
+                    var aKode = alt.kode ? ('(' + alt.kode + ')') : '';
+                    var prio = alt.prioritas || 2;
+                    altHtml += '<div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size:11.5px;">'
+                        + '<span class="badge bg-secondary rounded-pill" style="font-size:9px;padding:2px 6px;">' + prio + '</span>'
+                        + '<span>' + aName + '</span>'
+                        + (aKode ? '<span class="font-monospace text-muted small" style="font-size:10px;">' + aKode + '</span>' : '')
+                        + '<span class="text-warning-emphasis fst-italic ms-1" style="font-size:11px;">(substitusi)</span>'
+                        + '</div>';
                 });
             }
+
+            tbody.insertAdjacentHTML('beforeend',
+                '<tr>'
+                + '<td class="text-center text-muted fw-semibold">' + (idx + 1) + '</td>'
+                + '<td>'
+                +   '<div class="fw-semibold text-dark d-flex align-items-center gap-1">'
+                +     '<span class="badge bg-primary rounded-pill" style="font-size:10px;padding:3px 7px;">1</span>'
+                +     '<span>' + pName + '</span>'
+                +     (pKode ? '<span class="font-monospace text-muted small ms-1" style="font-size:11px;">' + pKode + '</span>' : '')
+                +   '</div>'
+                +   altHtml
+                + '</td>'
+                + '<td class="text-center fw-bold text-dark fs-6">' + qty.toLocaleString('id-ID') + '</td>'
+                + '<td class="text-center"><span class="badge bg-light text-secondary border px-2 py-1">' + satuan + '</span></td>'
+                + '</tr>'
+            );
+        });
+    }
+
+    /* ── Open modal from a trigger button ────────────────────────── */
+    function openDetailModal(btn) {
+        currentDetailResepId = btn.getAttribute('data-id');
+
+        var data = getDataFromButton(btn);
+        populateModal(data);
+
+        var modalEl = document.getElementById('modalDetailResep');
+        if (!modalEl) return;
+
+        try {
+            var inst = bootstrap.Modal.getOrCreateInstance(modalEl);
+            inst.show();
+        } catch (err) {
+            console.error('Modal show error:', err);
         }
     }
 
-    // Delegated click on .btn-lihat-resep
+    /* ── Delegated click: Lihat button ───────────────────────────── */
     document.addEventListener('click', function(e) {
-        const btn = e.target.closest('.btn-lihat-resep');
+        var btn = e.target.closest('.btn-lihat-resep');
         if (!btn) return;
-        populateResepDetail(btn);
-
-        // Fallback: If Bootstrap data-bs-toggle doesn't show the modal within 80ms, show it manually
-        const modalEl = document.getElementById('modalDetailResep');
-        if (modalEl) {
-            setTimeout(function() {
-                if (!modalEl.classList.contains('show') && !modalEl.classList.contains('showing')) {
-                    try {
-                        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                            const inst = bootstrap.Modal.getOrCreateInstance(modalEl);
-                            inst.show();
-                        } else if (window.jQuery && typeof window.jQuery(modalEl).modal === 'function') {
-                            window.jQuery(modalEl).modal('show');
-                        }
-                    } catch (err) {
-                        console.warn('Fallback modal show error:', err);
-                    }
-                }
-            }, 80);
-        }
+        e.preventDefault();
+        openDetailModal(btn);
     });
 
-    // Native Bootstrap show.bs.modal listener
-    document.addEventListener('DOMContentLoaded', function() {
-        const modalEl = document.getElementById('modalDetailResep');
-        if (modalEl) {
-            modalEl.addEventListener('show.bs.modal', function(e) {
-                const btn = e.relatedTarget || lastTriggerButton || (currentDetailResepId ? document.querySelector(`.btn-lihat-resep[data-id="${currentDetailResepId}"]`) : null);
-                if (btn) {
-                    populateResepDetail(btn);
-                }
-            });
-        }
-    });
-
-    // Delegated click for Edit button inside Detail Modal
+    /* ── Delegated click: Edit dari dalam modal detail ───────────── */
     document.addEventListener('click', function(e) {
-        const btnEditModal = e.target.closest('#btn-edit-dari-detail');
-        if (!btnEditModal) return;
-
+        var btnEdit = e.target.closest('#btn-edit-dari-detail');
+        if (!btnEdit) return;
         if (!currentDetailResepId) return;
-        const targetBtnEdit = document.querySelector(`.btn-edit-resep[data-id="${currentDetailResepId}"]`);
-        const modalEl = document.getElementById('modalDetailResep');
 
-        if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-            const inst = bootstrap.Modal.getInstance(modalEl);
+        var targetBtnEdit = document.querySelector('.btn-edit-resep[data-id="' + currentDetailResepId + '"]');
+        var modalEl = document.getElementById('modalDetailResep');
+
+        if (modalEl && typeof bootstrap !== 'undefined') {
+            var inst = bootstrap.Modal.getInstance(modalEl);
             if (inst) {
-                modalEl.addEventListener('hidden.bs.modal', function onDetailHidden() {
-                    modalEl.removeEventListener('hidden.bs.modal', onDetailHidden);
+                modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                    modalEl.removeEventListener('hidden.bs.modal', onHidden);
                     if (targetBtnEdit) targetBtnEdit.click();
                 });
                 inst.hide();
@@ -915,6 +884,7 @@
         }
         if (targetBtnEdit) targetBtnEdit.click();
     });
+
 })();
 </script>
 

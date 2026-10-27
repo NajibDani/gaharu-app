@@ -959,11 +959,28 @@
              */
             function getTableContainers(doc) {
                 doc = doc || document;
-                // Selector prioritas container tabel
-                let tableBox = doc.querySelector('.table-responsive');
+                // Selector prioritas container tabel — hindari tabel di dalam modal
+                // 1. Coba selector spesifik dengan data-table-main atau ID khusus
+                let tableBox = doc.querySelector('[data-table-main], #resep-table-container, #barang-table-container, #produk-table-container, #main-table-container');
                 if (!tableBox) {
-                    let table = doc.querySelector('table');
-                    if (table) tableBox = table.closest('.card-body') || table.closest('.card') || table;
+                    // 2. Fallback: semua .table-responsive yang BUKAN di dalam .modal
+                    let allResponsive = doc.querySelectorAll('.table-responsive');
+                    for (let el of allResponsive) {
+                        if (!el.closest('.modal')) {
+                            tableBox = el;
+                            break;
+                        }
+                    }
+                }
+                if (!tableBox) {
+                    // 3. Fallback terakhir: cari table pertama yang tidak di dalam modal
+                    let allTables = doc.querySelectorAll('table');
+                    for (let t of allTables) {
+                        if (!t.closest('.modal')) {
+                            tableBox = t.closest('.card-body') || t.closest('.card') || t;
+                            break;
+                        }
+                    }
                 }
                 
                 // Cari container paginasi
