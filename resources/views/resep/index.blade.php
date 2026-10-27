@@ -205,27 +205,13 @@
                                 <div class="d-flex align-items-center justify-content-center gap-1">
                                     <button type="button" 
                                             class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#modalDetailResep"
-                                            data-id="{{ $r->id }}"
-                                            data-produk-nama="{{ $r->produk->nama ?? 'Produk Tidak Diketahui' }}"
-                                            data-produk-kode="{{ $r->produk->kode_barang ?? '-' }}"
-                                            data-tipe-badge="{{ $r->produk ? ($r->produk->is_bahan_setengah_jadi ? 'BSJ' : ($r->produk->tipe_penjualan ?: 'Barang Jadi')) : '' }}"
-                                            data-output-qty="{{ (int) $r->output_qty }}"
-                                            data-satuan-output="{{ $r->produk->satuan ?? $r->satuan_output }}"
-                                            data-bahanbaku="{{ json_encode($r->bahanbaku) }}">
+                                            data-id="{{ $r->id }}">
                                         <i class="fas fa-eye me-1"></i>Lihat
                                     </button>
                                     
                                     <button type="button" 
                                             class="btn btn-warning btn-sm btn-edit-resep rounded-2 px-2"
                                             data-id="{{ $r->id }}"
-                                            data-produk_id="{{ $r->produk_id }}"
-                                            data-output_qty="{{ (int) $r->output_qty }}"
-                                            data-satuan_output="{{ $r->produk->satuan ?? $r->satuan_output }}"
-                                            data-btkl="{{ (int) $r->btkl_per_batch }}"
-                                            data-bop="{{ (int) $r->bop_per_batch }}"
-                                            data-bahanbaku="{{ json_encode($r->bahanbaku) }}"
                                             data-page="{{ $data->currentPage() }}">
                                         Edit
                                     </button>
@@ -1226,6 +1212,8 @@ document.addEventListener("DOMContentLoaded", function () {
         return (b.nama || 'Bahan') + extra;
     }
 
+    const allResepData = @json($data->keyBy('id'));
+
     // ============ MODAL EDIT ============
     document.addEventListener('click', function(e) {
         const tombol = e.target.closest('.btn-edit-resep');
@@ -1240,24 +1228,35 @@ document.addEventListener("DOMContentLoaded", function () {
         formResep.action = `/resep/${idResep}?page=${pageNum}`; 
         formMethod.value = "PUT";
 
-        produkChoices.setChoiceByValue(tombol.dataset.produk_id);
-        produkChoices.disable();
-        warningProduk.classList.remove('d-none');
+        const resepItem = allResepData[idResep] || null;
+        const produkId = resepItem ? resepItem.produk_id : (tombol.dataset.produk_id || '');
+        const outputQty = resepItem ? resepItem.output_qty : (tombol.dataset.output_qty || '0');
+        const satuanOutput = resepItem ? (resepItem.produk?.satuan || resepItem.satuan_output) : (tombol.dataset.satuan_output || '-');
 
-        document.getElementById('output_qty').value = tombol.dataset.output_qty;
-        const selectedProdOption = selectProduk.querySelector(`option[value="${tombol.dataset.produk_id}"]`);
-        const currentProdSatuan = (selectedProdOption && selectedProdOption.dataset.satuan) ? selectedProdOption.dataset.satuan : tombol.dataset.satuan_output;
-        inputSatuanOutput.value = currentProdSatuan || tombol.dataset.satuan_output || '-';
+        if (produkId) {
+            produkChoices.setChoiceByValue(produkId);
+            produkChoices.disable();
+            warningProduk.classList.remove('d-none');
+        }
+
+        document.getElementById('output_qty').value = parseFloat(outputQty) || 0;
+        const selectedProdOption = selectProduk.querySelector(`option[value="${produkId}"]`);
+        const currentProdSatuan = (selectedProdOption && selectedProdOption.dataset.satuan) ? selectedProdOption.dataset.satuan : satuanOutput;
+        inputSatuanOutput.value = currentProdSatuan || satuanOutput || '-';
 
         tbodyBahan.innerHTML = '';
         
         let arrayBahanBaku = [];
-        try {
-            const rawBahan = tombol.getAttribute('data-bahanbaku') || tombol.dataset.bahanbaku || '[]';
-            arrayBahanBaku = typeof rawBahan === 'string' ? JSON.parse(rawBahan) : (rawBahan || []);
-        } catch (err) {
-            console.error('Failed to parse bahanbaku:', err);
-            arrayBahanBaku = [];
+        if (resepItem && Array.isArray(resepItem.bahanbaku)) {
+            arrayBahanBaku = resepItem.bahanbaku;
+        } else {
+            try {
+                const rawBahan = tombol.getAttribute('data-bahanbaku') || tombol.dataset.bahanbaku || '[]';
+                arrayBahanBaku = typeof rawBahan === 'string' ? JSON.parse(rawBahan) : (rawBahan || []);
+            } catch (err) {
+                console.error('Failed to parse bahanbaku:', err);
+                arrayBahanBaku = [];
+            }
         }
 
         const getMasterSatuan = (bahanId, fallback) => {
@@ -1316,7 +1315,8 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }
         if (checkboxAuto) {
-            if (Math.abs(sumBahan - parseFloat(tombol.dataset.output_qty)) < 0.0001 && sumBahan > 0) {
+            const currentOutput = parseFloat(outputQty) || 0;
+            if (Math.abs(sumBahan - currentOutput) < 0.0001 && sumBahan > 0) {
                 checkboxAuto.checked = true;
                 inputOutputQty.readOnly = true;
             } else {
@@ -1336,13 +1336,26 @@ document.addEventListener("DOMContentLoaded", function () {
         const btn = e.target.closest('.btn-lihat-resep');
         if (!btn) return;
 
-        // Populate detail modal data
-        activeResepIdForEdit = btn.getAttribute('data-id') || btn.dataset.id;
-        const produkNama = btn.getAttribute('data-produk-nama') || btn.dataset.produkNama || '-';
-        const produkKode = btn.getAttribute('data-produk-kode') || btn.dataset.produkKode || '-';
-        const tipeBadge = btn.getAttribute('data-tipe-badge') || btn.dataset.tipeBadge || '';
-        const outputQty = btn.getAttribute('data-output-qty') || btn.dataset.outputQty || '0';
-        const satuanOutput = btn.getAttribute('data-satuan-output') || btn.dataset.satuanOutput || '-';
+        const resepId = btn.getAttribute('data-id') || btn.dataset.id;
+        activeResepIdForEdit = resepId;
+
+        const resepItem = allResepData[resepId] || null;
+        const produkNama = resepItem?.produk?.nama || btn.getAttribute('data-produk-nama') || btn.dataset.produkNama || '-';
+        const produkKode = resepItem?.produk?.kode_barang || btn.getAttribute('data-produk-kode') || btn.dataset.produkKode || '-';
+        
+        let tipeBadge = '';
+        if (resepItem && resepItem.produk) {
+            if (resepItem.produk.is_bahan_setengah_jadi) {
+                tipeBadge = 'BSJ';
+            } else if (resepItem.produk.is_barang_jadi) {
+                tipeBadge = resepItem.produk.tipe_penjualan || 'Barang Jadi';
+            }
+        } else {
+            tipeBadge = btn.getAttribute('data-tipe-badge') || btn.dataset.tipeBadge || '';
+        }
+
+        const outputQty = resepItem ? (parseFloat(resepItem.output_qty) || 0) : (btn.getAttribute('data-output-qty') || btn.dataset.outputQty || '0');
+        const satuanOutput = resepItem ? (resepItem.produk?.satuan || resepItem.satuan_output || '-') : (btn.getAttribute('data-satuan-output') || btn.dataset.satuanOutput || '-');
 
         const elemNama = document.getElementById('detail-produk-nama');
         const elemKode = document.getElementById('detail-produk-kode');
@@ -1376,21 +1389,25 @@ document.addEventListener("DOMContentLoaded", function () {
             tbodyDetail.innerHTML = '';
 
             let bahanList = [];
-            try {
-                let rawBahan = btn.getAttribute('data-bahanbaku') || btn.dataset.bahanbaku || '[]';
-                if (typeof rawBahan === 'string') {
-                    if (rawBahan.includes('&quot;') || rawBahan.includes('&#039;') || rawBahan.includes('&amp;')) {
-                        const txt = document.createElement('textarea');
-                        txt.innerHTML = rawBahan;
-                        rawBahan = txt.value;
+            if (resepItem && Array.isArray(resepItem.bahanbaku)) {
+                bahanList = resepItem.bahanbaku;
+            } else {
+                try {
+                    let rawBahan = btn.getAttribute('data-bahanbaku') || btn.dataset.bahanbaku || '[]';
+                    if (typeof rawBahan === 'string') {
+                        if (rawBahan.includes('&quot;') || rawBahan.includes('&#039;') || rawBahan.includes('&amp;')) {
+                            const txt = document.createElement('textarea');
+                            txt.innerHTML = rawBahan;
+                            rawBahan = txt.value;
+                        }
+                        bahanList = JSON.parse(rawBahan);
+                    } else if (Array.isArray(rawBahan)) {
+                        bahanList = rawBahan;
                     }
-                    bahanList = JSON.parse(rawBahan);
-                } else if (Array.isArray(rawBahan)) {
-                    bahanList = rawBahan;
+                } catch (err) {
+                    console.error('Failed to parse data-bahanbaku:', err);
+                    bahanList = [];
                 }
-            } catch (err) {
-                console.error('Failed to parse data-bahanbaku:', err);
-                bahanList = [];
             }
 
             const elemTotalBadge = document.getElementById('detail-total-bahan-badge');

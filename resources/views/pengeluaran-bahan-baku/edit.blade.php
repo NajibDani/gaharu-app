@@ -359,17 +359,21 @@ function refreshAllBarangSelects() {
     document.querySelectorAll('.barang-select').forEach(sel => {
         if (sel.tomselect) {
             const currentVal = sel.tomselect.getValue();
-            sel.tomselect.clearOptions();
-            sel.tomselect.addOptions(filtered);
-            if (currentVal) {
-                // Pertahankan jika item yang terpilih masih valid di divisi ini
-                if (filtered.some(f => f.value == currentVal)) {
-                    sel.tomselect.setValue(currentVal, true);
-                } else {
-                    sel.tomselect.clear();
-                    const row = sel.closest('tr');
-                    if (row) updateRowInfo(row, '');
+            let optionsForThis = [...filtered];
+
+            // Pastikan jika ada item yang sedang terpilih di baris ini, option-nya tetap tersedia dan tidak terhapus
+            if (currentVal && !optionsForThis.some(f => f.value == currentVal)) {
+                const currentOpt = allBarangData.find(b => b.value == currentVal);
+                if (currentOpt) {
+                    optionsForThis.unshift(currentOpt);
                 }
+            }
+
+            sel.tomselect.clearOptions();
+            sel.tomselect.addOptions(optionsForThis);
+
+            if (currentVal) {
+                sel.tomselect.setValue(currentVal, true);
             }
             sel.tomselect.refreshOptions(false);
         }
@@ -379,7 +383,16 @@ function refreshAllBarangSelects() {
 function initTomSelect(selectEl) {
     if (!selectEl || selectEl.tomselect) return selectEl.tomselect;
 
-    const initialOptions = getFilteredBarangData();
+    const filtered = getFilteredBarangData();
+    const currentVal = selectEl.value;
+    let initialOptions = [...filtered];
+
+    if (currentVal && !initialOptions.some(f => f.value == currentVal)) {
+        const currentOpt = allBarangData.find(b => b.value == currentVal);
+        if (currentOpt) {
+            initialOptions.unshift(currentOpt);
+        }
+    }
 
     return new TomSelect(selectEl, {
         options: initialOptions,
