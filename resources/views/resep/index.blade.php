@@ -203,22 +203,59 @@
                             </td>
                             <td class="text-center">
                                 <div class="d-flex align-items-center justify-content-center gap-1">
+                                    @php
+                                        $detailPayload = [
+                                            'id' => $r->id,
+                                            'produk_id' => $r->produk_id,
+                                            'produk_nama' => $r->produk->nama ?? 'Produk Tidak Diketahui',
+                                            'produk_kode' => $r->produk->kode_barang ?? '-',
+                                            'tipe_badge' => $r->produk ? ($r->produk->is_bahan_setengah_jadi ? 'BSJ' : ($r->produk->tipe_penjualan ?? 'Barang Jadi')) : '',
+                                            'output_qty' => (float) $r->output_qty,
+                                            'satuan_output' => $r->produk->satuan ?? $r->satuan_output ?? '-',
+                                            'bahan' => []
+                                        ];
+                                        if ($r->bahanbaku) {
+                                            foreach ($r->bahanbaku as $bb) {
+                                                $alts = [];
+                                                if ($bb->alternatif) {
+                                                    foreach ($bb->alternatif as $alt) {
+                                                        $alts[] = [
+                                                            'nama' => $alt->bahan->nama ?? 'Bahan Alternatif',
+                                                            'kode' => $alt->bahan->kode_barang ?? '',
+                                                            'prioritas' => $alt->prioritas ?? 2,
+                                                        ];
+                                                    }
+                                                }
+                                                $detailPayload['bahan'][] = [
+                                                    'nama' => $bb->bahan->nama ?? 'Bahan Utama',
+                                                    'kode' => $bb->bahan->kode_barang ?? '',
+                                                    'qty' => (float) $bb->qty_bahan,
+                                                    'satuan' => $bb->satuan ?: ($bb->bahan->satuan ?? '-'),
+                                                    'alternatif' => $alts,
+                                                ];
+                                            }
+                                        }
+                                        $detailB64 = base64_encode(json_encode($detailPayload));
+                                        $fullResepB64 = base64_encode(json_encode($r));
+                                    @endphp
                                     <script type="application/json" id="resep-json-{{ $r->id }}">@json($r)</script>
                                     <button type="button" 
                                             class="btn btn-info btn-sm text-white rounded-2 px-2 btn-lihat-resep"
                                             data-bs-toggle="modal"
                                             data-bs-target="#modalDetailResep"
-                                            data-id="{{ $r->id }}">
+                                            data-id="{{ $r->id }}"
+                                            data-detail="{{ $detailB64 }}">
                                         <i class="fas fa-eye me-1"></i>Lihat
                                     </button>
                                     
                                     <button type="button" 
                                             class="btn btn-warning btn-sm btn-edit-resep rounded-2 px-2"
                                             data-id="{{ $r->id }}"
+                                            data-resep="{{ $fullResepB64 }}"
                                             data-page="{{ $data->currentPage() }}">
                                         Edit
                                     </button>
- 
+
                                     <form action="{{ route('resep.destroy', $r->id) }}" method="POST" class="d-inline m-0">
                                         @csrf
                                         @method('DELETE')
@@ -639,6 +676,248 @@
     </div>
 </div>
 
+<script>
+/**
+ * Dedicated Standalone Handler for Modal Detail Resep
+ * Self-contained, resilient to dynamic reloads and framework race conditions.
+ */
+(function() {
+    let currentDetailResepId = null;
+    let lastTriggerButton = null;
+
+    function safeDecodeB64(str) {
+        if (!str) return null;
+        try {
+            return JSON.parse(decodeURIComponent(escape(atob(str))));
+        } catch (e) {
+            try {
+                return JSON.parse(atob(str));
+            } catch (e2) {
+                return null;
+            }
+        }
+    }
+
+    function populateResepDetail(triggerEl) {
+        if (!triggerEl) return;
+        const btn = triggerEl.closest('.btn-lihat-resep') || triggerEl;
+        lastTriggerButton = btn;
+
+        const resepId = btn.getAttribute('data-id') || btn.dataset.id;
+        currentDetailResepId = resepId;
+
+        let data = safeDecodeB64(btn.getAttribute('data-detail'));
+        if (!data) {
+            const scriptTag = document.getElementById('resep-json-' + resepId);
+            if (scriptTag && scriptTag.textContent) {
+                try {
+                    const raw = JSON.parse(scriptTag.textContent);
+                    if (raw) {
+                        data = {
+                            id: raw.id,
+                            produk_nama: raw.produk ? raw.produk.nama : 'Produk',
+                            produk_kode: raw.produk ? raw.produk.kode_barang : '-',
+                            tipe_badge: raw.produk ? (raw.produk.is_bahan_setengah_jadi ? 'BSJ' : (raw.produk.tipe_penjualan || 'Barang Jadi')) : '',
+                            output_qty: parseFloat(raw.output_qty) || 0,
+                            satuan_output: raw.produk ? (raw.produk.satuan || raw.satuan_output) : (raw.satuan_output || '-'),
+                            bahan: []
+                        };
+                        if (raw.bahanbaku && Array.isArray(raw.bahanbaku)) {
+                            raw.bahanbaku.forEach(bb => {
+                                const alts = [];
+                                if (bb.alternatif && Array.isArray(bb.alternatif)) {
+                                    bb.alternatif.forEach(alt => {
+                                        alts.push({
+                                            nama: alt.bahan ? alt.bahan.nama : 'Bahan Alternatif',
+                                            kode: alt.bahan ? alt.bahan.kode_barang : '',
+                                            prioritas: alt.prioritas || 2
+                                        });
+                                    });
+                                }
+                                data.bahan.push({
+                                    nama: bb.bahan ? bb.bahan.nama : 'Bahan Utama',
+                                    kode: bb.bahan ? bb.bahan.kode_barang : '',
+                                    qty: parseFloat(bb.qty_bahan) || 0,
+                                    satuan: bb.satuan || (bb.bahan ? bb.bahan.satuan : '-'),
+                                    alternatif: alts
+                                });
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Fallback JSON parse failed:', e);
+                }
+            }
+        }
+
+        if (!data) {
+            data = {
+                id: resepId,
+                produk_nama: btn.getAttribute('data-produk-nama') || '-',
+                produk_kode: btn.getAttribute('data-produk-kode') || '-',
+                tipe_badge: btn.getAttribute('data-tipe-badge') || '',
+                output_qty: parseFloat(btn.getAttribute('data-output-qty')) || 0,
+                satuan_output: btn.getAttribute('data-satuan-output') || '-',
+                bahan: []
+            };
+        }
+
+        // Set Nama Produk
+        const elemNama = document.getElementById('detail-produk-nama');
+        if (elemNama) elemNama.textContent = data.produk_nama || '-';
+
+        // Set Kode Produk
+        const elemKode = document.getElementById('detail-produk-kode');
+        if (elemKode) elemKode.textContent = data.produk_kode || '-';
+
+        // Set Output Qty
+        const elemOutput = document.getElementById('detail-output-qty');
+        if (elemOutput) {
+            const qtyNum = Number(data.output_qty || 0);
+            elemOutput.textContent = `${qtyNum.toLocaleString('id-ID')} ${data.satuan_output || ''}`.trim();
+        }
+
+        // Set Tipe Badge
+        const badgeContainer = document.getElementById('detail-produk-badge');
+        if (badgeContainer) {
+            const tb = data.tipe_badge || '';
+            if (tb === 'BSJ') {
+                badgeContainer.innerHTML = `<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 11px;"><i class="bi bi-gear me-1"></i>Bahan Setengah Jadi</span>`;
+            } else if (tb === 'POS Kejingga') {
+                badgeContainer.innerHTML = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Kejingga</span>`;
+            } else if (tb === 'POS Gaharu') {
+                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Gaharu</span>`;
+            } else if (tb === 'B2B') {
+                badgeContainer.innerHTML = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 11px;"><i class="bi bi-building me-1"></i>B2B</span>`;
+            } else if (tb) {
+                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;">${tb}</span>`;
+            } else {
+                badgeContainer.innerHTML = '';
+            }
+        }
+
+        // Set Total Bahan Badge
+        const elemTotalBadge = document.getElementById('detail-total-bahan-badge');
+        const bahanList = Array.isArray(data.bahan) ? data.bahan : [];
+        if (elemTotalBadge) elemTotalBadge.textContent = `${bahanList.length} Bahan`;
+
+        // Render Tabel Bahan
+        const tbodyDetail = document.getElementById('tbody-detail-resep');
+        if (tbodyDetail) {
+            tbodyDetail.innerHTML = '';
+            if (bahanList.length === 0) {
+                tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar pada resep ini.</td></tr>`;
+            } else {
+                bahanList.forEach((b, idx) => {
+                    const primaryName = b.nama || 'Bahan Baku';
+                    const primaryKode = b.kode ? `(${b.kode})` : '';
+                    const satuan = b.satuan || '-';
+                    const qty = Number(b.qty || 0);
+
+                    let altHtml = '';
+                    if (b.alternatif && b.alternatif.length > 0) {
+                        b.alternatif.forEach(alt => {
+                            const altName = alt.nama || 'Bahan Alternatif';
+                            const altKode = alt.kode ? `(${alt.kode})` : '';
+                            const prio = alt.prioritas || 2;
+                            altHtml += `
+                                <div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size: 11.5px;">
+                                    <span class="badge bg-secondary rounded-pill" style="font-size: 9px; padding: 2px 6px;">${prio}</span>
+                                    <span>${altName}</span>
+                                    ${altKode ? `<span class="font-monospace text-muted small" style="font-size: 10px;">${altKode}</span>` : ''}
+                                    <span class="text-warning-emphasis fst-italic ms-1" style="font-size: 11px;">(substitusi)</span>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    const rowHtml = `
+                        <tr>
+                            <td class="text-center text-muted fw-semibold">${idx + 1}</td>
+                            <td>
+                                <div class="fw-semibold text-dark d-flex align-items-center gap-1">
+                                    <span class="badge bg-primary rounded-pill" style="font-size: 10px; padding: 3px 7px;">1</span>
+                                    <span>${primaryName}</span>
+                                    ${primaryKode ? `<span class="font-monospace text-muted small ms-1" style="font-size: 11px;">${primaryKode}</span>` : ''}
+                                </div>
+                                ${altHtml}
+                            </td>
+                            <td class="text-center fw-bold text-dark fs-6">${qty.toLocaleString('id-ID')}</td>
+                            <td class="text-center">
+                                <span class="badge bg-light text-secondary border px-2 py-1">${satuan}</span>
+                            </td>
+                        </tr>
+                    `;
+                    tbodyDetail.insertAdjacentHTML('beforeend', rowHtml);
+                });
+            }
+        }
+    }
+
+    // Delegated click on .btn-lihat-resep
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.btn-lihat-resep');
+        if (!btn) return;
+        populateResepDetail(btn);
+
+        // Fallback: If Bootstrap data-bs-toggle doesn't show the modal within 80ms, show it manually
+        const modalEl = document.getElementById('modalDetailResep');
+        if (modalEl) {
+            setTimeout(function() {
+                if (!modalEl.classList.contains('show') && !modalEl.classList.contains('showing')) {
+                    try {
+                        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                            const inst = bootstrap.Modal.getOrCreateInstance(modalEl);
+                            inst.show();
+                        } else if (window.jQuery && typeof window.jQuery(modalEl).modal === 'function') {
+                            window.jQuery(modalEl).modal('show');
+                        }
+                    } catch (err) {
+                        console.warn('Fallback modal show error:', err);
+                    }
+                }
+            }, 80);
+        }
+    });
+
+    // Native Bootstrap show.bs.modal listener
+    document.addEventListener('DOMContentLoaded', function() {
+        const modalEl = document.getElementById('modalDetailResep');
+        if (modalEl) {
+            modalEl.addEventListener('show.bs.modal', function(e) {
+                const btn = e.relatedTarget || lastTriggerButton || (currentDetailResepId ? document.querySelector(`.btn-lihat-resep[data-id="${currentDetailResepId}"]`) : null);
+                if (btn) {
+                    populateResepDetail(btn);
+                }
+            });
+        }
+    });
+
+    // Delegated click for Edit button inside Detail Modal
+    document.addEventListener('click', function(e) {
+        const btnEditModal = e.target.closest('#btn-edit-dari-detail');
+        if (!btnEditModal) return;
+
+        if (!currentDetailResepId) return;
+        const targetBtnEdit = document.querySelector(`.btn-edit-resep[data-id="${currentDetailResepId}"]`);
+        const modalEl = document.getElementById('modalDetailResep');
+
+        if (modalEl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const inst = bootstrap.Modal.getInstance(modalEl);
+            if (inst) {
+                modalEl.addEventListener('hidden.bs.modal', function onDetailHidden() {
+                    modalEl.removeEventListener('hidden.bs.modal', onDetailHidden);
+                    if (targetBtnEdit) targetBtnEdit.click();
+                });
+                inst.hide();
+                return;
+            }
+        }
+        if (targetBtnEdit) targetBtnEdit.click();
+    });
+})();
+</script>
+
 {{-- ================= MODAL IMPORT EXCEL RESEP ================= --}}
 <div class="modal fade" id="modalImportResep" tabindex="-1" aria-labelledby="modalImportResepLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -870,35 +1149,48 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    const produkChoices = new Choices(selectProduk, {
-        searchEnabled: true,
-        itemSelectText: '',
-        shouldSort: false,
-    });
-
-    // Inisialisasi Choices.js untuk filter dropdown search produk & search bahan
-    const filterProdukEl = document.getElementById('filter_search_produk');
-    if (filterProdukEl) {
-        new Choices(filterProdukEl, {
-            searchEnabled: true,
-            itemSelectText: '',
-            shouldSort: false,
-            placeholder: true,
-            placeholderValue: '-- Cari Produk --',
-            allowHTML: false,
-        });
+    let produkChoices = null;
+    if (typeof Choices !== 'undefined' && selectProduk) {
+        try {
+            produkChoices = new Choices(selectProduk, {
+                searchEnabled: true,
+                itemSelectText: '',
+                shouldSort: false,
+            });
+        } catch (e) {
+            console.warn('Choices initialization for selectProduk error:', e);
+        }
     }
 
-    const filterBahanEl = document.getElementById('filter_search_bahan');
-    if (filterBahanEl) {
-        new Choices(filterBahanEl, {
-            searchEnabled: true,
-            itemSelectText: '',
-            shouldSort: false,
-            placeholder: true,
-            placeholderValue: '-- Cari Bahan Baku --',
-            allowHTML: false,
-        });
+    // Inisialisasi Choices.js untuk filter dropdown search produk & search bahan
+    if (typeof Choices !== 'undefined') {
+        const filterProdukEl = document.getElementById('filter_search_produk');
+        if (filterProdukEl) {
+            try {
+                new Choices(filterProdukEl, {
+                    searchEnabled: true,
+                    itemSelectText: '',
+                    shouldSort: false,
+                    placeholder: true,
+                    placeholderValue: '-- Cari Produk --',
+                    allowHTML: false,
+                });
+            } catch (e) {}
+        }
+
+        const filterBahanEl = document.getElementById('filter_search_bahan');
+        if (filterBahanEl) {
+            try {
+                new Choices(filterBahanEl, {
+                    searchEnabled: true,
+                    itemSelectText: '',
+                    shouldSort: false,
+                    placeholder: true,
+                    placeholderValue: '-- Cari Bahan Baku --',
+                    allowHTML: false,
+                });
+            } catch (e) {}
+        }
     }
 
     // Helper: update all hidden inputs inside a row based on selected items
@@ -1125,8 +1417,10 @@ document.addEventListener("DOMContentLoaded", function () {
         formMethod.value = "POST";
         
         formResep.reset();
-        produkChoices.enable();
-        produkChoices.removeActiveItems();
+        if (produkChoices) {
+            if (typeof produkChoices.enable === 'function') produkChoices.enable();
+            if (typeof produkChoices.removeActiveItems === 'function') produkChoices.removeActiveItems();
+        }
         warningProduk.classList.add('d-none');
 
         if (checkboxAuto) {
@@ -1144,7 +1438,11 @@ document.addEventListener("DOMContentLoaded", function () {
         updateAllRowIndexes();
 
         if (preselectedProdukId) {
-            produkChoices.setChoiceByValue(String(preselectedProdukId));
+            if (produkChoices && typeof produkChoices.setChoiceByValue === 'function') {
+                produkChoices.setChoiceByValue(String(preselectedProdukId));
+            } else {
+                selectProduk.value = String(preselectedProdukId);
+            }
             const selectedOpt = selectProduk.querySelector(`option[value="${preselectedProdukId}"]`);
             if (selectedOpt) {
                 inputSatuanOutput.value = selectedOpt.dataset.satuan || '';
@@ -1217,6 +1515,18 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function getResepData(resepId) {
         if (!resepId) return null;
+        const editBtn = document.querySelector(`.btn-edit-resep[data-id="${resepId}"]`);
+        if (editBtn && editBtn.dataset.resep) {
+            try {
+                const b64 = editBtn.dataset.resep;
+                const decoded = decodeURIComponent(escape(atob(b64)));
+                return JSON.parse(decoded);
+            } catch (err) {
+                try {
+                    return JSON.parse(atob(editBtn.dataset.resep));
+                } catch (e2) {}
+            }
+        }
         const scriptEl = document.getElementById('resep-json-' + resepId);
         if (scriptEl && scriptEl.textContent) {
             try {
@@ -1251,8 +1561,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const satuanOutput = resepItem ? (resepItem.produk?.satuan || resepItem.satuan_output) : (tombol.dataset.satuan_output || '-');
 
         if (produkId) {
-            produkChoices.setChoiceByValue(produkId);
-            produkChoices.disable();
+            if (produkChoices && typeof produkChoices.setChoiceByValue === 'function') {
+                produkChoices.setChoiceByValue(produkId);
+                if (typeof produkChoices.disable === 'function') produkChoices.disable();
+            } else {
+                selectProduk.value = produkId;
+            }
             warningProduk.classList.remove('d-none');
         }
 
@@ -1345,209 +1659,6 @@ document.addEventListener("DOMContentLoaded", function () {
         bsModalInstance.show();
     });
 
-    // ============ MODAL LIHAT DETAIL RESEP ============
-    const modalDetailEl = document.getElementById('modalDetailResep');
-    let activeResepIdForEdit = null;
-
-    function populateResepDetail(btn) {
-        if (!btn) return;
-
-        const resepId = btn.getAttribute('data-id') || btn.dataset.id;
-        activeResepIdForEdit = resepId;
-
-        const resepItem = getResepData(resepId);
-        const produkNama = resepItem?.produk?.nama || btn.getAttribute('data-produk-nama') || btn.dataset.produkNama || '-';
-        const produkKode = resepItem?.produk?.kode_barang || btn.getAttribute('data-produk-kode') || btn.dataset.produkKode || '-';
-        
-        let tipeBadge = '';
-        if (resepItem && resepItem.produk) {
-            if (resepItem.produk.is_bahan_setengah_jadi) {
-                tipeBadge = 'BSJ';
-            } else if (resepItem.produk.is_barang_jadi) {
-                tipeBadge = resepItem.produk.tipe_penjualan || 'Barang Jadi';
-            }
-        } else {
-            tipeBadge = btn.getAttribute('data-tipe-badge') || btn.dataset.tipeBadge || '';
-        }
-
-        const outputQty = resepItem ? (parseFloat(resepItem.output_qty) || 0) : (btn.getAttribute('data-output-qty') || btn.dataset.outputQty || '0');
-        const satuanOutput = resepItem ? (resepItem.produk?.satuan || resepItem.satuan_output || '-') : (btn.getAttribute('data-satuan-output') || btn.dataset.satuanOutput || '-');
-
-        const elemNama = document.getElementById('detail-produk-nama');
-        const elemKode = document.getElementById('detail-produk-kode');
-        const elemOutput = document.getElementById('detail-output-qty');
-
-        if (elemNama) elemNama.innerText = produkNama;
-        if (elemKode) elemKode.innerText = produkKode;
-        if (elemOutput) elemOutput.innerText = `${outputQty} ${satuanOutput}`;
-
-        // Tipe badge
-        const badgeContainer = document.getElementById('detail-produk-badge');
-        if (badgeContainer) {
-            if (tipeBadge === 'BSJ') {
-                badgeContainer.innerHTML = `<span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 11px;"><i class="bi bi-gear me-1"></i>Bahan Setengah Jadi</span>`;
-            } else if (tipeBadge === 'POS Kejingga') {
-                badgeContainer.innerHTML = `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Kejingga</span>`;
-            } else if (tipeBadge === 'POS Gaharu') {
-                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;"><i class="bi bi-shop me-1"></i>POS Gaharu</span>`;
-            } else if (tipeBadge === 'B2B') {
-                badgeContainer.innerHTML = `<span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 11px;"><i class="bi bi-building me-1"></i>B2B</span>`;
-            } else if (tipeBadge) {
-                badgeContainer.innerHTML = `<span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size: 11px;">${tipeBadge}</span>`;
-            } else {
-                badgeContainer.innerHTML = '';
-            }
-        }
-
-        // Render daftar bahan baku
-        const tbodyDetail = document.getElementById('tbody-detail-resep');
-        if (tbodyDetail) {
-            tbodyDetail.innerHTML = '';
-
-            let bahanList = [];
-            if (resepItem && Array.isArray(resepItem.bahanbaku)) {
-                bahanList = resepItem.bahanbaku;
-            } else {
-                try {
-                    let rawBahan = btn.getAttribute('data-bahanbaku') || btn.dataset.bahanbaku || '[]';
-                    if (typeof rawBahan === 'string') {
-                        if (rawBahan.includes('&quot;') || rawBahan.includes('&#039;') || rawBahan.includes('&amp;')) {
-                            const txt = document.createElement('textarea');
-                            txt.innerHTML = rawBahan;
-                            rawBahan = txt.value;
-                        }
-                        bahanList = JSON.parse(rawBahan);
-                    } else if (Array.isArray(rawBahan)) {
-                        bahanList = rawBahan;
-                    }
-                } catch (err) {
-                    console.error('Failed to parse data-bahanbaku:', err);
-                    bahanList = [];
-                }
-            }
-
-            const elemTotalBadge = document.getElementById('detail-total-bahan-badge');
-            if (elemTotalBadge) elemTotalBadge.innerText = `${bahanList.length} Bahan`;
-
-            const safeFormatBahan = (b) => {
-                if (!b) return 'Bahan Tidak Diketahui';
-                if (typeof formatBahanNama === 'function') {
-                    return formatBahanNama(b);
-                }
-                let extra = '';
-                if (b.is_barang_jadi) {
-                    extra = b.tipe_penjualan ? ` (${b.tipe_penjualan})` : ' (POS)';
-                } else if (b.is_bahan_setengah_jadi) {
-                    extra = ' (BSJ)';
-                }
-                return (b.nama || 'Bahan') + extra;
-            };
-
-            if (!bahanList || bahanList.length === 0) {
-                tbodyDetail.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">Belum ada bahan baku yang terdaftar.</td></tr>`;
-            } else {
-                bahanList.forEach((b, idx) => {
-                    if (!b) return;
-                    const primaryName = safeFormatBahan(b.bahan);
-                    const primaryKode = b.bahan ? (b.bahan.kode_barang || '') : '';
-                    const satuan = b.satuan || (b.bahan ? b.bahan.satuan : '-');
-                    const qty = parseFloat(b.qty_bahan) || 0;
-
-                    let altHtml = '';
-                    if (b.alternatif && b.alternatif.length > 0) {
-                        b.alternatif.forEach(alt => {
-                            if (!alt) return;
-                            const altName = safeFormatBahan(alt.bahan);
-                            const prio = alt.prioritas || 2;
-                            altHtml += `
-                                <div class="ms-3 mt-1 d-flex align-items-center gap-1 text-muted small" style="font-size: 11.5px;">
-                                    <span class="badge bg-secondary rounded-pill" style="font-size: 9px; padding: 2px 6px;">${prio}</span>
-                                    <span>${altName}</span>
-                                    <span class="text-warning-emphasis fst-italic" style="font-size: 11px;">(substitusi)</span>
-                                </div>
-                            `;
-                        });
-                    }
-
-                    const rowHtml = `
-                        <tr>
-                            <td class="text-center text-muted fw-semibold">${idx + 1}</td>
-                            <td>
-                                <div class="fw-semibold text-dark d-flex align-items-center gap-1">
-                                    <span class="badge bg-primary rounded-pill" style="font-size: 10px; padding: 3px 7px;">1</span>
-                                    <span>${primaryName}</span>
-                                    ${primaryKode ? `<span class="font-monospace text-muted small ms-1" style="font-size: 11px;">(${primaryKode})</span>` : ''}
-                                </div>
-                                ${altHtml}
-                            </td>
-                            <td class="text-center fw-bold text-dark fs-6">${qty.toLocaleString('id-ID')}</td>
-                            <td class="text-center">
-                                <span class="badge bg-light text-secondary border px-2 py-1">${satuan}</span>
-                            </td>
-                        </tr>
-                    `;
-                    tbodyDetail.insertAdjacentHTML('beforeend', rowHtml);
-                });
-            }
-        }
-    }
-
-    // Tangani event Bootstrap native modal saat modal dibuka
-    if (modalDetailEl) {
-        modalDetailEl.addEventListener('show.bs.modal', function(e) {
-            const btn = e.relatedTarget || document.querySelector(`.btn-lihat-resep[data-id="${activeResepIdForEdit}"]`);
-            if (btn) {
-                populateResepDetail(btn);
-            }
-        });
-    }
-
-    // Tangani juga via click event fallback
-    document.addEventListener('click', function(e) {
-        const btn = e.target.closest('.btn-lihat-resep');
-        if (!btn) return;
-
-        populateResepDetail(btn);
-
-        if (modalDetailEl) {
-            try {
-                if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                    const modalDetailInst = bootstrap.Modal.getOrCreateInstance(modalDetailEl);
-                    modalDetailInst.show();
-                } else if (window.jQuery && typeof window.jQuery(modalDetailEl).modal === 'function') {
-                    window.jQuery(modalDetailEl).modal('show');
-                }
-            } catch (err) {
-                console.warn('Bootstrap modal show fallback:', err);
-            }
-        }
-    });
-
-    // Tombol Edit langsung dari dalam Modal Detail
-    const btnEditDariDetail = document.getElementById('btn-edit-dari-detail');
-    if (btnEditDariDetail) {
-        btnEditDariDetail.addEventListener('click', function() {
-            if (!activeResepIdForEdit) return;
-            const targetBtnEdit = document.querySelector(`.btn-edit-resep[data-id="${activeResepIdForEdit}"]`);
-            if (targetBtnEdit) {
-                if (modalDetailEl && typeof bootstrap !== 'undefined') {
-                    const inst = bootstrap.Modal.getInstance(modalDetailEl);
-                    modalDetailEl.addEventListener('hidden.bs.modal', function onDetailHidden() {
-                        modalDetailEl.removeEventListener('hidden.bs.modal', onDetailHidden);
-                        targetBtnEdit.click();
-                    });
-                    if (inst) {
-                        inst.hide();
-                    } else {
-                        targetBtnEdit.click();
-                    }
-                } else {
-                    targetBtnEdit.click();
-                }
-            }
-        });
-    }
-
     formResep.addEventListener('submit', function(e) {
         // Validation check
         let valid = true;
@@ -1564,7 +1675,9 @@ document.addEventListener("DOMContentLoaded", function () {
             return false;
         }
 
-        produkChoices.enable();
+        if (produkChoices && typeof produkChoices.enable === 'function') {
+            produkChoices.enable();
+        }
     });
 });
 </script>
