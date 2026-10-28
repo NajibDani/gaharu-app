@@ -1240,6 +1240,44 @@ class StokGudangController extends Controller
 
             $affectedItems = [];
 
+            // 0. Sinkronisasi instan tanggal transfer BSJ langsung via SQL (tanpa perlu migrasi manual)
+            $itemFilterSql = $barangId ? "AND ts.barang_id = " . intval($barangId) : "";
+            $batchItemFilterSql = $barangId ? "AND sgb.barang_id = " . intval($barangId) : "";
+
+            DB::update("
+                UPDATE transaksi_stok ts
+                JOIN alokasi_produksi_pesanan app ON app.produksi_id = ts.source_id AND app.produk_id = ts.barang_id
+                JOIN pesanan pes ON pes.id = app.pesanan_id
+                JOIN master_barang mb ON mb.id = ts.barang_id
+                SET ts.tanggal = CONCAT(DATE(pes.tanggal), ' ', TIME(COALESCE(pes.created_at, '08:00:00')))
+                WHERE ts.source_type = 'transfer_ck'
+                  AND ts.tipe IN ('masuk', 'keluar')
+                  AND mb.is_bahan_setengah_jadi = 1
+                  AND pes.tanggal IS NOT NULL
+                  {$itemFilterSql}
+            ");
+
+            DB::update("
+                UPDATE stok_gudang_batch sgb
+                JOIN alokasi_produksi_pesanan app ON sgb.barang_id = app.produk_id
+                JOIN produksi prd ON prd.id = app.produksi_id
+                JOIN pesanan pes ON pes.id = app.pesanan_id
+                JOIN master_barang mb ON mb.id = sgb.barang_id
+                SET sgb.created_at = CONCAT(DATE(pes.tanggal), ' ', TIME(COALESCE(pes.created_at, '08:00:00')))
+                WHERE (sgb.batch_number LIKE CONCAT('%', prd.kode_produksi, '%') OR sgb.batch_number LIKE CONCAT('%-', pes.id, '%'))
+                  AND mb.is_bahan_setengah_jadi = 1
+                  AND pes.tanggal IS NOT NULL
+                  {$batchItemFilterSql}
+            ");
+
+            DB::update("
+                UPDATE pengiriman p
+                JOIN pesanan pes ON pes.id = p.pesanan_id
+                SET p.tanggal_pengiriman = DATE(pes.tanggal)
+                WHERE pes.tanggal IS NOT NULL
+                  AND p.no_pengiriman LIKE 'DO-CK-%'
+            ");
+
             // 1. Perbaiki transaksi transfer_ck, pengiriman, atau produksi yang sudah ada tetapi divisi_tujuan_id-nya belum ke Kitchen
             $qExist = DB::table('transaksi_stok as ts')
                 ->whereIn('ts.source_type', ['transfer_ck', 'pengiriman'])
