@@ -3499,8 +3499,17 @@ class CentralKitchenProductionController extends Controller
             }
         }
 
-        if ($pengiriman && $pengiriman->status_pengiriman !== 'Selesai') {
-            $pengiriman->update(['status_pengiriman' => 'Selesai']);
+        if ($pengiriman) {
+            $pUp = [];
+            if ($pengiriman->status_pengiriman !== 'Selesai') {
+                $pUp['status_pengiriman'] = 'Selesai';
+            }
+            if ($isBsjItem && $pengiriman->tanggal_pengiriman != date('Y-m-d', strtotime($transactionDate))) {
+                $pUp['tanggal_pengiriman'] = date('Y-m-d', strtotime($transactionDate));
+            }
+            if (!empty($pUp)) {
+                $pengiriman->update($pUp);
+            }
         }
 
         if ($pengiriman) {

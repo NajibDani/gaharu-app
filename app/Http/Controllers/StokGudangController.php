@@ -227,8 +227,21 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Pastikan seluruh BSJ hasil produksi Central Kitchen sinkron hanya saat refresh diminta
-        if ($request->has('refresh') || $request->has('sync')) {
+        // Pastikan seluruh BSJ hasil produksi Central Kitchen sinkron dengan tanggal permintaan outlet
+        $hasOutOfSyncBsj = DB::table('transaksi_stok as ts')
+            ->join('alokasi_produksi_pesanan as app', function($j) {
+                $j->on('app.produksi_id', '=', 'ts.source_id')
+                  ->on('app.produk_id', '=', 'ts.barang_id');
+            })
+            ->join('pesanan as pes', 'pes.id', '=', 'app.pesanan_id')
+            ->join('master_barang as mb', 'mb.id', '=', 'ts.barang_id')
+            ->where('mb.is_bahan_setengah_jadi', 1)
+            ->where('ts.source_type', 'transfer_ck')
+            ->whereNotNull('pes.tanggal')
+            ->whereRaw('DATE(ts.tanggal) != DATE(pes.tanggal)')
+            ->exists();
+
+        if ($hasOutOfSyncBsj || $request->has('refresh') || $request->has('sync')) {
             self::autoHealApprovedCkProductionTransfers();
         }
 
@@ -301,30 +314,35 @@ class StokGudangController extends Controller
         $startDate = $request->start_date ?: date('Y-m-01');
         $endDate   = $request->end_date ?: date('Y-m-d');
 
-        // Cek cepat jika ada transfer produksi CK selesai yang belum tercatat untuk barang ini
+        // Auto-heal transfer produksi CK: Selalu sinkronkan untuk barang BSJ agar tanggal mutasi mengikuti permintaan outlet
         if ($barangId && !$request->boolean('refresh')) {
-            $hasUnrecordedCk = DB::table('alokasi_produksi_pesanan as app')
-                ->join('produksi as p', 'app.produksi_id', '=', 'p.id')
-                ->join('pesanan as pes', 'app.pesanan_id', '=', 'pes.id')
-                ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
-                ->where('app.qty_alokasi', '>', 0)
-                ->where('app.produk_id', $barangId)
-                ->when($gudangId, function($q) use ($gudangId) {
-                    $q->where('pes.gudang_id', $gudangId);
-                })
-                ->whereNotExists(function($sq) {
-                    $sq->select(DB::raw(1))
-                       ->from('transaksi_stok')
-                       ->whereRaw('transaksi_stok.barang_id = app.produk_id')
-                       ->whereRaw('transaksi_stok.gudang_tujuan_id = pes.gudang_id')
-                       ->where('tipe', 'masuk')
-                       ->where('source_type', 'transfer_ck')
-                       ->whereRaw('transaksi_stok.source_id = app.produksi_id');
-                })
-                ->exists();
-
-            if ($hasUnrecordedCk) {
+            $isBsj = DB::table('master_barang')->where('id', $barangId)->value('is_bahan_setengah_jadi');
+            if ($isBsj) {
                 self::autoHealApprovedCkProductionTransfers($barangId);
+            } else {
+                $hasUnrecordedCk = DB::table('alokasi_produksi_pesanan as app')
+                    ->join('produksi as p', 'app.produksi_id', '=', 'p.id')
+                    ->join('pesanan as pes', 'app.pesanan_id', '=', 'pes.id')
+                    ->where(DB::raw('LOWER(p.status_produksi)'), 'selesai')
+                    ->where('app.qty_alokasi', '>', 0)
+                    ->where('app.produk_id', $barangId)
+                    ->when($gudangId, function($q) use ($gudangId) {
+                        $q->where('pes.gudang_id', $gudangId);
+                    })
+                    ->whereNotExists(function($sq) {
+                        $sq->select(DB::raw(1))
+                           ->from('transaksi_stok')
+                           ->whereRaw('transaksi_stok.barang_id = app.produk_id')
+                           ->whereRaw('transaksi_stok.gudang_tujuan_id = pes.gudang_id')
+                           ->where('tipe', 'masuk')
+                           ->where('source_type', 'transfer_ck')
+                           ->whereRaw('transaksi_stok.source_id = app.produksi_id');
+                    })
+                    ->exists();
+
+                if ($hasUnrecordedCk) {
+                    self::autoHealApprovedCkProductionTransfers($barangId);
+                }
             }
         }
 
@@ -1378,7 +1396,7 @@ class StokGudangController extends Controller
                             $sub->where('source_type', 'transfer_ck')
                                 ->where('source_id', $al->produksi_id);
                         })->orWhere(function($sub) use ($al) {
-                            $sub->whereIn('source_type', ['transfer_ck', 'pengiriman'])
+                            $sub->where('source_type', 'pengiriman')
                                 ->whereIn('source_id', function($sq) use ($al) {
                                     $sq->select('id')->from('pengiriman')->where('pesanan_id', $al->pesanan_id);
                                 });
@@ -1434,6 +1452,13 @@ class StokGudangController extends Controller
                                 ->where('tipe', 'keluar')
                                 ->where('barang_id', $al->produk_id)
                                 ->update(['tanggal' => $txDate]);
+
+                            if ($isBsj && !empty($al->pesanan_tanggal)) {
+                                DB::table('pengiriman')
+                                    ->where('pesanan_id', $al->pesanan_id)
+                                    ->where('no_pengiriman', 'like', 'DO-CK-%')
+                                    ->update(['tanggal_pengiriman' => date('Y-m-d', strtotime($al->pesanan_tanggal))]);
+                            }
                         }
 
                         $batchUpdate = [];
@@ -1445,7 +1470,8 @@ class StokGudangController extends Controller
                             ->where('barang_id', $al->produk_id);
                         if (!empty($al->kode_produksi)) {
                             $bQuery->where('batch_number', 'like', "%{$al->kode_produksi}%");
-                        } else {
+                        }
+                        if (!empty($al->pesanan_id)) {
                             $bQuery->where('batch_number', 'like', "%-{$al->pesanan_id}%");
                         }
                         $bQuery->update($batchUpdate);
@@ -1715,7 +1741,7 @@ class StokGudangController extends Controller
                             $sub->where('source_type', 'transfer_ck')
                                 ->where('source_id', $pdet->produksi_id);
                         })->orWhere(function($sub) use ($pesananId) {
-                            $sub->whereIn('source_type', ['transfer_ck', 'pengiriman'])
+                            $sub->where('source_type', 'pengiriman')
                                 ->whereIn('source_id', function($sq) use ($pesananId) {
                                     $sq->select('id')->from('pengiriman')->where('pesanan_id', $pesananId);
                                 });
@@ -1750,6 +1776,13 @@ class StokGudangController extends Controller
                                 ->where('tipe', 'keluar')
                                 ->where('barang_id', $pdet->produk_id)
                                 ->update(['tanggal' => $txDate]);
+
+                            if ($isBsj && !empty($pesTanggal)) {
+                                DB::table('pengiriman')
+                                    ->where('pesanan_id', $pesananId)
+                                    ->where('no_pengiriman', 'like', 'DO-CK-%')
+                                    ->update(['tanggal_pengiriman' => date('Y-m-d', strtotime($pesTanggal))]);
+                            }
                         }
 
                         $batchUp3 = ['divisi_id' => $kitchenDivId];
@@ -1762,7 +1795,8 @@ class StokGudangController extends Controller
                             ->where('barang_id', $pdet->produk_id);
                         if (!empty($pdet->kode_produksi)) {
                             $bQuery3->where('batch_number', 'like', "%{$pdet->kode_produksi}%");
-                        } else {
+                        }
+                        if (!empty($pesananId)) {
                             $bQuery3->where('batch_number', 'like', "%-{$pesananId}%");
                         }
                         $bQuery3->update($batchUp3);
