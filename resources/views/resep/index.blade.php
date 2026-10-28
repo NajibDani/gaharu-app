@@ -301,6 +301,7 @@
                     {{-- PILIH MASTER PRODUK BARANG JADI / BSJ --}}
                     <div class="mb-3 position-relative" style="z-index: 1050;">
                         <label class="form-label fw-bold small text-secondary">Produk</label>
+                        <input type="hidden" name="produk_id" id="hidden_produk_id" value="" disabled>
                         <select name="produk_id" id="produk_id" class="form-select produk-select" required>
                             <option value="" disabled selected>-- Pilih Produk --</option>
                             @foreach($produk as $p)
@@ -1400,6 +1401,11 @@ document.addEventListener("DOMContentLoaded", function () {
         formMethod.value = "POST";
         
         formResep.reset();
+        const hiddenProduk = document.getElementById('hidden_produk_id');
+        if (hiddenProduk) {
+            hiddenProduk.value = '';
+            hiddenProduk.disabled = true;
+        }
         if (produkChoices) {
             if (typeof produkChoices.enable === 'function') produkChoices.enable();
             if (typeof produkChoices.removeActiveItems === 'function') produkChoices.removeActiveItems();
@@ -1544,6 +1550,11 @@ document.addEventListener("DOMContentLoaded", function () {
         const satuanOutput = resepItem ? (resepItem.produk?.satuan || resepItem.satuan_output) : (tombol.dataset.satuan_output || '-');
 
         if (produkId) {
+            const hiddenProduk = document.getElementById('hidden_produk_id');
+            if (hiddenProduk) {
+                hiddenProduk.value = String(produkId);
+                hiddenProduk.disabled = false;
+            }
             if (produkChoices && typeof produkChoices.setChoiceByValue === 'function') {
                 produkChoices.setChoiceByValue(produkId);
                 if (typeof produkChoices.disable === 'function') produkChoices.disable();
@@ -1656,6 +1667,19 @@ document.addEventListener("DOMContentLoaded", function () {
             e.preventDefault();
             alert('Harap pilih minimal 1 bahan baku utama untuk setiap baris.');
             return false;
+        }
+
+        const hiddenProduk = document.getElementById('hidden_produk_id');
+        if (hiddenProduk) {
+            let activeVal = selectProduk ? selectProduk.value : '';
+            if (produkChoices && typeof produkChoices.getValue === 'function') {
+                const choiceVal = produkChoices.getValue(true);
+                if (choiceVal) activeVal = choiceVal;
+            }
+            if (activeVal) {
+                hiddenProduk.value = activeVal;
+                hiddenProduk.disabled = false;
+            }
         }
 
         if (produkChoices && typeof produkChoices.enable === 'function') {

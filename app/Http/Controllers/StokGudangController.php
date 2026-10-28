@@ -1332,7 +1332,8 @@ class StokGudangController extends Controller
                     'pes.gudang_id as pesanan_gudang_id',
                     'pes.divisi_id as pesanan_divisi_id',
                     'pes.kode_pesanan',
-                    'pes.tanggal as pesanan_tanggal'
+                    'pes.tanggal as pesanan_tanggal',
+                    'pes.created_at as pesanan_created_at'
                 );
 
             if ($barangId) {
@@ -1351,6 +1352,19 @@ class StokGudangController extends Controller
                 );
 
                 if (!$outletGudangId || !$kitchenDivId) {
+                    continue;
+                }
+
+                // Jangan bangkitkan kembali transfer yang telah dihapus secara eksplisit oleh pengguna
+                $isDeletedByUser = DB::table('deleted_ck_transfers')
+                    ->where('barang_id', $al->produk_id)
+                    ->where(function($q) use ($al, $outletGudangId) {
+                        $q->where('produksi_id', $al->produksi_id)
+                          ->orWhere('pesanan_id', $al->pesanan_id);
+                    })
+                    ->exists();
+
+                if ($isDeletedByUser) {
                     continue;
                 }
 
@@ -1382,18 +1396,31 @@ class StokGudangController extends Controller
                     ->where('wod_dt.produk_id', $al->produk_id)
                     ->value('wo_dt.tanggal_wo');
 
-                // Tanggal transfer masuk outlet paling lambat H+1 setelah produksi selesai di WO
-                $txDate = $prodDate;
+                // Khusus BSJ: Tanggal masuk ke buku pembantu outlet sesuai tanggal permintaan outlet, bukan approval produksi
+                $isBsj = DB::table('master_barang')->where('id', $al->produk_id)->value('is_bahan_setengah_jadi');
+                if ($isBsj && !empty($al->pesanan_tanggal)) {
+                    $timePart = !empty($al->pesanan_created_at) ? date('H:i:s', strtotime($al->pesanan_created_at)) : '08:00:00';
+                    $txDate = date('Y-m-d', strtotime($al->pesanan_tanggal)) . ' ' . $timePart;
+                } else {
+                    $txDate = $prodDate;
+                }
 
                 if ($existingTxOutlet) {
                     $updatePayload = [];
                     if ($kitchenDivId && $existingTxOutlet->divisi_tujuan_id != $kitchenDivId) {
                         $updatePayload['divisi_tujuan_id'] = $kitchenDivId;
                     }
-                    // Jika tanggal transfer tercatat sebelum produksi selesai atau lebih dari H+1, perbaiki ke tanggal produksi
-                    $prodDateH1 = date('Y-m-d 23:59:59', strtotime($prodDate . ' +1 day'));
-                    if ($existingTxOutlet->tanggal < $prodDate || $existingTxOutlet->tanggal > $prodDateH1) {
-                        $updatePayload['tanggal'] = $txDate;
+                    if ($isBsj) {
+                        // Untuk BSJ, pastikan tanggal selalu sinkron dengan tanggal permintaan pesanan outlet
+                        if ($existingTxOutlet->tanggal != $txDate) {
+                            $updatePayload['tanggal'] = $txDate;
+                        }
+                    } else {
+                        // Jika tanggal transfer non-BSJ tercatat sebelum produksi selesai atau lebih dari H+1, perbaiki ke tanggal produksi
+                        $prodDateH1 = date('Y-m-d 23:59:59', strtotime($prodDate . ' +1 day'));
+                        if ($existingTxOutlet->tanggal < $prodDate || $existingTxOutlet->tanggal > $prodDateH1) {
+                            $updatePayload['tanggal'] = $txDate;
+                        }
                     }
 
                     if (!empty($updatePayload)) {
@@ -1413,14 +1440,15 @@ class StokGudangController extends Controller
                         if ($kitchenDivId) $batchUpdate['divisi_id'] = $kitchenDivId;
                         if (isset($updatePayload['tanggal'])) $batchUpdate['created_at'] = $txDate;
 
-                        DB::table('stok_gudang_batch')
+                        $bQuery = DB::table('stok_gudang_batch')
                             ->where('gudang_id', $outletGudangId)
-                            ->where('barang_id', $al->produk_id)
-                            ->where(function($q) use ($al) {
-                                $q->where('batch_number', 'like', "%{$al->kode_produksi}%")
-                                  ->orWhere('batch_number', 'like', 'TRANSFER-CK-%');
-                            })
-                            ->update($batchUpdate);
+                            ->where('barang_id', $al->produk_id);
+                        if (!empty($al->kode_produksi)) {
+                            $bQuery->where('batch_number', 'like', "%{$al->kode_produksi}%");
+                        } else {
+                            $bQuery->where('batch_number', 'like', "%-{$al->pesanan_id}%");
+                        }
+                        $bQuery->update($batchUpdate);
 
                         $affectedItems[] = ['barang_id' => $al->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
                     }
@@ -1600,7 +1628,8 @@ class StokGudangController extends Controller
                     'pes.gudang_id as pesanan_gudang_id',
                     'pes.divisi_id as pesanan_divisi_id',
                     'pes.kode_pesanan',
-                    'pes.tanggal as pesanan_tanggal'
+                    'pes.tanggal as pesanan_tanggal',
+                    'pes.created_at as pesanan_created_at'
                 );
 
             if ($barangId) {
@@ -1617,13 +1646,14 @@ class StokGudangController extends Controller
                 $pesGudangId = $pdet->pesanan_gudang_id;
                 $pesDivId = $pdet->pesanan_divisi_id;
                 $pesTanggal = $pdet->pesanan_tanggal;
+                $pesCreatedAt = $pdet->pesanan_created_at;
 
                 if (!$pesananId) {
                     $wod = DB::table('work_order_detail as wod')
                         ->join('pesanan as ps', 'wod.pesanan_id', '=', 'ps.id')
                         ->leftJoin('customers as cust', 'ps.customer_id', '=', 'cust.id')
                         ->where('wod.produk_id', $pdet->produk_id)
-                        ->select('wod.pesanan_id', 'cust.nama as customer_nama', 'ps.customer_id', 'ps.gudang_id', 'ps.divisi_id', 'ps.tanggal')
+                        ->select('wod.pesanan_id', 'cust.nama as customer_nama', 'ps.customer_id', 'ps.gudang_id', 'ps.divisi_id', 'ps.tanggal', 'ps.created_at')
                         ->first();
                     if ($wod) {
                         $pesananId = $wod->pesanan_id;
@@ -1632,6 +1662,7 @@ class StokGudangController extends Controller
                         $pesGudangId = $wod->gudang_id;
                         $pesDivId = $wod->divisi_id;
                         $pesTanggal = $wod->tanggal;
+                        $pesCreatedAt = $wod->created_at;
                     }
                 }
 
@@ -1661,6 +1692,19 @@ class StokGudangController extends Controller
                     continue;
                 }
 
+                // Jangan bangkitkan kembali transfer yang telah dihapus secara eksplisit oleh pengguna
+                $isDeletedByUser = DB::table('deleted_ck_transfers')
+                    ->where('barang_id', $pdet->produk_id)
+                    ->where(function($q) use ($pdet, $pesananId) {
+                        $q->where('produksi_id', $pdet->produksi_id)
+                          ->orWhere('pesanan_id', $pesananId);
+                    })
+                    ->exists();
+
+                if ($isDeletedByUser) {
+                    continue;
+                }
+
                 // Cek apakah sudah tercatat transaksi masuk ke outlet
                 $hasTxMasuk = DB::table('transaksi_stok')
                     ->where('barang_id', $pdet->produk_id)
@@ -1679,17 +1723,49 @@ class StokGudangController extends Controller
                     })
                     ->first();
 
+                $isBsj = DB::table('master_barang')->where('id', $pdet->produk_id)->value('is_bahan_setengah_jadi');
+                if ($isBsj && !empty($pesTanggal)) {
+                    $timePart = !empty($pesCreatedAt) ? date('H:i:s', strtotime($pesCreatedAt)) : '08:00:00';
+                    $txDate = date('Y-m-d', strtotime($pesTanggal)) . ' ' . $timePart;
+                } else {
+                    $txDate = $pdet->tanggal_selesai ?: ($pdet->tanggal_mulai ?: ($pesTanggal ?: now()));
+                }
+
                 if ($hasTxMasuk) {
+                    $updatePayload3 = [];
                     if ($hasTxMasuk->divisi_tujuan_id != $kitchenDivId) {
-                        DB::table('transaksi_stok')->where('id', $hasTxMasuk->id)->update(['divisi_tujuan_id' => $kitchenDivId]);
-                        DB::table('stok_gudang_batch')
+                        $updatePayload3['divisi_tujuan_id'] = $kitchenDivId;
+                    }
+                    if ($isBsj && $hasTxMasuk->tanggal != $txDate) {
+                        $updatePayload3['tanggal'] = $txDate;
+                    }
+
+                    if (!empty($updatePayload3)) {
+                        DB::table('transaksi_stok')->where('id', $hasTxMasuk->id)->update($updatePayload3);
+
+                        if (isset($updatePayload3['tanggal'])) {
+                            DB::table('transaksi_stok')
+                                ->where('source_type', 'transfer_ck')
+                                ->where('source_id', $pdet->produksi_id)
+                                ->where('tipe', 'keluar')
+                                ->where('barang_id', $pdet->produk_id)
+                                ->update(['tanggal' => $txDate]);
+                        }
+
+                        $batchUp3 = ['divisi_id' => $kitchenDivId];
+                        if (isset($updatePayload3['tanggal'])) {
+                            $batchUp3['created_at'] = $txDate;
+                        }
+
+                        $bQuery3 = DB::table('stok_gudang_batch')
                             ->where('gudang_id', $outletGudangId)
-                            ->where('barang_id', $pdet->produk_id)
-                            ->where(function($q) use ($pdet) {
-                                $q->where('batch_number', 'like', "%{$pdet->kode_produksi}%")
-                                  ->orWhere('batch_number', 'like', 'TRANSFER-CK-%');
-                            })
-                            ->update(['divisi_id' => $kitchenDivId]);
+                            ->where('barang_id', $pdet->produk_id);
+                        if (!empty($pdet->kode_produksi)) {
+                            $bQuery3->where('batch_number', 'like', "%{$pdet->kode_produksi}%");
+                        } else {
+                            $bQuery3->where('batch_number', 'like', "%-{$pesananId}%");
+                        }
+                        $bQuery3->update($batchUp3);
                         $affectedItems[] = ['barang_id' => $pdet->produk_id, 'gudang_id' => $outletGudangId, 'divisi_id' => $kitchenDivId];
                     }
                     continue;
@@ -1699,7 +1775,6 @@ class StokGudangController extends Controller
                 $qtyTransfer = floatval($pdet->qty);
                 $totalHpp    = floatval($pdet->hpp_total);
                 $hppPerUnit  = $qtyTransfer > 0 ? ($totalHpp / $qtyTransfer) : 0;
-                $txDate      = $pdet->tanggal_selesai ?: ($pdet->tanggal_mulai ?: ($pesTanggal ?: now()));
 
                 // Kurangi stok CK
                 $stokCk = DB::table('stok_gudang')
@@ -3436,6 +3511,64 @@ class StokGudangController extends Controller
                 $deleteQuery->delete();
             }
 
+            // 6c. Bersihkan duplikasi transaksi_stok transfer_ck (baik masuk maupun keluar)
+            $dupTransferCkQuery = DB::table('transaksi_stok')
+                ->where('source_type', 'transfer_ck')
+                ->whereNotNull('source_id');
+            if ($barangId) {
+                $dupTransferCkQuery->where('barang_id', $barangId);
+            }
+
+            $duplicateTransferGroups = $dupTransferCkQuery
+                ->select(
+                    'source_id',
+                    'barang_id',
+                    'tipe',
+                    'gudang_tujuan_id',
+                    DB::raw('COALESCE(divisi_tujuan_id, 0) as div_id'),
+                    DB::raw('COUNT(*) as total_count'),
+                    DB::raw('MAX(id) as keep_id')
+                )
+                ->groupBy('source_id', 'barang_id', 'tipe', 'gudang_tujuan_id', DB::raw('COALESCE(divisi_tujuan_id, 0)'))
+                ->having('total_count', '>', 1)
+                ->get();
+
+            foreach ($duplicateTransferGroups as $tGroup) {
+                $deleteTQuery = DB::table('transaksi_stok')
+                    ->where('source_type', 'transfer_ck')
+                    ->where('source_id', $tGroup->source_id)
+                    ->where('barang_id', $tGroup->barang_id)
+                    ->where('tipe', $tGroup->tipe)
+                    ->where('gudang_tujuan_id', $tGroup->gudang_tujuan_id)
+                    ->where('id', '!=', $tGroup->keep_id);
+
+                if ($tGroup->div_id == 0) {
+                    $deleteTQuery->whereNull('divisi_tujuan_id');
+                } else {
+                    $deleteTQuery->where('divisi_tujuan_id', $tGroup->div_id);
+                }
+
+                $deleteTQuery->delete();
+            }
+
+            // Bersihkan duplikasi batch TRANSFER-CK di stok_gudang_batch
+            $dupTransferBatches = DB::table('stok_gudang_batch')
+                ->where('batch_number', 'like', 'TRANSFER-CK-%')
+                ->when($barangId, fn($q) => $q->where('barang_id', $barangId))
+                ->select('gudang_id', 'barang_id', 'batch_number', DB::raw('COUNT(*) as total_count'), DB::raw('MAX(id) as keep_id'))
+                ->groupBy('gudang_id', 'barang_id', 'batch_number')
+                ->having('total_count', '>', 1)
+                ->get();
+
+            foreach ($dupTransferBatches as $dtb) {
+                DB::table('stok_gudang_batch')
+                    ->where('gudang_id', $dtb->gudang_id)
+                    ->where('barang_id', $dtb->barang_id)
+                    ->where('batch_number', $dtb->batch_number)
+                    ->where('id', '!=', $dtb->keep_id)
+                    ->delete();
+            }
+
             // 7. Non-CK Incoming mutations for Barang Setengah Jadi (BSJ):
             // Barang berstatus BSJ di divisi Kitchen hanya boleh masuk melalui produksi Central Kitchen (transfer_ck / produksi_ck)
             // Mutasi masuk dari pengeluaran_bahan_baku / manual transfer ke gudang outlet dihapus/dibersihkan
@@ -3733,6 +3866,79 @@ class StokGudangController extends Controller
                                 ]);
                             }
                         }
+                    }
+                }
+                // Skenario 5: Transfer Central Kitchen (transfer_ck)
+                elseif ($sourceType === 'transfer_ck') {
+                    $gudangCk = MasterGudang::where('nama', 'like', '%Central Kitchen%')->first();
+                    $gudangCkId = $gudangCk ? $gudangCk->id : 1;
+
+                    // Catat ke deleted_ck_transfers agar tidak dibangkitkan ulang oleh auto-heal
+                    $prodId = $sourceId;
+                    $pesananId = null;
+                    if ($prodId) {
+                        $pesananId = DB::table('produksi')->where('id', $prodId)->value('pesanan_id')
+                            ?? DB::table('alokasi_produksi_pesanan')->where('produksi_id', $prodId)->value('pesanan_id');
+                    }
+
+                    $outletGudangId = $tx->gudang_tujuan_id ?: $tx->gudang_asal_id;
+                    $outletDivisiId = $tx->divisi_tujuan_id ?: $tx->divisi_asal_id;
+
+                    DB::table('deleted_ck_transfers')->insert([
+                        'produksi_id' => $prodId,
+                        'pesanan_id'  => $pesananId,
+                        'barang_id'   => $targetBarangId,
+                        'gudang_id'   => $outletGudangId ?: 5,
+                        'divisi_id'   => $outletDivisiId,
+                        'deleted_by'  => auth()->id(),
+                        'created_at'  => now(),
+                        'updated_at'  => now(),
+                    ]);
+
+                    // Hapus batch TRANSFER-CK terkait di gudang outlet
+                    $batchesToDelete = collect();
+                    if ($prodId) {
+                        $kodeProd = DB::table('produksi')->where('id', $prodId)->value('kode_produksi');
+                        if ($kodeProd) {
+                            $delBatchQuery = DB::table('stok_gudang_batch')
+                                ->where('barang_id', $targetBarangId)
+                                ->where('batch_number', 'like', "%{$kodeProd}%");
+                            if ($outletGudangId) {
+                                $delBatchQuery->where('gudang_id', $outletGudangId);
+                            }
+                            $batchesToDelete = $delBatchQuery->get();
+                        }
+                    }
+                    foreach ($batchesToDelete as $btd) {
+                        // Kurangi stok di gudang outlet jika batch masuk dihapus
+                        if ($btd->qty_masuk > 0 && $outletGudangId) {
+                            $stokOutlet = \App\Models\StokGudang::where('barang_id', $targetBarangId)
+                                ->where('gudang_id', $btd->gudang_id)
+                                ->when($btd->divisi_id, fn($q) => $q->where('divisi_id', $btd->divisi_id), fn($q) => $q->whereNull('divisi_id'))
+                                ->first();
+                            if ($stokOutlet) {
+                                $stokOutlet->decrement('jumlah', min((float)$stokOutlet->jumlah, (float)$btd->qty_masuk));
+                            }
+                        }
+                        DB::table('stok_gudang_batch')->where('id', $btd->id)->delete();
+                    }
+
+                    // Hapus juga transaksi pasangannya (keluar di CK atau masuk di Outlet)
+                    if ($sourceId) {
+                        DB::table('transaksi_stok')
+                            ->where('source_type', 'transfer_ck')
+                            ->where('source_id', $sourceId)
+                            ->where('barang_id', $targetBarangId)
+                            ->where('id', '!=', $tx->id)
+                            ->delete();
+                    }
+
+                    // Jika alokasi ada, bersihkan qty_terkirim
+                    if ($prodId) {
+                        DB::table('alokasi_produksi_pesanan')
+                            ->where('produksi_id', $prodId)
+                            ->where('produk_id', $targetBarangId)
+                            ->update(['qty_terkirim' => 0]);
                     }
                 }
 

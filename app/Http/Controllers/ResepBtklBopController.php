@@ -273,6 +273,12 @@ class ResepBtklBopController extends Controller
 
     public function update(Request $request, $id)
     {
+        $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
+
+        if (!$request->filled('produk_id')) {
+            $request->merge(['produk_id' => $resep->produk_id]);
+        }
+
         $request->validate([
             'produk_id' => 'required',
             'output_qty' => 'required|numeric|min:1',
@@ -284,8 +290,6 @@ class ResepBtklBopController extends Controller
             'qty_bahan' => 'required|array',
             'qty_bahan.*' => 'required|numeric|min:0.001',
         ]);
-
-        $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
 
         // Cek duplikasi bahan baku di seluruh baris
         $allBahanIds = [];
@@ -303,7 +307,7 @@ class ResepBtklBopController extends Controller
         $satuanOutput = $request->satuan_output ?? ($produk->satuan ?? ($resep->satuan_output ?? '-'));
         $outputQty = floatval($request->output_qty);
         
-        if ($produk && strtoupper(trim($satuanOutput)) === strtoupper(trim($produk->satuan_pembelian))) {
+        if ($produk && $produk->satuan_pembelian && strtoupper(trim($satuanOutput ?? '')) === strtoupper(trim($produk->satuan_pembelian ?? ''))) {
             $konv = floatval($produk->konversi_pembelian ?? 1);
             if ($konv > 1) {
                 $outputQty = $outputQty * $konv;
@@ -337,7 +341,7 @@ class ResepBtklBopController extends Controller
             $satuanBahan = $request->satuan[$i] ?? ($bahan->satuan ?? '-');
             
             // Konversi ke gram jika satuan yang dipilih adalah satuan pembelian
-            if ($bahan && strtoupper(trim($satuanBahan)) === strtoupper(trim($bahan->satuan_pembelian))) {
+            if ($bahan && $bahan->satuan_pembelian && strtoupper(trim($satuanBahan ?? '')) === strtoupper(trim($bahan->satuan_pembelian ?? ''))) {
                 $konv = floatval($bahan->konversi_pembelian ?? 1);
                 if ($konv > 1) {
                     $qty = floatval($qty) * $konv;

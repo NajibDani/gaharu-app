@@ -1640,9 +1640,15 @@ class CentralKitchenProductionController extends Controller
                                 ->value('wo_dt.tanggal_wo');
                         }
 
-                        // Tanggal transfer masuk outlet paling lambat H+1 setelah produksi selesai di WO
-                        $prodDate = $request->tanggal_produksi ?: ($woDate ?: now());
-                        $finalTransferDate = $prodDate;
+                        // Khusus BSJ: Tanggal masuk ke buku pembantu outlet sesuai tanggal permintaan outlet, bukan tanggal approval produksi
+                        $isBsjItem = DB::table('master_barang')->where('id', $produkId)->value('is_bahan_setengah_jadi');
+                        if ($isBsjItem && $pesananItem && $pesananItem->tanggal) {
+                            $timePart = $pesananItem->created_at ? date('H:i:s', strtotime($pesananItem->created_at)) : '08:00:00';
+                            $finalTransferDate = date('Y-m-d', strtotime($pesananItem->tanggal)) . ' ' . $timePart;
+                        } else {
+                            $prodDate = $request->tanggal_produksi ?: ($woDate ?: now());
+                            $finalTransferDate = $prodDate;
+                        }
 
                         $this->transferBsjToOutletKitchen(
                             $produksiId,
@@ -1705,6 +1711,11 @@ class CentralKitchenProductionController extends Controller
                     );
 
                     if (!$isInternalCk && $qtyHasil > 0 && $pesananItem && $outletGudangId) {
+                        $isBsjItem = DB::table('master_barang')->where('id', $produkId)->value('is_bahan_setengah_jadi');
+                        $transferDate = ($isBsjItem && $pesananItem && $pesananItem->tanggal)
+                            ? (date('Y-m-d', strtotime($pesananItem->tanggal)) . ' ' . ($pesananItem->created_at ? date('H:i:s', strtotime($pesananItem->created_at)) : '08:00:00'))
+                            : ($request->tanggal_produksi ?: now());
+
                         $this->transferBsjToOutletKitchen(
                             $produksiId,
                             $kodeProduksi,
@@ -1715,7 +1726,7 @@ class CentralKitchenProductionController extends Controller
                             $gudangCkId,
                             $outletGudangId,
                             $kitchenDivId,
-                            $request->tanggal_produksi ?: now()
+                            $transferDate
                         );
                     }
                 }
@@ -2445,6 +2456,11 @@ class CentralKitchenProductionController extends Controller
                                 if (!str_contains($cName, 'central kitchen')) {
                                     [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pItem);
                                     if ($outletGudangId) {
+                                        $isBsjItem = DB::table('master_barang')->where('id', $produkId)->value('is_bahan_setengah_jadi');
+                                        $transferDate = ($isBsjItem && $pItem && $pItem->tanggal)
+                                            ? (date('Y-m-d', strtotime($pItem->tanggal)) . ' ' . ($pItem->created_at ? date('H:i:s', strtotime($pItem->created_at)) : '08:00:00'))
+                                            : ($produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now()));
+
                                         $this->transferBsjToOutletKitchen(
                                             $produksi->id,
                                             $produksi->kode_produksi,
@@ -2455,7 +2471,7 @@ class CentralKitchenProductionController extends Controller
                                             $gudangHasilId,
                                             $outletGudangId,
                                             $kitchenDivId,
-                                            $produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now())
+                                            $transferDate
                                         );
                                     }
                                 }
@@ -2471,6 +2487,11 @@ class CentralKitchenProductionController extends Controller
                             if ($pesananModel) {
                                 [$outletGudangId, $kitchenDivId] = $this->resolveTargetOutletAndDivisi($pesananModel);
                                 if ($outletGudangId) {
+                                    $isBsjItem = DB::table('master_barang')->where('id', $produkId)->value('is_bahan_setengah_jadi');
+                                    $transferDate = ($isBsjItem && $pesananModel && $pesananModel->tanggal)
+                                        ? (date('Y-m-d', strtotime($pesananModel->tanggal)) . ' ' . ($pesananModel->created_at ? date('H:i:s', strtotime($pesananModel->created_at)) : '08:00:00'))
+                                        : ($produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now()));
+
                                     $this->transferBsjToOutletKitchen(
                                         $produksi->id,
                                         $produksi->kode_produksi,
@@ -2481,7 +2502,7 @@ class CentralKitchenProductionController extends Controller
                                         $gudangHasilId,
                                         $outletGudangId,
                                         $kitchenDivId,
-                                        $produksi->tanggal_selesai ?: ($produksi->tanggal_mulai ?: now())
+                                        $transferDate
                                     );
                                 }
                             }
@@ -3291,7 +3312,15 @@ class CentralKitchenProductionController extends Controller
     public function transferBsjToOutletKitchen($produksiId, $kodeProduksi, $pesanan, $produkId, $qty, $hppPerUnit, $gudangCkId, $outletGudangId, $kitchenDivId, $txDate = null)
     {
         $totalHpp = $qty * $hppPerUnit;
-        $transactionDate = $txDate ?: now();
+        
+        // Khusus BSJ: Tanggal masuk ke buku pembantu outlet sesuai tanggal permintaan outlet
+        $isBsjItem = DB::table('master_barang')->where('id', $produkId)->value('is_bahan_setengah_jadi');
+        if ($isBsjItem && $pesanan && !empty($pesanan->tanggal)) {
+            $timePart = !empty($pesanan->created_at) ? date('H:i:s', strtotime($pesanan->created_at)) : '08:00:00';
+            $transactionDate = date('Y-m-d', strtotime($pesanan->tanggal)) . ' ' . $timePart;
+        } else {
+            $transactionDate = $txDate ?: now();
+        }
 
         // 1. Cek apakah transaksi keluar & masuk untuk produksi ini sudah pernah dibuat sebelumnya
         $existingTxKeluar = TransaksiStok::where('source_type', 'transfer_ck')
