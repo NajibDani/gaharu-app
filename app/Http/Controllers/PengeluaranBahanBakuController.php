@@ -1225,6 +1225,12 @@ class PengeluaranBahanBakuController extends Controller
         $barangIds = $barang->pluck('id')->toArray();
         $bulkStok = StokGudang::getBulkStokBukuPembantu($barangIds, $gudangSourceId);
 
+        foreach ($pengeluaran->details as $d) {
+            if ($d->barang) {
+                $d->barang->stok = (float) ($bulkStok[$d->barang_id] ?? 0);
+            }
+        }
+
         $barangData = $barang->map(function ($b) use ($jenis, $gudangSourceId, $bulkStok) {
             $satuan = $b->satuan ?: 'Pcs';
             $satuanBeli = $b->satuan_pembelian ?: $satuan;
@@ -1456,14 +1462,15 @@ class PengeluaranBahanBakuController extends Controller
                                 ->where('gudang_id', $gudangAsalId)
                                 ->sum('jumlah') ?? 0);
 
-                            if ($stokTersedia < $detail->qty) {
+                            // Validasi blokir stok hanya untuk pengguna non-Super Admin (Super Admin didukung alokasi allow_negative oleh service)
+                            if (!$isSuperAdmin && $stokTersedia < $deltaQty) {
                                 $barang = MasterBarang::find($detail->barang_id);
                                 $namaBarang = $barang ? $barang->nama : "ID Barang: {$detail->barang_id}";
                                 $satuan = $barang->satuan ?? 'pcs';
-                                $kurang = $detail->qty - $stokTersedia;
+                                $kurang = $deltaQty - $stokTersedia;
                                 
                                 throw new \Exception(
-                                    "Gagal Menyimpan: Stok \"{$namaBarang}\" di Gudang Utama tidak mencukupi untuk disetujui (Diminta: " . number_format($detail->qty, 2, ',', '.') . " {$satuan}, Tersedia: " . number_format($stokTersedia, 2, ',', '.') . " {$satuan}, Kekurangan: -" . number_format($kurang, 2, ',', '.') . " {$satuan})."
+                                    "Gagal Menyimpan: Stok \"{$namaBarang}\" di Gudang Utama tidak mencukupi untuk disetujui (Tambahan diminta: " . number_format($deltaQty, 2, ',', '.') . " {$satuan}, Tersedia: " . number_format($stokTersedia, 2, ',', '.') . " {$satuan}, Kekurangan: -" . number_format($kurang, 2, ',', '.') . " {$satuan})."
                                 );
                             }
                         }

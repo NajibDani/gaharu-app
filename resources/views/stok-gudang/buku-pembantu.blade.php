@@ -363,7 +363,7 @@
                 return text.replace(/[&<>"']/g, function(m) { return map[m]; });
             }
 
-            function loadMutasiData(showSpinner = true) {
+            function loadMutasiData(showSpinner = true, forceRefresh = false) {
                 if (!activeBarangId) return;
 
                 const form = document.getElementById('formFilter');
@@ -414,7 +414,10 @@
                     tableState.classList.add('d-none');
                 }
 
-                const url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${activeBarangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}&refresh=1&_t=${Date.now()}`;
+                let url = `{{ route('stok-gudang.buku-pembantu.mutasi') }}?barang_id=${activeBarangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&start_date=${start_date}&end_date=${end_date}&_t=${Date.now()}`;
+                if (forceRefresh) {
+                    url += '&refresh=1';
+                }
 
                 fetch(url, { cache: 'no-store' })
                     .then(response => {
@@ -629,6 +632,7 @@
                     })
                     .catch(err => {
                         loadingState.classList.add('d-none');
+                        tableState.classList.remove('d-none');
                         tbodyMutasi.innerHTML = `
                             <tr>
                                 <td colspan="11" class="text-center py-4 text-danger fw-semibold">

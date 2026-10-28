@@ -212,7 +212,7 @@
                                 $sUtama = $bItem->satuan ?? 'Pcs';
                                 $hasKonv = ($sPembelian && $konv > 1 && $sPembelian !== $sUtama);
                             @endphp
-                            <tr>
+                            <tr data-original-barang-id="{{ $detail->barang_id }}" data-original-qty="{{ $detail->qty }}">
                                 <td>
                                     <select name="barang_id[]" class="form-select barang-select" required>
                                         <option value="">-- Pilih / Cari Bahan Baku --</option>
@@ -244,7 +244,7 @@
                                         <span class="stok-satuan text-muted fw-semibold small" style="min-width:35px;">{{ $sUtama }}</span>
                                     </div>
                                     <small class="text-muted stok-info d-block mt-1" style="font-size:0.75rem;">
-                                        Tersedia di Gudang Utama: {{ $bItem ? ($bItem->stok ?? 0) : 0 }} {{ $sUtama }}
+                                        Tersedia di Gudang Utama: {{ number_format(($bItem ? ($bItem->stok ?? 0) : 0) + (float)$detail->qty, 0, ',', '.') }} {{ $sUtama }}
                                     </small>
                                     <small class="text-danger stok-warning d-block mt-1" style="display:none; font-size:0.75rem;"></small>
                                 </td>
@@ -462,6 +462,9 @@ function updateRowInfo(row, barangId) {
     let infoEl = row.querySelector('.stok-info');
     let warnEl = row.querySelector('.stok-warning');
 
+    let originalBarangId = row.dataset.originalBarangId;
+    let originalQty = (originalBarangId && originalBarangId == barangId) ? (parseFloat(row.dataset.originalQty) || 0) : 0;
+
     if (found) {
         if (satuanSelect) {
             let opts = `<option value="utama">${found.satuan}</option>`;
@@ -472,8 +475,10 @@ function updateRowInfo(row, barangId) {
         }
         if (satuanEl) satuanEl.textContent = found.satuan;
         if (infoEl) {
-            infoEl.textContent = `Tersedia di Gudang Utama: ${found.stok} ${found.satuan}`;
-            infoEl.style.color = found.habis ? '#dc3545' : '#6c757d';
+            let currentStok = parseFloat(found.stok) || 0;
+            let effectiveStok = currentStok + originalQty;
+            infoEl.textContent = `Tersedia di Gudang Utama: ${effectiveStok.toLocaleString('id-ID')} ${found.satuan}`;
+            infoEl.style.color = effectiveStok <= 0 ? '#dc3545' : '#6c757d';
         }
     } else {
         if (satuanSelect) satuanSelect.innerHTML = '<option value="utama">Utama</option>';
@@ -494,9 +499,16 @@ function checkStok(row) {
     let found = allBarangData.find(b => b.value == barangId);
     let qty = parseFloat(qtyInput.value) || 0;
 
+    let originalBarangId = row.dataset.originalBarangId;
+    let originalQty = (originalBarangId && originalBarangId == barangId) ? (parseFloat(row.dataset.originalQty) || 0) : 0;
+
     if (found && qty > 0) {
-        if (qty > found.stok) {
-            warning.innerHTML = `⚠️ Melebihi stok Gudang Utama! (Tersedia: <strong>${found.stok} ${found.satuan}</strong>)`;
+        let currentStok = parseFloat(found.stok) || 0;
+        let effectiveStok = currentStok + originalQty;
+
+        if (qty > effectiveStok) {
+            let maxAvailable = Math.max(0, effectiveStok);
+            warning.innerHTML = `⚠️ Melebihi stok Gudang Utama! (Tersedia: <strong>${maxAvailable.toLocaleString('id-ID')} ${found.satuan}</strong>)`;
             warning.style.display = 'block';
         } else {
             warning.style.display = 'none';
