@@ -185,7 +185,7 @@ public function firstFifoLayer()
         }
 
         // Cek counterpart produk dengan nama sama jika ada (misal produk POS Kejingga memakai resep POS Gaharu)
-        if (!empty($this->nama)) {
+        if ($this->is_barang_jadi && !empty($this->nama)) {
             $counterpartResepId = \Illuminate\Support\Facades\DB::table('master_barang')
                 ->where('is_barang_jadi', 1)
                 ->whereNotNull('resep_id')
@@ -234,6 +234,60 @@ public function resepBahanBakuAlternatif()
     public static function syncAllResepIds(): void
     {
         try {
+            // 0. Bersihkan resep_id yang salah pada barang bukan barang jadi (bahan baku murni yang tertempel resep barang jadi lain)
+            \Illuminate\Support\Facades\DB::table('master_barang')
+                ->join('resep_btkl_bop', 'master_barang.resep_id', '=', 'resep_btkl_bop.id')
+                ->where('master_barang.is_barang_jadi', 0)
+                ->whereColumn('master_barang.id', '!=', 'resep_btkl_bop.produk_id')
+                ->update(['master_barang.resep_id' => null]);
+
+            // Auto-heal data harga referensi bahan baku yang mengalami anomali desimal/satuan
+            $knownAnomalies = [
+                134  => ['hpp_referensi' => 800.00, 'resep_id' => null], // CIRENG (BBB134)
+                402  => ['hpp_referensi' => 18.29, 'resep_id' => null],  // NANAS LOKAL (BBB405)
+                417  => ['hpp_referensi' => 40.00, 'resep_id' => null],  // PAHA ATAS (BBB420)
+                210  => ['hpp_referensi' => 19.17, 'resep_id' => null],  // GAS LPG 12KG (BBB211)
+                1485 => ['hpp_referensi' => 10.29, 'resep_id' => null],  // SAYUR CHAISIM (BBB771)
+                1394 => ['hpp_referensi' => 8.00, 'resep_id' => null],   // LABU (BBB730)
+                1383 => ['hpp_referensi' => 220.00, 'resep_id' => null], // ALMOND POWDER 500 GR (BBB727)
+                1112 => ['hpp_referensi' => 700.00, 'resep_id' => null], // FILTER BLEND KALCER (BBB709)
+                132  => ['hpp_referensi' => 308.00, 'resep_id' => null], // CHOCOCHIP COKLAT (BBB132)
+                271  => ['hpp_referensi' => 70.00, 'resep_id' => null],  // KACANG TANAH KULIT (BBB272)
+                352  => ['hpp_referensi' => 97.77, 'resep_id' => null],  // LYCHEE FROZEN (BBB355)
+                589  => ['hpp_referensi' => 52.87, 'resep_id' => null],  // SPRITE 1.5 L (BBB594)
+            ];
+
+            foreach ($knownAnomalies as $bId => $payload) {
+                $targetItem = \Illuminate\Support\Facades\DB::table('master_barang')->where('id', $bId)->first();
+                if ($targetItem) {
+                    $needsUpdate = false;
+                    $updateFields = [];
+                    if (isset($payload['resep_id']) && $targetItem->resep_id !== null) {
+                        $updateFields['resep_id'] = null;
+                        $needsUpdate = true;
+                    }
+                    if (isset($payload['hpp_referensi']) && floatval($targetItem->hpp_referensi) > ($payload['hpp_referensi'] * 2)) {
+                        $updateFields['hpp_referensi'] = $payload['hpp_referensi'];
+                        $needsUpdate = true;
+                    }
+                    if ($needsUpdate) {
+                        \Illuminate\Support\Facades\DB::table('master_barang')->where('id', $bId)->update($updateFields);
+                    }
+                }
+            }
+
+            // Normalisasi batch Base Asam Manis (BSJ011) yang terlanjur tercatat 477.50 / 233.00
+            \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('barang_id', 706)
+                ->whereIn('harga_per_qty', [477.50, 233.00])
+                ->update(['harga_per_qty' => 29.14]);
+
+            // Normalisasi hpp_referensi Base Asam Manis jika masih bengkak (> 100)
+            \Illuminate\Support\Facades\DB::table('master_barang')
+                ->where('id', 706)
+                ->where('hpp_referensi', '>', 100)
+                ->update(['hpp_referensi' => 29.14]);
+
             // 1. Cek produk yang resep_id nya belum sesuai dengan resep_btkl_bop.produk_id
             $mismatched = \Illuminate\Support\Facades\DB::table('master_barang')
                 ->join('resep_btkl_bop', 'master_barang.id', '=', 'resep_btkl_bop.produk_id')

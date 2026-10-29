@@ -219,6 +219,9 @@ class PenjualanPosController extends Controller
             'gudang'
         ])->findOrFail($id);
 
+        // Pastikan relasi resep dan anomali data harga tersinkronisasi otomatis
+        MasterBarang::syncAllResepIds();
+
         $fifoService = app(\App\Services\FifoService::class);
         $gudangId = $penjualan->gudang_id;
         $cacheBatchBeli = [];
@@ -253,7 +256,7 @@ class PenjualanPosController extends Controller
                     $subResep = null;
                     $komposisiResep = '';
 
-                    if ($item->bahan && ($item->bahan->is_bahan_setengah_jadi || !empty($item->bahan->resep_id))) {
+                    if ($isBsj) {
                         $subResep = $item->bahan->resepBtklBop;
                         if (!$subResep && $item->bahan->resep_id) {
                             if (!array_key_exists($item->bahan->resep_id, $cacheSubResep)) {
@@ -261,7 +264,7 @@ class PenjualanPosController extends Controller
                             }
                             $subResep = $cacheSubResep[$item->bahan->resep_id];
                         }
-                        if (!$subResep && $item->bahan->is_bahan_setengah_jadi && !empty($item->bahan->nama)) {
+                        if (!$subResep && !empty($item->bahan->nama)) {
                             $sameNameIds = DB::table('master_barang')
                                 ->where('is_bahan_setengah_jadi', 1)
                                 ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower(trim($item->bahan->nama))])
@@ -273,8 +276,6 @@ class PenjualanPosController extends Controller
                             }
                         }
                     }
-
-                    $isBsj = $isBsj || (!empty($subResep) && ($item->bahan->is_bahan_setengah_jadi ?? false));
 
                     // Jika bahan adalah BSJ (punya resep sendiri atau tagging BSJ) → SELALU gunakan HPP resep BSJ
                     if ($isBsj) {
@@ -326,7 +327,7 @@ class PenjualanPosController extends Controller
                         'bahan_id'        => $item->bahan_id,
                         'nama_bahan'      => $item->bahan->nama ?? 'Bahan',
                         'kode_bahan'      => $item->bahan->kode_barang ?? '-',
-                        'is_bsj'          => $isBsj || !empty($subResep),
+                        'is_bsj'          => $isBsj,
                         'komposisi_resep' => $komposisiResep,
                         'sub_resep_id'    => $subResep ? $subResep->id : null,
                         'qty_resep'       => $qtyBahan,
@@ -361,6 +362,12 @@ class PenjualanPosController extends Controller
             ];
 
             $d->estimated_hpp = $totalHppProduk > 0 ? $totalHppProduk : ($hargaTerbaruProduk > 0 ? $hargaTerbaruProduk : $hppRefProduk);
+
+            // Auto-heal: Jika transaksi lama memiliki hpp_satuan yang membengkak tidak wajar akibat bug resep lama (> 1.5x dari resep kalkulasi riil), sinkronkan otomatis
+            if ($hasResep && $totalHppProduk > 0 && floatval($d->hpp_satuan) > ($totalHppProduk * 1.5)) {
+                $d->update(['hpp_satuan' => round($totalHppProduk, 2)]);
+                $d->hpp_satuan = round($totalHppProduk, 2);
+            }
         }
 
         $isDraftStatus = ($penjualan->status ?? 'Draft') === 'Draft';
@@ -1264,7 +1271,7 @@ class PenjualanPosController extends Controller
                 if (!$barang) return 0;
 
                 $isBsj = (bool) ($barang->is_bahan_setengah_jadi ?? false);
-                $hasRecipe = !empty($barang->resep_id) || ($isBsj && DB::table('resep_btkl_bop')->where('produk_id', $barangId)->exists());
+                $hasRecipe = ($isBsj && !empty($barang->resep_id)) || ($isBsj && DB::table('resep_btkl_bop')->where('produk_id', $barangId)->exists()) || ($barang->is_barang_jadi && (!empty($barang->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $barangId)->exists()));
 
                 if ($isBsj || $hasRecipe) {
                     $hppBsj = $fifoService->getHppResepBsj($barangId);
@@ -1423,7 +1430,7 @@ class PenjualanPosController extends Controller
                         foreach ($resepBahan as $bahan) {
                             $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                             $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
-                            $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || !empty($bhn->resep_id) || ($bhn->is_bahan_setengah_jadi && DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists())) : false;
+                            $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || ($bhn->is_bahan_setengah_jadi && !empty($bhn->resep_id)) || ($bhn->is_bahan_setengah_jadi && DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists())) : false;
 
                             $hargaBahan = 0.0;
                             if ($isBsj) {
@@ -1546,7 +1553,7 @@ class PenjualanPosController extends Controller
                     foreach ($resepBahan as $bahan) {
                         $kebutuhanPerPcs = floatval($bahan->qty_bahan);
                         $bhn = DB::table('master_barang')->where('id', $bahan->bahan_id)->first();
-                        $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || !empty($bhn->resep_id) || ($bhn->is_bahan_setengah_jadi && DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists())) : false;
+                        $isBsj = $bhn ? ($bhn->is_bahan_setengah_jadi || ($bhn->is_bahan_setengah_jadi && !empty($bhn->resep_id)) || ($bhn->is_bahan_setengah_jadi && DB::table('resep_btkl_bop')->where('produk_id', $bahan->bahan_id)->exists())) : false;
 
                         $hargaBahan = 0.0;
                         if ($isBsj) {

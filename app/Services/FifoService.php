@@ -401,46 +401,55 @@ class FifoService
         $masterKonv = (float)($master->konversi_pembelian ?? 1);
         $masterHppRef = (float)($master->hpp_referensi ?? 0);
         $masterNama = strtolower($master->nama ?? '');
-        $expectedMinPrice = 0.0;
-        if ($masterHppRef > 0) {
-            $expectedMinPrice = $masterHppRef * 0.1;
+
+        // Normalisasi harga referensi jika satuan dasar GR/ML tetapi hpp_referensi belum dibagi konversi atau terindikasi anomali
+        $effectiveRefPrice = $masterHppRef;
+        if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1 && $masterHppRef > 500) {
+            $effectiveRefPrice = $masterHppRef / $masterKonv;
         }
 
-        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv, $masterHppRef, $satDasar, $masterNama) {
+        $expectedMinPrice = 0.0;
+        // Hanya terapkan expectedMinPrice jika harga referensi wajar (< 500 untuk satuan GR/ML)
+        if ($effectiveRefPrice > 0 && !(in_array($satDasar, ['gr', 'ml', 'gram']) && $effectiveRefPrice > 500)) {
+            $expectedMinPrice = $effectiveRefPrice * 0.1;
+        }
+
+        $isValidBatchPrice = function($rawPrice) use ($expectedMinPrice, $masterKonv, $masterHppRef, $effectiveRefPrice, $satDasar, $masterNama) {
             $p = floatval($rawPrice);
             if ($p <= 0) return false;
             // Cegah harga rogue dummy yang sering mengontaminasi sistem
             if (abs($p - 233) <= 1 || abs($p - 25888.89) <= 1) {
                 return false;
             }
-            // Cegah harga batch yang terlalu rendah (< 10% dari HPP referensi)
+            // Cegah harga batch yang terlalu rendah (< 10% dari HPP referensi wajar)
+            // Jangan tolak harga batch nyata (>= 0.1 / GR) jika HPP referensi terindikasi bengkak
             if ($expectedMinPrice > 0 && $p < $expectedMinPrice) {
-                return false;
+                if ($p < 0.1 || ($effectiveRefPrice <= 500 && $p < ($effectiveRefPrice * 0.05))) {
+                    return false;
+                }
             }
             // Cegah harga pecahan rupiah yang tidak masuk akal (< Rp 1/GR atau Rp 1/ML) untuk daging, protein, atau bahan ber-HPP
             if (in_array($satDasar, ['gr', 'ml', 'gram']) && $p < 1.0) {
-                if ($masterHppRef >= 5 || str_contains($masterNama, 'shortplate') || str_contains($masterNama, 'daging') || str_contains($masterNama, 'beef') || str_contains($masterNama, 'ayam') || str_contains($masterNama, 'dory')) {
+                if ($effectiveRefPrice >= 5 || str_contains($masterNama, 'shortplate') || str_contains($masterNama, 'daging') || str_contains($masterNama, 'beef') || str_contains($masterNama, 'ayam') || str_contains($masterNama, 'dory')) {
                     return false;
                 }
             }
-            // Jika satuan dasar adalah GR / ML dan harga per GR/ML di atas Rp 1.000 (kecuali HPP referensi memang mahal)
+            // Validasi batas atas kewajaran harga per GR/ML:
+            // Bahan nabati segar, bumbu, sayur, buah di atas Rp 500/GR (Rp 500.000/kg) adalah anomali
             if (in_array($satDasar, ['gr', 'ml', 'gram'])) {
-                if ($p >= 1000 && ($masterHppRef <= 500 || $masterKonv >= 5)) {
-                    return false;
-                }
-                if ($p > 500 && $masterKonv >= 5 && $masterHppRef <= 500) {
-                    return false;
+                $isLuxury = str_contains($masterNama, 'wagyu') || str_contains($masterNama, 'saffron') || str_contains($masterNama, 'truffle') || str_contains($masterNama, 'caviar');
+                if ($p >= 500 && !$isLuxury) {
+                    if ($masterKonv > 1 && ($p / $masterKonv) <= 500) {
+                        return false;
+                    }
+                    if ($p >= 1000) {
+                        return false;
+                    }
                 }
             }
-            // Jika barang memiliki konversi besar (> 1) dan harga batch sangat kecil (< 1 atau < 10% estimasi harga dasar),
-            // kemungkinan besar terkena bug double division oleh konversi.
+            // Jika barang memiliki konversi besar (> 1) dan harga batch masih satuan kemasan beli
             if ($masterKonv > 1) {
-                if ($expectedMinPrice > 0 && $p < $expectedMinPrice) {
-                    return false;
-                }
-                // Jika harga batch jauh lebih tinggi dari HPP referensi (misal Rp 7.000 vs Rp 140),
-                // berarti harga batch tersebut masih dalam satuan beli (papan/kg/karton) dan belum dikonversi ke satuan dasar.
-                if ($masterHppRef > 0 && $p > ($masterHppRef * 4)) {
+                if ($effectiveRefPrice > 0 && $p > ($effectiveRefPrice * 4)) {
                     return false;
                 }
             }
@@ -788,10 +797,13 @@ class FifoService
             return 0.0;
         }
 
-        // Cari resep: via resep_id, produk_id, atau barang lain dengan nama sama (HANYA jika berjenis BSJ, bukan bahan baku murni)
+        // Cari resep: via resep_id, produk_id, atau barang lain dengan nama sama (HANYA jika berjenis BSJ atau Barang Jadi, bukan bahan baku murni)
         $resep = null;
         if (!empty($barang->resep_id)) {
-            $resep = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+            $candidate = DB::table('resep_btkl_bop')->where('id', $barang->resep_id)->first();
+            if ($candidate && ($candidate->produk_id == $barangId || ($barang->is_barang_jadi && DB::table('master_barang')->where('id', $candidate->produk_id)->where('is_barang_jadi', 1)->exists()))) {
+                $resep = $candidate;
+            }
         }
         if (!$resep && ($barang->is_bahan_setengah_jadi || $barang->is_barang_jadi)) {
             $resep = DB::table('resep_btkl_bop')->where('produk_id', $barangId)->first();
@@ -815,7 +827,7 @@ class FifoService
                 $totalBbb  = 0.0;
                 foreach ($subBahanList as $subBahan) {
                     $subBhn = DB::table('master_barang')->where('id', $subBahan->bahan_id)->first();
-                    $isSubBsj = $subBhn ? ($subBhn->is_bahan_setengah_jadi || !empty($subBhn->resep_id) || DB::table('resep_btkl_bop')->where('produk_id', $subBahan->bahan_id)->exists()) : false;
+                    $isSubBsj = $subBhn ? ($subBhn->is_bahan_setengah_jadi || ($subBhn->is_bahan_setengah_jadi && !empty($subBhn->resep_id)) || DB::table('resep_btkl_bop')->where('produk_id', $subBahan->bahan_id)->exists()) : false;
                     
                     $hargaBahan = 0.0;
                     if ($isSubBsj) {
@@ -838,12 +850,21 @@ class FifoService
                         $hargaBahan = $refPrice;
                     }
 
-                    // Pengaman: Jika satuan adalah GR / ML dan harga per satuan dasar > 500, cek apakah masih harga satuan beli
+                    // Pengaman: Jika satuan adalah GR / ML dan harga per satuan dasar > 500, cek apakah masih harga satuan beli atau terjadi anomali desimal
                     if ($subBhn) {
                         $subSatDasar = strtolower(trim($subBhn->satuan ?? ''));
                         $subKonv = (float) ($subBhn->konversi_pembelian ?? 1);
-                        if (in_array($subSatDasar, ['gr', 'ml', 'gram']) && $subKonv > 1 && $hargaBahan > 500) {
-                            $hargaBahan = round($hargaBahan / $subKonv, 4);
+                        if (in_array($subSatDasar, ['gr', 'ml', 'gram'])) {
+                            if ($subKonv > 1 && $hargaBahan > 500) {
+                                $hargaBahan = round($hargaBahan / $subKonv, 4);
+                            } elseif ($hargaBahan >= 500 && !str_contains(strtolower($subBhn->nama ?? ''), 'wagyu')) {
+                                $latestReal = $this->getHargaTerakhirBahan((int)$subBahan->bahan_id, $gudangCkId);
+                                if ($latestReal > 0 && $latestReal < 500) {
+                                    $hargaBahan = $latestReal;
+                                } elseif ($hargaBahan >= 1000) {
+                                    $hargaBahan = round($hargaBahan / 100, 4);
+                                }
+                            }
                         }
                     }
 
@@ -953,7 +974,7 @@ class FifoService
         if (!$barang) return 0.0;
 
         // Jika barang merupakan Bahan Setengah Jadi atau memiliki formulasi resep, utamakan kalkulasi HPP Resep BSJ
-        if ($barang->is_bahan_setengah_jadi || $barang->hasResep()) {
+        if ($barang->is_bahan_setengah_jadi || ($barang->is_barang_jadi && $barang->hasResep())) {
             $newHpp = $this->getHppResepBsj($barangId);
         } else {
             $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
