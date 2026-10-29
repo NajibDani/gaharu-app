@@ -365,8 +365,11 @@ class PenjualanPosController extends Controller
 
             // Auto-heal: Jika transaksi lama memiliki hpp_satuan yang membengkak tidak wajar akibat bug resep lama (> 1.5x dari resep kalkulasi riil), sinkronkan otomatis
             if ($hasResep && $totalHppProduk > 0 && floatval($d->hpp_satuan) > ($totalHppProduk * 1.5)) {
-                $d->update(['hpp_satuan' => round($totalHppProduk, 2)]);
-                $d->hpp_satuan = round($totalHppProduk, 2);
+                $healedHpp = round($totalHppProduk, 2);
+                \Illuminate\Support\Facades\DB::table('penjualanpos_detail')
+                    ->where('id', $d->id)
+                    ->update(['hpp_satuan' => $healedHpp]);
+                $d->hpp_satuan = $healedHpp;
             }
         }
 
