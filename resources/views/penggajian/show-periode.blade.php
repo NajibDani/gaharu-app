@@ -2001,6 +2001,17 @@
                                             </div>
                                         @endif
 
+                                        @if(!$isPaid)
+                                            <button type="button"
+                                                    onclick="confirmHapusKaryawanDariPeriode({{ $payroll->karyawan_id }}, '{{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }}', this)"
+                                                    class="text-rose-500 hover:text-white hover:bg-rose-600 px-2 py-1 rounded-lg text-xs font-bold transition-colors border border-rose-200 hover:border-rose-600 cursor-pointer flex items-center justify-center shadow-xs"
+                                                    title="Hapus Karyawan (Sudah Keluar) dari Periode Ini">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                                </svg>
+                                            </button>
+                                        @endif
+
                                         {{-- KEBAB DROPDOWN --}}
                                         <div class="relative kebab-wrapper" style="position:relative;">
                                             <button onclick="toggleKebab(this)"
@@ -2134,6 +2145,13 @@
                                                             </form>
                                                         @endif
                                                     @endif
+
+                                                    <div class="border-t border-slate-100 my-1"></div>
+                                                    <button type="button"
+                                                            onclick="confirmHapusKaryawanDariPeriode({{ $payroll->karyawan_id }}, '{{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }}', this)"
+                                                            class="w-full flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer text-left">
+                                                        <span>🗑️</span> Hapus Karyawan (Keluar)
+                                                    </button>
                                                 @endif
                                             </div>
                                         </div>
@@ -4344,5 +4362,166 @@
             }
         }
 
-</script>
+    </script>
+
+    <!-- MODAL KONFIRMASI HAPUS KARYAWAN DARI PERIODE -->
+    <div id="modalConfirmHapusKaryawan" class="fixed inset-0 z-50 overflow-y-auto hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity bg-slate-900/60 backdrop-blur-xs" onclick="closeModalConfirmHapusKaryawan()"></div>
+
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <div class="inline-block px-5 pt-5 pb-5 overflow-hidden text-left align-bottom transition-all transform bg-white rounded-2xl shadow-2xl sm:my-8 sm:align-middle sm:max-w-md sm:w-full border border-slate-200">
+                <div class="sm:flex sm:items-start">
+                    <div class="flex items-center justify-center flex-shrink-0 w-12 h-12 mx-auto bg-rose-100 rounded-full sm:mx-0 sm:h-10 sm:w-10 text-rose-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </div>
+                    <div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left flex-1">
+                        <h3 class="text-base font-bold text-slate-800" id="modal-title">
+                            Hapus Karyawan dari Perhitungan Gaji?
+                        </h3>
+                        <div class="mt-2 text-xs text-slate-600 leading-relaxed">
+                            Apakah Anda yakin ingin menghapus <strong class="text-slate-900" id="hapusKaryawanNama">Nama Karyawan</strong> dari perhitungan gaji periode <strong class="text-slate-900">{{ \Carbon\Carbon::parse($periode.'-01')->translatedFormat('F Y') }}</strong>?
+                        </div>
+                        <div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11.5px] text-amber-800 leading-relaxed">
+                            <div class="font-bold mb-1 flex items-center gap-1.5 text-amber-900">
+                                <span>ℹ️</span> Karyawan Keluar (Soft Delete):
+                            </div>
+                            Kontrak karyawan akan diselesaikan per akhir bulan lalu sehingga otomatis <strong>tidak ikut dalam perhitungan gaji periode ini dan periode berikutnya</strong>. Seluruh riwayat slip gaji periode sebelumnya tetap tersimpan utuh dan aman.
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-2">
+                    <button type="button"
+                            id="btnExecHapusKaryawan"
+                            onclick="executeHapusKaryawanDariPeriode()"
+                            class="w-full sm:w-auto inline-flex justify-center items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-sm transition-colors cursor-pointer">
+                        <span>🗑️</span> Ya, Hapus Karyawan
+                    </button>
+                    <button type="button"
+                            onclick="closeModalConfirmHapusKaryawan()"
+                            class="mt-2 sm:mt-0 w-full sm:w-auto inline-flex justify-center px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer">
+                        Batal
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let targetHapusKaryawanId = null;
+        let targetHapusRowEl = null;
+
+        function confirmHapusKaryawanDariPeriode(karyawanId, namaKaryawan, btnEl) {
+            targetHapusKaryawanId = karyawanId;
+            targetHapusRowEl = btnEl ? btnEl.closest('.payroll-row') : null;
+            
+            const nameEl = document.getElementById('hapusKaryawanNama');
+            if (nameEl) nameEl.textContent = namaKaryawan;
+            
+            const modalEl = document.getElementById('modalConfirmHapusKaryawan');
+            if (modalEl) modalEl.classList.remove('hidden');
+        }
+
+        function closeModalConfirmHapusKaryawan() {
+            const modalEl = document.getElementById('modalConfirmHapusKaryawan');
+            if (modalEl) modalEl.classList.add('hidden');
+            targetHapusKaryawanId = null;
+            targetHapusRowEl = null;
+        }
+
+        function executeHapusKaryawanDariPeriode() {
+            if (!targetHapusKaryawanId) return;
+
+            const btnExec = document.getElementById('btnExecHapusKaryawan');
+            const origHtml = btnExec.innerHTML;
+            btnExec.disabled = true;
+            btnExec.innerHTML = '<span class="inline-block animate-spin mr-1">⌛</span> Menghapus...';
+
+            fetch('{{ route('penggajian.hapus-karyawan-periode') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    karyawan_id: targetHapusKaryawanId,
+                    periode: '{{ $periode }}',
+                    outlet: '{{ $selectedOutlet }}'
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                btnExec.disabled = false;
+                btnExec.innerHTML = origHtml;
+
+                if (data.success) {
+                    closeModalConfirmHapusKaryawan();
+
+                    // 1. Hapus baris dari tabel dengan animasi fade out
+                    if (targetHapusRowEl) {
+                        targetHapusRowEl.style.transition = 'all 0.3s ease';
+                        targetHapusRowEl.style.opacity = '0';
+                        targetHapusRowEl.style.transform = 'scale(0.95)';
+                        setTimeout(() => {
+                            targetHapusRowEl.remove();
+
+                            // 2. Hitung ulang nomor urut baris
+                            const tbody = document.getElementById('tbodyKaryawan');
+                            if (tbody) {
+                                const rows = tbody.querySelectorAll('.payroll-row');
+                                rows.forEach((row, idx) => {
+                                    const idxSpan = row.querySelector('.row-index');
+                                    if (idxSpan) idxSpan.textContent = idx + 1;
+                                });
+
+                                if (rows.length === 0) {
+                                    tbody.innerHTML = `
+                                        <tr>
+                                            <td colspan="20" class="px-6 py-16 text-center">
+                                                <div class="text-3xl mb-2">&#128203;</div>
+                                                <div class="font-bold text-slate-700 text-xs">Belum ada data karyawan</div>
+                                                <div class="text-[11px] text-slate-500 mt-1 font-medium">Semua karyawan telah diproses atau belum terdaftar pada periode ini.</div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }
+                            }
+
+                            // 3. Hitung ulang total gaji di header card secara otomatis
+                            if (typeof recalculateAllHeaderTotals === 'function') {
+                                recalculateAllHeaderTotals();
+                            }
+                        }, 300);
+                    } else {
+                        window.location.reload();
+                    }
+
+                    // Notifikasi sukses
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil Dihapus',
+                            text: data.message,
+                            timer: 2500,
+                            showConfirmButton: false
+                        });
+                    } else {
+                        alert(data.message);
+                    }
+                } else {
+                    alert(data.message || 'Gagal menghapus karyawan dari periode ini.');
+                }
+            })
+            .catch(err => {
+                btnExec.disabled = false;
+                btnExec.innerHTML = origHtml;
+                console.error(err);
+                alert('Terjadi kesalahan jaringan atau server saat menghapus karyawan.');
+            });
+        }
+    </script>
 </x-app-layout>

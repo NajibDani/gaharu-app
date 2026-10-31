@@ -360,7 +360,11 @@ class PenggajianController extends Controller
                       $kq->where('outlet', $selectedOutlet);
                   });
             })
-            ->get();
+            ->get()
+            ->filter(function ($p) use ($periode) {
+                if ($p->status_jurnal) return true;
+                return $p->karyawan && $p->karyawan->isContractActiveInPeriod($periode);
+            })->values();
 
         // Bersihkan duplikat otomatis di database & bersihkan slip draft periode 2 jika di master data periode 2 gajinya 0/null
         $groupedByKaryawan = $rawPayrolls->groupBy('karyawan_id');
@@ -625,10 +629,13 @@ class PenggajianController extends Controller
         }
 
         $payrollCounts = $rawPayrolls->groupBy('karyawan_id')->map->count();
-        $allKaryawans = Karyawan::where('outlet', $selectedOutlet)->get()->map(function($k) use ($payrollCounts) {
-            $k->payroll_count = $payrollCounts[$k->id] ?? 0;
-            return $k;
-        });
+        $allKaryawans = Karyawan::where('outlet', $selectedOutlet)->get()
+            ->filter(fn($k) => $k->isContractActiveInPeriod($periode))
+            ->values()
+            ->map(function($k) use ($payrollCounts) {
+                $k->payroll_count = $payrollCounts[$k->id] ?? 0;
+                return $k;
+            });
         $availableKaryawans = $allKaryawans;
         $periodes = $this->getAvailablePeriodes($selectedOutlet, $periode);
 
@@ -814,7 +821,9 @@ class PenggajianController extends Controller
 
         $karyawans = Karyawan::where('outlet', $selectedOutlet)
             ->whereNotIn('id', $alreadyPaidIds)
-            ->get();
+            ->get()
+            ->filter(fn($k) => $k->isContractActiveInPeriod($periode))
+            ->values();
 
         if ($karyawans->isEmpty()) {
             return back()->with('info', "Semua karyawan aktif outlet {$selectedOutlet} sudah terdaftar pada periode ini.");
@@ -2014,5 +2023,62 @@ class PenggajianController extends Controller
 
         return redirect()->route('penggajian.periode', ['periode' => $periode, 'outlet' => $outlet])
             ->with('success', "Seluruh waktu kerja ({$updatedCount} karyawan) berhasil disimpan secara bersamaan.");
+    }
+
+    /**
+     * Hapus karyawan pada halaman Hitung Gaji (untuk karyawan yang sudah keluar)
+     * Menggunakan soft delete (menyesuaikan tanggal_selesai kontrak ke akhir bulan sebelum periode ini)
+     * sehingga karyawan otomatis tidak ikut dalam perhitungan periode ini dan periode berikutnya,
+     * namun riwayat gaji periode sebelumnya tetap utuh.
+     */
+    public function hapusKaryawanPeriode(Request $request)
+    {
+        $request->validate([
+            'karyawan_id' => 'required|exists:karyawan,id',
+            'periode'     => 'required|string',
+        ]);
+
+        $karyawanId = (int)$request->karyawan_id;
+        $periode = trim((string)$request->periode);
+        $karyawan = Karyawan::findOrFail($karyawanId);
+
+        // Periksa apakah slip gaji karyawan pada periode ini sudah dibuatkan jurnal / dibayar
+        $hasPaidSlip = Penggajian::where('karyawan_id', $karyawan->id)
+            ->where('periode_bulan_tahun', $periode)
+            ->where('status_jurnal', true)
+            ->exists();
+
+        if ($hasPaidSlip) {
+            return response()->json([
+                'success' => false,
+                'message' => "Gaji {$karyawan->nama_karyawan} pada periode {$periode} sudah dibuatkan Jurnal Kas Keluar / ditransfer, sehingga tidak dapat dihapus."
+            ], 422);
+        }
+
+        // 1. Hapus slip penggajian periode ini yang belum dijurnal
+        Penggajian::where('karyawan_id', $karyawan->id)
+            ->where('periode_bulan_tahun', $periode)
+            ->where('status_jurnal', false)
+            ->delete();
+
+        // 2. Soft-delete: catat tanggal keluar / selesai kontrak karyawan ke akhir bulan sebelum periode ini
+        // Asumsi periode gaji sama dengan periode kontrak kerja, sehingga tidak muncul lagi di periode ini & mendatang,
+        // sedangkan riwayat penggajian periode sebelumnya tetap utuh.
+        try {
+            $prevMonthEnd = \Carbon\Carbon::parse($periode . '-01')->subDay()->format('Y-m-d');
+        } catch (\Throwable $e) {
+            $prevMonthEnd = date('Y-m-d');
+        }
+
+        $updateData = ['tanggal_selesai' => $prevMonthEnd];
+        if ($karyawan->tanggal_mulai_2 || $karyawan->gaji_pokok_2 !== null) {
+            $updateData['tanggal_selesai_2'] = $prevMonthEnd;
+        }
+        $karyawan->update($updateData);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Karyawan {$karyawan->nama_karyawan} berhasil dihapus dari perhitungan gaji periode {$periode} dan ditandai keluar per " . \Carbon\Carbon::parse($prevMonthEnd)->translatedFormat('d F Y') . "."
+        ]);
     }
 }

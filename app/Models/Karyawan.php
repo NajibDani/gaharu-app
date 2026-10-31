@@ -221,4 +221,53 @@ class Karyawan extends Model
     {
         return $this->hasMany(Keterlambatan::class, 'karyawan_id', 'id');
     }
+
+    /**
+     * Periksa apakah masa kontrak karyawan mencakup periode penggajian tertentu (YYYY-MM).
+     * Asumsi: periode gaji sama dengan periode masa kontrak kerja karyawan.
+     * Karyawan yang masa kontraknya sudah melewati periode gaji tidak ditampilkan lagi,
+     * dan karyawan hanya muncul jika periode gaji berada dalam rentang tanggal mulai dan akhir kontraknya.
+     */
+    public function isContractActiveInPeriod(string $periode): bool
+    {
+        try {
+            $periodeStart = \Carbon\Carbon::parse($periode . '-01')->startOfMonth()->format('Y-m-d');
+            $periodeEnd   = \Carbon\Carbon::parse($periode . '-01')->endOfMonth()->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return true;
+        }
+
+        // Cek Periode 1
+        $p1M = $this->tanggal_mulai ? \Carbon\Carbon::parse($this->tanggal_mulai)->format('Y-m-d') : null;
+        $p1S = $this->tanggal_selesai ? \Carbon\Carbon::parse($this->tanggal_selesai)->format('Y-m-d') : null;
+
+        $p1Active = true;
+        if ($p1M && $p1M > $periodeEnd) {
+            $p1Active = false; // Kontrak baru mulai setelah periode ini
+        }
+        if ($p1S && $p1S < $periodeStart) {
+            $p1Active = false; // Kontrak sudah berakhir sebelum periode ini dimulai
+        }
+
+        // Cek Periode 2 jika ada master P2
+        $p2Total = floatval($this->gaji_pokok_2 ?? 0) + floatval($this->uang_makan_2 ?? 0) + floatval($this->uang_transport_2 ?? 0);
+        $hasP2 = ($this->gaji_pokok_2 !== null && $p2Total > 0);
+
+        if ($hasP2) {
+            $p2M = $this->tanggal_mulai_2 ? \Carbon\Carbon::parse($this->tanggal_mulai_2)->format('Y-m-d') : null;
+            $p2S = $this->tanggal_selesai_2 ? \Carbon\Carbon::parse($this->tanggal_selesai_2)->format('Y-m-d') : null;
+
+            $p2Active = true;
+            if ($p2M && $p2M > $periodeEnd) {
+                $p2Active = false;
+            }
+            if ($p2S && $p2S < $periodeStart) {
+                $p2Active = false;
+            }
+
+            return $p1Active || $p2Active;
+        }
+
+        return $p1Active;
+    }
 }
