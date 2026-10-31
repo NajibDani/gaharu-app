@@ -92,6 +92,8 @@
             justify-content: center;
             transition: all 0.15s ease-in-out;
             user-select: none;
+            touch-action: none !important;
+            -webkit-touch-callout: none !important;
         }
         .grip-handle:hover {
             color: #0f172a !important; /* slate-900 */

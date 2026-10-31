@@ -4348,47 +4348,343 @@
                 });
             }
 
+            // =========================================================================
+            // AUTO-SCROLL ENGINE UNTUK DRAG & DROP URUTAN KARYAWAN
+            // =========================================================================
+            const scrollContainer = document.getElementById('payrollTableScrollContainer');
+            const table = document.getElementById('tableKaryawan');
+            const thead = table ? table.querySelector('thead') : null;
+
+            let isDragging = false;
+            let currentDraggedRow = null;
+            let lastPointerX = null;
+            let lastPointerY = null;
+            let autoScrollRafId = null;
+            let lastScrollTimestamp = null;
+            let activeScrollSpeedY = 0;
+            let activeScrollTarget = null; // 'container' | 'window'
+
+            const SCROLL_THRESHOLD = 75; // Jarak 60-80 px dari tepi batas scroll
+            const MIN_SPEED = 2.5;       // Kecepatan awal yang halus (px/frame)
+            const MAX_SPEED = 28.0;      // Kecepatan maksimal di tepi terluar (px/frame)
+
+            function updateAutoScrollSpeed(pointerX, pointerY) {
+                lastPointerX = pointerX;
+                lastPointerY = pointerY;
+
+                if (!isDragging || pointerY === null || pointerY === undefined) {
+                    activeScrollSpeedY = 0;
+                    activeScrollTarget = null;
+                    return;
+                }
+
+                const winH = window.innerHeight;
+                const containerRect = scrollContainer ? scrollContainer.getBoundingClientRect() : null;
+                const theadH = thead ? thead.offsetHeight : 68;
+
+                let speedY = 0;
+                let target = null;
+
+                // 1. Cek scroll pada container tabel (#payrollTableScrollContainer)
+                if (containerRect && scrollContainer) {
+                    const canScrollUp = scrollContainer.scrollTop > 0;
+                    const canScrollDown = scrollContainer.scrollTop < (scrollContainer.scrollHeight - scrollContainer.clientHeight - 1);
+
+                    // Batas atas area baris tabel yang terlihat (tepat di bawah sticky header)
+                    const topThresholdEdge = containerRect.top + theadH;
+                    // Batas bawah area tabel
+                    const bottomThresholdEdge = containerRect.bottom;
+
+                    // Pastikan kursor berada dalam area horizontal tabel (dengan toleransi 60px kiri-kanan)
+                    const isWithinHoriz = (pointerX >= containerRect.left - 60 && pointerX <= containerRect.right + 60);
+
+                    if (isWithinHoriz) {
+                        // Mendekati tepi atas (sticky header / atas container)
+                        if (pointerY <= topThresholdEdge + SCROLL_THRESHOLD && pointerY >= containerRect.top - 40) {
+                            if (canScrollUp) {
+                                const dist = Math.max(0, pointerY - topThresholdEdge);
+                                const ratio = Math.max(0, Math.min(1, (SCROLL_THRESHOLD - dist) / SCROLL_THRESHOLD));
+                                speedY = -(MIN_SPEED + Math.pow(ratio, 1.8) * (MAX_SPEED - MIN_SPEED));
+                                target = 'container';
+                            }
+                        }
+                        // Mendekati tepi bawah container tabel
+                        else if (pointerY >= bottomThresholdEdge - SCROLL_THRESHOLD && pointerY <= bottomThresholdEdge + 50) {
+                            if (canScrollDown) {
+                                const dist = Math.max(0, bottomThresholdEdge - pointerY);
+                                const ratio = Math.max(0, Math.min(1, (SCROLL_THRESHOLD - dist) / SCROLL_THRESHOLD));
+                                speedY = +(MIN_SPEED + Math.pow(ratio, 1.8) * (MAX_SPEED - MIN_SPEED));
+                                target = 'container';
+                            }
+                        }
+                    }
+                }
+
+                // 2. Jika container tabel tidak perlu scroll atau sudah mentok, cek scroll halaman utama (window)
+                // Catatan: Pada mode Maximize, body di-lock sehingga window scroll tidak diperlukan
+                const isMaximized = document.body.classList.contains('payroll-maximized');
+                if (!isMaximized && speedY === 0) {
+                    const docEl = document.documentElement;
+                    const canWindowScrollUp = window.scrollY > 0;
+                    const canWindowScrollDown = (window.innerHeight + window.scrollY) < (docEl.scrollHeight - 2);
+
+                    if (pointerY <= SCROLL_THRESHOLD && canWindowScrollUp) {
+                        const dist = Math.max(0, pointerY);
+                        const ratio = Math.max(0, Math.min(1, (SCROLL_THRESHOLD - dist) / SCROLL_THRESHOLD));
+                        speedY = -(MIN_SPEED + Math.pow(ratio, 1.8) * (MAX_SPEED - MIN_SPEED));
+                        target = 'window';
+                    } else if (pointerY >= winH - SCROLL_THRESHOLD && canWindowScrollDown) {
+                        const dist = Math.max(0, winH - pointerY);
+                        const ratio = Math.max(0, Math.min(1, (SCROLL_THRESHOLD - dist) / SCROLL_THRESHOLD));
+                        speedY = +(MIN_SPEED + Math.pow(ratio, 1.8) * (MAX_SPEED - MIN_SPEED));
+                        target = 'window';
+                    }
+                }
+
+                activeScrollSpeedY = speedY;
+                activeScrollTarget = target;
+
+                if (activeScrollSpeedY !== 0 && !autoScrollRafId) {
+                    lastScrollTimestamp = performance.now();
+                    autoScrollRafId = requestAnimationFrame(autoScrollLoop);
+                }
+            }
+
+            function autoScrollLoop(timestamp) {
+                if (!isDragging || activeScrollSpeedY === 0) {
+                    autoScrollRafId = null;
+                    return;
+                }
+
+                // Delta time normalizer (halus di display 60Hz, 120Hz ProMotion Mac, maupun 144Hz)
+                const dt = lastScrollTimestamp ? Math.min(32, timestamp - lastScrollTimestamp) : 16;
+                lastScrollTimestamp = timestamp;
+                const frameRatio = dt / 16.667;
+                const scrollStep = activeScrollSpeedY * frameRatio;
+
+                if (activeScrollTarget === 'container' && scrollContainer) {
+                    scrollContainer.scrollTop += scrollStep;
+                } else if (activeScrollTarget === 'window') {
+                    window.scrollBy(0, scrollStep);
+                }
+
+                // SINKRONISASI INDIKATOR DROP POSISI:
+                // Saat scroll bergerak sementara kursor diam, baris di bawah kursor berganti.
+                // Fungsi ini memperbarui posisi ghost / drop target seketika secara real-time.
+                updateDropIndicator();
+
+                // Lanjutkan loop selama user masih melakukan drag dan berada di zona auto-scroll
+                if (isDragging) {
+                    updateAutoScrollSpeed(lastPointerX, lastPointerY);
+                    if (activeScrollSpeedY !== 0) {
+                        autoScrollRafId = requestAnimationFrame(autoScrollLoop);
+                    } else {
+                        autoScrollRafId = null;
+                    }
+                } else {
+                    autoScrollRafId = null;
+                }
+            }
+
+            function updateDropIndicator() {
+                if (lastPointerX === null || lastPointerY === null || !tbody) return;
+
+                const ghost = tbody.querySelector('.sortable-ghost') || currentDraggedRow;
+                let prevGhostPE = '';
+                if (ghost) {
+                    prevGhostPE = ghost.style.pointerEvents;
+                    ghost.style.pointerEvents = 'none';
+                }
+
+                const hitElement = document.elementFromPoint(lastPointerX, lastPointerY);
+
+                if (ghost) {
+                    ghost.style.pointerEvents = prevGhostPE;
+                }
+
+                if (!hitElement) return;
+
+                // 1. Dispatch mousemove & dragover agar listener SortableJS re-evaluasi target row
+                const mouseEvt = new MouseEvent('mousemove', {
+                    clientX: lastPointerX,
+                    clientY: lastPointerY,
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                });
+                hitElement.dispatchEvent(mouseEvt);
+
+                try {
+                    const dragEvt = new DragEvent('dragover', {
+                        clientX: lastPointerX,
+                        clientY: lastPointerY,
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    });
+                    hitElement.dispatchEvent(dragEvt);
+                } catch (_) {}
+
+                // 2. Direct DOM positioning sync: Pastikan ghost ditaruh tepat di atas/bawah baris target
+                const targetRow = hitElement.closest('.payroll-row');
+                if (targetRow && targetRow.parentNode === tbody && ghost && targetRow !== ghost) {
+                    const r = targetRow.getBoundingClientRect();
+                    const isBelow = (lastPointerY - r.top) > (r.height / 2);
+                    tbody.insertBefore(ghost, isBelow ? targetRow.nextSibling : targetRow);
+                    updateRowIndexes();
+                }
+            }
+
+            function stopAutoScroll() {
+                isDragging = false;
+                activeScrollSpeedY = 0;
+                activeScrollTarget = null;
+                currentDraggedRow = null;
+                lastPointerX = null;
+                lastPointerY = null;
+                if (autoScrollRafId) {
+                    cancelAnimationFrame(autoScrollRafId);
+                    autoScrollRafId = null;
+                }
+            }
+
+            // Inisialisasi Drag & Drop dengan SortableJS
             if (tbody && typeof Sortable !== 'undefined') {
                 Sortable.create(tbody, {
                     handle: '.grip-handle',
                     animation: 180,
                     ghostClass: 'sortable-ghost',
                     chosenClass: 'sortable-chosen',
+                    scroll: false, // Gunakan auto-scroll engine kustom kita agar tidak konflik
+                    touchStartThreshold: 3,
+                    delay: 0,
+                    onStart: function (evt) {
+                        isDragging = true;
+                        currentDraggedRow = evt.item;
+                    },
+                    onMove: function (evt, originalEvent) {
+                        if (originalEvent) {
+                            const clientX = originalEvent.clientX ?? (originalEvent.touches && originalEvent.touches[0] ? originalEvent.touches[0].clientX : null);
+                            const clientY = originalEvent.clientY ?? (originalEvent.touches && originalEvent.touches[0] ? originalEvent.touches[0].clientY : null);
+                            if (clientY !== null && clientY !== undefined) {
+                                updateAutoScrollSpeed(clientX, clientY);
+                            }
+                        }
+                    },
                     onEnd: function () {
+                        stopAutoScroll();
                         updateRowIndexes();
                         saveOrder();
                     }
                 });
             } else if (tbody) {
-                // Native HTML5 Drag and Drop fallback
-                let draggedRow = null;
+                // Native HTML5 & Touch Drag and Drop Fallback
                 const rows = tbody.querySelectorAll('.payroll-row');
                 rows.forEach(row => {
                     const handle = row.querySelector('.grip-handle') || row;
                     handle.setAttribute('draggable', 'true');
+
                     handle.addEventListener('dragstart', (e) => {
-                        draggedRow = row;
+                        isDragging = true;
+                        currentDraggedRow = row;
                         e.dataTransfer.effectAllowed = 'move';
-                        row.classList.add('opacity-50');
+                        row.classList.add('opacity-50', 'sortable-chosen');
                     });
+
                     handle.addEventListener('dragend', () => {
-                        draggedRow = null;
-                        row.classList.remove('opacity-50');
+                        row.classList.remove('opacity-50', 'sortable-chosen');
+                        stopAutoScroll();
                         updateRowIndexes();
                         saveOrder();
                     });
+
+                    // Touch support for fallback
+                    handle.addEventListener('touchstart', (e) => {
+                        if (e.touches && e.touches[0]) {
+                            isDragging = true;
+                            currentDraggedRow = row;
+                            row.classList.add('opacity-50', 'sortable-chosen');
+                            updateAutoScrollSpeed(e.touches[0].clientX, e.touches[0].clientY);
+                        }
+                    }, { passive: true });
+
+                    handle.addEventListener('touchend', () => {
+                        row.classList.remove('opacity-50', 'sortable-chosen');
+                        stopAutoScroll();
+                        updateRowIndexes();
+                        saveOrder();
+                    });
+
                     row.addEventListener('dragover', (e) => {
                         e.preventDefault();
                         e.dataTransfer.dropEffect = 'move';
+                        updateAutoScrollSpeed(e.clientX, e.clientY);
                         const targetRow = e.target.closest('.payroll-row');
-                        if (targetRow && targetRow !== draggedRow) {
+                        if (targetRow && targetRow !== currentDraggedRow && targetRow.parentNode === tbody) {
                             const rect = targetRow.getBoundingClientRect();
                             const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
-                            tbody.insertBefore(draggedRow, next ? targetRow.nextSibling : targetRow);
+                            tbody.insertBefore(currentDraggedRow, next ? targetRow.nextSibling : targetRow);
+                            updateRowIndexes();
                         }
                     });
                 });
             }
+
+            // Global Pointer & Drag Listeners untuk menangkap koordinat saat kursor bergerak di luar area baris (misal di header / footer)
+            window.addEventListener('dragover', function (e) {
+                if (isDragging) {
+                    updateAutoScrollSpeed(e.clientX, e.clientY);
+                }
+            }, { passive: true });
+
+            window.addEventListener('dragend', function () {
+                if (isDragging) {
+                    stopAutoScroll();
+                    updateRowIndexes();
+                    saveOrder();
+                }
+            });
+
+            window.addEventListener('drop', function () {
+                if (isDragging) {
+                    stopAutoScroll();
+                }
+            });
+
+            // Touch screen move & end
+            window.addEventListener('touchmove', function (e) {
+                if (isDragging && e.touches && e.touches.length > 0) {
+                    updateAutoScrollSpeed(e.touches[0].clientX, e.touches[0].clientY);
+                    updateDropIndicator();
+                }
+            }, { passive: true });
+
+            window.addEventListener('touchend', function () {
+                if (isDragging) {
+                    stopAutoScroll();
+                    updateRowIndexes();
+                    saveOrder();
+                }
+            });
+
+            window.addEventListener('touchcancel', function () {
+                if (isDragging) {
+                    stopAutoScroll();
+                }
+            });
+
+            // Mouse / Pointer move & up
+            window.addEventListener('mousemove', function (e) {
+                if (isDragging) {
+                    updateAutoScrollSpeed(e.clientX, e.clientY);
+                }
+            }, { passive: true });
+
+            window.addEventListener('mouseup', function () {
+                if (isDragging) {
+                    stopAutoScroll();
+                }
+            });
         });
     
         // =========================================================================
