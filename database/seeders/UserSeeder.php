@@ -29,11 +29,22 @@ class UserSeeder extends Seeder
 
         $passwordPrivacy = Hash::make('admin16072023');
 
-        // 1. Superadmin
+        // 1. Superadmin Utama
         User::updateOrCreate(
             ['username' => 'superadmin'],
             [
                 'nama'      => 'Super Admin Utama',
+                'password'  => $passwordPrivacy,
+                'role_id'   => $idSuperAdmin,
+                'gudang_id' => null,
+            ]
+        );
+
+        // 1b. Super Admin 2 (Akses Semua Menu Tanpa Kecuali)
+        User::updateOrCreate(
+            ['username' => 'admin'],
+            [
+                'nama'      => 'Administrator',
                 'password'  => $passwordPrivacy,
                 'role_id'   => $idSuperAdmin,
                 'gudang_id' => null,

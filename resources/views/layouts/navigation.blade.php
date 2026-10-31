@@ -151,9 +151,9 @@
 
             {{-- ========================================================================= --}}
             {{-- ========================================================================= --}}
-            {{-- HRD & PERSONALIA (Eksklusif Khusus Akun Role HRD - Superadmin pun Tidak Bisa Akses) --}}
+            {{-- HRD & PERSONALIA (Dapat diakses oleh Role HRD dan Super Admin) --}}
             {{-- ========================================================================= --}}
-            @if($role === 'HRD')
+            @if($role === 'HRD' || $isSuperAdmin)
             <div class="menu-group {{ $hrdActive ? 'open' : '' }}">
                 <div class="menu-parent d-flex align-items-center justify-content-between toggle-accordion">
                     <div class="d-flex align-items-center">
