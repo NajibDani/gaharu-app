@@ -401,6 +401,38 @@ class PenggajianController extends Controller
             }
         }
 
+        // Penyesuaian khusus: Hafid Yuslim di periode 2026-10 terbayar semua di pertengahan periode
+        if ($periode === '2026-10') {
+            Penggajian::whereHas('karyawan', function($q) {
+                $q->where('nama_karyawan', 'like', '%Hafid Yuslim%');
+            })
+            ->where('periode_bulan_tahun', '2026-10')
+            ->where('tipe_pembayaran', '!=', 'tengah_bulan')
+            ->update(['tipe_pembayaran' => 'tengah_bulan']);
+
+            $hafidJournals = Penggajian::whereHas('karyawan', function($q) {
+                $q->where('nama_karyawan', 'like', '%Hafid Yuslim%');
+            })
+            ->where('periode_bulan_tahun', '2026-10')
+            ->with('journal')
+            ->get();
+
+            foreach ($hafidJournals as $hj) {
+                if ($hj->journal && str_contains(strtolower($hj->journal->deskripsi ?? ''), 'akhir')) {
+                    $hj->journal->update([
+                        'deskripsi' => str_ireplace('akhir bulan', 'tengah bulan', $hj->journal->deskripsi),
+                        'tanggal' => $hj->tanggal_selesai ? \Carbon\Carbon::parse($hj->tanggal_selesai)->toDateString() : '2026-10-15'
+                    ]);
+                }
+            }
+
+            foreach ($rawPayrolls as $rp) {
+                if ($rp->karyawan && str_contains(strtolower($rp->karyawan->nama_karyawan), 'hafid yuslim')) {
+                    $rp->tipe_pembayaran = 'tengah_bulan';
+                }
+            }
+        }
+
         // Otomatis sinkronkan komponen gaji master dan potongan keterlambatan untuk slip yang belum dijurnal
         foreach ($rawPayrolls as $payroll) {
             if (!$payroll->status_jurnal && $payroll->karyawan) {
@@ -1537,18 +1569,124 @@ class PenggajianController extends Controller
     }
 
     /**
-     * PROSES BAYAR GAJI KARYAWAN TUNGGAL (BAYAR + OTOMATIS BUAT JURNAL)
+     * PROSES BAYAR GAJI KARYAWAN TUNGGAL / SEMUA PERIODE KARYAWAN TERKAIT
      */
     public function bayarKaryawan(Request $request, $id): RedirectResponse
     {
-        $payroll = Penggajian::with('karyawan')->findOrFail($id);
-
-        if ($payroll->status_jurnal) {
-            return redirect()->back()->with('info', 'Slip gaji karyawan ini sudah dibayar dan dijurnal.');
-        }
+        $payroll = Penggajian::with(['karyawan', 'journal'])->findOrFail($id);
 
         $tipe = $request->input('tipe') ?? $request->query('tipe');
         $tipePembayaran = ($tipe === 'tengah_bulan' || $tipe === 'p1') ? 'tengah_bulan' : 'akhir_bulan';
+        $bayarSemuaPeriode = $request->boolean('semua_periode', false) || $request->input('target') === 'all_periods';
+        $ubahTipe = $request->boolean('ubah_tipe', false) || $request->input('action') === 'ubah_tipe';
+
+        // 1. OPSI UBAH TIPE PEMBAYARAN JIKA SUDAH TERBAYAR
+        if ($payroll->status_jurnal && $ubahTipe) {
+            $payrollsToUpdate = collect([$payroll]);
+            if ($bayarSemuaPeriode && $payroll->karyawan_id && $payroll->periode_bulan_tahun) {
+                $payrollsToUpdate = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+                    ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+                    ->get();
+            }
+
+            foreach ($payrollsToUpdate as $p) {
+                $p->update(['tipe_pembayaran' => $tipePembayaran]);
+                if ($p->journal) {
+                    $label = ($tipePembayaran === 'tengah_bulan') ? 'tengah bulan' : 'akhir bulan';
+                    $tanggalJurnal = ($tipePembayaran === 'tengah_bulan')
+                        ? ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-15')->toDateString())
+                        : ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-01')->endOfMonth()->toDateString());
+                    $p->journal->update([
+                        'tanggal' => $tanggalJurnal,
+                        'deskripsi' => "Pembayaran gaji {$label} karyawan " . ($p->karyawan->nama_karyawan ?? 'Karyawan')
+                    ]);
+                }
+            }
+
+            $label = ($tipePembayaran === 'tengah_bulan') ? 'Tengah Bulan' : 'Akhir Bulan';
+            return redirect()->back()->with('success', "Status pembayaran berhasil diubah menjadi {$label}.");
+        }
+
+        // 2. OPSI BAYAR SEMUA PERIODE SEKALIGUS (TENGAH SEMUA / AKHIR SEMUA)
+        if ($bayarSemuaPeriode && $payroll->karyawan_id && $payroll->periode_bulan_tahun) {
+            $unpaidList = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+                ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+                ->where('status_jurnal', false)
+                ->get();
+
+            if ($unpaidList->isEmpty()) {
+                return redirect()->back()->with('info', 'Seluruh periode gaji karyawan ini sudah dibayar.');
+            }
+
+            $akunBebanGaji = \App\Models\ChartOfAccount::where('kode', '6101')->first()
+                ?? \App\Models\ChartOfAccount::where('kode', '6100')->first()
+                ?? \App\Models\ChartOfAccount::where('nama', 'like', '%Beban Gaji%')->first();
+
+            $akunKas = \App\Models\ChartOfAccount::where('kode', '1101')->first()
+                ?? \App\Models\ChartOfAccount::where('kode', '1100')->first()
+                ?? \App\Models\ChartOfAccount::where('nama', 'like', '%Kas di Bank%')->first();
+
+            if (!$akunBebanGaji || !$akunKas) {
+                return redirect()->back()->with('error', 'Gagal memposting. Akun Beban Gaji atau Kas tidak ditemukan di Chart of Accounts.');
+            }
+
+            $totalDibayar = 0;
+            DB::transaction(function () use ($unpaidList, $tipePembayaran, $akunBebanGaji, $akunKas, &$totalDibayar) {
+                foreach ($unpaidList as $p) {
+                    $labelTipe = ($tipePembayaran === 'tengah_bulan') ? "tengah bulan" : "akhir bulan";
+                    $tanggalJurnal = ($tipePembayaran === 'tengah_bulan')
+                        ? ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-15')->toDateString())
+                        : ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-01')->endOfMonth()->toDateString());
+                    $namaKaryawan = $p->karyawan->nama_karyawan ?? 'Karyawan';
+                    $rentangKet = ($p->tanggal_mulai && $p->tanggal_selesai)
+                        ? " (" . \Carbon\Carbon::parse($p->tanggal_mulai)->format('d/m/Y') . " - " . \Carbon\Carbon::parse($p->tanggal_selesai)->format('d/m/Y') . ")"
+                        : " (Periode " . ($p->pilihan_periode ?? 1) . ")";
+
+                    $journal = Journal::create([
+                        'tanggal'     => $tanggalJurnal,
+                        'deskripsi'   => "Pembayaran gaji {$labelTipe} karyawan {$namaKaryawan}{$rentangKet}",
+                        'no_ref'      => 'PY-' . $p->id . '-' . rand(100, 999),
+                        'source_type' => 'jurnal_umum',
+                        'source_id'   => $p->id,
+                        'created_by'  => auth()->id() ?? 1,
+                        'status'      => 'approved',
+                    ]);
+
+                    JournalItem::create([
+                        'journal_id'   => $journal->id,
+                        'account_id'   => $akunBebanGaji->id,
+                        'debit'        => $p->total_gaji_bersih,
+                        'kredit'       => 0,
+                        'journal_type' => 'jurnal_umum',
+                    ]);
+
+                    JournalItem::create([
+                        'journal_id'   => $journal->id,
+                        'account_id'   => $akunKas->id,
+                        'debit'        => 0,
+                        'kredit'       => $p->total_gaji_bersih,
+                        'journal_type' => 'jurnal_umum',
+                    ]);
+
+                    $p->update([
+                        'status'          => 'approved',
+                        'status_jurnal'   => true,
+                        'journal_id'      => $journal->id,
+                        'tipe_pembayaran' => $tipePembayaran,
+                    ]);
+
+                    $totalDibayar += $p->total_gaji_bersih;
+                }
+            });
+
+            $label = ($tipePembayaran === 'tengah_bulan') ? 'Tengah Bulan' : 'Akhir Bulan';
+            return redirect()->back()->with('success', "Seluruh periode gaji ({$label}) atas nama {$payroll->karyawan->nama_karyawan} (Total Rp " . number_format($totalDibayar, 0, ',', '.') . ") berhasil dibayar & dijurnal!");
+        }
+
+        // 3. OPSI SINGLE SLIP
+        if ($payroll->status_jurnal) {
+            return redirect()->back()->with('info', 'Slip gaji karyawan ini sudah dibayar dan dijurnal.');
+        }
 
         $akunBebanGaji = \App\Models\ChartOfAccount::where('kode', '6101')->first()
             ?? \App\Models\ChartOfAccount::where('kode', '6100')->first()
@@ -1618,6 +1756,41 @@ class PenggajianController extends Controller
     }
 
     /**
+     * UBAH TIPE PEMBAYARAN GAJI (TENGAH BULAN / AKHIR BULAN)
+     */
+    public function ubahTipePembayaran(Request $request, $id): RedirectResponse
+    {
+        $payroll = Penggajian::with(['karyawan', 'journal'])->findOrFail($id);
+        $tipe = $request->input('tipe') === 'tengah_bulan' ? 'tengah_bulan' : 'akhir_bulan';
+        $target = $request->input('target', 'single'); // 'single' or 'all_periods'
+
+        $payrollsToUpdate = collect([$payroll]);
+        if ($target === 'all_periods' && $payroll->karyawan_id && $payroll->periode_bulan_tahun) {
+            $payrollsToUpdate = Penggajian::where('karyawan_id', $payroll->karyawan_id)
+                ->where('periode_bulan_tahun', $payroll->periode_bulan_tahun)
+                ->get();
+        }
+
+        foreach ($payrollsToUpdate as $p) {
+            $p->update(['tipe_pembayaran' => $tipe]);
+            if ($p->journal) {
+                $label = ($tipe === 'tengah_bulan') ? 'tengah bulan' : 'akhir bulan';
+                $tgl = ($tipe === 'tengah_bulan')
+                    ? ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-15')->toDateString())
+                    : ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-01')->endOfMonth()->toDateString());
+
+                $p->journal->update([
+                    'tanggal' => $tgl,
+                    'deskripsi' => "Pembayaran gaji {$label} karyawan " . ($p->karyawan->nama_karyawan ?? 'Karyawan')
+                ]);
+            }
+        }
+
+        $label = ($tipe === 'tengah_bulan') ? 'Tengah Bulan' : 'Akhir Bulan';
+        return redirect()->back()->with('success', "Status pembayaran berhasil diubah menjadi {$label}.");
+    }
+
+    /**
      * PROSES BAYAR SEMUA KARYAWAN DALAM PERIODE TERSEBUT (MASSAL)
      */
     public function bayarSemuaPeriode(Request $request, $periode): RedirectResponse
@@ -1638,19 +1811,24 @@ class PenggajianController extends Controller
         $allPayrolls = $query->get();
 
         if ($tipe === 'tengah_bulan' || $tipe === 'p1') {
-            // Filter hanya slip P1 untuk karyawan yang memiliki 2 periode
+            // Filter slip yang diset tengah_bulan ATAU slip P1 untuk karyawan 2 periode yang belum diset
             $payrolls = $allPayrolls->filter(function($p) {
+                if ($p->tipe_pembayaran === 'tengah_bulan') return true;
+                if ($p->tipe_pembayaran === 'akhir_bulan') return false;
+
                 $kw = $p->karyawan;
                 if (!$kw) return false;
                 $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
                 $hasP2 = ($kw->gaji_pokok_2 !== null && $p2Total > 0);
                 return (int)($p->pilihan_periode ?? 1) === 1 && $hasP2;
             });
-            $tipeLabel = "Gaji Tengah Bulan (P1)";
+            $tipeLabel = "Gaji Tengah Bulan";
             $setTipe = 'tengah_bulan';
         } elseif ($tipe === 'akhir_bulan' || $tipe === 'p2') {
-            // Filter slip P2 untuk karyawan 2 periode ATAU slip karyawan single period / bulanan
+            // Filter slip P2 untuk karyawan 2 periode ATAU slip karyawan single period / bulanan (kecuali yang sengaja diset tengah_bulan)
             $payrolls = $allPayrolls->filter(function($p) {
+                if ($p->tipe_pembayaran === 'tengah_bulan') return false;
+
                 $kw = $p->karyawan;
                 if (!$kw) return true;
                 $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
@@ -1661,7 +1839,7 @@ class PenggajianController extends Controller
                     return true;
                 }
             });
-            $tipeLabel = "Gaji Akhir Bulan (P2 & Bulanan)";
+            $tipeLabel = "Gaji Akhir Bulan";
             $setTipe = 'akhir_bulan';
         } else {
             $payrolls = $allPayrolls;
