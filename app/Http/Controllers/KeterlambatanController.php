@@ -58,6 +58,20 @@ class KeterlambatanController extends Controller
             ->orderBy('tanggal', 'asc')
             ->get();
 
+        // Self-heal data lama yang potongannya masih dibatasi gaji pokok lama, bukan tarif harian total
+        foreach ($listKeterlambatan as $item) {
+            if ($item->karyawan && $item->jam_shift && $item->jam_datang) {
+                $kalkulasi = Keterlambatan::hitungPotongan($item->jam_shift, $item->jam_datang);
+                $gajiHarian = $item->karyawan->getGajiHarianForDate($item->tanggal);
+                $potonganSeharusnya = min((float)$kalkulasi['potongan'], (float)$gajiHarian);
+                if ($potonganSeharusnya > 0 && abs((float)$item->potongan - $potonganSeharusnya) > 0.01) {
+                    $item->update(['potongan' => $potonganSeharusnya]);
+                    $item->potongan = $potonganSeharusnya;
+                    $this->syncKePenggajian($item->karyawan_id, $item->tanggal);
+                }
+            }
+        }
+
         // Hitung Akumulasi Potongan Per Karyawan & Per Periode Gaji Spesifik
         $akumulasiPerKaryawanPeriode = [];
         $lastRowPerKaryawanPeriode   = [];

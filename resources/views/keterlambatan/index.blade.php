@@ -82,7 +82,7 @@
                 <h6 class="fw-bold mb-0 text-dark">
                     <i class="bi bi-shield-exclamation text-warning me-1"></i> Ketentuan Skala Potongan Keterlambatan
                 </h6>
-                <small class="text-muted">Skala kelipatan Rp 10.000 per 10 menit keterlambatan</small>
+                <small class="text-muted">Skala kelipatan Rp 10.000 per 10 menit keterlambatan (Maksimum potongan adalah gaji/hari)</small>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -294,6 +294,9 @@
                             <div class="d-flex justify-content-between align-items-center">
                                 <span class="small text-muted fw-bold">Potongan Denda:</span>
                                 <strong class="text-danger fs-6" id="previewPotongan">Rp 0</strong>
+                            </div>
+                            <div class="mt-1 text-end text-muted" style="font-size: 11px;">
+                                * Maksimum potongan denda per kejadian adalah gaji/hari (Tarif Harian Total)
                             </div>
                         </div>
                     </div>

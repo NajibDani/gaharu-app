@@ -145,15 +145,17 @@ class Karyawan extends Model
     }
 
     /**
-     * Get the daily base salary (gaji pokok harian) for a specific date
+     * Mendapatkan gaji / tarif harian total (Gaji Pokok + Uang Makan + Uang Transport) untuk tanggal tertentu
+     * sebagai batas maksimum potongan denda keterlambatan (maksimum potongan adalah gaji/hari).
      */
     public function getGajiHarianForDate($tanggal): float
     {
         $pInfo = $this->getPeriodeGajiLabelForDate($tanggal);
         if ($pInfo['key'] === 'P2') {
-            return (float) ($this->gaji_pokok_2 ?? 0);
+            $totalP2 = (float) (($this->gaji_pokok_2 ?? 0) + ($this->uang_makan_2 ?? 0) + ($this->uang_transport_2 ?? 0));
+            return $totalP2 > 0 ? $totalP2 : (float) $this->tarif_harian_total;
         }
-        return (float) ($this->gaji_pokok ?? 0);
+        return (float) $this->tarif_harian_total;
     }
 
     /**

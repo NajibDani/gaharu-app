@@ -287,6 +287,19 @@ class Penggajian extends Model
             return 0.0;
         }
 
+        // Self-heal jika ada potongan lama yang terpotong hanya sebesar gaji pokok
+        foreach ($allMonthLate as $t) {
+            if ($t->jam_shift && $t->jam_datang) {
+                $kalkulasi = Keterlambatan::hitungPotongan($t->jam_shift, $t->jam_datang);
+                $gajiHarian = $karyawan->getGajiHarianForDate($t->tanggal);
+                $potonganSeharusnya = min((float)$kalkulasi['potongan'], (float)$gajiHarian);
+                if ($potonganSeharusnya > 0 && abs((float)$t->potongan - $potonganSeharusnya) > 0.01) {
+                    $t->update(['potongan' => $potonganSeharusnya]);
+                    $t->potongan = $potonganSeharusnya;
+                }
+            }
+        }
+
         $p2Total = floatval($karyawan->gaji_pokok_2 ?? 0) + floatval($karyawan->uang_makan_2 ?? 0) + floatval($karyawan->uang_transport_2 ?? 0);
         $hasMultipleP = ($karyawan->gaji_pokok_2 !== null && $p2Total > 0);
 
