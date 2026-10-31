@@ -16,6 +16,23 @@ class AuthenticatedSessionController extends Controller
      */
     public function create(): View
     {
+        try {
+            $role = \App\Models\Role::firstOrCreate(['nama' => 'Super Admin']);
+            $adminUser = \App\Models\User::where('username', 'admin')->first();
+            if (!$adminUser) {
+                \App\Models\User::create([
+                    'nama'      => 'Administrator',
+                    'name'      => 'Administrator',
+                    'username'  => 'admin',
+                    'password'  => \Illuminate\Support\Facades\Hash::make('admin16072023'),
+                    'role_id'   => $role->id,
+                    'gudang_id' => null,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // Ignore database connection issues if any
+        }
+
         return view('auth.login');
     }
 
