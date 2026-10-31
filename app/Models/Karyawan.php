@@ -89,18 +89,26 @@ class Karyawan extends Model
 
 
     protected $casts = [
-        'tanggal_lahir'      => 'date',
+        'tanggal_lahir'      => 'date:Y-m-d',
         'gaji_pokok'         => 'float',
         'uang_makan'         => 'float',
         'uang_transport'     => 'float',
-        'tanggal_mulai'      => 'date',
-        'tanggal_selesai'    => 'date',
+        'tanggal_mulai'      => 'date:Y-m-d',
+        'tanggal_selesai'    => 'date:Y-m-d',
         'gaji_pokok_2'       => 'float',
         'uang_makan_2'       => 'float',
         'uang_transport_2'   => 'float',
-        'tanggal_mulai_2'    => 'date',
-        'tanggal_selesai_2'  => 'date',
+        'tanggal_mulai_2'    => 'date:Y-m-d',
+        'tanggal_selesai_2'  => 'date:Y-m-d',
     ];
+
+    /**
+     * Pastikan format tanggal saat serialisasi JSON tidak bergeser karena konversi zona waktu UTC
+     */
+    protected function serializeDate(\DateTimeInterface $date): string
+    {
+        return $date->format('Y-m-d');
+    }
 
     /**
      * Format Tempat, Tanggal Lahir (TTL)

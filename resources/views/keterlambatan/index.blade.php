@@ -730,8 +730,22 @@
         document.getElementById('formKeterlambatan').action = `/keterlambatan/${item.id}`;
         document.getElementById('formMethod').value = 'PUT';
 
+        function formatInputDate(val) {
+            if (!val) return '';
+            if (typeof val === 'string' && val.includes('T')) {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                }
+            }
+            return String(val).substring(0, 10);
+        }
+
         document.getElementById('modalKaryawanId').value = item.karyawan_id;
-        document.getElementById('modalTanggal').value = item.tanggal.substring(0, 10);
+        document.getElementById('modalTanggal').value = formatInputDate(item.tanggal);
         
         let itemShift = item.shift || (globalShifts.length > 0 ? globalShifts[0].nama : 'Morning 08.00');
         renderShiftDropdown(globalShifts, itemShift);

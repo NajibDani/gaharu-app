@@ -22,10 +22,18 @@ class Keterlambatan extends Model
     ];
 
     protected $casts = [
-        'tanggal'      => 'date',
+        'tanggal'      => 'date:Y-m-d',
         'durasi_menit' => 'integer',
         'potongan'     => 'float',
     ];
+
+    /**
+     * Pastikan format tanggal saat serialisasi JSON tidak bergeser karena konversi zona waktu UTC
+     */
+    protected function serializeDate(\DateTimeInterface $date): string
+    {
+        return $date->format('Y-m-d');
+    }
 
     public function karyawan(): BelongsTo
     {

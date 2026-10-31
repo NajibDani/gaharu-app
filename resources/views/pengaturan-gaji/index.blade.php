@@ -499,19 +499,33 @@
         }
         updateSatuanGajiLabels2();
 
+        function formatInputDate(val) {
+            if (!val) return '';
+            if (typeof val === 'string' && val.includes('T')) {
+                const d = new Date(val);
+                if (!isNaN(d.getTime())) {
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                }
+            }
+            return String(val).substring(0, 10);
+        }
+
         // Periode 1
         document.getElementById('inputGajiPokok').value = karyawan.gaji_pokok || 0;
         document.getElementById('inputUangMakan').value = karyawan.uang_makan || 0;
         document.getElementById('inputUangTransport').value = karyawan.uang_transport || 0;
-        document.getElementById('inputTanggalMulai').value = karyawan.tanggal_mulai ? karyawan.tanggal_mulai.substring(0, 10) : '';
-        document.getElementById('inputTanggalSelesai').value = karyawan.tanggal_selesai ? karyawan.tanggal_selesai.substring(0, 10) : '';
+        document.getElementById('inputTanggalMulai').value = formatInputDate(karyawan.tanggal_mulai);
+        document.getElementById('inputTanggalSelesai').value = formatInputDate(karyawan.tanggal_selesai);
 
         // Periode 2
         document.getElementById('inputGajiPokok2').value = karyawan.gaji_pokok_2 !== null ? karyawan.gaji_pokok_2 : '';
         document.getElementById('inputUangMakan2').value = karyawan.uang_makan_2 !== null ? karyawan.uang_makan_2 : '';
         document.getElementById('inputUangTransport2').value = karyawan.uang_transport_2 !== null ? karyawan.uang_transport_2 : '';
-        document.getElementById('inputTanggalMulai2').value = karyawan.tanggal_mulai_2 ? karyawan.tanggal_mulai_2.substring(0, 10) : '';
-        document.getElementById('inputTanggalSelesai2').value = karyawan.tanggal_selesai_2 ? karyawan.tanggal_selesai_2.substring(0, 10) : '';
+        document.getElementById('inputTanggalMulai2').value = formatInputDate(karyawan.tanggal_mulai_2);
+        document.getElementById('inputTanggalSelesai2').value = formatInputDate(karyawan.tanggal_selesai_2);
 
         document.getElementById('formEditGaji').action = `/pengaturan-gaji/${karyawan.id}`;
 
