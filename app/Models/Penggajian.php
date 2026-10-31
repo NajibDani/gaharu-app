@@ -266,4 +266,44 @@ class Penggajian extends Model
 
         return trim(preg_replace('/\s+/', ' ', $hasil));
     }
+
+    /**
+     * Hitung akumulasi denda keterlambatan karyawan pada bulan dan periode pilihan tertentu
+     */
+    public static function hitungPotonganTerlambat($karyawan, $periodeBulanTahun, $pilihanPeriode = 1): float
+    {
+        if (is_numeric($karyawan)) {
+            $karyawan = Karyawan::find($karyawan);
+        }
+        if (!$karyawan) {
+            return 0.0;
+        }
+
+        $allMonthLate = Keterlambatan::where('karyawan_id', $karyawan->id)
+            ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periodeBulanTahun])
+            ->get();
+
+        if ($allMonthLate->isEmpty()) {
+            return 0.0;
+        }
+
+        $p2Total = floatval($karyawan->gaji_pokok_2 ?? 0) + floatval($karyawan->uang_makan_2 ?? 0) + floatval($karyawan->uang_transport_2 ?? 0);
+        $hasMultipleP = ($karyawan->gaji_pokok_2 !== null && $p2Total > 0);
+
+        if ($hasMultipleP) {
+            if ((int)$pilihanPeriode === 2) {
+                return (float) $allMonthLate->filter(function ($t) use ($karyawan) {
+                    $pInfo = $karyawan->getPeriodeGajiLabelForDate($t->tanggal);
+                    return ($pInfo['key'] ?? '') === 'P2';
+                })->sum('potongan');
+            } else {
+                return (float) $allMonthLate->filter(function ($t) use ($karyawan) {
+                    $pInfo = $karyawan->getPeriodeGajiLabelForDate($t->tanggal);
+                    return ($pInfo['key'] ?? '') !== 'P2';
+                })->sum('potongan');
+            }
+        }
+
+        return (float) $allMonthLate->sum('potongan');
+    }
 }

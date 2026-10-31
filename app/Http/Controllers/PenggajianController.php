@@ -397,9 +397,9 @@ class PenggajianController extends Controller
             }
         }
 
-        // Otomatis sinkronkan komponen gaji master dan potongan keterlambatan untuk slip draft / waiting approval di periode ini
+        // Otomatis sinkronkan komponen gaji master dan potongan keterlambatan untuk slip yang belum dijurnal
         foreach ($rawPayrolls as $payroll) {
-            if ($payroll->status !== 'approved' && !$payroll->status_jurnal && $payroll->karyawan) {
+            if (!$payroll->status_jurnal && $payroll->karyawan) {
                 $kw = $payroll->karyawan;
                 $pNum = (int)($payroll->pilihan_periode ?? 1);
                 $p2Total = floatval($kw->gaji_pokok_2 ?? 0) + floatval($kw->uang_makan_2 ?? 0) + floatval($kw->uang_transport_2 ?? 0);
@@ -427,17 +427,8 @@ class PenggajianController extends Controller
                 $pMulai = $payroll->tanggal_mulai ? \Carbon\Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d') : $masterMulai;
                 $pSelesai = $payroll->tanggal_selesai ? \Carbon\Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d') : $masterSelesai;
 
-                $qLate = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
-                if ($pMulai && $pSelesai) {
-                    $qLate->whereBetween('tanggal', [$pMulai, $pSelesai]);
-                } elseif ($pMulai) {
-                    $qLate->where('tanggal', '>=', $pMulai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
-                } elseif ($pSelesai) {
-                    $qLate->where('tanggal', '<=', $pSelesai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
-                } else {
-                    $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
-                }
-                $potonganTerlambat = (float) $qLate->sum('potongan');
+                // Hitung potongan keterlambatan secara otomatis dari tabel Keterlambatan
+                $potonganTerlambat = Penggajian::hitungPotonganTerlambat($kw, $payroll->periode_bulan_tahun, $pNum);
 
                 $bTarget = intval($payroll->banyak_target ?? 0);
                 $bMerah = intval($payroll->banyak_tanggal_merah ?? 0);
@@ -841,21 +832,8 @@ class PenggajianController extends Controller
             $uangTransport = floatval($k->uang_transport ?? 0);
             $tarifHarian = $gajiPokok + $uangMakan + $uangTransport;
 
-            // Otomatis hitung akumulasi denda keterlambatan bulan ini dari tabel Keterlambatan sesuai tanggal berlaku
-            $pMulai = $k->tanggal_mulai ? \Carbon\Carbon::parse($k->tanggal_mulai)->format('Y-m-d') : null;
-            $pSelesai = $k->tanggal_selesai ? \Carbon\Carbon::parse($k->tanggal_selesai)->format('Y-m-d') : null;
-
-            $qLate = Keterlambatan::where('karyawan_id', $k->id);
-            if ($pMulai && $pSelesai) {
-                $qLate->whereBetween('tanggal', [$pMulai, $pSelesai]);
-            } elseif ($pMulai) {
-                $qLate->where('tanggal', '>=', $pMulai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
-            } elseif ($pSelesai) {
-                $qLate->where('tanggal', '<=', $pSelesai)->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
-            } else {
-                $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
-            }
-            $potonganTerlambat = (float) $qLate->sum('potongan');
+            // Otomatis hitung akumulasi denda keterlambatan bulan ini dari tabel Keterlambatan
+            $potonganTerlambat = Penggajian::hitungPotonganTerlambat($k, $periode, 1);
 
             $totalDeductions = floatval($potonganTerlambat);
             $gajiUtama = ($satuanGaji === 'Bulanan') ? $tarifHarian : 0;
@@ -1939,7 +1917,8 @@ class PenggajianController extends Controller
             $catatanPotonganDll = array_key_exists('catatan_potongan_dll', $item) ? $item['catatan_potongan_dll'] : ($payroll->catatan_potongan_dll ?? null);
 
             if ($payroll) {
-                $potonganTerlambat = floatval($payroll->potongan_terlambat ?? 0);
+                // Selalu sinkronkan potongan keterlambatan dari data presensi absensi
+                $potonganTerlambat = Penggajian::hitungPotonganTerlambat($karyawan, $periode, $pilihanPeriode);
                 $totalEarnings   = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
                 $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
                 $totalGajiBersih = $totalEarnings - $totalDeductions;
@@ -1966,6 +1945,7 @@ class PenggajianController extends Controller
                     'pengembalian_deposit'        => $pengembalianDeposit,
                     'bonus_dll'                   => $bonusDll,
                     'catatan_bonus_dll'           => $catatanBonusDll,
+                    'potongan_terlambat'          => $potonganTerlambat,
                     'potongan_inventaris'         => $potonganInventaris,
                     'potongan_kasbon'             => $potonganKasbon,
                     'potongan_deposit'            => $potonganDeposit,
@@ -1977,25 +1957,7 @@ class PenggajianController extends Controller
                 ]);
             } else {
                 // Buat record baru jika belum ada
-                $pMulai = ($pilihanPeriode === 2) ? ($karyawan->tanggal_mulai_2 ?? $karyawan->tanggal_mulai) : $karyawan->tanggal_mulai;
-                $pSelesai = ($pilihanPeriode === 2) ? ($karyawan->tanggal_selesai_2 ?? $karyawan->tanggal_selesai) : $karyawan->tanggal_selesai;
-
-                $qLate = Keterlambatan::where('karyawan_id', $karyawan->id);
-                if ($pMulai && $pSelesai) {
-                    $qLate->whereBetween('tanggal', [
-                        \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
-                        \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
-                    ]);
-                } elseif ($pMulai) {
-                    $qLate->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
-                          ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
-                } elseif ($pSelesai) {
-                    $qLate->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
-                          ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
-                } else {
-                    $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periode]);
-                }
-                $potonganTerlambat = floatval($qLate->sum('potongan'));
+                $potonganTerlambat = Penggajian::hitungPotonganTerlambat($karyawan, $periode, $pilihanPeriode);
                 $totalEarnings   = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
                 $totalDeductions = $potonganTerlambat + $potonganInventaris + $potonganKasbon + $potonganDeposit + $potonganDll;
                 $totalGajiBersih = $totalEarnings - $totalDeductions;

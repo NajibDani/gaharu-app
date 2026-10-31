@@ -31,7 +31,12 @@
                                   (float)($it->pengembalian_deposit ?? 0) +
                                   (float)($it->bonus_dll ?? 0);
                             $kasbon = (float)($it->potongan_kasbon ?? 0);
-                            $potNonKasbon = (float)($it->potongan_terlambat ?? 0) +
+                            $potTerlambatIt = (float)($it->potongan_terlambat ?? 0);
+                            if ($potTerlambatIt == 0 && $kw) {
+                                $potTerlambatIt = \App\Models\Penggajian::hitungPotonganTerlambat($kw, $p->periode_bulan_tahun ?? $periode, $it->pilihan_periode ?? 1);
+                                $it->potongan_terlambat = $potTerlambatIt;
+                            }
+                            $potNonKasbon = $potTerlambatIt +
                                             (float)($it->potongan_inventaris ?? 0) +
                                             (float)($it->potongan_deposit ?? 0) +
                                             (float)($it->potongan_dll ?? 0);
@@ -60,7 +65,12 @@
                         $gu = (float)($p->gaji_utama ?? 0);
                         $bn = (float)(($p->lembur ?? 0) + ($p->bonus_target ?? 0) + ($p->bonus_tanggal_merah ?? 0) + ($p->bonus_birthday ?? 0) + ($p->pengembalian_deposit ?? 0) + ($p->bonus_dll ?? 0));
                         $kasbon = (float)($p->potongan_kasbon ?? 0);
-                        $potNonKasbon = (float)($p->potongan_terlambat ?? 0) +
+                        $potTerlambatP = (float)($p->potongan_terlambat ?? 0);
+                        if ($potTerlambatP == 0 && $p->karyawan) {
+                            $potTerlambatP = \App\Models\Penggajian::hitungPotonganTerlambat($p->karyawan, $p->periode_bulan_tahun ?? $periode, $p->pilihan_periode ?? 1);
+                            $p->potongan_terlambat = $potTerlambatP;
+                        }
+                        $potNonKasbon = $potTerlambatP +
                                         (float)($p->potongan_inventaris ?? 0) +
                                         (float)($p->potongan_deposit ?? 0) +
                                         (float)($p->potongan_dll ?? 0);
@@ -736,9 +746,16 @@
                                     ? $payroll->tarif_harian_total
                                     : (($payroll->gaji_pokok ?? 0) + ($payroll->tunjangan_makan ?? 0) + ($payroll->tunjangan_transport ?? 0));
                                 $totalBonus = (float)(($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) + ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0));
-                                $totalPotongan = (float)($payroll->total_deductions ?? (($payroll->potongan_terlambat ?? 0) + ($payroll->potongan_inventaris ?? 0) + ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_deposit ?? 0) + ($payroll->potongan_dll ?? 0)));
+                                $potTerlambatHeader = (float)($payroll->potongan_terlambat ?? 0);
+                                if ($potTerlambatHeader == 0 && $payroll->karyawan) {
+                                    $potTerlambatHeader = \App\Models\Penggajian::hitungPotonganTerlambat($payroll->karyawan, $payroll->periode_bulan_tahun ?? $periode, $payroll->pilihan_periode ?? 1);
+                                    $payroll->potongan_terlambat = $potTerlambatHeader;
+                                }
+                                $totalPotongan = (float)($potTerlambatHeader + ($payroll->potongan_inventaris ?? 0) + ($payroll->potongan_kasbon ?? 0) + ($payroll->potongan_deposit ?? 0) + ($payroll->potongan_dll ?? 0));
                                 $gajiPokok = (float)($payroll->gaji_utama ?? 0);
                                 $earnings = (float)($payroll->total_earnings > 0 ? $payroll->total_earnings : ($gajiPokok + $totalBonus));
+                                $payroll->total_deductions = $totalPotongan;
+                                $payroll->take_home_pay = $earnings - $totalPotongan;
                                 $isPaid = $payroll->is_paid;
                                 $confirmMsg = 'Bayar gaji ' . ($payroll->karyawan->nama_karyawan ?? 'Karyawan') . ' dan buat Jurnal Umum?';
                                 
@@ -900,7 +917,7 @@
                                         ]]);
                                     } else {
 
-                                    $itemBreakdowns = collect($targetPeriodes)->map(function($pNum) use ($existingItemsByPeriode, $payroll) {
+                                    $itemBreakdowns = collect($targetPeriodes)->map(function($pNum) use ($existingItemsByPeriode, $payroll, $periode) {
                                         $kw = $payroll->karyawan;
                                         $it = $existingItemsByPeriode->get($pNum);
 
@@ -938,6 +955,9 @@
                                         $itTotalBonus = $itLembur + $itTarget + $itMerah + $itBday + $itDepKembali + $itBonusDll;
 
                                         $itLate = $it ? (float)($it->potongan_terlambat ?? 0) : 0;
+                                        if ($itLate == 0 && $kw) {
+                                            $itLate = \App\Models\Penggajian::hitungPotonganTerlambat($kw, $payroll->periode_bulan_tahun ?? $periode, $pNum);
+                                        }
                                         $itInv = $it ? (float)($it->potongan_inventaris ?? 0) : 0;
                                         $itKasbon = $it ? (float)($it->potongan_kasbon ?? 0) : 0;
                                         $itDepPot = $it ? (float)($it->potongan_deposit ?? 0) : 0;
