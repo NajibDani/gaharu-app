@@ -2166,7 +2166,7 @@
                                                 @if($hasMultiplePeriods)
                                                     {{-- Jika belum terbayar semua --}}
                                                     @if(!$allPaid)
-                                                        <form action="{{ route('penggajian.bayar-karyawan', $payroll->id) }}" method="POST"
+                                                        <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST"
                                                               onsubmit="return confirm('Bayar SELURUH periode gaji karyawan {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} di TENGAH BULAN?')">
                                                             @csrf
                                                             <input type="hidden" name="tipe_pembayaran" value="tengah_bulan">
@@ -2176,7 +2176,7 @@
                                                                 <span>🗓️</span> Bayar Tengah (Semua Periode)
                                                             </button>
                                                         </form>
-                                                        <form action="{{ route('penggajian.bayar-karyawan', $payroll->id) }}" method="POST"
+                                                        <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST"
                                                               onsubmit="return confirm('Bayar SELURUH periode gaji karyawan {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} di AKHIR BULAN?')">
                                                             @csrf
                                                             <input type="hidden" name="tipe_pembayaran" value="akhir_bulan">

@@ -470,6 +470,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
         Route::post('/penggajian/periode/{periode}/approve', [PenggajianController::class, 'approveByDirector'])->name('penggajian.approve');
         Route::post('/penggajian/periode/{periode}/journal', [PenggajianController::class, 'sendToJournal'])->name('penggajian.journal');
         Route::post('/penggajian/{id}/bayar', [PenggajianController::class, 'bayarKaryawan'])->name('penggajian.bayar');
+        Route::post('/penggajian/{id}/bayar-karyawan', [PenggajianController::class, 'bayarKaryawan'])->name('penggajian.bayar-karyawan');
         Route::post('/penggajian/{id}/ubah-tipe-pembayaran', [PenggajianController::class, 'ubahTipePembayaran'])->name('penggajian.ubah-tipe-pembayaran');
         Route::post('/penggajian/periode/{periode}/bayar-semua', [PenggajianController::class, 'bayarSemuaPeriode'])->name('penggajian.bayar-semua');
         Route::delete('/penggajian/{penggajian}', [PenggajianController::class, 'destroy'])->name('penggajian.destroy');
