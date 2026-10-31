@@ -414,13 +414,13 @@ class PenggajianController extends Controller
                 $q->where('nama_karyawan', 'like', '%Hafid Yuslim%');
             })
             ->where('periode_bulan_tahun', '2026-10')
-            ->with('journal')
             ->get();
 
             foreach ($hafidJournals as $hj) {
-                if ($hj->journal && str_contains(strtolower($hj->journal->deskripsi ?? ''), 'akhir')) {
-                    $hj->journal->update([
-                        'deskripsi' => str_ireplace('akhir bulan', 'tengah bulan', $hj->journal->deskripsi),
+                $j = $hj->journal ?? ($hj->journal_id ? Journal::find($hj->journal_id) : null);
+                if ($j && str_contains(strtolower($j->deskripsi ?? ''), 'akhir')) {
+                    $j->update([
+                        'deskripsi' => str_ireplace('akhir bulan', 'tengah bulan', $j->deskripsi),
                         'tanggal' => $hj->tanggal_selesai ? \Carbon\Carbon::parse($hj->tanggal_selesai)->toDateString() : '2026-10-15'
                     ]);
                 }
@@ -1591,12 +1591,13 @@ class PenggajianController extends Controller
 
             foreach ($payrollsToUpdate as $p) {
                 $p->update(['tipe_pembayaran' => $tipePembayaran]);
-                if ($p->journal) {
+                $j = $p->journal ?? ($p->journal_id ? Journal::find($p->journal_id) : null);
+                if ($j) {
                     $label = ($tipePembayaran === 'tengah_bulan') ? 'tengah bulan' : 'akhir bulan';
                     $tanggalJurnal = ($tipePembayaran === 'tengah_bulan')
                         ? ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-15')->toDateString())
                         : ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-01')->endOfMonth()->toDateString());
-                    $p->journal->update([
+                    $j->update([
                         'tanggal' => $tanggalJurnal,
                         'deskripsi' => "Pembayaran gaji {$label} karyawan " . ($p->karyawan->nama_karyawan ?? 'Karyawan')
                     ]);
@@ -1773,13 +1774,14 @@ class PenggajianController extends Controller
 
         foreach ($payrollsToUpdate as $p) {
             $p->update(['tipe_pembayaran' => $tipe]);
-            if ($p->journal) {
+            $j = $p->journal ?? ($p->journal_id ? Journal::find($p->journal_id) : null);
+            if ($j) {
                 $label = ($tipe === 'tengah_bulan') ? 'tengah bulan' : 'akhir bulan';
                 $tgl = ($tipe === 'tengah_bulan')
                     ? ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-15')->toDateString())
                     : ($p->tanggal_selesai ? \Carbon\Carbon::parse($p->tanggal_selesai)->toDateString() : \Carbon\Carbon::parse($p->periode_bulan_tahun . '-01')->endOfMonth()->toDateString());
 
-                $p->journal->update([
+                $j->update([
                     'tanggal' => $tgl,
                     'deskripsi' => "Pembayaran gaji {$label} karyawan " . ($p->karyawan->nama_karyawan ?? 'Karyawan')
                 ]);

@@ -162,6 +162,11 @@ class Penggajian extends Model
         return $this->belongsTo(Karyawan::class, 'karyawan_id', 'id');
     }
 
+    public function journal(): BelongsTo
+    {
+        return $this->belongsTo(Journal::class, 'journal_id', 'id');
+    }
+
     /**
      * Konversi format periode (contoh: 2026-08) menjadi format nama bulan dan tahun Bahasa Indonesia (contoh: Agustus 2026).
      */
