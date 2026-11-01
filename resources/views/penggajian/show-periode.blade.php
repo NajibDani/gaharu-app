@@ -1952,38 +1952,8 @@
                                                         @endforeach
                                                     @endif
                                                 @else
-                                                    {{-- Belum Terbayar Semua --}}
-                                                    @if(!$anyPaid)
-                                                        {{-- Belum ada yang dibayar: Opsi Bayar Tengah (Semua) ATAU Bayar Akhir (Semua) --}}
-                                                        <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST" class="inline m-0 p-0"
-                                                              onsubmit="return confirm('Proses pembayaran TENGAH BULAN untuk SEMUA PERIODE atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($payroll->take_home_pay ?: $payroll->total_gaji_bersih, 0, ',', '.') }})?')">
-                                                            @csrf
-                                                            <input type="hidden" name="tipe" value="tengah_bulan">
-                                                            <input type="hidden" name="semua_periode" value="1">
-                                                            <button type="submit"
-                                                                    style="background-color: #0284c7; color: #ffffff; border: none; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(2,132,199,0.25); transition: background .15s; white-space: nowrap;"
-                                                                    onmouseover="this.style.background='#0369a1'"
-                                                                    onmouseout="this.style.background='#0284c7'"
-                                                                    title="Bayar seluruh periode (P1 & P2) di Tengah Periode">
-                                                                <span>🗓️</span> Bayar Tengah
-                                                            </button>
-                                                        </form>
-
-                                                        <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST" class="inline m-0 p-0"
-                                                              onsubmit="return confirm('Proses pembayaran AKHIR BULAN untuk SEMUA PERIODE atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($payroll->take_home_pay ?: $payroll->total_gaji_bersih, 0, ',', '.') }})?')">
-                                                            @csrf
-                                                            <input type="hidden" name="tipe" value="akhir_bulan">
-                                                            <input type="hidden" name="semua_periode" value="1">
-                                                            <button type="submit"
-                                                                    style="background-color: #059669; color: #ffffff; border: none; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 2px rgba(5,150,105,0.25); transition: background .15s; white-space: nowrap;"
-                                                                    onmouseover="this.style.background='#047857'"
-                                                                    onmouseout="this.style.background='#059669'"
-                                                                    title="Bayar seluruh periode (P1 & P2) di Akhir Bulan">
-                                                                <span>💳</span> Bayar Akhir
-                                                            </button>
-                                                        </form>
-                                                    @else
-                                                        {{-- Sebagian sudah dibayar --}}
+                                                    {{-- Belum Terbayar Semua: Tampilkan Tombol Bayar Per-Periode --}}
+                                                    <div class="flex flex-col gap-1 items-center justify-center">
                                                         @foreach($itemBreakdowns as $ib)
                                                             @php
                                                                 $ibId = $ib['id'];
@@ -1991,36 +1961,42 @@
                                                                 $ibPNum = $ib['periode'] ?? 1;
                                                                 $isTengah = ($ib['tipe_pembayaran'] ?? '') === 'tengah_bulan' || ($ibPNum === 1 && empty($ib['tipe_pembayaran']));
                                                             @endphp
-                                                            @if($ibPaid)
-                                                                <button type="button" disabled
-                                                                        style="background-color: {{ $isTengah ? '#e0f2fe' : '#ecfdf5' }}; color: {{ $isTengah ? '#0369a1' : '#065f46' }}; border: 1px solid {{ $isTengah ? '#bae6fd' : '#a7f3d0' }}; padding: 4px 8px; border-radius: 6px; font-weight: 800; font-size: 11px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.95; white-space: nowrap;"
-                                                                        title="Gaji Periode {{ $ibPNum }} sudah dibayar ({{ $isTengah ? 'Tengah Periode' : 'Akhir Bulan' }})">
-                                                                    <span>✓</span> P{{ $ibPNum }} ({{ $isTengah ? 'Tengah' : 'Akhir' }})
-                                                                </button>
-                                                            @elseif($ibId)
-                                                                <form action="{{ route('penggajian.bayar', $ibId) }}" method="POST" class="inline m-0 p-0"
-                                                                      onsubmit="return confirm('Bayar gaji Periode {{ $ibPNum }} di TENGAH BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }})?')">
-                                                                    @csrf
-                                                                    <input type="hidden" name="tipe" value="tengah_bulan">
-                                                                    <button type="submit"
-                                                                            style="background-color: #0284c7; color: #ffffff; border: none; padding: 4px 7px; border-radius: 6px; font-weight: 800; font-size: 10.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); white-space: nowrap;"
-                                                                            title="Bayar P{{ $ibPNum }} Tengah Bulan">
-                                                                        <span>🗓️</span> P{{ $ibPNum }} Tengah
+                                                            <div class="flex items-center gap-1">
+                                                                @if($ibPaid)
+                                                                    <button type="button" disabled
+                                                                            style="background-color: {{ $isTengah ? '#e0f2fe' : '#ecfdf5' }}; color: {{ $isTengah ? '#0369a1' : '#065f46' }}; border: 1px solid {{ $isTengah ? '#bae6fd' : '#a7f3d0' }}; padding: 3px 6px; border-radius: 6px; font-weight: 800; font-size: 10.5px; display: inline-flex; align-items: center; gap: 3px; cursor: not-allowed; opacity: 0.95; white-space: nowrap;"
+                                                                            title="Gaji Periode {{ $ibPNum }} sudah dibayar ({{ $isTengah ? 'Tengah Periode' : 'Akhir Bulan' }})">
+                                                                        <span>✓</span> P{{ $ibPNum }} ({{ $isTengah ? 'Tengah' : 'Akhir' }})
                                                                     </button>
-                                                                </form>
-                                                                <form action="{{ route('penggajian.bayar', $ibId) }}" method="POST" class="inline m-0 p-0"
-                                                                      onsubmit="return confirm('Bayar gaji Periode {{ $ibPNum }} di AKHIR BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }})?')">
-                                                                    @csrf
-                                                                    <input type="hidden" name="tipe" value="akhir_bulan">
-                                                                    <button type="submit"
-                                                                            style="background-color: #059669; color: #ffffff; border: none; padding: 4px 7px; border-radius: 6px; font-weight: 800; font-size: 10.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); white-space: nowrap;"
-                                                                            title="Bayar P{{ $ibPNum }} Akhir Bulan">
-                                                                        <span>💳</span> P{{ $ibPNum }} Akhir
-                                                                    </button>
-                                                                </form>
-                                                            @endif
+                                                                @elseif($ibId)
+                                                                    <form action="{{ route('penggajian.bayar', $ibId) }}" method="POST" class="inline m-0 p-0"
+                                                                          onsubmit="return confirm('Bayar gaji Periode {{ $ibPNum }} di TENGAH BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }})?')">
+                                                                        @csrf
+                                                                        <input type="hidden" name="tipe" value="tengah_bulan">
+                                                                        <button type="submit"
+                                                                                style="background-color: #0284c7; color: #ffffff; border: none; padding: 3px 6px; border-radius: 6px; font-weight: 800; font-size: 10.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; box-shadow: 0 1px 2px rgba(2,132,199,0.25); white-space: nowrap;"
+                                                                                onmouseover="this.style.background='#0369a1'"
+                                                                                onmouseout="this.style.background='#0284c7'"
+                                                                                title="Bayar P{{ $ibPNum }} di Tengah Bulan (Rp {{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }})">
+                                                                            <span>🗓️</span> P{{ $ibPNum }} Tengah
+                                                                        </button>
+                                                                    </form>
+                                                                    <form action="{{ route('penggajian.bayar', $ibId) }}" method="POST" class="inline m-0 p-0"
+                                                                          onsubmit="return confirm('Bayar gaji Periode {{ $ibPNum }} di AKHIR BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }})?')">
+                                                                        @csrf
+                                                                        <input type="hidden" name="tipe" value="akhir_bulan">
+                                                                        <button type="submit"
+                                                                                style="background-color: #059669; color: #ffffff; border: none; padding: 3px 6px; border-radius: 6px; font-weight: 800; font-size: 10.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; box-shadow: 0 1px 2px rgba(5,150,105,0.25); white-space: nowrap;"
+                                                                                onmouseover="this.style.background='#047857'"
+                                                                                onmouseout="this.style.background='#059669'"
+                                                                                title="Bayar P{{ $ibPNum }} di Akhir Bulan (Rp {{ number_format($ib['total_gaji_bersih'], 0, ',', '.') }})">
+                                                                            <span>💳</span> P{{ $ibPNum }} Akhir
+                                                                        </button>
+                                                                    </form>
+                                                                @endif
+                                                            </div>
                                                         @endforeach
-                                                    @endif
+                                                    </div>
                                                 @endif
                                             </div>
                                         @else
@@ -2169,7 +2145,7 @@
                                                         <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST"
                                                               onsubmit="return confirm('Bayar SELURUH periode gaji karyawan {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} di TENGAH BULAN?')">
                                                             @csrf
-                                                            <input type="hidden" name="tipe_pembayaran" value="tengah_bulan">
+                                                            <input type="hidden" name="tipe" value="tengah_bulan">
                                                             <input type="hidden" name="semua_periode" value="1">
                                                             <button type="submit"
                                                                     class="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-50 transition-colors cursor-pointer text-left">
@@ -2179,13 +2155,42 @@
                                                         <form action="{{ route('penggajian.bayar', $payroll->id) }}" method="POST"
                                                               onsubmit="return confirm('Bayar SELURUH periode gaji karyawan {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} di AKHIR BULAN?')">
                                                             @csrf
-                                                            <input type="hidden" name="tipe_pembayaran" value="akhir_bulan">
+                                                            <input type="hidden" name="tipe" value="akhir_bulan">
                                                             <input type="hidden" name="semua_periode" value="1">
                                                             <button type="submit"
                                                                     class="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer text-left">
                                                                 <span>💳</span> Bayar Akhir (Semua Periode)
                                                             </button>
                                                         </form>
+
+                                                        @foreach($itemBreakdowns as $ibKebab)
+                                                            @php
+                                                                $kIbId = $ibKebab['id'];
+                                                                $kIbPaid = $ibKebab['is_paid'] ?? false;
+                                                                $kIbPNum = $ibKebab['periode'] ?? 1;
+                                                            @endphp
+                                                            @if(!$kIbPaid && $kIbId)
+                                                                <div class="border-t border-slate-100 my-0.5"></div>
+                                                                <form action="{{ route('penggajian.bayar', $kIbId) }}" method="POST"
+                                                                      onsubmit="return confirm('Bayar gaji Periode {{ $kIbPNum }} di TENGAH BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($ibKebab['total_gaji_bersih'], 0, ',', '.') }})?')">
+                                                                    @csrf
+                                                                    <input type="hidden" name="tipe" value="tengah_bulan">
+                                                                    <button type="submit"
+                                                                            class="w-full flex items-center gap-2 px-3.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 transition-colors cursor-pointer text-left pl-6">
+                                                                        <span>🗓️</span> Bayar P{{ $kIbPNum }} di Tengah (Rp {{ number_format($ibKebab['total_gaji_bersih'], 0, ',', '.') }})
+                                                                    </button>
+                                                                </form>
+                                                                <form action="{{ route('penggajian.bayar', $kIbId) }}" method="POST"
+                                                                      onsubmit="return confirm('Bayar gaji Periode {{ $kIbPNum }} di AKHIR BULAN atas nama {{ addslashes($payroll->karyawan->nama_karyawan ?? 'Karyawan') }} (Rp {{ number_format($ibKebab['total_gaji_bersih'], 0, ',', '.') }})?')">
+                                                                    @csrf
+                                                                    <input type="hidden" name="tipe" value="akhir_bulan">
+                                                                    <button type="submit"
+                                                                            class="w-full flex items-center gap-2 px-3.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer text-left pl-6">
+                                                                        <span>💳</span> Bayar P{{ $kIbPNum }} di Akhir (Rp {{ number_format($ibKebab['total_gaji_bersih'], 0, ',', '.') }})
+                                                                    </button>
+                                                                </form>
+                                                            @endif
+                                                        @endforeach
                                                     @endif
 
                                                     {{-- Jika ada yang sudah terbayar, sediakan opsi ubah tipe pembayaran --}}

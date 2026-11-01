@@ -1575,7 +1575,7 @@ class PenggajianController extends Controller
     {
         $payroll = Penggajian::with(['karyawan', 'journal'])->findOrFail($id);
 
-        $tipe = $request->input('tipe') ?? $request->query('tipe');
+        $tipe = $request->input('tipe') ?? $request->input('tipe_pembayaran') ?? $request->query('tipe');
         $tipePembayaran = ($tipe === 'tengah_bulan' || $tipe === 'p1') ? 'tengah_bulan' : 'akhir_bulan';
         $bayarSemuaPeriode = $request->boolean('semua_periode', false) || $request->input('target') === 'all_periods';
         $ubahTipe = $request->boolean('ubah_tipe', false) || $request->input('action') === 'ubah_tipe';
