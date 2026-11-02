@@ -72,9 +72,10 @@
                 <div class="col-12 col-md-2">
                     <label class="form-label text-muted small fw-semibold mb-1">Jenis Barang</label>
                     <select name="jenis_barang" class="form-select form-select-sm">
-                        <option value="">-- Semua Jenis (Bahan) --</option>
+                        <option value="">-- Semua Jenis --</option>
                         <option value="bahan_baku" {{ request('jenis_barang') == 'bahan_baku' ? 'selected' : '' }}>Bahan Baku</option>
                         <option value="bahan_setengah_jadi" {{ request('jenis_barang') == 'bahan_setengah_jadi' ? 'selected' : '' }}>Bahan Setengah Jadi</option>
+                        <option value="operational" {{ request('jenis_barang') == 'operational' ? 'selected' : '' }}>Operational</option>
                     </select>
                 </div>
                 <div class="col-12 col-md-2 d-flex align-items-end gap-1" style="padding-top: 22px;">
