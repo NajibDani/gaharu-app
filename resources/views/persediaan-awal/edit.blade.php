@@ -145,6 +145,7 @@
                                             data-satuan-stok="{{ $b->satuan ?: 'pcs' }}"
                                             data-satuan-beli="{{ $b->satuan_pembelian ?: ($b->satuan ?: 'pcs') }}"
                                             data-konversi="{{ (float)($b->konversi_pembelian ?: 1.00) }}"
+                                            data-is-bsj="{{ $b->is_bahan_setengah_jadi ? '1' : '0' }}"
                                             data-harga-stok-utama="{{ (float)($hargaUtamaMap[$b->id] ?? ($b->hpp_referensi ?? 0)) }}"
                                             data-harga-beli-utama="{{ (float)(($hargaUtamaMap[$b->id] ?? ($b->hpp_referensi ?? 0)) * ((float)($b->konversi_pembelian ?: 1.00))) }}">
                                             <div class="fw-bold small text-truncate">{{ $b->nama }}</div>
@@ -590,7 +591,8 @@
                     konversi_pembelian: konversi,
                     hpp_satuan_utama: hrgStok,
                     harga_beli_utama: hrgBeli,
-                    hpp_referensi: hrgStok
+                    hpp_referensi: hrgStok,
+                    is_bahan_setengah_jadi: this.getAttribute('data-is-bsj') === '1'
                 };
 
                 const tr = createRowElement(itemObj);

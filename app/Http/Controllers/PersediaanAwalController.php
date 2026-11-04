@@ -263,8 +263,7 @@ class PersediaanAwalController extends Controller
 
         $query = MasterBarang::with('kategori')
             ->where('is_active', true)
-            ->where('is_barang_jadi', false)
-            ->where('is_operational', false);
+            ->where('is_barang_jadi', false);
 
         if ($kategoriId) {
             $query->where('kategori_id', $kategoriId);
@@ -280,13 +279,29 @@ class PersediaanAwalController extends Controller
         // Filter barang sesuai gudang & tagging divisi
         if ($gudangId) {
             if ($isGudangUtama) {
-                // Khusus Gudang Utama: Reload SEMUA barang dengan jenis BAHAN BAKU tanpa kecuali (tanpa filter tagging, baik ada stok maupun stok 0)
-                $query->where('is_bahan_baku', true);
+                // Gudang Utama: memuat SEMUA barang BAHAN BAKU tanpa kecuali,
+                // serta barang Operasional / BSJ yang dialokasikan (tagging) ke Gudang Utama
+                $query->where(function ($q) use ($gudangId) {
+                    $q->where('is_bahan_baku', true)
+                      ->orWhere(function ($subQ) use ($gudangId) {
+                          $subQ->where(function ($jenisQ) {
+                              $jenisQ->where('is_operational', true)
+                                     ->orWhere('is_bahan_setengah_jadi', true);
+                          })->whereExists(function ($existsQuery) use ($gudangId) {
+                              $existsQuery->select(DB::raw(1))
+                                  ->from('barang_minimum_stock')
+                                  ->whereColumn('barang_minimum_stock.barang_id', 'master_barang.id')
+                                  ->where('barang_minimum_stock.gudang_id', $gudangId)
+                                  ->where('barang_minimum_stock.is_active', true);
+                          });
+                      });
+                });
             } else {
-                // HANYA memuat barang dengan jenis bahan baku dan bahan setengah jadi
+                // Memuat barang dengan jenis bahan baku, bahan setengah jadi, atau operasional
                 $query->where(function($q_bahan) {
                     $q_bahan->where('is_bahan_baku', true)
-                            ->orWhere('is_bahan_setengah_jadi', true);
+                            ->orWhere('is_bahan_setengah_jadi', true)
+                            ->orWhere('is_operational', true);
                 });
 
                 // Filter sesuai tagging divisi/lokasi terkait
@@ -320,7 +335,8 @@ class PersediaanAwalController extends Controller
         } else {
             $query->where(function($q_bahan) {
                 $q_bahan->where('is_bahan_baku', true)
-                        ->orWhere('is_bahan_setengah_jadi', true);
+                        ->orWhere('is_bahan_setengah_jadi', true)
+                        ->orWhere('is_operational', true);
             });
         }
 
@@ -751,9 +767,11 @@ class PersediaanAwalController extends Controller
 
         $allBarang = MasterBarang::with('kategori')
             ->where('is_active', true)
+            ->where('is_barang_jadi', false)
             ->where(function($q) {
                 $q->where('is_bahan_baku', true)
-                  ->orWhere('is_bahan_setengah_jadi', true);
+                  ->orWhere('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_operational', true);
             })
             ->orderBy('nama', 'asc')
             ->get();
@@ -1861,11 +1879,13 @@ class PersediaanAwalController extends Controller
                 ->setFillType(Fill::FILL_SOLID)
                 ->getStartColor()->setRGB('D88656');
 
-            // Isi master barang aktif (hanya bahan baku dan bahan setengah jadi) sebagai referensi
+            // Isi master barang aktif (bahan baku, bahan setengah jadi, atau operasional) sebagai referensi
             $barangs = MasterBarang::where('is_active', true)
+                ->where('is_barang_jadi', false)
                 ->where(function($q) {
                     $q->where('is_bahan_baku', true)
-                      ->orWhere('is_bahan_setengah_jadi', true);
+                      ->orWhere('is_bahan_setengah_jadi', true)
+                      ->orWhere('is_operational', true);
                 })
                 ->orderBy('nama', 'asc')
                 ->get();
@@ -1921,12 +1941,14 @@ class PersediaanAwalController extends Controller
 
         $hargaUtamaMap = $this->getHargaGudangUtamaMap();
 
-        // Isi semua data master barang aktif (hanya bahan baku dan bahan setengah jadi) sebagai referensi
+        // Isi semua data master barang aktif (bahan baku, bahan setengah jadi, atau operasional) sebagai referensi
         $barangs = MasterBarang::with('kategori')
             ->where('is_active', true)
+            ->where('is_barang_jadi', false)
             ->where(function($q) {
                 $q->where('is_bahan_baku', true)
-                  ->orWhere('is_bahan_setengah_jadi', true);
+                  ->orWhere('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_operational', true);
             })
             ->orderBy('kode_barang', 'asc')
             ->get();
@@ -2219,6 +2241,7 @@ class PersediaanAwalController extends Controller
                         $isBahanBaku = ($katName === 'BAHAN BAKU') ? 1 : 0;
                         $isBahanSetengahJadi = ($katName === 'BAHAN SETENGAH JADI') ? 1 : 0;
                         $isBarangJadi = ($katName === 'MAKANAN & MINUMAN' || $katName === 'BARANG JADI') ? 1 : 0;
+                        $isOperational = ($katName === 'OPERATIONAL' || strpos($katName, 'OPERASIONAL') !== false) ? 1 : 0;
 
                         $barang = MasterBarang::create([
                             'kode_barang'            => $finalKode,
@@ -2227,9 +2250,10 @@ class PersediaanAwalController extends Controller
                             'satuan'                 => $satuanFinal,
                             'satuan_pembelian'       => $satBeliFinal,
                             'konversi_pembelian'     => $konvFinal,
-                            'is_bahan_baku'          => $isBahanBaku ?: 1,
+                            'is_bahan_baku'          => ($isBahanSetengahJadi || $isBarangJadi || $isOperational) ? 0 : 1,
                             'is_bahan_setengah_jadi' => $isBahanSetengahJadi,
                             'is_barang_jadi'         => $isBarangJadi,
+                            'is_operational'         => $isOperational,
                             'is_active'              => 1,
                         ]);
 
