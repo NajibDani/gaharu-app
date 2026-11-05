@@ -690,22 +690,23 @@ function renderDetailPengeluaran(data) {
         ? `<span class="badge bg-light text-primary border border-primary-subtle ms-1"><i class="bi bi-diagram-3 me-1"></i>${data.divisi_nama}</span>`
         : '';
 
-    let isWastedCK = data.is_wasted && data.is_central_kitchen;
+    let isWasted = data.is_wasted;
 
     let alertShortage = '';
     if (data.total_item_kurang > 0) {
-        if (isWastedCK) {
+        if (isWasted) {
+            let lokasiWarning = data.lokasi_nama || 'Lokasi Terkait';
             alertShortage = `
                 <div class="alert alert-warning d-flex align-items-center py-2 px-3 mb-3 rounded-3 border-warning-subtle" role="alert">
                     <i class="bi bi-exclamation-triangle-fill fs-5 me-2 text-warning"></i>
                     <div class="small">
-                        <strong>Peringatan Wasted Central Kitchen:</strong> Terdapat <strong>${data.total_item_kurang}</strong> item bahan yang stoknya di <strong>Central Kitchen</strong> sudah habis (0) karena telah dipakai seluruhnya untuk produksi. Dokumen <strong>tetap dapat disetujui (Approved)</strong> dengan nilai HPP dihitung dari <strong>Harga Terakhir Barang</strong>.
+                        <strong>Peringatan Wasted (${lokasiWarning}):</strong> Terdapat <strong>${data.total_item_kurang}</strong> item bahan yang stok fisiknya di <strong>${lokasiWarning}</strong> sudah habis (0) atau kurang. Dokumen <strong>tetap dapat disetujui (Approved)</strong> dengan nilai HPP dihitung dari <strong>Harga HPP Pembelian Terakhir</strong>.
                     </div>
                 </div>
             `;
         } else {
-            let lokasiWarning = data.is_wasted ? data.lokasi_nama : data.gudang_utama_nama;
-            let contextWarning = data.is_wasted ? 'kuantitas wasted yang dilaporkan' : 'kuantitas yang diminta';
+            let lokasiWarning = data.gudang_utama_nama;
+            let contextWarning = 'kuantitas yang diminta';
             alertShortage = `
                 <div class="alert alert-warning d-flex align-items-center py-2 px-3 mb-3 rounded-3 border-warning-subtle" role="alert">
                     <i class="bi bi-exclamation-triangle-fill fs-5 me-2 text-warning"></i>
@@ -815,12 +816,12 @@ function renderDetailPengeluaran(data) {
                     ${!data.is_wo ? `<a href="${data.edit_url}" class="btn btn-warning btn-sm px-3 fw-semibold"><i class="bi bi-pencil-square me-1"></i> Edit</a>` : ''}
                     ${data.can_approve ? (
                         data.total_item_kurang > 0
-                            ? (isWastedCK
-                                ? `<button type="button" class="btn btn-success btn-sm px-3 fw-semibold shadow-sm" onclick="confirmApproveWastedCK('${data.approve_url}', '${data.kode_pengeluaran}', ${data.grand_total}, ${data.total_item_kurang})"><i class="bi bi-check-circle me-1"></i> Approve Wasted (HPP Terakhir)</button>`
+                            ? (data.is_wasted
+                                ? `<button type="button" class="btn btn-success btn-sm px-3 fw-semibold shadow-sm" onclick="confirmApproveWasted('${data.approve_url}', '${data.kode_pengeluaran}', ${data.grand_total}, ${data.total_item_kurang}, '${data.lokasi_nama || 'Gudang'}')"><i class="bi bi-check-circle me-1"></i> Approve Wasted (HPP Terakhir)</button>`
                                 : `<button type="button" class="btn btn-secondary btn-sm px-3 fw-semibold shadow-sm" disabled title="Tidak dapat di-approve karena stok di gudang sumber tidak mencukupi"><i class="bi bi-x-circle me-1"></i> Stok Kurang (Tidak Bisa Di-Approve)</button>`
                               )
-                            : (isWastedCK
-                                ? `<button type="button" class="btn btn-success btn-sm px-3 fw-semibold shadow-sm" onclick="confirmApproveWastedCK('${data.approve_url}', '${data.kode_pengeluaran}', ${data.grand_total}, 0)"><i class="bi bi-check-circle me-1"></i> Approve Pengeluaran</button>`
+                            : (data.is_wasted
+                                ? `<button type="button" class="btn btn-success btn-sm px-3 fw-semibold shadow-sm" onclick="confirmApproveWasted('${data.approve_url}', '${data.kode_pengeluaran}', ${data.grand_total}, 0, '${data.lokasi_nama || 'Gudang'}')"><i class="bi bi-check-circle me-1"></i> Approve Pengeluaran</button>`
                                 : `<a href="${data.approve_url}" class="btn btn-success btn-sm px-3 fw-semibold" onclick="return confirm('Approve pengeluaran dan potong stok di gudang terkait?')"><i class="bi bi-check-circle me-1"></i> Approve Pengeluaran</a>`
                               )
                     ) : ''}
@@ -1713,21 +1714,22 @@ function confirmDeletePengeluaran(id, kode, isApproved, formId, isPaid) {
     }
 }
 
-function confirmApproveWastedCK(approveUrl, kode, grandTotal, totalKurang) {
+function confirmApproveWasted(approveUrl, kode, grandTotal, totalKurang, lokasiNama) {
     const formattedTotal = Number(grandTotal || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    lokasiNama = lokasiNama || 'Gudang Terkait';
     
     if (typeof Swal !== 'undefined') {
         let warningHtml = totalKurang > 0 ? `
             <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 10px 12px; border-radius: 4px; margin-bottom: 12px;">
-                <strong style="color: #b45309; display: block; margin-bottom: 2px;">⚠️ Peringatan Ketersediaan Stok Central Kitchen:</strong>
+                <strong style="color: #b45309; display: block; margin-bottom: 2px;">⚠️ Peringatan Ketersediaan Stok (${lokasiNama}):</strong>
                 <span style="color: #92400e; font-size: 12.5px;">
-                    Terdapat <strong>${totalKurang}</strong> item bahan yang stok fisiknya di Gudang Central Kitchen sudah <strong>habis (0)</strong> karena telah dipakai untuk produksi.
+                    Terdapat <strong>${totalKurang}</strong> item bahan yang stok fisiknya di <strong>${lokasiNama}</strong> sudah <strong>habis (0)</strong> atau tidak mencukupi.
                 </span>
             </div>
             <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 10px 12px; border-radius: 4px; margin-bottom: 12px;">
                 <strong style="color: #15803d; display: block; margin-bottom: 2px;">ℹ️ Penyesuaian Nilai HPP:</strong>
                 <span style="color: #166534; font-size: 12.5px;">
-                    Biaya wasted tetap dapat disetujui dan nilai HPP otomatis dihitung menggunakan <strong>Harga Terakhir Barang di Central Kitchen</strong> (Estimasi Total HPP: <strong>Rp ${formattedTotal}</strong>).
+                    Biaya wasted tetap dapat disetujui dan nilai HPP otomatis dihitung menggunakan <strong>Harga HPP Pembelian Terakhir</strong> (Estimasi Total HPP: <strong>Rp ${formattedTotal}</strong>).
                 </span>
             </div>
         ` : `
@@ -1740,7 +1742,7 @@ function confirmApproveWastedCK(approveUrl, kode, grandTotal, totalKurang) {
         `;
 
         Swal.fire({
-            title: 'Approve Wasted Central Kitchen?',
+            title: `Approve Wasted ${lokasiNama}?`,
             html: `
                 <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #334155;">
                     <p style="margin-bottom: 10px;">Anda akan menyetujui dokumen pengeluaran wasted <strong>${kode}</strong>.</p>
@@ -1762,11 +1764,12 @@ function confirmApproveWastedCK(approveUrl, kode, grandTotal, totalKurang) {
             }
         });
     } else {
-        if (confirm(`Peringatan Wasted Central Kitchen:\nStok di Gudang Central Kitchen sudah habis (0). Biaya wasted akan dihitung menggunakan harga terakhir barang (Total: Rp ${formattedTotal}).\n\nLanjutkan approval?`)) {
+        if (confirm(`Peringatan Wasted ${lokasiNama}:\nStok di ${lokasiNama} sudah habis (0). Biaya wasted akan dihitung menggunakan harga HPP pembelian terakhir (Total: Rp ${formattedTotal}).\n\nLanjutkan approval?`)) {
             window.location.href = approveUrl;
         }
     }
 }
+const confirmApproveWastedCK = confirmApproveWasted;
 </script>
 
 </x-app-layout>

@@ -248,10 +248,14 @@
                                 } elseif ($stokTersedia == $qtyDiminta && $stokTersedia > 0) {
                                     $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"><i class="bi bi-exclamation-circle me-1"></i>Stok Terakhir di Gudang (Segera Pembelian)</span>';
                                 } elseif ($stokTersedia > 0) {
-                                    $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Kurang ' . number_format($kurang, 2, ',', '.') . ' ' . $satuan . '</span>';
+                                    if ($isWasted) {
+                                        $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">Sisa Stok ' . number_format($stokTersedia, 2, ',', '.') . ' ' . $satuan . ' (HPP Terakhir)</span>';
+                                    } else {
+                                        $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Kurang ' . number_format($kurang, 2, ',', '.') . ' ' . $satuan . '</span>';
+                                    }
                                 } else {
-                                    if ($isWasted && ($isCentralKitchen ?? false)) {
-                                        $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">Stok Habis (0) - HPP Harga Terakhir</span>';
+                                    if ($isWasted) {
+                                        $statusPill = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1">Stok Habis (0) - HPP Pembelian Terakhir</span>';
                                     } else {
                                         $statusPill = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Stok Habis (0)</span>';
                                     }
@@ -382,7 +386,7 @@
 @if($pengeluaran->status == 'draft')
     @php
         $isWO = str_contains(strtolower($pengeluaran->keterangan ?? ''), 'permintaan bahan baku untuk');
-        $isWastedCK = $isWasted && ($isCentralKitchen ?? false);
+        $lokasiNama = ($pengeluaran->gudang->nama ?? 'Gudang') . ($pengeluaran->divisi ? ' - ' . $pengeluaran->divisi->nama : '');
     @endphp
 
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-4">
@@ -400,12 +404,12 @@
                     <i class="bi bi-pencil-square me-1"></i> Edit Pengeluaran
                 </a>
             @endif
-            @if($totalKurang > 0 && !$isWastedCK)
+            @if($totalKurang > 0 && !$isWasted)
                 <button type="button" class="btn btn-secondary fw-semibold" disabled title="Stok di gudang sumber tidak mencukupi untuk disetujui">
                     <i class="bi bi-x-circle me-1"></i> Stok Kurang (Tidak Bisa Di-Approve)
                 </button>
-            @elseif($isWastedCK)
-                <button type="button" class="btn btn-success fw-semibold shadow-sm" onclick="confirmApproveWastedCK('{{ route('pengeluaran-bahan-baku.approve', $pengeluaran->id) }}', '{{ $pengeluaran->kode_pengeluaran }}', {{ $grandTotal }}, {{ $totalKurang }})">
+            @elseif($isWasted)
+                <button type="button" class="btn btn-success fw-semibold shadow-sm" onclick="confirmApproveWasted('{{ route('pengeluaran-bahan-baku.approve', $pengeluaran->id) }}', '{{ $pengeluaran->kode_pengeluaran }}', {{ $grandTotal }}, {{ $totalKurang }}, '{{ $lokasiNama }}')">
                     <i class="bi bi-check-circle me-1"></i> {{ $totalKurang > 0 ? 'Approve Wasted (HPP Terakhir)' : 'Approve Pengeluaran' }}
                 </button>
             @else
@@ -684,21 +688,22 @@ function downloadPageAsImage() {
     });
 }
 
-function confirmApproveWastedCK(approveUrl, kode, grandTotal, totalKurang) {
+function confirmApproveWasted(approveUrl, kode, grandTotal, totalKurang, lokasiNama) {
     const formattedTotal = Number(grandTotal || 0).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    lokasiNama = lokasiNama || 'Gudang Terkait';
     
     if (typeof Swal !== 'undefined') {
         let warningHtml = totalKurang > 0 ? `
             <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 10px 12px; border-radius: 4px; margin-bottom: 12px;">
-                <strong style="color: #b45309; display: block; margin-bottom: 2px;">⚠️ Peringatan Ketersediaan Stok Central Kitchen:</strong>
+                <strong style="color: #b45309; display: block; margin-bottom: 2px;">⚠️ Peringatan Ketersediaan Stok (${lokasiNama}):</strong>
                 <span style="color: #92400e; font-size: 12.5px;">
-                    Terdapat <strong>${totalKurang}</strong> item bahan yang stok fisiknya di Gudang Central Kitchen sudah <strong>habis (0)</strong> karena telah dipakai untuk produksi.
+                    Terdapat <strong>${totalKurang}</strong> item bahan yang stok fisiknya di <strong>${lokasiNama}</strong> sudah <strong>habis (0)</strong> atau tidak mencukupi.
                 </span>
             </div>
             <div style="background: #f0fdf4; border-left: 4px solid #22c55e; padding: 10px 12px; border-radius: 4px; margin-bottom: 12px;">
                 <strong style="color: #15803d; display: block; margin-bottom: 2px;">ℹ️ Penyesuaian Nilai HPP:</strong>
                 <span style="color: #166534; font-size: 12.5px;">
-                    Biaya wasted tetap dapat disetujui dan nilai HPP otomatis dihitung menggunakan <strong>Harga Terakhir Barang di Central Kitchen</strong> (Estimasi Total HPP: <strong>Rp ${formattedTotal}</strong>).
+                    Biaya wasted tetap dapat disetujui dan nilai HPP otomatis dihitung menggunakan <strong>Harga HPP Pembelian Terakhir</strong> (Estimasi Total HPP: <strong>Rp ${formattedTotal}</strong>).
                 </span>
             </div>
         ` : `
@@ -711,7 +716,7 @@ function confirmApproveWastedCK(approveUrl, kode, grandTotal, totalKurang) {
         `;
 
         Swal.fire({
-            title: 'Approve Wasted Central Kitchen?',
+            title: `Approve Wasted ${lokasiNama}?`,
             html: `
                 <div style="text-align: left; font-size: 13.5px; line-height: 1.6; color: #334155;">
                     <p style="margin-bottom: 10px;">Anda akan menyetujui dokumen pengeluaran wasted <strong>${kode}</strong>.</p>
@@ -733,11 +738,12 @@ function confirmApproveWastedCK(approveUrl, kode, grandTotal, totalKurang) {
             }
         });
     } else {
-        if (confirm(`Peringatan Wasted Central Kitchen:\nStok di Gudang Central Kitchen sudah habis (0). Biaya wasted akan dihitung menggunakan harga terakhir barang (Total: Rp ${formattedTotal}).\n\nLanjutkan approval?`)) {
+        if (confirm(`Peringatan Wasted ${lokasiNama}:\nStok di ${lokasiNama} sudah habis (0). Biaya wasted akan dihitung menggunakan harga HPP pembelian terakhir (Total: Rp ${formattedTotal}).\n\nLanjutkan approval?`)) {
             window.location.href = approveUrl;
         }
     }
 }
+const confirmApproveWastedCK = confirmApproveWasted;
 </script>
 
 </x-app-layout>

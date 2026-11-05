@@ -777,9 +777,13 @@ class PengeluaranBahanBakuController extends Controller
                 }
             }
             if ($hppTotal <= 0 || ($detail->qty > 0 && abs(($hppTotal / $detail->qty) - 233) <= 1)) {
-                $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
-                if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
-                    $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                if ($isWasted) {
+                    $hargaUnit = $this->getHargaPembelianTerakhir($detail->barang_id);
+                } else {
+                    $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
+                    if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
+                        $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                    }
                 }
                 $hppTotal = round($detail->qty * $hargaUnit, 2);
             }
@@ -910,9 +914,13 @@ class PengeluaranBahanBakuController extends Controller
                 }
                 if ($hppTotal <= 0 || ($detail->qty > 0 && abs(($hppTotal / $detail->qty) - 233) <= 1)) {
                     try {
-                        $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
-                        if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
-                            $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                        if ($isWasted) {
+                            $hargaUnit = $this->getHargaPembelianTerakhir($detail->barang_id);
+                        } else {
+                            $hargaUnit = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $pengeluaran->gudang_id);
+                            if ($hargaUnit <= 0 || abs($hargaUnit - 233) <= 1 || abs($hargaUnit - 25888.89) <= 1) {
+                                $hargaUnit = $this->getHargaTerakhirBarang($detail->barang_id);
+                            }
                         }
                         $hppTotal = round($detail->qty * $hargaUnit, 2);
                     } catch (\Throwable $eLastPrice) {
@@ -968,11 +976,16 @@ class PengeluaranBahanBakuController extends Controller
                     $statusStok = 'Stok Terakhir di Gudang (Segera Pembelian)';
                     $statusColor = 'warning';
                 } elseif ($stokTersedia > 0) {
-                    $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
-                    $statusColor = 'danger';
+                    if ($isWasted) {
+                        $statusStok = 'Sisa Stok ' . number_format($stokTersedia, 2, ',', '.') . ' ' . $satuan . ' (Kekurangan HPP Terakhir)';
+                        $statusColor = 'warning';
+                    } else {
+                        $statusStok = 'Kurang ' . number_format($kekurangan, 2, ',', '.') . ' ' . $satuan;
+                        $statusColor = 'danger';
+                    }
                 } else {
-                    if ($isWasted && $isCentralKitchen) {
-                        $statusStok = 'Stok Habis (0) - HPP Harga Terakhir';
+                    if ($isWasted) {
+                        $statusStok = 'Stok Habis (0) - HPP Pembelian Terakhir';
                         $statusColor = 'warning';
                     } else {
                         $statusStok = 'Stok Habis (0)';
@@ -1621,6 +1634,17 @@ class PengeluaranBahanBakuController extends Controller
             $divisiLokasi = $pengeluaran->divisi_id;
 
             // 1. Kembalikan stok_gudang
+            $qtyKembali = (float) $detail->qty;
+            if ($isWasted) {
+                $tsWasted = TransaksiStok::where('source_type', 'pengeluaran_wasted')
+                    ->where('source_id', $pengeluaran->id)
+                    ->where('barang_id', $detail->barang_id)
+                    ->first();
+                if ($tsWasted) {
+                    $qtyKembali = (float) $tsWasted->qty;
+                }
+            }
+
             $stokQuery = StokGudang::where('barang_id', $detail->barang_id)
                 ->where('gudang_id', $gudangLokasi);
             if ($divisiLokasi) {
@@ -1630,13 +1654,15 @@ class PengeluaranBahanBakuController extends Controller
             }
             $stokGudang = $stokQuery->lockForUpdate()->first();
             if ($stokGudang) {
-                $stokGudang->increment('jumlah', $detail->qty);
+                if ($qtyKembali > 0) {
+                    $stokGudang->increment('jumlah', $qtyKembali);
+                }
             } else {
                 StokGudang::create([
                     'barang_id' => $detail->barang_id,
                     'gudang_id' => $gudangLokasi,
                     'divisi_id' => $divisiLokasi,
-                    'jumlah'    => $detail->qty,
+                    'jumlah'    => $qtyKembali,
                 ]);
             }
 
@@ -1829,7 +1855,16 @@ class PengeluaranBahanBakuController extends Controller
             $hppTotal = 0;
 
             foreach ($fifoResult as $fifo) {
-                $totalHarga = $fifo['qty_keluar'] * $fifo['harga_per_qty'];
+                $hargaPerQty = (float) $fifo['harga_per_qty'];
+                // Jika wasted dan batch habis/tidak ada, pastikan gunakan harga HPP pembelian terakhir
+                if ($isWasted && ($fifo['batch_id'] === null || $hargaPerQty <= 0)) {
+                    $hargaBeliTerakhir = $this->getHargaPembelianTerakhir($detail->barang_id);
+                    if ($hargaBeliTerakhir > 0) {
+                        $hargaPerQty = $hargaBeliTerakhir;
+                    }
+                }
+
+                $totalHarga = $fifo['qty_keluar'] * $hargaPerQty;
                 $hppTotal  += $totalHarga;
 
                 if ($fifo['batch_id'] !== null) {
@@ -1839,14 +1874,17 @@ class PengeluaranBahanBakuController extends Controller
                         'batch_id'       => $fifo['batch_id'],
                         'batch_number'   => $fifo['batch_number'],
                         'qty_keluar'     => $fifo['qty_keluar'],
-                        'harga_per_qty'  => $fifo['harga_per_qty'],
+                        'harga_per_qty'  => $hargaPerQty,
                         'total_harga'    => $totalHarga,
                     ]);
                 }
             }
 
             if ($hppTotal <= 0) {
-                $hargaFallback = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $gudangLokasi);
+                $hargaFallback = $isWasted ? $this->getHargaPembelianTerakhir($detail->barang_id) : 0;
+                if ($hargaFallback <= 0) {
+                    $hargaFallback = $this->fifoService->getHargaTerakhirBahan($detail->barang_id, $gudangLokasi);
+                }
                 if ($hargaFallback <= 0) {
                     $hargaFallback = $this->getHargaTerakhirBarang($detail->barang_id);
                 }
@@ -1912,16 +1950,39 @@ class PengeluaranBahanBakuController extends Controller
             }
 
             $stokGudang = $stokQuery->first();
+            $qtyPotongStok = (float) $detail->qty;
 
-            if ($stokGudang) {
-                $stokGudang->decrement('jumlah', (float)$detail->qty);
+            if ($isWasted) {
+                if ($stokGudang) {
+                    // Jika stok di lokasi terjadinya wasted masih ada (> 0), kurangi stok yang ada (maksimal sampai 0)
+                    // Jika stok sudah habis (<= 0), tidak membuat stok semakin minus (hanya untuk mencatat HPP wasted)
+                    $stokTersedia = (float) $stokGudang->jumlah;
+                    if ($stokTersedia > 0) {
+                        $qtyPotongStok = min($stokTersedia, (float) $detail->qty);
+                        $stokGudang->decrement('jumlah', $qtyPotongStok);
+                    } else {
+                        $qtyPotongStok = 0;
+                    }
+                } else {
+                    $qtyPotongStok = 0;
+                    StokGudang::create([
+                        'barang_id' => $detail->barang_id,
+                        'gudang_id' => $gudangLokasi,
+                        'divisi_id' => $divisiLokasi,
+                        'jumlah'    => 0,
+                    ]);
+                }
             } else {
-                StokGudang::create([
-                    'barang_id' => $detail->barang_id,
-                    'gudang_id' => $gudangLokasi,
-                    'divisi_id' => $divisiLokasi,
-                    'jumlah'    => -1 * (float)$detail->qty,
-                ]);
+                if ($stokGudang) {
+                    $stokGudang->decrement('jumlah', (float)$detail->qty);
+                } else {
+                    StokGudang::create([
+                        'barang_id' => $detail->barang_id,
+                        'gudang_id' => $gudangLokasi,
+                        'divisi_id' => $divisiLokasi,
+                        'jumlah'    => -1 * (float)$detail->qty,
+                    ]);
+                }
             }
 
             TransaksiStok::create([
@@ -1932,7 +1993,7 @@ class PengeluaranBahanBakuController extends Controller
                 'gudang_asal_id' => $gudangLokasi,
                 'divisi_asal_id' => $divisiLokasi,
                 'barang_id'      => $detail->barang_id,
-                'qty'            => $detail->qty,
+                'qty'            => $qtyPotongStok,
                 'total_harga'    => $hppTotal,
                 'created_by'     => auth()->id(),
             ]);
@@ -1995,6 +2056,70 @@ class PengeluaranBahanBakuController extends Controller
         return (float) ($hppRef ?? 0);
     }
 
+    /**
+     * Mengambil harga HPP dari pembelian terakhir barang.
+     * Digunakan khusus untuk pencatatan HPP wasted ketika stok di gudang terjadinya wasted sudah habis.
+     */
+    public function getHargaPembelianTerakhir($barangId): float
+    {
+        $latestPembelian = DB::table('pembelian_detail')
+            ->join('pembelian', 'pembelian.id', '=', 'pembelian_detail.pembelian_id')
+            ->where('pembelian_detail.barang_id', $barangId)
+            ->where(function($q) {
+                $q->where('pembelian_detail.harga_per_qty', '>', 0)
+                  ->orWhere('pembelian_detail.harga', '>', 0);
+            })
+            ->where(function($q) {
+                $q->whereNull('pembelian.catatan_pembayaran')
+                  ->orWhere(function($sub) {
+                      $sub->where('pembelian.catatan_pembayaran', 'not like', '[DELETED]%')
+                          ->where('pembelian.catatan_pembayaran', 'not like', '[BATAL]%');
+                  });
+            })
+            ->where(function($q) {
+                $q->whereNull('pembelian.keterangan')
+                  ->orWhere('pembelian.keterangan', 'not like', '[BATAL]%');
+            })
+            ->select('pembelian_detail.*', 'pembelian.tanggal')
+            ->orderBy('pembelian.tanggal', 'desc')
+            ->orderBy('pembelian.id', 'desc')
+            ->orderBy('pembelian_detail.id', 'desc')
+            ->first();
+
+        if ($latestPembelian) {
+            $master = DB::table('master_barang')->where('id', $barangId)->first();
+            $satDasar = strtolower(trim($master->satuan ?? ''));
+            $masterKonv = (float)($master->konversi_pembelian ?? 1);
+
+            $pQty = (float)($latestPembelian->qty ?? 0);
+            $pHarga = (float)($latestPembelian->harga ?? 0);
+            $pHargaPerQty = (float)($latestPembelian->harga_per_qty ?? 0);
+            $detailKonv = (float)($latestPembelian->konversi_pembelian ?? 1);
+            $effectiveKonv = $detailKonv > 1 ? $detailKonv : ($masterKonv > 1 ? $masterKonv : 1.0);
+
+            if ($pHargaPerQty > 0 && abs($pHargaPerQty - 233) > 1 && abs($pHargaPerQty - 25888.89) > 1) {
+                return (float)$pHargaPerQty;
+            }
+
+            if ($pHarga > 0 && $pQty > 0) {
+                $calcPrice = ($pHarga / $pQty);
+                if ($effectiveKonv > 1) {
+                    $calcPrice = $calcPrice / $effectiveKonv;
+                }
+                if ($calcPrice > 0 && abs($calcPrice - 233) > 1 && abs($calcPrice - 25888.89) > 1) {
+                    return (float)$calcPrice;
+                }
+            }
+        }
+
+        $fifoPrice = $this->fifoService->getHargaTerakhirBahan((int)$barangId, null);
+        if ($fifoPrice > 0 && abs($fifoPrice - 233) > 1 && abs($fifoPrice - 25888.89) > 1) {
+            return (float)$fifoPrice;
+        }
+
+        return $this->getHargaTerakhirBarang($barangId);
+    }
+
     public function hitungNilaiOpname($gudangId, $barangId, $selisih, $divisiId = null): float
     {
         if (abs($selisih) < 0.0001) {
@@ -2046,35 +2171,6 @@ class PengeluaranBahanBakuController extends Controller
                 $isWasted = ($data->jenis_pengeluaran === 'wasted' || str_starts_with($data->kode_pengeluaran, 'PBK-WST-'));
 
                 if ($isFromOpname || $isWasted) {
-                    $isCentralKitchen = ($data->gudang && str_contains(strtolower($data->gudang->nama), 'central kitchen'))
-                        || ($data->divisi && str_contains(strtolower($data->divisi->nama), 'central kitchen'))
-                        || str_contains(strtolower($data->keterangan ?? ''), 'central kitchen');
-
-                    // Jika Wasted di luar Central Kitchen, tetap validasi kecukupan stok lokasi
-                    if ($isWasted && !$isCentralKitchen) {
-                        foreach ($data->details as $detail) {
-                            $stokQuery = StokGudang::where('barang_id', $detail->barang_id)
-                                ->where('gudang_id', $data->gudang_id);
-                            if ($data->divisi_id) {
-                                $stokQuery->where('divisi_id', $data->divisi_id);
-                            } else {
-                                $stokQuery->whereNull('divisi_id');
-                            }
-                            $stokTersedia = (float) ($stokQuery->sum('jumlah') ?? 0);
-
-                            if ($stokTersedia < $detail->qty) {
-                                $barang = MasterBarang::find($detail->barang_id);
-                                $namaBarang = $barang ? $barang->nama : "ID Barang: {$detail->barang_id}";
-                                $satuan = $barang->satuan ?? 'pcs';
-                                $kurang = $detail->qty - $stokTersedia;
-                                
-                                throw new \Exception(
-                                    "Gagal Approve: Stok \"{$namaBarang}\" di lokasi tidak mencukupi (Diminta: " . number_format($detail->qty, 2, ',', '.') . " {$satuan}, Tersedia: " . number_format($stokTersedia, 2, ',', '.') . " {$satuan}, Kekurangan: -" . number_format($kurang, 2, ',', '.') . " {$satuan}). Dokumen wasted non-Central Kitchen tidak dapat disetujui jika stok tidak mencukupi."
-                                );
-                            }
-                        }
-                    }
-
                     $this->executeApproveWastedOrOpname($data);
                 } else {
                     $gudangAsalId = MasterGudang::getGudangUtamaId();

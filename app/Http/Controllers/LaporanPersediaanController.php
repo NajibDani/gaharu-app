@@ -347,63 +347,111 @@ class LaporanPersediaanController extends Controller
     */
     public function stockOpname(Request $request)
     {
+        @ini_set('memory_limit', '512M');
+
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';
 
         // Auto filter warehouse based on role
         if ($roleName === 'Kepala Outlet Kejingga') {
-            $request->merge(['gudang_id' => 4]);
+            $gId = MasterGudang::where('nama', 'like', '%KeJingga%')->first()?->id ?? 4;
+            $request->merge(['gudang_id' => $gId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gId)->get();
         } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $request->merge(['gudang_id' => 2]);
+            $gId = MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 2;
+            $request->merge(['gudang_id' => $gId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gId)->get();
         } elseif ($roleName === 'Kepala Gudang') {
-            $request->merge(['gudang_id' => 1]);
-        }
-
-        if ($roleName === 'Kepala Outlet Kejingga') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 4)->get();
-        } elseif ($roleName === 'Kepala Outlet Gaharu') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 2)->get();
-        } elseif ($roleName === 'Kepala Gudang') {
-            $gudangs = MasterGudang::with('divisi')->where('id', 1)->get();
+            $gId = MasterGudang::getGudangUtamaId() ?: 1;
+            $request->merge(['gudang_id' => $gId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gId)->get();
         } else {
             $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
         }
 
-        $query = StockOpname::with(['gudang', 'divisi', 'user', 'details.barang'])
-            ->orderBy('tanggal', 'desc');
+        $baseQuery = StockOpname::query();
 
         if ($request->filled('dari')) {
-            $query->whereDate('tanggal', '>=', $request->dari);
+            $baseQuery->whereDate('tanggal', '>=', $request->dari);
         }
         if ($request->filled('sampai')) {
-            $query->whereDate('tanggal', '<=', $request->sampai);
+            $baseQuery->whereDate('tanggal', '<=', $request->sampai);
         }
         if ($request->filled('gudang_id')) {
-            $query->where('gudang_id', $request->gudang_id);
+            $baseQuery->where('gudang_id', $request->gudang_id);
         }
         if ($request->filled('divisi_id')) {
-            $query->where('divisi_id', $request->divisi_id);
+            $baseQuery->where('divisi_id', $request->divisi_id);
         }
         if ($request->filled('status')) {
-            $query->where('status', $request->status);
+            $baseQuery->where('status', $request->status);
         }
 
-        $data = $query->get();
+        $hanyaSelisih = $request->filled('hanya_selisih') && $request->hanya_selisih == '1';
+        if ($hanyaSelisih) {
+            $baseQuery->whereHas('details', function ($q) {
+                $q->where('selisih', '!=', 0);
+            });
+        }
 
-        $totalOpname       = $data->count();
-        $totalSelisih      = $data->sum(fn($d) => $d->details->sum(fn($r) => abs($r->selisih)));
-        $totalNilaiSelisih = $data->sum(fn($d) => $d->details->sum('nilai_selisih'));
-        $totalApproved     = $data->where('status', 'approved')->count();
+        // Hitung statistik ringkasan via SQL agregat langsung (hemat memori PHP & sangat cepat)
+        $totalOpname   = (clone $baseQuery)->count();
+        $totalApproved = (clone $baseQuery)->where('status', 'approved')->count();
+
+        $matchingOpnameIds = (clone $baseQuery)->pluck('id');
+        if ($matchingOpnameIds->isNotEmpty()) {
+            $detailStats = DB::table('stock_opname_detail')
+                ->whereIn('stock_opname_id', $matchingOpnameIds)
+                ->selectRaw('SUM(ABS(selisih)) as total_selisih, SUM(nilai_selisih) as total_nilai_selisih')
+                ->first();
+            $totalSelisih      = (float) ($detailStats->total_selisih ?? 0);
+            $totalNilaiSelisih = (float) ($detailStats->total_nilai_selisih ?? 0);
+        } else {
+            $totalSelisih      = 0;
+            $totalNilaiSelisih = 0;
+        }
 
         if ($request->format === 'pdf') {
+            $data = (clone $baseQuery)
+                ->with([
+                    'gudang',
+                    'divisi',
+                    'user',
+                    'details.barang:id,nama,kode_barang,satuan,satuan_pembelian,konversi_pembelian',
+                ])
+                ->orderBy('tanggal', 'desc')
+                ->get();
+
             $pdf = app('dompdf.wrapper');
             $pdf->loadView('laporanpersediaan.stock-opname-pdf', compact('data', 'request'));
             return $pdf->download('laporan-stock-opname-' . now()->format('Ymd') . '.pdf');
         }
 
         if ($request->format === 'excel') {
+            $data = (clone $baseQuery)
+                ->with(['gudang', 'divisi', 'details'])
+                ->orderBy('tanggal', 'desc')
+                ->get();
+
             return $this->exportExcelOpname($data, $request);
         }
+
+        // Tampilkan data dengan paginasi 10 dokumen per halaman untuk mencegah memory exhausted
+        $query = (clone $baseQuery)
+            ->with([
+                'gudang',
+                'divisi',
+                'user',
+                'details' => function ($q) use ($hanyaSelisih) {
+                    if ($hanyaSelisih) {
+                        $q->where('selisih', '!=', 0);
+                    }
+                },
+                'details.barang:id,nama,kode_barang,satuan,satuan_pembelian,konversi_pembelian',
+            ])
+            ->orderBy('tanggal', 'desc');
+
+        $data = $query->paginate(10)->withQueryString();
 
         return view('laporanpersediaan.stock-opname', compact(
             'data', 'gudangs',
@@ -526,6 +574,7 @@ class LaporanPersediaanController extends Controller
 
     private function exportExcelOpname($data, $request)
     {
+        @ini_set('memory_limit', '512M');
         $filename = 'laporan-stock-opname-' . now()->format('Ymd') . '.csv';
         $headers  = [
             'Content-Type'        => 'text/csv',

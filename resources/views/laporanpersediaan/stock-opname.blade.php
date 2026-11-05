@@ -7,15 +7,15 @@
         <div class="card mb-4 shadow-sm">
             <div class="card-body">
                 <form method="GET" action="{{ route('laporan.stock-opname') }}" class="row g-3 align-items-end">
-                    <div class="col-12 col-md-2">
+                    <div class="col-12 col-sm-6 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">DARI TANGGAL</label>
                         <input type="date" name="dari" class="form-control form-control-sm" value="{{ request('dari') }}">
                     </div>
-                    <div class="col-12 col-md-2">
+                    <div class="col-12 col-sm-6 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">SAMPAI TANGGAL</label>
                         <input type="date" name="sampai" class="form-control form-control-sm" value="{{ request('sampai') }}">
                     </div>
-                    <div class="col-12 col-md-2">
+                    <div class="col-12 col-sm-6 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">GUDANG</label>
                         <select name="gudang_id" id="report_gudang_id" class="form-select form-select-sm">
                             <option value="">Semua Gudang</option>
@@ -24,13 +24,13 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-12 col-md-2" id="report_divisi_container" style="{{ !request('divisi_id') && !request('gudang_id') ? 'display:none;' : '' }}">
+                    <div class="col-12 col-sm-6 col-md-2" id="report_divisi_container" style="{{ !request('divisi_id') && !request('gudang_id') ? 'display:none;' : '' }}">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">DIVISI</label>
                         <select name="divisi_id" id="report_divisi_id" class="form-select form-select-sm">
                             <option value="">Semua Divisi</option>
                         </select>
                     </div>
-                    <div class="col-12 col-md-2">
+                    <div class="col-12 col-sm-6 col-md-2">
                         <label class="form-label fw-semibold text-muted" style="font-size:12px;">STATUS</label>
                         <select name="status" class="form-select form-select-sm">
                             <option value="">Semua Status</option>
@@ -38,17 +38,29 @@
                             <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approved</option>
                         </select>
                     </div>
-                    <div class="col-12 col-md-2 d-flex gap-2">
+                    <div class="col-12 col-sm-6 col-md-2">
+                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">FILTER BARANG</label>
+                        <select name="hanya_selisih" class="form-select form-select-sm">
+                            <option value="" {{ !request('hanya_selisih') ? 'selected' : '' }}>Semua Barang</option>
+                            <option value="1" {{ request('hanya_selisih') == '1' ? 'selected' : '' }}>Hanya Berselisih (≠ 0)</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex gap-2 justify-content-end mt-2">
                         <button type="submit" class="btn btn-sm text-white px-3" style="background-color: #d88656; border: none;">
                             <i class="bi bi-search me-1"></i> Tampilkan
                         </button>
+                        @if(request()->hasAny(['dari', 'sampai', 'gudang_id', 'divisi_id', 'status', 'hanya_selisih']))
+                            <a href="{{ route('laporan.stock-opname') }}" class="btn btn-sm btn-outline-secondary" title="Reset Filter">
+                                <i class="bi bi-arrow-clockwise me-1"></i> Reset
+                            </a>
+                        @endif
                         <a href="{{ route('laporan.stock-opname', array_merge(request()->all(), ['format'=>'excel'])) }}"
-                           class="btn btn-sm text-white" style="background-color: #606060; border: none;">
-                            <i class="bi bi-file-earmark-spreadsheet"></i>
+                           class="btn btn-sm text-white" style="background-color: #606060; border: none;" title="Export Excel">
+                            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Excel
                         </a>
                         <a href="{{ route('laporan.stock-opname', array_merge(request()->all(), ['format'=>'pdf'])) }}"
-                           class="btn btn-sm text-white" style="background-color: #606060; border: none;">
-                            <i class="bi bi-file-earmark-pdf"></i>
+                           class="btn btn-sm text-white" style="background-color: #606060; border: none;" title="Export PDF">
+                            <i class="bi bi-file-earmark-pdf me-1"></i> PDF
                         </a>
                     </div>
                 </form>
@@ -100,9 +112,20 @@
         {{-- ── TABEL OPNAME ── --}}
         <div class="card shadow-sm">
             <div class="card-body p-0">
-                <div class="px-4 py-3" style="border-bottom:1px solid #eadfd4;">
-                    <span class="fw-bold" style="color:#d88656;">Rincian Stock Opname</span>
-                    <span class="text-muted ms-2" style="font-size:13px;">{{ $data->count() }} dokumen</span>
+                <div class="px-4 py-3 d-flex justify-content-between align-items-center" style="border-bottom:1px solid #eadfd4;">
+                    <div>
+                        <span class="fw-bold" style="color:#d88656;">Rincian Stock Opname</span>
+                        <span class="text-muted ms-2" style="font-size:13px;">
+                            @if($data->total() > 0)
+                                Menampilkan {{ $data->firstItem() }} - {{ $data->lastItem() }} dari {{ $data->total() }} dokumen
+                            @else
+                                0 dokumen
+                            @endif
+                        </span>
+                    </div>
+                    @if(request('hanya_selisih') == '1')
+                        <span class="badge bg-warning text-dark"><i class="bi bi-filter me-1"></i>Hanya Menampilkan Barang Berselisih (≠ 0)</span>
+                    @endif
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0" style="font-size:13px;">
@@ -207,6 +230,16 @@
                     </table>
                 </div>
             </div>
+            @if($data->hasPages())
+                <div class="card-footer bg-white py-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <div class="text-muted small">
+                        Halaman {{ $data->currentPage() }} dari {{ $data->lastPage() }} (Total {{ $data->total() }} Dokumen)
+                    </div>
+                    <div>
+                        {{ $data->links() }}
+                    </div>
+                </div>
+            @endif
         </div>
 
     </div>

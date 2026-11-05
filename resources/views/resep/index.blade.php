@@ -88,38 +88,22 @@
                         <option value="pos" {{ request('jenis') == 'pos' ? 'selected' : '' }}>Barang Jadi / POS</option>
                     </select>
 
-                    <div class="filter-choices-wrapper" style="width: 210px;">
-                        <select name="search" id="filter_search_produk" class="form-select form-select-sm search-select-filter" onchange="this.form.submit()">
-                            <option value="">-- Cari Produk --</option>
-                            @if(isset($listProdukResep))
-                                @foreach($listProdukResep as $pr)
-                                    <option value="{{ $pr->nama }}" {{ request('search') == $pr->nama ? 'selected' : '' }}>
-                                        {{ $pr->nama }}
-                                    </option>
-                                @endforeach
-                            @endif
-                        </select>
+                    {{-- Input Search Resep --}}
+                    <div class="input-group input-group-sm" style="width: 210px;">
+                        <span class="input-group-text bg-white border-end-0" style="border-radius: 6px 0 0 6px;"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" name="search" id="filter_search_resep" class="form-control form-control-sm border-start-0 border-end-0 shadow-none" placeholder="Cari Resep..." value="{{ request('search') }}" autocomplete="off">
+                        <button class="btn btn-outline-secondary border-start-0 btn-sm bg-white text-muted" type="button" onclick="const el = document.getElementById('filter_search_resep'); el.value=''; if ('{{ request('search') }}') { el.form.submit(); } else { el.focus(); }" title="Hapus pencarian resep" style="border-radius: 0 6px 6px 0;">
+                            <i class="bi bi-x"></i>
+                        </button>
                     </div>
 
-                    <div class="filter-choices-wrapper" style="width: 220px;">
-                        <select name="search_bahan" id="filter_search_bahan" class="form-select form-select-sm search-select-filter" onchange="this.form.submit()">
-                            <option value="">-- Cari Bahan Baku --</option>
-                            @if(isset($listBahanResep))
-                                @foreach($listBahanResep as $br)
-                                    @php
-                                        $brExtra = '';
-                                        if ($br->is_barang_jadi) {
-                                            $brExtra = $br->tipe_penjualan ? ' (' . $br->tipe_penjualan . ')' : ' (POS)';
-                                        } elseif ($br->is_bahan_setengah_jadi) {
-                                            $brExtra = ' (BSJ)';
-                                        }
-                                    @endphp
-                                    <option value="{{ $br->nama }}" {{ request('search_bahan') == $br->nama ? 'selected' : '' }}>
-                                        {{ $br->nama }}{{ $brExtra }}
-                                    </option>
-                                @endforeach
-                            @endif
-                        </select>
+                    {{-- Input Search Bahan Baku --}}
+                    <div class="input-group input-group-sm" style="width: 210px;">
+                        <span class="input-group-text bg-white border-end-0" style="border-radius: 6px 0 0 6px;"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" name="search_bahan" id="filter_search_bahan" class="form-control form-control-sm border-start-0 border-end-0 shadow-none" placeholder="Cari Bahan Baku..." value="{{ request('search_bahan') }}" autocomplete="off">
+                        <button class="btn btn-outline-secondary border-start-0 btn-sm bg-white text-muted" type="button" onclick="const el = document.getElementById('filter_search_bahan'); el.value=''; if ('{{ request('search_bahan') }}') { el.form.submit(); } else { el.focus(); }" title="Hapus pencarian bahan" style="border-radius: 0 6px 6px 0;">
+                            <i class="bi bi-x"></i>
+                        </button>
                     </div>
 
                     <button type="submit" class="btn btn-sm text-white" style="background-color: #d88656; border-radius: 6px; border: none; padding: 5px 15px;">Cari</button>
@@ -1146,36 +1130,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    // Inisialisasi Choices.js untuk filter dropdown search produk & search bahan
-    if (typeof Choices !== 'undefined') {
-        const filterProdukEl = document.getElementById('filter_search_produk');
-        if (filterProdukEl) {
-            try {
-                new Choices(filterProdukEl, {
-                    searchEnabled: true,
-                    itemSelectText: '',
-                    shouldSort: false,
-                    placeholder: true,
-                    placeholderValue: '-- Cari Produk --',
-                    allowHTML: false,
-                });
-            } catch (e) {}
-        }
 
-        const filterBahanEl = document.getElementById('filter_search_bahan');
-        if (filterBahanEl) {
-            try {
-                new Choices(filterBahanEl, {
-                    searchEnabled: true,
-                    itemSelectText: '',
-                    shouldSort: false,
-                    placeholder: true,
-                    placeholderValue: '-- Cari Bahan Baku --',
-                    allowHTML: false,
-                });
-            } catch (e) {}
-        }
-    }
 
     // Helper: update all hidden inputs inside a row based on selected items
     function updateHiddenInputs(row, rowIndex) {
