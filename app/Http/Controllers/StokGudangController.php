@@ -357,6 +357,7 @@ class StokGudangController extends Controller
 
             // Auto-heal jika ada batch pembelian yang kuantitasnya belum terkonversi (tersimpan satuan beli, bukan satuan stok dasar)
             MasterBarang::autoHealUnconvertedPembelianBatches($barangId);
+            \App\Http\Controllers\PersediaanAwalController::autoHealCorruptedPersediaanAwal();
             MasterBarang::autoHealSaldoAwalBatches($barangId);
 
             // Bersihkan resep duplikat agar pemotongan resep akurat

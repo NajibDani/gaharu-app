@@ -35,6 +35,9 @@ class PersediaanAwalController extends Controller
     */
     public function index(Request $request)
     {
+        // Auto-heal persediaan awal yang terindikasi memiliki anomali harga kemasan pack vs satuan dasar
+        self::autoHealCorruptedPersediaanAwal();
+
         $user = auth()->user();
         $roleName = $user->role->nama ?? '';
 
@@ -181,61 +184,208 @@ class PersediaanAwalController extends Controller
     }
 
     /**
-     * Mengambil map harga referensi persediaan awal dari Gudang Utama (ID: 2 / Kategori Utama)
+     * Mengambil harga satuan stok dasar (per GR, per ML, per PCS, per BOTOL) yang paling akurat
+     * berdasarkan riwayat pembelian terakhir atau resep BSJ, dengan proteksi ketat
+     * agar harga satuan kemasan beli (pack/bag/karton/box) tidak tertukar dengan satuan dasar.
+     */
+    public function getHargaSatuanStokAkurat(int $barangId): float
+    {
+        static $cache = [];
+        if (isset($cache[$barangId])) {
+            return $cache[$barangId];
+        }
+
+        $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
+        if (!$barang) {
+            return 0.0;
+        }
+
+        $satDasar = strtolower(trim($barang->satuan ?: 'pcs'));
+        $satBeli  = strtolower(trim($barang->satuan_pembelian ?: $satDasar));
+        $konv     = (float)($barang->konversi_pembelian ?: 1.00);
+        if ($konv <= 0 || $satBeli === $satDasar) {
+            $konv = 1.00;
+        }
+
+        // 1. Jika Bahan Setengah Jadi: HPP formulasi resep Central Kitchen
+        if ($barang->is_bahan_setengah_jadi) {
+            try {
+                $fifoService = app(FifoService::class);
+                $hppBsj = (float) $fifoService->getHppResepBsj($barang->id);
+                if ($hppBsj > 0) {
+                    return $cache[$barangId] = round($hppBsj, 4);
+                }
+            } catch (\Throwable $e) {}
+        }
+
+        // 2. Ambil dari transaksi Pembelian Terakhir (pembelian_detail) yang sah/tidak dibatalkan
+        $latestPembelian = DB::table('pembelian_detail as pd')
+            ->join('pembelian as p', 'p.id', '=', 'pd.pembelian_id')
+            ->where('pd.barang_id', $barangId)
+            ->where(function($q) {
+                $q->where('pd.harga_per_qty', '>', 0)
+                  ->orWhere('pd.harga', '>', 0);
+            })
+            ->where(function($q) {
+                $q->whereNull('p.catatan_pembayaran')
+                  ->orWhere(function($sub) {
+                      $sub->where('p.catatan_pembayaran', 'not like', '[DELETED]%')
+                          ->where('p.catatan_pembayaran', 'not like', '[BATAL]%');
+                  });
+            })
+            ->where(function($q) {
+                $q->whereNull('p.keterangan')
+                  ->orWhere('p.keterangan', 'not like', '[BATAL]%');
+            })
+            ->select('pd.*', 'p.tanggal')
+            ->orderBy('p.tanggal', 'desc')
+            ->orderBy('p.id', 'desc')
+            ->orderBy('pd.id', 'desc')
+            ->first();
+
+        if ($latestPembelian) {
+            $pQty = (float)($latestPembelian->qty ?? 0);
+            $pHarga = (float)($latestPembelian->harga ?? 0);
+            $pHargaPerQty = (float)($latestPembelian->harga_per_qty ?? 0);
+            $detailKonv = (float)($latestPembelian->konversi_pembelian ?? 1);
+            $pdSatBeli = strtolower(trim($latestPembelian->satuan_pembelian ?? ''));
+
+            $effKonv = ($detailKonv > 1) ? $detailKonv : ($konv > 1 ? $konv : 1.0);
+
+            // Deteksi apakah input pembelian dalam satuan beli atau satuan dasar
+            $isSatBeli = false;
+            if ($effKonv > 1 && $pQty >= $effKonv && $pHarga > 0 && ($pHarga / $pQty) >= 10.0 && ($pHarga / ($pQty * $effKonv)) < 1.0) {
+                $isSatBeli = false;
+            } elseif (!empty($pdSatBeli) && !empty($satDasar) && $pdSatBeli !== $satDasar) {
+                $isSatBeli = true;
+            } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
+                $isSatBeli = true;
+            } elseif ($effKonv > 1 && $pQty < ($effKonv * 0.5) && $pHarga > 0) {
+                $isSatBeli = true;
+            }
+
+            $totalBaseQty = $isSatBeli ? ($pQty * $effKonv) : $pQty;
+            $unitPrice = 0.0;
+            if ($totalBaseQty > 0 && $pHarga > 0) {
+                $unitPrice = $pHarga / $totalBaseQty;
+            } elseif ($pHargaPerQty > 0) {
+                $unitPrice = $isSatBeli ? ($pHargaPerQty / $effKonv) : $pHargaPerQty;
+            }
+
+            // Normalisasi jika masih terindikasi harga kemasan pack untuk satuan GR/ML
+            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $effKonv > 1 && $unitPrice >= 500) {
+                $namaLower = strtolower($barang->nama);
+                $isLuxury = str_contains($namaLower, 'wagyu') || str_contains($namaLower, 'truffle') || str_contains($namaLower, 'saffron') || str_contains($namaLower, 'caviar');
+                if (!$isLuxury) {
+                    $unitPrice = round($unitPrice / $effKonv, 4);
+                }
+            }
+
+            if ($unitPrice > 0) {
+                return $cache[$barangId] = round($unitPrice, 4);
+            }
+        }
+
+        // 3. Ambil dari batch stok non-SA (pembelian nyata / mutasi)
+        $batchNonSa = DB::table('stok_gudang_batch')
+            ->where('barang_id', $barangId)
+            ->where('harga_per_qty', '>', 0)
+            ->where('batch_number', 'not like', 'SA-%')
+            ->orderBy('id', 'desc')
+            ->value('harga_per_qty');
+
+        if ($batchNonSa && (float)$batchNonSa > 0) {
+            $bPrice = (float)$batchNonSa;
+            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konv > 1 && $bPrice >= 500) {
+                $namaLower = strtolower($barang->nama);
+                $isLuxury = str_contains($namaLower, 'wagyu') || str_contains($namaLower, 'truffle') || str_contains($namaLower, 'saffron') || str_contains($namaLower, 'caviar');
+                if (!$isLuxury) {
+                    $bPrice = round($bPrice / $konv, 4);
+                }
+            }
+            return $cache[$barangId] = round($bPrice, 4);
+        }
+
+        // 4. Gunakan FifoService getHargaTerakhirBahan sebagai fallback pintar
+        try {
+            $fifoPrice = (float) app(FifoService::class)->getHargaTerakhirBahan($barangId);
+            if ($fifoPrice > 0) {
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konv > 1 && $fifoPrice >= 500) {
+                    $namaLower = strtolower($barang->nama);
+                    $isLuxury = str_contains($namaLower, 'wagyu') || str_contains($namaLower, 'truffle') || str_contains($namaLower, 'saffron') || str_contains($namaLower, 'caviar');
+                    if (!$isLuxury) {
+                        $fifoPrice = round($fifoPrice / $konv, 4);
+                    }
+                }
+                return $cache[$barangId] = round($fifoPrice, 4);
+            }
+        } catch (\Throwable $e) {}
+
+        // 5. Fallback ke hpp_referensi di master_barang
+        $refHpp = (float) ($barang->hpp_referensi ?: 0);
+        if ($refHpp > 0) {
+            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konv > 1 && $refHpp >= 500) {
+                $namaLower = strtolower($barang->nama);
+                $isLuxury = str_contains($namaLower, 'wagyu') || str_contains($namaLower, 'truffle') || str_contains($namaLower, 'saffron') || str_contains($namaLower, 'caviar');
+                if (!$isLuxury) {
+                    $refHpp = round($refHpp / $konv, 4);
+                }
+            }
+            return $cache[$barangId] = round($refHpp, 4);
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Mengambil map harga referensi persediaan awal dari Gudang Utama / Pembelian Terakhir
      * Format output: [barang_id => harga_satuan_stok]
      */
     private function getHargaGudangUtamaMap(): array
     {
-        $gudangUtama = MasterGudang::where('kategori', 'Utama')->orWhere('nama', 'like', '%Gudang Utama%')->first() ?? MasterGudang::find(2);
-        $gudangUtamaId = $gudangUtama ? $gudangUtama->id : 2;
+        $barangs = MasterBarang::where('is_active', true)->where('is_barang_jadi', false)->get(['id']);
+        $map = [];
+        foreach ($barangs as $b) {
+            $price = $this->getHargaSatuanStokAkurat($b->id);
+            if ($price > 0) {
+                $map[$b->id] = $price;
+            }
+        }
+        return $map;
+    }
 
-        // 1. Ambil dari persediaan awal Gudang Utama yang harganya > 0 (prioritaskan status approved)
-        $paUtamaPrices = DB::table('persediaan_awal_detail as pad')
-            ->join('persediaan_awal as pa', 'pa.id', '=', 'pad.persediaan_awal_id')
-            ->where('pa.gudang_id', $gudangUtamaId)
-            ->where('pad.harga_satuan', '>', 0)
-            ->orderByRaw("CASE WHEN pa.status IN ('approved', 'posted') THEN 2 ELSE 1 END ASC")
-            ->orderBy('pa.tanggal', 'asc')
-            ->orderBy('pad.id', 'asc')
-            ->pluck('pad.harga_satuan', 'pad.barang_id')
-            ->toArray();
+    /**
+     * Auto-heal transaksi persediaan awal yang terindikasi memiliki rincian harga bengkak
+     */
+    public static function autoHealCorruptedPersediaanAwal(?int $targetId = null): void
+    {
+        try {
+            $query = PersediaanAwal::query();
+            if ($targetId) {
+                $query->where('id', $targetId);
+            } else {
+                $query->where(function($q) {
+                    $q->where('total_nilai', '>', 50000000)
+                      ->orWhereExists(function($sq) {
+                          $sq->select(DB::raw(1))
+                              ->from('persediaan_awal_detail as pad')
+                              ->join('master_barang as mb', 'mb.id', '=', 'pad.barang_id')
+                              ->whereColumn('pad.persediaan_awal_id', 'persediaan_awal.id')
+                              ->whereIn(DB::raw('LOWER(TRIM(pad.satuan))'), ['gr', 'ml', 'gram'])
+                              ->where('pad.harga_satuan', '>=', 500)
+                              ->where('mb.konversi_pembelian', '>', 1);
+                      });
+                });
+            }
 
-        // 2. Ambil dari batch stok Gudang Utama
-        $batchPrices = DB::table('stok_gudang_batch')
-            ->where('gudang_id', $gudangUtamaId)
-            ->where('harga_per_qty', '>', 0)
-            ->orderBy('id', 'asc')
-            ->pluck('harga_per_qty', 'barang_id')
-            ->toArray();
-
-        // 3. Ambil dari pembelian terakhir (pembelian_detail)
-        $latestPurchases = DB::table('pembelian_detail as pd')
-            ->join('pembelian as p', 'p.id', '=', 'pd.pembelian_id')
-            ->where('pd.harga_per_qty', '>', 0)
-            ->orderBy('p.tanggal', 'asc')
-            ->orderBy('pd.id', 'asc')
-            ->pluck('pd.harga_per_qty', 'pd.barang_id')
-            ->toArray();
-
-        // 4. Ambil dari batch stok gudang manapun
-        $batchAnyPrices = DB::table('stok_gudang_batch')
-            ->where('harga_per_qty', '>', 0)
-            ->orderBy('id', 'asc')
-            ->pluck('harga_per_qty', 'barang_id')
-            ->toArray();
-
-        // 5. Ambil dari persediaan awal gudang manapun
-        $paAnyPrices = DB::table('persediaan_awal_detail as pad')
-            ->where('pad.harga_satuan', '>', 0)
-            ->orderBy('pad.id', 'asc')
-            ->pluck('pad.harga_satuan', 'pad.barang_id')
-            ->toArray();
-
-        // 6. Ambil dari master_barang hpp_referensi
-        $masterHpp = MasterBarang::where('hpp_referensi', '>', 0)->pluck('hpp_referensi', 'id')->toArray();
-
-        // Prioritas penggabungan
-        return $paUtamaPrices + $batchPrices + $latestPurchases + $batchAnyPrices + $paAnyPrices + $masterHpp;
+            $pas = $query->limit(10)->get();
+            if ($pas->count() > 0) {
+                $controller = new self();
+                foreach ($pas as $pa) {
+                    $controller->fixPersediaanAwalDetailPrices($pa);
+                }
+            }
+        } catch (\Throwable $e) {}
     }
 
     /*
@@ -510,6 +660,21 @@ class PersediaanAwalController extends Controller
                     if ($rawHarga > 0) {
                         $hargaInput = $rawHarga;
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
+
+                        // Safety guard: jika user memilih satuan dasar (multiplier = 1), tapi tidak sengaja mengetik harga pack
+                        if (!$isPembelian && $hasKonv && $konversi > 1 && $hargaStok > 0) {
+                            $satDasar = strtolower(trim($satuanStok));
+                            $isLuxury = str_contains(strtolower($barang->nama), 'wagyu') || str_contains(strtolower($barang->nama), 'truffle') || str_contains(strtolower($barang->nama), 'saffron') || str_contains(strtolower($barang->nama), 'caviar');
+                            $accurateRef = $this->getHargaSatuanStokAkurat((int)$barangId);
+
+                            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $hargaStok >= 500 && !$isLuxury) {
+                                $hargaStok = round($hargaStok / $konversi, 4);
+                                $hargaInput = $hargaStok;
+                            } elseif ($accurateRef > 0 && $hargaStok >= ($accurateRef * ($konversi * 0.4))) {
+                                $hargaStok = round($hargaStok / $konversi, 4);
+                                $hargaInput = $hargaStok;
+                            }
+                        }
                     } else {
                         $hargaStok = (float) ($hargaUtamaMap[$barangId] ?? ($barang->hpp_referensi ?? 0));
                         $hargaInput = $hargaStok * $multiplier;
@@ -1010,6 +1175,21 @@ class PersediaanAwalController extends Controller
                     if ($subHarga > 0) {
                         $hargaInput = $subHarga;
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
+
+                        // Safety guard: jika user memilih satuan dasar (multiplier = 1), tapi tidak sengaja mengetik harga pack
+                        if (!$isPembelian && $hasKonv && $konversi > 1 && $hargaStok > 0) {
+                            $satDasar = strtolower(trim($satuanStok));
+                            $isLuxury = str_contains(strtolower($barang->nama), 'wagyu') || str_contains(strtolower($barang->nama), 'truffle') || str_contains(strtolower($barang->nama), 'saffron') || str_contains(strtolower($barang->nama), 'caviar');
+                            $accurateRef = $this->getHargaSatuanStokAkurat((int)$bId);
+
+                            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $hargaStok >= 500 && !$isLuxury) {
+                                $hargaStok = round($hargaStok / $konversi, 4);
+                                $hargaInput = $hargaStok;
+                            } elseif ($accurateRef > 0 && $hargaStok >= ($accurateRef * ($konversi * 0.4))) {
+                                $hargaStok = round($hargaStok / $konversi, 4);
+                                $hargaInput = $hargaStok;
+                            }
+                        }
                     } else {
                         $hargaStok = (float) ($hargaUtamaMap[$bId] ?? ($barang->hpp_referensi ?? 0));
                         $hargaInput = $hargaStok * $multiplier;
@@ -1738,14 +1918,14 @@ class PersediaanAwalController extends Controller
 
     /**
      * Memperbaiki dan merekolkoreksi harga satuan, harga pembelian, dan total nilai pada rincian persediaan awal
-     * apabila terdapat kesalahan pengisian/skala harga per PACK yang secara tidak sengaja tersimpan pada harga per GR.
+     * apabila terdapat kesalahan pengisian/skala harga per PACK yang secara tidak sengaja tersimpan pada harga per GR/BOTOL/PCS.
      */
     private function fixPersediaanAwalDetailPrices(PersediaanAwal $persediaanAwal)
     {
-        $gudangUtamaMap = $this->getHargaGudangUtamaMap();
         $totalNilaiCalculated = 0;
+        $anyDetailChanged = false;
 
-        $persediaanAwal->load(['details.barang']);
+        $persediaanAwal->load(['details.barang.kategori', 'gudang']);
 
         foreach ($persediaanAwal->details as $d) {
             $barang = $d->barang;
@@ -1758,6 +1938,9 @@ class PersediaanAwalController extends Controller
                 $masterKonv = 1.00;
             }
 
+            $satDasar = strtolower(trim($masterSatStok));
+            $isLuxury = str_contains(strtolower($barang->nama), 'wagyu') || str_contains(strtolower($barang->nama), 'truffle') || str_contains(strtolower($barang->nama), 'saffron') || str_contains(strtolower($barang->nama), 'caviar');
+
             $dChanged = false;
 
             // 1. Deteksi dan sinkronkan jika ada perbedaan satuan dasar atau rasio konversi dengan Master Barang
@@ -1766,47 +1949,68 @@ class PersediaanAwalController extends Controller
                 $d->satuan = $masterSatStok;
                 $d->satuan_pembelian = ($masterKonv > 1) ? $masterSatBeli : null;
                 $d->konversi_pembelian = $masterKonv;
-
-                if ($d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
-                    $d->qty = round((float)$d->qty_pembelian * $masterKonv, 4);
-                    if ((float)$d->harga_pembelian > 0) {
-                        $d->harga_satuan = round((float)$d->harga_pembelian / $masterKonv, 4);
-                    }
-                } elseif ($masterKonv > 1 && (float)$d->qty > 0) {
-                    $d->qty_pembelian = round((float)$d->qty / $masterKonv, 4);
-                    $d->harga_pembelian = round((float)$d->harga_satuan * $masterKonv, 2);
-                }
                 $dChanged = true;
             }
 
             $konv = (float)($d->konversi_pembelian ?: $masterKonv);
             if ($konv <= 0) $konv = 1.00;
 
-            $satStok = $masterSatStok;
-            $satBeli = $d->satuan_pembelian ?: $satStok;
+            // Dapatkan harga satuan stok dasar yang akurat (per GR, per BOTOL, per PCS)
+            $accurateHargaStok = $this->getHargaSatuanStokAkurat((int)$d->barang_id);
 
-            $refHargaStok = (float) ($gudangUtamaMap[$d->barang_id] ?? ($barang->hpp_referensi ?? 0));
-            $refHargaBeli = round($refHargaStok * $konv, 2);
+            // 2. Deteksi harga bengkak / tertukar dengan harga pack
+            $currentHarga = (float) $d->harga_satuan;
+            $isInflated = false;
 
-            if ($satBeli !== $satStok && $konv > 1) {
-                // Hanya koreksi jika harga_satuan salah diisi setara harga pack (terdeteksi ketika harga_pembelian belum ada atau sama persis dengan harga_satuan)
-                if ((float)$d->harga_satuan > 0 && ((float)$d->harga_pembelian <= 0 || abs((float)$d->harga_pembelian - (float)$d->harga_satuan) < 0.01)) {
-                    if ($refHargaStok > 0 && (float)$d->harga_satuan >= ($refHargaStok * ($konv / 2))) {
-                        $d->harga_pembelian = (float)$d->harga_satuan;
-                        $d->harga_satuan = round((float)$d->harga_satuan / $konv, 4);
-                        $dChanged = true;
-                    }
+            if ($konv > 1) {
+                // Kasus A: Satuan dasar GR/ML tapi harga >= 500 (dan bukan komoditas luxury)
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $currentHarga >= 500 && !$isLuxury) {
+                    $isInflated = true;
+                }
+                // Kasus B: Harga satuan persediaan awal >= 40% dari (harga akurat * konversi), menandakan harga pack tersimpan di harga satuan
+                elseif ($accurateHargaStok > 0 && $currentHarga >= ($accurateHargaStok * ($konv * 0.4))) {
+                    $isInflated = true;
+                }
+                // Kasus C: harga_pembelian sama persis dengan harga_satuan (pack price diinput pada satuan dasar)
+                elseif ($currentHarga > 0 && (float)$d->harga_pembelian > 0 && abs((float)$d->harga_pembelian - $currentHarga) < 0.01) {
+                    $isInflated = true;
+                }
+                // Kasus D: harga_satuan mendekati harga kemasan pack pembelian (misal selisih < 5% dari harga beli pack)
+                elseif ($accurateHargaStok > 0 && abs($currentHarga - ($accurateHargaStok * $konv)) <= ($accurateHargaStok * $konv * 0.05)) {
+                    $isInflated = true;
                 }
             }
 
-            if ((float)$d->harga_satuan <= 0 && $refHargaStok > 0) {
-                $d->harga_satuan = $refHargaStok;
-                if ($satBeli !== $satStok && $konv > 1) {
-                    $d->harga_pembelian = $refHargaBeli;
+            if ($isInflated) {
+                // Pulihkan harga satuan stok ke harga pembelian terakhir yang benar
+                if ($accurateHargaStok > 0) {
+                    $d->harga_satuan = $accurateHargaStok;
+                } else {
+                    $d->harga_satuan = round($currentHarga / $konv, 4);
                 }
+                $d->harga_pembelian = round($d->harga_satuan * $konv, 2);
+                $dChanged = true;
+            } elseif ($currentHarga <= 0 && $accurateHargaStok > 0) {
+                $d->harga_satuan = $accurateHargaStok;
+                if ($konv > 1) {
+                    $d->harga_pembelian = round($accurateHargaStok * $konv, 2);
+                }
+                $dChanged = true;
+            } elseif ($konv > 1 && ((float)$d->harga_pembelian <= 0 || abs((float)$d->harga_pembelian - ($d->harga_satuan * $konv)) > 1.0)) {
+                $d->harga_pembelian = round((float)$d->harga_satuan * $konv, 2);
                 $dChanged = true;
             }
 
+            // Pastikan qty_pembelian selalu sinkron dengan qty stok dasar
+            if ($konv > 1 && (float)$d->qty > 0) {
+                $expectedQtyBeli = round((float)$d->qty / $konv, 4);
+                if ($d->qty_pembelian === null || abs((float)$d->qty_pembelian - $expectedQtyBeli) > 0.01) {
+                    $d->qty_pembelian = $expectedQtyBeli;
+                    $dChanged = true;
+                }
+            }
+
+            // Hitung ulang total nilai
             $calcTotalNilai = round((float)$d->qty * (float)$d->harga_satuan, 2);
             if (abs((float)$d->total_nilai - $calcTotalNilai) > 0.01) {
                 $d->total_nilai = $calcTotalNilai;
@@ -1815,6 +2019,7 @@ class PersediaanAwalController extends Controller
 
             if ($dChanged) {
                 $d->save();
+                $anyDetailChanged = true;
 
                 // Sinkronkan TransaksiStok saldo_awal terkait
                 TransaksiStok::whereIn('source_type', ['saldo_awal', 'persediaan_awal'])
@@ -1855,6 +2060,50 @@ class PersediaanAwalController extends Controller
             'total_qty'   => $totalQtyCalculated,
             'total_nilai' => $totalNilaiCalculated,
         ]);
+
+        // Sinkronkan Jurnal Penyesuaian terkait jika transaksi ini sudah pernah dijurnal
+        $jp = JurnalPenyesuaian::where('source_type', 'saldo_awal')
+            ->where('source_id', $persediaanAwal->id)
+            ->first();
+
+        if ($jp && $totalNilaiCalculated > 0 && ($anyDetailChanged || in_array($persediaanAwal->status, ['approved', 'posted']))) {
+            $idEkuitas = DB::table('chart_of_accounts')->where('kode', '3101')->value('id')
+                      ?? DB::table('chart_of_accounts')->where('kode', '3103')->value('id')
+                      ?? 30;
+
+            $surplusDebits = [];
+            foreach ($persediaanAwal->details as $d) {
+                $b = $d->barang;
+                $isOp = $b && ($b->is_operational || (!$b->is_bahan_baku && !$b->is_bahan_setengah_jadi && !$b->is_barang_jadi));
+                $coaCode = $isOp ? '1501' : '1301';
+                $accId = DB::table('chart_of_accounts')->where('kode', $coaCode)->value('id') ?? ($isOp ? 27 : 19);
+
+                if (!isset($surplusDebits[$accId])) {
+                    $surplusDebits[$accId] = 0;
+                }
+                $surplusDebits[$accId] += (float) $d->total_nilai;
+            }
+
+            $jp->details()->delete();
+
+            foreach ($surplusDebits as $accId => $debitAmount) {
+                if ($debitAmount > 0) {
+                    $jp->details()->create([
+                        'account_id'   => $accId,
+                        'debit'        => round($debitAmount, 2),
+                        'kredit'       => 0,
+                        'journal_type' => JurnalPenyesuaian::class,
+                    ]);
+                }
+            }
+
+            $jp->details()->create([
+                'account_id'   => $idEkuitas,
+                'debit'        => 0,
+                'kredit'       => round($totalNilaiCalculated, 2),
+                'journal_type' => JurnalPenyesuaian::class,
+            ]);
+        }
     }
 
     /*
@@ -2341,6 +2590,21 @@ class PersediaanAwalController extends Controller
                             $hargaInput = $isPembelian ? (($hargaUtamaMap[$barang->id] ?? $barang->hpp_referensi) * $multiplier) : ($hargaUtamaMap[$barang->id] ?? $barang->hpp_referensi);
                         }
                         $hargaStok = $multiplier > 0 ? (max(0, $hargaInput) / $multiplier) : max(0, $hargaInput);
+
+                        // Safety guard: jika kolom harga diisi harga pack pada satuan dasar
+                        if (!$isPembelian && $hasKonv && $konversi > 1 && $hargaStok > 0) {
+                            $satDasar = strtolower(trim($satuanStok));
+                            $isLuxury = str_contains(strtolower($barang->nama), 'wagyu') || str_contains(strtolower($barang->nama), 'truffle') || str_contains(strtolower($barang->nama), 'saffron') || str_contains(strtolower($barang->nama), 'caviar');
+                            $accurateRef = $this->getHargaSatuanStokAkurat((int)$barang->id);
+
+                            if (in_array($satDasar, ['gr', 'ml', 'gram']) && $hargaStok >= 500 && !$isLuxury) {
+                                $hargaStok = round($hargaStok / $konversi, 4);
+                                $hargaInput = $hargaStok;
+                            } elseif ($accurateRef > 0 && $hargaStok >= ($accurateRef * ($konversi * 0.4))) {
+                                $hargaStok = round($hargaStok / $konversi, 4);
+                                $hargaInput = $hargaStok;
+                            }
+                        }
                     } else {
                         // Gudang non-Utama oleh divisi: harga otomatis mengikuti harga referensi Gudang Utama
                         $hargaStok = (float) ($hargaUtamaMap[$barang->id] ?? ($barang->hpp_referensi ?? 0));
