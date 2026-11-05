@@ -657,12 +657,23 @@
             if (satuanSelectEl) {
                 satuanSelectEl.addEventListener('change', function () {
                     const newUnit = this.value;
+                    const oldUnit = row.getAttribute('data-current-unit') || 'pembelian';
                     const isReadonly = hargaInputEl.hasAttribute('readonly');
                     const hargaStokUtama = parseFloat(row.getAttribute('data-harga-stok-utama')) || 0;
                     const hargaBeliUtama = parseFloat(row.getAttribute('data-harga-beli-utama')) || 0;
                     const konversi = parseFloat(row.getAttribute('data-konversi')) || 1.00;
 
+                    let currentQty = parseFloat(qtyInputEl.value) || 0;
                     let currentPrice = parseFloat(hargaInputEl.value) || 0;
+
+                    // Konversi Qty Input secara proporsional saat user mengganti satuan
+                    if (oldUnit !== newUnit && currentQty > 0 && konversi > 1) {
+                        if (newUnit === 'utama' && oldUnit === 'pembelian') {
+                            qtyInputEl.value = Number((currentQty * konversi).toFixed(2));
+                        } else if (newUnit === 'pembelian' && oldUnit === 'utama') {
+                            qtyInputEl.value = Number((currentQty / konversi).toFixed(4));
+                        }
+                    }
 
                     if (isReadonly) {
                         const newPrice = newUnit === 'pembelian' ? hargaBeliUtama : hargaStokUtama;

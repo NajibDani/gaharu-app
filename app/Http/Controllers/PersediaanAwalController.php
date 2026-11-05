@@ -686,8 +686,8 @@ class PersediaanAwalController extends Controller
                 }
 
                 $hasKonv = ($satuanBeli !== $satuanStok && $konversi > 1);
-                $qtyPembelian = $isPembelian ? $qtyInput : ($hasKonv && $konversi > 0 ? round($qtyStok / $konversi, 4) : null);
-                $hargaPembelian = $isPembelian ? max(0, $hargaInput) : ($hasKonv && $konversi > 0 ? round($hargaStok * $konversi, 2) : null);
+                $qtyPembelian = $isPembelian ? $qtyInput : null;
+                $hargaPembelian = $isPembelian ? max(0, $hargaInput) : null;
 
                 $itemTotalNilai = $qtyStok * $hargaStok;
 
@@ -886,9 +886,20 @@ class PersediaanAwalController extends Controller
 
             if ($hasKonv) {
                 if ($d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
-                    $isSavedInPembelian = true;
-                    $qtyInput = (float)$d->qty_pembelian;
-                    $hargaInput = (float)($d->harga_pembelian ?: round((float)$d->harga_satuan * $konv, 2));
+                    $satDasar = strtolower(trim($satStok));
+                    $isFractionalPack = abs((float)$d->qty_pembelian - round((float)$d->qty_pembelian)) > 0.001;
+
+                    // Jika satuan dasar adalah GR/ML dan nilai qty_pembelian bernilai pecahan desimal (cth: 1.37 botol = 1041.2 ml, 0.29 pack = 580 gr),
+                    // itu menandakan item sebenarnya dihitung dan diinput dalam satuan dasar (GR/ML), bukan botol/pack utuh
+                    if (in_array($satDasar, ['gr', 'ml', 'gram']) && $isFractionalPack) {
+                        $isSavedInPembelian = false;
+                        $qtyInput = (float)$d->qty;
+                        $hargaInput = (float)$d->harga_satuan;
+                    } else {
+                        $isSavedInPembelian = true;
+                        $qtyInput = (float)$d->qty_pembelian;
+                        $hargaInput = (float)($d->harga_pembelian ?: round((float)$d->harga_satuan * $konv, 2));
+                    }
                 }
             }
 
@@ -1206,8 +1217,8 @@ class PersediaanAwalController extends Controller
                     }
                 }
 
-                $qtyPembelian = $isPembelian ? $qtyInput : ($hasKonv && $konversi > 0 ? round($qtyStok / $konversi, 4) : null);
-                $hargaPembelian = $isPembelian ? max(0, $hargaInput) : ($hasKonv && $konversi > 0 ? round($hargaStok * $konversi, 2) : null);
+                $qtyPembelian = $isPembelian ? $qtyInput : null;
+                $hargaPembelian = $isPembelian ? max(0, $hargaInput) : null;
 
                 $itemTotalNilai = $qtyStok * $hargaStok;
 
@@ -1437,10 +1448,10 @@ class PersediaanAwalController extends Controller
                 }
             }
 
-            if ($isApproved) {
-                // Tangani item lama yang dihapus dari form edit (tidak ada lagi di validItems)
-                foreach ($oldDetailsMap as $oldBarangId => $oldDetail) {
-                    if (!in_array($oldBarangId, $processedBarangIds)) {
+            // Tangani item lama yang dihapus dari form edit (tidak ada lagi di validItems)
+            foreach ($oldDetailsMap as $oldBarangId => $oldDetail) {
+                if (!in_array($oldBarangId, $processedBarangIds)) {
+                    if ($isApproved) {
                         $oldBatch = StokGudangBatch::where('gudang_id', $gudangId)
                             ->where('barang_id', $oldBarangId)
                             ->where('batch_number', $oldDetail->batch_number)
@@ -1480,9 +1491,12 @@ class PersediaanAwalController extends Controller
                             ->where('barang_id', $oldBarangId)
                             ->delete();
 
-                        // Hapus detail
-                        $oldDetail->delete();
+                        // Rekonsiliasi ringkasan stok gudang untuk barang yang dihapus
+                        \App\Models\StokGudang::reconcileStockSummary($oldBarangId, $gudangId, $divisiId);
                     }
+
+                    // Hapus detail persediaan awal (berlaku untuk draft maupun approved)
+                    $oldDetail->delete();
                 }
             }
 
@@ -1996,17 +2010,28 @@ class PersediaanAwalController extends Controller
                     $d->harga_pembelian = round($accurateHargaStok * $konv, 2);
                 }
                 $dChanged = true;
-            } elseif ($konv > 1 && ((float)$d->harga_pembelian <= 0 || abs((float)$d->harga_pembelian - ($d->harga_satuan * $konv)) > 1.0)) {
+            } elseif ($konv > 1 && $d->qty_pembelian !== null && ((float)$d->harga_pembelian <= 0 || abs((float)$d->harga_pembelian - ($d->harga_satuan * $konv)) > 1.0)) {
                 $d->harga_pembelian = round((float)$d->harga_satuan * $konv, 2);
                 $dChanged = true;
             }
 
-            // Pastikan qty_pembelian selalu sinkron dengan qty stok dasar
-            if ($konv > 1 && (float)$d->qty > 0) {
-                $expectedQtyBeli = round((float)$d->qty / $konv, 4);
-                if ($d->qty_pembelian === null || abs((float)$d->qty_pembelian - $expectedQtyBeli) > 0.01) {
-                    $d->qty_pembelian = $expectedQtyBeli;
+            // Jika item tersimpan dalam satuan pembelian (qty_pembelian terisi), pastikan sinkron
+            if ($konv > 1 && $d->qty_pembelian !== null && (float)$d->qty_pembelian > 0) {
+                $satDasar = strtolower(trim($masterSatStok));
+                $isFractionalPack = abs((float)$d->qty_pembelian - round((float)$d->qty_pembelian)) > 0.001;
+
+                // Auto-heal legacy data: jika satuan dasar GR/ML dan qty_pembelian bernilai pecahan (cth: 1.37 botol = 1041.2 ml, 0.29 pack = 580 gr),
+                // pulihkan status input ke satuan dasar (qty_pembelian = null, harga_pembelian = null) agar tidak berubah menjadi botol/pack secara otomatis.
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $isFractionalPack) {
+                    $d->qty_pembelian = null;
+                    $d->harga_pembelian = null;
                     $dChanged = true;
+                } else {
+                    $expectedBaseQty = round((float)$d->qty_pembelian * $konv, 4);
+                    if (abs((float)$d->qty - $expectedBaseQty) > 0.01) {
+                        $d->qty = $expectedBaseQty;
+                        $dChanged = true;
+                    }
                 }
             }
 
@@ -2613,8 +2638,8 @@ class PersediaanAwalController extends Controller
 
                     $totalNilai = round($qtyInput * max(0, $hargaInput), 2);
 
-                    $qtyPembelian = $isPembelian ? $qtyInput : ($hasKonv && $konversi > 0 ? round($qtyStok / $konversi, 4) : null);
-                    $hargaPembelian = $isPembelian ? max(0, $hargaInput) : ($hasKonv && $konversi > 0 ? round($hargaStok * $konversi, 2) : null);
+                    $qtyPembelian = $isPembelian ? $qtyInput : null;
+                    $hargaPembelian = $isPembelian ? max(0, $hargaInput) : null;
 
                     $validItems[] = [
                         'barang_id'          => $barang->id,
