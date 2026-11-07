@@ -112,6 +112,9 @@ class Pembelian extends Model
         if (isset($this->attributes['divisi_id']) && !is_null($this->attributes['divisi_id'])) {
             return (int) $this->attributes['divisi_id'];
         }
+        if (isset($this->runtime_divisi_id) && !is_null($this->runtime_divisi_id)) {
+            return (int) $this->runtime_divisi_id;
+        }
         $keterangan = (string) ($this->attributes['keterangan'] ?? '');
         if (!empty($keterangan) && str_starts_with(trim($keterangan), '{')) {
             $decoded = json_decode($keterangan, true);
@@ -148,7 +151,11 @@ class Pembelian extends Model
         if (!$divId) {
             return null;
         }
-        return \App\Models\GudangDivisi::find($divId);
+        static $divisiCache = null;
+        if ($divisiCache === null) {
+            $divisiCache = \App\Models\GudangDivisi::all()->keyBy('id');
+        }
+        return $divisiCache->get($divId);
     }
 
     public function details()

@@ -4,47 +4,82 @@
     <div class="container-fluid">
 
         {{-- ── FILTER CARD ── --}}
-        <div class="card mb-4">
+        <div class="card mb-4 shadow-sm">
             <div class="card-body">
-                <form method="GET" action="{{ route('laporan.pembelian') }}" class="row g-3 align-items-end">
-                    <div class="col-12 col-md-2">
-                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">DARI TANGGAL</label>
-                        <input type="date" name="dari" class="form-control" value="{{ request('dari') }}">
+                <form method="GET" action="{{ route('laporan.pembelian') }}">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold text-muted" style="font-size:12px;">DARI TANGGAL</label>
+                            <input type="date" name="dari" class="form-control form-control-sm" value="{{ request('dari') }}">
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold text-muted" style="font-size:12px;">SAMPAI TANGGAL</label>
+                            <input type="date" name="sampai" class="form-control form-control-sm" value="{{ request('sampai') }}">
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold text-muted" style="font-size:12px;">OUTLET / GUDANG</label>
+                            <select name="gudang_id" id="report_gudang_id" class="form-select form-select-sm">
+                                <option value="">Semua Outlet &amp; Gudang</option>
+                                @foreach($gudangs as $g)
+                                    <option value="{{ $g->id }}" {{ request('gudang_id') == $g->id ? 'selected' : '' }}>
+                                        {{ $g->nama }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-2" id="report_divisi_container">
+                            <label class="form-label fw-semibold text-muted" style="font-size:12px;">DIVISI</label>
+                            <select name="divisi_id" id="report_divisi_id" class="form-select form-select-sm">
+                                <option value="">Semua Divisi</option>
+                                @foreach($divisis as $d)
+                                    <option value="{{ $d->id }}" data-gudang="{{ $d->gudang_id }}" {{ request('divisi_id') == $d->id ? 'selected' : '' }}>
+                                        {{ $d->nama }} ({{ $d->gudang->nama ?? '' }})
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold text-muted" style="font-size:12px;">SUPPLIER</label>
+                            <select name="supplier_id" class="form-select form-select-sm">
+                                <option value="">Semua Supplier</option>
+                                @foreach($suppliers as $s)
+                                    <option value="{{ $s->id }}" {{ request('supplier_id') == $s->id ? 'selected' : '' }}>{{ $s->nama }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-12 col-sm-6 col-md-2">
+                            <label class="form-label fw-semibold text-muted" style="font-size:12px;">METODE BAYAR</label>
+                            <select name="metode_pembayaran" class="form-select form-select-sm">
+                                <option value="">Semua Metode</option>
+                                <option value="cod"    {{ request('metode_pembayaran') === 'cod'    ? 'selected' : '' }}>COD</option>
+                                <option value="termin" {{ request('metode_pembayaran') === 'termin' ? 'selected' : '' }}>Termin</option>
+                                <option value="dp"     {{ request('metode_pembayaran') === 'dp'     ? 'selected' : '' }}>DP</option>
+                            </select>
+                        </div>
                     </div>
-                    <div class="col-12 col-md-2">
-                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">SAMPAI TANGGAL</label>
-                        <input type="date" name="sampai" class="form-control" value="{{ request('sampai') }}">
-                    </div>
-                    <div class="col-12 col-md-3">
-                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">SUPPLIER</label>
-                        <select name="supplier_id" class="form-select">
-                            <option value="">Semua Supplier</option>
-                            @foreach($suppliers as $s)
-                                <option value="{{ $s->id }}" {{ request('supplier_id') == $s->id ? 'selected' : '' }}>{{ $s->nama }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2">
-                        <label class="form-label fw-semibold text-muted" style="font-size:12px;">METODE BAYAR</label>
-                        <select name="metode_pembayaran" class="form-select">
-                            <option value="">Semua Metode</option>
-                            <option value="cod"    {{ request('metode_pembayaran') === 'cod'    ? 'selected' : '' }}>COD</option>
-                            <option value="termin" {{ request('metode_pembayaran') === 'termin' ? 'selected' : '' }}>Termin</option>
-                            <option value="dp"     {{ request('metode_pembayaran') === 'dp'     ? 'selected' : '' }}>DP</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-3 d-flex gap-2">
-                        <button type="submit" class="btn text-white px-4" style="background-color: #d88656; border: none;">
-                            <i class="bi bi-search me-1"></i> Tampilkan
-                        </button>
-                        <a href="{{ route('laporan.pembelian', array_merge(request()->all(), ['format'=>'excel'])) }}"
-                           class="btn btn-outline-success">
-                            <i class="bi bi-file-earmark-spreadsheet me-1"></i> Excel
-                        </a>
-                        <a href="{{ route('laporan.pembelian', array_merge(request()->all(), ['format'=>'pdf'])) }}"
-                           class="btn btn-outline-danger">
-                            <i class="bi bi-file-earmark-pdf me-1"></i> PDF
-                        </a>
+
+                    <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                        <div class="text-muted" style="font-size: 12px;">
+                            @if(request()->anyFilled(['dari', 'sampai', 'gudang_id', 'divisi_id', 'supplier_id', 'metode_pembayaran']))
+                                <span class="badge bg-light text-dark border me-2"><i class="bi bi-funnel-fill text-warning me-1"></i>Filter Aktif</span>
+                                <a href="{{ route('laporan.pembelian') }}" class="text-decoration-none text-danger fw-semibold">
+                                    <i class="bi bi-x-circle me-1"></i>Reset Filter
+                                </a>
+                            @endif
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-sm text-white px-3" style="background-color: #d88656; border: none; font-weight: 500;">
+                                <i class="bi bi-search me-1"></i> Tampilkan
+                            </button>
+                            <a href="{{ route('laporan.pembelian', array_merge(request()->all(), ['format'=>'excel'])) }}"
+                               class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-file-earmark-spreadsheet me-1"></i> Excel
+                            </a>
+                            <a href="{{ route('laporan.pembelian', array_merge(request()->all(), ['format'=>'pdf'])) }}"
+                               class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+                            </a>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -106,7 +141,7 @@
                                 <th style="background-color: #d88656; color: white;" class="px-4">Kode</th>
                                 <th style="background-color: #d88656; color: white;">Tanggal</th>
                                 <th style="background-color: #d88656; color: white;">Supplier</th>
-                                <th style="background-color: #d88656; color: white;">Gudang</th>
+                                <th style="background-color: #d88656; color: white;">Outlet / Gudang</th>
                                 <th style="background-color: #d88656; color: white;" class="text-end">Total</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Metode Bayar</th>
                                 <th style="background-color: #d88656; color: white;">Jatuh Tempo</th>
@@ -131,7 +166,16 @@
                                     </td>
                                     <td>{{ \Carbon\Carbon::parse($row->tanggal)->format('d M Y') }}</td>
                                     <td>{{ $row->supplier->nama ?? '-' }}</td>
-                                    <td>{{ $row->gudang->nama ?? '-' }}</td>
+                                    <td>
+                                        <span class="fw-semibold text-dark">{{ $row->gudang->nama ?? '-' }}</span>
+                                        @if($row->divisi)
+                                            <div class="mt-1">
+                                                <span class="badge bg-light text-dark border font-monospace" style="font-size:10.5px;">
+                                                    <i class="bi bi-diagram-3 text-primary me-1"></i>{{ $row->divisi->nama }}
+                                                </span>
+                                            </div>
+                                        @endif
+                                    </td>
                                     <td class="text-end fw-semibold">
                                         Rp {{ number_format($row->total, 0, ',', '.') }}
                                     </td>
@@ -159,7 +203,7 @@
                                                 <small class="d-block text-muted" style="font-size: 10px;">{{ \Carbon\Carbon::parse($row->lunas_at)->format('d M Y') }}</small>
                                             @endif
                                         @else
-                                            <span class="badge bg-danger">Belum Lunas</span>
+                                             <span class="badge bg-danger">Belum Lunas</span>
                                         @endif
                                     </td>
                                     <td class="text-muted" style="font-size:11px;">
@@ -187,7 +231,10 @@
                                                                 <p class="mb-1"><strong>Supplier:</strong> {{ $row->supplier->nama ?? '-' }}</p>
                                                             </div>
                                                             <div class="col-md-6 text-md-end">
-                                                                <p class="mb-1"><strong>Gudang Masuk:</strong> {{ $row->gudang->nama ?? '-' }}</p>
+                                                                <p class="mb-1"><strong>Outlet / Gudang:</strong> {{ $row->gudang->nama ?? '-' }}</p>
+                                                                @if($row->divisi)
+                                                                    <p class="mb-1"><strong>Divisi / Alokasi:</strong> <span class="badge bg-light text-dark border">{{ $row->divisi->nama }}</span></p>
+                                                                @endif
                                                                 <p class="mb-1"><strong>Metode Bayar:</strong> <span class="badge {{ $metodeBadge[1] }}">{{ $metodeBadge[0] }}</span></p>
                                                             </div>
                                                         </div>
@@ -272,4 +319,69 @@
             filter: invert(1) grayscale(1) brightness(2);
         }
     </style>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const gudangSelect = document.getElementById('report_gudang_id');
+        const divisiSelect = document.getElementById('report_divisi_id');
+        if (!gudangSelect || !divisiSelect) return;
+
+        // Cache all initial divisi options
+        const allDivisiOptions = Array.from(divisiSelect.querySelectorAll('option[data-gudang]')).map(opt => ({
+            id: opt.value,
+            nama: opt.textContent.trim(),
+            gudangId: opt.getAttribute('data-gudang')
+        }));
+
+        const currentDivisiId = "{{ request('divisi_id') }}";
+
+        function updateDivisiOptions(selectedGudangId, preserveSelectedId = null) {
+            divisiSelect.innerHTML = '<option value="">Semua Divisi</option>';
+
+            if (!selectedGudangId) {
+                allDivisiOptions.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    opt.textContent = item.nama;
+                    opt.setAttribute('data-gudang', item.gudangId);
+                    if (preserveSelectedId && String(preserveSelectedId) === String(item.id)) {
+                        opt.selected = true;
+                    }
+                    divisiSelect.appendChild(opt);
+                });
+                return;
+            }
+
+            const filtered = allDivisiOptions.filter(item => String(item.gudangId) === String(selectedGudangId));
+            if (filtered.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = "";
+                opt.textContent = "Tidak ada divisi";
+                opt.disabled = true;
+                divisiSelect.appendChild(opt);
+            } else {
+                filtered.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    // Bersihkan label outlet tambahan jika outlet sudah dipilih secara spesifik
+                    const cleanName = item.nama.replace(/\s*\([^)]*\)$/, '');
+                    opt.textContent = cleanName;
+                    opt.setAttribute('data-gudang', item.gudangId);
+                    if (preserveSelectedId && String(preserveSelectedId) === String(item.id)) {
+                        opt.selected = true;
+                    }
+                    divisiSelect.appendChild(opt);
+                });
+            }
+        }
+
+        gudangSelect.addEventListener('change', function() {
+            updateDivisiOptions(this.value);
+        });
+
+        if (gudangSelect.value) {
+            updateDivisiOptions(gudangSelect.value, currentDivisiId);
+        }
+    });
+    </script>
 </x-app-layout>

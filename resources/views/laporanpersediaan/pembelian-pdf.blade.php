@@ -105,7 +105,7 @@
         <tr>
             <td width="15%" class="fw-bold">Periode Laporan</td>
             <td width="2%">:</td>
-            <td>
+            <td width="33%">
                 @if(request('dari') || request('sampai'))
                     {{ request('dari') ?? '—' }} s/d {{ request('sampai') ?? '—' }}
                 @else
@@ -114,7 +114,27 @@
             </td>
             <td width="15%" class="text-right fw-bold">Tanggal Cetak</td>
             <td width="2%" class="text-center">:</td>
-            <td width="15%">{{ date('d-m-Y H:i') }}</td>
+            <td width="33%">{{ date('d-m-Y H:i') }}</td>
+        </tr>
+        <tr>
+            <td class="fw-bold">Outlet / Gudang</td>
+            <td>:</td>
+            <td>
+                @if(request('gudang_id'))
+                    {{ \App\Models\MasterGudang::find(request('gudang_id'))->nama ?? 'Semua Outlet' }}
+                @else
+                    Semua Outlet &amp; Gudang
+                @endif
+            </td>
+            <td class="text-right fw-bold">Divisi</td>
+            <td class="text-center">:</td>
+            <td>
+                @if(request('divisi_id'))
+                    {{ \App\Models\GudangDivisi::find(request('divisi_id'))->nama ?? 'Semua Divisi' }}
+                @else
+                    Semua Divisi
+                @endif
+            </td>
         </tr>
     </table>
 
@@ -123,10 +143,10 @@
             <tr>
                 <th width="12%">Kode</th>
                 <th width="10%">Tanggal</th>
-                <th width="18%">Supplier</th>
-                <th width="13%">Gudang</th>
+                <th width="17%">Supplier</th>
+                <th width="15%">Outlet / Gudang</th>
                 <th class="text-right" width="13%">Total</th>
-                <th class="text-center" width="10%">Metode</th>
+                <th class="text-center" width="9%">Metode</th>
                 <th class="text-center" width="12%">Jatuh Tempo</th>
                 <th class="text-center" width="12%">Status</th>
             </tr>
@@ -145,7 +165,12 @@
                     <td class="fw-bold">{{ $row->kode_pembelian }}</td>
                     <td>{{ \Carbon\Carbon::parse($row->tanggal)->format('d/m/Y') }}</td>
                     <td>{{ $row->supplier->nama ?? '-' }}</td>
-                    <td>{{ $row->gudang->nama ?? '-' }}</td>
+                    <td>
+                        {{ $row->gudang->nama ?? '-' }}
+                        @if($row->divisi)
+                            <div style="font-size: 9px; color: #555; margin-top: 1px;">Div: {{ $row->divisi->nama }}</div>
+                        @endif
+                    </td>
                     <td class="text-right fw-bold">Rp {{ number_format($row->total, 0, ',', '.') }}</td>
                     <td class="text-center"><span class="badge {{ $cls }}">{{ $label }}</span></td>
                     <td class="text-center">

@@ -23,8 +23,37 @@ class LaporanPersediaanController extends Controller
     */
     public function pembelian(Request $request)
     {
+        $user = auth()->user();
+        $roleName = $user->role->nama ?? '';
+        $isSuperAdmin = $user && $user->isSuperAdmin();
+
         $suppliers = Supplier::orderBy('nama')->get();
-        $gudangs   = MasterGudang::orderBy('nama')->get();
+
+        // Handle alias outlet_id
+        if ($request->filled('outlet_id') && !$request->filled('gudang_id')) {
+            $request->merge(['gudang_id' => $request->outlet_id]);
+        }
+
+        // Auto filter warehouse based on role
+        if ($roleName === 'Kepala Outlet Kejingga') {
+            $gKejinggaId = MasterGudang::where('nama', 'like', '%KeJingga%')->first()?->id ?? 5;
+            $request->merge(['gudang_id' => $gKejinggaId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gKejinggaId)->get();
+            $divisis = \App\Models\GudangDivisi::with('gudang')->where('gudang_id', $gKejinggaId)->orderBy('nama')->get();
+        } elseif ($roleName === 'Kepala Outlet Gaharu') {
+            $gGaharuId = MasterGudang::where('nama', 'like', '%Gaharu%')->first()?->id ?? 3;
+            $request->merge(['gudang_id' => $gGaharuId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gGaharuId)->get();
+            $divisis = \App\Models\GudangDivisi::with('gudang')->where('gudang_id', $gGaharuId)->orderBy('nama')->get();
+        } elseif (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
+            $gUtamaId = MasterGudang::getGudangUtamaId();
+            $request->merge(['gudang_id' => $gUtamaId]);
+            $gudangs = MasterGudang::with('divisi')->where('id', $gUtamaId)->get();
+            $divisis = \App\Models\GudangDivisi::with('gudang')->where('gudang_id', $gUtamaId)->orderBy('nama')->get();
+        } else {
+            $gudangs = MasterGudang::with('divisi')->orderBy('nama')->get();
+            $divisis = \App\Models\GudangDivisi::with('gudang')->orderBy('gudang_id')->orderBy('nama')->get();
+        }
 
         $query = Pembelian::with(['supplier', 'gudang', 'details.barang'])
             ->orderBy('tanggal', 'desc');
@@ -41,11 +70,48 @@ class LaporanPersediaanController extends Controller
         if ($request->filled('gudang_id')) {
             $query->where('gudang_id', $request->gudang_id);
         }
+        if ($request->filled('divisi_id')) {
+            $divId = (int) $request->divisi_id;
+            $query->where(function ($q) use ($divId) {
+                if (\Illuminate\Support\Facades\Schema::hasColumn('pembelian', 'divisi_id')) {
+                    $q->where('divisi_id', $divId);
+                }
+                $q->orWhere('keterangan', 'like', '%"divisi_id":' . $divId . '%')
+                  ->orWhere('keterangan', 'like', '%"divisi_id": "' . $divId . '"%')
+                  ->orWhere('keterangan', 'like', '%"divisi_id":' . $divId . ',%')
+                  ->orWhereExists(function ($sq) use ($divId) {
+                      $sq->select(DB::raw(1))
+                         ->from('stok_gudang_batch')
+                         ->whereColumn('stok_gudang_batch.pembelian_id', 'pembelian.id')
+                         ->where('stok_gudang_batch.divisi_id', $divId);
+                  })
+                  ->orWhereExists(function ($sq) use ($divId) {
+                      $sq->select(DB::raw(1))
+                         ->from('transaksi_stok')
+                         ->whereColumn('transaksi_stok.source_id', 'pembelian.id')
+                         ->where('transaksi_stok.source_type', 'pembelian')
+                         ->where('transaksi_stok.divisi_tujuan_id', $divId);
+                  });
+            });
+        }
         if ($request->filled('metode_pembayaran')) {
             $query->where('metode_pembayaran', $request->metode_pembayaran);
         }
 
         $data = $query->get();
+
+        if ($data->isNotEmpty()) {
+            $batchDivisiMap = DB::table('stok_gudang_batch')
+                ->whereIn('pembelian_id', $data->pluck('id'))
+                ->whereNotNull('divisi_id')
+                ->pluck('divisi_id', 'pembelian_id');
+
+            foreach ($data as $row) {
+                if (!isset($row->attributes['divisi_id']) && isset($batchDivisiMap[$row->id])) {
+                    $row->runtime_divisi_id = (int) $batchDivisiMap[$row->id];
+                }
+            }
+        }
 
         $totalNilai     = $data->sum('total');
         $totalTransaksi = $data->count();
@@ -73,7 +139,7 @@ class LaporanPersediaanController extends Controller
         }
 
         return view('laporanpersediaan.pembelian', compact(
-            'data', 'suppliers', 'gudangs',
+            'data', 'suppliers', 'gudangs', 'divisis',
             'totalNilai', 'totalTransaksi',
             'totalCod', 'totalTermin', 'totalDp', 'belumDicatat',
             'bySupplier', 'request'
@@ -476,7 +542,7 @@ class LaporanPersediaanController extends Controller
         $callback = function () use ($data) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode', 'Tanggal', 'Supplier', 'Gudang', 'Total', 'Metode Bayar', 'Jatuh Tempo', 'Status Lunas', 'Tanggal Pelunasan', 'Dicatat Pada']);
+            fputcsv($f, ['Kode', 'Tanggal', 'Supplier', 'Outlet / Gudang', 'Divisi', 'Total', 'Metode Bayar', 'Jatuh Tempo', 'Status Lunas', 'Tanggal Pelunasan', 'Dicatat Pada']);
             foreach ($data as $row) {
                 $statusLunas = $row->is_lunas ? 'Lunas' : 'Belum Lunas';
                 $tglPelunasan = $row->is_lunas && $row->lunas_at 
@@ -488,6 +554,7 @@ class LaporanPersediaanController extends Controller
                     Carbon::parse($row->tanggal)->format('d/m/Y'),
                     $row->supplier->nama ?? '-',
                     $row->gudang->nama ?? '-',
+                    $row->divisi->nama ?? '-',
                     $row->total,
                     strtoupper($row->metode_pembayaran ?? 'Belum dicatat'),
                     ($row->tanggal_jatuh_tempo ?? $row->tanggal_pelunasan) ? Carbon::parse($row->tanggal_jatuh_tempo ?? $row->tanggal_pelunasan)->format('d/m/Y') : '-',
