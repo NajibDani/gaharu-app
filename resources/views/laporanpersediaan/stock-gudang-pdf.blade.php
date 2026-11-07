@@ -30,23 +30,35 @@
 
     <table class="info-table">
         <tr>
-            <td width="15%"><strong>Kategori Laporan</strong></td>
-            <td width="3%">:</td>
-            <td>Stok Aktual Gudang</td>
+            <td width="15%"><strong>Posisi Stok Per</strong></td>
+            <td width="2%">:</td>
+            <td width="33%">
+                {{ request('tanggal') ? \Carbon\Carbon::parse(request('tanggal'))->format('d/m/Y') : 'Saat Ini (' . date('d/m/Y H:i') . ')' }}
+            </td>
             <td width="15%" class="text-right"><strong>Tanggal Cetak</strong></td>
-            <td width="3%">:</td>
-            <td width="20%">{{ date('d-m-Y H:i') }}</td>
+            <td width="2%" class="text-center">:</td>
+            <td width="33%">{{ date('d-m-Y H:i') }}</td>
+        </tr>
+        <tr>
+            <td><strong>Total Item</strong></td>
+            <td>:</td>
+            <td>{{ number_format($totalItem ?? $data->count()) }} item</td>
+            <td class="text-right"><strong>Total Nilai Stok</strong></td>
+            <td class="text-center">:</td>
+            <td class="plus">Rp {{ number_format($totalNilaiStok ?? 0, 0, ',', '.') }}</td>
         </tr>
     </table>
 
     <table class="main-table">
         <thead>
             <tr>
-                <th width="110">Kode Barang</th>
+                <th width="90">Kode Barang</th>
                 <th>Nama Barang</th>
-                <th width="130">Gudang & Divisi</th>
-                <th width="80">Satuan</th>
-                <th class="text-right" width="130">Stok</th>
+                <th width="120">Gudang & Divisi</th>
+                <th width="60">Satuan</th>
+                <th class="text-right" width="90">Stok</th>
+                <th class="text-right" width="85">Harga Satuan</th>
+                <th class="text-right" width="105">Total Harga</th>
             </tr>
         </thead>
         <tbody>
@@ -70,17 +82,26 @@
                             <div style="font-size: 8px; color: #1e3a8a;">1 {{ $row->satuan_pembelian }} = {{ number_format($konversi, 0, ',', '.') }} {{ $row->satuan }}</div>
                         @endif
                     </td>
-                    <td class="text-right fw-bold {{ $row->jumlah == 0 ? 'minus' : 'plus' }}">
-                        {{ number_format($row->jumlah, 2) }} {{ $row->satuan }}
-                        @if($hasKonversi)
-                            <div style="font-size: 9px; font-weight: normal; color: #1e3a8a;">
-                                ({{ number_format($row->jumlah / $konversi, 2) }} {{ $row->satuan_pembelian }})
-                            </div>
-                        @endif
+                    <td class="text-right fw-bold {{ $row->jumlah <= 0 ? 'minus' : 'plus' }}">
+                        {{ number_format($row->jumlah, 2) }}
+                    </td>
+                    <td class="text-right">
+                        Rp {{ number_format($row->harga_satuan ?? 0, 0, ',', '.') }}
+                    </td>
+                    <td class="text-right fw-bold {{ ($row->total_harga ?? 0) <= 0 ? 'minus' : 'plus' }}">
+                        Rp {{ number_format($row->total_harga ?? 0, 0, ',', '.') }}
                     </td>
                 </tr>
             @endforeach
         </tbody>
+        <tfoot>
+            <tr style="background-color: #e5e7eb; font-weight: bold;">
+                <td colspan="4" class="text-right">TOTAL NILAI PERSEDIAAN:</td>
+                <td class="text-right">{{ number_format($data->sum('jumlah'), 2) }}</td>
+                <td></td>
+                <td class="text-right plus">Rp {{ number_format($totalNilaiStok ?? 0, 0, ',', '.') }}</td>
+            </tr>
+        </tfoot>
     </table>
 
 </body>

@@ -190,6 +190,9 @@ class LaporanPersediaanController extends Controller
                 'master_barang.is_bahan_setengah_jadi',
                 'master_barang.is_barang_jadi',
                 'master_barang.is_operational',
+                'master_barang.hpp_referensi',
+                'master_barang.harga_jual_pos',
+                'master_barang.harga_jual_b2b',
                 'master_gudang.nama as nama_gudang',
                 'gudang_divisi.nama as nama_divisi',
                 'master_barang.minimum_stock',
@@ -230,18 +233,105 @@ class LaporanPersediaanController extends Controller
 
         // --- MENGAMBIL DATA UTAMA (TABEL) ---
         $data = $query->get();
+
+        // 1. FILTER TANGGAL (POSISI STOK HISTORIS PER TANGGAL)
+        $targetDate = $request->tanggal ?? $request->sampai ?? $request->dari;
+        if (!empty($targetDate)) {
+            $cutoff = date('Y-m-d', strtotime($targetDate)) . ' 23:59:59';
+            if ($cutoff < date('Y-m-d 23:59:59')) {
+                $inAfterCutoff = DB::table('transaksi_stok')
+                    ->where('tipe', 'masuk')
+                    ->where('tanggal', '>', $cutoff)
+                    ->select(
+                        'barang_id',
+                        'gudang_tujuan_id as gudang_id',
+                        DB::raw('COALESCE(divisi_tujuan_id, 0) as divisi_id'),
+                        DB::raw('SUM(qty) as total_qty')
+                    )
+                    ->groupBy('barang_id', 'gudang_tujuan_id', DB::raw('COALESCE(divisi_tujuan_id, 0)'))
+                    ->get()
+                    ->keyBy(fn($item) => "{$item->barang_id}_{$item->gudang_id}_{$item->divisi_id}");
+
+                $outAfterCutoff = DB::table('transaksi_stok')
+                    ->where('tipe', 'keluar')
+                    ->where('tanggal', '>', $cutoff)
+                    ->select(
+                        'barang_id',
+                        'gudang_asal_id as gudang_id',
+                        DB::raw('COALESCE(divisi_asal_id, 0) as divisi_id'),
+                        DB::raw('SUM(qty) as total_qty')
+                    )
+                    ->groupBy('barang_id', 'gudang_asal_id', DB::raw('COALESCE(divisi_asal_id, 0)'))
+                    ->get()
+                    ->keyBy(fn($item) => "{$item->barang_id}_{$item->gudang_id}_{$item->divisi_id}");
+
+                foreach ($data as $row) {
+                    $key = "{$row->barang_id}_{$row->gudang_id}_" . ($row->divisi_id ?: 0);
+                    $inQty = (float) ($inAfterCutoff[$key]->total_qty ?? 0);
+                    $outQty = (float) ($outAfterCutoff[$key]->total_qty ?? 0);
+                    $row->jumlah = (float)$row->jumlah - $inQty + $outQty;
+                }
+            }
+        }
+
+        // 2. HITUNG HARGA SATUAN DAN TOTAL HARGA PERSERDIAAN
+        $barangIds = $data->pluck('barang_id')->unique()->filter()->values();
+        $latestBatchPrices = collect();
+        if ($barangIds->isNotEmpty()) {
+            $latestBatchPrices = DB::table('stok_gudang_batch as sgb')
+                ->join(DB::raw('(SELECT barang_id, MAX(id) as max_id FROM stok_gudang_batch WHERE harga_per_qty > 0 GROUP BY barang_id) as latest'), function($join) {
+                    $join->on('sgb.id', '=', 'latest.max_id');
+                })
+                ->whereIn('sgb.barang_id', $barangIds)
+                ->pluck('sgb.harga_per_qty', 'sgb.barang_id');
+        }
+
+        foreach ($data as $row) {
+            $hppRef = (float) ($row->hpp_referensi ?? 0);
+            $batchPrice = (float) ($latestBatchPrices[$row->barang_id] ?? 0);
+
+            if ($batchPrice > 0) {
+                if ($hppRef > 0 && $batchPrice > ($hppRef * 20)) {
+                    $hargaSatuan = $hppRef;
+                } else {
+                    $hargaSatuan = $batchPrice;
+                }
+            } elseif ($hppRef > 0) {
+                $hargaSatuan = $hppRef;
+            } elseif ((float)($row->harga_jual_pos ?? 0) > 0) {
+                $hargaSatuan = (float) $row->harga_jual_pos;
+            } elseif ((float)($row->harga_jual_b2b ?? 0) > 0) {
+                $hargaSatuan = (float) $row->harga_jual_b2b;
+            } else {
+                $hargaSatuan = 0.0;
+            }
+
+            $row->harga_satuan = $hargaSatuan;
+            $row->total_harga = round((float)$row->jumlah * $hargaSatuan, 2);
+        }
+
         $totalItem = $data->count();
+        $totalNilaiStok = (float) $data->where('jumlah', '>', 0)->sum('total_harga');
 
         // --- MENGAMBIL 5 DATA STOK KRITIS ---
-        $queryKritis = clone $query; 
-        $stokKritis = $queryKritis->whereNotNull('master_barang.minimum_stock')
-                                  ->whereColumn('stok_gudang.jumlah', '<=', 'master_barang.minimum_stock')
-                                  ->take(5)
-                                  ->get();
+        $stokKritis = $data->filter(function($row) {
+            $minStock = $row->minimum_stock;
+            if ($row->is_bahan_setengah_jadi) {
+                $gudangName = strtolower($row->nama_gudang ?? '');
+                if (str_contains($gudangName, 'central kitchen')) {
+                    $minStock = $row->minimum_stock_ck;
+                } elseif (str_contains($gudangName, 'kejingga')) {
+                    $minStock = $row->minimum_stock_kejingga;
+                } elseif (str_contains($gudangName, 'gaharu')) {
+                    $minStock = $row->minimum_stock_gaharu;
+                }
+            }
+            return $minStock !== null && $row->jumlah <= $minStock;
+        })->take(5);
 
         if ($request->format === 'pdf') {
             $pdf = app('dompdf.wrapper');
-            $pdf->loadView('laporanpersediaan.stock-gudang-pdf', compact('data', 'request'));
+            $pdf->loadView('laporanpersediaan.stock-gudang-pdf', compact('data', 'request', 'totalItem', 'totalNilaiStok'));
             return $pdf->download('laporan-stock-gudang-' . now()->format('Ymd') . '.pdf');
         }
 
@@ -253,7 +343,7 @@ class LaporanPersediaanController extends Controller
 
         return view('laporanpersediaan.stock-gudang', compact(
             'data', 'gudangs', 'kategoris',
-            'totalItem', 'stokKritis',
+            'totalItem', 'totalNilaiStok', 'stokKritis',
             'request', 'hasPurchaseAccess'
         ));
     }
@@ -580,7 +670,7 @@ class LaporanPersediaanController extends Controller
         $callback = function () use ($data) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode Barang', 'Nama Barang', 'Jenis', 'Satuan', 'Gudang', 'Divisi', 'Stok Utama', 'Satuan Pembelian', 'Faktor Konversi', 'Stok Konversi', 'Status']);
+            fputcsv($f, ['Kode Barang', 'Nama Barang', 'Jenis', 'Satuan', 'Gudang', 'Divisi', 'Stok Utama', 'Harga Satuan', 'Total Harga', 'Satuan Pembelian', 'Faktor Konversi', 'Stok Konversi', 'Status']);
             foreach ($data as $row) {
                 $jenis  = $row->is_bahan_baku  ? 'Bahan Baku'
                         : ($row->is_bahan_setengah_jadi ? 'Bahan Setengah Jadi'
@@ -599,6 +689,8 @@ class LaporanPersediaanController extends Controller
                     $row->nama_gudang,
                     $row->nama_divisi ?? '-',
                     $row->jumlah,
+                    $row->harga_satuan ?? 0,
+                    $row->total_harga ?? 0,
                     $row->satuan_pembelian ?? '-',
                     $hasKonversi ? $konversi : '-',
                     $stokKonv,
