@@ -268,6 +268,11 @@
                                             <span class="badge bg-light text-dark border" style="font-size: 10px;">
                                                 {{ $item['kategori'] }}
                                             </span>
+                                            @if(!empty($item['is_bahan_setengah_jadi']))
+                                                <span class="badge bg-warning bg-opacity-10 text-dark border border-warning border-opacity-25" style="font-size: 10px;" title="Bahan Setengah Jadi (Produksi/Pembelian dari Central Kitchen)">
+                                                    <i class="bi bi-box-seam me-1 text-warning"></i>Central Kitchen
+                                                </span>
+                                            @endif
                                         </div>
                                     </td>
                                     <td class="text-center font-monospace small">

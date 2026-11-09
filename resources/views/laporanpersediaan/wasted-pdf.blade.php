@@ -231,7 +231,12 @@
                 <tr>
                     <td class="text-center">{{ $idx + 1 }}</td>
                     <td>{{ $item['kode_barang'] }}</td>
-                    <td class="fw-bold">{{ $item['nama_barang'] }}</td>
+                    <td class="fw-bold">
+                        {{ $item['nama_barang'] }}
+                        @if(!empty($item['is_bahan_setengah_jadi']))
+                            <span style="font-size: 7.5px; color: #d88656; font-weight: normal;">(Central Kitchen)</span>
+                        @endif
+                    </td>
                     <td class="text-center">{{ strtoupper($item['satuan']) }}</td>
                     <td class="text-right fw-bold text-danger">{{ number_format($item['total_qty_wasted'], 2, ',', '.') }}</td>
                     <td class="text-right fw-bold text-danger">Rp {{ number_format($item['total_nominal_wasted'], 0, ',', '.') }}</td>

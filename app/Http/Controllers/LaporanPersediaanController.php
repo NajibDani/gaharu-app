@@ -995,22 +995,39 @@ class LaporanPersediaanController extends Controller
                 $bId = $b->id;
                 if (!isset($itemsMap[$bId])) {
                     $itemsMap[$bId] = [
-                        'barang_id'            => $bId,
-                        'kode_barang'          => $b->kode_barang ?? '-',
-                        'nama_barang'          => $b->nama ?? 'Unknown',
-                        'kategori'             => $b->kategori->nama ?? '-',
-                        'satuan'               => $b->satuan ?: 'pcs',
-                        'satuan_pembelian'     => $b->satuan_pembelian ?: $b->satuan,
-                        'konversi_pembelian'   => (float)($b->konversi_pembelian ?: 1),
-                        'total_qty_wasted'     => 0,
-                        'total_nominal_wasted' => 0,
-                        'alokasi'              => [],
-                        'transaksi_list'       => [],
+                        'barang_id'              => $bId,
+                        'kode_barang'            => $b->kode_barang ?? '-',
+                        'nama_barang'            => $b->nama ?? 'Unknown',
+                        'kategori'               => $b->kategori->nama ?? '-',
+                        'is_bahan_setengah_jadi' => (bool) ($b->is_bahan_setengah_jadi ?? false),
+                        'satuan'                 => $b->satuan ?: 'pcs',
+                        'satuan_pembelian'       => $b->satuan_pembelian ?: $b->satuan,
+                        'konversi_pembelian'     => (float)($b->konversi_pembelian ?: 1),
+                        'total_qty_wasted'       => 0,
+                        'total_nominal_wasted'   => 0,
+                        'alokasi'                => [],
+                        'transaksi_list'         => [],
                     ];
                 }
 
                 $qty = (float) $d->qty;
                 $nominal = (float) ($d->hpp_total ?: ($d->total_harga ?: ($qty * (float) $d->harga_satuan)));
+
+                if ($nominal <= 0 && $qty > 0) {
+                    // Fallback jika nominal wasted belum terhitung di PBK detail
+                    $fallbackPrice = (float) ($b->hpp_referensi ?: 0);
+                    if ($fallbackPrice <= 0 && $b->is_bahan_setengah_jadi) {
+                        $fallbackPrice = app(\App\Services\FifoService::class)->getHppResepBsj($bId);
+                    }
+                    if ($fallbackPrice <= 0) {
+                        $fallbackPrice = (float) (DB::table('stok_gudang_batch')
+                            ->where('barang_id', $bId)
+                            ->where('harga_per_qty', '>', 0)
+                            ->orderBy('id', 'desc')
+                            ->value('harga_per_qty') ?: 0);
+                    }
+                    $nominal = $qty * $fallbackPrice;
+                }
 
                 $itemsMap[$bId]['total_qty_wasted'] += $qty;
                 $itemsMap[$bId]['total_nominal_wasted'] += $nominal;
@@ -1046,6 +1063,15 @@ class LaporanPersediaanController extends Controller
         // 3. Ambil data Pembelian untuk barang-barang ini
         $barangIds = array_keys($itemsMap);
         
+        $pembelianAgg = [];
+        foreach ($barangIds as $bId) {
+            $pembelianAgg[$bId] = [
+                'qty'     => 0,
+                'nominal' => 0,
+            ];
+        }
+
+        // 3a. Pembelian Eksternal (Supplier) melalui tabel pembelian & pembelian_detail
         $pembelianQuery = DB::table('pembelian_detail as pd')
             ->join('pembelian as p', 'p.id', '=', 'pd.pembelian_id')
             ->whereBetween('p.tanggal', [$dari . ' 00:00:00', $sampai . ' 23:59:59']);
@@ -1062,14 +1088,10 @@ class LaporanPersediaanController extends Controller
             'pd.harga_per_qty'
         )->get();
 
-        $pembelianAgg = [];
         foreach ($pembelianRows as $pr) {
             $bId = $pr->barang_id;
             if (!isset($pembelianAgg[$bId])) {
-                $pembelianAgg[$bId] = [
-                    'qty'     => 0,
-                    'nominal' => 0,
-                ];
+                $pembelianAgg[$bId] = ['qty' => 0, 'nominal' => 0];
             }
             $konv = (float) ($pr->konversi_pembelian ?: 1);
             $qtyDasar = (float) $pr->qty * $konv;
@@ -1077,6 +1099,252 @@ class LaporanPersediaanController extends Controller
 
             $pembelianAgg[$bId]['qty'] += $qtyDasar;
             $pembelianAgg[$bId]['nominal'] += $nom;
+        }
+
+        // 3b. Pengadaan / Pembelian dari Central Kitchen (CK Transfers & Orders)
+        try {
+            \App\Http\Controllers\StokGudangController::autoHealApprovedCkProductionTransfers();
+        } catch (\Throwable $e) {
+            // Silently continue
+        }
+
+        $gudangCkId = DB::table('master_gudang')
+            ->where(function($q) {
+                $q->where('kategori', 'Produksi')
+                  ->orWhere('nama', 'like', '%Central Kitchen%');
+            })
+            ->value('id');
+
+        // Ambil transaksi stok masuk dari Central Kitchen (transfer_ck dan pengiriman)
+        $ckQuery = DB::table('transaksi_stok as ts')
+            ->where('ts.tipe', 'masuk')
+            ->whereIn('ts.source_type', ['transfer_ck', 'pengiriman'])
+            ->whereBetween('ts.tanggal', [$dari . ' 00:00:00', $sampai . ' 23:59:59']);
+
+        if (!empty($barangIds)) {
+            $ckQuery->whereIn('ts.barang_id', $barangIds);
+        }
+
+        if ($gudangId) {
+            $ckQuery->where('ts.gudang_tujuan_id', $gudangId);
+        } elseif ($gudangCkId) {
+            $ckQuery->where('ts.gudang_tujuan_id', '!=', $gudangCkId);
+        }
+
+        if ($divisiId) {
+            $ckQuery->where('ts.divisi_tujuan_id', $divisiId);
+        }
+
+        $ckTransfers = $ckQuery->select(
+            'ts.id',
+            'ts.barang_id',
+            'ts.qty',
+            'ts.total_harga',
+            'ts.source_id',
+            'ts.source_type',
+            'ts.gudang_tujuan_id'
+        )->get();
+
+        // Cari harga B2B per customer / outlet jika relevan
+        $b2bPrices = [];
+        if ($gudangId) {
+            $outletName = DB::table('master_gudang')->where('id', $gudangId)->value('nama') ?? '';
+            $custKeyword = str_contains(strtolower($outletName), 'kejingga') ? 'kejingga' : (str_contains(strtolower($outletName), 'gaharu') ? 'gaharu' : null);
+            if ($custKeyword) {
+                $matchedCustIds = DB::table('customers')->where('nama', 'like', "%{$custKeyword}%")->pluck('id')->toArray();
+                if (!empty($matchedCustIds)) {
+                    $b2bPrices = DB::table('harga_barang_b2b')
+                        ->whereIn('customer_id', $matchedCustIds)
+                        ->whereIn('barang_id', $barangIds)
+                        ->where('harga_b2b', '>', 0)
+                        ->pluck('harga_b2b', 'barang_id')
+                        ->toArray();
+                }
+            }
+        }
+
+        foreach ($ckTransfers as $ct) {
+            $bId = $ct->barang_id;
+            $qty = (float) $ct->qty;
+            if ($qty <= 0) continue;
+
+            $nom = (float) $ct->total_harga;
+
+            // Jika total_harga pada transfer_ck belum terisi / 0, tentukan harga beli dari CK
+            if ($nom <= 0) {
+                $unitPrice = (float) ($b2bPrices[$bId] ?? 0);
+
+                if ($unitPrice <= 0) {
+                    $unitPrice = (float) (DB::table('stok_gudang_batch')
+                        ->where('barang_id', $bId)
+                        ->where(function($q) {
+                            $q->where('batch_number', 'like', 'TRANSFER-CK-%')
+                              ->orWhere('batch_number', 'like', 'CK-%');
+                        })
+                        ->where('harga_per_qty', '>', 0)
+                        ->orderBy('id', 'desc')
+                        ->value('harga_per_qty') ?: 0);
+                }
+
+                if ($unitPrice <= 0) {
+                    $itemMaster = MasterBarang::withoutGlobalScopes()->find($bId);
+                    $unitPrice = (float) ($itemMaster->hpp_referensi ?: 0);
+                    if ($unitPrice <= 0 && ($itemMaster->is_bahan_setengah_jadi ?? false)) {
+                        $unitPrice = app(\App\Services\FifoService::class)->getHppResepBsj($bId);
+                    }
+                }
+
+                $nom = $qty * $unitPrice;
+            }
+
+            if (!isset($pembelianAgg[$bId])) {
+                $pembelianAgg[$bId] = ['qty' => 0, 'nominal' => 0];
+            }
+
+            $pembelianAgg[$bId]['qty'] += $qty;
+            $pembelianAgg[$bId]['nominal'] += $nom;
+        }
+
+        // 3c. Fallback untuk pesanan Central Kitchen & batch jika belum tercatat di transaksi_stok
+        foreach ($barangIds as $bId) {
+            if (($pembelianAgg[$bId]['qty'] ?? 0) > 0) continue;
+
+            $itemMaster = MasterBarang::withoutGlobalScopes()->find($bId);
+            $isBsj = $itemMaster ? (bool)$itemMaster->is_bahan_setengah_jadi : false;
+
+            // Query pesanan CK untuk barang ini pada rentang tanggal
+            $pesananCkQuery = DB::table('pesanan_detail as pd')
+                ->join('pesanan as p', 'p.id', '=', 'pd.pesanan_id')
+                ->where('p.tipe_pesanan', 'central_kitchen')
+                ->where('pd.produk_id', $bId)
+                ->whereBetween('p.tanggal', [$dari . ' 00:00:00', $sampai . ' 23:59:59'])
+                ->where(function($q) {
+                    $q->whereNotIn('p.status_pesanan', ['batal', 'cancelled', 'rejected'])
+                      ->orWhereNull('p.status_pesanan');
+                });
+
+            if ($gudangId) {
+                $pesananCkQuery->where(function($q) use ($gudangId) {
+                    $q->where('p.gudang_id', $gudangId)
+                      ->orWhereNull('p.gudang_id');
+                });
+            }
+
+            $pesananCkRows = $pesananCkQuery->select(
+                'pd.qty',
+                'pd.harga',
+                'pd.subtotal'
+            )->get();
+
+            foreach ($pesananCkRows as $pcr) {
+                $qty = (float) $pcr->qty;
+                if ($qty <= 0) continue;
+
+                $nom = (float) ($pcr->subtotal ?: ($qty * (float) $pcr->harga));
+                if ($nom <= 0) {
+                    $unitPrice = (float) ($b2bPrices[$bId] ?? 0);
+                    if ($unitPrice <= 0) {
+                        $unitPrice = (float) ($itemMaster->hpp_referensi ?: 0);
+                    }
+                    if ($unitPrice <= 0 && $isBsj) {
+                        $unitPrice = app(\App\Services\FifoService::class)->getHppResepBsj($bId);
+                    }
+                    if ($unitPrice <= 0) {
+                        $unitPrice = (float) (DB::table('stok_gudang_batch')
+                            ->where('barang_id', $bId)
+                            ->where('harga_per_qty', '>', 0)
+                            ->orderBy('id', 'desc')
+                            ->value('harga_per_qty') ?: 0);
+                    }
+                    $nom = $qty * $unitPrice;
+                }
+
+                $pembelianAgg[$bId]['qty'] += $qty;
+                $pembelianAgg[$bId]['nominal'] += $nom;
+            }
+
+            // 3d. Fallback batch CK jika ada batch yang dibuat pada periode ini
+            if (($pembelianAgg[$bId]['qty'] ?? 0) <= 0) {
+                $batchCkQuery = DB::table('stok_gudang_batch')
+                    ->where('barang_id', $bId)
+                    ->where(function($q) {
+                        $q->where('batch_number', 'like', 'TRANSFER-CK-%')
+                          ->orWhere('batch_number', 'like', 'CK-%')
+                          ->orWhere('batch_number', 'like', 'PRODUKSI-%');
+                    })
+                    ->whereBetween('created_at', [$dari . ' 00:00:00', $sampai . ' 23:59:59']);
+
+                if ($gudangId) {
+                    $batchCkQuery->where('gudang_id', $gudangId);
+                }
+
+                $batchRows = $batchCkQuery->select('qty_masuk', 'harga_per_qty')->get();
+                foreach ($batchRows as $br) {
+                    $bQty = (float) $br->qty_masuk;
+                    if ($bQty <= 0) continue;
+
+                    $bPrice = (float) $br->harga_per_qty;
+                    if ($bPrice <= 0) {
+                        $bPrice = (float) ($b2bPrices[$bId] ?? 0);
+                    }
+                    if ($bPrice <= 0) {
+                        $bPrice = (float) ($itemMaster->hpp_referensi ?: 0);
+                    }
+                    if ($bPrice <= 0 && $isBsj) {
+                        $bPrice = app(\App\Services\FifoService::class)->getHppResepBsj($bId);
+                    }
+                    $pembelianAgg[$bId]['qty'] += $bQty;
+                    $pembelianAgg[$bId]['nominal'] += ($bQty * $bPrice);
+                }
+            }
+
+            // 3e. Khusus Bahan Setengah Jadi (BSJ): Jika pada periode ini tidak ada pengiriman baru,
+            // namun barang terbuang (wasted) dari stok CK sebelumnya, ambil data pembelian / batch CK terakhir
+            if ($isBsj && ($pembelianAgg[$bId]['qty'] ?? 0) <= 0) {
+                $lastCkTransfer = DB::table('transaksi_stok')
+                    ->where('barang_id', $bId)
+                    ->where('tipe', 'masuk')
+                    ->whereIn('source_type', ['transfer_ck', 'pengiriman'])
+                    ->where('tanggal', '<=', $sampai . ' 23:59:59')
+                    ->when($gudangId, fn($q) => $q->where('gudang_tujuan_id', $gudangId))
+                    ->orderBy('tanggal', 'desc')
+                    ->first();
+
+                if ($lastCkTransfer && (float)$lastCkTransfer->qty > 0) {
+                    $lastQty = (float) $lastCkTransfer->qty;
+                    $lastNom = (float) $lastCkTransfer->total_harga;
+                    if ($lastNom <= 0) {
+                        $uPrice = (float) ($b2bPrices[$bId] ?? 0);
+                        if ($uPrice <= 0) $uPrice = (float) ($itemMaster->hpp_referensi ?: 0);
+                        if ($uPrice <= 0) $uPrice = app(\App\Services\FifoService::class)->getHppResepBsj($bId);
+                        $lastNom = $lastQty * $uPrice;
+                    }
+                    $pembelianAgg[$bId]['qty'] += $lastQty;
+                    $pembelianAgg[$bId]['nominal'] += $lastNom;
+                } else {
+                    $lastBatch = DB::table('stok_gudang_batch')
+                        ->where('barang_id', $bId)
+                        ->where(function($q) {
+                            $q->where('batch_number', 'like', 'TRANSFER-CK-%')
+                              ->orWhere('batch_number', 'like', 'CK-%')
+                              ->orWhere('batch_number', 'like', 'PRODUKSI-%');
+                        })
+                        ->where('created_at', '<=', $sampai . ' 23:59:59')
+                        ->when($gudangId, fn($q) => $q->where('gudang_id', $gudangId))
+                        ->orderBy('id', 'desc')
+                        ->first();
+
+                    if ($lastBatch && (float)$lastBatch->qty_masuk > 0) {
+                        $bQty = (float) $lastBatch->qty_masuk;
+                        $bPrice = (float) $lastBatch->harga_per_qty;
+                        if ($bPrice <= 0) $bPrice = (float) ($b2bPrices[$bId] ?? 0);
+                        if ($bPrice <= 0) $bPrice = (float) ($itemMaster->hpp_referensi ?: 0);
+                        if ($bPrice <= 0) $bPrice = app(\App\Services\FifoService::class)->getHppResepBsj($bId);
+                        $pembelianAgg[$bId]['qty'] += $bQty;
+                        $pembelianAgg[$bId]['nominal'] += ($bQty * $bPrice);
+                    }
+                }
+            }
         }
 
         // 4. Hitung persentase wasted dan siapkan list akhir
