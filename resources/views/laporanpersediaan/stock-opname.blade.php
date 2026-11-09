@@ -68,42 +68,95 @@
         </div>
 
         {{-- ── SUMMARY CARDS ── --}}
-        <div class="row g-3 mb-4">
-            <div class="col-12 col-sm-6 col-md-3">
+        {{-- Row 1: Dokumen & Selisih Qty --}}
+        <div class="row g-3 mb-3">
+            <div class="col-12 col-sm-6 col-md-4">
                 <div class="card h-100 border-0 shadow-sm" style="background:#d88656; color:white;">
                     <div class="card-body">
-                        <div style="font-size:11px; opacity:.9; text-transform:uppercase; letter-spacing:1px;">Total Opname</div>
-                        <div class="fw-bold mt-1" style="font-size:28px;">{{ $totalOpname }}</div>
+                        <div style="font-size:11px; opacity:.9; text-transform:uppercase; letter-spacing:1px;"><i class="bi bi-file-earmark-text me-1"></i>Total Opname</div>
+                        <div class="fw-bold mt-1" style="font-size:26px;">{{ $totalOpname }}</div>
                         <div style="font-size:12px; opacity:.9;">dokumen opname</div>
                     </div>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-md-3">
+            <div class="col-12 col-sm-6 col-md-4">
                 <div class="card h-100 border-0 shadow-sm" style="background:#d1e7dd;">
                     <div class="card-body">
-                        <div style="font-size:11px; color:#0a3622; text-transform:uppercase; letter-spacing:1px;">Sudah Approved</div>
-                        <div class="fw-bold mt-1" style="font-size:28px; color:#0a3622;">{{ $totalApproved }}</div>
+                        <div style="font-size:11px; color:#0a3622; text-transform:uppercase; letter-spacing:1px;"><i class="bi bi-check-circle me-1"></i>Sudah Approved</div>
+                        <div class="fw-bold mt-1" style="font-size:26px; color:#0a3622;">{{ $totalApproved }}</div>
                         <div style="font-size:12px; color:#0a3622;">dokumen final</div>
                     </div>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-md-3">
+            <div class="col-12 col-sm-6 col-md-4">
                 <div class="card h-100 border-0 shadow-sm" style="background:#fff3cd;">
                     <div class="card-body">
-                        <div style="font-size:11px; color:#856404; text-transform:uppercase; letter-spacing:1px;">Total Selisih Qty</div>
-                        <div class="fw-bold mt-1" style="font-size:28px; color:#856404;">{{ number_format($totalSelisih, 2) }}</div>
+                        <div style="font-size:11px; color:#856404; text-transform:uppercase; letter-spacing:1px;"><i class="bi bi-arrow-left-right me-1"></i>Total Selisih Qty</div>
+                        <div class="fw-bold mt-1" style="font-size:26px; color:#856404;">{{ number_format($totalSelisih, 2) }}</div>
                         <div style="font-size:12px; color:#856404;">unit (absolut)</div>
                     </div>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-md-3">
-                <div class="card h-100 border-0 shadow-sm" style="background:#f8d7da;">
+        </div>
+
+        {{-- Row 2: Nilai Finansial Inventory (Sistem, Riil, Selisih) --}}
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-6 col-md-4">
+                <div class="card h-100 border-0 shadow-sm" style="background:#e0f2fe;">
                     <div class="card-body">
-                        <div style="font-size:11px; color:#842029; text-transform:uppercase; letter-spacing:1px;">Nilai Selisih</div>
-                        <div class="fw-bold mt-1" style="font-size:20px; color:#842029;">
-                            Rp {{ number_format($totalNilaiSelisih, 0, ',', '.') }}
+                        <div style="font-size:11px; color:#0369a1; text-transform:uppercase; letter-spacing:1px;">
+                            <i class="bi bi-cpu me-1"></i>Total Nominal Inventory Sistem
                         </div>
-                        <div style="font-size:12px; color:#842029;">estimasi kerugian/keuntungan</div>
+                        <div class="fw-bold mt-1" style="font-size:22px; color:#0369a1;">
+                            Rp {{ number_format($totalNominalSistem, 0, ',', '.') }}
+                        </div>
+                        <div style="font-size:12px; color:#0369a1; opacity:0.9;">nilai persediaan stok sistem</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4">
+                <div class="card h-100 border-0 shadow-sm" style="background:#dcfce7;">
+                    <div class="card-body">
+                        <div style="font-size:11px; color:#15803d; text-transform:uppercase; letter-spacing:1px;">
+                            <i class="bi bi-box-seam me-1"></i>Total Nominal Inventory Riil
+                        </div>
+                        <div class="fw-bold mt-1" style="font-size:22px; color:#15803d;">
+                            Rp {{ number_format($totalNominalRiil, 0, ',', '.') }}
+                        </div>
+                        <div style="font-size:12px; color:#15803d; opacity:0.9;">nilai persediaan stok fisik riil</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-4">
+                @php
+                    $isSurplus  = $totalNominalSelisih > 0;
+                    $isShortage = $totalNominalSelisih < 0;
+                    $cardBg     = $isSurplus ? '#d1e7dd' : ($isShortage ? '#f8d7da' : '#f1f5f9');
+                    $cardText   = $isSurplus ? '#0f5132' : ($isShortage ? '#842029' : '#475569');
+                    $prefixSign = $isSurplus ? '+' : ($isShortage ? '-' : '');
+                @endphp
+                <div class="card h-100 border-0 shadow-sm" style="background:{{ $cardBg }};">
+                    <div class="card-body">
+                        <div style="font-size:11px; color:{{ $cardText }}; text-transform:uppercase; letter-spacing:1px;">
+                            <i class="bi bi-cash-stack me-1"></i>Nominal Selisih
+                        </div>
+                        <div class="fw-bold mt-1" style="font-size:22px; color:{{ $cardText }};">
+                            {{ $prefixSign }}Rp {{ number_format(abs($totalNominalSelisih), 0, ',', '.') }}
+                        </div>
+                        <div style="font-size:12px; color:{{ $cardText }};">
+                            @if($isSurplus)
+                                surplus nilai inventory (+)
+                            @elseif($isShortage)
+                                shortage / penyusutan nilai inventory (-)
+                            @else
+                                cocok / balance (selisih Rp 0)
+                            @endif
+                            @if($totalNilaiSelisih > 0 && abs($totalNominalSelisih) != $totalNilaiSelisih)
+                                <span class="d-block small mt-1 opacity-75" style="font-size:11px;">
+                                    (Total selisih absolut: Rp {{ number_format($totalNilaiSelisih, 0, ',', '.') }})
+                                </span>
+                            @endif
+                        </div>
                     </div>
                 </div>
             </div>
@@ -134,10 +187,10 @@
                                 <th style="background-color: #d88656; color: white;" class="px-4">Dokumen</th>
                                 <th style="background-color: #d88656; color: white;">Gudang & Divisi</th>
                                 <th style="background-color: #d88656; color: white;">Barang</th>
-                                <th style="background-color: #d88656; color: white;" class="text-center">Sistem</th>
-                                <th style="background-color: #d88656; color: white;" class="text-center">Fisik</th>
-                                <th style="background-color: #d88656; color: white;" class="text-center">Selisih</th>
-                                <th style="background-color: #d88656; color: white;" class="text-end">Nilai Selisih</th>
+                                <th style="background-color: #d88656; color: white;" class="text-center">Sistem (Qty & Nilai)</th>
+                                <th style="background-color: #d88656; color: white;" class="text-center">Fisik / Riil (Qty & Nilai)</th>
+                                <th style="background-color: #d88656; color: white;" class="text-center">Selisih Qty</th>
+                                <th style="background-color: #d88656; color: white;" class="text-end">Nominal Selisih</th>
                                 <th style="background-color: #d88656; color: white;" class="text-center">Status</th>
                             </tr>
                         </thead>
@@ -149,6 +202,9 @@
                                             $hasKonv = !empty($detail->barang->satuan_pembelian) && $konv > 1;
                                             $satuan = $detail->barang->satuan ?? 'pcs';
                                             $satuanBeli = $detail->barang->satuan_pembelian ?? '';
+                                            $nomSistem = $detail->nominal_sistem ?? 0;
+                                            $nomFisik  = $detail->nominal_fisik ?? 0;
+                                            $nomSel    = $detail->nominal_selisih ?? 0;
                                         @endphp
                                         <tr>
                                             <td class="px-4">
@@ -178,6 +234,9 @@
                                                         ≈ {{ number_format($detail->stok_sistem / $konv, 2) }} {{ $satuanBeli }}
                                                     </div>
                                                 @endif
+                                                <div class="badge bg-light text-primary border border-primary-subtle mt-1" style="font-size: 0.72rem;" title="Nominal Inventory Sistem">
+                                                    Rp {{ number_format($nomSistem, 0, ',', '.') }}
+                                                </div>
                                             </td>
                                             <td class="text-center fw-semibold">
                                                 <div>{{ number_format($detail->stok_fisik, 2) }} <span class="text-muted small">{{ $satuan }}</span></div>
@@ -186,6 +245,9 @@
                                                         ≈ {{ number_format($detail->stok_fisik / $konv, 2) }} {{ $satuanBeli }}
                                                     </div>
                                                 @endif
+                                                <div class="badge bg-light text-success border border-success-subtle mt-1" style="font-size: 0.72rem;" title="Nominal Inventory Riil / Fisik">
+                                                    Rp {{ number_format($nomFisik, 0, ',', '.') }}
+                                                </div>
                                             </td>
                                             <td class="text-center">
                                                 @if($detail->selisih < 0)
@@ -206,8 +268,15 @@
                                                     <span class="text-muted">0 {{ $satuan }}</span>
                                                 @endif
                                             </td>
-                                            <td class="text-end fw-semibold {{ $detail->nilai_selisih < 0 ? 'text-danger' : ($detail->nilai_selisih > 0 ? 'text-success' : '') }}">
-                                                Rp {{ number_format($detail->nilai_selisih, 0, ',', '.') }}
+                                            <td class="text-end">
+                                                <div class="fw-bold {{ $nomSel < 0 ? 'text-danger' : ($nomSel > 0 ? 'text-success' : 'text-muted') }}">
+                                                    {{ $nomSel > 0 ? '+' : ($nomSel < 0 ? '-' : '') }}Rp {{ number_format(abs($nomSel), 0, ',', '.') }}
+                                                </div>
+                                                @if(!empty($detail->unit_price) && $detail->unit_price > 0)
+                                                    <div class="text-muted small" style="font-size: 0.7rem;" title="Harga Satuan Dasar">
+                                                        @ Rp {{ number_format($detail->unit_price, 2, ',', '.') }}
+                                                    </div>
+                                                @endif
                                             </td>
                                             <td class="text-center">
                                                 @if($opname->status === 'approved')
@@ -227,6 +296,34 @@
                                 </tr>
                             @endforelse
                         </tbody>
+                        @if($data->count() > 0)
+                            <tfoot style="background-color: #fdfaf6; border-top: 2px solid #d88656;">
+                                <tr class="fw-bold align-middle">
+                                    <td colspan="3" class="text-end px-4 py-3" style="color: #8c4a1e;">
+                                        TOTAL KESELURUHAN (SESUAI FILTER):
+                                    </td>
+                                    <td class="text-center py-3">
+                                        <div class="small text-muted" style="font-size: 11px;">Nominal Sistem</div>
+                                        <div class="text-primary fw-bold" style="font-size: 13px;">Rp {{ number_format($totalNominalSistem, 0, ',', '.') }}</div>
+                                    </td>
+                                    <td class="text-center py-3">
+                                        <div class="small text-muted" style="font-size: 11px;">Nominal Riil</div>
+                                        <div class="text-success fw-bold" style="font-size: 13px;">Rp {{ number_format($totalNominalRiil, 0, ',', '.') }}</div>
+                                    </td>
+                                    <td class="text-center py-3">
+                                        <div class="small text-muted" style="font-size: 11px;">Selisih Qty</div>
+                                        <div class="text-dark fw-bold" style="font-size: 13px;">{{ number_format($totalSelisih, 2) }}</div>
+                                    </td>
+                                    <td class="text-end py-3">
+                                        <div class="small text-muted" style="font-size: 11px;">Nominal Selisih</div>
+                                        <div class="fw-bold {{ $totalNominalSelisih > 0 ? 'text-success' : ($totalNominalSelisih < 0 ? 'text-danger' : 'text-muted') }}" style="font-size: 13px;">
+                                            {{ $totalNominalSelisih > 0 ? '+' : ($totalNominalSelisih < 0 ? '-' : '') }}Rp {{ number_format(abs($totalNominalSelisih), 0, ',', '.') }}
+                                        </div>
+                                    </td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        @endif
                     </table>
                 </div>
             </div>

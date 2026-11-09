@@ -135,6 +135,26 @@
         </tr>
     </table>
 
+    {{-- Ringkasan Finansial Inventory --}}
+    <table class="info-table" style="margin-top: 10px; margin-bottom: 15px; border: 1px solid #cbd5e1; background: #f8fafc;">
+        <tr>
+            <td style="padding: 8px 12px; width: 33.3%;">
+                <div style="font-size: 9px; color: #64748b; text-transform: uppercase;">Total Nominal Sistem</div>
+                <div style="font-size: 13px; font-weight: bold; color: #1e3a8a;">Rp {{ number_format($totalNominalSistem ?? 0, 0, ',', '.') }}</div>
+            </td>
+            <td style="padding: 8px 12px; width: 33.3%; border-left: 1px solid #cbd5e1;">
+                <div style="font-size: 9px; color: #64748b; text-transform: uppercase;">Total Nominal Riil / Fisik</div>
+                <div style="font-size: 13px; font-weight: bold; color: #047857;">Rp {{ number_format($totalNominalRiil ?? 0, 0, ',', '.') }}</div>
+            </td>
+            <td style="padding: 8px 12px; width: 33.3%; border-left: 1px solid #cbd5e1;">
+                <div style="font-size: 9px; color: #64748b; text-transform: uppercase;">Nominal Selisih (Riil - Sistem)</div>
+                <div style="font-size: 13px; font-weight: bold; color: {{ ($totalNominalSelisih ?? 0) >= 0 ? '#047857' : '#b91c1c' }};">
+                    {{ ($totalNominalSelisih ?? 0) >= 0 ? '+' : '-' }}Rp {{ number_format(abs($totalNominalSelisih ?? 0), 0, ',', '.') }}
+                </div>
+            </td>
+        </tr>
+    </table>
+
     <table class="main-table">
         <thead>
             <tr>
@@ -219,11 +239,22 @@
         </tbody>
         <tfoot>
             <tr>
-                <td colspan="6" class="text-right">TOTAL NILAI SELISIH:</td>
-                <td class="text-right fw-bold {{ $data->sum(fn($d) => $d->details->sum('nilai_selisih')) < 0 ? 'minus' : 'plus' }}">
-                    Rp {{ number_format($data->sum(fn($d) => $d->details->sum('nilai_selisih')), 0, ',', '.') }}
+                <td colspan="4" class="text-right">TOTAL NOMINAL SISTEM:</td>
+                <td colspan="4" class="text-left fw-bold" style="color: #1e3a8a;">
+                    Rp {{ number_format($totalNominalSistem ?? 0, 0, ',', '.') }}
                 </td>
-                <td></td>
+            </tr>
+            <tr>
+                <td colspan="4" class="text-right">TOTAL NOMINAL RIIL (FISIK):</td>
+                <td colspan="4" class="text-left fw-bold" style="color: #047857;">
+                    Rp {{ number_format($totalNominalRiil ?? 0, 0, ',', '.') }}
+                </td>
+            </tr>
+            <tr>
+                <td colspan="4" class="text-right">NOMINAL SELISIH (RIIL - SISTEM):</td>
+                <td colspan="4" class="text-left fw-bold {{ ($totalNominalSelisih ?? 0) < 0 ? 'minus' : 'plus' }}">
+                    {{ ($totalNominalSelisih ?? 0) >= 0 ? '+' : '-' }}Rp {{ number_format(abs($totalNominalSelisih ?? 0), 0, ',', '.') }}
+                </td>
             </tr>
         </tfoot>
     </table>

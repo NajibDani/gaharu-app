@@ -381,14 +381,14 @@ class FifoService
      * 5. Formulasi resep jika barang merupakan Bahan Setengah Jadi / memiliki resep
      * 6. HPP referensi / harga beli master barang
      */
-    public function getHargaTerakhirBahan(int $barangId, ?int $gudangId = null, array $visited = []): float
+    public function getHargaTerakhirBahan(int $barangId, ?int $gudangId = null, array $visited = [], ?string $asOfDate = null): float
     {
         // Cegah rekursi tak hingga (circular reference)
         if (in_array($barangId, $visited)) {
             return 0.0;
         }
 
-        $cacheKey = "{$barangId}_{$gudangId}";
+        $cacheKey = "{$barangId}_{$gudangId}_" . ($asOfDate ?? 'latest');
         if (isset(self::$hargaTerakhirCache[$cacheKey])) {
             return self::$hargaTerakhirCache[$cacheKey];
         }
@@ -402,10 +402,15 @@ class FifoService
         $masterHppRef = (float)($master->hpp_referensi ?? 0);
         $masterNama = strtolower($master->nama ?? '');
 
-        // Normalisasi harga referensi jika satuan dasar GR/ML tetapi hpp_referensi belum dibagi konversi atau terindikasi anomali
+        // Normalisasi harga referensi jika satuan dasar GR/ML tetapi hpp_referensi belum dibagi konversi atau terindikasi anomali double-conversion
         $effectiveRefPrice = $masterHppRef;
-        if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1 && $masterHppRef > 500) {
-            $effectiveRefPrice = $masterHppRef / $masterKonv;
+        if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1) {
+            if ($masterHppRef > 500) {
+                $effectiveRefPrice = $masterHppRef / $masterKonv;
+            } elseif ($masterHppRef > 0 && $masterHppRef < 1.0 && ($masterHppRef * $masterKonv) >= 1.0 && ($masterHppRef * $masterKonv) <= 1000) {
+                // Deteksi anomali double division (misal 146.27 terbagi lagi 1000 menjadi 0.15)
+                $effectiveRefPrice = $masterHppRef * $masterKonv;
+            }
         }
 
         $expectedMinPrice = 0.0;
@@ -428,9 +433,9 @@ class FifoService
                     return false;
                 }
             }
-            // Cegah harga pecahan rupiah yang tidak masuk akal (< Rp 1/GR atau Rp 1/ML) untuk daging, protein, atau bahan ber-HPP
+            // Cegah harga pecahan rupiah yang tidak masuk akal (< Rp 1/GR atau Rp 1/ML) untuk daging, protein, keju, butter, atau bahan olahan berharga
             if (in_array($satDasar, ['gr', 'ml', 'gram']) && $p < 1.0) {
-                if ($effectiveRefPrice >= 5 || str_contains($masterNama, 'shortplate') || str_contains($masterNama, 'daging') || str_contains($masterNama, 'beef') || str_contains($masterNama, 'ayam') || str_contains($masterNama, 'dory')) {
+                if ($effectiveRefPrice >= 5 || str_contains($masterNama, 'shortplate') || str_contains($masterNama, 'daging') || str_contains($masterNama, 'beef') || str_contains($masterNama, 'ayam') || str_contains($masterNama, 'dory') || str_contains($masterNama, 'cheese') || str_contains($masterNama, 'keju') || str_contains($masterNama, 'cream') || str_contains($masterNama, 'anchor') || str_contains($masterNama, 'butter')) {
                     return false;
                 }
             }
@@ -447,13 +452,29 @@ class FifoService
                     }
                 }
             }
-            // Jika barang memiliki konversi besar (> 1) dan harga batch masih satuan kemasan beli
+            // Jika barang memiliki konversi besar (> 1) dan harga batch diduga masih satuan kemasan beli
             if ($masterKonv > 1) {
-                if ($effectiveRefPrice > 0 && $p > ($effectiveRefPrice * 4)) {
-                    return false;
+                if ($effectiveRefPrice >= 1.0 && $p > ($effectiveRefPrice * 4)) {
+                    if ($p >= 500 || ($masterKonv >= 10 && $p >= ($effectiveRefPrice * $masterKonv * 0.4))) {
+                        return false;
+                    }
                 }
             }
             return true;
+        };
+
+        $returnAndAutoHeal = function($res) use ($barangId, $cacheKey, $masterHppRef, $satDasar) {
+            $val = (float) $res;
+            if ($val > 0 && ($masterHppRef <= 0 || ($masterHppRef < 1.0 && in_array($satDasar, ['gr', 'ml', 'gram']) && $val >= 1.0))) {
+                try {
+                    DB::table('master_barang')->where('id', $barangId)->update([
+                        'hpp_referensi' => $val,
+                        'updated_at'    => now(),
+                    ]);
+                } catch (\Throwable $e) {}
+            }
+            self::$hargaTerakhirCache[$cacheKey] = $val;
+            return $val;
         };
 
         // 1. Cek batch aktif di gudang spesifik yang memiliki sisa stok (qty_sisa > 0)
@@ -464,13 +485,14 @@ class FifoService
                 ->where('qty_sisa', '>', 0)
                 ->where('is_habis', false)
                 ->where('harga_per_qty', '>', 0)
+                ->when($asOfDate, function($q) use ($asOfDate) {
+                    $q->where('created_at', '<=', $asOfDate . ' 23:59:59');
+                })
                 ->orderBy('id', 'asc')
                 ->value('harga_per_qty');
 
             if ($activeGudangBatch && $isValidBatchPrice($activeGudangBatch)) {
-                $res = (float) $activeGudangBatch;
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-                return $res;
+                return $returnAndAutoHeal($activeGudangBatch);
             }
         }
 
@@ -481,21 +503,23 @@ class FifoService
                   ->orWhere('kategori', 'Utama');
             })
             ->first();
+        $gudangUtamaId = $gudangUtama ? (int)$gudangUtama->id : \App\Models\MasterGudang::getGudangUtamaId();
 
-        if ($gudangUtama && (!$gudangId || $gudangId != $gudangUtama->id)) {
+        if ($gudangUtamaId && (!$gudangId || $gudangId != $gudangUtamaId)) {
             $activeUtamaBatch = DB::table('stok_gudang_batch')
-                ->where('gudang_id', $gudangUtama->id)
+                ->where('gudang_id', $gudangUtamaId)
                 ->where('barang_id', $barangId)
                 ->where('qty_sisa', '>', 0)
                 ->where('is_habis', false)
                 ->where('harga_per_qty', '>', 0)
+                ->when($asOfDate, function($q) use ($asOfDate) {
+                    $q->where('created_at', '<=', $asOfDate . ' 23:59:59');
+                })
                 ->orderBy('id', 'asc')
                 ->value('harga_per_qty');
 
             if ($activeUtamaBatch && $isValidBatchPrice($activeUtamaBatch)) {
-                $res = (float) $activeUtamaBatch;
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-                return $res;
+                return $returnAndAutoHeal($activeUtamaBatch);
             }
         }
 
@@ -505,13 +529,14 @@ class FifoService
             ->where('qty_sisa', '>', 0)
             ->where('is_habis', false)
             ->where('harga_per_qty', '>', 0)
+            ->when($asOfDate, function($q) use ($asOfDate) {
+                $q->where('created_at', '<=', $asOfDate . ' 23:59:59');
+            })
             ->orderBy('id', 'asc')
             ->value('harga_per_qty');
 
         if ($activeAnyBatch && $isValidBatchPrice($activeAnyBatch)) {
-            $res = (float) $activeAnyBatch;
-            self::$hargaTerakhirCache[$cacheKey] = $res;
-            return $res;
+            return $returnAndAutoHeal($activeAnyBatch);
         }
 
         // 4. Cek detail pembelian terakhir pada tabel pembelian_detail yang valid (tidak dihapus / batal)
@@ -533,6 +558,9 @@ class FifoService
                 $q->whereNull('pembelian.keterangan')
                   ->orWhere('pembelian.keterangan', 'not like', '[BATAL]%');
             })
+            ->when($asOfDate, function($q) use ($asOfDate) {
+                $q->where('pembelian.tanggal', '<=', $asOfDate);
+            })
             ->select('pembelian_detail.*', 'pembelian.tanggal')
             ->orderBy('pembelian.tanggal', 'desc')
             ->orderBy('pembelian.id', 'desc')
@@ -551,16 +579,13 @@ class FifoService
             // Deteksi apakah pQty dinyatakan dalam satuan pembelian (misal LOAFT, PAPAN, PCS) atau satuan dasar (misal GR)
             $isSatuanBeli = false;
             if ($effectiveKonv > 1 && $pQty >= $effectiveKonv && $pHarga > 0 && ($pHarga / $pQty) >= 10.0 && ($pHarga / ($pQty * $effectiveKonv)) < 1.0) {
-                // Heuristik: Qty besar (misal 31.520) di mana total/qty sudah wajar sebagai harga dasar (Rp 128/gr),
-                // tetapi jika dikalikan konversi (5000) harganya anjlok tidak masuk akal (< Rp 1/gr).
-                // Maka pQty sudah merupakan satuan dasar (GR), BUKAN satuan pembelian!
+                // Heuristik: Qty besar di mana total/qty sudah wajar sebagai harga dasar, tetapi jika dikalikan konversi harganya anjlok tidak masuk akal.
                 $isSatuanBeli = false;
             } elseif (!empty($satBeli) && !empty($satDasar) && $satBeli !== $satDasar) {
                 $isSatuanBeli = true;
             } elseif (!empty($masterSatBeli) && !empty($satDasar) && $masterSatBeli !== $satDasar && $satBeli === $masterSatBeli) {
                 $isSatuanBeli = true;
             } elseif ($effectiveKonv > 1 && $pQty < ($effectiveKonv * 0.5) && $pHarga > 0) {
-                // Heuristik: jika qty sangat kecil dibanding konversi (misal 4.65 vs konversi 5000), ini adalah satuan pembelian
                 $isSatuanBeli = true;
             }
 
@@ -573,9 +598,7 @@ class FifoService
             }
 
             if ($unitPriceDasar > 0 && $isValidBatchPrice($unitPriceDasar)) {
-                $res = (float) $unitPriceDasar;
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-                return $res;
+                return $returnAndAutoHeal($unitPriceDasar);
             }
         }
 
@@ -585,41 +608,44 @@ class FifoService
                 ->where('gudang_id', $gudangId)
                 ->where('barang_id', $barangId)
                 ->where('harga_per_qty', '>', 0)
+                ->when($asOfDate, function($q) use ($asOfDate) {
+                    $q->where('created_at', '<=', $asOfDate . ' 23:59:59');
+                })
                 ->orderBy('id', 'desc')
                 ->value('harga_per_qty');
 
             if ($latestGudangBatch && $isValidBatchPrice($latestGudangBatch)) {
-                $res = (float) $latestGudangBatch;
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-                return $res;
+                return $returnAndAutoHeal($latestGudangBatch);
             }
         }
 
-        if ($gudangUtama && (!$gudangId || $gudangId != $gudangUtama->id)) {
+        if ($gudangUtamaId && (!$gudangId || $gudangId != $gudangUtamaId)) {
             $latestUtamaBatch = DB::table('stok_gudang_batch')
-                ->where('gudang_id', $gudangUtama->id)
+                ->where('gudang_id', $gudangUtamaId)
                 ->where('barang_id', $barangId)
                 ->where('harga_per_qty', '>', 0)
+                ->when($asOfDate, function($q) use ($asOfDate) {
+                    $q->where('created_at', '<=', $asOfDate . ' 23:59:59');
+                })
                 ->orderBy('id', 'desc')
                 ->value('harga_per_qty');
 
             if ($latestUtamaBatch && $isValidBatchPrice($latestUtamaBatch)) {
-                $res = (float) $latestUtamaBatch;
-                self::$hargaTerakhirCache[$cacheKey] = $res;
-                return $res;
+                return $returnAndAutoHeal($latestUtamaBatch);
             }
         }
 
         $latestBatchGlobal = DB::table('stok_gudang_batch')
             ->where('barang_id', $barangId)
             ->where('harga_per_qty', '>', 0)
+            ->when($asOfDate, function($q) use ($asOfDate) {
+                $q->where('created_at', '<=', $asOfDate . ' 23:59:59');
+            })
             ->orderBy('id', 'desc')
             ->value('harga_per_qty');
 
         if ($latestBatchGlobal && $isValidBatchPrice($latestBatchGlobal)) {
-            $res = (float) $latestBatchGlobal;
-            self::$hargaTerakhirCache[$cacheKey] = $res;
-            return $res;
+            return $returnAndAutoHeal($latestBatchGlobal);
         }
 
         // 6. Fallback ke persediaan awal
@@ -631,8 +657,7 @@ class FifoService
 
         if ($sa && floatval($sa) > 0) {
             $res = round((float) $sa, 2);
-            self::$hargaTerakhirCache[$cacheKey] = $res;
-            return $res;
+            return $returnAndAutoHeal($res);
         }
 
         // 7. Formulasi resep jika barang memiliki resep (terutama Bahan Setengah Jadi)
@@ -652,15 +677,14 @@ class FifoService
                     $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
                     $totalBiayaResep = 0.0;
                     foreach ($subBahanList as $subBahan) {
-                        $subHarga = $this->getHargaTerakhirBahan($subBahan->bahan_id, $gudangId, $visited);
+                        $subHarga = $this->getHargaTerakhirBahan($subBahan->bahan_id, $gudangId, $visited, $asOfDate);
                         $totalBiayaResep += (floatval($subBahan->qty_bahan) * $subHarga);
                     }
                     if ($totalBiayaResep > 0) {
                         $multiplier = $this->isProducedInCkOrColdKitchen($barangId) ? 1.30 : 1.0;
                         $totalBiayaResep = $totalBiayaResep * $multiplier;
                         $res = (float) ($totalBiayaResep / $outputQty);
-                        self::$hargaTerakhirCache[$cacheKey] = $res;
-                        return $res;
+                        return $returnAndAutoHeal($res);
                     }
                 }
             }
@@ -668,8 +692,12 @@ class FifoService
             // 8. Fallback ke HPP referensi master barang (dengan validasi konversi satuan dasar)
             if (isset($barang->hpp_referensi) && floatval($barang->hpp_referensi) > 0) {
                 $res = (float) $barang->hpp_referensi;
-                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1 && $res > 500) {
-                    $res = round($res / $masterKonv, 4);
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1) {
+                    if ($res > 500) {
+                        $res = round($res / $masterKonv, 4);
+                    } elseif ($res < 1.0 && ($res * $masterKonv) >= 1.0 && ($res * $masterKonv) <= 1000) {
+                        $res = round($res * $masterKonv, 4);
+                    }
                 }
                 if ($isValidBatchPrice($res)) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;
@@ -678,8 +706,12 @@ class FifoService
             }
             if (isset($barang->harga_satuan_terkecil) && floatval($barang->harga_satuan_terkecil) > 0) {
                 $res = (float) $barang->harga_satuan_terkecil;
-                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1 && $res > 500) {
-                    $res = round($res / $masterKonv, 4);
+                if (in_array($satDasar, ['gr', 'ml', 'gram']) && $masterKonv > 1) {
+                    if ($res > 500) {
+                        $res = round($res / $masterKonv, 4);
+                    } elseif ($res < 1.0 && ($res * $masterKonv) >= 1.0 && ($res * $masterKonv) <= 1000) {
+                        $res = round($res * $masterKonv, 4);
+                    }
                 }
                 if ($isValidBatchPrice($res)) {
                     self::$hargaTerakhirCache[$cacheKey] = $res;

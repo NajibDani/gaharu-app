@@ -554,17 +554,29 @@ class LaporanPersediaanController extends Controller
         $totalOpname   = (clone $baseQuery)->count();
         $totalApproved = (clone $baseQuery)->where('status', 'approved')->count();
 
-        $matchingOpnameIds = (clone $baseQuery)->pluck('id');
+        $matchingOpnameIds   = (clone $baseQuery)->pluck('id');
+        $priceMap            = [];
+        $totalSelisih        = 0.0;
+        $totalNilaiSelisih   = 0.0;
+        $totalNominalSistem  = 0.0;
+        $totalNominalRiil    = 0.0;
+        $totalNominalSelisih = 0.0;
+
         if ($matchingOpnameIds->isNotEmpty()) {
-            $detailStats = DB::table('stock_opname_detail')
-                ->whereIn('stock_opname_id', $matchingOpnameIds)
-                ->selectRaw('SUM(ABS(selisih)) as total_selisih, SUM(nilai_selisih) as total_nilai_selisih')
-                ->first();
-            $totalSelisih      = (float) ($detailStats->total_selisih ?? 0);
-            $totalNilaiSelisih = (float) ($detailStats->total_nilai_selisih ?? 0);
-        } else {
-            $totalSelisih      = 0;
-            $totalNilaiSelisih = 0;
+            $allDetailsQuery = DB::table('stock_opname_detail')
+                ->whereIn('stock_opname_id', $matchingOpnameIds);
+            if ($hanyaSelisih) {
+                $allDetailsQuery->where('selisih', '!=', 0);
+            }
+            $allDetails = $allDetailsQuery->get();
+
+            $totalSelisih      = (float) $allDetails->sum(fn($d) => abs($d->selisih));
+            $totalNilaiSelisih = (float) $allDetails->sum('nilai_selisih');
+
+            $nomTotals = $this->resolveNominalOpnameDetails($allDetails, $priceMap);
+            $totalNominalSistem  = $nomTotals['total_nominal_sistem'];
+            $totalNominalRiil    = $nomTotals['total_nominal_riil'];
+            $totalNominalSelisih = $nomTotals['total_nominal_selisih'];
         }
 
         if ($request->format === 'pdf') {
@@ -578,8 +590,15 @@ class LaporanPersediaanController extends Controller
                 ->orderBy('tanggal', 'desc')
                 ->get();
 
+            $pdfDetails = $data->pluck('details')->flatten();
+            $this->resolveNominalOpnameDetails($pdfDetails, $priceMap);
+
             $pdf = app('dompdf.wrapper');
-            $pdf->loadView('laporanpersediaan.stock-opname-pdf', compact('data', 'request'));
+            $pdf->loadView('laporanpersediaan.stock-opname-pdf', compact(
+                'data', 'request',
+                'totalOpname', 'totalApproved', 'totalSelisih', 'totalNilaiSelisih',
+                'totalNominalSistem', 'totalNominalRiil', 'totalNominalSelisih'
+            ));
             return $pdf->download('laporan-stock-opname-' . now()->format('Ymd') . '.pdf');
         }
 
@@ -589,7 +608,7 @@ class LaporanPersediaanController extends Controller
                 ->orderBy('tanggal', 'desc')
                 ->get();
 
-            return $this->exportExcelOpname($data, $request);
+            return $this->exportExcelOpname($data, $request, $priceMap);
         }
 
         // Tampilkan data dengan paginasi 10 dokumen per halaman untuk mencegah memory exhausted
@@ -609,9 +628,13 @@ class LaporanPersediaanController extends Controller
 
         $data = $query->paginate(10)->withQueryString();
 
+        $pageDetails = $data->pluck('details')->flatten();
+        $this->resolveNominalOpnameDetails($pageDetails, $priceMap);
+
         return view('laporanpersediaan.stock-opname', compact(
             'data', 'gudangs',
             'totalOpname', 'totalSelisih', 'totalNilaiSelisih', 'totalApproved',
+            'totalNominalSistem', 'totalNominalRiil', 'totalNominalSelisih',
             'request'
         ));
     }
@@ -731,7 +754,7 @@ class LaporanPersediaanController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
-    private function exportExcelOpname($data, $request)
+    private function exportExcelOpname($data, $request, array &$priceMap = [])
     {
         @ini_set('memory_limit', '512M');
         $filename = 'laporan-stock-opname-' . now()->format('Ymd') . '.csv';
@@ -740,25 +763,161 @@ class LaporanPersediaanController extends Controller
             'Content-Disposition' => "attachment; filename=\"$filename\"",
         ];
 
+        $allDetails = $data->pluck('details')->flatten();
+        $this->resolveNominalOpnameDetails($allDetails, $priceMap);
+
         $callback = function () use ($data) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, ['Kode Opname', 'Tanggal', 'Gudang', 'Status', 'Total Item', 'Total Selisih', 'Nilai Selisih']);
+            fputcsv($f, [
+                'Kode Opname',
+                'Tanggal',
+                'Gudang',
+                'Divisi',
+                'Status',
+                'Total Item',
+                'Total Selisih Qty',
+                'Total Nominal Sistem (Rp)',
+                'Total Nominal Riil (Rp)',
+                'Nominal Selisih (Rp)',
+            ]);
+
+            $grandNomSistem = 0;
+            $grandNomRiil = 0;
+            $grandNomSelisih = 0;
+
             foreach ($data as $row) {
+                $nomSistem  = (float) $row->details->sum('nominal_sistem');
+                $nomRiil    = (float) $row->details->sum('nominal_fisik');
+                $nomSelisih = (float) $row->details->sum('nominal_selisih');
+
+                $grandNomSistem  += $nomSistem;
+                $grandNomRiil    += $nomRiil;
+                $grandNomSelisih += $nomSelisih;
+
                 fputcsv($f, [
                     $row->kode_opname,
                     Carbon::parse($row->tanggal)->format('d/m/Y'),
                     $row->gudang->nama ?? '-',
+                    $row->divisi->nama ?? '-',
                     ucfirst($row->status),
                     $row->details->count(),
                     $row->details->sum(fn($d) => abs($d->selisih)),
-                    $row->details->sum('nilai_selisih'),
+                    $nomSistem,
+                    $nomRiil,
+                    $nomSelisih,
                 ]);
             }
+
+            fputcsv($f, [
+                'TOTAL',
+                '',
+                '',
+                '',
+                '',
+                $data->sum(fn($r) => $r->details->count()),
+                $data->sum(fn($r) => $r->details->sum(fn($d) => abs($d->selisih))),
+                $grandNomSistem,
+                $grandNomRiil,
+                $grandNomSelisih,
+            ]);
+
             fclose($f);
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Hitung harga satuan dan total nominal (sistem, riil, selisih) untuk stock opname details
+     */
+    private function resolveNominalOpnameDetails($details, array &$priceMap = []): array
+    {
+        $neededBarangIds = [];
+        foreach ($details as $d) {
+            $hasHargaInput  = !empty($d->harga_satuan) && (float)$d->harga_satuan > 0;
+            $hasSelisihNilai = (float)$d->selisih != 0 && (float)$d->nilai_selisih > 0;
+            if (!$hasHargaInput && !$hasSelisihNilai && !isset($priceMap[$d->barang_id])) {
+                $neededBarangIds[$d->barang_id] = $d->barang_id;
+            }
+        }
+
+        if (!empty($neededBarangIds)) {
+            $batchPrices = DB::table('stok_gudang_batch as sgb')
+                ->join(DB::raw('(SELECT barang_id, MAX(id) as max_id FROM stok_gudang_batch WHERE harga_per_qty > 0 GROUP BY barang_id) as latest'), function($join) {
+                    $join->on('sgb.id', '=', 'latest.max_id');
+                })
+                ->whereIn('sgb.barang_id', $neededBarangIds)
+                ->pluck('sgb.harga_per_qty', 'sgb.barang_id');
+
+            $masterBarangs = DB::table('master_barang')
+                ->whereIn('id', $neededBarangIds)
+                ->select('id', 'hpp_referensi', 'harga_satuan_terkecil', 'harga_jual_pos', 'harga_jual_b2b', 'is_bahan_setengah_jadi')
+                ->get()
+                ->keyBy('id');
+
+            $fifoService = null;
+            foreach ($neededBarangIds as $bId) {
+                $bPrice = (float) ($batchPrices[$bId] ?? 0);
+                $mb     = $masterBarangs[$bId] ?? null;
+                $hppRef = (float) ($mb->hpp_referensi ?? 0);
+
+                if ($bPrice > 0 && $hppRef > 0 && $bPrice > ($hppRef * 20)) {
+                    $price = $hppRef;
+                } elseif ($bPrice > 0) {
+                    $price = $bPrice;
+                } elseif ($hppRef > 0) {
+                    $price = $hppRef;
+                } elseif ($mb && (float)($mb->harga_satuan_terkecil ?? 0) > 0) {
+                    $price = (float) $mb->harga_satuan_terkecil;
+                } else {
+                    if (!$fifoService) {
+                        $fifoService = app(\App\Services\FifoService::class);
+                    }
+                    $price = (float) $fifoService->getHargaTerakhirBahan((int)$bId);
+                }
+
+                $priceMap[$bId] = max(0.0, (float)$price);
+            }
+        }
+
+        $totSistem  = 0.0;
+        $totRiil    = 0.0;
+        $totSelisih = 0.0;
+
+        foreach ($details as $d) {
+            $selisih      = (float) $d->selisih;
+            $nilaiSelisih = (float) $d->nilai_selisih;
+            $stokSistem   = (float) $d->stok_sistem;
+            $stokFisik    = (float) $d->stok_fisik;
+
+            if (!empty($d->harga_satuan) && (float)$d->harga_satuan > 0) {
+                $unitPrice = (float) $d->harga_satuan;
+            } elseif ($selisih != 0 && $nilaiSelisih > 0) {
+                $unitPrice = abs($nilaiSelisih / $selisih);
+            } else {
+                $unitPrice = (float) ($priceMap[$d->barang_id] ?? 0);
+            }
+
+            $nomSistem  = round($stokSistem * $unitPrice, 2);
+            $nomRiil    = round($stokFisik * $unitPrice, 2);
+            $nomSelisih = round(($stokFisik - $stokSistem) * $unitPrice, 2);
+
+            $d->unit_price      = $unitPrice;
+            $d->nominal_sistem  = $nomSistem;
+            $d->nominal_fisik   = $nomRiil;
+            $d->nominal_selisih = $nomSelisih;
+
+            $totSistem  += $nomSistem;
+            $totRiil    += $nomRiil;
+            $totSelisih += $nomSelisih;
+        }
+
+        return [
+            'total_nominal_sistem'  => $totSistem,
+            'total_nominal_riil'    => $totRiil,
+            'total_nominal_selisih' => $totSelisih,
+        ];
     }
 
     /*

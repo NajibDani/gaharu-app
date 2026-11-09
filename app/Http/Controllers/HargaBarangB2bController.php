@@ -17,6 +17,14 @@ class HargaBarangB2bController extends Controller
     {
         HargaBarangB2b::ensureTableExists();
 
+        if ($request->has('refresh_all')) {
+            MasterBarang::syncAllResepIds();
+            MasterBarang::syncAllResepSatuan();
+            \App\Services\FifoService::clearHargaCache();
+            return redirect()->route('harga-b2b.index', $request->except('refresh_all'))
+                ->with('success', 'Seluruh formulasi resep dan HPP berhasil diperbarui per tanggal ' . now()->translatedFormat('d F Y H:i') . '!');
+        }
+
         $customerId = $request->query('customer_id');
         $search = $request->query('search');
 
@@ -209,11 +217,27 @@ class HargaBarangB2bController extends Controller
     /**
      * Detail rincian formula resep & HPP per unit untuk pop-up modal
      */
-    public function getHppDetail($barangId)
+    public function getHppDetail($barangId, Request $request = null)
     {
         $barang = MasterBarang::withoutGlobalScopes()->find($barangId);
         if (!$barang) {
             return response()->json(['error' => 'Barang tidak ditemukan.'], 404);
+        }
+
+        if (!$request) {
+            $request = request();
+        }
+
+        $isRefresh = $request->boolean('refresh') || $request->has('refresh');
+        $tanggal = $request->query('tanggal');
+        if ($tanggal && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $tanggal)) {
+            $tanggal = null;
+        }
+
+        if ($isRefresh) {
+            MasterBarang::syncAllResepIds();
+            MasterBarang::syncAllResepSatuan();
+            \App\Services\FifoService::clearHargaCache();
         }
 
         $fifoService = app(FifoService::class);
@@ -233,36 +257,48 @@ class HargaBarangB2bController extends Controller
         if (!$resep || $resep->bahanbaku->isEmpty()) {
             $fallbackHpp = floatval($barang->hpp_referensi ?? 0);
             return response()->json([
-                'has_resep'          => false,
-                'nama_produk'        => $barang->nama,
-                'kode_barang'        => $barang->kode_barang,
-                'satuan'             => $barang->satuan ?? 'unit',
-                'hpp_referensi'      => $fallbackHpp,
-                'formatted_hpp'      => number_format($fallbackHpp, 0, ',', '.'),
-                'ingredients'        => [],
-                'output_qty'         => 1,
-                'satuan_output'      => $barang->satuan ?? 'unit',
-                'total_bbb'          => $fallbackHpp,
-                'formatted_bbb'      => number_format($fallbackHpp, 0, ',', '.'),
-                'btkl'               => 0,
-                'formatted_btkl'     => '0',
-                'bop'                => 0,
-                'formatted_bop'      => '0',
-                'total_hpp_batch'    => $fallbackHpp,
-                'formatted_hpp_batch'=> number_format($fallbackHpp, 0, ',', '.'),
-                'hpp_per_unit'       => $fallbackHpp,
-                'formatted_per_unit' => number_format($fallbackHpp, 0, ',', '.'),
+                'has_resep'           => false,
+                'nama_produk'         => $barang->nama,
+                'kode_barang'         => $barang->kode_barang,
+                'satuan'              => $barang->satuan ?? 'unit',
+                'hpp_referensi'       => $fallbackHpp,
+                'formatted_hpp'       => number_format($fallbackHpp, 0, ',', '.'),
+                'ingredients'         => [],
+                'output_qty'          => 1,
+                'satuan_output'       => $barang->satuan ?? 'unit',
+                'total_bbb'           => $fallbackHpp,
+                'formatted_bbb'       => number_format($fallbackHpp, 0, ',', '.'),
+                'btkl'                => 0,
+                'formatted_btkl'      => '0',
+                'bop'                 => 0,
+                'formatted_bop'       => '0',
+                'total_hpp_batch'     => $fallbackHpp,
+                'formatted_hpp_batch' => number_format($fallbackHpp, 0, ',', '.'),
+                'hpp_per_unit'        => $fallbackHpp,
+                'formatted_per_unit'  => number_format($fallbackHpp, 0, ',', '.'),
+                'refreshed_at'        => now()->format('d/m/Y H:i'),
+                'refreshed_date'      => $tanggal ?? date('Y-m-d'),
+                'as_of_date_label'    => $tanggal ? \Carbon\Carbon::parse($tanggal)->translatedFormat('d F Y') : now()->translatedFormat('d F Y H:i'),
+                'message'             => 'Data HPP referensi master barang berhasil dimuat.',
             ]);
         }
 
         $outputQty = floatval($resep->output_qty) > 0 ? floatval($resep->output_qty) : 1.0;
         $ingredients = [];
-        $totalBbb = $this->expandResep($resep, 1.0, 0, [$barang->id], $ingredients, $fifoService, $gudangCkId, $outputQty);
+        $totalBbb = $this->expandResep($resep, 1.0, 0, [$barang->id], $ingredients, $fifoService, $gudangCkId, $outputQty, $tanggal);
 
         $btkl = $totalBbb * 0.20;
         $bop = $totalBbb * 0.10;
         $totalHppBatch = $totalBbb * 1.30;
         $hppPerUnit = round($totalHppBatch / $outputQty, 2);
+
+        // Jika user melakukan refresh, perbarui juga hpp_referensi di master_barang agar tersinkronisasi
+        if ($isRefresh && $hppPerUnit > 0) {
+            MasterBarang::withoutGlobalScopes()->where('id', $barang->id)->update([
+                'hpp_referensi' => $hppPerUnit,
+                'updated_at'    => now(),
+            ]);
+        }
 
         return response()->json([
             'has_resep'           => true,
@@ -282,6 +318,10 @@ class HargaBarangB2bController extends Controller
             'hpp_per_unit'        => $hppPerUnit,
             'formatted_per_unit'  => number_format($hppPerUnit, 0, ',', '.'),
             'ingredients'         => $ingredients,
+            'refreshed_at'        => now()->format('d/m/Y H:i'),
+            'refreshed_date'      => $tanggal ?? date('Y-m-d'),
+            'as_of_date_label'    => $tanggal ? \Carbon\Carbon::parse($tanggal)->translatedFormat('d F Y') : now()->translatedFormat('d F Y H:i'),
+            'message'             => 'HPP dan formulasi resep berhasil diperbarui!',
         ]);
     }
 
@@ -326,9 +366,10 @@ class HargaBarangB2bController extends Controller
      *
      * @param float $multiplier skala resep ini relatif terhadap 1 batch produk utama
      */
-    private function expandResep($resep, float $multiplier, int $level, array $visited, array &$rows, $fifoService, int $gudangId, float $topOutput): float
+    private function expandResep($resep, float $multiplier, int $level, array $visited, array &$rows, $fifoService, int $gudangId, float $topOutput, ?string $asOfDate = null): float
     {
         $total = 0.0;
+        $gudangUtamaId = \App\Models\MasterGudang::getGudangUtamaId();
 
         foreach ($resep->bahanbaku as $bb) {
             $bahan = $bb->bahan;
@@ -361,16 +402,28 @@ class HargaBarangB2bController extends Controller
                 $subOutput = floatval($subResep->output_qty) > 0 ? floatval($subResep->output_qty) : 1.0;
                 $cost = $this->expandResep(
                     $subResep, $qtyBatch / $subOutput, $level + 1,
-                    array_merge($visited, [$bahan->id]), $rows, $fifoService, $gudangId, $topOutput
+                    array_merge($visited, [$bahan->id]), $rows, $fifoService, $gudangId, $topOutput, $asOfDate
                 );
                 $harga = $qtyBatch > 0 ? $cost / $qtyBatch : 0;
                 $rows[$idx] = array_merge($row, $this->costFields($harga, $cost, $topOutput), [
                     'sub_output' => $subOutput . ' ' . ($subResep->satuan_output ?? $satuan),
                 ]);
             } else {
-                $harga = $fifoService->getHargaTerakhirBahan((int) $bahan->id, $gudangId);
+                $harga = $fifoService->getHargaTerakhirBahan((int) $bahan->id, $gudangId, [], $asOfDate);
+                if ($harga <= 0 && $gudangUtamaId && $gudangId != $gudangUtamaId) {
+                    $harga = $fifoService->getHargaTerakhirBahan((int) $bahan->id, $gudangUtamaId, [], $asOfDate);
+                }
                 if ($harga <= 0) {
                     $harga = floatval($bahan->hpp_referensi ?? 0);
+                    $satDasar = strtolower(trim($bahan->satuan ?? ''));
+                    $konv = floatval($bahan->konversi_pembelian ?? 1);
+                    if (in_array($satDasar, ['gr', 'ml', 'gram']) && $konv > 1) {
+                        if ($harga > 500) {
+                            $harga = round($harga / $konv, 4);
+                        } elseif ($harga > 0 && $harga < 1.0 && ($harga * $konv) >= 1.0 && ($harga * $konv) <= 1000) {
+                            $harga = round($harga * $konv, 4);
+                        }
+                    }
                 }
                 $cost = $qtyBatch * $harga;
                 $rows[] = array_merge($row, $this->costFields($harga, $cost, $topOutput));
