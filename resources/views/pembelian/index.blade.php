@@ -253,13 +253,13 @@
                             }
     
                             $kekurangan = match(true) {
-                                // COD atau sudah lunas → tidak ada kekurangan
-                                $item->metode_pembayaran === 'cod' => 0,
+                                // Cash, petty cash, transfer, COD atau sudah lunas → tidak ada kekurangan
+                                in_array($item->metode_pembayaran, ['cod', 'cash', 'petty_cash', 'transfer_bca', 'transfer_bri']) => 0,
                                 $item->is_lunas                    => 0,
-                                // DP: sisa = total - nominal DP
-                                $item->metode_pembayaran === 'dp'  => $total - $nominalDp,
-                                // Termin: full amount belum dibayar
-                                $item->metode_pembayaran === 'termin' => $total,
+                                // DP: sisa = total - nominal DP - nominal pelunasan
+                                $item->metode_pembayaran === 'dp'  => max(0, $total - $nominalDp - (float)($item->nominal_pelunasan ?? 0)),
+                                // Tempo / Termin: full amount - nominal pelunasan
+                                in_array($item->metode_pembayaran, ['termin', 'tempo']) => max(0, $total - (float)($item->nominal_pelunasan ?? 0)),
                                 // Belum dicatat
                                 default => 0,
                             };
@@ -305,7 +305,7 @@
                                     <span class="badge bg-secondary" style="font-size:10px;">Dibatalkan</span>
                                 @elseif(!$item->metode_pembayaran)
                                     <span class="text-muted" style="font-size:11px;">—</span>
-                                @elseif($item->metode_pembayaran === 'cod' || $item->is_lunas)
+                                @elseif(in_array($item->metode_pembayaran, ['cod', 'cash', 'petty_cash', 'transfer_bca', 'transfer_bri']) || $item->is_lunas)
                                     <span class="badge bg-success" style="font-size:11px;">Lunas</span>
                                 @elseif($adaKekurangan)
                                     <span class="fw-semibold text-danger">
@@ -316,7 +316,7 @@
                                 @endif
                             </td>
     
-                            {{-- PEMBAYARAN --}}
+                            {{-- PEMBAYARAN (Hanya Super Admin yang berhak bayar / lunasi) --}}
                             <td class="text-center">
                                 @php
                                     $user = auth()->user();
@@ -328,10 +328,13 @@
                                 @elseif($item->metode_pembayaran)
                                     @php
                                         $labelMetode = match($item->metode_pembayaran) {
-                                            'cod'    => ['text' => 'COD', 'class' => 'bg-success'],
-                                            'termin' => ['text' => 'Termin', 'class' => 'bg-warning text-dark'],
-                                            'dp'     => ['text' => ($item->nominal_dp && $item->nominal_dp > 0 ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.') : 'DP ' . $item->persen_dp . '%'), 'class' => 'bg-info'],
-                                            default  => ['text' => '-', 'class' => 'bg-secondary'],
+                                            'cash', 'cod'          => ['text' => 'Cash', 'class' => 'bg-success text-white'],
+                                            'petty_cash'           => ['text' => 'Petty Cash', 'class' => 'bg-success text-white'],
+                                            'transfer_bca'         => ['text' => 'Transfer BCA', 'class' => 'bg-primary text-white'],
+                                            'transfer_bri'         => ['text' => 'Transfer BRI', 'class' => 'bg-info text-dark'],
+                                            'tempo', 'termin'      => ['text' => 'Tempo' . ($item->tanggal_jatuh_tempo ? ' (' . \Carbon\Carbon::parse($item->tanggal_jatuh_tempo)->format('d M') . ')' : ''), 'class' => 'bg-warning text-dark'],
+                                            'dp'                   => ['text' => ($item->nominal_dp && $item->nominal_dp > 0 ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.') : 'DP ' . $item->persen_dp . '%'), 'class' => 'bg-info text-white'],
+                                            default                => ['text' => '-', 'class' => 'bg-secondary text-white'],
                                         };
                                     @endphp
                                     <div class="d-flex flex-column align-items-center gap-1">
@@ -351,7 +354,8 @@
                                                             {{ $item->id }},
                                                             '{{ $item->kode_pembelian }}',
                                                             {{ $kekurangan }},
-                                                            '{{ $item->supplier->nama ?? '' }}'
+                                                            '{{ addslashes($item->supplier->nama ?? '') }}',
+                                                            '{{ $item->metode_pembayaran }}'
                                                         )">
                                                     <i class="bi bi-cash me-1"></i>Lunasi
                                                 </button>
@@ -359,47 +363,80 @@
                                                 <button type="button"
                                                         class="btn btn-sm mt-1"
                                                         disabled
-                                                        title="Hanya Super Admin yang dapat menginput pembayaran pelunasan."
+                                                        title="Hanya Super Admin yang berhak melunasi pembayaran."
                                                         style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
                                                     <i class="bi bi-lock-fill me-1"></i>Lunasi
                                                 </button>
                                             @endif
-                                        @elseif($item->is_lunas && $item->metode_pembayaran !== 'cod')
+                                        @elseif($item->is_lunas && !in_array($item->metode_pembayaran, ['cod', 'cash', 'petty_cash', 'transfer_bca', 'transfer_bri']))
                                             <span class="badge bg-success" style="font-size:10px;">✓ Lunas</span>
                                         @endif
                                     </div>
                                 @else
-                                    {{-- Tombol Catat Pembayaran (Super Admin & Gudang) --}}
-                                    @php $isGudangUser = $user && $user->isGudang(); @endphp
-                                    @if($isSuperAdmin || $isGudangUser)
+                                    {{-- Tombol Catat Pembayaran (Hanya Super Admin) --}}
+                                    @if($isSuperAdmin)
                                         <button type="button"
                                                 class="btn btn-sm"
-                                                style="background:#606060; color:#fff; font-size:11px; padding:2px 10px;"
+                                                style="background:#DE8958; color:#fff; font-size:11px; padding:3px 12px; border-radius:6px;"
                                                 onclick="bukaPembayaran({{ $item->id }}, '{{ $item->kode_pembelian }}', {{ $item->total }})">
-                                            + Catat
+                                            + Bayar
                                         </button>
                                     @else
-                                        <button type="button"
-                                                class="btn btn-sm"
-                                                disabled
-                                                title="Hanya Super Admin atau pengguna Gudang yang dapat mencatat pembayaran pembelian."
-                                                style="background:#d0d0d0; color:#888; font-size:11px; padding:2px 10px; cursor:not-allowed;">
-                                            <i class="bi bi-lock-fill me-1"></i>+ Catat
-                                        </button>
+                                        <span class="badge bg-secondary-subtle text-muted border" style="font-size:10px;" title="Pembayaran hanya dapat dilakukan oleh Super Admin">
+                                            <i class="bi bi-shield-lock me-1"></i>Super Admin
+                                        </span>
                                     @endif
                                 @endif
                             </td>
     
-                            {{-- BARANG DITERIMA --}}
+                            {{-- BARANG DITERIMA (Di-klik oleh User Gudang atau Super Admin) --}}
                             <td class="text-center">
                                 @if($item->is_deleted)
                                     <span class="badge bg-secondary" style="font-size:11px;">Dibatalkan</span>
-                                @else
+                                @elseif($item->is_diterima)
                                     <div class="d-flex flex-column align-items-center">
-                                        <span class="badge bg-success">✓ Diterima</span>
+                                        <span class="badge bg-success shadow-sm" style="font-size:11px;">✓ Diterima</span>
                                         <small class="text-muted mt-1" style="font-size:10px;">
                                             {{ \Carbon\Carbon::parse($item->diterima_at ?: $item->tanggal)->format('d M Y') }}
                                         </small>
+                                    </div>
+                                @else
+                                    @php
+                                        $isGudangUser = $user && ($user->isGudang() || ($user->role->nama ?? '') === 'Kepala Gudang');
+                                        $canReceive = $isSuperAdmin || $isGudangUser;
+                                        $hasPartial = false;
+                                        if ($item->details) {
+                                            foreach ($item->details as $det) {
+                                                if (floatval($det->qty_diterima ?? 0) > 0) {
+                                                    $hasPartial = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    @endphp
+                                    <div class="d-flex flex-column align-items-center gap-1">
+                                        @if($hasPartial)
+                                            <span class="badge bg-warning text-dark" style="font-size:10px;">Sebagian Diterima</span>
+                                        @else
+                                            <span class="badge bg-secondary-subtle text-secondary border" style="font-size:10px;">Belum Diterima</span>
+                                        @endif
+
+                                        @if($canReceive)
+                                            <button type="button"
+                                                    class="btn btn-sm mt-1"
+                                                    style="background:#28a745; color:#fff; font-size:11px; padding:3px 10px; border-radius:6px;"
+                                                    onclick="bukaModalTerimaBarang({{ $item->id }})">
+                                                <i class="bi bi-box-arrow-in-down me-1"></i>{{ $hasPartial ? 'Terima Sisa' : 'Terima Barang' }}
+                                            </button>
+                                        @else
+                                            <button type="button"
+                                                    class="btn btn-sm mt-1"
+                                                    disabled
+                                                    title="Hanya User Gudang atau Super Admin yang dapat menerima barang"
+                                                    style="background:#e2e8f0; color:#94a3b8; font-size:11px; padding:2px 10px; cursor:not-allowed;">
+                                                <i class="bi bi-box-arrow-in-down me-1"></i>User Gudang
+                                            </button>
+                                        @endif
                                     </div>
                                 @endif
                             </td>
@@ -543,81 +580,146 @@
                 <form id="formPembayaran" method="POST" action="" enctype="multipart/form-data">
                     @csrf
                     <div class="modal-body">
-                        <p class="text-muted small" id="infoPembelian"></p>
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold">Metode Pembayaran</label>
-                            <div class="d-flex gap-2">
-                                <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_cod" value="cod" onchange="toggleFieldPembayaran('cod')">
-                                <label class="btn btn-outline-success" for="opt_cod">COD</label>
-                                <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_dp" value="dp" onchange="toggleFieldPembayaran('dp')">
-                                <label class="btn btn-outline-info" for="opt_dp">DP</label>
-                                <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_termin" value="termin" onchange="toggleFieldPembayaran('termin')">
-                                <label class="btn btn-outline-warning" for="opt_termin">Termin / Tempo</label>
+                        <div class="p-2 px-3 mb-3 rounded-3" style="background:#f8f9fa; border:1px solid #e9ecef;">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-dark font-monospace" id="infoPembelianKode">—</span>
+                                <span class="fw-bold fs-6 text-primary" id="infoPembelianTotal">—</span>
                             </div>
                         </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted text-uppercase mb-2">Pilih Metode Pembayaran <span class="text-danger">*</span></label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_cash" value="cash" onchange="toggleFieldPembayaran('cash')" required>
+                                    <label class="btn btn-outline-success w-100 text-start py-2 px-3 rounded-3" for="opt_cash" style="font-size:12.5px;">
+                                        <div class="fw-bold"><i class="bi bi-cash-stack me-1"></i> Cash / Tunai</div>
+                                        <small class="text-muted" style="font-size:10px;">Langsung lunas</small>
+                                    </label>
+                                </div>
+                                <div class="col-6">
+                                    <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_petty_cash" value="petty_cash" onchange="toggleFieldPembayaran('petty_cash')">
+                                    <label class="btn btn-outline-success w-100 text-start py-2 px-3 rounded-3" for="opt_petty_cash" style="font-size:12.5px;">
+                                        <div class="fw-bold"><i class="bi bi-wallet2 me-1"></i> Cash (Petty Cash)</div>
+                                        <small class="text-muted" style="font-size:10px;">Kas kecil kafe</small>
+                                    </label>
+                                </div>
+                                <div class="col-6">
+                                    <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_bca" value="transfer_bca" onchange="toggleFieldPembayaran('transfer_bca')">
+                                    <label class="btn btn-outline-primary w-100 text-start py-2 px-3 rounded-3" for="opt_bca" style="font-size:12.5px;">
+                                        <div class="fw-bold"><i class="bi bi-bank me-1"></i> Transfer BCA</div>
+                                        <small class="text-muted" style="font-size:10px;">Bank BCA</small>
+                                    </label>
+                                </div>
+                                <div class="col-6">
+                                    <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_bri" value="transfer_bri" onchange="toggleFieldPembayaran('transfer_bri')">
+                                    <label class="btn btn-outline-info w-100 text-start py-2 px-3 rounded-3" for="opt_bri" style="font-size:12.5px;">
+                                        <div class="fw-bold text-dark"><i class="bi bi-bank2 me-1 text-info"></i> Transfer BRI</div>
+                                        <small class="text-muted" style="font-size:10px;">Bank BRI</small>
+                                    </label>
+                                </div>
+                                <div class="col-6">
+                                    <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_tempo" value="tempo" onchange="toggleFieldPembayaran('tempo')">
+                                    <label class="btn btn-outline-warning w-100 text-start py-2 px-3 rounded-3" for="opt_tempo" style="font-size:12.5px;">
+                                        <div class="fw-bold text-dark"><i class="bi bi-calendar-event me-1 text-warning"></i> Tempo</div>
+                                        <small class="text-muted" style="font-size:10px;">Jatuh tempo & buku utang</small>
+                                    </label>
+                                </div>
+                                <div class="col-6">
+                                    <input type="radio" class="btn-check" name="metode_pembayaran" id="opt_dp" value="dp" onchange="toggleFieldPembayaran('dp')">
+                                    <label class="btn btn-outline-secondary w-100 text-start py-2 px-3 rounded-3" for="opt_dp" style="font-size:12.5px;">
+                                        <div class="fw-bold"><i class="bi bi-pie-chart me-1"></i> DP / Uang Muka</div>
+                                        <small class="text-muted" style="font-size:10px;">Bayar sebagian di awal</small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Info Langsung Lunas --}}
+                        <div id="info_langsung_lunas" class="alert alert-success py-2 px-3 d-none mb-3" style="font-size:12px;">
+                            <i class="bi bi-check-circle-fill me-1"></i> Transaksi akan dicatat sebagai <strong>Lunas</strong> dan mengurangi saldo kas/bank terkait.
+                        </div>
+
+                        {{-- Field Khusus Tempo --}}
                         <div id="field_termin" class="d-none">
-                            <div class="mb-3">
+                            <div class="card bg-warning-subtle border-warning-subtle p-3 mb-3 rounded-3">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <label class="form-label fw-semibold mb-0">Tanggal Jatuh Tempo</label>
+                                    <label class="form-label fw-bold text-dark mb-0" style="font-size:13px;">
+                                        <i class="bi bi-calendar-check me-1"></i> Tanggal Jatuh Tempo <span class="text-danger">*</span>
+                                    </label>
                                     <div class="form-check form-check-inline mb-0">
-                                        <input class="form-check-input" type="checkbox" id="checkTanpaJatuhTempo" onchange="toggleTanpaJatuhTempo(this.checked)">
-                                        <label class="form-check-label text-muted small" for="checkTanpaJatuhTempo">Tidak ada jatuh tempo (Fleksibel)</label>
+                                        <input class="form-check-input" type="checkbox" name="tanpa_jatuh_tempo" id="checkTanpaJatuhTempo" onchange="toggleTanpaJatuhTempo(this.checked)">
+                                        <label class="form-check-label text-muted small" for="checkTanpaJatuhTempo" style="font-size:11px;">Fleksibel</label>
                                     </div>
                                 </div>
-                                <input type="date" name="tanggal_jatuh_tempo" id="inputJatuhTempoTermin" class="form-control">
-                                <small class="text-muted" id="hintTanpaJatuhTempo" style="display:none;">Tempo pembayaran fleksibel / kesepakatan personal.</small>
+                                <input type="date" name="tanggal_jatuh_tempo" id="inputJatuhTempoTermin" class="form-control form-control-sm mb-2">
+                                <div class="d-flex gap-1" id="quickDaysJatuhTempo">
+                                    <button type="button" class="btn btn-xs btn-outline-dark py-0 px-2" style="font-size:10.5px;" onclick="setJatuhTempoDays(7)">+7 Hari</button>
+                                    <button type="button" class="btn btn-xs btn-outline-dark py-0 px-2" style="font-size:10.5px;" onclick="setJatuhTempoDays(14)">+14 Hari</button>
+                                    <button type="button" class="btn btn-xs btn-outline-dark py-0 px-2" style="font-size:10.5px;" onclick="setJatuhTempoDays(30)">+30 Hari</button>
+                                </div>
+                                <small class="text-muted mt-2" id="hintTanpaJatuhTempo" style="display:none; font-size:11px;">
+                                    Tempo fleksibel. Transaksi akan tetap masuk ke <strong>Buku Pembantu Utang</strong>.
+                                </small>
                             </div>
                         </div>
+
+                        {{-- Field Khusus DP --}}
                         <div id="field_dp" class="d-none">
-                            <div class="row">
-                                <div class="col-6 mb-3">
-                                    <label class="form-label fw-semibold">Persentase DP</label>
-                                    <div class="input-group">
-                                        <input type="number" name="persen_dp" id="inputPersenDP" class="form-control" min="1" max="99" placeholder="cth: 30" oninput="updateDariPersen()">
-                                        <span class="input-group-text">%</span>
+                            <div class="card bg-info-subtle border-info-subtle p-3 mb-3 rounded-3">
+                                <div class="row g-2">
+                                    <div class="col-6 mb-2">
+                                        <label class="form-label fw-bold text-dark mb-1" style="font-size:12px;">Persentase DP</label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" name="persen_dp" id="inputPersenDP" class="form-control" min="1" max="99" placeholder="cth: 30" oninput="updateDariPersen()">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 mb-2">
+                                        <label class="form-label fw-bold text-dark mb-1" style="font-size:12px;">Nominal DP</label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">Rp</span>
+                                            <input type="number" name="nominal_dp" id="inputNominalDP" class="form-control" min="1" placeholder="cth: 150000" oninput="updateDariNominal()">
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="col-6 mb-3">
-                                    <label class="form-label fw-semibold">Nominal DP</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text">Rp</span>
-                                        <input type="number" name="nominal_dp" id="inputNominalDP" class="form-control" min="1" placeholder="cth: 150000" oninput="updateDariNominal()">
-                                    </div>
+                                <div class="mb-2">
+                                    <small id="keteranganDP" class="fw-semibold text-dark" style="font-size:11.5px;"></small>
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <small class="text-muted" id="keteranganDP"></small>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold">Estimasi Pelunasan</label>
-                                <input type="date" name="tanggal_pelunasan" class="form-control">
+                                <div class="mb-0">
+                                    <label class="form-label fw-bold text-dark mb-1" style="font-size:12px;">Estimasi Pelunasan</label>
+                                    <input type="date" name="tanggal_pelunasan" class="form-control form-control-sm">
+                                </div>
                             </div>
                         </div>
+
                         <div class="mb-3">
-                            <label class="form-label">Catatan <span class="text-muted">(opsional)</span></label>
-                            <textarea name="catatan_pembayaran" class="form-control" rows="2" placeholder="Mis: Transfer ke BCA 1234567..."></textarea>
+                            <label class="form-label fw-semibold small mb-1">Catatan Pembayaran <span class="text-muted">(opsional)</span></label>
+                            <textarea name="catatan_pembayaran" class="form-control form-control-sm" rows="2" placeholder="Nomor referensi / keterangan pembayaran..."></textarea>
                         </div>
                         <div class="mb-0">
-                            <label class="form-label fw-semibold">Upload Bukti Pembayaran <span class="text-muted">(bisa >1 gambar)</span></label>
-                            <input type="file" name="bukti_file[]" class="form-control" accept="image/*" multiple>
+                            <label class="form-label fw-semibold small mb-1">Upload Bukti Pembayaran <span class="text-muted">(opsional, bisa >1 gambar)</span></label>
+                            <input type="file" name="bukti_file[]" class="form-control form-control-sm" accept="image/*" multiple>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-primary">Simpan</button>
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-sm btn-primary px-3 fw-semibold">
+                            <i class="bi bi-check-circle me-1"></i> Simpan Pembayaran
+                        </button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
 
-    {{-- ══════════════════ MODAL: LUNASI ══════════════════ --}}
+    {{-- ══════════════════ MODAL: LUNASI (Hanya Super Admin) ══════════════════ --}}
     <div class="modal fade" id="modalLunasi" tabindex="-1">
         <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header" style="background:#fff8f5; border-bottom:1px solid #f0ddd4;">
-                    <h5 class="modal-title" style="color:#dd7045;">
-                        <i class="bi bi-cash-coin me-2"></i>Catat Pelunasan
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header py-3" style="background:#fff8f5; border-bottom:1px solid #f0ddd4;">
+                    <h5 class="modal-title fw-bold" style="color:#dd7045; font-size:16px;">
+                        <i class="bi bi-cash-coin me-2"></i>Catat Pelunasan Pembelian
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -626,71 +728,97 @@
                     <div class="modal-body">
 
                         {{-- Info ringkas --}}
-                        <div class="p-3 mb-3 rounded" style="background:#f8f4f0; border:1px solid #eadfd4;">
+                        <div class="p-3 mb-3 rounded-3" style="background:#f8f4f0; border:1px solid #eadfd4;">
                             <div class="row g-2" style="font-size:13px;">
                                 <div class="col-6">
                                     <div class="text-muted" style="font-size:11px;">KODE PEMBELIAN</div>
-                                    <div class="fw-semibold" id="lunasi_kode">—</div>
+                                    <div class="fw-semibold font-monospace" id="lunasi_kode">—</div>
                                 </div>
                                 <div class="col-6">
                                     <div class="text-muted" style="font-size:11px;">SUPPLIER</div>
                                     <div class="fw-semibold" id="lunasi_supplier">—</div>
                                 </div>
-                                <div class="col-6">
-                                    <div class="text-muted" style="font-size:11px;">SISA YANG HARUS DIBAYAR</div>
-                                    <div class="fw-bold text-danger" id="lunasi_sisa" style="font-size:15px;">—</div>
+                                <div class="col-12 mt-2 pt-2 border-top">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="text-muted small">SISA KEKURANGAN:</span>
+                                        <span class="fw-bold text-danger fs-6" id="lunasi_sisa">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {{-- Metode Pelunasan (Disesuaikan otomatis sesuai jenis Tempo vs DP) --}}
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted text-uppercase mb-2">Metode Pelunasan <span class="text-danger">*</span></label>
+                            <div id="containerOpsiPelunasan" class="d-flex flex-wrap gap-2">
+                                <!-- Diisi secara dinamis oleh JS -->
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label fw-semibold small mb-1">Tanggal Pelunasan <span class="text-danger">*</span></label>
+                                <input type="date" name="tanggal_pelunasan" id="inputTanggalPelunasan" class="form-control form-control-sm" value="{{ date('Y-m-d') }}" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-semibold small mb-1">Nominal Pelunasan <span class="text-danger">*</span></label>
+                                <div class="input-group input-group-sm">
+                                    <span class="input-group-text">Rp</span>
+                                    <input type="number" name="nominal_pelunasan" id="inputNominalLunasi" class="form-control" min="1" placeholder="0" required>
                                 </div>
                             </div>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label fw-semibold">Nominal Pelunasan</label>
-                            <div class="input-group">
-                                <span class="input-group-text">Rp</span>
-                                <input type="number" name="nominal_pelunasan" id="inputNominalLunasi"
-                                       class="form-control" min="1" placeholder="0">
-                            </div>
-                            <small class="text-muted">Masukkan jumlah yang dibayarkan untuk pelunasan</small>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Catatan <span class="text-muted">(opsional)</span></label>
-                            <textarea name="catatan_pelunasan" class="form-control" rows="2"
-                                      placeholder="Mis: Transfer BCA tgl 29 Jun..."></textarea>
+                            <label class="form-label small mb-1">Catatan Pelunasan <span class="text-muted">(opsional)</span></label>
+                            <textarea name="catatan_pelunasan" class="form-control form-control-sm" rows="2" placeholder="Nomor ref transfer / catatan pelunasan..."></textarea>
                         </div>
 
                         <div class="mb-0">
-                            <label class="form-label fw-semibold">Upload Bukti Pembayaran <span class="text-muted">(bisa >1 gambar)</span></label>
-                            <input type="file" name="bukti_file[]" class="form-control" accept="image/*" multiple>
+                            <label class="form-label fw-semibold small mb-1">Upload Bukti Pelunasan <span class="text-muted">(opsional)</span></label>
+                            <input type="file" name="bukti_file[]" class="form-control form-control-sm" accept="image/*" multiple>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-success">
-                            <i class="bi bi-check-circle me-1"></i>Tandai Lunas
+                    <div class="modal-footer py-2">
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-sm btn-success px-3 fw-semibold">
+                            <i class="bi bi-check-circle me-1"></i> Simpan & Tandai Lunas
                         </button>
                     </div>
                 </form>
             </div>
         </div>
     </div>
+    </div>
 
-    {{-- ══════════════════ MODAL TERIMA BARANG (QTY INPUT) ══════════════════ --}}
+    {{-- ══════════════════ MODAL TERIMA BARANG (QTY INPUT & VERIFIKASI GUDANG) ══════════════════ --}}
     <div class="modal fade" id="modalTerimaBarang" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <form id="formTerimaBarang" method="POST">
                     @csrf
                     <div class="modal-header">
-                        <h5 class="modal-title fs-6 fw-bold">Konfirmasi Penerimaan Barang — <span id="terima_kode" class="text-primary"></span></h5>
+                        <h5 class="modal-title fs-6 fw-bold">
+                            <i class="bi bi-box-seam me-2 text-success"></i> Verifikasi Penerimaan Barang Gudang — <span id="terima_kode" class="text-primary"></span>
+                        </h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body" style="font-size:13px;">
-                        <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-center gap-2" style="font-size:12px;">
-                            <i class="bi bi-info-circle-fill fs-5"></i>
-                            <div>
-                                Periksa dan sesuaikan <strong>Qty Barang Diterima</strong> di bawah ini.
-                                Stok gudang dan batch FIFO akan ditambahkan secara proporsional sesuai Qty yang diterima.
+                        <div class="alert alert-success bg-success-subtle border-success-subtle py-2 px-3 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style="font-size:12px;">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="bi bi-shield-check text-success fs-5"></i>
+                                <div>
+                                    <strong>Verifikasi Manual oleh User Gudang:</strong><br>
+                                    Periksa dan hitung fisik barang yang tiba di gudang. Masukkan jumlah riil yang diterima pada kolom <strong>Qty Diterima Baru</strong>.
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2 mt-1 mt-md-0">
+                                <button type="button" class="btn btn-xs btn-outline-success bg-white fw-semibold" onclick="setSemuaTerimaSisa()" title="Isi semua dengan sisa yang belum diterima">
+                                    <i class="bi bi-check-all me-1"></i> Penuhi Semua Sisa
+                                </button>
+                                <button type="button" class="btn btn-xs btn-outline-secondary bg-white fw-semibold" onclick="setSemuaTerimaNol()" title="Reset semua input ke 0 untuk verifikasi manual">
+                                    <i class="bi bi-x-circle me-1"></i> Kosongkan
+                                </button>
                             </div>
                         </div>
                         <table class="table table-bordered align-middle mb-0" style="font-size:13px;">
@@ -700,7 +828,7 @@
                                     <th class="text-center" style="width:110px;">Qty Dipesan</th>
                                     <th class="text-center" style="width:110px;">Diterima Seb.</th>
                                     <th class="text-center" style="width:110px;">Sisa</th>
-                                    <th class="text-center" style="width:150px;">Qty Diterima Baru</th>
+                                    <th class="text-center" style="width:160px;">Qty Diterima Baru</th>
                                     <th class="text-end" style="width:120px;">Harga/Unit</th>
                                 </tr>
                             </thead>
@@ -710,8 +838,8 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" class="btn btn-sm btn-success px-3">
-                            <i class="bi bi-check-lg me-1"></i> Simpan & Terima Barang
+                        <button type="submit" class="btn btn-sm btn-success px-3 fw-bold">
+                            <i class="bi bi-check-lg me-1"></i> Konfirmasi Penerimaan Barang
                         </button>
                     </div>
                 </form>
@@ -2047,7 +2175,12 @@
         function bukaPembayaran(id, kode, total) {
             totalAktif = total;
             document.getElementById('formPembayaran').action = '/pembelian/' + id + '/catat-pembayaran';
-            document.getElementById('infoPembelian').textContent = kode + ' · Total: Rp ' + Number(total).toLocaleString('id-ID');
+            
+            const elKode = document.getElementById('infoPembelianKode');
+            const elTotal = document.getElementById('infoPembelianTotal');
+            if (elKode) elKode.textContent = kode;
+            if (elTotal) elTotal.textContent = 'Rp ' + Number(total).toLocaleString('id-ID');
+
             document.querySelectorAll('input[name=metode_pembayaran]').forEach(r => r.checked = false);
             
             const fieldDp = document.getElementById('field_dp');
@@ -2055,13 +2188,20 @@
 
             const fieldTermin = document.getElementById('field_termin');
             if (fieldTermin) fieldTermin.classList.add('d-none');
+
+            const infoLunas = document.getElementById('info_langsung_lunas');
+            if (infoLunas) infoLunas.classList.add('d-none');
             
             document.getElementById('inputPersenDP').value = '';
             document.getElementById('inputNominalDP').value = '';
             document.getElementById('keteranganDP').textContent = '';
+            
             const inputJt = document.getElementById('inputJatuhTempoTermin');
             if (inputJt) {
-                inputJt.value = '';
+                // Default 14 hari ke depan
+                const d = new Date();
+                d.setDate(d.getDate() + 14);
+                inputJt.value = d.toISOString().split('T')[0];
                 inputJt.disabled = false;
             }
             const checkTjt = document.getElementById('checkTanpaJatuhTempo');
@@ -2075,25 +2215,18 @@
             new bootstrap.Modal(document.getElementById('modalPembayaran')).show();
         }
 
-        function toggleTanpaJatuhTempo(isTanpaJatuhTempo) {
-            const inputJt = document.getElementById('inputJatuhTempoTermin');
-            const hintTjt = document.getElementById('hintTanpaJatuhTempo');
-            if (inputJt) {
-                if (isTanpaJatuhTempo) {
-                    inputJt.value = '';
-                    inputJt.disabled = true;
-                    if (hintTjt) hintTjt.style.display = 'block';
-                } else {
-                    inputJt.disabled = false;
-                    if (hintTjt) hintTjt.style.display = 'none';
-                }
+        function setJatuhTempoDays(days) {
+            const input = document.getElementById('inputJatuhTempoTermin');
+            if (input) {
+                const d = new Date();
+                d.setDate(d.getDate() + days);
+                input.value = d.toISOString().split('T')[0];
+                const checkTjt = document.getElementById('checkTanpaJatuhTempo');
+                if (checkTjt) checkTjt.checked = false;
+                input.disabled = false;
+                const hintTjt = document.getElementById('hintTanpaJatuhTempo');
+                if (hintTjt) hintTjt.style.display = 'none';
             }
-        }
-        function toggleFieldPembayaran(metode) {
-            const fieldDp = document.getElementById('field_dp');
-            const fieldTermin = document.getElementById('field_termin');
-            if (fieldDp) fieldDp.classList.toggle('d-none', metode !== 'dp');
-            if (fieldTermin) fieldTermin.classList.toggle('d-none', metode !== 'termin');
         }
 
         function toggleTanpaJatuhTempo(checked) {
@@ -2106,6 +2239,16 @@
             if (hint) {
                 hint.style.display = checked ? 'block' : 'none';
             }
+        }
+
+        function toggleFieldPembayaran(metode) {
+            const fieldDp = document.getElementById('field_dp');
+            const fieldTermin = document.getElementById('field_termin');
+            const infoLunas = document.getElementById('info_langsung_lunas');
+
+            if (fieldDp) fieldDp.classList.toggle('d-none', metode !== 'dp');
+            if (fieldTermin) fieldTermin.classList.toggle('d-none', (metode !== 'tempo' && metode !== 'termin'));
+            if (infoLunas) infoLunas.classList.toggle('d-none', (metode === 'dp' || metode === 'tempo' || metode === 'termin'));
         }
 
         function updateDariPersen() {
@@ -2136,57 +2279,164 @@
             document.getElementById('dp_kode').textContent         = data.kode;
             document.getElementById('dp_total').textContent        = 'Rp ' + total.toLocaleString('id-ID');
             document.getElementById('dp_dicatat_pada').textContent = data.dicatat_pada ?? '-';
-            const badgeClass = { cod: 'bg-success', termin: 'bg-warning text-dark', dp: 'bg-info' };
+
+            const badgeClass = {
+                cod: 'bg-success',
+                cash: 'bg-success',
+                petty_cash: 'bg-success',
+                transfer_bca: 'bg-primary',
+                transfer_bri: 'bg-info text-dark',
+                termin: 'bg-warning text-dark',
+                tempo: 'bg-warning text-dark',
+                dp: 'bg-info'
+            };
+            const cls = badgeClass[data.metode] || 'bg-secondary';
             document.getElementById('dp_metode_badge').innerHTML =
-                `<span class="badge ${badgeClass[data.metode]}">${data.label}</span>`;
+                `<span class="badge ${cls}">${data.label}</span>`;
+
             ['row_jatuh_tempo','row_nominal_dp','row_sisa_dp','row_pelunasan_tgl','row_catatan']
-                .forEach(rowId => document.getElementById(rowId).classList.add('d-none'));
-            if (data.metode === 'termin') {
-                document.getElementById('row_jatuh_tempo').classList.remove('d-none');
-                document.getElementById('dp_jatuh_tempo').textContent = data.tanggal_jatuh_tempo ? data.tanggal_jatuh_tempo : 'Fleksibel / Kesepakatan Personal';
-                document.getElementById('row_sisa_dp').classList.remove('d-none');
-                document.getElementById('dp_sisa').textContent = 'Rp ' + total.toLocaleString('id-ID');
+                .forEach(rowId => {
+                    const el = document.getElementById(rowId);
+                    if (el) el.classList.add('d-none');
+                });
+
+            if (data.metode === 'termin' || data.metode === 'tempo') {
+                const elJt = document.getElementById('row_jatuh_tempo');
+                if (elJt) {
+                    elJt.classList.remove('d-none');
+                    document.getElementById('dp_jatuh_tempo').textContent = data.tanggal_jatuh_tempo ? data.tanggal_jatuh_tempo : 'Fleksibel / Kesepakatan Personal';
+                }
+                const elSisa = document.getElementById('row_sisa_dp');
+                if (elSisa) {
+                    elSisa.classList.remove('d-none');
+                    document.getElementById('dp_sisa').textContent = 'Rp ' + (data.is_lunas ? '0 (Sudah Lunas)' : Number(data.kekurangan || total).toLocaleString('id-ID'));
+                }
                 if (data.tanggal_pelunasan) {
-                    document.getElementById('row_pelunasan_tgl').classList.remove('d-none');
-                    document.getElementById('dp_pelunasan').textContent = data.tanggal_pelunasan;
+                    const elPel = document.getElementById('row_pelunasan_tgl');
+                    if (elPel) {
+                        elPel.classList.remove('d-none');
+                        document.getElementById('dp_pelunasan').textContent = data.tanggal_pelunasan + (data.metode_pelunasan ? ' via ' + data.metode_pelunasan.toUpperCase() : '');
+                    }
                 }
             }
             if (data.metode === 'dp') {
                 const nominalDP = parseFloat(data.nominal_dp) || Math.round(total * (data.persen_dp || 0) / 100);
                 const persenDP = data.persen_dp || (total > 0 ? Math.round((nominalDP / total) * 100) : 0);
-                const sisa = total - nominalDP;
-                document.getElementById('row_nominal_dp').classList.remove('d-none');
-                document.getElementById('row_sisa_dp').classList.remove('d-none');
-                document.getElementById('dp_nominal').textContent = 'Rp ' + nominalDP.toLocaleString('id-ID') + ' (' + persenDP + '%)';
-                document.getElementById('dp_sisa').textContent   = 'Rp ' + sisa.toLocaleString('id-ID');
+                const sisa = data.is_lunas ? 0 : (total - nominalDP);
+                
+                const elNom = document.getElementById('row_nominal_dp');
+                if (elNom) {
+                    elNom.classList.remove('d-none');
+                    document.getElementById('dp_nominal').textContent = 'Rp ' + nominalDP.toLocaleString('id-ID') + ' (' + persenDP + '%)';
+                }
+                const elSisa = document.getElementById('row_sisa_dp');
+                if (elSisa) {
+                    elSisa.classList.remove('d-none');
+                    document.getElementById('dp_sisa').textContent   = 'Rp ' + (data.is_lunas ? '0 (Sudah Lunas)' : sisa.toLocaleString('id-ID'));
+                }
                 if (data.tanggal_pelunasan) {
-                    document.getElementById('row_pelunasan_tgl').classList.remove('d-none');
-                    document.getElementById('dp_pelunasan').textContent = data.tanggal_pelunasan;
+                    const elPel = document.getElementById('row_pelunasan_tgl');
+                    if (elPel) {
+                        elPel.classList.remove('d-none');
+                        document.getElementById('dp_pelunasan').textContent = data.tanggal_pelunasan + (data.metode_pelunasan ? ' via ' + data.metode_pelunasan.toUpperCase() : '');
+                    }
                 }
             }
             if (data.catatan) {
-                document.getElementById('row_catatan').classList.remove('d-none');
-                document.getElementById('dp_catatan').textContent = data.catatan;
+                const elCat = document.getElementById('row_catatan');
+                if (elCat) {
+                    elCat.classList.remove('d-none');
+                    document.getElementById('dp_catatan').textContent = data.catatan;
+                }
             }
             new bootstrap.Modal(document.getElementById('modalDetailPembayaran')).show();
         }
 
-        // ── Modal Lunasi ──
-        function bukaModalLunasi(id, kode, kekurangan, supplier) {
+        // ── Modal Lunasi (Hanya Super Admin) ──
+        function bukaModalLunasi(id, kode, kekurangan, supplier, metode) {
             document.getElementById('formLunasi').action = '/pembelian/' + id + '/lunasi';
             document.getElementById('lunasi_kode').textContent     = kode;
             document.getElementById('lunasi_supplier').textContent = supplier;
             document.getElementById('lunasi_sisa').textContent     = 'Rp ' + Number(kekurangan).toLocaleString('id-ID');
             document.getElementById('inputNominalLunasi').value    = kekurangan;
+
+            const containerOpsi = document.getElementById('containerOpsiPelunasan');
+            containerOpsi.innerHTML = '';
+
+            const isTempo = (metode === 'tempo' || metode === 'termin');
+
+            if (isTempo) {
+                // Untuk Tempo: button pelunasan dengan BRI / BCA
+                containerOpsi.innerHTML = `
+                    <div class="form-check form-check-inline border rounded-3 p-2 px-3 m-0 bg-white shadow-sm flex-fill">
+                        <input class="form-check-input" type="radio" name="metode_pelunasan" id="lunas_bri" value="transfer_bri" checked required>
+                        <label class="form-check-label fw-bold text-dark" for="lunas_bri">
+                            <i class="bi bi-bank2 me-1 text-info"></i> Transfer BRI
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline border rounded-3 p-2 px-3 m-0 bg-white shadow-sm flex-fill">
+                        <input class="form-check-input" type="radio" name="metode_pelunasan" id="lunas_bca" value="transfer_bca" required>
+                        <label class="form-check-label fw-bold text-dark" for="lunas_bca">
+                            <i class="bi bi-bank me-1 text-primary"></i> Transfer BCA
+                        </label>
+                    </div>
+                `;
+            } else {
+                // Untuk DP: button pelunasan dengan BRI / BCA / Tunai / Petty cash
+                containerOpsi.innerHTML = `
+                    <div class="form-check form-check-inline border rounded-3 p-2 px-3 m-0 bg-white shadow-sm flex-fill">
+                        <input class="form-check-input" type="radio" name="metode_pelunasan" id="lunas_bri" value="transfer_bri" checked required>
+                        <label class="form-check-label fw-bold text-dark" for="lunas_bri">
+                            <i class="bi bi-bank2 me-1 text-info"></i> Transfer BRI
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline border rounded-3 p-2 px-3 m-0 bg-white shadow-sm flex-fill">
+                        <input class="form-check-input" type="radio" name="metode_pelunasan" id="lunas_bca" value="transfer_bca" required>
+                        <label class="form-check-label fw-bold text-dark" for="lunas_bca">
+                            <i class="bi bi-bank me-1 text-primary"></i> Transfer BCA
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline border rounded-3 p-2 px-3 m-0 bg-white shadow-sm flex-fill">
+                        <input class="form-check-input" type="radio" name="metode_pelunasan" id="lunas_tunai" value="cash" required>
+                        <label class="form-check-label fw-bold text-dark" for="lunas_tunai">
+                            <i class="bi bi-cash-stack me-1 text-success"></i> Tunai (Cash)
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline border rounded-3 p-2 px-3 m-0 bg-white shadow-sm flex-fill">
+                        <input class="form-check-input" type="radio" name="metode_pelunasan" id="lunas_petty" value="petty_cash" required>
+                        <label class="form-check-label fw-bold text-dark" for="lunas_petty">
+                            <i class="bi bi-wallet2 me-1 text-warning"></i> Petty Cash
+                        </label>
+                    </div>
+                `;
+            }
+
             new bootstrap.Modal(document.getElementById('modalLunasi')).show();
         }
 
-        // ── Modal Terima Barang (Input Qty Diterima) ──
+        // ── Helper Quick Action Verifikasi Penerimaan Barang Gudang ──
+        function setSemuaTerimaSisa() {
+            document.querySelectorAll('#tbodyTerimaBarang input[type="number"]').forEach(input => {
+                const max = input.getAttribute('max') || 0;
+                input.value = max;
+                input.dispatchEvent(new Event('input'));
+            });
+        }
+
+        function setSemuaTerimaNol() {
+            document.querySelectorAll('#tbodyTerimaBarang input[type="number"]').forEach(input => {
+                input.value = 0;
+                input.dispatchEvent(new Event('input'));
+            });
+        }
+
+        // ── Modal Terima Barang (Input Qty Diterima Manual Gudang) ──
         function bukaModalTerimaBarang(id) {
             const data = dataPembayaran[id];
             if (!data || !data.details) return;
 
-            document.getElementById('formTerimaBarang').action = '/pembelian/' + id + '/terima';
+            const form = document.getElementById('formTerimaBarang');
+            form.action = '/pembelian/' + id + '/terima';
             document.getElementById('terima_kode').textContent = data.kode;
 
             const tbody = document.getElementById('tbodyTerimaBarang');
@@ -2226,18 +2476,42 @@
                     <td>
                         <div class="input-group input-group-sm">
                             <input type="number" step="0.01" min="0" max="${qtyRemaining}" 
-                                   class="form-control text-center fw-bold" 
+                                   class="form-control text-center fw-bold input-qty-rcv" 
                                    name="qty_diterima[${det.id}]" 
                                    value="${qtyRemaining}" 
+                                   data-konv="${konv}"
+                                   data-satuan-utama="${det.satuan_utama || ''}"
+                                   id="input_rcv_${det.id}"
                                    required>
                             <span class="input-group-text">${det.satuan}</span>
                         </div>
-                        ${hasKonv ? `<small class="text-muted d-block text-center mt-1" style="font-size:10px;">Stok masuk: <strong>${(qtyRemaining * konv).toLocaleString('id-ID')} ${det.satuan_utama}</strong></small>` : ''}
+                        ${hasKonv ? `<small class="text-muted d-block text-center mt-1" style="font-size:10px;">Stok masuk: <strong id="lbl_stok_masuk_${det.id}">${(qtyRemaining * konv).toLocaleString('id-ID')} ${det.satuan_utama}</strong></small>` : ''}
                     </td>
                     <td class="text-end">Rp ${Number(det.harga_per_qty).toLocaleString('id-ID')}</td>
                 `;
                 tbody.appendChild(tr);
+
+                if (hasKonv) {
+                    const inputEl = tr.querySelector(`#input_rcv_${det.id}`);
+                    const lblEl = tr.querySelector(`#lbl_stok_masuk_${det.id}`);
+                    inputEl.addEventListener('input', function () {
+                        const val = parseFloat(this.value) || 0;
+                        lblEl.textContent = (val * konv).toLocaleString('id-ID') + ' ' + (det.satuan_utama || '');
+                    });
+                }
             });
+
+            form.onsubmit = function (e) {
+                let totalInput = 0;
+                form.querySelectorAll('.input-qty-rcv').forEach(inp => {
+                    totalInput += parseFloat(inp.value) || 0;
+                });
+                if (totalInput <= 0) {
+                    e.preventDefault();
+                    alert('Harap masukkan minimal 1 barang dengan jumlah diterima > 0 untuk verifikasi penerimaan.');
+                    return false;
+                }
+            };
 
             new bootstrap.Modal(document.getElementById('modalTerimaBarang')).show();
         }

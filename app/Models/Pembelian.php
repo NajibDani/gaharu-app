@@ -89,7 +89,51 @@ class Pembelian extends Model
         return null;
     }
 
-    
+    /**
+     * Accessor metode pelunasan: mengambil dari catatan_pelunasan atau tabel pembayaran
+     * tanpa memerlukan kolom tambahan di tabel pembelian.
+     */
+    public function getMetodePelunasanAttribute(): ?string
+    {
+        if (isset($this->attributes['metode_pelunasan']) && !empty($this->attributes['metode_pelunasan'])) {
+            return $this->attributes['metode_pelunasan'];
+        }
+        $catatan = (string) ($this->attributes['catatan_pelunasan'] ?? '');
+        if (preg_match('/\[(?:via\s+)?([A-Za-z0-9_\s]+)\]/i', $catatan, $matches)) {
+            $val = strtolower(trim($matches[1]));
+            if (str_contains($val, 'bri')) return 'transfer_bri';
+            if (str_contains($val, 'bca')) return 'transfer_bca';
+            if (str_contains($val, 'petty')) return 'petty_cash';
+            if (str_contains($val, 'cash') || str_contains($val, 'tunai')) return 'cash';
+            return $val;
+        }
+        $bayar = $this->pembayaran()->where('kategori_pembayaran', 'pembelian')->where('metode_pembayaran', 'like', '%Pelunasan%')->latest()->first();
+        if ($bayar) {
+            $m = strtolower($bayar->metode_pembayaran);
+            if (str_contains($m, 'bri')) return 'transfer_bri';
+            if (str_contains($m, 'bca')) return 'transfer_bca';
+            if (str_contains($m, 'petty')) return 'petty_cash';
+            if (str_contains($m, 'cash') || str_contains($m, 'tunai')) return 'cash';
+        }
+        return null;
+    }
+
+    /**
+     * Accessor detail metode pembayaran awal: mengambil channel kas/bank
+     * tanpa mengubah enum metode_pembayaran standar ('cod', 'termin', 'dp').
+     */
+    public function getMetodePembayaranDetailAttribute(): ?string
+    {
+        $catatan = (string) ($this->attributes['catatan_pembayaran'] ?? '');
+        if (preg_match('/\[(?:via\s+)?([A-Za-z0-9_\s]+)\]/i', $catatan, $matches)) {
+            return trim($matches[1]);
+        }
+        $bayar = $this->pembayaran()->where('kategori_pembayaran', 'pembelian')->where('metode_pembayaran', 'not like', '%Pelunasan%')->latest()->first();
+        if ($bayar && !empty($bayar->metode_pembayaran)) {
+            return $bayar->metode_pembayaran;
+        }
+        return strtoupper((string) ($this->attributes['metode_pembayaran'] ?? ''));
+    }
 
     /*
     |--------------------------------------------------------------------------

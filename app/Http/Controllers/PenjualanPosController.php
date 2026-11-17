@@ -89,10 +89,6 @@ class PenjualanPosController extends Controller
             return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku. Tidak dapat membuat transaksi POS pada periode yang sudah ditutup.')->withInput();
         }
 
-        if (date('Y-m-d', strtotime($request->tanggal)) < date('Y-m-d')) {
-            return back()->with('error', 'Tanggal transaksi tidak boleh sebelum hari ini.')->withInput();
-        }
-
         $user = auth()->user();
         $gudangPilihan = MasterGudang::find($request->gudang_id);
         if (!$gudangPilihan || !$gudangPilihan->isOutlet()) {
@@ -460,12 +456,12 @@ class PenjualanPosController extends Controller
             'hpp_satuan.*'=> 'nullable|numeric|min:0',
         ]);
 
+        if (\App\Models\Journal::isPeriodClosed($request->tanggal)) {
+            return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku. Tidak dapat mengubah transaksi POS pada periode yang sudah ditutup.')->withInput();
+        }
+
         $user = auth()->user();
         $isSuperAdmin = $user && $user->isSuperAdmin();
-
-        if (!$isSuperAdmin && date('Y-m-d', strtotime($request->tanggal)) < date('Y-m-d')) {
-            return back()->with('error', 'Tanggal transaksi tidak boleh sebelum hari ini.')->withInput();
-        }
 
         $gudangPilihan = MasterGudang::find($request->gudang_id);
         if (!$gudangPilihan || !$gudangPilihan->isOutlet()) {

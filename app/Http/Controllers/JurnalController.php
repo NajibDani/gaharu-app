@@ -1739,11 +1739,74 @@ class JurnalController extends Controller
                 break;
         }
 
+        // Tangkap parameter filter status tagihan khusus utang/piutang (semua, belum_lunas, lunas, jatuh_tempo)
+        $statusTagihan = $request->query('status_tagihan', 'semua');
+
         // 4. Transformasi Data untuk Tampilan Blade dengan logika penyelarasan status terima sebagian / selesai
-        $entities = $entities->map(function ($item) use ($jenis) {
+        $today = now()->format('Y-m-d');
+
+        $entities = $entities->map(function ($item) use ($jenis, $today) {
             $isCompleted = false;
 
-            if (in_array($jenis, ['utang', 'um-pembelian'])) {
+            if ($jenis === 'utang') {
+                $purchases = DB::table('pembelian')
+                    ->where('supplier_id', $item->entity_id)
+                    ->get();
+
+                $unpaidPurchases = $purchases->filter(function($p) {
+                    $catatan = (string)($p->catatan_pembayaran ?? '');
+                    $keterangan = (string)($p->keterangan ?? '');
+                    $isBatal = str_starts_with($catatan, '[BATAL]') || str_starts_with($catatan, '[DELETED]') || str_starts_with($keterangan, '[BATAL]') || str_starts_with($keterangan, '[DELETED]');
+                    return !$isBatal && !$p->is_lunas;
+                });
+
+                $isOverdue = false;
+                $jatuhTempoTerdekat = null;
+                $totalUnpaidDebt = 0;
+
+                foreach ($unpaidPurchases as $p) {
+                    $totalNota = (float)$p->total;
+                    $nominalDp = (float)($p->nominal_dp ?? 0);
+                    $nominalPelunasan = (float)($p->nominal_pelunasan ?? 0);
+
+                    if ($p->metode_pembayaran === 'dp') {
+                        $sisaNota = max(0, $totalNota - $nominalDp - $nominalPelunasan);
+                    } else {
+                        $sisaNota = max(0, $totalNota - $nominalPelunasan);
+                    }
+                    $totalUnpaidDebt += $sisaNota;
+
+                    if (!empty($p->tanggal_jatuh_tempo)) {
+                        $tglJt = date('Y-m-d', strtotime($p->tanggal_jatuh_tempo));
+                        if ($tglJt < $today) {
+                            $isOverdue = true;
+                        }
+                        if (!$jatuhTempoTerdekat || $tglJt < $jatuhTempoTerdekat) {
+                            $jatuhTempoTerdekat = $tglJt;
+                        }
+                    }
+                }
+
+                if ($unpaidPurchases->isEmpty()) {
+                    $item->saldo = 0;
+                    $item->status = 'Lunas';
+                    $item->keterangan_sub = 'Semua transaksi sudah selesai';
+                    $item->is_overdue = false;
+                    $item->jatuh_tempo_terdekat = null;
+                    $item->jumlah_tagihan_aktif = 0;
+                } else {
+                    $calculatedSaldo = max((float)$item->saldo, $totalUnpaidDebt);
+                    if ($calculatedSaldo <= 0 && $totalUnpaidDebt > 0) {
+                        $calculatedSaldo = $totalUnpaidDebt;
+                    }
+                    $item->saldo = $calculatedSaldo;
+                    $item->status = 'Belum Lunas';
+                    $item->keterangan_sub = 'Terdapat ' . $unpaidPurchases->count() . ' tagihan belum lunas' . ($isOverdue ? ' (Ada yang lewat tempo)' : '');
+                    $item->is_overdue = $isOverdue;
+                    $item->jatuh_tempo_terdekat = $jatuhTempoTerdekat;
+                    $item->jumlah_tagihan_aktif = $unpaidPurchases->count();
+                }
+            } elseif ($jenis === 'um-pembelian') {
                 $purchases = DB::table('pembelian')
                     ->where('supplier_id', $item->entity_id)
                     ->get();
@@ -1761,6 +1824,19 @@ class JurnalController extends Controller
                         }
                     }
                     $isCompleted = $allMatch;
+                }
+
+                if ($isCompleted) {
+                    $item->saldo = 0;
+                    $item->status = 'Lunas';
+                    $item->keterangan_sub = 'Semua transaksi sudah selesai';
+                    $item->is_overdue = false;
+                } else {
+                    $item->status = ($item->saldo <= 0) ? 'Lunas' : 'Belum Lunas';
+                    $item->keterangan_sub = ($item->saldo <= 0) 
+                        ? 'Semua transaksi sudah selesai' 
+                        : 'Terdapat transaksi aktif / belum tuntas';
+                    $item->is_overdue = false;
                 }
             } else {
                 $orders = DB::table('pesanan')
@@ -1784,52 +1860,64 @@ class JurnalController extends Controller
                     }
                     $isCompleted = $allMatch;
                 }
-            }
 
-            if ($isCompleted) {
-                $item->saldo = 0;
-                $item->status = 'Lunas';
-                $item->keterangan_sub = 'Semua transaksi sudah selesai';
-            } else {
-                // Fallback kalkulasi langsung jika saldo jurnal masih 0 tetapi ada pesanan aktif
-                if ($jenis === 'piutang' && floatval($item->total_debit) == 0 && floatval($item->total_kredit) == 0) {
-                    $custOrders = DB::table('pesanan')
-                        ->where('customer_id', $item->entity_id)
-                        ->whereNotIn(DB::raw('LOWER(COALESCE(status_pesanan, ""))'), ['batal', 'dibatalkan'])
-                        ->get();
+                if ($isCompleted) {
+                    $item->saldo = 0;
+                    $item->status = 'Lunas';
+                    $item->keterangan_sub = 'Semua transaksi sudah selesai';
+                    $item->is_overdue = false;
+                } else {
+                    // Fallback kalkulasi langsung jika saldo jurnal masih 0 tetapi ada pesanan aktif
+                    if ($jenis === 'piutang' && floatval($item->total_debit) == 0 && floatval($item->total_kredit) == 0) {
+                        $custOrders = DB::table('pesanan')
+                            ->where('customer_id', $item->entity_id)
+                            ->whereNotIn(DB::raw('LOWER(COALESCE(status_pesanan, ""))'), ['batal', 'dibatalkan'])
+                            ->get();
 
-                    if ($custOrders->isNotEmpty()) {
-                        $totalTagihanCust = 0;
-                        foreach ($custOrders as $cOrd) {
-                            $totalTagihanCust += (float)($cOrd->total_pesanan > 0 ? $cOrd->total_pesanan : ($cOrd->total_harga ?? 0));
+                        if ($custOrders->isNotEmpty()) {
+                            $totalTagihanCust = 0;
+                            foreach ($custOrders as $cOrd) {
+                                $totalTagihanCust += (float)($cOrd->total_pesanan > 0 ? $cOrd->total_pesanan : ($cOrd->total_harga ?? 0));
+                            }
+                            $totalBayarCust = (float)DB::table('pembayaran')
+                                ->whereIn('pesanan_id', $custOrders->pluck('id'))
+                                ->sum('jumlah_bayar');
+
+                            $item->total_debit = $totalTagihanCust;
+                            $item->total_kredit = $totalBayarCust;
+                            $item->saldo = max(0, $totalTagihanCust - $totalBayarCust);
                         }
-                        $totalBayarCust = (float)DB::table('pembayaran')
-                            ->whereIn('pesanan_id', $custOrders->pluck('id'))
-                            ->sum('jumlah_bayar');
-
-                        $item->total_debit = $totalTagihanCust;
-                        $item->total_kredit = $totalBayarCust;
-                        $item->saldo = max(0, $totalTagihanCust - $totalBayarCust);
                     }
-                }
 
-                $item->status = ($item->saldo <= 0) ? 'Lunas' : 'Belum Lunas';
-                $item->keterangan_sub = ($item->saldo <= 0) 
-                    ? 'Semua transaksi sudah selesai' 
-                    : 'Terdapat transaksi aktif / belum tuntas';
+                    $item->status = ($item->saldo <= 0) ? 'Lunas' : 'Belum Lunas';
+                    $item->keterangan_sub = ($item->saldo <= 0) 
+                        ? 'Semua transaksi sudah selesai' 
+                        : 'Terdapat transaksi aktif / belum tuntas';
+                    $item->is_overdue = false;
+                }
             }
 
             return $item;
         });
 
-        // 5. Summary Metrics
+        // 5. Summary Metrics (Dihitung dari seluruh entitas sebelum filter tagihan)
         $summary = [
-            'total_saldo'   => $entities->sum('saldo'),
+            'total_saldo'   => (float) $entities->sum('saldo'),
             'total_akun'    => $entities->count(),
             'total_pending' => $entities->where('saldo', '>', 0)->count(),
+            'total_overdue' => $entities->where('is_overdue', true)->count(),
         ];
 
-        return view('buku-pembantu.index', compact('jenis', 'entities', 'summary', 'search'));
+        // 6. Terapkan Filter Status Tagihan jika dipilih
+        if ($statusTagihan === 'belum_lunas') {
+            $entities = $entities->where('saldo', '>', 0)->values();
+        } elseif ($statusTagihan === 'lunas') {
+            $entities = $entities->where('saldo', '<=', 0)->values();
+        } elseif ($statusTagihan === 'jatuh_tempo') {
+            $entities = $entities->filter(fn($e) => !empty($e->is_overdue) && $e->saldo > 0)->values();
+        }
+
+        return view('buku-pembantu.index', compact('jenis', 'entities', 'summary', 'search', 'statusTagihan'));
     }
 
     public function bukuPembantuShow(Request $request, $jenis, $id)
@@ -1879,19 +1967,28 @@ class JurnalController extends Controller
                     ->orderBy('jurnal_pembelian.id', 'asc')
                     ->get();
 
-                // Ambil data lengkap pembelian terkait untuk pop-up modal rincian nota
-                $pembelianIds = $mutasi->pluck('pembelian_id')->unique()->filter()->values();
-                if ($pembelianIds->isNotEmpty()) {
-                    $pembelianModels = \App\Models\Pembelian::with(['supplier', 'gudang', 'details.barang'])
-                        ->whereIn('id', $pembelianIds)
-                        ->get();
+                // Ambil seluruh data pembelian supplier ini untuk rincian modal nota dan mutasi
+                $pembelianModels = \App\Models\Pembelian::with(['supplier', 'gudang', 'details.barang'])
+                    ->where('supplier_id', $id)
+                    ->orderBy('tanggal', 'asc')
+                    ->get();
 
+                if ($pembelianModels->isNotEmpty()) {
                     foreach ($pembelianModels as $pItem) {
                         $labelMetode = match($pItem->metode_pembayaran) {
-                            'cod'    => 'COD',
-                            'termin' => 'Termin / Tempo',
-                            'dp'     => 'DP ' . ($pItem->persen_dp ? $pItem->persen_dp . '%' : ''),
-                            default  => 'Belum Dicatat',
+                            'cash', 'cod'          => 'Cash / Tunai',
+                            'petty_cash'           => 'Petty Cash',
+                            'transfer_bca'         => 'Transfer BCA',
+                            'transfer_bri'         => 'Transfer BRI',
+                            'tempo', 'termin'      => 'Tempo (Jatuh Tempo: ' . ($pItem->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($pItem->tanggal_jatuh_tempo)->format('d M Y') : '-') . ')',
+                            'dp'                   => 'DP ' . ($pItem->nominal_dp && $pItem->nominal_dp > 0 ? 'Rp ' . number_format($pItem->nominal_dp, 0, ',', '.') : $pItem->persen_dp . '%'),
+                            default                => 'Belum Dicatat',
+                        };
+
+                        $sisaKekurangan = match(true) {
+                            $pItem->is_lunas => 0,
+                            $pItem->metode_pembayaran === 'dp' => max(0, (float)$pItem->total - (float)($pItem->nominal_dp ?? 0) - (float)($pItem->nominal_pelunasan ?? 0)),
+                            default => max(0, (float)$pItem->total - (float)($pItem->nominal_pelunasan ?? 0)),
                         };
 
                         $pembelianMap[$pItem->id] = [
@@ -1905,12 +2002,13 @@ class JurnalController extends Controller
                             'tax_service'         => (float) ($pItem->tax_service ?? 0),
                             'total'               => (float) $pItem->total,
                             'metode'              => $pItem->metode_pembayaran,
+                            'metode_pelunasan'    => $pItem->metode_pelunasan,
                             'label'               => $labelMetode,
                             'persen_dp'           => $pItem->persen_dp,
                             'nominal_dp'          => (float) $pItem->nominal_dp,
                             'is_lunas'            => (bool) $pItem->is_lunas,
                             'is_diterima'         => (bool) $pItem->is_diterima,
-                            'kekurangan'          => (float) ($pItem->is_lunas ? 0 : ($pItem->total - ($pItem->nominal_dp ?? 0))),
+                            'kekurangan'          => (float) $sisaKekurangan,
                             'tanggal_jatuh_tempo' => $pItem->tanggal_jatuh_tempo ? \Carbon\Carbon::parse($pItem->tanggal_jatuh_tempo)->format('d M Y') : null,
                             'tanggal_pelunasan'   => $pItem->tanggal_pelunasan ? \Carbon\Carbon::parse($pItem->tanggal_pelunasan)->format('d M Y') : null,
                             'catatan'             => $pItem->catatan_pembayaran,
@@ -1938,6 +2036,43 @@ class JurnalController extends Controller
                                 ];
                             })->values()->toArray(),
                         ];
+                    }
+
+                    // Jika jurnal belum mencatat mutasi, buat baris mutasi fallback dari nota pembelian
+                    if ($mutasi->isEmpty()) {
+                        $fallbackMutasi = collect();
+                        foreach ($pembelianModels as $pItem) {
+                            $isBatal = str_starts_with((string)$pItem->catatan_pembayaran, '[BATAL]') || str_starts_with((string)$pItem->keterangan, '[BATAL]');
+                            if ($isBatal) continue;
+
+                            $isTempoOrUnpaid = in_array($pItem->metode_pembayaran, ['tempo', 'termin']) || !$pItem->is_lunas;
+                            if ($isTempoOrUnpaid) {
+                                $fallbackMutasi->push((object)[
+                                    'tanggal'        => date('Y-m-d', strtotime($pItem->tanggal)),
+                                    'keterangan'     => 'Faktur Pembelian ' . $pItem->kode_pembelian . ($pItem->tanggal_jatuh_tempo ? ' (JT: ' . date('d/m/Y', strtotime($pItem->tanggal_jatuh_tempo)) . ')' : ''),
+                                    'ref'            => $pItem->kode_pembelian,
+                                    'debit'          => 0,
+                                    'kredit'         => (float)$pItem->total,
+                                    'pembelian_id'   => $pItem->id,
+                                    'kode_transaksi' => $pItem->kode_pembelian,
+                                ]);
+
+                                if ($pItem->is_lunas) {
+                                    $fallbackMutasi->push((object)[
+                                        'tanggal'        => $pItem->lunas_at ? date('Y-m-d', strtotime($pItem->lunas_at)) : date('Y-m-d', strtotime($pItem->tanggal)),
+                                        'keterangan'     => 'Pelunasan Pembelian ' . $pItem->kode_pembelian . ($pItem->metode_pelunasan ? ' via ' . strtoupper($pItem->metode_pelunasan) : ''),
+                                        'ref'            => 'LUNAS-' . $pItem->kode_pembelian,
+                                        'debit'          => (float)($pItem->nominal_pelunasan ?: $pItem->total),
+                                        'kredit'         => 0,
+                                        'pembelian_id'   => $pItem->id,
+                                        'kode_transaksi' => $pItem->kode_pembelian,
+                                    ]);
+                                }
+                            }
+                        }
+                        if ($fallbackMutasi->isNotEmpty()) {
+                            $mutasi = $fallbackMutasi;
+                        }
                     }
                 }
                 break;
@@ -2290,6 +2425,23 @@ class JurnalController extends Controller
         }
     }
 
+    public static function resolveKasBankCoaId(?string $metode): int
+    {
+        $normalized = strtolower(trim((string)$metode));
+        $code = match(true) {
+            str_contains($normalized, 'bca')                                         => '1102',
+            str_contains($normalized, 'petty') || str_contains($normalized, 'kecil') => '1103',
+            str_contains($normalized, 'cash') || str_contains($normalized, 'tunai')   => '1104',
+            default                                                                   => '1101', // Kas di Bank BRI (default)
+        };
+
+        $id = DB::table('chart_of_accounts')->where('kode', $code)->value('id');
+        if (!$id) {
+            $id = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
+        }
+        return (int) $id;
+    }
+
     public static function autoPostPembelian($pembelianId, $tahap, $penerimaanId = null)
     {
         try {
@@ -2307,7 +2459,12 @@ class JurnalController extends Controller
 
             $debitCoaCode = $hasOperational ? '1501' : '1301';
 
-            $idKasBank      = DB::table('chart_of_accounts')->where('kode', '1101')->value('id') ?? 15;
+            // Tentukan akun Kas/Bank secara dinamis sesuai metode bayar/pelunasan
+            $targetPaymentMetode = ($tahap === 'pelunasan')
+                ? ($pembelian->metode_pelunasan ?: $pembelian->metode_pembayaran)
+                : ($pembelian->metode_pembayaran_detail ?: $pembelian->metode_pembayaran);
+
+            $idKasBank      = self::resolveKasBankCoaId($targetPaymentMetode);
             $idPersediaan   = DB::table('chart_of_accounts')->where('kode', $debitCoaCode)->value('id') ?? ($hasOperational ? 27 : 19);
             $idUangMukaPemb = DB::table('chart_of_accounts')->where('kode', '1202')->value('id') ?? 17;
             $idPPNMasukan   = DB::table('chart_of_accounts')->where('kode', '1203')->value('id') ?? 18;
@@ -2319,7 +2476,7 @@ class JurnalController extends Controller
             $noRef = 'AJP-PB-' . strtoupper($tahap) . '-' . $pembelian->kode_pembelian;
             $descJurnal = $pembelian->kode_pembelian;
 
-            if (in_array($tahap, ['reklas_lunas', 'cod', 'termin'])) {
+            if (in_array($tahap, ['reklas_lunas', 'cod', 'termin', 'tempo'])) {
                 if (!$penerimaanId) {
                     $penerimaan = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelianId)->latest()->first();
                 } else {
@@ -2340,8 +2497,8 @@ class JurnalController extends Controller
                     $dppTotal += floatval($det->qty) * floatval($det->harga_per_qty);
                 }
 
-                if ($tahap === 'termin') {
-                    // Penerimaan barang dengan termin -> Debit Persediaan & PPN, Kredit Utang Dagang
+                if (in_array($tahap, ['termin', 'tempo'])) {
+                    // Penerimaan barang dengan termin / tempo -> Debit Persediaan & PPN, Kredit Utang Dagang
                     $ppnTotal = floatval($pembelian->tax_service ?? 0);
                     $totalUtang = $dppTotal + $ppnTotal;
 
@@ -2402,9 +2559,9 @@ class JurnalController extends Controller
                         ['account_id' => $idUangMukaPemb, 'debit' => $dpMurni, 'kredit' => 0],
                         ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $kasDP]
                     ];
-                } elseif ($pembelian->metode_pembayaran === 'termin') {
-                    // Pelunasan untuk termin -> Debit Utang Dagang, Kredit Kas/Bank
-                    $totalPelunasanTermin = floatval($pembelian->total);
+                } elseif (in_array($pembelian->metode_pembayaran, ['termin', 'tempo'])) {
+                    // Pelunasan untuk termin/tempo -> Debit Utang Dagang, Kredit Kas/Bank (BRI atau BCA)
+                    $totalPelunasanTermin = floatval($pembelian->nominal_pelunasan ?: $pembelian->total);
                     $defaultDetails = [
                         ['account_id' => $idUtangDagang, 'debit' => $totalPelunasanTermin, 'kredit' => 0],
                         ['account_id' => $idKasBank, 'debit' => 0, 'kredit' => $totalPelunasanTermin]

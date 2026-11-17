@@ -100,6 +100,37 @@ class PembelianKejinggaController extends Controller
         $pembelian->keterangan = json_encode($meta);
     }
 
+    /**
+     * Parse numeric string safely for quantity supporting decimal commas and dots.
+     */
+    private function parseQty($value, float $default = 0.0): float
+    {
+        if ($value === null || $value === '') return $default;
+        if (is_numeric($value)) return (float) $value;
+        $str = str_replace(',', '.', trim((string) $value));
+        return is_numeric($str) ? (float) $str : $default;
+    }
+
+    /**
+     * Parse numeric string safely for harga / currency supporting Indonesian (147.900) and standard formats.
+     */
+    private function parseHarga($value, float $default = 0.0): float
+    {
+        if ($value === null || $value === '') return $default;
+        if (is_numeric($value)) return (float) $value;
+        $str = trim((string) $value);
+        $str = preg_replace('/[^0-9,\.]/', '', $str);
+        if (strpos($str, ',') !== false && strpos($str, '.') !== false) {
+            $str = str_replace('.', '', $str);
+            $str = str_replace(',', '.', $str);
+        } elseif (strpos($str, '.') !== false) {
+            $str = str_replace('.', '', $str);
+        } elseif (strpos($str, ',') !== false) {
+            $str = str_replace(',', '.', $str);
+        }
+        return is_numeric($str) ? (float) $str : $default;
+    }
+
     public function index(Request $request)
     {
         $this->authorizeAccess();
@@ -610,26 +641,22 @@ class PembelianKejinggaController extends Controller
             return back()->with('error', 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku.')->withInput();
         }
 
-        $targetDivisiId = $request->filled('divisi_id') ? (int) $request->divisi_id : $pembelian->divisi_id;
+        $targetDivisiId = $request->filled('divisi_id') 
+            ? (int) $request->divisi_id 
+            : ($pembelian->divisi_id ?: (\App\Models\GudangDivisi::where('gudang_id', 5)->value('id') ?: null));
 
         DB::beginTransaction();
         try {
             $taxService = 0;
             if (!empty($request->tax_service)) {
-                $taxService = (float) str_replace('.', '', $request->tax_service);
+                $taxService = $this->parseHarga($request->tax_service);
             }
 
             $totalItems = 0;
             $parsedItems = [];
             foreach ($request->items as $it) {
-                $qtyRaw   = str_replace('.', '', $it['qty']);
-                $qtyVal   = (float) str_replace(',', '.', $qtyRaw);
-
-                $hargaVal = 0;
-                if (!empty($it['harga'])) {
-                    $hargaRaw = str_replace('.', '', $it['harga']);
-                    $hargaVal = (float) str_replace(',', '.', $hargaRaw);
-                }
+                $qtyVal   = $this->parseQty($it['qty'] ?? 0);
+                $hargaVal = !empty($it['harga']) ? $this->parseHarga($it['harga']) : 0;
 
                 $totalItems += $hargaVal;
                 $parsedItems[] = [
@@ -906,10 +933,15 @@ class PembelianKejinggaController extends Controller
                     'divisi_id'  => $targetDivId,
                 ]);
 
+                $konv = (float) ($pDet->konversi_pembelian ?: 1);
+                $txQty = round((float) $pDet->qty * $konv, 4);
+
                 \App\Models\TransaksiStok::where('barang_id', $pDet->barang_id)
                     ->where('source_id', $pembelian->id)
                     ->whereIn('source_type', ['pembelian_kejingga', 'pembelian', 'penerimaan_pembelian'])
                     ->update([
+                        'qty'              => $txQty,
+                        'total_harga'      => (float) $pDet->harga,
                         'tanggal'          => $targetTxDateTime,
                         'divisi_tujuan_id' => $targetDivId,
                     ]);
@@ -919,7 +951,9 @@ class PembelianKejinggaController extends Controller
 
             DB::commit();
 
-            return redirect()->route('pembelian-kejingga.index')->with('success', "Pembelian Kejingga ({$pembelian->kode_pembelian}) berhasil diperbarui dan stok/HPP telah disinkronkan.");
+            return redirect()->back()
+                ->with('success', "Pembelian Kejingga ({$pembelian->kode_pembelian}) berhasil diperbarui dan stok/HPP telah disinkronkan.")
+                ->with('reopen_po_id', $pembelian->id);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -1213,7 +1247,7 @@ class PembelianKejinggaController extends Controller
         $request->validate([
             'detail_ids'          => 'required|array|min:1',
             'detail_ids.*'        => 'required|integer|exists:pembelian_detail,id',
-            'supplier_id'         => 'required|exists:suppliers,id',
+            'supplier_id'         => 'nullable|exists:suppliers,id',
             'tanggal_diterima'    => 'nullable|date',
             'items'               => 'required|array',
             'items.*.harga'       => 'nullable',
@@ -1232,7 +1266,7 @@ class PembelianKejinggaController extends Controller
 
         $taxService = 0;
         if ($request->filled('tax_service')) {
-            $taxService = (float) str_replace(['.', ','], ['', '.'], (string) $request->tax_service);
+            $taxService = $this->parseHarga($request->tax_service);
             if ($taxService < 0) $taxService = 0;
         }
 
@@ -1250,7 +1284,7 @@ class PembelianKejinggaController extends Controller
             $totalSelectedHarga = 0;
             foreach ($selectedDetailIds as $dId) {
                 $rawH = $request->items[$dId]['harga'] ?? null;
-                $hVal = (float) str_replace(['.', ','], ['', '.'], (string) $rawH);
+                $hVal = $this->parseHarga($rawH);
                 $totalSelectedHarga += max(0, $hVal);
             }
 
@@ -1271,11 +1305,11 @@ class PembelianKejinggaController extends Controller
 
                 $itemInput = $request->items[$detailId] ?? [];
 
-                $qty = isset($itemInput['qty']) ? (float) str_replace(['.', ','], ['', '.'], (string) $itemInput['qty']) : (float) $detail->qty;
+                $qty = isset($itemInput['qty']) ? $this->parseQty($itemInput['qty'], (float) $detail->qty) : (float) $detail->qty;
                 if ($qty <= 0) $qty = (float) $detail->qty;
 
                 $rawHarga = isset($itemInput['harga']) ? $itemInput['harga'] : $detail->harga;
-                $harga = (float) str_replace(['.', ','], ['', '.'], (string) $rawHarga);
+                $harga = $this->parseHarga($rawHarga, (float) $detail->harga);
                 $hargaPerQty = $qty > 0 ? ($harga / $qty) : 0;
 
                 // Alokasi tax_service spesifik hanya untuk item terpilih
@@ -1301,11 +1335,13 @@ class PembelianKejinggaController extends Controller
                 }
 
                 $qtyDiterimaInput = isset($itemInput['qty_diterima']) && $itemInput['qty_diterima'] !== '' 
-                    ? (float) str_replace(['.', ','], ['', '.'], (string) $itemInput['qty_diterima']) 
+                    ? $this->parseQty($itemInput['qty_diterima'], $qty) 
                     : ((float) $detail->qty_diterima > 0 ? (float) $detail->qty_diterima : $qty);
 
+                $selectedSupplierId = $request->filled('supplier_id') ? (int) $request->supplier_id : ($detail->supplier_id ?: $pembelian->supplier_id);
+
                 $updateData = [
-                    'supplier_id'         => $request->supplier_id,
+                    'supplier_id'         => $selectedSupplierId ?: $detail->supplier_id,
                     'qty'                 => $qty,
                     'qty_diterima'        => $qtyDiterimaInput,
                     'harga'               => $harga,
@@ -1354,7 +1390,7 @@ class PembelianKejinggaController extends Controller
                 $hargaPerQtyStok = ($qtyMasukStok > 0 && $harga > 0) ? round($harga / $qtyMasukStok, 4) : ($konversi > 0 ? round($hargaPerQty / $konversi, 4) : $hargaPerQty);
 
                 $targetTxTanggal = $tanggalDiterima ?: ($detail->tanggal_diterima ?: $pembelian->tanggal);
-                $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $detail->barang_id) ?: 5);
+                $targetDivisiId = $pembelian->divisi_id ?: (\App\Models\MasterGudang::resolveDivisiIdForBarang(5, $detail->barang_id) ?: (\App\Models\GudangDivisi::where('gudang_id', 5)->value('id') ?: null));
 
                 // Update transaksi_stok penerimaan / pembelian_kejingga
                 $txList = \App\Models\TransaksiStok::where('barang_id', $detail->barang_id)
@@ -1387,7 +1423,7 @@ class PembelianKejinggaController extends Controller
                 foreach ($batches as $batch) {
                     $newSisa = max(0, $qtyMasukStok - (float)$batch->qty_keluar);
                     $bUp = [
-                        'supplier_id'   => $request->supplier_id,
+                        'supplier_id'   => $selectedSupplierId ?: $batch->supplier_id,
                         'qty_masuk'     => $qtyMasukStok,
                         'qty_sisa'      => $newSisa,
                         'harga_per_qty' => $hargaPerQtyStok,
@@ -1400,6 +1436,15 @@ class PembelianKejinggaController extends Controller
                         $bUp['created_at'] = date('Y-m-d H:i:s', strtotime($targetTxTanggal));
                     }
                     $batch->update($bUp);
+                }
+
+                // Update penerimaan_pembelian_detail jika ada
+                $rcvDet = \App\Models\PenerimaanPembelianDetail::where('pembelian_detail_id', $detail->id)->first();
+                if ($rcvDet) {
+                    $rcvDet->update([
+                        'qty'           => $effectiveQty,
+                        'harga_per_qty' => $hargaPerQty,
+                    ]);
                 }
             }
 
@@ -1429,8 +1474,8 @@ class PembelianKejinggaController extends Controller
             $totalDetails = (float) $pembelian->details()->sum('harga');
             $pembelian->total = $totalDetails + $pembelian->tax_service;
 
-            if (empty($pembelian->supplier_id)) {
-                $pembelian->supplier_id = $request->supplier_id;
+            if (empty($pembelian->supplier_id) && !empty($selectedSupplierId)) {
+                $pembelian->supplier_id = $selectedSupplierId;
             }
 
             $unpaidCount = $pembelian->details()->where('is_lunas', false)->count();
@@ -1446,8 +1491,9 @@ class PembelianKejinggaController extends Controller
         });
 
         $count = count($request->detail_ids);
-        return redirect()->route('pembelian-kejingga.index')
-            ->with('success', "Berhasil memperbarui data {$count} barang terpilih untuk PO {$pembelian->kode_pembelian}.");
+        return redirect()->back()
+            ->with('success', "Berhasil memperbarui data {$count} barang terpilih untuk PO {$pembelian->kode_pembelian}.")
+            ->with('reopen_po_id', $pembelian->id);
     }
 
     public function destroyDetail($detailId)

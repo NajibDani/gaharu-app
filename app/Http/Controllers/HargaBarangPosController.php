@@ -15,7 +15,15 @@ class HargaBarangPosController extends Controller
     {
         $user = auth()->user();
         $tipePenjualan = $request->query('tipe_penjualan');
+        $search = trim((string) $request->query('search'));
         $queryBarang = \App\Models\MasterBarang::where('is_barang_jadi', 1)->where('is_active', true)->orderBy('nama');
+
+        if (!empty($search)) {
+            $queryBarang->where(function($q) use ($search) {
+                $q->where('nama', 'like', '%' . $search . '%')
+                  ->orWhere('kode_barang', 'like', '%' . $search . '%');
+            });
+        }
 
         if ($tipePenjualan) {
             $queryBarang->where('tipe_penjualan', $tipePenjualan);
@@ -34,7 +42,7 @@ class HargaBarangPosController extends Controller
             $barang->dynamic_hpp = $this->calculateHppBarangJadi($barang->id, $defaultGudangId);
         }
     
-        return view('harga.index', compact('listBarang', 'tipePenjualan'));
+        return view('harga.index', compact('listBarang', 'tipePenjualan', 'search'));
     }
 
     // Menampilkan detail barang, pengaturan harga baru, dan histori harga (GET)
@@ -142,17 +150,13 @@ class HargaBarangPosController extends Controller
     // Memproses Hapus (DELETE)
     public function destroy($id)
     {
-        $harga = HargaPeriode::findOrFail($id);
-        $hariIni = Carbon::today()->format('Y-m-d');
+        $harga = HargaPeriode::with('barang')->findOrFail($id);
+        $barangNama = $harga->barang->nama ?? 'Produk';
+        $periode = date('d/m/Y', strtotime($harga->tgl_mulai)) . ' s/d ' . date('d/m/Y', strtotime($harga->tgl_selesai));
 
-        // HANYA BOLEH hapus jika harga baru berlaku di masa depan
-        if ($harga->tgl_mulai > $hariIni) {
-            $harga->delete();
-            return redirect()->back()->with('success', 'Harga masa depan berhasil dihapus.');
-        }
+        $harga->delete();
 
-        // Tolak hapus jika sedang aktif atau masa lalu
-        return redirect()->back()->withErrors(['error' => 'Gagal! Hanya harga di masa depan yang boleh dihapus untuk menjaga riwayat transaksi.']);
+        return redirect()->back()->with('success', "Periode harga ({$periode}) untuk {$barangNama} berhasil dihapus.");
     }
 
     private function getHargaFIFORata($gudangId, $barangId): float

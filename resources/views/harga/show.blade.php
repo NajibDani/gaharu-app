@@ -186,31 +186,28 @@
                                                 {!! $badgeHtml !!}
                                             </td>
                                             <td class="text-center pe-4">
-                                                @if($isAktif && $h->tgl_selesai > $today)
-                                                    <form action="{{ route('harga.update', $h->id) }}" method="POST" class="d-inline m-0 p-0" onsubmit="return confirm('Yakin ingin mengakhiri periode harga ini sekarang?');">
-                                                        @csrf
-                                                        @method('PUT')
-                                                        <input type="hidden" name="tgl_selesai" value="{{ date('Y-m-d') }}">
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1 shadow-none fw-semibold" style="font-size: 0.75rem;">
-                                                            <i class="bi bi-stop-circle me-1"></i>Akhiri
-                                                        </button>
-                                                    </form>
-                                                @elseif($isAktif && $h->tgl_selesai == $today)
-                                                    <span class="small text-muted fst-italic text-secondary"><i class="bi bi-check-all me-1"></i>Sudah Diakhiri</span>
-                                                @elseif($h->tgl_mulai > $today)
-                                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-2 px-2 py-1 shadow-none me-1 fw-semibold" style="font-size: 0.75rem;" title="Edit Data" onclick="alert('Gunakan form sebelah kiri untuk membuat harga baru dengan tanggal periode yang sama untuk meng-overwrite.')">
-                                                        <i class="bi bi-pencil-square"></i> Edit
-                                                    </button>
-                                                    <form action="{{ route('harga.destroy', $h->id) }}" method="POST" class="d-inline m-0 p-0" onsubmit="return confirm('Hapus rencana harga ini?');">
+                                                <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap">
+                                                    @if($isAktif && $h->tgl_selesai > $today)
+                                                        <form action="{{ route('harga.update', $h->id) }}" method="POST" class="d-inline m-0 p-0" onsubmit="return confirm('Yakin ingin mengakhiri periode harga ini sekarang?');">
+                                                            @csrf
+                                                            @method('PUT')
+                                                            <input type="hidden" name="tgl_selesai" value="{{ date('Y-m-d') }}">
+                                                            <button type="submit" class="btn btn-sm btn-outline-warning rounded-2 px-2 py-1 shadow-none fw-semibold" style="font-size: 0.75rem;" title="Akhiri Sekarang">
+                                                                <i class="bi bi-stop-circle me-1"></i>Akhiri
+                                                            </button>
+                                                        </form>
+                                                    @elseif($isAktif && $h->tgl_selesai == $today)
+                                                        <span class="badge bg-light text-secondary border me-1" style="font-size: 0.7rem;"><i class="bi bi-check-all me-1"></i>Diakhiri Hari Ini</span>
+                                                    @endif
+
+                                                    <form action="{{ route('harga.destroy', $h->id) }}" method="POST" class="d-inline m-0 p-0" onsubmit="return confirm('Apakah Anda yakin ingin menghapus periode harga ini? Data yang dihapus tidak dapat dikembalikan.');">
                                                         @csrf
                                                         @method('DELETE')
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1 shadow-none fw-semibold" style="font-size: 0.75rem;" title="Hapus Data">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger rounded-2 px-2 py-1 shadow-none fw-semibold" style="font-size: 0.75rem;" title="Hapus Periode Harga">
                                                             <i class="bi bi-trash"></i> Hapus
                                                         </button>
                                                     </form>
-                                                @else
-                                                    <span class="text-muted small">-</span>
-                                                @endif
+                                                </div>
                                             </td>
                                         </tr>
                                     @empty

@@ -86,7 +86,7 @@
                         <label class="form-label fw-bold small text-dark mb-1">Alokasi Gudang / Departemen Tujuan <span class="text-danger">*</span></label>
                         <select name="divisi_id" id="divisi_id" class="form-select" required>
                             @foreach($divisiList as $div)
-                                <option value="{{ $div->id }}" {{ old('divisi_id', $pembelian->divisi_id ?? 5) == $div->id ? 'selected' : '' }}>
+                                <option value="{{ $div->id }}" {{ old('divisi_id', $pembelian->divisi_id ?? ($divisiList->first()->id ?? null)) == $div->id ? 'selected' : '' }}>
                                     {{ $div->nama }}
                                 </option>
                             @endforeach

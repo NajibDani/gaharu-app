@@ -41,20 +41,25 @@
                     <div class="card-body bg-white p-4">
                         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                             <h5 class="fw-bold text-gray-800 m-0"><i class="bi bi-list-stars me-2" style="color: #d88656;"></i>Daftar Barang Jadi</h5>
-                            <div class="d-flex align-items-center gap-2">
-                                <form action="{{ route('harga.index') }}" method="GET" class="d-flex gap-2 align-items-center">
-                                    <select name="tipe_penjualan" class="form-select form-select-sm rounded-3" style="width: 180px;" onchange="this.form.submit()">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <form action="{{ route('harga.index') }}" method="GET" class="d-flex gap-2 align-items-center flex-wrap" id="form-filter-harga">
+                                    <div class="input-group input-group-sm" style="min-width: 250px;">
+                                        <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                                        <input type="text" name="search" id="input-search-barang" class="form-control border-start-0 ps-0" placeholder="Cari nama barang / kode..." value="{{ request('search') }}">
+                                    </div>
+                                    <select name="tipe_penjualan" class="form-select form-select-sm rounded-3" style="width: 170px;" onchange="this.form.submit()">
                                         <option value="">-- Semua Outlet --</option>
                                         <option value="POS Gaharu" {{ request('tipe_penjualan') == 'POS Gaharu' ? 'selected' : '' }}>POS Gaharu</option>
                                         <option value="POS Kejingga" {{ request('tipe_penjualan') == 'POS Kejingga' ? 'selected' : '' }}>POS Kejingga</option>
                                         <option value="B2B" {{ request('tipe_penjualan') == 'B2B' ? 'selected' : '' }}>B2B</option>
                                     </select>
-                                    @if(request('tipe_penjualan'))
+                                    <button type="submit" class="btn btn-sm btn-primary-theme rounded-3 px-3">Cari</button>
+                                    @if(request('tipe_penjualan') || request('search'))
                                         <a href="{{ route('harga.index') }}" class="btn btn-sm btn-outline-secondary rounded-3">Reset</a>
                                     @endif
                                 </form>
                                 <span class="badge bg-light text-dark border px-3 py-2 fw-semibold rounded-pill">
-                                    Total: <span style="color: #d88656;">{{ $listBarang->count() }} Produk</span>
+                                    Total: <span id="badge-total-produk" style="color: #d88656;">{{ $listBarang->count() }} Produk</span>
                                 </span>
                             </div>
                         </div>
@@ -189,6 +194,31 @@
             popoverTriggerList.map(function (popoverTriggerEl) {
                 return new bootstrap.Popover(popoverTriggerEl);
             });
+
+            const searchInput = document.getElementById('input-search-barang');
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    const query = this.value.toLowerCase().trim();
+                    const rows = document.querySelectorAll('table tbody tr');
+                    let count = 0;
+                    rows.forEach(tr => {
+                        const nameEl = tr.querySelector('.fw-bold.text-gray-800');
+                        const codeEl = tr.querySelector('.small.text-muted');
+                        if (!nameEl) return;
+                        const text = (nameEl.innerText + ' ' + (codeEl ? codeEl.innerText : '')).toLowerCase();
+                        if (text.includes(query)) {
+                            tr.style.display = '';
+                            count++;
+                        } else {
+                            tr.style.display = 'none';
+                        }
+                    });
+                    const totalBadge = document.getElementById('badge-total-produk');
+                    if (totalBadge) {
+                        totalBadge.innerText = count + ' Produk';
+                    }
+                });
+            }
         });
     </script>
 </x-app-layout>

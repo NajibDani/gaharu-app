@@ -88,6 +88,20 @@
                 <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         @endif
+        @if($errors->any())
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                    <strong>Gagal Menyimpan Perubahan:</strong>
+                </div>
+                <ul class="mb-0 ps-3 small">
+                    @foreach($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        @endif
 
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <a href="{{ route('pembelian-kejingga.create') }}" class="btn text-white mb-0 shadow-sm fw-semibold d-inline-flex align-items-center gap-1" style="background-color: #DE8958; border-radius: 8px;">
@@ -803,9 +817,9 @@
                             </div>
                             <div class="row g-2 pt-1">
                                 <div class="col-12 col-md-5">
-                                    <label class="form-label fw-semibold text-secondary small mb-1">Supplier / Toko <span class="text-danger">*</span></label>
-                                    <select name="supplier_id" id="input_supplier_id" class="form-select form-select-sm" required>
-                                        <option value="">-- Pilih Supplier --</option>
+                                    <label class="form-label fw-semibold text-secondary small mb-1">Supplier / Toko (Opsional)</label>
+                                    <select name="supplier_id" id="input_supplier_id" class="form-select form-select-sm">
+                                        <option value="">-- Pertahankan / Pilih Supplier --</option>
                                         @foreach($suppliers as $sup)
                                             <option value="{{ $sup->id }}">{{ $sup->nama }}</option>
                                         @endforeach
@@ -2356,7 +2370,11 @@
         document.getElementById('edit_tanggal').value = item.tanggal_raw;
         const divisiSelect = document.getElementById('edit_divisi_id');
         if (divisiSelect) {
-            divisiSelect.value = item.divisi_id || 5;
+            if (item.divisi_id && [...divisiSelect.options].some(o => o.value == item.divisi_id)) {
+                divisiSelect.value = item.divisi_id;
+            } else if (divisiSelect.options.length > 0) {
+                divisiSelect.selectedIndex = 0;
+            }
         }
         document.getElementById('edit_tax_service').value = item.tax_service > 0 ? formatNumberDisplay(item.tax_service) : '';
 
@@ -2374,6 +2392,31 @@
 
         new bootstrap.Modal(document.getElementById('modalEdit')).show();
     }
+
+    // Event listeners untuk perhitungan otomatis baris edit di modalEdit
+    document.addEventListener('input', function(e) {
+        if (e.target.closest('#table-edit-items') && (e.target.classList.contains('qty-input') || e.target.classList.contains('harga-input'))) {
+            calcEditRow(e.target.closest('tr'));
+        }
+    });
+
+    document.addEventListener('change', function(e) {
+        if (e.target.closest('#table-edit-items') && e.target.classList.contains('satuan-select')) {
+            let tr = e.target.closest('tr');
+            let selectedOpt = e.target.options[e.target.selectedIndex];
+            let konvVal = selectedOpt ? parseFloat(selectedOpt.getAttribute('data-konversi')) || 1 : 1;
+            tr.querySelector('.konversi-input').value = konvVal;
+            calcEditRow(tr);
+        }
+    });
+
+    @if(session('reopen_po_id'))
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                bukaModalDetail({{ session('reopen_po_id') }});
+            }, 350);
+        });
+    @endif
     </script>
 
     {{-- ══════════════════ DATE RANGE PICKER — FILTER PEMBELIAN ══════════════════ --}}

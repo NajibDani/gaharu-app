@@ -1,4 +1,15 @@
 <x-app-layout>
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+    <style>
+        .ts-dropdown {
+            z-index: 9999 !important;
+        }
+        .table-responsive {
+            overflow: visible !important;
+        }
+    </style>
+
     <div class="container py-4">
         <h3 class="mb-4 fw-bold">Edit Penjualan POS</h3>
 
@@ -66,7 +77,7 @@
                                 <tr>
                                     <td>
                                         <select name="produk_id[]" class="form-select select-produk" required>
-                                            <option value="">-- Pilih Produk --</option>
+                                            <option value="">-- Pilih / Cari Produk --</option>
                                             @foreach($produk as $p)
                                                 <option value="{{ $p->id }}" {{ $detail->produk_id == $p->id ? 'selected' : '' }}>
                                                     {{ $p->nama }}
@@ -118,6 +129,60 @@
                         </table>
                     </div>
 
+                    {{-- Template Baris Baru untuk Penambahan Item dengan TomSelect --}}
+                    <template id="row-template">
+                        <tr>
+                            <td>
+                                <select name="produk_id[]" class="form-select select-produk" required>
+                                    <option value="">-- Pilih / Cari Produk --</option>
+                                    @foreach($produk as $p)
+                                        <option value="{{ $p->id }}">
+                                            {{ $p->nama }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td>
+                                <input type="number" 
+                                       step="0.01" 
+                                       min="0.01"
+                                       name="qty[]" 
+                                       class="form-control qty" 
+                                       value="" 
+                                       required>
+                            </td>
+                            <td>
+                                <input type="number" 
+                                       step="0.01" 
+                                       name="harga[]" 
+                                       class="form-control harga" 
+                                       value="0" 
+                                       readonly>
+                            </td>
+                            @if($isSuperAdmin ?? false)
+                            <td>
+                                <input type="number" 
+                                       step="0.01" 
+                                       name="hpp_satuan[]" 
+                                       class="form-control hpp-satuan border-primary" 
+                                       value="" 
+                                       placeholder="Otomatis FIFO">
+                            </td>
+                            @endif
+                            <td>
+                                <input type="number" 
+                                       class="form-control subtotal" 
+                                       value="0" 
+                                       readonly>
+                            </td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-danger btn-sm btn-remove">
+                                    X
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+
                     <button type="button" class="btn btn-success mb-4" id="btn-add">
                         + Tambah Item
                     </button>
@@ -146,32 +211,43 @@
     <script>
         document.addEventListener('DOMContentLoaded', function () {
 
-            // 1. TAMBAH BARIS BARU (CLONE ROW)
+            // Inisialisasi TomSelect untuk searchable dropdown produk
+            function initTomSelect(el) {
+                if (!el || el.tomselect) return;
+                return new TomSelect(el, {
+                    create: false,
+                    sortField: { field: "text", direction: "asc" },
+                    placeholder: "-- Pilih / Cari Produk --",
+                    allowEmptyOption: true,
+                    dropdownParent: 'body',
+                    maxOptions: 1000,
+                    onChange: function(val) {
+                        fetchHarga(el);
+                    }
+                });
+            }
+
+            // Inisialisasi TomSelect untuk semua dropdown produk yang sudah ada di tabel
+            document.querySelectorAll('.select-produk').forEach(initTomSelect);
+
+            // 1. TAMBAH BARIS BARU (DARI TEMPLATE)
             document.getElementById('btn-add').addEventListener('click', function() {
-                let tableBody = document.querySelector('#table-item tbody');
-                let firstRow = tableBody.querySelector('tr');
-                
-                if (!firstRow) return; 
+                const template = document.getElementById('row-template');
+                const clone = template.content.cloneNode(true);
+                const tbody = document.querySelector('#table-item tbody');
+                tbody.appendChild(clone);
 
-                let row = firstRow.cloneNode(true);
-
-                // Reset nilai input baris baru
-                row.querySelectorAll('input').forEach(input => {
-                    input.value = '';
-                });
-                row.querySelector('.subtotal').value = 0;
-                
-                // Reset dropdown select baris baru
-                row.querySelectorAll('select').forEach(select => {
-                    select.selectedIndex = 0;
-                });
-
-                tableBody.appendChild(row);
+                const newRow = tbody.lastElementChild;
+                const newSelect = newRow.querySelector('.select-produk');
+                if (newSelect) {
+                    initTomSelect(newSelect);
+                }
             });
 
             // 2. FUNGSI PANGGIL API HARGA (Sinkron dengan Logika Periode)
             function fetchHarga(selectElement) {
                 const row = selectElement.closest('tr');
+                if (!row) return;
                 const inputHarga = row.querySelector('.harga'); 
                 
                 const produkId = selectElement.value;
@@ -181,7 +257,7 @@
                     inputHarga.value = '...'; 
 
                     // Memanggil endpoint get-harga milikmu
-                    const urlHarga = '/penjualan_pos/get-harga/' + produkId + '?tanggal=' + tanggalInput;
+                    const urlHarga = '/penjualan_pos/get-harga/' + produkId + '?tanggal=' + encodeURIComponent(tanggalInput);
 
                     fetch(urlHarga)
                         .then(response => {
@@ -193,14 +269,22 @@
                         .then(data => {
                             if (data && data.has_resep === false) {
                                 alert('Gagal! Produk "' + data.nama + '" belum memiliki resep bahan baku. Silakan atur resep terlebih dahulu.');
-                                selectElement.selectedIndex = 0;
+                                if (selectElement.tomselect) {
+                                    selectElement.tomselect.setValue('', true);
+                                } else {
+                                    selectElement.selectedIndex = 0;
+                                }
                                 inputHarga.value = 0;
                                 hitungSubtotal(row);
                                 return;
                             }
                             if (!data || parseFloat(data.harga_pos) <= 0) {
                                 alert('Gagal! Produk "' + (data ? data.nama : '') + '" belum memiliki harga jual POS yang aktif. Silakan atur harga jual terlebih dahulu.');
-                                selectElement.selectedIndex = 0;
+                                if (selectElement.tomselect) {
+                                    selectElement.tomselect.setValue('', true);
+                                } else {
+                                    selectElement.selectedIndex = 0;
+                                }
                                 inputHarga.value = 0;
                                 hitungSubtotal(row);
                                 return;
@@ -211,7 +295,11 @@
                         .catch(error => {
                             console.error('Error fetching price:', error);
                             alert('Gagal mengambil harga aktif: ' + error.message);
-                            selectElement.selectedIndex = 0;
+                            if (selectElement.tomselect) {
+                                selectElement.tomselect.setValue('', true);
+                            } else {
+                                selectElement.selectedIndex = 0;
+                            }
                             inputHarga.value = 0;
                             hitungSubtotal(row);
                         });
@@ -224,13 +312,6 @@
             // 3. EVENT DELEGATION (UNTUK OPERASI TABEL DINAMIS)
             const table = document.querySelector('#table-item');
 
-            // Deteksi perubahan produk
-            table.addEventListener('change', function(e) {
-                if (e.target.classList.contains('select-produk')) {
-                    fetchHarga(e.target);
-                }
-            });
-
             // Deteksi input nilai Qty / Harga
             table.addEventListener('input', function(e) {
                 if (e.target.classList.contains('qty') || e.target.classList.contains('harga')) {
@@ -241,11 +322,17 @@
 
             // Hapus baris item
             table.addEventListener('click', function(e) {
-                if (e.target.classList.contains('btn-remove')) {
+                const btnRemove = e.target.closest('.btn-remove');
+                if (btnRemove) {
                     let rows = document.querySelectorAll('#table-item tbody tr');
                     
                     if (rows.length > 1) {
-                        e.target.closest('tr').remove();
+                        let tr = btnRemove.closest('tr');
+                        let select = tr.querySelector('.select-produk');
+                        if (select && select.tomselect) {
+                            select.tomselect.destroy();
+                        }
+                        tr.remove();
                         hitungTotal();
                     } else {
                         alert('Minimal harus ada satu item produk di dalam transaksi!');

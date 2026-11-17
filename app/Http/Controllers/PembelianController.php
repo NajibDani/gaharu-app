@@ -81,15 +81,23 @@ class PembelianController extends Controller
         // Filter status pembayaran
         if ($statusPembayaran === 'belum_dicatat') {
             $query->whereNull('metode_pembayaran');
-        } elseif ($statusPembayaran === 'cod') {
-            $query->where('metode_pembayaran', 'cod');
+        } elseif ($statusPembayaran === 'cod' || $statusPembayaran === 'cash') {
+            $query->whereIn('metode_pembayaran', ['cod', 'cash', 'petty_cash', 'transfer_bca', 'transfer_bri']);
+        } elseif ($statusPembayaran === 'tempo') {
+            $query->whereIn('metode_pembayaran', ['tempo', 'termin']);
+        } elseif ($statusPembayaran === 'dp') {
+            $query->where('metode_pembayaran', 'dp');
         } elseif ($statusPembayaran === 'belum_lunas') {
-            $query->whereNotNull('metode_pembayaran')
-                  ->where('metode_pembayaran', '!=', 'cod')
-                  ->where('is_lunas', false);
+            $query->where(function($q) {
+                $q->whereNull('metode_pembayaran')
+                  ->orWhere(function($sub) {
+                      $sub->whereNotIn('metode_pembayaran', ['cod', 'cash', 'petty_cash', 'transfer_bca', 'transfer_bri'])
+                          ->where('is_lunas', false);
+                  });
+            });
         } elseif ($statusPembayaran === 'lunas') {
             $query->where(function($q) {
-                $q->where('metode_pembayaran', 'cod')
+                $q->whereIn('metode_pembayaran', ['cod', 'cash', 'petty_cash', 'transfer_bca', 'transfer_bri'])
                   ->orWhere('is_lunas', true);
             });
         }
@@ -120,12 +128,15 @@ class PembelianController extends Controller
 
         $dataPembayaran = $pembelian->mapWithKeys(function ($item) {
             $label = match($item->metode_pembayaran) {
-                'cod'    => 'COD',
-                'termin' => 'Termin',
-                'dp'     => $item->nominal_dp && $item->nominal_dp > 0
-                            ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.')
-                            : 'DP ' . $item->persen_dp . '%',
-                default  => '-',
+                'cash', 'cod'          => 'Cash',
+                'petty_cash'           => 'Petty Cash',
+                'transfer_bca'         => 'Transfer BCA',
+                'transfer_bri'         => 'Transfer BRI',
+                'tempo', 'termin'      => 'Tempo',
+                'dp'                   => $item->nominal_dp && $item->nominal_dp > 0
+                                          ? 'DP Rp ' . number_format($item->nominal_dp, 0, ',', '.')
+                                          : 'DP ' . $item->persen_dp . '%',
+                default                => '-',
             };
             return [$item->id => [
                 'id'                  => $item->id,
@@ -140,6 +151,7 @@ class PembelianController extends Controller
                 'tax_service'         => (float) ($item->tax_service ?? 0),
                 'total'               => (float) $item->total,
                 'metode'              => $item->metode_pembayaran,
+                'metode_pelunasan'    => $item->metode_pelunasan,
                 'label'               => $label,
                 'persen_dp'           => $item->persen_dp,
                 'nominal_dp'          => (float) $item->nominal_dp,
@@ -366,8 +378,8 @@ class PembelianController extends Controller
             $taxService = (float) ($data['tax_service'] ?? 0);
             $total = collect($data['items'])->sum(fn($item) => (float) $item['harga']) + $taxService;
 
-            $txDate = $data['tanggal'];
-            $txDateTime = $txDate . ' ' . date('H:i:s');
+            $txDate = date('Y-m-d', strtotime($data['tanggal']));
+            $txDateTime = date('Y-m-d') === $txDate ? date('Y-m-d H:i:s') : ($txDate . ' ' . date('H:i:s'));
 
             $createData = [
                 'kode_pembelian' => $this->generateKodePembelian($txDate),
@@ -377,9 +389,9 @@ class PembelianController extends Controller
                 'total'          => $total,
                 'tax_service'    => $taxService,
                 'created_by'     => auth()->id(),
-                'is_diterima'    => true, // Otomatis diterima pada tanggal transaksi
-                'diterima_at'    => $txDateTime,
-                'diterima_oleh'  => auth()->id(),
+                'is_diterima'    => false, // Barang belum diterima; penerimaan barang dilakukan manual oleh user gudang untuk verifikasi fisik
+                'diterima_at'    => null,
+                'diterima_oleh'  => null,
                 'is_lunas'       => false,
             ];
 
@@ -389,23 +401,7 @@ class PembelianController extends Controller
 
             $pembelian = Pembelian::create($createData);
 
-            // Buat header penerimaan_pembelian otomatis pada tanggal transaksi
-            $supplier = Supplier::find($data['supplier_id']);
-            $prefix = strtoupper($supplier->prefix ?? 'SUP');
-            $noPenerimaan = 'RCV-' . $prefix . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
-            while (DB::table('penerimaan_pembelian')->where('no_penerimaan', $noPenerimaan)->exists()) {
-                $noPenerimaan = 'RCV-' . $prefix . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
-            }
-
-            $penerimaan = \App\Models\PenerimaanPembelian::create([
-                'pembelian_id'  => $pembelian->id,
-                'no_penerimaan' => $noPenerimaan,
-                'tanggal'       => $txDate,
-                'created_by'    => auth()->id(),
-                'created_at'    => $txDateTime,
-                'updated_at'    => $txDateTime,
-            ]);
-
+            // Simpan rincian item pesanan pembelian (qty_diterima diinisialisasi 0)
             foreach ($data['items'] as $item) {
 
                 $qtyInput = (float) $item['qty'];
@@ -421,13 +417,12 @@ class PembelianController extends Controller
                 }
                 if ($konv <= 0) $konv = 1.00;
 
-                // Simpan detail pembelian langsung dengan qty_diterima penuh
                 $detail = $pembelian->details()->create([
                     'barang_id'          => $item['barang_id'],
                     'satuan_pembelian'   => $satBeli,
                     'konversi_pembelian' => $konv,
                     'qty'                => $qtyInput,
-                    'qty_diterima'       => $qtyInput,
+                    'qty_diterima'       => 0, // Awal 0; diverifikasi manual oleh petugas gudang saat fisik barang tiba
                     'harga'              => $hargaTotalItem,
                     'harga_per_qty'      => $hargaPerQty,
                     'batch_number'       => 'TEMP',
@@ -437,63 +432,12 @@ class PembelianController extends Controller
                 $detail->update([
                     'batch_number' => $batchNumber,
                 ]);
-
-                // Buat detail penerimaan_pembelian_detail
-                $penerimaan->details()->create([
-                    'pembelian_detail_id' => $detail->id,
-                    'barang_id'           => $detail->barang_id,
-                    'qty'                 => $qtyInput,
-                    'harga_per_qty'       => $hargaPerQty,
-                    'created_at'          => $txDateTime,
-                    'updated_at'          => $txDateTime,
-                ]);
-
-                $qtyMasukStok = $qtyInput * $konv;
-                $hargaPerQtyStok = $konv > 0 ? ($hargaPerQty / $konv) : $hargaPerQty;
-                $targetDivisiId = MasterGudang::resolveDivisiIdForBarang($pembelian->gudang_id, $detail->barang_id);
-
-                // Buat batch persediaan FIFO dengan tanggal persis tanggal transaksi pembelian
-                \App\Models\StokGudangBatch::create([
-                    'gudang_id'           => $pembelian->gudang_id,
-                    'divisi_id'           => $targetDivisiId,
-                    'supplier_id'         => $pembelian->supplier_id,
-                    'barang_id'           => $detail->barang_id,
-                    'pembelian_id'        => $pembelian->id,
-                    'pembelian_detail_id' => $detail->id,
-                    'batch_number'        => $batchNumber . '-RCV-' . rand(10, 99) . '-' . date('His'),
-                    'qty_masuk'           => $qtyMasukStok,
-                    'qty_keluar'          => 0,
-                    'qty_sisa'            => $qtyMasukStok,
-                    'harga_per_qty'       => $hargaPerQtyStok,
-                    'is_habis'            => false,
-                    'created_at'          => $txDateTime,
-                    'updated_at'          => $txDateTime,
-                ]);
-
-                // Tambahkan mutasi masuk ke transaksi_stok tepat pada tanggal transaksi pembelian
-                $this->stockService->stockIn([
-                    'tanggal'          => $txDateTime,
-                    'barang_id'        => $detail->barang_id,
-                    'gudang_tujuan_id' => $pembelian->gudang_id,
-                    'divisi_tujuan_id' => $targetDivisiId,
-                    'qty'              => $qtyMasukStok,
-                    'total_harga'      => $hargaTotalItem,
-                    'source_type'      => 'pembelian',
-                    'source_id'        => $pembelian->id,
-                    'user_id'          => auth()->id(),
-                ]);
-
-                // Sinkronisasi HPP barang sesuai FIFO
-                app(\App\Services\FifoService::class)->syncBarangHpp((int) $detail->barang_id);
-
-                // Rekonsiliasi ringkasan stok gudang
-                \App\Models\StokGudang::reconcileStockSummary($detail->barang_id, $pembelian->gudang_id, $targetDivisiId);
             }
         });
 
         return redirect()
             ->route('pembelian.index')
-            ->with('success', 'Pembelian berhasil disimpan dan penerimaan barang otomatis dicatat tepat pada tanggal transaksi.');
+            ->with('success', 'Pesanan pembelian (PO) berhasil disimpan. Penerimaan barang tetap dilakukan manual oleh user gudang untuk memverifikasi jumlah penerimaannya.');
     }
 
     /*
@@ -508,15 +452,16 @@ class PembelianController extends Controller
         $isSuperAdmin = $user && $user->isSuperAdmin();
         $roleName = $user?->role?->nama ?? '';
 
+        // Hak akses penerimaan: User Gudang atau Super Admin
+        if (!$isSuperAdmin && !$user?->isGudang() && $roleName !== 'Kepala Gudang') {
+            return back()->with('error', 'Akses ditolak: Hanya pengguna Gudang atau Super Admin yang dapat menerima barang.');
+        }
+
         if (!$isSuperAdmin && ($user?->isGudang() || $roleName === 'Kepala Gudang')) {
             $gudangUtamaId = MasterGudang::getGudangUtamaId();
             if ($pembelian->gudang_id != $gudangUtamaId) {
                 return back()->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat menerima barang untuk Gudang Utama.');
             }
-        }
-
-        if (empty($pembelian->metode_pembayaran)) {
-            return back()->with('error', 'Gagal memproses penerimaan barang: Metode pembayaran belum dicatat. Silakan catat metode pembayaran (COD / DP / Termin) terlebih dahulu.');
         }
 
         $request->validate([
@@ -549,8 +494,8 @@ class PembelianController extends Controller
         }
 
         DB::transaction(function () use ($request, $pembelian) {
-            $txDate = $pembelian->tanggal;
-            $txDateTime = $txDate . ' ' . date('H:i:s');
+            $txDate = date('Y-m-d', strtotime($pembelian->tanggal));
+            $txDateTime = date('Y-m-d') === $txDate ? date('Y-m-d H:i:s') : ($txDate . ' ' . date('H:i:s'));
 
             // Create PenerimaanPembelian header
             $noPenerimaan = 'RCV-' . strtoupper($pembelian->supplier->prefix ?? 'SUP') . '-' . date('Ymd', strtotime($txDate)) . '-' . rand(100, 999);
@@ -679,7 +624,7 @@ class PembelianController extends Controller
             $tahapJurnal = 'cod';
             if ($pembelian->metode_pembayaran === 'dp') {
                 $tahapJurnal = 'reklas_lunas';
-            } elseif ($pembelian->metode_pembayaran === 'termin') {
+            } elseif (in_array($pembelian->metode_pembayaran, ['termin', 'tempo']) || empty($pembelian->metode_pembayaran)) {
                 $tahapJurnal = 'termin';
             }
             \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, $tahapJurnal, $penerimaan->id);
@@ -690,30 +635,47 @@ class PembelianController extends Controller
 
     /*
     |--------------------------------------------------------------------------
-    | LUNASI — untuk DP & Termin
+    | LUNASI — Pelunasan untuk Tempo (BRI/BCA) & DP (BRI/BCA/Tunai/Petty Cash)
     |--------------------------------------------------------------------------
     */
 
     public function lunasi(Request $request, Pembelian $pembelian)
     {
         if (!auth()->user() || !auth()->user()->isSuperAdmin()) {
-            return back()->with('error', 'Hanya Super Admin yang diizinkan untuk menginput atau melunasi pembayaran pembelian.');
+            return back()->with('error', 'Akses ditolak: Hanya Super Admin yang diizinkan untuk melunasi pembayaran pembelian.');
         }
 
         if ($pembelian->is_lunas) {
             return back()->with('error', 'Pembelian ini sudah lunas.');
         }
 
-        if (!in_array($pembelian->metode_pembayaran, ['dp', 'termin'])) {
-            return back()->with('error', 'Hanya pembelian DP atau Termin yang perlu dilunasi.');
+        if (!in_array($pembelian->metode_pembayaran, ['dp', 'termin', 'tempo'])) {
+            return back()->with('error', 'Hanya pembelian Tempo atau DP yang perlu dilunasi.');
         }
 
         $request->validate([
+            'metode_pelunasan'  => 'required|string',
             'nominal_pelunasan' => 'required|numeric|min:1',
+            'tanggal_pelunasan' => 'nullable|date',
             'catatan_pelunasan' => 'nullable|string|max:500',
             'bukti_file'        => 'nullable|array',
             'bukti_file.*'      => 'file|image|max:2048'
         ]);
+
+        $metodePelunasan = strtolower(trim((string)$request->metode_pelunasan));
+
+        // Validasi opsi metode pelunasan sesuai instruksi:
+        // - Tempo: button pelunasan dengan BRI/BCA
+        // - DP/uang muka: button pelunasan dengan BRI/BCA/Tunai/petty cash
+        if (in_array($pembelian->metode_pembayaran, ['tempo', 'termin'])) {
+            if (!in_array($metodePelunasan, ['transfer_bri', 'transfer_bca', 'bri', 'bca'])) {
+                return back()->with('error', 'Untuk pembelian Tempo, pelunasan hanya dapat dilakukan melalui Transfer BRI atau Transfer BCA.');
+            }
+        } elseif ($pembelian->metode_pembayaran === 'dp') {
+            if (!in_array($metodePelunasan, ['transfer_bri', 'transfer_bca', 'cash', 'petty_cash', 'bri', 'bca', 'tunai'])) {
+                return back()->with('error', 'Untuk pembelian DP, pelunasan hanya dapat dilakukan melalui Transfer BRI, Transfer BCA, Tunai, atau Petty Cash.');
+            }
+        }
 
         $buktiFiles = [];
         if ($request->hasFile('bukti_file')) {
@@ -723,35 +685,52 @@ class PembelianController extends Controller
             }
         }
 
-        DB::transaction(function() use ($request, $pembelian, $buktiFiles) {
+        DB::transaction(function() use ($request, $pembelian, $buktiFiles, $metodePelunasan) {
+            $tglPelunasan = $request->tanggal_pelunasan ? Carbon::parse($request->tanggal_pelunasan) : now();
+
+            $labelPelunasan = match($metodePelunasan) {
+                'transfer_bri', 'bri'       => 'Pelunasan Transfer BRI',
+                'transfer_bca', 'bca'       => 'Pelunasan Transfer BCA',
+                'cash', 'tunai'             => 'Pelunasan Tunai (Cash)',
+                'petty_cash', 'petty'       => 'Pelunasan Petty Cash',
+                default                     => 'Pelunasan (' . strtoupper($metodePelunasan) . ')',
+            };
+
+            $catatanPelunasan = (string) $request->catatan_pelunasan;
+            if (!str_starts_with($catatanPelunasan, '[')) {
+                $catatanPelunasan = "[{$metodePelunasan}] " . $catatanPelunasan;
+            }
+
             $pembelian->update([
                 'is_lunas'          => true,
-                'lunas_at'          => now(),
+                'lunas_at'          => $tglPelunasan,
+                'tanggal_pelunasan' => $tglPelunasan->toDateString(),
                 'nominal_pelunasan' => $request->nominal_pelunasan,
-                'catatan_pelunasan' => $request->catatan_pelunasan,
+                'catatan_pelunasan' => trim($catatanPelunasan),
             ]);
 
             \App\Models\Pembayaran::create([
-                'pembelian_id' => $pembelian->id,
+                'pembelian_id'        => $pembelian->id,
                 'kategori_pembayaran' => 'pembelian',
-                'tanggal_bayar' => now(),
-                'jumlah_bayar' => floatval($request->nominal_pelunasan),
-                'metode_pembayaran' => 'Pelunasan',
-                'catatan' => $request->catatan_pelunasan,
-                'bukti_pembayaran' => $buktiFiles,
-                'created_by' => auth()->id()
+                'tanggal_bayar'       => $tglPelunasan->toDateString(),
+                'jumlah_bayar'        => floatval($request->nominal_pelunasan),
+                'metode_pembayaran'   => $labelPelunasan,
+                'catatan'             => $request->catatan_pelunasan,
+                'bukti_pembayaran'    => $buktiFiles,
+                'created_by'          => auth()->id()
             ]);
 
             // Auto-post Jurnal Pelunasan
             \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'pelunasan');
         });
 
-        return back()->with('success', 'Pembayaran lunas berhasil dicatat.');
+        return back()->with('success', 'Pembayaran pelunasan berhasil dicatat.');
     }
 
     /*
     |--------------------------------------------------------------------------
-    | CATAT PEMBAYARAN
+    | CATAT PEMBAYARAN (Hanya Super Admin)
+    | Metode: Cash, Cash Petty Cash, Transfer BCA, Transfer BRI, Tempo, DP
     |--------------------------------------------------------------------------
     */
 
@@ -759,31 +738,30 @@ class PembelianController extends Controller
     {
         $user = auth()->user();
         $isSuperAdmin = $user && $user->isSuperAdmin();
-        $roleName = $user?->role?->nama ?? '';
 
-        if (!$user || (!$isSuperAdmin && !$user->isGudang())) {
-            return back()->with('error', 'Hanya Super Admin atau pengguna Gudang yang diizinkan untuk mencatat pembayaran pembelian.');
-        }
-
-        if (!$isSuperAdmin && ($user->isGudang() || $roleName === 'Kepala Gudang')) {
-            $gudangUtamaId = MasterGudang::getGudangUtamaId();
-            if ($pembelian->gudang_id != $gudangUtamaId) {
-                return back()->with('error', 'Akses ditolak: User Kepala Gudang hanya dapat mencatat pembayaran pembelian Gudang Utama.');
-            }
+        // Penerimaan barang di-klik user gudang, namun pembayaran HANYA bisa dilakukan superadmin
+        if (!$user || !$isSuperAdmin) {
+            return back()->with('error', 'Akses ditolak: Hanya Super Admin yang diizinkan untuk mencatat pembayaran pembelian.');
         }
 
         $validated = $request->validate([
-            'metode_pembayaran'   => 'required|in:cod,dp,termin',
+            'metode_pembayaran'   => 'required|in:cash,petty_cash,transfer_bca,transfer_bri,tempo,termin,dp,cod',
             'tanggal_jatuh_tempo' => 'nullable|date',
             'persen_dp'           => 'nullable|integer|min:1|max:99',
             'nominal_dp'          => 'nullable|numeric|min:0',
-            'tanggal_pelunasan'   => 'required_if:metode_pembayaran,dp|nullable|date',
+            'metode_dp'           => 'nullable|string',
+            'tanggal_pelunasan'   => 'nullable|date',
             'catatan_pembayaran'  => 'nullable|string|max:500',
             'bukti_file'          => 'nullable|array',
             'bukti_file.*'        => 'file|image|max:2048'
-        ], [
-            'tanggal_pelunasan.required_if' => 'Tanggal pelunasan wajib diisi untuk metode DP.'
         ]);
+
+        if (in_array($validated['metode_pembayaran'], ['tempo', 'termin'])) {
+            // Tempo: catat tanggal jatuh tempo
+            if (empty($validated['tanggal_jatuh_tempo']) && !$request->has('tanpa_jatuh_tempo')) {
+                $validated['tanggal_jatuh_tempo'] = Carbon::parse($pembelian->tanggal)->addDays(14)->toDateString();
+            }
+        }
 
         if ($validated['metode_pembayaran'] === 'dp') {
             if (empty($validated['persen_dp']) && empty($validated['nominal_dp'])) {
@@ -798,8 +776,8 @@ class PembelianController extends Controller
             }
         }
 
-        // COD langsung lunas
-        $isLunas = $validated['metode_pembayaran'] === 'cod';
+        // Cash, Cash Petty Cash, Transfer BCA, Transfer BRI, COD langsung lunas
+        $isLunas = in_array($validated['metode_pembayaran'], ['cash', 'petty_cash', 'transfer_bca', 'transfer_bri', 'cod']);
 
         $buktiFiles = [];
         if ($request->hasFile('bukti_file')) {
@@ -810,7 +788,31 @@ class PembelianController extends Controller
         }
 
         DB::transaction(function () use ($validated, $pembelian, $isLunas, $buktiFiles) {
-            $pembelianData = collect($validated)->except(['bukti_file'])->toArray();
+            $pembelianData = collect($validated)->except(['bukti_file', 'metode_dp'])->toArray();
+
+            $labelMetode = match($validated['metode_pembayaran']) {
+                'cash'         => 'Cash / Tunai',
+                'petty_cash'   => 'Cash dengan Petty Cash',
+                'transfer_bca' => 'Transfer BCA',
+                'transfer_bri' => 'Transfer BRI',
+                'tempo', 'termin' => 'Tempo',
+                'dp'           => 'DP / Uang Muka',
+                'cod'          => 'COD',
+                default        => strtoupper($validated['metode_pembayaran']),
+            };
+
+            // Petakan ke enum asli ('cod', 'termin', 'dp') agar kompatibel tanpa migrasi database
+            $enumMetode = match($validated['metode_pembayaran']) {
+                'dp'              => 'dp',
+                'tempo', 'termin' => 'termin',
+                default           => 'cod',
+            };
+            $pembelianData['metode_pembayaran'] = $enumMetode;
+
+            $catatanPembayaran = (string) ($pembelianData['catatan_pembayaran'] ?? '');
+            if (!str_starts_with($catatanPembayaran, '[')) {
+                $pembelianData['catatan_pembayaran'] = trim("[{$validated['metode_pembayaran']}] " . $catatanPembayaran);
+            }
 
             $pembelian->update([
                 ...$pembelianData,
@@ -820,18 +822,35 @@ class PembelianController extends Controller
                 'lunas_at'     => $isLunas ? now() : null,
             ]);
 
-            $jumlahBayar = $isLunas ? floatval($pembelian->total) : floatval($validated['nominal_dp']);
+            $jumlahBayar = match(true) {
+                $isLunas => floatval($pembelian->total),
+                $validated['metode_pembayaran'] === 'dp' => floatval($validated['nominal_dp']),
+                default => 0,
+            };
 
-            \App\Models\Pembayaran::create([
-                'pembelian_id' => $pembelian->id,
-                'kategori_pembayaran' => 'pembelian',
-                'tanggal_bayar' => now(),
-                'jumlah_bayar' => $jumlahBayar,
-                'metode_pembayaran' => $isLunas ? 'COD' : 'DP',
-                'catatan' => $validated['catatan_pembayaran'] ?? null,
-                'bukti_pembayaran' => $buktiFiles,
-                'created_by' => auth()->id()
-            ]);
+            $labelMetode = match($validated['metode_pembayaran']) {
+                'cash'         => 'Cash / Tunai',
+                'petty_cash'   => 'Cash dengan Petty Cash',
+                'transfer_bca' => 'Transfer BCA',
+                'transfer_bri' => 'Transfer BRI',
+                'tempo', 'termin' => 'Tempo',
+                'dp'           => 'DP / Uang Muka',
+                'cod'          => 'COD',
+                default        => strtoupper($validated['metode_pembayaran']),
+            };
+
+            if ($jumlahBayar > 0 || in_array($validated['metode_pembayaran'], ['tempo', 'termin'])) {
+                \App\Models\Pembayaran::create([
+                    'pembelian_id'        => $pembelian->id,
+                    'kategori_pembayaran' => 'pembelian',
+                    'tanggal_bayar'       => now()->toDateString(),
+                    'jumlah_bayar'        => $jumlahBayar,
+                    'metode_pembayaran'   => $labelMetode,
+                    'catatan'             => $validated['catatan_pembayaran'] ?? null,
+                    'bukti_pembayaran'    => $buktiFiles,
+                    'created_by'          => auth()->id()
+                ]);
+            }
 
             // Auto-post Jurnal Pembelian sesuai metode pembayaran
             $penerimaan = \App\Models\PenerimaanPembelian::where('pembelian_id', $pembelian->id)->first();
@@ -839,16 +858,16 @@ class PembelianController extends Controller
 
             if ($validated['metode_pembayaran'] === 'dp') {
                 \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'dp');
-                if ($pembelian->is_diterima) {
+                if ($pembelian->is_diterima && $penerimaanId) {
                     \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'reklas_lunas', $penerimaanId);
                 }
-            } elseif ($validated['metode_pembayaran'] === 'cod') {
-                if ($pembelian->is_diterima) {
-                    \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'cod', $penerimaanId);
-                }
-            } elseif ($validated['metode_pembayaran'] === 'termin') {
-                if ($pembelian->is_diterima) {
+            } elseif (in_array($validated['metode_pembayaran'], ['termin', 'tempo'])) {
+                if ($pembelian->is_diterima && $penerimaanId) {
                     \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'termin', $penerimaanId);
+                }
+            } else {
+                if ($pembelian->is_diterima && $penerimaanId) {
+                    \App\Http\Controllers\JurnalController::autoPostPembelian($pembelian->id, 'cod', $penerimaanId);
                 }
             }
         });

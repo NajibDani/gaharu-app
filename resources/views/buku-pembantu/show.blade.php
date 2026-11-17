@@ -190,6 +190,16 @@
                         <p style="font-size: 12px; color: #64748b; margin-top: 6px;">
                             Masih terdapat saldo berjalan sebesar <strong>Rp {{ number_format($saldoAkhir, 0, ',', '.') }}</strong>.
                         </p>
+                        @if($jenis === 'utang')
+                            <div class="mt-3 pt-3 border-top text-start" style="font-size: 12px;">
+                                <div class="alert alert-warning py-2 px-3 mb-2" style="font-size: 11px;">
+                                    <i class="bi bi-info-circle me-1"></i> Pembayaran & pelunasan utang pembelian hanya dapat dilakukan oleh <strong>Super Admin</strong>.
+                                </div>
+                                <a href="{{ route('pembelian.index') }}" class="btn btn-sm btn-outline-danger w-100" style="border-radius: 8px; font-weight: 600;">
+                                    <i class="bi bi-arrow-right-circle me-1"></i> Buka Menu Pembelian
+                                </a>
+                            </div>
+                        @endif
                     @endif
                 </div>
             </div>
@@ -215,7 +225,7 @@
                             <strong id="modalPoSupplier" class="text-dark">-</strong>
                         </div>
                         <div class="col-6 col-md-3">
-                            <span class="text-muted d-block">Tanggal:</span>
+                            <span class="text-muted d-block">Tanggal Nota:</span>
                             <strong id="modalPoTanggal" class="text-dark">-</strong>
                         </div>
                         <div class="col-6 col-md-3">
@@ -234,7 +244,15 @@
                             <span class="text-muted d-block">Status Bayar:</span>
                             <span id="modalPoStatusBayar">-</span>
                         </div>
-                        <div class="col-12 col-md-6" id="modalPoCatatanWrapper">
+                        <div class="col-6 col-md-3" id="modalPoJatuhTempoWrapper">
+                            <span class="text-muted d-block">Jatuh Tempo:</span>
+                            <span id="modalPoJatuhTempo" class="fw-bold text-danger">-</span>
+                        </div>
+                        <div class="col-6 col-md-3" id="modalPoPelunasanWrapper">
+                            <span class="text-muted d-block">Pelunasan:</span>
+                            <span id="modalPoPelunasan" class="fw-bold text-success">-</span>
+                        </div>
+                        <div class="col-12" id="modalPoCatatanWrapper">
                             <span class="text-muted d-block">Catatan:</span>
                             <span id="modalPoCatatan" class="text-secondary">-</span>
                         </div>
@@ -379,6 +397,34 @@
             document.getElementById('modalPoStatusBayar').innerHTML = data.is_lunas 
                 ? '<span class="badge bg-success">Lunas</span>' 
                 : '<span class="badge bg-danger">Belum Lunas</span>';
+
+            // Jatuh Tempo & Kekurangan
+            const jtWrapper = document.getElementById('modalPoJatuhTempoWrapper');
+            if (data.tanggal_jatuh_tempo) {
+                jtWrapper.style.display = 'block';
+                document.getElementById('modalPoJatuhTempo').innerText = data.tanggal_jatuh_tempo;
+            } else if (!data.is_lunas && data.kekurangan > 0) {
+                jtWrapper.style.display = 'block';
+                document.getElementById('modalPoJatuhTempo').innerText = 'Sisa ' + formatRupiah(data.kekurangan);
+            } else {
+                jtWrapper.style.display = 'none';
+            }
+
+            // Pelunasan Info
+            const pelunasanWrapper = document.getElementById('modalPoPelunasanWrapper');
+            if (data.is_lunas && (data.metode_pelunasan || data.tanggal_pelunasan)) {
+                pelunasanWrapper.style.display = 'block';
+                let pelText = '';
+                if (data.metode_pelunasan) {
+                    pelText += data.metode_pelunasan.toUpperCase();
+                }
+                if (data.tanggal_pelunasan) {
+                    pelText += (pelText ? ' (' : '') + data.tanggal_pelunasan + (pelText ? ')' : '');
+                }
+                document.getElementById('modalPoPelunasan').innerText = pelText || 'Lunas';
+            } else {
+                pelunasanWrapper.style.display = 'none';
+            }
 
             document.getElementById('modalPoCatatan').innerText = data.catatan || '-';
             document.getElementById('modalPoTax').innerText = formatRupiah(data.tax_service);
