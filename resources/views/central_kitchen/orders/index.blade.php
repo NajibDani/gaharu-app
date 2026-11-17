@@ -627,6 +627,14 @@
                                                                          <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Estimasi Kirim</td>
                                                                          <td><strong>{{ \Carbon\Carbon::parse($p->estimasi_kirim)->format('d F Y') }}</strong></td>
                                                                      </tr>
+                                                                     @if(!empty($p->catatan))
+                                                                     <tr>
+                                                                         <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Catatan Order</td>
+                                                                         <td colspan="3" class="text-dark fw-bold text-start" style="background-color: #fffbeb;">
+                                                                             <i class="bi bi-sticky-fill text-warning me-1"></i> {{ $p->catatan }}
+                                                                         </td>
+                                                                     </tr>
+                                                                     @endif
                                                                  </tbody>
                                                              </table>
                                                          </div>
@@ -945,6 +953,10 @@
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-secondary">Estimasi Kirim <span class="text-danger">*</span></label>
                                 <input type="date" name="estimasi_kirim" class="form-control rounded-3" value="{{ date('Y-m-d', strtotime('+1 day')) }}" required>
+                            </div>
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold small text-secondary">Catatan Permintaan (Opsional)</label>
+                                <textarea name="catatan" class="form-control rounded-3" rows="2" placeholder="Catatan khusus untuk tim produksi (cth: jangan terlalu manis, request batch baru, kirim pagi, dsb)..."></textarea>
                             </div>
                             <input type="hidden" name="divisi_id" value="1">
                         </div>

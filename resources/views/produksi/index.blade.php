@@ -294,6 +294,17 @@
                                                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                             </div>
                                                             <div class="modal-body p-4">
+                                                                @if(!empty($p->catatan))
+                                                                    <div class="alert alert-warning border-warning shadow-sm mb-3 rounded-3" style="background-color: #fffbeb; border-left: 5px solid #f59e0b !important;">
+                                                                        <div class="d-flex align-items-start gap-2">
+                                                                            <i class="bi bi-sticky-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                                                                            <div>
+                                                                                <strong class="text-dark d-block mb-1" style="font-size: 0.88rem; letter-spacing: 0.3px;"><i class="bi bi-bell-fill text-warning me-1"></i> CATATAN DARI OUTLET / TIM PEMESAN:</strong>
+                                                                                <div class="text-dark fw-bold" style="font-size: 0.95rem; white-space: pre-wrap; line-height: 1.5;">{{ $p->catatan }}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
                                                                 <div class="mb-3 p-3 bg-light rounded-3">
                                                                     <div class="row g-2 small">
                                                                         <div class="col-6"><strong>Customer:</strong> {{ $p->customer->nama ?? ($p->customer->name ?? '-') }}</div>
@@ -483,6 +494,22 @@
                                                             <input type="hidden" name="work_order_id" value="{{ $wo->id }}">
 
                                                             <div class="modal-body p-4">
+                                                                {{-- CATATAN ORDER DARI OUTLET / TIM PEMESAN --}}
+                                                                @php
+                                                                    $displayCatatanCold = $wo->pesanan_catatan ?: ($wo->catatan && !str_contains($wo->catatan, 'Bahan baku') ? $wo->catatan : null);
+                                                                @endphp
+                                                                @if(!empty($displayCatatanCold))
+                                                                    <div class="alert alert-warning border-warning shadow-sm mb-3 rounded-3" style="background-color: #fffbeb; border-left: 5px solid #f59e0b !important;">
+                                                                        <div class="d-flex align-items-start gap-2">
+                                                                            <i class="bi bi-sticky-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                                                                            <div>
+                                                                                <strong class="text-dark d-block mb-1" style="font-size: 0.88rem; letter-spacing: 0.3px;"><i class="bi bi-bell-fill text-warning me-1"></i> CATATAN DARI OUTLET / TIM PEMESAN:</strong>
+                                                                                <div class="text-dark fw-bold" style="font-size: 0.95rem; white-space: pre-wrap; line-height: 1.5;">{{ $displayCatatanCold }}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
+
                                                                 @if(!$wo->is_bahan_sufficient && !empty($wo->defisit_bahan))
                                                                     <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
                                                                         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -622,6 +649,21 @@
                                                         </form>
                                                         @else
                                                             <div class="modal-body p-4">
+                                                                {{-- CATATAN ORDER DARI OUTLET / TIM PEMESAN --}}
+                                                                @php
+                                                                    $displayCatatanColdSelesai = $wo->pesanan_catatan ?: ($wo->catatan && !str_contains($wo->catatan, 'Bahan baku') ? $wo->catatan : null);
+                                                                @endphp
+                                                                @if(!empty($displayCatatanColdSelesai))
+                                                                    <div class="alert alert-warning border-warning shadow-sm mb-3 rounded-3" style="background-color: #fffbeb; border-left: 5px solid #f59e0b !important;">
+                                                                        <div class="d-flex align-items-start gap-2">
+                                                                            <i class="bi bi-sticky-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                                                                            <div>
+                                                                                <strong class="text-dark d-block mb-1" style="font-size: 0.88rem; letter-spacing: 0.3px;"><i class="bi bi-bell-fill text-warning me-1"></i> CATATAN DARI OUTLET / TIM PEMESAN:</strong>
+                                                                                <div class="text-dark fw-bold" style="font-size: 0.95rem; white-space: pre-wrap; line-height: 1.5;">{{ $displayCatatanColdSelesai }}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
                                                                 @if(strtolower($wo->status_wo) == 'draft')
                                                                     <div class="alert alert-warning d-flex align-items-center mb-3">
                                                                         <i class="bi bi-exclamation-triangle-fill fs-4 me-2"></i>

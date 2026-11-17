@@ -274,6 +274,7 @@ class PesananController extends Controller
             'divisi_id'      => 'nullable|exists:gudang_divisi,id',
             'tanggal'        => 'required',
             'estimasi_kirim' => 'nullable',
+            'catatan'        => 'nullable|string',
             'produk_id'      => 'required|array|min:1',
             'qty'            => 'required|array|min:1',
             'harga'          => 'nullable|array',
@@ -401,6 +402,7 @@ class PesananController extends Controller
                 'status_pembayaran' => $statusBayar,
                 'created_by'        => auth()->id(),
                 'gudang_id'         => $gudangId,
+                'catatan'           => $request->catatan,
             ]);
 
             foreach ($itemsData as $item) {
@@ -497,6 +499,7 @@ class PesananController extends Controller
             'divisi_id'      => 'nullable|exists:gudang_divisi,id',
             'tanggal'        => 'required',
             'estimasi_kirim' => 'nullable',
+            'catatan'        => 'nullable|string',
             'produk_id'      => 'required|array|min:1',
             'qty'            => 'required|array|min:1',
             'harga'          => 'nullable|array',
@@ -599,6 +602,7 @@ class PesananController extends Controller
                 'tax_percentage'    => $taxPercentage,
                 'tax_service'       => $taxAmount,
                 'gudang_id'         => $gudangId,
+                'catatan'           => $request->catatan,
             ]);
 
             // Hapus detail lama dan ganti detail baru

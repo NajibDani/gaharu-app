@@ -9,6 +9,8 @@ class Pesanan extends Model
 {
     protected $table = 'pesanan';
 
+    public $pendingCatatan = null;
+
     protected $fillable = [
         'kode_pesanan',
         'tipe_pesanan',
@@ -23,8 +25,53 @@ class Pesanan extends Model
         'status_pembayaran',
         'created_by',
         'gudang_id',
-        'divisi_id'
+        'divisi_id',
+        'catatan',
     ];
+
+    public function getCatatanAttribute()
+    {
+        if (array_key_exists('catatan', $this->attributes)) {
+            return $this->attributes['catatan'];
+        }
+        return \Illuminate\Support\Facades\Cache::get('pesanan_catatan_' . $this->id);
+    }
+
+    public function setCatatanAttribute($value)
+    {
+        if (\Illuminate\Support\Facades\Schema::hasColumn('pesanan', 'catatan')) {
+            $this->attributes['catatan'] = $value;
+        } else {
+            $this->pendingCatatan = $value;
+        }
+    }
+
+    protected static function booted()
+    {
+        static::saving(function ($pesanan) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('pesanan', 'catatan')) {
+                if (isset($pesanan->attributes['catatan'])) {
+                    $pesanan->pendingCatatan = $pesanan->attributes['catatan'];
+                    unset($pesanan->attributes['catatan']);
+                }
+            }
+        });
+
+        static::saved(function ($pesanan) {
+            if (isset($pesanan->pendingCatatan)) {
+                if (!empty($pesanan->pendingCatatan)) {
+                    \Illuminate\Support\Facades\Cache::put('pesanan_catatan_' . $pesanan->id, $pesanan->pendingCatatan, now()->addYears(5));
+                } else {
+                    \Illuminate\Support\Facades\Cache::forget('pesanan_catatan_' . $pesanan->id);
+                }
+                unset($pesanan->pendingCatatan);
+            }
+        });
+
+        static::deleted(function ($pesanan) {
+            \Illuminate\Support\Facades\Cache::forget('pesanan_catatan_' . $pesanan->id);
+        });
+    }
 
     public function scopeB2b($query)
     {

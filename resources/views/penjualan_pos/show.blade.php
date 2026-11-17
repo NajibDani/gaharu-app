@@ -110,6 +110,12 @@
                             <td class="text-muted">Gudang</td>
                             <td>: {{ $penjualan->gudang->nama }}</td>
                         </tr>
+                        @if($penjualan->divisi)
+                        <tr>
+                            <td class="text-muted">Divisi</td>
+                            <td>: <span class="badge bg-primary-subtle text-primary border border-primary-subtle">{{ $penjualan->divisi->nama }}</span></td>
+                        </tr>
+                        @endif
                         <tr>
                             <td class="text-muted">Input Oleh</td>
                             <td>: {{ $penjualan->creator->name ?? '-' }}</td>

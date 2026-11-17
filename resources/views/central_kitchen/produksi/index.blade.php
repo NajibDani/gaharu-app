@@ -277,6 +277,17 @@
                                                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body p-4">
+                                                            @if(!empty($p->catatan))
+                                                                <div class="alert alert-warning border-warning shadow-sm mb-3 rounded-3" style="background-color: #fffbeb; border-left: 5px solid #f59e0b !important;">
+                                                                    <div class="d-flex align-items-start gap-2">
+                                                                        <i class="bi bi-sticky-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                                                                        <div>
+                                                                            <strong class="text-dark d-block mb-1" style="font-size: 0.88rem; letter-spacing: 0.3px;"><i class="bi bi-bell-fill text-warning me-1"></i> CATATAN DARI OUTLET / TIM PEMESAN:</strong>
+                                                                            <div class="text-dark fw-bold" style="font-size: 0.95rem; white-space: pre-wrap; line-height: 1.5;">{{ $p->catatan }}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            @endif
                                                             <div class="mb-3 p-3 bg-light rounded-3">
                                                                 <div class="row g-2 small">
                                                                     <div class="col-6"><strong>Outlet Pemesan:</strong> {{ $p->customer->nama ?? '-' }}</div>
@@ -553,10 +564,10 @@
                                                             </button>
                                                         </form>
                                                     @else
-                                                        <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus Work Order {{ $wo->kode_wo }} karena kesalahan produksi? Status pesanan akan dikembalikan ke antrean Order Masuk (Pending). Tindakan ini tidak dapat dibatalkan.');">
+                                                        <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline w-100" onsubmit="return confirm('Apakah Anda yakin ingin menghapus & membatalkan Work Order {{ $wo->kode_wo }} ini karena kesalahan / double produksi?\n\n- Stok hasil produksi akan ditarik kembali dari Gudang CK.\n- Bahan baku yang terpakai akan otomatis dikembalikan ke stok Gudang CK.\n- Status pesanan akan dikembalikan ke pending.');">
                                                             @csrf
                                                             @method('DELETE')
-                                                            <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus WO yang belum terkirim (karena kesalahan produksi)">
+                                                            <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 w-100" style="font-size: 0.74rem; border-radius: 6px;" title="Hapus WO (kesalahan / double produksi)">
                                                                 <i class="bi bi-trash"></i> Hapus WO
                                                             </button>
                                                         </form>
@@ -582,6 +593,22 @@
                                                             <input type="hidden" name="work_order_id" value="{{ $wo->id }}">
 
                                                             <div class="modal-body p-4">
+                                                                {{-- CATATAN ORDER DARI OUTLET / TIM PEMESAN --}}
+                                                                @php
+                                                                    $displayCatatanCk = $wo->pesanan_catatan ?: ($wo->catatan && !str_contains($wo->catatan, 'Bahan baku') ? $wo->catatan : null);
+                                                                @endphp
+                                                                @if(!empty($displayCatatanCk))
+                                                                    <div class="alert alert-warning border-warning shadow-sm mb-3 rounded-3" style="background-color: #fffbeb; border-left: 5px solid #f59e0b !important;">
+                                                                        <div class="d-flex align-items-start gap-2">
+                                                                            <i class="bi bi-sticky-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                                                                            <div>
+                                                                                <strong class="text-dark d-block mb-1" style="font-size: 0.88rem; letter-spacing: 0.3px;"><i class="bi bi-bell-fill text-warning me-1"></i> CATATAN DARI OUTLET / TIM PEMESAN:</strong>
+                                                                                <div class="text-dark fw-bold" style="font-size: 0.95rem; white-space: pre-wrap; line-height: 1.5;">{{ $displayCatatanCk }}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
+
                                                                 {{-- ALERT PERINGATAN: MENU BELUM MEMILIKI RESEP --}}
                                                                 @if($wo->has_missing_resep ?? false)
                                                                     <div class="alert alert-danger border-danger d-flex align-items-start gap-2 p-3 rounded-3 mb-3 small">
@@ -898,6 +925,21 @@
                                                         @else
                                                             {{-- JIKA SUDAH SELESAI SEMUA --}}
                                                             <div class="modal-body p-4">
+                                                                {{-- CATATAN ORDER DARI OUTLET / TIM PEMESAN --}}
+                                                                @php
+                                                                    $displayCatatanCkSelesai = $wo->pesanan_catatan ?: ($wo->catatan && !str_contains($wo->catatan, 'Bahan baku') ? $wo->catatan : null);
+                                                                @endphp
+                                                                @if(!empty($displayCatatanCkSelesai))
+                                                                    <div class="alert alert-warning border-warning shadow-sm mb-3 rounded-3" style="background-color: #fffbeb; border-left: 5px solid #f59e0b !important;">
+                                                                        <div class="d-flex align-items-start gap-2">
+                                                                            <i class="bi bi-sticky-fill text-warning fs-5 mt-0.5 flex-shrink-0"></i>
+                                                                            <div>
+                                                                                <strong class="text-dark d-block mb-1" style="font-size: 0.88rem; letter-spacing: 0.3px;"><i class="bi bi-bell-fill text-warning me-1"></i> CATATAN DARI OUTLET / TIM PEMESAN:</strong>
+                                                                                <div class="text-dark fw-bold" style="font-size: 0.95rem; white-space: pre-wrap; line-height: 1.5;">{{ $displayCatatanCkSelesai }}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                @endif
                                                                 <div class="alert alert-success d-flex align-items-center mb-3">
                                                                     <i class="bi bi-check-circle-fill fs-4 me-2"></i>
                                                                     <div>Seluruh target Work Order ini telah <strong>100% Selesai</strong> diproduksi dan siap dikirim ke outlet pemesan.</div>
@@ -981,8 +1023,24 @@
                                                                     </div>
                                                                 @endif
                                                             </div>
-                                                            <div class="modal-footer bg-light py-2">
-                                                                <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Tutup</button>
+                                                            <div class="modal-footer bg-light py-2 d-flex justify-content-between align-items-center">
+                                                                @if(($canDeleteWo ?? $isSuperAdmin) && ($wo->is_belum_terkirim ?? true))
+                                                                    <form action="{{ route('ck-produksi.destroy-wo', $wo->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin MENGHAPUS & MEMBATALKAN Work Order {{ $wo->kode_wo }} ini karena DOUBLE PRODUKSI / kesalahan?\n\n- Stok hasil produksi akan otomatis ditarik dari Gudang CK.\n- Bahan baku yang terpakai akan otomatis dikembalikan ke stok Gudang CK.\n- Status pesanan akan dikembalikan ke pending.');">
+                                                                        @csrf
+                                                                        @method('DELETE')
+                                                                        <button type="submit" class="btn btn-outline-danger fw-semibold d-flex align-items-center gap-1 shadow-sm" title="Hapus WO jika terjadi double produksi">
+                                                                            <i class="bi bi-trash-fill"></i> Hapus WO (Double Produksi)
+                                                                        </button>
+                                                                    </form>
+                                                                @else
+                                                                    <div></div>
+                                                                @endif
+                                                                <div class="d-flex gap-2">
+                                                                    <a href="{{ route('pengiriman.index', ['tipe' => 'central_kitchen', 'search' => $wo->kode_wo]) }}" class="btn btn-custom-orange text-white fw-semibold d-flex align-items-center gap-1">
+                                                                        <i class="bi bi-truck"></i> Kirim ke Logistik
+                                                                    </a>
+                                                                    <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Tutup</button>
+                                                                </div>
                                                             </div>
                                                         @endif
                                                     </div>
@@ -1692,6 +1750,15 @@
                                                                     @csrf
                                                                     <button type="submit" id="btnApproveDraft{{ $prod->id }}" class="btn btn-success btn-sm px-3" {{ (!($prod->can_approve ?? false)) ? 'disabled' : '' }}>
                                                                         <i class="bi bi-check-circle me-1"></i> Approve &amp; Hitung HPP
+                                                                    </button>
+                                                                </form>
+                                                            @endif
+                                                            @if(strtolower($prod->status_produksi) == 'selesai' && ($prod->is_belum_terkirim ?? true) && ($canDeleteWo ?? $isSuperAdmin))
+                                                                <form action="{{ route('ck-produksi.destroy-produksi', $prod->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin membatalkan/menghapus hasil produksi {{ $prod->kode_produksi }} ini karena DOUBLE PRODUKSI / kesalahan QC?\n\n- Stok produk jadi akan ditarik dari Gudang CK.\n- Stok bahan baku akan dikembalikan otomatis ke Gudang CK.');">
+                                                                    @csrf
+                                                                    @method('DELETE')
+                                                                    <button type="submit" class="btn btn-outline-danger btn-sm px-2.5" title="Batalkan Hasil Produksi (Double Produksi / Kesalahan)">
+                                                                        <i class="bi bi-trash me-1"></i> Hapus Hasil Produksi
                                                                     </button>
                                                                 </form>
                                                             @endif

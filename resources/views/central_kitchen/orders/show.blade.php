@@ -101,6 +101,14 @@
                             <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Estimasi Kirim</td>
                             <td><strong>{{ \Carbon\Carbon::parse($pesanan->estimasi_kirim)->format('d F Y') }}</strong></td>
                         </tr>
+                        @if(!empty($pesanan->catatan))
+                        <tr>
+                            <td class="fw-bold text-secondary text-uppercase" style="font-size: 11px;">Catatan Permintaan</td>
+                            <td colspan="3" class="text-dark fw-bold text-start" style="background-color: #fffbeb;">
+                                <i class="bi bi-sticky-fill text-warning me-1"></i> {{ $pesanan->catatan }}
+                            </td>
+                        </tr>
+                        @endif
                     </tbody>
                 </table>
             </div>

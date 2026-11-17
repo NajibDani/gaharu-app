@@ -80,6 +80,11 @@
                         <label class="form-label form-label-custom">Kode Permintaan</label>
                         <input type="text" name="kode_pesanan" class="form-control text-sm rounded-3 bg-light" value="P{{ rand(100,999) }}" readonly>
                     </div>
+
+                    <div class="col-md-12">
+                        <label class="form-label form-label-custom">Catatan Permintaan (Opsional)</label>
+                        <textarea name="catatan" class="form-control text-sm rounded-3" rows="2" placeholder="Catatan khusus untuk tim produksi (cth: jangan terlalu manis, request batch baru, kirim pagi, dsb)...">{{ old('catatan') }}</textarea>
+                    </div>
                 </div>
             </div>
 

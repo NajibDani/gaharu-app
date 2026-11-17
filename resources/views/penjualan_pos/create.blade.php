@@ -33,7 +33,7 @@
                 @csrf
 
                 <div class="row mb-3">
-                    <div class="col-12 col-md-6 mb-3 mb-md-0">
+                    <div class="col-12 col-md-4 mb-3 mb-md-0">
                         <label class="form-label font-weight-bold">Tanggal Transaksi</label>
                         <input type="datetime-local"
                                name="tanggal"
@@ -43,9 +43,9 @@
                                required>
                     </div>
 
-                    <div class="col-12 col-md-6 mb-3 mb-md-0">
+                    <div class="col-12 col-md-4 mb-3 mb-md-0">
                         <label class="form-label font-weight-bold">Gudang Operasional</label>
-                        <select name="gudang_id" class="form-control" required>
+                        <select name="gudang_id" id="select-gudang" class="form-control" required>
                             <option value="">-- Pilih Gudang Operasional Cafe --</option>
                             @foreach($gudang as $g)
                                 <option value="{{ $g->id }}" {{ (old('gudang_id') == $g->id || count($gudang) === 1 || (auth()->check() && auth()->user()->gudang_id == $g->id)) ? 'selected' : '' }}>
@@ -53,6 +53,21 @@
                                 </option>
                             @endforeach
                         </select>
+                    </div>
+
+                    <div class="col-12 col-md-4 mb-3 mb-md-0">
+                        <label class="form-label font-weight-bold">Divisi (Opsional)</label>
+                        <select name="divisi_id" id="select-divisi" class="form-control">
+                            <option value="">-- Pilih Divisi (Kitchen / Barista / dll) --</option>
+                            @if(isset($divisis))
+                                @foreach($divisis as $d)
+                                    <option value="{{ $d->id }}" data-gudang-id="{{ $d->gudang_id }}" {{ old('divisi_id') == $d->id ? 'selected' : '' }}>
+                                        {{ $d->nama }} ({{ $d->gudang->nama ?? '' }})
+                                    </option>
+                                @endforeach
+                            @endif
+                        </select>
+                        <small class="text-muted" style="font-size: 0.75rem;">Pilih divisi operasional jika rekap khusus per divisi</small>
                     </div>
                 </div>
 
@@ -335,6 +350,39 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     });
+
+    // 7. FILTER PILIHAN DIVISI BERDASARKAN GUDANG OPERASIONAL
+    const selectGudang = document.getElementById('select-gudang');
+    const selectDivisi = document.getElementById('select-divisi');
+
+    function filterDivisi() {
+        if (!selectGudang || !selectDivisi) return;
+        const selectedGudangId = selectGudang.value;
+        const currentDivisiVal = selectDivisi.value;
+        let hasSelectedVisible = false;
+
+        Array.from(selectDivisi.options).forEach((opt, idx) => {
+            if (idx === 0) return;
+            const optGudangId = opt.getAttribute('data-gudang-id');
+            if (!selectedGudangId || optGudangId === selectedGudangId) {
+                opt.style.display = '';
+                opt.disabled = false;
+                if (opt.value === currentDivisiVal) hasSelectedVisible = true;
+            } else {
+                opt.style.display = 'none';
+                opt.disabled = true;
+            }
+        });
+
+        if (!hasSelectedVisible && currentDivisiVal !== '') {
+            selectDivisi.value = '';
+        }
+    }
+
+    if (selectGudang) {
+        selectGudang.addEventListener('change', filterDivisi);
+        filterDivisi();
+    }
 
 });
 </script>

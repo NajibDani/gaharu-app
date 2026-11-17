@@ -78,6 +78,11 @@
                         <input type="date" name="estimasi_kirim" class="form-control text-sm rounded-3" value="{{ old('estimasi_kirim', date('Y-m-d', strtotime($pesanan->estimasi_kirim))) }}" required>
                     </div>
 
+                    <div class="col-md-12">
+                        <label class="form-label form-label-custom">Catatan Permintaan (Opsional)</label>
+                        <textarea name="catatan" class="form-control text-sm rounded-3" rows="2" placeholder="Catatan khusus untuk tim produksi (cth: jangan terlalu manis, request batch baru, kirim pagi, dsb)...">{{ old('catatan', $pesanan->catatan) }}</textarea>
+                    </div>
+
                     <input type="hidden" name="divisi_id" value="{{ $pesanan->divisi_id ?? 1 }}">
                 </div>
             </div>

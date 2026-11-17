@@ -104,6 +104,7 @@ class ProduksiController extends Controller
             $customer = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->customer : null;
             $wo->customer_nama = $customer ? ($customer->nama ?? $customer->name ?? 'Customer B2B') : 'Customer B2B';
             $wo->pesanan_kode  = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->kode_pesanan : '-';
+            $wo->pesanan_catatan = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->catatan : null;
 
             $totalTarget = 0;
             $totalSelesai = 0;
@@ -384,7 +385,7 @@ class ProduksiController extends Controller
                 'kode_wo'    => 'WO-B2B-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3))),
                 'tanggal_wo' => now(),
                 'status_wo'  => $isBahanCukup ? 'Diproses' : 'Draft',
-                'catatan'    => $request->catatan ?? ($isBahanCukup ? 'Bahan baku mencukupi di Gudang B2B' : 'Bahan baku kurang, menunggu permintaan'),
+                'catatan'    => $request->catatan ?: ($pesanan->catatan ?: ($isBahanCukup ? 'Bahan baku mencukupi di Gudang B2B' : 'Bahan baku kurang, menunggu permintaan')),
                 'created_by' => auth()->id(),
             ]);
 

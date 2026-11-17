@@ -8,6 +8,7 @@ use App\Models\MasterBarang;
 use App\Models\MasterGudang;
 use App\Models\StokGudang;
 use App\Models\HargaPeriode; 
+use App\Models\GudangDivisi;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,7 +20,7 @@ class PenjualanPosController extends Controller
     {
         $user = auth()->user();
         $search = $request->query('search');
-        $query = PenjualanPos::latest();
+        $query = PenjualanPos::with('gudang')->latest();
         
         if ($user->gudang_id) {
             $query->where('gudang_id', $user->gudang_id);
@@ -65,8 +66,9 @@ class PenjualanPosController extends Controller
 
         $produk = $queryProduk->get();
         $gudang = $queryGudang->get();
+        $divisis = GudangDivisi::with('gudang')->orderBy('nama')->get();
 
-        return view('penjualan_pos.create', compact('produk', 'gudang'));
+        return view('penjualan_pos.create', compact('produk', 'gudang', 'divisis'));
     }
 
     /**
@@ -77,6 +79,7 @@ class PenjualanPosController extends Controller
         $request->validate([
             'tanggal'     => 'required',
             'gudang_id'   => 'required|exists:master_gudang,id',
+            'divisi_id'   => 'nullable|exists:gudang_divisi,id',
             'produk_id'   => 'required|array',
             'produk_id.*' => 'required|exists:master_barang,id',
             'qty'         => 'required|array',
@@ -150,6 +153,7 @@ class PenjualanPosController extends Controller
                 'status'         => 'Draft', // Status awal selalu Draft
                 'tanggal'        => $tanggalTrans,
                 'gudang_id'      => $request->gudang_id,
+                'divisi_id'      => $request->divisi_id ?: null,
                 'total'          => 0,
                 'created_by'     => auth()->id() ?? 1
             ]);
@@ -434,8 +438,9 @@ class PenjualanPosController extends Controller
 
         $produk = $queryProduk->get();
         $gudang = $queryGudang->get();
+        $divisis = GudangDivisi::with('gudang')->orderBy('nama')->get();
 
-        return view('penjualan_pos.edit', compact('penjualan', 'produk', 'gudang', 'isSuperAdmin'));
+        return view('penjualan_pos.edit', compact('penjualan', 'produk', 'gudang', 'divisis', 'isSuperAdmin'));
     }
 
     /**
@@ -446,6 +451,7 @@ class PenjualanPosController extends Controller
         $request->validate([
             'tanggal'     => 'required',
             'gudang_id'   => 'required|exists:master_gudang,id',
+            'divisi_id'   => 'nullable|exists:gudang_divisi,id',
             'produk_id'   => 'required|array',
             'produk_id.*' => 'required|exists:master_barang,id',
             'qty'         => 'required|array',
@@ -597,6 +603,7 @@ class PenjualanPosController extends Controller
             $penjualan->update([
                 'tanggal'   => date('Y-m-d H:i:s', strtotime($request->tanggal)),
                 'gudang_id' => $request->gudang_id,
+                'divisi_id' => $request->divisi_id ?: null,
                 'status'    => 'Draft', // Set Draft sementara untuk pemrosesan ulang
             ]);
 
@@ -1145,6 +1152,7 @@ class PenjualanPosController extends Controller
                 'kode_pengeluaran' => 'OUT-' . $kodePos,
                 'tanggal'          => $tanggalTrans,
                 'gudang_id'        => $gudangId,
+                'divisi_id'        => $penjualan->divisi_id ?? null,
                 'status'           => 'approved', 
                 'keterangan'       => 'AUTO_POS:' . $kodePos, 
                 'created_by'       => auth()->id() ?? 1,

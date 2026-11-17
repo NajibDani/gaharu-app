@@ -376,6 +376,7 @@ class CentralKitchenOrderController extends Controller
             'tanggal'        => 'required|date',
             'estimasi_kirim' => 'required|date',
             'divisi_id'      => 'required|exists:gudang_divisi,id',
+            'catatan'        => 'nullable|string',
             'produk_id'      => 'required|array|min:1',
             'qty'            => 'required|array|min:1',
         ]);
@@ -434,6 +435,7 @@ class CentralKitchenOrderController extends Controller
                 'created_by'        => auth()->id(),
                 'gudang_id'         => $gudangId,
                 'divisi_id'         => $targetDivisiId,
+                'catatan'           => $request->catatan,
             ]);
 
             $orderModes = $request->input('order_mode', []);
@@ -542,6 +544,7 @@ class CentralKitchenOrderController extends Controller
             'tanggal'        => 'required|date',
             'estimasi_kirim' => 'required|date',
             'divisi_id'      => 'nullable|exists:gudang_divisi,id',
+            'catatan'        => 'nullable|string',
             'produk_id'      => 'required|array|min:1',
             'qty'            => 'required|array|min:1',
         ]);
@@ -590,6 +593,7 @@ class CentralKitchenOrderController extends Controller
                 'estimasi_produksi' => $request->estimasi_produksi,
                 'gudang_id'         => $gudangId,
                 'divisi_id'         => $targetDivisiId,
+                'catatan'           => $request->catatan,
             ]);
 
             // Hapus detail lama dan masukkan detail baru

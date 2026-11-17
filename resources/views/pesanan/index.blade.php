@@ -1001,6 +1001,10 @@
                                 <label class="form-label fw-bold small text-secondary">Estimasi Kirim <span class="text-danger">*</span></label>
                                 <input type="date" name="estimasi_kirim" class="form-control rounded-3" value="{{ date('Y-m-d', strtotime('+1 day')) }}" required>
                             </div>
+                            <div class="col-md-12">
+                                <label class="form-label fw-bold small text-secondary">Catatan Permintaan (Opsional)</label>
+                                <textarea name="catatan" class="form-control rounded-3" rows="2" placeholder="Catatan khusus untuk tim produksi (cth: jangan terlalu manis, request batch baru, kirim pagi, dsb)..."></textarea>
+                            </div>
                         </div>
 
                         {{-- SUGGESTION RESTOCK BOX DI DALAM MODAL --}}

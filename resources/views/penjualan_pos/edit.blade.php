@@ -26,7 +26,7 @@
                     @method('PUT')
 
                     <div class="row mb-4">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label fw-bold">Tanggal</label>
                             <input type="datetime-local" 
                                    name="tanggal" 
@@ -38,12 +38,12 @@
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <label class="form-label fw-bold">Gudang</label>
-                            <select name="gudang_id" class="form-select @error('gudang_id') is-invalid @enderror" required>
+                            <select name="gudang_id" id="select-gudang" class="form-select @error('gudang_id') is-invalid @enderror" required>
                                 <option value="">-- Pilih Gudang --</option>
                                 @foreach($gudang as $g)
-                                    <option value="{{ $g->id }}" {{ $penjualan->gudang_id == $g->id ? 'selected' : '' }}>
+                                    <option value="{{ $g->id }}" {{ old('gudang_id', $penjualan->gudang_id) == $g->id ? 'selected' : '' }}>
                                         {{ $g->nama }}
                                     </option>
                                 @endforeach
@@ -51,6 +51,23 @@
                             @error('gudang_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Divisi (Opsional)</label>
+                            <select name="divisi_id" id="select-divisi" class="form-select @error('divisi_id') is-invalid @enderror">
+                                <option value="">-- Pilih Divisi (Kitchen / Barista / dll) --</option>
+                                @if(isset($divisis))
+                                    @foreach($divisis as $d)
+                                        <option value="{{ $d->id }}" data-gudang-id="{{ $d->gudang_id }}" {{ old('divisi_id', $penjualan->divisi_id) == $d->id ? 'selected' : '' }}>
+                                            {{ $d->nama }} ({{ $d->gudang->nama ?? '' }})
+                                        </option>
+                                    @endforeach
+                                @endif
+                            </select>
+                            @error('divisi_id')
+                                <div class="invalid-feedback">{{ $message }}</div>
+                            @enderror
+                            <small class="text-muted" style="font-size: 0.75rem;">Pilih divisi operasional jika rekap khusus per divisi</small>
                         </div>
                     </div>
 
@@ -367,6 +384,39 @@
                 });
 
                 document.getElementById('grand-total').innerText = total.toLocaleString('id-ID');
+            }
+
+            // 7. FILTER PILIHAN DIVISI BERDASARKAN GUDANG
+            const selectGudang = document.getElementById('select-gudang');
+            const selectDivisi = document.getElementById('select-divisi');
+
+            function filterDivisi() {
+                if (!selectGudang || !selectDivisi) return;
+                const selectedGudangId = selectGudang.value;
+                const currentDivisiVal = selectDivisi.value;
+                let hasSelectedVisible = false;
+
+                Array.from(selectDivisi.options).forEach((opt, idx) => {
+                    if (idx === 0) return;
+                    const optGudangId = opt.getAttribute('data-gudang-id');
+                    if (!selectedGudangId || optGudangId === selectedGudangId) {
+                        opt.style.display = '';
+                        opt.disabled = false;
+                        if (opt.value === currentDivisiVal) hasSelectedVisible = true;
+                    } else {
+                        opt.style.display = 'none';
+                        opt.disabled = true;
+                    }
+                });
+
+                if (!hasSelectedVisible && currentDivisiVal !== '') {
+                    selectDivisi.value = '';
+                }
+            }
+
+            if (selectGudang) {
+                selectGudang.addEventListener('change', filterDivisi);
+                filterDivisi();
             }
         });
     </script>

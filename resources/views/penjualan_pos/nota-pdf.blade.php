@@ -28,7 +28,7 @@
 <body>
 
     <div class="header">
-        <div class="outlet-name">{{ $penjualan->gudang->nama ?? 'OUTLET KASIR POS' }}</div>
+        <div class="outlet-name">{{ $penjualan->gudang->nama ?? 'OUTLET KASIR POS' }}{{ $penjualan->divisi ? ' - ' . $penjualan->divisi->nama : '' }}</div>
         <div class="doc-title">STRUK SALES ORDER POS</div>
         <div style="font-size: 11px; color: #555; margin-top: 3px;">
             Kode Transaksi: <strong>#{{ $penjualan->kode_transaksi }}</strong>

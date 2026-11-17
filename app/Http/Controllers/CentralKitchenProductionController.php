@@ -167,6 +167,7 @@ class CentralKitchenProductionController extends Controller
             ? array_flip(
                 Pengiriman::whereIn('pesanan_id', $allWoPesananIds)
                     ->where('status_pengiriman', 'Selesai')
+                    ->where('kurir', '!=', 'Internal CK Transfer')
                     ->pluck('pesanan_id')
                     ->toArray()
             )
@@ -178,6 +179,7 @@ class CentralKitchenProductionController extends Controller
             $customer = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->customer : null;
             $wo->customer_nama = $customer ? $customer->nama : 'Outlet Internal';
             $wo->pesanan_kode  = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->kode_pesanan : '-';
+            $wo->pesanan_catatan = $firstDetail && $firstDetail->pesanan ? $firstDetail->pesanan->catatan : null;
             $wo->tanggal_permintaan = $firstDetail && $firstDetail->pesanan && $firstDetail->pesanan->tanggal
                 ? $firstDetail->pesanan->tanggal
                 : null;
@@ -609,7 +611,13 @@ class CentralKitchenProductionController extends Controller
         $allRiwayatPesananIds = array_unique(array_filter($allRiwayatPesananIds));
 
         $terkirimRiwayatSet = !empty($allRiwayatPesananIds)
-            ? array_flip(Pengiriman::whereIn('pesanan_id', $allRiwayatPesananIds)->where('status_pengiriman', 'Selesai')->pluck('pesanan_id')->toArray())
+            ? array_flip(
+                Pengiriman::whereIn('pesanan_id', $allRiwayatPesananIds)
+                    ->where('status_pengiriman', 'Selesai')
+                    ->where('kurir', '!=', 'Internal CK Transfer')
+                    ->pluck('pesanan_id')
+                    ->toArray()
+            )
             : [];
 
         $wodRiwayatMap = !empty($allRiwayatPesananIds)
@@ -837,7 +845,7 @@ class CentralKitchenProductionController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
-        $canDeleteWo = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty()));
+        $canDeleteWo = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty() || auth()->user()->isCentralKitchen()));
 
         return view('central_kitchen.produksi.index', compact(
             'woList', 
@@ -911,7 +919,7 @@ class CentralKitchenProductionController extends Controller
                 'kode_wo'    => 'WO-CK-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3))),
                 'tanggal_wo' => now(),
                 'status_wo'  => $isBahanCukup ? 'Diproses' : 'Draft',
-                'catatan'    => $request->catatan ?? ($isBahanCukup ? 'Bahan baku mencukupi di Gudang CK' : 'Bahan baku kurang, menunggu permintaan'),
+                'catatan'    => $request->catatan ?: ($pesanan->catatan ?: ($isBahanCukup ? 'Bahan baku mencukupi di Gudang CK' : 'Bahan baku kurang, menunggu permintaan')),
                 'created_by' => auth()->id(),
             ]);
 
@@ -1811,6 +1819,7 @@ class CentralKitchenProductionController extends Controller
         $pesananIds = $wo->details->pluck('pesanan_id')->filter()->unique();
         $isTerkirim = Pengiriman::whereIn('pesanan_id', $pesananIds)
             ->where('status_pengiriman', 'Selesai')
+            ->where('kurir', '!=', 'Internal CK Transfer')
             ->exists();
 
         if ($isTerkirim) {
@@ -2818,7 +2827,7 @@ class CentralKitchenProductionController extends Controller
     public function destroyWo($id)
     {
         $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
-        $canDelete = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty()));
+        $canDelete = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty() || auth()->user()->isCentralKitchen()));
 
         if (!$canDelete) {
             abort(403, 'Akses ditolak: Anda tidak memiliki wewenang untuk menghapus Work Order.');
@@ -2984,7 +2993,7 @@ class CentralKitchenProductionController extends Controller
     public function destroyProduksi($id)
     {
         $isSuperAdmin = auth()->check() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin');
-        $canDelete = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty()));
+        $canDelete = $isSuperAdmin || (auth()->check() && (auth()->user()->isGudang() || auth()->user()->canEditWoQty() || auth()->user()->isCentralKitchen()));
 
         if (!$canDelete) {
             abort(403, 'Akses ditolak: Anda tidak memiliki wewenang untuk membatalkan hasil produksi.');

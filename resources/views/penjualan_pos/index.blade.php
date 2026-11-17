@@ -65,7 +65,12 @@
                         <tr>
                             <td class="ps-3 fw-bold text-primary">{{ $item->kode_transaksi }}</td>
                             <td>{{ \Carbon\Carbon::parse($item->tanggal)->format('d M Y, H:i') }}</td>
-                            <td>{{ $item->gudang->nama ?? '-' }}</td>
+                            <td>
+                                {{ $item->gudang->nama ?? '-' }}
+                                @if($item->divisi)
+                                    <span class="badge bg-secondary-subtle text-secondary border small ms-1">{{ $item->divisi->nama }}</span>
+                                @endif
+                            </td>
                             
                             <td class="text-end fw-bold text-dark">
                                 Rp {{ number_format($item->total, 0, ',', '.') }}

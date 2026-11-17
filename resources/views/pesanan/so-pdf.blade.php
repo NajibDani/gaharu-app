@@ -161,6 +161,14 @@
                 @endif
             </td>
         </tr>
+        @if(!empty($pesanan->catatan))
+        <tr>
+            <td class="info-label">Catatan Permintaan</td>
+            <td class="info-value" colspan="3" style="font-weight: bold; color: #1e293b; background-color: #fffbeb;">
+                {{ $pesanan->catatan }}
+            </td>
+        </tr>
+        @endif
     </table>
 
     {{-- TABEL ITEM PRODUK --}}

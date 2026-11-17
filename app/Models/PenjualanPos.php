@@ -12,10 +12,13 @@ class PenjualanPos extends Model
         'kode_transaksi',
         'tanggal',
         'gudang_id',
+        'divisi_id',
         'total',
-        'status', // <--- Tambahkan baris ini
+        'status',
         'created_by'
     ];
+
+    public $pendingDivisiId = null;
 
     public function details()
     {
@@ -32,6 +35,35 @@ class PenjualanPos extends Model
         return $this->belongsTo(MasterGudang::class, 'gudang_id');
     }
 
+    public function getDivisiIdAttribute()
+    {
+        if (array_key_exists('divisi_id', $this->attributes)) {
+            return $this->attributes['divisi_id'];
+        }
+        return \Illuminate\Support\Facades\Cache::get('penjualan_pos_divisi_' . $this->id);
+    }
+
+    public function setDivisiIdAttribute($value)
+    {
+        if (\Illuminate\Support\Facades\Schema::hasColumn('penjualan_pos', 'divisi_id')) {
+            $this->attributes['divisi_id'] = $value;
+        } else {
+            $this->pendingDivisiId = $value;
+        }
+    }
+
+    public function getDivisiAttribute()
+    {
+        $divId = $this->divisi_id;
+        if (!$divId) return null;
+
+        static $divisiCache = null;
+        if ($divisiCache === null) {
+            $divisiCache = \App\Models\GudangDivisi::all()->keyBy('id');
+        }
+        return $divisiCache->get($divId);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
@@ -40,6 +72,30 @@ class PenjualanPos extends Model
     protected static function boot()
     {
         parent::boot();
+
+        static::saving(function ($model) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn('penjualan_pos', 'divisi_id')) {
+                if (isset($model->attributes['divisi_id'])) {
+                    $model->pendingDivisiId = $model->attributes['divisi_id'];
+                    unset($model->attributes['divisi_id']);
+                }
+            }
+        });
+
+        static::saved(function ($model) {
+            if (isset($model->pendingDivisiId)) {
+                if (!empty($model->pendingDivisiId)) {
+                    \Illuminate\Support\Facades\Cache::put('penjualan_pos_divisi_' . $model->id, $model->pendingDivisiId, now()->addYears(5));
+                } else {
+                    \Illuminate\Support\Facades\Cache::forget('penjualan_pos_divisi_' . $model->id);
+                }
+                unset($model->pendingDivisiId);
+            }
+        });
+
+        static::deleted(function ($model) {
+            \Illuminate\Support\Facades\Cache::forget('penjualan_pos_divisi_' . $model->id);
+        });
 
         static::deleting(function ($penjualan) {
             // Bersihkan transaksi_stok terkait jika ada
