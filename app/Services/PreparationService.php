@@ -82,9 +82,10 @@ class PreparationService
     }
 
     /**
-     * Get available stock in specified gudang & optional divisi
+     * Get available stock in specified gudang & optional divisi.
+     * Mendukung pengecekan stok historis berdasarkan tanggal dokumen.
      */
-    public function getAvailableStock(int $barangId, int $gudangId, ?int $divisiId = null): float
+    public function getAvailableStock(int $barangId, int $gudangId, ?int $divisiId = null, $date = null): float
     {
         $query = StokGudang::where('gudang_id', $gudangId)
             ->where('barang_id', $barangId);
@@ -95,7 +96,19 @@ class PreparationService
             $query->whereNull('divisi_id');
         }
 
-        return (float)($query->value('jumlah') ?? 0);
+        $stokRealtime = (float)($query->value('jumlah') ?? 0);
+
+        $targetDate = $date ? date('Y-m-d', strtotime($date)) : date('Y-m-d');
+        $stokBukuDivisi = $divisiId ? StokGudang::getStokBukuPembantu($barangId, $gudangId, $divisiId, $targetDate) : 0;
+        $stokBukuGudang = StokGudang::getStokBukuPembantu($barangId, $gudangId, null, $targetDate);
+
+        $stokBatch = (float) DB::table('stok_gudang_batch')
+            ->where('gudang_id', $gudangId)
+            ->where('barang_id', $barangId)
+            ->when($divisiId, fn($q) => $q->where('divisi_id', $divisiId))
+            ->sum('qty_sisa');
+
+        return max($stokRealtime, $stokBukuDivisi, $stokBukuGudang, $stokBatch);
     }
 
     /**
@@ -270,11 +283,15 @@ class PreparationService
             // Validate that all raw materials are currently sufficient before executing FIFO
             $stockCheck = $this->checkStockAvailability($lockedPrep);
             if (!$stockCheck['is_sufficient']) {
-                $details = [];
-                foreach ($stockCheck['insufficient_items'] as $item) {
-                    $details[] = "{$item['nama']} (Tersedia: {$item['tersedia']} {$item['satuan']}, Dibutuhkan: {$item['dibutuhkan']} {$item['satuan']})";
+                $user = auth()->user();
+                $isSuperAdmin = $user && $user->isSuperAdmin();
+                if (!$isSuperAdmin) {
+                    $details = [];
+                    foreach ($stockCheck['insufficient_items'] as $item) {
+                        $details[] = "{$item['nama']} (Tersedia: {$item['tersedia']} {$item['satuan']}, Dibutuhkan: {$item['dibutuhkan']} {$item['satuan']})";
+                    }
+                    throw new \Exception('Stok bahan baku tidak mencukupi untuk disetujui: ' . implode(', ', $details) . '. Harap penuhi stok terlebih dahulu.');
                 }
-                throw new \Exception('Stok bahan baku tidak mencukupi untuk disetujui: ' . implode(', ', $details) . '. Harap penuhi stok terlebih dahulu.');
             }
 
             $gudangId = $lockedPrep->gudang_id;

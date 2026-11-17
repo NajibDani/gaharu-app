@@ -95,12 +95,14 @@ class Preparation extends Model
     }
 
     /**
-     * Check real-time stock sufficiency for all inputs in the designated gudang & divisi
+     * Check real-time and historical stock sufficiency for all inputs in the designated gudang & divisi.
+     * Memperhitungkan stok buku pembantu persediaan pada tanggal dokumen preparation dan sisa batch aktif.
      */
     public function getStockCheckDetails(): array
     {
         $gudangId = $this->gudang_id;
         $divisiId = $this->divisi_id;
+        $targetDate = $this->tanggal ? date('Y-m-d', strtotime($this->tanggal)) : date('Y-m-d');
         $isSufficient = true;
         $items = [];
 
@@ -110,6 +112,7 @@ class Preparation extends Model
             $barang = $input->barang;
             $qtyDibutuhkan = (float)$input->qty_base;
 
+            // 1. Stok realtime saat ini di tabel stok_gudang
             $stokQuery = StokGudang::where('gudang_id', $gudangId)
                 ->where('barang_id', $input->barang_id);
 
@@ -119,7 +122,21 @@ class Preparation extends Model
                 $stokQuery->whereNull('divisi_id');
             }
 
-            $availStock = (float)($stokQuery->value('jumlah') ?? 0);
+            $stokRealtime = (float)($stokQuery->value('jumlah') ?? 0);
+
+            // 2. Stok buku pembantu persediaan pada tanggal dokumen preparation
+            $stokBukuDivisi = $divisiId ? \App\Models\StokGudang::getStokBukuPembantu($input->barang_id, $gudangId, $divisiId, $targetDate) : 0;
+            $stokBukuGudang = \App\Models\StokGudang::getStokBukuPembantu($input->barang_id, $gudangId, null, $targetDate);
+
+            // 3. Sisa stok batch FIFO aktif di gudang / divisi
+            $stokBatch = (float) \Illuminate\Support\Facades\DB::table('stok_gudang_batch')
+                ->where('gudang_id', $gudangId)
+                ->where('barang_id', $input->barang_id)
+                ->when($divisiId, fn($q) => $q->where('divisi_id', $divisiId))
+                ->sum('qty_sisa');
+
+            // Gunakan nilai stok terbesar antara stok buku pembantu tanggal dokumen, stok realtime, atau batch aktif
+            $availStock = max($stokRealtime, $stokBukuDivisi, $stokBukuGudang, $stokBatch);
             $satuan = $barang ? ($barang->satuan ?: 'unit') : ($input->satuan ?: 'unit');
             $cukup = ($availStock >= $qtyDibutuhkan);
 

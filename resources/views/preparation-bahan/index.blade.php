@@ -277,14 +277,14 @@
 
                                     {{-- 3. Setujui (Hanya Menunggu & Permission) --}}
                                     @if($prep->isMenunggu() && auth()->user()->canApprovePreparation())
-                                        @if($isStockCukup)
+                                        @if($isStockCukup || $isSuperAdmin)
                                             <form action="{{ route('preparation-bahan.approve', $prep->id) }}" method="POST" 
                                                   onsubmit="return confirm('Apakah Anda yakin menyetujui Preparation Bahan {{ $prep->kode }}? Stok bahan baku akan otomatis dipotong secara FIFO dan stok BSJ akan ditambahkan.');" 
                                                   class="d-inline m-0 p-0">
                                                 @csrf
                                                 <button type="submit" class="btn btn-sm text-white rounded-2 p-0 d-inline-flex align-items-center justify-content-center shadow-sm" 
                                                         style="width: 32px; height: 32px; background-color: #247d4f; font-size: 14px;"
-                                                        data-bs-toggle="tooltip" title="Setujui (Stok Cukup)">
+                                                        data-bs-toggle="tooltip" title="{{ $isStockCukup ? 'Setujui (Stok Cukup)' : 'Setujui (Super Admin Override)' }}">
                                                     <i class="bi bi-check-lg"></i>
                                                 </button>
                                             </form>
@@ -1105,9 +1105,12 @@
             return;
         }
 
+        const tanggalInput = document.getElementById(prefix + '_tanggal');
+        const tanggal = tanggalInput ? tanggalInput.value : '';
+
         indicator.innerHTML = '<span class="spinner-border spinner-border-sm text-secondary" style="width: 10px; height: 10px;"></span>';
 
-        fetch(`{{ route('preparation-bahan.stock') }}?barang_id=${barangId}&gudang_id=${gudangId}&divisi_id=${divisiId}`)
+        fetch(`{{ route('preparation-bahan.stock') }}?barang_id=${barangId}&gudang_id=${gudangId}&divisi_id=${divisiId}&tanggal=${encodeURIComponent(tanggal)}`)
             .then(res => res.json())
             .then(data => {
                 const rawStock = parseFloat(data.stok || 0);
@@ -1507,6 +1510,14 @@
         // Ensure Select2 adjusts width when modals are fully shown
         $(document).on('shown.bs.modal', '#modalCreatePreparation, #modalEditPreparation', function () {
             $(this).find('.select2-container').css('width', '100%');
+        });
+
+        // Refresh label stok input saat tanggal diubah
+        $('#create_tanggal').on('change', function () {
+            refreshAllInputStockLabels('create');
+        });
+        $('#edit_tanggal').on('change', function () {
+            refreshAllInputStockLabels('edit');
         });
     });
 </script>

@@ -448,13 +448,14 @@ class PreparationController extends Controller
         $barangId = (int)$request->query('barang_id');
         $gudangId = (int)$request->query('gudang_id');
         $divisiId = $request->query('divisi_id') ? (int)$request->query('divisi_id') : null;
+        $tanggal  = $request->query('tanggal');
 
         if (!$barangId || !$gudangId) {
             return response()->json(['stok' => 0, 'satuan' => '']);
         }
 
         $barang = MasterBarang::find($barangId);
-        $stock = $this->service->getAvailableStock($barangId, $gudangId, $divisiId);
+        $stock = $this->service->getAvailableStock($barangId, $gudangId, $divisiId, $tanggal);
 
         return response()->json([
             'success'           => true,
