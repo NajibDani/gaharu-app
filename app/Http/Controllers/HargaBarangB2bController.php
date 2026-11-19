@@ -262,20 +262,20 @@ class HargaBarangB2bController extends Controller
                 'kode_barang'         => $barang->kode_barang,
                 'satuan'              => $barang->satuan ?? 'unit',
                 'hpp_referensi'       => $fallbackHpp,
-                'formatted_hpp'       => number_format($fallbackHpp, 0, ',', '.'),
+                'formatted_hpp'       => number_format($fallbackHpp, 2, ',', '.'),
                 'ingredients'         => [],
                 'output_qty'          => 1,
                 'satuan_output'       => $barang->satuan ?? 'unit',
                 'total_bbb'           => $fallbackHpp,
-                'formatted_bbb'       => number_format($fallbackHpp, 0, ',', '.'),
+                'formatted_bbb'       => number_format($fallbackHpp, 2, ',', '.'),
                 'btkl'                => 0,
-                'formatted_btkl'      => '0',
+                'formatted_btkl'      => '0,00',
                 'bop'                 => 0,
-                'formatted_bop'       => '0',
+                'formatted_bop'       => '0,00',
                 'total_hpp_batch'     => $fallbackHpp,
-                'formatted_hpp_batch' => number_format($fallbackHpp, 0, ',', '.'),
+                'formatted_hpp_batch' => number_format($fallbackHpp, 2, ',', '.'),
                 'hpp_per_unit'        => $fallbackHpp,
-                'formatted_per_unit'  => number_format($fallbackHpp, 0, ',', '.'),
+                'formatted_per_unit'  => number_format($fallbackHpp, 2, ',', '.'),
                 'refreshed_at'        => now()->format('d/m/Y H:i'),
                 'refreshed_date'      => $tanggal ?? date('Y-m-d'),
                 'as_of_date_label'    => $tanggal ? \Carbon\Carbon::parse($tanggal)->translatedFormat('d F Y') : now()->translatedFormat('d F Y H:i'),
@@ -308,15 +308,15 @@ class HargaBarangB2bController extends Controller
             'output_qty'          => $outputQty,
             'satuan_output'       => $resep->satuan_output ?? $barang->satuan ?? 'unit',
             'total_bbb'           => $totalBbb,
-            'formatted_bbb'       => number_format($totalBbb, 0, ',', '.'),
+            'formatted_bbb'       => number_format($totalBbb, 2, ',', '.'),
             'btkl'                => $btkl,
-            'formatted_btkl'      => number_format($btkl, 0, ',', '.'),
+            'formatted_btkl'      => number_format($btkl, 2, ',', '.'),
             'bop'                 => $bop,
-            'formatted_bop'       => number_format($bop, 0, ',', '.'),
+            'formatted_bop'       => number_format($bop, 2, ',', '.'),
             'total_hpp_batch'     => $totalHppBatch,
-            'formatted_hpp_batch' => number_format($totalHppBatch, 0, ',', '.'),
+            'formatted_hpp_batch' => number_format($totalHppBatch, 2, ',', '.'),
             'hpp_per_unit'        => $hppPerUnit,
-            'formatted_per_unit'  => number_format($hppPerUnit, 0, ',', '.'),
+            'formatted_per_unit'  => number_format($hppPerUnit, 2, ',', '.'),
             'ingredients'         => $ingredients,
             'refreshed_at'        => now()->format('d/m/Y H:i'),
             'refreshed_date'      => $tanggal ?? date('Y-m-d'),
@@ -437,14 +437,23 @@ class HargaBarangB2bController extends Controller
 
     private function costFields(float $harga, float $cost, float $topOutput): array
     {
-        $perUnit = $cost / $topOutput;
+        $perUnit = $topOutput > 0 ? ($cost / $topOutput) : 0;
+        $decHarga = (fmod($harga, 1) != 0 || $harga < 100) ? 2 : 0;
+
+        // Biaya / Satuan: tambahkan 2 angka setelah koma agar lebih akurat (tidak Rp 0).
+        // Jika nilainya sangat kecil (> 0 dan round 2 desimal adalah 0), tampilkan hingga 4 angka setelah koma agar nilai tetap terbaca jelas.
+        $decPerUnit = 2;
+        if ($perUnit > 0 && round($perUnit, 2) == 0.0) {
+            $decPerUnit = 4;
+        }
+
         return [
             'harga_satuan'       => $harga,
-            'formatted_harga'    => number_format($harga, $harga < 100 ? 2 : 0, ',', '.'),
+            'formatted_harga'    => number_format($harga, $decHarga, ',', '.'),
             'subtotal_batch'     => $cost,
-            'formatted_subtotal' => number_format($cost, 0, ',', '.'),
-            'subtotal_per_unit'  => round($perUnit, 2),
-            'formatted_per_unit' => number_format($perUnit, 0, ',', '.'),
+            'formatted_subtotal' => number_format($cost, 2, ',', '.'),
+            'subtotal_per_unit'  => round($perUnit, 4),
+            'formatted_per_unit' => number_format($perUnit, $decPerUnit, ',', '.'),
         ];
     }
 }

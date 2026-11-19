@@ -127,22 +127,22 @@
                                                         data-barang-nama="{{ $item->barang->nama ?? '' }}"
                                                         title="Klik untuk melihat rincian bahan & perhitungan HPP per {{ $itemSatuan }}">
                                                     <div class="fw-bold text-dark d-flex align-items-center justify-content-end gap-1">
-                                                        <span>Rp {{ number_format($item->hpp_referensi ?? 0, 0, ',', '.') }}</span>
+                                                        <span>Rp {{ number_format($item->hpp_referensi ?? 0, 2, ',', '.') }}</span>
                                                         <i class="bi bi-info-circle-fill text-info" style="font-size: 13px;"></i>
                                                     </div>
                                                     <span class="text-primary small text-decoration-underline" style="font-size: 11px;">/ {{ $itemSatuan }} (lihat detail)</span>
                                                 </button>
                                             </td>
                                             <td class="text-end">
-                                                <div class="fw-bold text-success fs-6">Rp {{ number_format($item->harga_b2b ?? 0, 0, ',', '.') }}</div>
+                                                <div class="fw-bold text-success fs-6">Rp {{ number_format($item->harga_b2b ?? 0, (fmod($item->harga_b2b, 1) != 0 ? 2 : 0), ',', '.') }}</div>
                                                 <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }}</span>
                                             </td>
                                             <td class="text-end">
                                                 @if(($item->laba_unit ?? 0) >= 0)
-                                                    <div class="fw-bold text-primary">Rp {{ number_format($item->laba_unit ?? 0, 0, ',', '.') }}</div>
+                                                    <div class="fw-bold text-primary">Rp {{ number_format($item->laba_unit ?? 0, 2, ',', '.') }}</div>
                                                     <span class="badge bg-success-subtle text-success small" style="font-size: 11px;">+{{ $item->margin_persen ?? 0 }}% / {{ $itemSatuan }}</span>
                                                 @else
-                                                    <div class="fw-bold text-danger">Rp {{ number_format($item->laba_unit ?? 0, 0, ',', '.') }}</div>
+                                                    <div class="fw-bold text-danger">Rp {{ number_format($item->laba_unit ?? 0, 2, ',', '.') }}</div>
                                                     <span class="badge bg-danger-subtle text-danger small" style="font-size: 11px;">{{ $item->margin_persen ?? 0 }}% / {{ $itemSatuan }}</span>
                                                 @endif
                                             </td>
@@ -748,8 +748,8 @@
                                 tbody.appendChild(tr);
                             });
 
-                            const bbbUnit = Math.round(data.total_bbb / (data.output_qty || 1));
-                            document.getElementById('modalHppTotalBbbPerUnit').textContent = `Rp ${bbbUnit.toLocaleString('id-ID')} / ${data.satuan}`;
+                            const bbbUnit = (data.total_bbb || 0) / (data.output_qty || 1);
+                            document.getElementById('modalHppTotalBbbPerUnit').textContent = `Rp ${bbbUnit.toLocaleString('id-ID', {minimumFractionDigits: 2, maximumFractionDigits: 2})} / ${data.satuan}`;
                         }
 
                         // Perbarui data di baris tabel halaman jika dilakukan refresh
@@ -764,11 +764,11 @@
                                     const hargaB2bEl = row.querySelector('td:nth-child(5) .fw-bold');
                                     const labaContainer = row.querySelector('td:nth-child(6)');
                                     if (hargaB2bEl && labaContainer) {
-                                        const cleanHargaB2b = parseFloat(hargaB2bEl.textContent.replace(/[^\d]/g, '')) || 0;
+                                        const cleanHargaB2b = parseFloat(hargaB2bEl.textContent.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
                                         const newLaba = cleanHargaB2b - (data.hpp_per_unit || 0);
                                         const newMargin = cleanHargaB2b > 0 ? Math.round((newLaba / cleanHargaB2b) * 1000) / 10 : 0;
                                         const satuan = data.satuan || 'unit';
-                                        const formattedLaba = Math.round(newLaba).toLocaleString('id-ID');
+                                        const formattedLaba = newLaba.toLocaleString('id-ID', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
                                         if (newLaba >= 0) {
                                             labaContainer.innerHTML = `

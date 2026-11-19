@@ -1154,8 +1154,10 @@
                     let successMessage = 'Data berhasil diperbarui.';
                     let errorMessage = '';
 
+                    let resJson = null;
+
                     if (contentType.includes('application/json')) {
-                        let resJson = await response.json();
+                        resJson = await response.json();
                         if (!response.ok) {
                             throw new Error(resJson.message || 'Terjadi kesalahan saat memproses data.');
                         }
@@ -1210,8 +1212,22 @@
                         }
                     }
 
-                    // Reload tabel saat ini (gunakan response.url jika redirect ke URL spesifik, atau pertahankan URL saat ini)
-                    let targetUrl = (response && response.url) ? response.url : null;
+                    // Tentukan target URL untuk reload tabel:
+                    // Pertahankan URL halaman saat ini beserta filter/search query,
+                    // jangan mengganti dengan URL resource show (misal /resep/123)
+                    let targetUrl = window.location.href;
+                    if (resJson && resJson.redirect_url) {
+                        targetUrl = resJson.redirect_url;
+                    } else if (!contentType.includes('application/json') && response && response.url) {
+                        try {
+                            const parsed = new URL(response.url, window.location.origin);
+                            // Jika response URL bukan resource show ID (misal /resep/123), gunakan response.url
+                            if (!/\/\d+(\?.*)?$/.test(parsed.pathname)) {
+                                targetUrl = response.url;
+                            }
+                        } catch (e) {}
+                    }
+
                     window.reloadCurrentTable(targetUrl, function() {
                         if (window.showToast) {
                             window.showToast('success', successMessage);

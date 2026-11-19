@@ -16,11 +16,13 @@ class ResepBtklBopController extends Controller
 {
     public function index(Request $request)
     {
-        try {
-            MasterBarang::syncAllResepIds();
-            MasterBarang::syncAllResepSatuan();
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Resep index sync warning: ' . $e->getMessage());
+        if ($request->has('refresh_sync') || $request->has('sync')) {
+            try {
+                MasterBarang::syncAllResepIds();
+                MasterBarang::syncAllResepSatuan();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Resep index sync warning: ' . $e->getMessage());
+            }
         }
 
         $search      = $request->query('search');
@@ -245,16 +247,15 @@ class ResepBtklBopController extends Controller
             }
         }
 
-        // Sinkronkan pemotongan stok POS dan rekonsiliasi stok untuk seluruh bahan baku pada resep ini
-        $allBahanIds = [];
-        foreach ($request->bahan_ids as $item_bahan_ids) {
-            foreach ($item_bahan_ids as $bId) {
-                if ($bId) $allBahanIds[] = $bId;
-            }
-        }
-        foreach (array_unique($allBahanIds) as $bId) {
-            \App\Http\Controllers\StokGudangController::autoHealApprovedPosStockMutations($bId);
-            \App\Models\StokGudang::reconcileStockSummary($bId);
+        // Clear FIFO harga cache agar perhitungan HPP dan biaya bahan baku langsung tersinkron
+        \App\Services\FifoService::clearHargaCache();
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'status'       => 'success',
+                'message'      => 'Resep berhasil dibuat dan dihubungkan ke produk',
+                'redirect_url' => route('resep.index', $request->query()),
+            ]);
         }
 
         return redirect()->route('resep.index')->with('success', 'Resep berhasil dibuat dan dihubungkan ke produk');
@@ -274,10 +275,8 @@ class ResepBtklBopController extends Controller
     public function update(Request $request, $id)
     {
         $resep = ResepBtklBop::whereHas('produk')->findOrFail($id);
-
-        if (!$request->filled('produk_id')) {
-            $request->merge(['produk_id' => $resep->produk_id]);
-        }
+        $produkId = $resep->produk_id;
+        $request->merge(['produk_id' => $produkId]);
 
         $request->validate([
             'produk_id' => 'required',
@@ -302,7 +301,7 @@ class ResepBtklBopController extends Controller
             }
         }
 
-        $produk = MasterBarang::find($request->produk_id);
+        $produk = MasterBarang::find($produkId);
         
         $satuanOutput = $request->satuan_output ?? ($produk->satuan ?? ($resep->satuan_output ?? '-'));
         $outputQty = floatval($request->output_qty);
@@ -317,7 +316,7 @@ class ResepBtklBopController extends Controller
 
         // 1. Update header
         $resep->update([
-            'produk_id' => $request->produk_id,
+            'produk_id' => $produkId,
             'output_qty' => $outputQty,
             'satuan_output' => $satuanOutput,
             'btkl_per_batch' => $request->btkl_per_batch ?? 0,
@@ -325,7 +324,7 @@ class ResepBtklBopController extends Controller
         ]);
 
         // 🎯 SINKRONISASI: Pastikan master_barang tetap terhubung ke resep ini
-        MasterBarang::where('id', $request->produk_id)->update([
+        MasterBarang::where('id', $produkId)->update([
             'resep_id' => $resep->id
         ]);
 
@@ -366,10 +365,15 @@ class ResepBtklBopController extends Controller
             }
         }
 
-        // Sinkronkan pemotongan stok POS dan rekonsiliasi stok untuk seluruh bahan baku yang diupdate di resep ini
-        foreach (array_unique($allBahanIds) as $bId) {
-            \App\Http\Controllers\StokGudangController::autoHealApprovedPosStockMutations($bId);
-            \App\Models\StokGudang::reconcileStockSummary($bId);
+        // Clear FIFO harga cache agar perhitungan HPP dan biaya bahan baku langsung tersinkron
+        \App\Services\FifoService::clearHargaCache();
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'status'       => 'success',
+                'message'      => 'Resep dan koneksi produk berhasil diupdate',
+                'redirect_url' => route('resep.index', $request->query()),
+            ]);
         }
 
         $page = $request->query('page', 1);
@@ -385,6 +389,15 @@ class ResepBtklBopController extends Controller
 
         ResepBahanBaku::where('resep_id', $id)->delete();
         $resep->delete();
+
+        \App\Services\FifoService::clearHargaCache();
+
+        if (request()->ajax() || request()->wantsJson()) {
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Resep berhasil dihapus',
+            ]);
+        }
 
         return back()->with('success', 'Resep berhasil dihapus');
     }

@@ -111,7 +111,7 @@
                                                 @endif
                                             </td>
                                             <td class="text-end text-gray-700 fw-semibold">
-                                                Rp {{ number_format($hpp, 0, ',', '.') }}
+                                                Rp {{ number_format($hpp, (fmod($hpp, 1) != 0 || $hpp < 100) ? 2 : 0, ',', '.') }}
                                             </td>
                                             <td class="text-center">
                                                 @if($hargaJualAktif > 0 && $hpp > 0)

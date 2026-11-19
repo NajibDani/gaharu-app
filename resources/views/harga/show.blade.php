@@ -66,7 +66,7 @@
                             @php
                                 $hpp = $barangTerpilih->dynamic_hpp;
                             @endphp
-                            <span class="badge bg-info text-dark mt-1">HPP Ref: Rp {{ number_format($hpp, 0, ',', '.') }}</span>
+                            <span class="badge bg-info text-dark mt-1">HPP Ref: Rp {{ number_format($hpp, (fmod($hpp, 1) != 0 || $hpp < 100) ? 2 : 0, ',', '.') }}</span>
                         </div>
 
                         <form action="{{ route('harga.store') }}" method="POST">
