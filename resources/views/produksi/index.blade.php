@@ -536,6 +536,22 @@
                                                                                 </ul>
                                                                             </div>
                                                                         </div>
+
+                                                                        @if($isSuperAdmin)
+                                                                            <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
+                                                                                <input class="form-check-input check-override-stok-cold" type="checkbox" name="override_stok" value="1" id="overrideStokWoCold{{ $wo->id }}" data-wo-id="{{ $wo->id }}">
+                                                                                <label class="form-check-label fw-bold text-dark small" for="overrideStokWoCold{{ $wo->id }}">
+                                                                                    <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi (Override Stok Kurang - Khusus Super Admin)
+                                                                                </label>
+                                                                                <div class="text-muted mt-0" style="font-size: 11px;">
+                                                                                    Centang opsi ini jika fisik bahan ada di dapur namun belum selesai di-stock opname pada sistem. HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.
+                                                                                </div>
+                                                                            </div>
+                                                                        @else
+                                                                            <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                                                                                <i class="bi bi-info-circle me-1"></i> Jika stok fisik ada namun belum selesai stock opname, hubungi <strong>Super Admin</strong> untuk menyetujui produksi dengan override stok.
+                                                                            </div>
+                                                                        @endif
                                                                     </div>
                                                                 @else
                                                                     <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
@@ -630,18 +646,21 @@
                                                             </div>
                                                             <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
                                                                 <div>
-                                                                    @if(!($wo->is_bahan_sufficient ?? true))
-                                                                        <span class="text-danger small fw-semibold">
-                                                                            <i class="bi bi-lock-fill me-1"></i> Bahan baku belum mencukupi. Harap minta bahan terlebih dahulu.
-                                                                        </span>
-                                                                    @endif
+                                                                    <span id="lockNoticeWoCold{{ $wo->id }}" class="text-danger small fw-semibold" style="{{ ($wo->is_bahan_sufficient ?? true) ? 'display: none;' : '' }}">
+                                                                        <i class="bi bi-lock-fill me-1"></i>
+                                                                        @if($isSuperAdmin)
+                                                                            Centang opsi persetujuan override stok di atas atau lakukan permintaan bahan.
+                                                                        @else
+                                                                            Bahan baku belum mencukupi. Harap minta bahan terlebih dahulu atau hubungi Super Admin.
+                                                                        @endif
+                                                                    </span>
                                                                 </div>
                                                                 <div class="d-flex gap-2">
                                                                     <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
                                                                     <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas Work Order ini?')">
                                                                         <i class="bi bi-save me-1"></i> Simpan Draft
                                                                     </button>
-                                                                    <button type="submit" name="action" value="approve" class="btn btn-success px-4 fw-bold" @if(!($wo->is_bahan_sufficient ?? true)) disabled title="Approval dinonaktifkan: Bahan baku belum mencukupi" @endif onclick="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
+                                                                    <button type="submit" name="action" value="approve" id="btnApproveWoCold{{ $wo->id }}" class="btn btn-success px-4 fw-bold" @if(!($wo->is_bahan_sufficient ?? true)) disabled title="Approval dinonaktifkan: Bahan baku belum mencukupi" @endif onclick="return confirm('Simpan hasil produksi & Approve HPP otomatis?')">
                                                                         <i class="bi bi-check-circle-fill me-1"></i> Simpan & Approve HPP
                                                                     </button>
                                                                 </div>
@@ -1395,14 +1414,26 @@
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer bg-light d-flex justify-content-end gap-2">
-                        <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
-                        <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas batch ini?')">
-                            <i class="bi bi-save me-1"></i> Simpan Draft Batch
-                        </button>
-                        <button type="submit" name="action" value="approve" class="btn btn-success px-4 fw-bold" onclick="return confirm('Simpan hasil produksi batch & Approve HPP otomatis untuk semua WO terpilih?')">
-                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
-                        </button>
+                    <div class="modal-footer bg-light d-flex justify-content-between align-items-center">
+                        <div>
+                            <span id="lockNoticeBatchCold" class="text-danger small fw-semibold" style="display: none;">
+                                <i class="bi bi-lock-fill me-1"></i>
+                                @if($isSuperAdmin)
+                                    Centang opsi persetujuan override stok di atas untuk melanjutkan batch.
+                                @else
+                                    Bahan baku belum mencukupi. Harap minta bahan terlebih dahulu atau hubungi Super Admin.
+                                @endif
+                            </span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-secondary px-3" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" name="action" value="draft" class="btn btn-outline-primary px-3 fw-semibold" onclick="return confirm('Simpan draft perubahan kuantitas batch ini?')">
+                                <i class="bi bi-save me-1"></i> Simpan Draft Batch
+                            </button>
+                            <button type="submit" name="action" value="approve" id="btnBatchApproveCold" class="btn btn-success px-4 fw-bold" onclick="return confirm('Simpan hasil produksi batch & Approve HPP otomatis untuk semua WO terpilih?')">
+                                <i class="bi bi-check-circle-fill me-1"></i> Simpan Batch & Approve HPP
+                            </button>
+                        </div>
                     </div>
                 </form>
             </div>
@@ -1618,6 +1649,10 @@
             });
 
             // Render Alert Defisit
+            const isSuperAdminUser = {{ $isSuperAdmin ? 'true' : 'false' }};
+            const btnBatchApprove = document.getElementById('btnBatchApproveCold');
+            const lockNoticeBatch = document.getElementById('lockNoticeBatchCold');
+
             if (hasDefisit) {
                 const totalDefisitCount = Object.keys(defisitBahanMap).length;
                 let listHtml = '<ul class="mb-0 ps-3">';
@@ -1625,6 +1660,28 @@
                     listHtml += `<li class="mb-1">${def.nama}: Tersedia <strong>${def.stok.toLocaleString('id-ID')} ${def.satuan}</strong> / Combined Butuh <strong>${def.butuh.toLocaleString('id-ID')} ${def.satuan}</strong> (Kurang <span class="text-danger fw-bold">${def.kurang.toLocaleString('id-ID')} ${def.satuan}</span>)</li>`;
                 });
                 listHtml += '</ul>';
+
+                let overrideBatchHtml = '';
+                if (isSuperAdminUser) {
+                    overrideBatchHtml = `
+                        <div class="form-check mt-2 pt-2 border-top border-warning-subtle">
+                            <input class="form-check-input check-override-stok-batch-cold" type="checkbox" name="override_stok" value="1" id="overrideStokBatchCold">
+                            <label class="form-check-label fw-bold text-dark small" for="overrideStokBatchCold">
+                                <i class="bi bi-shield-check text-success me-1"></i> Setujui &amp; Lanjutkan Produksi Batch (Override Stok Kurang - Khusus Super Admin)
+                            </label>
+                            <div class="text-muted mt-0" style="font-size: 11px;">
+                                Centang opsi ini jika fisik bahan ada di dapur namun belum selesai di-stock opname pada sistem. HPP otomatis dihitung menggunakan <strong>harga terakhir bahan baku</strong>.
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    overrideBatchHtml = `
+                        <div class="mt-2 pt-2 border-top border-warning-subtle text-muted" style="font-size: 11px;">
+                            <i class="bi bi-info-circle me-1"></i> Jika stok fisik ada namun belum selesai stock opname, hubungi <strong>Super Admin</strong> untuk menyetujui produksi batch dengan override stok.
+                        </div>
+                    `;
+                }
+
                 alertDiv.innerHTML = `
                     <div class="alert alert-warning border-warning p-3 rounded-3 mb-3 small">
                         <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
@@ -1645,8 +1702,33 @@
                                 ${listHtml}
                             </div>
                         </div>
+                        ${overrideBatchHtml}
                     </div>
                 `;
+
+                if (btnBatchApprove) {
+                    btnBatchApprove.disabled = true;
+                    btnBatchApprove.setAttribute('title', 'Approval dinonaktifkan: Bahan baku belum mencukupi');
+                }
+                if (lockNoticeBatch) {
+                    lockNoticeBatch.style.display = 'inline';
+                }
+
+                const chkBatchOverride = document.getElementById('overrideStokBatchCold');
+                if (chkBatchOverride) {
+                    chkBatchOverride.addEventListener('change', function() {
+                        if (btnBatchApprove) {
+                            btnBatchApprove.disabled = !this.checked;
+                            if (this.checked) {
+                                btnBatchApprove.removeAttribute('title');
+                                if (lockNoticeBatch) lockNoticeBatch.style.display = 'none';
+                            } else {
+                                btnBatchApprove.setAttribute('title', 'Approval dinonaktifkan: Bahan baku belum mencukupi');
+                                if (lockNoticeBatch) lockNoticeBatch.style.display = 'inline';
+                            }
+                        }
+                    });
+                }
             } else {
                 alertDiv.innerHTML = `
                     <div class="alert alert-success border-success d-flex align-items-center gap-2 p-2.5 rounded-3 mb-3 small">
@@ -1654,6 +1736,13 @@
                         <span><strong>Bahan Baku Siap:</strong> Stok bahan baku di Gudang Cold Kitchen mencukupi seluruh kebutuhan gabungan Work Order terpilih.</span>
                     </div>
                 `;
+                if (btnBatchApprove) {
+                    btnBatchApprove.disabled = false;
+                    btnBatchApprove.removeAttribute('title');
+                }
+                if (lockNoticeBatch) {
+                    lockNoticeBatch.style.display = 'none';
+                }
             }
 
             // Render consolidated products table
@@ -1746,6 +1835,29 @@
                 if (triggerEl) {
                     const tab = new bootstrap.Tab(triggerEl);
                     tab.show();
+                }
+            }
+        });
+
+        // Listener untuk override persetujuan stok kurang (Cold Kitchen Single WO)
+        document.addEventListener('change', function(e) {
+            if (e.target.classList.contains('check-override-stok-cold')) {
+                const woId = e.target.getAttribute('data-wo-id');
+                const btn = document.getElementById('btnApproveWoCold' + woId);
+                const lockNotice = document.getElementById('lockNoticeWoCold' + woId);
+
+                if (e.target.checked) {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.removeAttribute('title');
+                    }
+                    if (lockNotice) lockNotice.style.display = 'none';
+                } else {
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.setAttribute('title', 'Approval dinonaktifkan: Bahan baku belum mencukupi');
+                    }
+                    if (lockNotice) lockNotice.style.display = 'inline';
                 }
             }
         });

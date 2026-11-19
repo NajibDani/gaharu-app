@@ -1530,15 +1530,49 @@
                 }
             }
 
+            function repositionSelect2Dropdown($select) {
+                const $container = $select.next('.select2-container');
+                const $openContainer = $('.select2-container--open');
+                if (!$openContainer.length || !$container.length) return;
+
+                const $dropdown = $openContainer.find('.select2-dropdown');
+                $dropdown.removeClass('select2-dropdown--above').addClass('select2-dropdown--below');
+                $openContainer.removeClass('select2-container--above').addClass('select2-container--below');
+
+                const $parent = $select.closest('.modal-content');
+                if ($parent.length && $container.is(':visible')) {
+                    const parentOffset = $parent.offset();
+                    const containerOffset = $container.offset();
+                    
+                    const top = (containerOffset.top - parentOffset.top) + $container.outerHeight();
+                    const left = containerOffset.left - parentOffset.left;
+                    const width = Math.max($container.outerWidth(), 460);
+
+                    $openContainer.css({
+                        position: 'absolute',
+                        top: top + 'px',
+                        left: left + 'px',
+                        width: width + 'px',
+                        zIndex: 1065
+                    });
+                }
+
+                const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                if (searchField) {
+                    searchField.focus();
+                }
+            }
+
             function initSelect2CustomerCold() {
                 if (!customerSelectCold || typeof $ === 'undefined' || !$.fn.select2) return;
                 const $cust = $(customerSelectCold);
+                const $modalContent = $cust.closest('.modal-content');
                 if ($cust.data('select2')) {
                     $cust.select2('destroy');
                 }
                 $cust.select2({
                     theme: 'bootstrap-5',
-                    dropdownParent: $('#modalCreateColdOrder'),
+                    dropdownParent: $modalContent.length ? $modalContent : $('#modalCreateColdOrder'),
                     width: '100%',
                     placeholder: '-- Cari / Pilih Outlet / Konsumen --',
                     allowClear: true
@@ -1559,6 +1593,11 @@
                         }
                     }
                     fetchColdSuggestions(val);
+                }).off('select2:open.cust').on('select2:open.cust', function() {
+                    const $select = $(this);
+                    setTimeout(function() {
+                        repositionSelect2Dropdown($select);
+                    }, 0);
                 });
             }
 
@@ -1598,12 +1637,13 @@
             function initSelect2Cold(selectEl) {
                 if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return null;
                 const $el = $(selectEl);
+                const $modalContent = $el.closest('.modal-content');
                 if ($el.data('select2')) {
                     $el.select2('destroy');
                 }
                 $el.select2({
                     theme: 'bootstrap-5',
-                    dropdownParent: $('#modalCreateColdOrder'),
+                    dropdownParent: $modalContent.length ? $modalContent : $('#modalCreateColdOrder'),
                     width: '100%',
                     placeholder: '-- Cari / Ketik Kode atau Nama Barang --',
                     allowClear: true,
@@ -1613,16 +1653,20 @@
                     const row = selectEl.closest('tr');
                     updateColdModeOptions(row);
                     updateColdKonversi(row);
+                }).off('select2:open.row').on('select2:open.row', function() {
+                    const $select = $(this);
+                    setTimeout(function() {
+                        repositionSelect2Dropdown($select);
+                    }, 0);
                 });
                 return $el;
             }
 
-            // Auto focus search input saat dropdown Select2 dibuka
+            // Close select2 dropdown when modal scrolls to avoid detached positioning
             if (typeof $ !== 'undefined') {
-                $(document).on('select2:open', () => {
-                    const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                    if (searchField) {
-                        searchField.focus();
+                $('#modalCreateColdOrder').on('scroll', function() {
+                    if ($('.select2-container--open').length) {
+                        $('.modal-select-produk-cold, #modal-select-customer-cold').select2('close');
                     }
                 });
             }
