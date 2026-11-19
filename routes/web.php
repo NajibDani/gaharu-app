@@ -145,6 +145,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
 
         // Harga Jual B2B per Outlet Pemesan
         Route::get('/harga-b2b/hpp-detail/{barang_id}', [\App\Http\Controllers\HargaBarangB2bController::class, 'getHppDetail'])->name('harga-b2b.hpp-detail');
+        Route::post('/harga-b2b/{id}/toggle-hpp', [\App\Http\Controllers\HargaBarangB2bController::class, 'toggleHpp'])->name('harga-b2b.toggle-hpp');
         Route::resource('harga-b2b', \App\Http\Controllers\HargaBarangB2bController::class)->names('harga-b2b');
     });
 

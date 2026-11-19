@@ -131,8 +131,14 @@ class HargaBarangB2bController extends Controller
             if ($item->barang) {
                 $detail = $this->getHppDetail($item->barang_id)->getData(true);
                 $item->hpp_referensi = floatval($detail['hpp_per_unit'] ?? 0);
-                $item->laba_unit = floatval($item->harga_b2b) - $item->hpp_referensi;
-                $item->margin_persen = floatval($item->harga_b2b) > 0 ? round(($item->laba_unit / floatval($item->harga_b2b)) * 100, 1) : 0;
+                if ($item->mengikuti_hpp) {
+                    $item->harga_b2b = $item->hpp_referensi;
+                    $item->laba_unit = 0.0;
+                    $item->margin_persen = 0.0;
+                } else {
+                    $item->laba_unit = floatval($item->harga_b2b) - $item->hpp_referensi;
+                    $item->margin_persen = floatval($item->harga_b2b) > 0 ? round(($item->laba_unit / floatval($item->harga_b2b)) * 100, 1) : 0;
+                }
             } else {
                 $item->hpp_referensi = 0;
                 $item->laba_unit = 0;
@@ -150,15 +156,21 @@ class HargaBarangB2bController extends Controller
     {
         HargaBarangB2b::ensureTableExists();
 
+        $isMengikutiHpp = $request->boolean('mengikuti_hpp');
+
         $request->validate([
             'customer_id' => 'required|exists:customers,id',
             'barang_id'   => 'required|exists:master_barang,id',
-            'harga_b2b'   => 'required',
+            'harga_b2b'   => $isMengikutiHpp ? 'nullable' : 'required',
         ]);
 
-        $cleanHarga = floatval(str_replace(['.', ','], ['', '.'], str_replace('Rp', '', $request->harga_b2b)));
+        $cleanHarga = floatval(str_replace(['.', ','], ['', '.'], str_replace('Rp', '', $request->harga_b2b ?? 0)));
         if ($cleanHarga < 0) {
             $cleanHarga = 0;
+        }
+
+        if ($isMengikutiHpp && $cleanHarga <= 0) {
+            $cleanHarga = HargaBarangB2b::getRealtimeHpp($request->barang_id);
         }
 
         HargaBarangB2b::updateOrCreate(
@@ -167,12 +179,17 @@ class HargaBarangB2bController extends Controller
                 'barang_id'   => $request->barang_id,
             ],
             [
-                'harga_b2b'   => $cleanHarga,
-                'keterangan'  => $request->keterangan,
+                'harga_b2b'     => $cleanHarga,
+                'mengikuti_hpp' => $isMengikutiHpp,
+                'keterangan'    => $request->keterangan,
             ]
         );
 
-        return redirect()->back()->with('success', 'Harga jual B2B khusus outlet berhasil disimpan!');
+        $msg = $isMengikutiHpp 
+            ? 'Pengaturan B2B berhasil disimpan: Harga otomatis mengikuti HPP riil Central Kitchen saat pemesanan.' 
+            : 'Harga jual B2B khusus outlet berhasil disimpan!';
+
+        return redirect()->back()->with('success', $msg);
     }
 
     /**
@@ -184,21 +201,63 @@ class HargaBarangB2bController extends Controller
 
         $harga = HargaBarangB2b::findOrFail($id);
 
-        $request->validate([
-            'harga_b2b' => 'required',
-        ]);
+        $isMengikutiHpp = $request->has('mengikuti_hpp') ? $request->boolean('mengikuti_hpp') : $harga->mengikuti_hpp;
 
-        $cleanHarga = floatval(str_replace(['.', ','], ['', '.'], str_replace('Rp', '', $request->harga_b2b)));
+        if (!$isMengikutiHpp) {
+            $request->validate([
+                'harga_b2b' => 'required',
+            ]);
+        }
+
+        $cleanHarga = floatval(str_replace(['.', ','], ['', '.'], str_replace('Rp', '', $request->harga_b2b ?? 0)));
         if ($cleanHarga < 0) {
             $cleanHarga = 0;
         }
 
+        if ($isMengikutiHpp && $cleanHarga <= 0) {
+            $cleanHarga = HargaBarangB2b::getRealtimeHpp($harga->barang_id);
+        }
+
         $harga->update([
-            'harga_b2b'  => $cleanHarga,
-            'keterangan' => $request->keterangan ?? $harga->keterangan,
+            'harga_b2b'     => $cleanHarga,
+            'mengikuti_hpp' => $isMengikutiHpp,
+            'keterangan'    => $request->keterangan ?? $harga->keterangan,
         ]);
 
-        return redirect()->back()->with('success', 'Perubahan harga jual B2B berhasil diperbarui!');
+        $msg = $isMengikutiHpp
+            ? 'Perubahan disimpan: Harga B2B outlet ini disetel mengikuti HPP riil saat pemesanan.'
+            : 'Perubahan harga jual B2B berhasil diperbarui!';
+
+        return redirect()->back()->with('success', $msg);
+    }
+
+    /**
+     * Toggle cepat status mengikuti HPP riil langsung dari tombol tabel
+     */
+    public function toggleHpp($id)
+    {
+        HargaBarangB2b::ensureTableExists();
+        $harga = HargaBarangB2b::findOrFail($id);
+        $newStatus = !$harga->mengikuti_hpp;
+
+        $updateData = ['mengikuti_hpp' => $newStatus];
+        if ($newStatus) {
+            $liveHpp = HargaBarangB2b::getRealtimeHpp($harga->barang_id);
+            if ($liveHpp > 0) {
+                $updateData['harga_b2b'] = $liveHpp;
+            }
+        }
+
+        $harga->update($updateData);
+
+        $outletName = $harga->customer->nama ?? 'Outlet';
+        $barangName = $harga->barang->nama ?? 'Produk';
+
+        $msg = $newStatus 
+            ? "Status diubah: [{$barangName}] untuk {$outletName} sekarang MENGIKUTI HPP RIIL saat pemesanan (0% margin)."
+            : "Status diubah: [{$barangName}] untuk {$outletName} kembali menggunakan HARGA MANUAL (tetap).";
+
+        return redirect()->back()->with('success', $msg);
     }
 
     /**

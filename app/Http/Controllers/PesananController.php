@@ -355,13 +355,20 @@ class PesananController extends Controller
                 }
 
                 $hargaVal = floatval($request->harga[$key] ?? 0);
-                if ($hargaVal <= 0) {
-                    $hargaVal = $fifoService->getHargaTerakhirBahan($produkId, 4); // Gudang Cold Kitchen
-                    if ($hargaVal <= 0) {
-                        $hargaVal = $fifoService->getHargaTerakhirBahan($produkId, 1); // Fallback Gudang Utama
-                    }
-                    if ($hargaVal <= 0 && $itemObj) {
-                        $hargaVal = floatval($itemObj->hpp_referensi ?? $itemObj->harga_satuan_terkecil ?? 0);
+                if ($request->customer_id && \App\Models\HargaBarangB2b::isMengikutiHpp($request->customer_id, $produkId)) {
+                    $hargaVal = \App\Models\HargaBarangB2b::getRealtimeHpp($produkId);
+                } elseif ($hargaVal <= 0) {
+                    $customB2b = $request->customer_id ? \App\Models\HargaBarangB2b::getHargaB2bKhusus($request->customer_id, $produkId) : null;
+                    if ($customB2b !== null && $customB2b > 0) {
+                        $hargaVal = $customB2b;
+                    } else {
+                        $hargaVal = $fifoService->getHargaTerakhirBahan($produkId, 4); // Gudang Cold Kitchen
+                        if ($hargaVal <= 0) {
+                            $hargaVal = $fifoService->getHargaTerakhirBahan($produkId, 1); // Fallback Gudang Utama
+                        }
+                        if ($hargaVal <= 0 && $itemObj) {
+                            $hargaVal = floatval($itemObj->hpp_referensi ?? $itemObj->harga_satuan_terkecil ?? 0);
+                        }
                     }
                 }
 
@@ -575,6 +582,14 @@ class PesananController extends Controller
                 }
 
                 $hargaVal = isset($request->harga[$key]) ? floatval($request->harga[$key]) : ($oldPrices[$produkId] ?? 0);
+                if ($request->customer_id && \App\Models\HargaBarangB2b::isMengikutiHpp($request->customer_id, $produkId)) {
+                    $hargaVal = \App\Models\HargaBarangB2b::getRealtimeHpp($produkId);
+                } elseif ($hargaVal <= 0) {
+                    $customB2b = $request->customer_id ? \App\Models\HargaBarangB2b::getHargaB2bKhusus($request->customer_id, $produkId) : null;
+                    if ($customB2b !== null && $customB2b > 0) {
+                        $hargaVal = $customB2b;
+                    }
+                }
                 $subtotalVal = isset($request->subtotal[$key]) && floatval($request->subtotal[$key]) > 0
                     ? floatval($request->subtotal[$key])
                     : ($finalQty * $hargaVal);

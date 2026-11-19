@@ -134,11 +134,22 @@
                                                 </button>
                                             </td>
                                             <td class="text-end">
-                                                <div class="fw-bold text-success fs-6">Rp {{ number_format($item->harga_b2b ?? 0, (fmod($item->harga_b2b, 1) != 0 ? 2 : 0), ',', '.') }}</div>
-                                                <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }}</span>
+                                                @if($item->mengikuti_hpp)
+                                                    <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-0.5 mb-1 d-inline-flex align-items-center gap-1" style="font-size: 11px;">
+                                                        <i class="bi bi-link-45deg"></i> Mengikuti HPP Riil
+                                                    </span>
+                                                    <div class="fw-bold text-info fs-6">Rp {{ number_format($item->hpp_referensi ?? 0, 2, ',', '.') }}</div>
+                                                    <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }} (0% Margin CK)</span>
+                                                @else
+                                                    <div class="fw-bold text-success fs-6">Rp {{ number_format($item->harga_b2b ?? 0, (fmod($item->harga_b2b, 1) != 0 ? 2 : 0), ',', '.') }}</div>
+                                                    <span class="text-muted small" style="font-size: 11px;">/ {{ $itemSatuan }}</span>
+                                                @endif
                                             </td>
                                             <td class="text-end">
-                                                @if(($item->laba_unit ?? 0) >= 0)
+                                                @if($item->mengikuti_hpp)
+                                                    <div class="fw-bold text-secondary">Rp 0,00</div>
+                                                    <span class="badge bg-secondary-subtle text-secondary small" style="font-size: 11px;">0% (Sesuai HPP Riil)</span>
+                                                @elseif(($item->laba_unit ?? 0) >= 0)
                                                     <div class="fw-bold text-primary">Rp {{ number_format($item->laba_unit ?? 0, 2, ',', '.') }}</div>
                                                     <span class="badge bg-success-subtle text-success small" style="font-size: 11px;">+{{ $item->margin_persen ?? 0 }}% / {{ $itemSatuan }}</span>
                                                 @else
@@ -147,13 +158,29 @@
                                                 @endif
                                             </td>
                                             <td class="text-center">
-                                                <div class="btn-group btn-group-sm shadow-sm" role="group">
-                                                    <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#modalEditHargaB2b{{ $item->id }}" title="Edit Harga">
-                                                        <i class="bi bi-pencil-square"></i>
-                                                    </button>
-                                                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalHapusHargaB2b{{ $item->id }}" title="Hapus Aturan">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
+                                                <div class="d-flex align-items-center justify-content-center gap-1">
+                                                    {{-- Tombol Cepat Mengikuti HPP Riil --}}
+                                                    <form action="{{ route('harga-b2b.toggle-hpp', $item->id) }}" method="POST" class="d-inline">
+                                                        @csrf
+                                                        @if($item->mengikuti_hpp)
+                                                            <button type="submit" class="btn btn-sm btn-info text-white shadow-sm px-2 py-1" style="font-size: 11px;" title="Saat ini mengikuti HPP Riil CK (0% Margin). Klik untuk beralih ke harga manual.">
+                                                                <i class="bi bi-shield-fill-check me-1"></i>HPP Riil
+                                                            </button>
+                                                        @else
+                                                            <button type="submit" class="btn btn-sm btn-outline-info shadow-sm px-2 py-1" style="font-size: 11px;" title="Klik untuk mengaktifkan harga mengikuti HPP Riil saat memesan (0% Margin).">
+                                                                <i class="bi bi-link-45deg me-1"></i>Set HPP
+                                                            </button>
+                                                        @endif
+                                                    </form>
+
+                                                    <div class="btn-group btn-group-sm shadow-sm" role="group">
+                                                        <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#modalEditHargaB2b{{ $item->id }}" title="Edit Pengaturan Harga">
+                                                            <i class="bi bi-pencil-square"></i>
+                                                        </button>
+                                                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#modalHapusHargaB2b{{ $item->id }}" title="Hapus Aturan">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </td>
                                         </tr>
@@ -163,7 +190,7 @@
                                             <div class="modal-dialog modal-dialog-centered">
                                                 <div class="modal-content border-0 shadow-lg rounded-4">
                                                     <div class="modal-header bg-warning text-dark py-3 px-4">
-                                                        <h5 class="modal-title fw-bold mb-0"><i class="bi bi-pencil-square me-2"></i>Edit Harga Jual B2B</h5>
+                                                        <h5 class="modal-title fw-bold mb-0"><i class="bi bi-pencil-square me-2"></i>Edit Pengaturan Harga B2B</h5>
                                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                     </div>
                                                     <form action="{{ route('harga-b2b.update', $item->id) }}" method="POST">
@@ -178,20 +205,44 @@
                                                                 <label class="form-label fw-semibold text-secondary small">Nama Barang</label>
                                                                 <input type="text" class="form-control bg-light" value="{{ $item->barang->nama ?? '-' }} ({{ $item->barang->kode_barang ?? '-' }})" readonly>
                                                             </div>
-                                                            <div class="mb-3">
-                                                                <label class="form-label fw-semibold text-secondary small">Harga Jual B2B per Satuan (Rp) <span class="text-danger">*</span></label>
-                                                                <div class="input-group">
-                                                                    <span class="input-group-text bg-light fw-bold">Rp</span>
-                                                                    <input type="number" name="harga_b2b" class="form-control fw-bold text-success fs-6" value="{{ (int)$item->harga_b2b }}" required min="0" step="any">
-                                                                    <span class="input-group-text bg-light text-muted fw-semibold">/ {{ $itemSatuan }}</span>
+
+                                                            {{-- SWITCH OPSI MENGIKUTI HPP RIIL --}}
+                                                            <div class="card border border-info-subtle bg-info-subtle bg-opacity-10 rounded-3 p-3 mb-3">
+                                                                <div class="form-check form-switch mb-0">
+                                                                    <input class="form-check-input fs-5 check-mengikuti-hpp-edit" type="checkbox" role="switch" name="mengikuti_hpp" id="checkMengikutiHppEdit{{ $item->id }}" value="1" {{ $item->mengikuti_hpp ? 'checked' : '' }} onchange="handleEditHppToggle({{ $item->id }}, this.checked, {{ $item->hpp_referensi ?? 0 }})">
+                                                                    <label class="form-check-label fw-bold text-dark ms-2" for="checkMengikutiHppEdit{{ $item->id }}">
+                                                                        <i class="bi bi-shield-check text-info me-1"></i>Harga B2B Mengikuti HPP Riil Saat Pemesanan
+                                                                    </label>
                                                                 </div>
-                                                                <div class="form-text small text-muted mt-1">
-                                                                    Harga jual per <strong>{{ $itemSatuan }}</strong> khusus untuk outlet pemesan yang dipilih (Satuan Master Barang).
+                                                                <div class="small text-muted mt-2 ps-1">
+                                                                    Khusus untuk rekan tertentu: harga pembelian sama dengan Central Kitchen (membayar sebesar HPP riil tanpa margin laba).
                                                                 </div>
                                                             </div>
+
+                                                            <div class="mb-3" id="wrapperHargaEdit{{ $item->id }}">
+                                                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                                                    <label class="form-label fw-semibold text-secondary small mb-0">Harga Jual B2B per Satuan (Rp) <span class="text-danger">*</span></label>
+                                                                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none small" onclick="applyHppToEdit({{ $item->id }}, {{ $item->hpp_referensi ?? 0 }})" title="Samakan nilai input dengan HPP saat ini">
+                                                                        <i class="bi bi-calculator me-1"></i>Samakan HPP (Rp {{ number_format($item->hpp_referensi ?? 0, 2, ',', '.') }})
+                                                                    </button>
+                                                                </div>
+                                                                <div class="input-group">
+                                                                    <span class="input-group-text bg-light fw-bold">Rp</span>
+                                                                    <input type="number" name="harga_b2b" id="inputHargaEdit{{ $item->id }}" class="form-control fw-bold {{ $item->mengikuti_hpp ? 'text-info bg-light' : 'text-success' }} fs-6" value="{{ (int)$item->harga_b2b }}" required min="0" step="any" {{ $item->mengikuti_hpp ? 'readonly' : '' }}>
+                                                                    <span class="input-group-text bg-light text-muted fw-semibold">/ {{ $itemSatuan }}</span>
+                                                                </div>
+                                                                <div class="form-text small text-muted mt-1" id="helpHargaEdit{{ $item->id }}">
+                                                                    @if($item->mengikuti_hpp)
+                                                                        <span class="text-info"><i class="bi bi-info-circle me-1"></i>Harga otomatis dikunci mengikuti HPP riil saat pesanan diajukan.</span>
+                                                                    @else
+                                                                        Harga jual per <strong>{{ $itemSatuan }}</strong> khusus untuk outlet pemesan yang dipilih (Satuan Master Barang).
+                                                                    @endif
+                                                                </div>
+                                                            </div>
+
                                                             <div class="mb-3">
                                                                 <label class="form-label fw-semibold text-secondary small">Catatan / Keterangan (Opsional)</label>
-                                                                <input type="text" name="keterangan" class="form-control" value="{{ $item->keterangan }}" placeholder="Misal: Harga kontrak Q3, diskon volume khusus">
+                                                                <input type="text" name="keterangan" class="form-control" value="{{ $item->keterangan }}" placeholder="Misal: Mitra Rekan Khusus - Tarif HPP CK Murni">
                                                             </div>
                                                         </div>
                                                         <div class="modal-footer bg-light px-4 py-3">
@@ -288,8 +339,26 @@
                                 <i class="bi bi-info-circle me-1"></i>Pilih outlet pemesan untuk memuat produk yang sesuai (BSJ tagging divisi / POS).
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-semibold text-secondary small">Harga Jual B2B Khusus (Rp) <span class="text-danger">*</span></label>
+                        {{-- SWITCH OPSI MENGIKUTI HPP RIIL --}}
+                        <div class="card border border-info-subtle bg-info-subtle bg-opacity-10 rounded-3 p-3 mb-3">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input fs-5" type="checkbox" role="switch" name="mengikuti_hpp" id="checkMengikutiHppTambah" value="1">
+                                <label class="form-check-label fw-bold text-dark ms-2" for="checkMengikutiHppTambah">
+                                    <i class="bi bi-shield-check text-info me-1"></i>Harga B2B Mengikuti HPP Riil Saat Pemesanan
+                                </label>
+                            </div>
+                            <div class="small text-muted mt-2 ps-1">
+                                Khusus untuk rekan tertentu: harga pembelian sama dengan Central Kitchen (membayar sebesar HPP riil tanpa margin laba).
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="wrapperHargaTambah">
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <label class="form-label fw-semibold text-secondary small mb-0">Harga Jual B2B Khusus (Rp) <span class="text-danger" id="b2bHargaRequiredStar">*</span></label>
+                                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none small d-none" id="btnSamakanHppTambah" title="Samakan nilai input dengan HPP produk terpilih">
+                                    <i class="bi bi-calculator me-1"></i><span id="btnSamakanHppTambahLabel">Samakan HPP Riil</span>
+                                </button>
+                            </div>
                             <div class="input-group">
                                 <span class="input-group-text bg-light fw-bold">Rp</span>
                                 <input type="number" name="harga_b2b" id="inputHargaB2b" class="form-control fw-bold text-success fs-6" placeholder="0" required min="0" step="any">
@@ -301,7 +370,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold text-secondary small">Catatan / Keterangan (Opsional)</label>
-                            <input type="text" name="keterangan" class="form-control" placeholder="Misal: Harga khusus kontrak, diskon outlet">
+                            <input type="text" name="keterangan" class="form-control" placeholder="Misal: Mitra Rekan Khusus - Tarif HPP CK Murni">
                         </div>
                     </div>
                     <div class="modal-footer bg-light px-4 py-3">
@@ -561,7 +630,107 @@
             }
         }
 
+        window.handleEditHppToggle = function(itemId, isChecked, hppValue) {
+            const input = document.getElementById(`inputHargaEdit${itemId}`);
+            const help = document.getElementById(`helpHargaEdit${itemId}`);
+            if (!input) return;
+
+            if (isChecked) {
+                if (hppValue > 0) input.value = hppValue;
+                input.readOnly = true;
+                input.classList.remove('text-success', 'bg-white');
+                input.classList.add('text-info', 'bg-light');
+                if (help) {
+                    help.innerHTML = `<span class="text-info"><i class="bi bi-info-circle me-1"></i>Harga otomatis dikunci mengikuti HPP riil Central Kitchen saat pesanan diajukan (0% Margin).</span>`;
+                }
+            } else {
+                input.readOnly = false;
+                input.classList.remove('text-info', 'bg-light');
+                input.classList.add('text-success', 'bg-white');
+                if (help) {
+                    help.innerHTML = `Harga jual per unit khusus untuk outlet pemesan yang dipilih (Satuan Master Barang).`;
+                }
+            }
+        };
+
+        window.applyHppToEdit = function(itemId, hppValue) {
+            const input = document.getElementById(`inputHargaEdit${itemId}`);
+            if (input && hppValue > 0) {
+                input.value = hppValue;
+            }
+        };
+
         document.addEventListener('DOMContentLoaded', function() {
+            const checkTambahHpp = document.getElementById('checkMengikutiHppTambah');
+            const inputHargaB2b = document.getElementById('inputHargaB2b');
+            const btnSamakanHpp = document.getElementById('btnSamakanHppTambah');
+            const helpTambah = document.getElementById('b2bSatuanHelp');
+            const reqStar = document.getElementById('b2bHargaRequiredStar');
+
+            function syncTambahHppUi() {
+                if (!checkTambahHpp || !inputHargaB2b) return;
+                const isChecked = checkTambahHpp.checked;
+                const selectBarang = document.getElementById('selectBarangB2b');
+                const barangId = selectBarang ? selectBarang.value : null;
+
+                if (isChecked) {
+                    inputHargaB2b.readOnly = true;
+                    inputHargaB2b.classList.remove('text-success', 'bg-white');
+                    inputHargaB2b.classList.add('text-info', 'bg-light');
+                    if (reqStar) reqStar.classList.add('d-none');
+                    inputHargaB2b.required = false;
+
+                    if (helpTambah) {
+                        helpTambah.innerHTML = `<span class="text-info fw-semibold"><i class="bi bi-info-circle me-1"></i>Harga otomatis disetel mengikuti HPP riil Central Kitchen saat pesanan dibuat (0% Margin).</span>`;
+                    }
+
+                    if (barangId) {
+                        fetch(`{{ url('/harga-b2b/hpp-detail') }}/${barangId}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data && data.hpp_per_unit > 0) {
+                                    inputHargaB2b.value = data.hpp_per_unit;
+                                }
+                            }).catch(() => {});
+                    }
+                } else {
+                    inputHargaB2b.readOnly = false;
+                    inputHargaB2b.classList.remove('text-info', 'bg-light');
+                    inputHargaB2b.classList.add('text-success', 'bg-white');
+                    if (reqStar) reqStar.classList.remove('d-none');
+                    inputHargaB2b.required = true;
+
+                    if (helpTambah) {
+                        const sat = document.getElementById('b2bSatuanSuffix')?.textContent || '/ unit';
+                        helpTambah.innerHTML = `Harga jual per unit/satuan master barang khusus untuk outlet pemesan yang dipilih.`;
+                    }
+                }
+            }
+
+            if (checkTambahHpp) {
+                checkTambahHpp.addEventListener('change', syncTambahHppUi);
+            }
+
+            if (btnSamakanHpp) {
+                btnSamakanHpp.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const selectBarang = document.getElementById('selectBarangB2b');
+                    const barangId = selectBarang ? selectBarang.value : null;
+                    if (!barangId) return;
+
+                    btnSamakanHpp.disabled = true;
+                    fetch(`{{ url('/harga-b2b/hpp-detail') }}/${barangId}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            btnSamakanHpp.disabled = false;
+                            if (data && data.hpp_per_unit > 0) {
+                                inputHargaB2b.value = data.hpp_per_unit;
+                            }
+                        })
+                        .catch(() => { btnSamakanHpp.disabled = false; });
+                });
+            }
+
             // Setup Select2 pada modal tambah
             if (typeof $ !== 'undefined') {
                 $('#modalTambahHargaB2b').on('shown.bs.modal', function () {
@@ -595,16 +764,25 @@
                     const inputHarga = document.getElementById('inputHargaB2b');
                     const suffix = document.getElementById('b2bSatuanSuffix');
                     const help = document.getElementById('b2bSatuanHelp');
+                    const btnSamakan = document.getElementById('btnSamakanHppTambah');
+
+                    if (btnSamakan) {
+                        btnSamakan.classList.toggle('d-none', !barangId);
+                    }
 
                     const item = allBarangData.find(b => String(b.id) === String(barangId));
                     if (item) {
                         const sat = item.satuan || 'unit';
                         if (suffix) suffix.textContent = `/ ${sat}`;
-                        if (help) help.innerHTML = `Tarif harga jual khusus per <strong>${sat}</strong> untuk outlet pemesan yang dipilih (Satuan Master Barang).`;
-                        if (inputHarga && (!inputHarga.value || inputHarga.value == '0')) {
-                            if (item.std_price > 0) {
-                                inputHarga.value = item.std_price;
+                        if (!checkTambahHpp || !checkTambahHpp.checked) {
+                            if (help) help.innerHTML = `Tarif harga jual khusus per <strong>${sat}</strong> untuk outlet pemesan yang dipilih (Satuan Master Barang).`;
+                            if (inputHarga && (!inputHarga.value || inputHarga.value == '0')) {
+                                if (item.std_price > 0) {
+                                    inputHarga.value = item.std_price;
+                                }
                             }
+                        } else {
+                            syncTambahHppUi();
                         }
                     } else {
                         if (suffix) suffix.textContent = '/ unit';
@@ -764,22 +942,32 @@
                                     const hargaB2bEl = row.querySelector('td:nth-child(5) .fw-bold');
                                     const labaContainer = row.querySelector('td:nth-child(6)');
                                     if (hargaB2bEl && labaContainer) {
-                                        const cleanHargaB2b = parseFloat(hargaB2bEl.textContent.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
-                                        const newLaba = cleanHargaB2b - (data.hpp_per_unit || 0);
-                                        const newMargin = cleanHargaB2b > 0 ? Math.round((newLaba / cleanHargaB2b) * 1000) / 10 : 0;
                                         const satuan = data.satuan || 'unit';
-                                        const formattedLaba = newLaba.toLocaleString('id-ID', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                                        const isMengikutiHppRow = row.querySelector('.badge.bg-info-subtle') !== null || row.textContent.includes('Mengikuti HPP Riil');
 
-                                        if (newLaba >= 0) {
+                                        if (isMengikutiHppRow) {
+                                            hargaB2bEl.textContent = `Rp ${data.formatted_per_unit}`;
                                             labaContainer.innerHTML = `
-                                                <div class="fw-bold text-primary">Rp ${formattedLaba}</div>
-                                                <span class="badge bg-success-subtle text-success small" style="font-size: 11px;">+${newMargin}% / ${satuan}</span>
+                                                <div class="fw-bold text-secondary">Rp 0,00</div>
+                                                <span class="badge bg-secondary-subtle text-secondary small" style="font-size: 11px;">0% (Sesuai HPP Riil)</span>
                                             `;
                                         } else {
-                                            labaContainer.innerHTML = `
-                                                <div class="fw-bold text-danger">Rp ${formattedLaba}</div>
-                                                <span class="badge bg-danger-subtle text-danger small" style="font-size: 11px;">${newMargin}% / ${satuan}</span>
-                                            `;
+                                            const cleanHargaB2b = parseFloat(hargaB2bEl.textContent.replace(/[^\d,]/g, '').replace(',', '.')) || 0;
+                                            const newLaba = cleanHargaB2b - (data.hpp_per_unit || 0);
+                                            const newMargin = cleanHargaB2b > 0 ? Math.round((newLaba / cleanHargaB2b) * 1000) / 10 : 0;
+                                            const formattedLaba = newLaba.toLocaleString('id-ID', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+                                            if (newLaba >= 0) {
+                                                labaContainer.innerHTML = `
+                                                    <div class="fw-bold text-primary">Rp ${formattedLaba}</div>
+                                                    <span class="badge bg-success-subtle text-success small" style="font-size: 11px;">+${newMargin}% / ${satuan}</span>
+                                                `;
+                                            } else {
+                                                labaContainer.innerHTML = `
+                                                    <div class="fw-bold text-danger">Rp ${formattedLaba}</div>
+                                                    <span class="badge bg-danger-subtle text-danger small" style="font-size: 11px;">${newMargin}% / ${satuan}</span>
+                                                `;
+                                            }
                                         }
                                     }
                                 }
