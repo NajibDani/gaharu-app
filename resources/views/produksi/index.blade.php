@@ -711,7 +711,7 @@
                                                                     </div>
                                                                 </div>
 
-                                                                <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rincian Item &amp; Analisis Laba Work Order</h6>
+                                                                <h6 class="fw-bold text-dark mb-2 small text-uppercase">Rincian Item {{ !($wo->is_b2b_same_as_hpp ?? false) ? '& Analisis Laba ' : '' }}Work Order</h6>
                                                                 <div class="table-responsive mb-3">
                                                                     <table class="table table-bordered align-middle text-center mb-0" style="font-size: 0.84rem;">
                                                                         <thead class="bg-light font-weight-bold">
@@ -723,7 +723,9 @@
                                                                                 <th class="text-end">HPP Satuan</th>
                                                                                 <th class="text-end">Harga Jual</th>
                                                                                 <th class="text-end">Total HPP</th>
-                                                                                <th class="text-end">Total Laba</th>
+                                                                                @if(!($wo->is_b2b_same_as_hpp ?? false))
+                                                                                    <th class="text-end">Total Laba</th>
+                                                                                @endif
                                                                                 <th>Status</th>
                                                                             </tr>
                                                                         </thead>
@@ -746,12 +748,14 @@
                                                                                     <td class="text-end fw-bold text-secondary">
                                                                                         Rp {{ number_format($item['total_hpp'] ?? 0, 0, ',', '.') }}
                                                                                     </td>
-                                                                                    <td class="text-end fw-bold {{ ($item['total_laba'] ?? 0) >= 0 ? 'text-success' : 'text-danger' }}">
-                                                                                        <div>Rp {{ number_format($item['total_laba'] ?? 0, 0, ',', '.') }}</div>
-                                                                                        <span class="badge {{ ($item['total_laba'] ?? 0) >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
-                                                                                            {{ $item['margin_persen'] ?? 0 }}%
-                                                                                        </span>
-                                                                                    </td>
+                                                                                    @if(!($wo->is_b2b_same_as_hpp ?? false))
+                                                                                        <td class="text-end fw-bold {{ ($item['total_laba'] ?? 0) >= 0 ? 'text-success' : 'text-danger' }}">
+                                                                                            <div>Rp {{ number_format($item['total_laba'] ?? 0, 0, ',', '.') }}</div>
+                                                                                            <span class="badge {{ ($item['total_laba'] ?? 0) >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
+                                                                                                {{ $item['margin_persen'] ?? 0 }}%
+                                                                                            </span>
+                                                                                        </td>
+                                                                                    @endif
                                                                                     <td>
                                                                                         @if($item['sisa'] <= 0)
                                                                                             <span class="badge bg-success">Lengkap</span>
@@ -769,7 +773,9 @@
                                                                                 <td class="text-success">{{ number_format($wo->total_selesai, 0, ',', '.') }}</td>
                                                                                 <td colspan="2"></td>
                                                                                 <td class="text-end text-secondary">Rp {{ number_format($wo->grand_total_hpp ?? 0, 0, ',', '.') }}</td>
-                                                                                <td class="text-end text-success fs-6">Rp {{ number_format($wo->grand_total_laba ?? 0, 0, ',', '.') }}</td>
+                                                                                @if(!($wo->is_b2b_same_as_hpp ?? false))
+                                                                                    <td class="text-end text-success fs-6">Rp {{ number_format($wo->grand_total_laba ?? 0, 0, ',', '.') }}</td>
+                                                                                @endif
                                                                                 <td>
                                                                                     <span class="badge bg-success">100% Selesai</span>
                                                                                 </td>
@@ -1178,54 +1184,103 @@
                                                                     </div>
 
                                                                     {{-- TABEL ITEM HASIL PRODUKSI --}}
-                                                                    <h6 class="fw-bold text-dark border-bottom pb-2 mb-3 text-uppercase small">Item Hasil Produksi &amp; Analisis Laba</h6>
+                                                                    @php
+                                                                        $customerId = $p->pesanan ? $p->pesanan->customer_id : null;
+                                                                        $customerNama = $p->pesanan && $p->pesanan->customer ? ($p->pesanan->customer->nama ?? ($p->pesanan->customer->name ?? '')) : '';
+                                                                        $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+
+                                                                        $itemsList = [];
+                                                                        $totalQtyModal = 0;
+                                                                        $grandHppModal = 0;
+                                                                        $grandOmsetModal = 0;
+                                                                        $grandLabaModal = 0;
+                                                                        $isAllB2bSameAsHpp = true;
+
+                                                                        foreach ($p->details as $dIdx => $d) {
+                                                                            $qtyVal = floatval($d->qty);
+                                                                            $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
+                                                                            $isMengikutiHpp = \App\Models\HargaBarangB2b::isMengikutiHpp($customerId, $d->produk_id);
+                                                                            
+                                                                            $refHpp = \App\Models\HargaBarangB2b::getRealtimeHpp($d->produk_id);
+                                                                            if ($refHpp <= 0 && $d->produk) {
+                                                                                $refHpp = floatval($d->produk->hpp_referensi ?? ($d->produk->harga_beli ?? 0));
+                                                                            }
+                                                                            if ($refHpp <= 0 && $b2bPrice > 0) {
+                                                                                $refHpp = $b2bPrice;
+                                                                            }
+
+                                                                            $rawHppTotal = floatval($d->hpp_total);
+                                                                            $rawUnitHpp = ($qtyVal > 0 && $rawHppTotal > 0) ? ($rawHppTotal / $qtyVal) : $refHpp;
+
+                                                                            $isSameHppItem = $isMengikutiHpp || $isCustomerKejingga || ($b2bPrice !== null && abs($b2bPrice - $rawUnitHpp) < 50);
+
+                                                                            if ($isSameHppItem && $b2bPrice !== null && $b2bPrice > 0) {
+                                                                                $hppUnitVal = $b2bPrice;
+                                                                                $hargaJualUnit = $b2bPrice;
+                                                                                $effectiveHppTotal = $b2bPrice * $qtyVal;
+                                                                                $totalHargaJual = $effectiveHppTotal;
+                                                                            } elseif ($b2bPrice !== null && $b2bPrice > 0 && $rawUnitHpp > ($b2bPrice * 2)) {
+                                                                                $hppUnitVal = ($refHpp > 0 && $refHpp <= $b2bPrice) ? $refHpp : $b2bPrice;
+                                                                                $effectiveHppTotal = $hppUnitVal * $qtyVal;
+                                                                                $hargaJualUnit = $b2bPrice;
+                                                                                $totalHargaJual = $b2bPrice * $qtyVal;
+                                                                            } else {
+                                                                                $hppUnitVal = ($rawUnitHpp > 0) ? $rawUnitHpp : $refHpp;
+                                                                                $effectiveHppTotal = $hppUnitVal * $qtyVal;
+                                                                                $hargaJualUnit = ($b2bPrice !== null) ? $b2bPrice : 0;
+                                                                                $totalHargaJual = ($b2bPrice !== null) ? ($hargaJualUnit * $qtyVal) : 0;
+                                                                            }
+
+                                                                            $isB2bSet = ($b2bPrice !== null);
+                                                                            $totalLaba = $isB2bSet ? ($totalHargaJual - $effectiveHppTotal) : 0;
+
+                                                                            if ($isB2bSet && abs($totalHargaJual - $effectiveHppTotal) > 100 && !$isSameHppItem) {
+                                                                                $isAllB2bSameAsHpp = false;
+                                                                            }
+
+                                                                            $marginPersen = ($isB2bSet && $totalHargaJual > 0) ? round(($totalLaba / $totalHargaJual) * 100, 1) : 0;
+
+                                                                            $totalQtyModal += $qtyVal;
+                                                                            $grandHppModal += $effectiveHppTotal;
+                                                                            if ($isB2bSet) {
+                                                                                $grandOmsetModal += $totalHargaJual;
+                                                                                $grandLabaModal += $totalLaba;
+                                                                            }
+
+                                                                            $itemsList[] = [
+                                                                                'detail'            => $d,
+                                                                                'qtyVal'            => $qtyVal,
+                                                                                'hppUnitVal'        => $hppUnitVal,
+                                                                                'effectiveHppTotal' => $effectiveHppTotal,
+                                                                                'isB2bSet'          => $isB2bSet,
+                                                                                'hargaJualUnit'     => $hargaJualUnit,
+                                                                                'totalHargaJual'    => $totalHargaJual,
+                                                                                'totalLaba'         => $totalLaba,
+                                                                                'marginPersen'      => $marginPersen,
+                                                                            ];
+                                                                        }
+                                                                    @endphp
+                                                                    <h6 class="fw-bold text-dark border-bottom pb-2 mb-3 text-uppercase small">Item Hasil Produksi {{ !$isAllB2bSameAsHpp ? '& Analisis Laba' : '' }}</h6>
                                                                     <div class="table-responsive mb-2">
                                                                         <table class="table table-bordered table-hover align-middle mb-0 text-center" style="font-size: 0.82rem;">
                                                                             <thead class="table-dark">
                                                                                 <tr>
                                                                                     <th width="4%">No</th>
                                                                                     <th class="text-start ps-3">Nama Produk</th>
-                                                                                    <th width="12%" class="text-end pe-2">HPP / Unit</th>
-                                                                                    <th width="14%" class="text-end pe-2">Harga Jual / Unit</th>
-                                                                                    <th width="10%">Qty Hasil</th>
-                                                                                    <th width="14%" class="text-end pe-2">Total HPP</th>
-                                                                                    <th width="15%" class="text-end pe-2">Total Harga Jual</th>
-                                                                                    <th width="15%" class="text-end pe-2">Total Laba</th>
+                                                                                    <th width="{{ $isAllB2bSameAsHpp ? '14%' : '12%' }}" class="text-end pe-2">HPP / Unit</th>
+                                                                                    <th width="{{ $isAllB2bSameAsHpp ? '16%' : '14%' }}" class="text-end pe-2">Harga Jual / Unit</th>
+                                                                                    <th width="{{ $isAllB2bSameAsHpp ? '12%' : '10%' }}">Qty Hasil</th>
+                                                                                    <th width="{{ $isAllB2bSameAsHpp ? '16%' : '14%' }}" class="text-end pe-2">Total HPP</th>
+                                                                                    <th width="{{ $isAllB2bSameAsHpp ? '18%' : '15%' }}" class="text-end pe-2">Total Harga Jual</th>
+                                                                                    @if(!$isAllB2bSameAsHpp)
+                                                                                        <th width="15%" class="text-end pe-2">Total Laba</th>
+                                                                                    @endif
                                                                                 </tr>
                                                                             </thead>
-                                                                             <tbody>
-                                                                                @php
-                                                                                    $customerId = $p->pesanan ? $p->pesanan->customer_id : null;
-                                                                                    $totalQtyModal = 0;
-                                                                                    $grandHppModal = 0;
-                                                                                    $grandOmsetModal = 0;
-                                                                                    $grandLabaModal = 0;
-                                                                                    $allB2bSet = true;
-                                                                                @endphp
-                                                                                @forelse($p->details as $dIdx => $d)
+                                                                            <tbody>
+                                                                                @forelse($itemsList as $dIdx => $item)
                                                                                     @php
-                                                                                        $qtyVal = floatval($d->qty);
-                                                                                        $hppTotalVal = floatval($d->hpp_total);
-                                                                                        $hppUnitVal = ($qtyVal > 0 && $hppTotalVal > 0) ? ($hppTotalVal / $qtyVal) : floatval($d->produk->hpp_referensi ?? ($d->produk->harga_beli ?? 0));
-                                                                                        
-                                                                                        // Cek pengaturan harga jual B2B per customer/outlet
-                                                                                        $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
-                                                                                        $isB2bSet = ($b2bPrice !== null);
-                                                                                        if (!$isB2bSet) {
-                                                                                            $allB2bSet = false;
-                                                                                        }
-                                                                                        $hargaJualUnit = $isB2bSet ? $b2bPrice : 0;
-                                                                                        $totalHargaJual = $isB2bSet ? ($hargaJualUnit * $qtyVal) : 0;
-                                                                                        $effectiveHppTotal = ($hppTotalVal > 0) ? $hppTotalVal : ($hppUnitVal * $qtyVal);
-                                                                                        $totalLaba = $isB2bSet ? ($totalHargaJual - $effectiveHppTotal) : 0;
-                                                                                        $marginPersen = ($isB2bSet && $totalHargaJual > 0) ? round(($totalLaba / $totalHargaJual) * 100, 1) : 0;
-
-                                                                                        $totalQtyModal += $qtyVal;
-                                                                                        $grandHppModal += $effectiveHppTotal;
-                                                                                        if ($isB2bSet) {
-                                                                                            $grandOmsetModal += $totalHargaJual;
-                                                                                            $grandLabaModal += $totalLaba;
-                                                                                        }
+                                                                                        $d = $item['detail'];
                                                                                     @endphp
                                                                                     <tr>
                                                                                         <td>{{ $dIdx + 1 }}</td>
@@ -1234,50 +1289,44 @@
                                                                                             <div class="text-muted small font-monospace">{{ $d->produk->kode_barang ?? '-' }}</div>
                                                                                         </td>
                                                                                         <td class="text-end pe-2 fw-semibold text-secondary">
-                                                                                            @if($p->status_produksi === 'Draft' && $hppTotalVal <= 0)
-                                                                                                <span class="text-muted fst-italic small">Rp {{ number_format($hppUnitVal, 0, ',', '.') }}</span>
-                                                                                            @else
-                                                                                                Rp {{ number_format($hppUnitVal, 0, ',', '.') }}
-                                                                                            @endif
+                                                                                            Rp {{ number_format($item['hppUnitVal'], 0, ',', '.') }}
                                                                                         </td>
                                                                                         <td class="text-end pe-2">
-                                                                                            @if($isB2bSet)
-                                                                                                <span class="fw-bold text-dark">Rp {{ number_format($hargaJualUnit, 0, ',', '.') }}</span>
+                                                                                            @if($item['isB2bSet'])
+                                                                                                <span class="fw-bold text-dark">Rp {{ number_format($item['hargaJualUnit'], 0, ',', '.') }}</span>
                                                                                             @else
                                                                                                 <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle py-1 px-2 text-wrap text-start d-inline-block" style="font-size: 0.72rem; line-height: 1.25;">
                                                                                                     <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i>Harap mengatur harga jual B2B lebih dulu
                                                                                                 </span>
                                                                                             @endif
                                                                                         </td>
-                                                                                        <td class="fw-bold text-primary">{{ number_format($qtyVal, 0, ',', '.') }} {{ $d->produk->satuan ?? 'Unit' }}</td>
+                                                                                        <td class="fw-bold text-primary">{{ number_format($item['qtyVal'], 0, ',', '.') }} {{ $d->produk->satuan ?? 'Unit' }}</td>
                                                                                         <td class="text-end pe-2 fw-bold text-secondary">
-                                                                                            @if($p->status_produksi === 'Draft' && $hppTotalVal <= 0)
-                                                                                                <span class="text-muted fw-normal fst-italic small">Rp {{ number_format($effectiveHppTotal, 0, ',', '.') }}</span>
-                                                                                            @else
-                                                                                                Rp {{ number_format($hppTotalVal, 0, ',', '.') }}
-                                                                                            @endif
+                                                                                            Rp {{ number_format($item['effectiveHppTotal'], 0, ',', '.') }}
                                                                                         </td>
                                                                                         <td class="text-end pe-2 fw-bold text-primary">
-                                                                                            @if($isB2bSet)
-                                                                                                Rp {{ number_format($totalHargaJual, 0, ',', '.') }}
+                                                                                            @if($item['isB2bSet'])
+                                                                                                Rp {{ number_format($item['totalHargaJual'], 0, ',', '.') }}
                                                                                             @else
                                                                                                 <span class="text-muted fst-italic small">Belum diatur</span>
                                                                                             @endif
                                                                                         </td>
-                                                                                        <td class="text-end pe-2 fw-bold">
-                                                                                            @if($isB2bSet)
-                                                                                                <div class="{{ $totalLaba >= 0 ? 'text-success' : 'text-danger' }}">Rp {{ number_format($totalLaba, 0, ',', '.') }}</div>
-                                                                                                <span class="badge {{ $totalLaba >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
-                                                                                                    {{ $marginPersen }}%
-                                                                                                </span>
-                                                                                            @else
-                                                                                                <span class="text-muted fst-italic small">-</span>
-                                                                                            @endif
-                                                                                        </td>
+                                                                                        @if(!$isAllB2bSameAsHpp)
+                                                                                            <td class="text-end pe-2 fw-bold">
+                                                                                                @if($item['isB2bSet'])
+                                                                                                    <div class="{{ $item['totalLaba'] >= 0 ? 'text-success' : 'text-danger' }}">Rp {{ number_format($item['totalLaba'], 0, ',', '.') }}</div>
+                                                                                                    <span class="badge {{ $item['totalLaba'] >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger' }}" style="font-size: 10px;">
+                                                                                                        {{ $item['marginPersen'] }}%
+                                                                                                    </span>
+                                                                                                @else
+                                                                                                    <span class="text-muted fst-italic small">-</span>
+                                                                                                @endif
+                                                                                            </td>
+                                                                                        @endif
                                                                                     </tr>
                                                                                 @empty
                                                                                     <tr>
-                                                                                        <td colspan="8" class="text-center text-muted py-3">Tidak ada detail produk.</td>
+                                                                                        <td colspan="{{ $isAllB2bSameAsHpp ? 7 : 8 }}" class="text-center text-muted py-3">Tidak ada detail produk.</td>
                                                                                     </tr>
                                                                                 @endforelse
                                                                             </tbody>
@@ -1294,13 +1343,15 @@
                                                                                             <span class="text-muted fst-italic small">-</span>
                                                                                         @endif
                                                                                     </td>
-                                                                                    <td class="text-end pe-2 text-success fs-6">
-                                                                                        @if($grandOmsetModal > 0)
-                                                                                            Rp {{ number_format($grandLabaModal, 0, ',', '.') }}
-                                                                                        @else
-                                                                                            <span class="text-muted fst-italic small">-</span>
-                                                                                        @endif
-                                                                                    </td>
+                                                                                    @if(!$isAllB2bSameAsHpp)
+                                                                                        <td class="text-end pe-2 text-success fs-6">
+                                                                                            @if($grandOmsetModal > 0)
+                                                                                                Rp {{ number_format($grandLabaModal, 0, ',', '.') }}
+                                                                                            @else
+                                                                                                <span class="text-muted fst-italic small">-</span>
+                                                                                            @endif
+                                                                                        </td>
+                                                                                    @endif
                                                                                 </tr>
                                                                             </tfoot>
                                                                         </table>

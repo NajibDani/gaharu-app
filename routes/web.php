@@ -428,8 +428,10 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
             Route::get('/pengeluaran-produksi-ck-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranProduksiCentralKitchenKejingga'])->name('produksi-ck-kejingga');
             Route::post('/pengeluaran-produksi-ck-kejingga/bayar', [\App\Http\Controllers\LaporanCustomController::class, 'prosesBayarProduksiCkKejingga'])->name('produksi-ck-kejingga.bayar');
             Route::get('/pengeluaran-produksi-ck-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoiceProduksiCkKejingga'])->name('produksi-ck-kejingga.cetak-invoice');
-            Route::post('/pengeluaran-produksi-ck-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoiceProduksiCkKejingga'])->name('produksi-ck-kejingga.cetak-invoice-post');
             Route::get('/pengeluaran-produksi-cold-kejingga', [\App\Http\Controllers\LaporanCustomController::class, 'pengeluaranProduksiColdKitchenKejingga'])->name('produksi-cold-kejingga');
+            Route::post('/pengeluaran-produksi-cold-kejingga/bayar', [\App\Http\Controllers\LaporanCustomController::class, 'prosesBayarProduksiColdKejingga'])->name('produksi-cold-kejingga.bayar');
+            Route::get('/pengeluaran-produksi-cold-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoiceProduksiColdKejingga'])->name('produksi-cold-kejingga.cetak-invoice');
+            Route::post('/pengeluaran-produksi-cold-kejingga/cetak-invoice', [\App\Http\Controllers\LaporanCustomController::class, 'cetakInvoiceProduksiColdKejingga'])->name('produksi-cold-kejingga.cetak-invoice-post');
             Route::get('/pembelian-gudang-utama-minus-permintaan', [\App\Http\Controllers\LaporanCustomController::class, 'pembelianGudangUtamaDikurangiPermintaan'])->name('pembelian-minus-permintaan');
             Route::get('/total-permintaan-divisi', [\App\Http\Controllers\LaporanCustomController::class, 'totalPermintaanBahanBakuDivisi'])->name('total-permintaan-divisi');
         });

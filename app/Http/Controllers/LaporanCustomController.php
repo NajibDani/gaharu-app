@@ -190,6 +190,24 @@ class LaporanCustomController extends Controller
             'creator',
             'dibayarByUser'
         ])
+        ->where(function($ckQ) {
+            $ckQ->whereHas('gudangBahan', function($gq) {
+                $gq->where('nama', 'like', '%Central Kitchen%');
+            })
+            ->orWhereHas('pesanan', function($pq) {
+                $pq->where('tipe_pesanan', 'central_kitchen');
+            })
+            ->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                $pq->where('tipe_pesanan', 'central_kitchen');
+            })
+            ->orWhere(function($sq) {
+                $sq->whereDoesntHave('pesanan', function($pq) {
+                    $pq->where('tipe_pesanan', 'b2b');
+                })->whereDoesntHave('gudangBahan', function($gq) {
+                    $gq->where('nama', 'like', '%Cold Kitchen%');
+                });
+            });
+        })
         ->where(function($q) use ($hasColKeterangan, $hasColCatatan, $hasColCatatanBayar) {
             $q->whereHas('pesanan.customer', function($cq) {
                 $cq->where('nama', 'like', '%kejingga%');
@@ -803,27 +821,668 @@ class LaporanCustomController extends Controller
     // 3. Pengeluaran produksi cold kitchen kejingga
     public function pengeluaranProduksiColdKitchenKejingga(Request $request)
     {
-        // Asumsi: Produksi dari gudang/divisi Cold Kitchen ke Kejingga
-        $query = Produksi::with(['details.barang', 'gudangBahan', 'gudangHasil', 'divisi'])
-            ->whereHas('gudangBahan', function ($q) {
-                $q->where('nama', 'like', '%Cold Kitchen%');
+        $hasColKeterangan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'keterangan');
+        $hasColCatatan = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan');
+        $hasColCatatanBayar = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'catatan_pembayaran');
+
+        // 1. Produksi dari Cold Kitchen yang dialokasikan ke Outlet Kejingga
+        $query = Produksi::with([
+            'details.barang',
+            'details.produk',
+            'gudangBahan',
+            'gudangHasil',
+            'divisi',
+            'pesanan.customer',
+            'alokasiPesanan.pesanan.customer',
+            'creator',
+            'dibayarByUser'
+        ])
+        ->where(function($coldQ) {
+            $coldQ->whereHas('gudangBahan', function($gq) {
+                $gq->where('nama', 'like', '%Cold Kitchen%');
             })
-            ->where(function ($q) {
-                $q->whereHas('gudangHasil', function ($q2) {
-                    $q2->where('nama', 'like', '%Kejingga%');
-                })->orWhereHas('divisi', function ($q3) {
-                    $q3->where('nama', 'like', '%Kejingga%');
+            ->orWhereHas('pesanan', function($pq) {
+                $pq->where(function($tp) {
+                    $tp->where('tipe_pesanan', 'b2b')
+                       ->orWhere('tipe_pesanan', 'cold_kitchen')
+                       ->orWhereNull('tipe_pesanan');
                 });
             })
-            ->where('kode_produksi', 'not like', '%SO%');
+            ->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                $pq->where(function($tp) {
+                    $tp->where('tipe_pesanan', 'b2b')
+                       ->orWhere('tipe_pesanan', 'cold_kitchen')
+                       ->orWhereNull('tipe_pesanan');
+                });
+            })
+            ->orWhere(function($sq) {
+                $sq->whereDoesntHave('pesanan', function($pq) {
+                    $pq->where('tipe_pesanan', 'central_kitchen');
+                })->whereDoesntHave('gudangBahan', function($gq) {
+                    $gq->where('nama', 'like', '%Central Kitchen%');
+                });
+            });
+        })
+        ->where(function($q) use ($hasColKeterangan, $hasColCatatan, $hasColCatatanBayar) {
+            $q->whereHas('pesanan.customer', function($cq) {
+                $cq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('alokasiPesanan.pesanan.customer', function($cq) {
+                $cq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('gudangHasil', function($gq) {
+                $gq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('divisi', function($dq) {
+                $dq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('pesanan.gudang', function($gq) {
+                $gq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhereHas('alokasiPesanan.pesanan.gudang', function($gq) {
+                $gq->where('nama', 'like', '%kejingga%');
+            })
+            ->orWhere('kode_produksi', 'like', '%kejingga%');
+
+            if ($hasColKeterangan) {
+                $q->orWhere('keterangan', 'like', '%kejingga%');
+            }
+            if ($hasColCatatan) {
+                $q->orWhere('catatan', 'like', '%kejingga%');
+            }
+            if ($hasColCatatanBayar) {
+                $q->orWhere('catatan_pembayaran', 'like', '%kejingga%');
+            }
+        });
 
         if ($request->filled('start_date') && $request->filled('end_date')) {
-            $query->whereBetween('tanggal_mulai', [$request->start_date, $request->end_date]);
+            $startDate = $request->start_date;
+            $endDate = $request->end_date;
+            $query->where(function($q) use ($startDate, $endDate) {
+                $q->whereHas('pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate, $endDate) {
+                    $pq->whereBetween('tanggal', [$startDate, $endDate]);
+                })
+                ->orWhere(function($sq) use ($startDate, $endDate) {
+                    $sq->whereDoesntHave('pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->whereDoesntHave('alokasiPesanan.pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->where(function($dq) use ($startDate, $endDate) {
+                        $dq->whereBetween('tanggal_mulai', [$startDate, $endDate])
+                          ->orWhere(function($cq) use ($startDate, $endDate) {
+                              $cq->whereNull('tanggal_mulai')
+                                 ->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+                          });
+                    });
+                });
+            });
+        } elseif ($request->filled('start_date')) {
+            $startDate = $request->start_date;
+            $query->where(function($q) use ($startDate) {
+                $q->whereHas('pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($startDate) {
+                    $pq->whereDate('tanggal', '>=', $startDate);
+                })
+                ->orWhere(function($sq) use ($startDate) {
+                    $sq->whereDoesntHave('pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->whereDoesntHave('alokasiPesanan.pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->where(function($dq) use ($startDate) {
+                        $dq->whereDate('tanggal_mulai', '>=', $startDate)
+                          ->orWhere(function($cq) use ($startDate) {
+                              $cq->whereNull('tanggal_mulai')
+                                 ->whereDate('created_at', '>=', $startDate);
+                          });
+                    });
+                });
+            });
+        } elseif ($request->filled('end_date')) {
+            $endDate = $request->end_date;
+            $query->where(function($q) use ($endDate) {
+                $q->whereHas('pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhereHas('alokasiPesanan.pesanan', function($pq) use ($endDate) {
+                    $pq->whereDate('tanggal', '<=', $endDate);
+                })
+                ->orWhere(function($sq) use ($endDate) {
+                    $sq->whereDoesntHave('pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->whereDoesntHave('alokasiPesanan.pesanan', function($pq) {
+                        $pq->whereNotNull('tanggal');
+                    })
+                    ->where(function($dq) use ($endDate) {
+                        $dq->whereDate('tanggal_mulai', '<=', $endDate)
+                          ->orWhere(function($cq) use ($endDate) {
+                              $cq->whereNull('tanggal_mulai')
+                                 ->whereDate('created_at', '<=', $endDate);
+                          });
+                    });
+                });
+            });
         }
 
-        $data = $query->latest('tanggal_mulai')->get();
+        $statusPembayaran = $request->query('status_pembayaran', 'semua');
+        $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
 
-        return view('laporan_custom.pengeluaran_produksi_cold_kejingga', compact('data'));
+        if ($statusPembayaran === 'belum_dibayar') {
+            $query->where(function($q) use ($hasColumnStatus, $hasColKeterangan, $hasColCatatan) {
+                $hasCond = false;
+                if ($hasColumnStatus) {
+                    $q->where(function($sq) {
+                        $sq->where('status_pembayaran', 'belum_dibayar')
+                          ->orWhere('status_pembayaran', 'Belum Bayar')
+                          ->orWhereNull('status_pembayaran');
+                    });
+                    $hasCond = true;
+                }
+                if ($hasColKeterangan) {
+                    if ($hasCond) {
+                        $q->orWhereNull('keterangan')->orWhere('keterangan', 'not like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where(function($sq) {
+                            $sq->whereNull('keterangan')->orWhere('keterangan', 'not like', '%"status_pembayaran":"lunas"%');
+                        });
+                        $hasCond = true;
+                    }
+                }
+                if ($hasColCatatan) {
+                    if ($hasCond) {
+                        $q->orWhereNull('catatan')->orWhere('catatan', 'not like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where(function($sq) {
+                            $sq->whereNull('catatan')->orWhere('catatan', 'not like', '%"status_pembayaran":"lunas"%');
+                        });
+                        $hasCond = true;
+                    }
+                }
+                if (!$hasCond) {
+                    $q->where(function($sq) {
+                        $sq->whereHas('pesanan', function($pq) {
+                            $pq->where('status_pembayaran', '!=', 'Lunas')
+                               ->where('status_pembayaran', '!=', 'lunas')
+                               ->orWhereNull('status_pembayaran');
+                        })->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                            $pq->where('status_pembayaran', '!=', 'Lunas')
+                               ->where('status_pembayaran', '!=', 'lunas')
+                               ->orWhereNull('status_pembayaran');
+                        });
+                    });
+                }
+            });
+        } elseif ($statusPembayaran === 'lunas') {
+            $query->where(function($q) use ($hasColumnStatus, $hasColKeterangan, $hasColCatatan) {
+                $hasCond = false;
+                if ($hasColumnStatus) {
+                    $q->where(function($sq) {
+                        $sq->where('status_pembayaran', 'lunas')
+                          ->orWhere('status_pembayaran', 'Lunas');
+                    });
+                    $hasCond = true;
+                }
+                if ($hasColKeterangan) {
+                    if ($hasCond) {
+                        $q->orWhere('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where('keterangan', 'like', '%"status_pembayaran":"lunas"%');
+                        $hasCond = true;
+                    }
+                }
+                if ($hasColCatatan) {
+                    if ($hasCond) {
+                        $q->orWhere('catatan', 'like', '%"status_pembayaran":"lunas"%');
+                    } else {
+                        $q->where('catatan', 'like', '%"status_pembayaran":"lunas"%');
+                        $hasCond = true;
+                    }
+                }
+                if (!$hasCond) {
+                    $q->where(function($sq) {
+                        $sq->whereHas('pesanan', function($pq) {
+                            $pq->where('status_pembayaran', 'Lunas')
+                               ->orWhere('status_pembayaran', 'lunas');
+                        })->orWhereHas('alokasiPesanan.pesanan', function($pq) {
+                            $pq->where('status_pembayaran', 'Lunas')
+                               ->orWhere('status_pembayaran', 'lunas');
+                        });
+                    });
+                }
+            });
+        }
+
+        $prodList = $query->latest('tanggal_mulai')->latest('id')->get();
+
+        // 2. Query Pesanan Cold Kitchen (B2B) Kejingga (Termasuk Permintaan Stok BSJ / Barang Jadi tanpa Batch Produksi Baru)
+        $fifoService = app(\App\Services\FifoService::class);
+        $pesananQuery = \App\Models\Pesanan::with([
+                'customer',
+                'gudang',
+                'divisi',
+                'details.produk',
+                'creator',
+                'workOrderDetails.workOrder'
+            ])
+            ->where(function($tp) {
+                $tp->where('tipe_pesanan', 'b2b')
+                   ->orWhere('tipe_pesanan', 'cold_kitchen')
+                   ->orWhereNull('tipe_pesanan');
+            })
+            ->where(function($q) {
+                $q->whereHas('customer', function($cq) { $cq->where('nama', 'like', '%kejingga%'); })
+                  ->orWhereHas('gudang', function($gq) { $gq->where('nama', 'like', '%kejingga%'); });
+            })
+            ->whereNotIn('id', function($q) {
+                $q->select('pesanan_id')->from('alokasi_produksi_pesanan')->whereNotNull('pesanan_id');
+            })
+            ->whereNotIn('id', function($q) {
+                $q->select('pesanan_id')->from('produksi')->whereNotNull('pesanan_id');
+            });
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $pesananQuery->whereBetween('tanggal', [$request->start_date, $request->end_date]);
+        } elseif ($request->filled('start_date')) {
+            $pesananQuery->whereDate('tanggal', '>=', $request->start_date);
+        } elseif ($request->filled('end_date')) {
+            $pesananQuery->whereDate('tanggal', '<=', $request->end_date);
+        }
+
+        if ($statusPembayaran === 'belum_dibayar') {
+            $pesananQuery->where(function($q) {
+                $q->where('status_pembayaran', '!=', 'Lunas')
+                  ->where('status_pembayaran', '!=', 'lunas')
+                  ->orWhereNull('status_pembayaran');
+            });
+        } elseif ($statusPembayaran === 'lunas') {
+            $pesananQuery->where(function($q) {
+                $q->where('status_pembayaran', 'Lunas')
+                  ->orWhere('status_pembayaran', 'lunas');
+            });
+        }
+
+        $pesananList = $pesananQuery->latest('tanggal')->latest('id')->get();
+
+        $data = collect();
+
+        foreach ($prodList as $p) {
+            $p->row_type = 'produksi';
+            $p->row_date = $p->pesanan->tanggal ?? ($p->alokasiPesanan->first()->pesanan->tanggal ?? $p->tanggal_mulai);
+            $p->details = $p->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
+            
+            // Pastikan hpp_total terhitung jika belum ada
+            foreach ($p->details as $d) {
+                if (!$d->hpp_total || floatval($d->hpp_total) <= 0) {
+                    $alokasiHpp = DB::table('alokasi_produksi_pesanan')
+                        ->where('produksi_id', $p->id)
+                        ->where('produk_id', $d->produk_id)
+                        ->value('total_hpp_alokasi');
+                    if ($alokasiHpp && floatval($alokasiHpp) > 0) {
+                        $d->hpp_total = floatval($alokasiHpp);
+                    } else {
+                        $h = $fifoService->getHppResepBsj($d->produk_id);
+                        if ($h <= 0 && $d->produk) $h = (float)($d->produk->hpp_referensi ?? 0);
+                        $d->hpp_total = floatval($d->qty ?? ($d->jumlah ?? 0)) * $h;
+                    }
+                }
+            }
+
+            $data->push($p);
+        }
+
+        foreach ($pesananList as $pes) {
+            $woDetail = $pes->workOrderDetails->first();
+            $wo = $woDetail ? $woDetail->workOrder : null;
+            $kodeWo = $wo ? $wo->kode_wo : $pes->kode_pesanan;
+            $validProductIds = ($wo && $wo->details) ? $wo->details->pluck('produk_id')->toArray() : null;
+
+            $activeDetails = $pes->details->filter(function($d) use ($validProductIds) {
+                if (floatval($d->qty ?? 0) <= 0) return false;
+                if ($validProductIds !== null && !in_array($d->produk_id, $validProductIds)) return false;
+                return true;
+            })->values();
+
+            foreach ($activeDetails as $d) {
+                $needsHppCalc = (!$d->hpp_total || $d->hpp_total <= 0);
+                if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
+                    $needsHppCalc = true;
+                }
+
+                if ($needsHppCalc) {
+                    $harga = 0;
+                    if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
+                        $harga = $d->subtotal / $d->qty;
+                    } elseif ($d->produk_id) {
+                        $harga = $fifoService->getHppResepBsj($d->produk_id);
+                        if ($harga <= 0 && $d->produk) {
+                            $harga = (float)($d->produk->hpp_referensi ?? 0);
+                        }
+                    }
+                    $d->hpp_total = ($d->subtotal && $d->subtotal > 0 && ($d->subtotal / $d->qty) >= 1.0) ? $d->subtotal : ($d->qty * $harga);
+                }
+                $d->barang = $d->produk;
+            }
+
+            $virtualObj = new \stdClass();
+            $virtualObj->row_type = 'pesanan';
+            $virtualObj->id = 'pes_' . $pes->id;
+            $virtualObj->pesanan_real_id = $pes->id;
+            $virtualObj->kode_produksi = $kodeWo;
+            $virtualObj->tanggal_mulai = $pes->tanggal;
+            $virtualObj->tanggal_selesai = $pes->estimasi_kirim ?? $pes->tanggal;
+            $virtualObj->gudangBahan = (object)['nama' => 'Gudang Cold Kitchen'];
+            $virtualObj->gudangHasil = $pes->customer ?? $pes->gudang ?? (object)['nama' => 'Outlet KeJingga'];
+            $virtualObj->divisi = $pes->divisi;
+            $virtualObj->status_produksi = 'Stok Cold (' . ucfirst($pes->status_pesanan ?? 'Diproses') . ')';
+            $virtualObj->status_pembayaran = strtolower($pes->status_pembayaran ?? '') === 'lunas' ? 'lunas' : 'belum_dibayar';
+            $virtualObj->details = $activeDetails;
+            $virtualObj->pesanan = $pes;
+            $virtualObj->alokasiPesanan = collect();
+            $virtualObj->creator = $pes->creator;
+            $virtualObj->dibayarByUser = null;
+            $virtualObj->row_date = $pes->tanggal;
+
+            $data->push($virtualObj);
+        }
+
+        $data = $data->sortByDesc(function($item) {
+            return $item->row_date;
+        })->values();
+
+        return view('laporan_custom.pengeluaran_produksi_cold_kejingga', compact('data', 'statusPembayaran'));
+    }
+
+    public function prosesBayarProduksiColdKejingga(Request $request)
+    {
+        $request->validate([
+            'ids' => 'required|array|min:1',
+            'tanggal_pembayaran' => 'required|date',
+            'metode_pembayaran' => 'required|string',
+            'catatan_pembayaran' => 'nullable|string|max:500',
+        ]);
+
+        $ids = $request->ids;
+        $noInvoice = 'INV-COLD-KEJINGGA-' . date('Ymd-His');
+        $hasColumnStatus = \Illuminate\Support\Facades\Schema::hasColumn('produksi', 'status_pembayaran');
+
+        $prodIds = [];
+        $pesIds = [];
+
+        foreach ($ids as $idItem) {
+            if (str_starts_with($idItem, 'pes_')) {
+                $pesIds[] = (int) str_replace('pes_', '', $idItem);
+            } elseif (str_starts_with($idItem, 'prod_')) {
+                $prodIds[] = (int) str_replace('prod_', '', $idItem);
+            } elseif (is_numeric($idItem)) {
+                if (Produksi::where('id', $idItem)->exists()) {
+                    $prodIds[] = (int) $idItem;
+                } else {
+                    $pesIds[] = (int) $idItem;
+                }
+            }
+        }
+
+        $updatedCount = 0;
+
+        if (!empty($prodIds)) {
+            $transactions = Produksi::with(['pesanan', 'alokasiPesanan.pesanan'])->whereIn('id', $prodIds)->get();
+
+            foreach ($transactions as $prod) {
+                $tgl = $request->tanggal_pembayaran . ' ' . date('H:i:s');
+                $metode = $request->metode_pembayaran;
+                $catatan = $request->catatan_pembayaran;
+
+                if ($hasColumnStatus) {
+                    $prod->update([
+                        'status_pembayaran'  => 'lunas',
+                        'tanggal_pembayaran' => $tgl,
+                        'metode_pembayaran'  => $metode,
+                        'catatan_pembayaran' => $catatan,
+                        'no_invoice'         => DB::raw("COALESCE(no_invoice, '{$noInvoice}')"),
+                        'dibayar_by'         => auth()->id() ?? 1,
+                    ]);
+                } else {
+                    $existingInv = $prod->no_invoice;
+                    $prod->updatePaymentMeta([
+                        'status_pembayaran'  => 'lunas',
+                        'tanggal_pembayaran' => $tgl,
+                        'metode_pembayaran'  => $metode,
+                        'catatan_pembayaran' => $catatan,
+                        'no_invoice'         => $existingInv ?: $noInvoice,
+                        'dibayar_by'         => auth()->id() ?? 1,
+                    ]);
+                }
+
+                $pesananIds = collect([$prod->pesanan_id]);
+                if ($prod->alokasiPesanan) {
+                    $pesananIds = $pesananIds->merge($prod->alokasiPesanan->pluck('pesanan_id'));
+                }
+                $pesananIds = $pesananIds->filter()->unique();
+
+                foreach ($pesananIds as $pId) {
+                    $p = \App\Models\Pesanan::with('details')->find($pId);
+                    if ($p) {
+                        $p->update(['status_pembayaran' => 'Lunas']);
+                        $hasPayment = \App\Models\Pembayaran::where('pesanan_id', $p->id)->exists();
+                        if (!$hasPayment) {
+                            $nominal = $p->total_pesanan > 0 ? (float)$p->total_pesanan : (float)$p->details->sum('subtotal');
+                            \App\Models\Pembayaran::create([
+                                'pesanan_id'          => $p->id,
+                                'kategori_pembayaran' => 'penjualan',
+                                'tanggal_bayar'       => $request->tanggal_pembayaran,
+                                'jumlah_bayar'        => $nominal > 0 ? $nominal : 0,
+                                'metode_pembayaran'   => $metode,
+                                'catatan'             => $catatan ? ($catatan . ' (Pelunasan via Laporan Produksi Cold Kitchen)') : 'Pelunasan via Laporan Produksi Cold Kitchen',
+                                'created_by'          => auth()->id() ?? 1,
+                            ]);
+                        }
+                    }
+                }
+                $updatedCount++;
+            }
+        }
+
+        if (!empty($pesIds)) {
+            $fifoService = app(\App\Services\FifoService::class);
+            $pesanans = \App\Models\Pesanan::with('details.produk')->whereIn('id', $pesIds)->get();
+
+            foreach ($pesanans as $p) {
+                $p->update(['status_pembayaran' => 'Lunas']);
+                $hasPayment = \App\Models\Pembayaran::where('pesanan_id', $p->id)->exists();
+                if (!$hasPayment) {
+                    $calcNominal = 0;
+                    foreach ($p->details as $d) {
+                        if ($d->subtotal && $d->subtotal > 0) {
+                            $calcNominal += (float)$d->subtotal;
+                        } else {
+                            $h = $fifoService->getHppResepBsj($d->produk_id);
+                            if ($h <= 0 && $d->produk) $h = (float)($d->produk->hpp_referensi ?? 0);
+                            $calcNominal += ($d->qty * $h);
+                        }
+                    }
+                    $nominal = $p->total_pesanan > 0 ? (float)$p->total_pesanan : $calcNominal;
+
+                    \App\Models\Pembayaran::create([
+                        'pesanan_id'          => $p->id,
+                        'kategori_pembayaran' => 'penjualan',
+                        'tanggal_bayar'       => $request->tanggal_pembayaran,
+                        'jumlah_bayar'        => $nominal > 0 ? $nominal : 0,
+                        'metode_pembayaran'   => $request->metode_pembayaran,
+                        'catatan'             => $request->catatan_pembayaran ? ($request->catatan_pembayaran . ' (Pelunasan via Laporan Produksi Cold Kitchen)') : 'Pelunasan via Laporan Produksi Cold Kitchen',
+                        'created_by'          => auth()->id() ?? 1,
+                    ]);
+                }
+                $updatedCount++;
+            }
+        }
+
+        return redirect()->back()->with('success', "Pembayaran untuk {$updatedCount} produksi & pesanan Cold Kitchen terkait berhasil diproses (Status: Lunas). Invoice dapat langsung dicetak.");
+    }
+
+    public function cetakInvoiceProduksiColdKejingga(Request $request)
+    {
+        $idsParam = $request->input('ids');
+        $noInvoice = $request->input('no_invoice');
+
+        $rawIds = [];
+        if (is_array($idsParam)) {
+            $rawIds = $idsParam;
+        } elseif (is_string($idsParam) && !empty($idsParam)) {
+            $rawIds = explode(',', $idsParam);
+        }
+
+        $prodIds = [];
+        $pesIds = [];
+
+        foreach ($rawIds as $idItem) {
+            $idItem = trim($idItem);
+            if (str_starts_with($idItem, 'pes_')) {
+                $pesIds[] = (int) str_replace('pes_', '', $idItem);
+            } elseif (str_starts_with($idItem, 'prod_')) {
+                $prodIds[] = (int) str_replace('prod_', '', $idItem);
+            } elseif (is_numeric($idItem)) {
+                if (Produksi::where('id', $idItem)->exists()) {
+                    $prodIds[] = (int) $idItem;
+                } else {
+                    $pesIds[] = (int) $idItem;
+                }
+            }
+        }
+
+        $transactions = collect();
+        $fifoService = app(\App\Services\FifoService::class);
+        $hppRecalculated = false;
+
+        if ($request->has('refresh_hpp') || $request->has('recalculate')) {
+            \App\Services\FifoService::clearHargaCache();
+            $hppRecalculated = true;
+        }
+
+        if (!empty($prodIds)) {
+            $prodTx = Produksi::with([
+                'details.barang',
+                'details.produk',
+                'gudangBahan',
+                'gudangHasil',
+                'divisi',
+                'pesanan.customer',
+                'alokasiPesanan.pesanan.customer',
+                'creator',
+                'dibayarByUser'
+            ])->whereIn('id', $prodIds)->get();
+
+            foreach ($prodTx as $pt) {
+                $pt->details = $pt->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
+                foreach ($pt->details as $d) {
+                    $qtyD = floatval($d->qty ?? ($d->jumlah ?? 0));
+                    $unitPriceD = $qtyD > 0 ? (floatval($d->hpp_total) / $qtyD) : 0;
+                    if ($qtyD > 0 && ($hppRecalculated || !$d->hpp_total || $unitPriceD < 1.0)) {
+                        $pId = $d->produk_id ?? ($d->barang_id ?? null);
+                        if ($pId) {
+                            $harga = $fifoService->getHppResepBsj($pId);
+                            if ($harga <= 0) {
+                                $pObj = $d->produk ?? $d->barang;
+                                $harga = (float)($pObj->hpp_referensi ?? 0);
+                            }
+                            if ($harga > 0) {
+                                $d->hpp_total = $qtyD * $harga;
+                            }
+                        }
+                    }
+                }
+                $transactions->push($pt);
+            }
+        }
+
+        if (!empty($pesIds)) {
+            $pesTx = \App\Models\Pesanan::with([
+                'customer',
+                'gudang',
+                'divisi',
+                'details.produk',
+                'creator',
+                'workOrderDetails.workOrder'
+            ])->whereIn('id', $pesIds)->get();
+
+            foreach ($pesTx as $pes) {
+                $woDetail = $pes->workOrderDetails->first();
+                $wo = $woDetail ? $woDetail->workOrder : null;
+                $kodeWo = $wo ? $wo->kode_wo : $pes->kode_pesanan;
+                $validProductIds = ($wo && $wo->details) ? $wo->details->pluck('produk_id')->toArray() : null;
+
+                $activeDetails = $pes->details->filter(function($d) use ($validProductIds) {
+                    if (floatval($d->qty ?? 0) <= 0) return false;
+                    if ($validProductIds !== null && !in_array($d->produk_id, $validProductIds)) return false;
+                    return true;
+                })->values();
+
+                foreach ($activeDetails as $d) {
+                    $needsHppCalc = $hppRecalculated || (!$d->hpp_total || $d->hpp_total <= 0);
+                    if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
+                        $needsHppCalc = true;
+                    }
+
+                    if ($needsHppCalc) {
+                        $harga = 0;
+                        if (!$hppRecalculated && $d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
+                            $harga = $d->subtotal / $d->qty;
+                        } elseif ($d->produk_id) {
+                            $harga = $fifoService->getHppResepBsj($d->produk_id);
+                            if ($harga <= 0 && $d->produk) {
+                                $harga = (float)($d->produk->hpp_referensi ?? 0);
+                            }
+                        }
+                        $d->hpp_total = ($d->qty * $harga);
+                    }
+                    $d->barang = $d->produk;
+                }
+
+                $virtualObj = new \stdClass();
+                $virtualObj->id = 'pes_' . $pes->id;
+                $virtualObj->kode_produksi = $kodeWo;
+                $virtualObj->tanggal_mulai = $pes->tanggal;
+                $virtualObj->tanggal_selesai = $pes->estimasi_kirim ?? $pes->tanggal;
+                $virtualObj->gudangBahan = (object)['nama' => 'Gudang Cold Kitchen'];
+                $virtualObj->gudangHasil = $pes->customer ?? $pes->gudang ?? (object)['nama' => 'Outlet KeJingga'];
+                $virtualObj->divisi = $pes->divisi;
+                $virtualObj->status_produksi = 'Stok Cold (' . ucfirst($pes->status_pesanan ?? 'Diproses') . ')';
+                $virtualObj->status_pembayaran = strtolower($pes->status_pembayaran ?? '') === 'lunas' ? 'lunas' : 'belum_dibayar';
+                $virtualObj->details = $activeDetails;
+                $virtualObj->pesanan = $pes;
+                $virtualObj->alokasiPesanan = collect();
+                $virtualObj->creator = $pes->creator;
+                $virtualObj->dibayarByUser = null;
+                $virtualObj->no_invoice = 'INV-COLD-KEJINGGA-' . date('YmdHis');
+                $virtualObj->tanggal_pembayaran = null;
+                $virtualObj->metode_pembayaran = null;
+                $virtualObj->catatan_pembayaran = null;
+
+                $transactions->push($virtualObj);
+            }
+        }
+
+        if ($transactions->isEmpty()) {
+            return redirect()->back()->with('error', 'Data produksi/permintaan tidak ditemukan.');
+        }
+
+        $isPdf = $request->has('pdf');
+
+        if ($isPdf) {
+            $pdf = app('dompdf.wrapper')->setPaper('a4', 'portrait');
+            $pdf->loadView('laporan_custom.invoice_produksi_cold_kejingga', compact('transactions', 'isPdf', 'hppRecalculated'));
+            return $pdf->stream('Invoice-Produksi-Cold-Kejingga-' . date('YmdHis') . '.pdf');
+        }
+
+        return view('laporan_custom.invoice_produksi_cold_kejingga', compact('transactions', 'isPdf', 'hppRecalculated'));
     }
 
     // 4. Pembelian bahan baku gudang utama dikurangi permintaan ke central kitchen dan kejingga

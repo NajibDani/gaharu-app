@@ -67,80 +67,134 @@
         </tr>
     </table>
 
-    <h3 class="title">Item Hasil Produksi &amp; Analisis Laba</h3>
+    @php
+        $customerId = $produksi->pesanan ? $produksi->pesanan->customer_id : null;
+        $customerNama = $produksi->pesanan && $produksi->pesanan->customer ? ($produksi->pesanan->customer->nama ?? ($produksi->pesanan->customer->name ?? '')) : '';
+        $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+
+        $itemsListPdf = [];
+        $totalQtyPdf = 0;
+        $totalHppPdf = 0;
+        $totalOmsetPdf = 0;
+        $totalLabaPdf = 0;
+        $isAllB2bSameAsHpp = true;
+
+        foreach ($produksi->details as $index => $detail) {
+            $qtyVal = floatval($detail->qty);
+            $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $detail->produk_id);
+            $isMengikutiHpp = \App\Models\HargaBarangB2b::isMengikutiHpp($customerId, $detail->produk_id);
+
+            $refHpp = \App\Models\HargaBarangB2b::getRealtimeHpp($detail->produk_id);
+            if ($refHpp <= 0 && $detail->produk) {
+                $refHpp = floatval($detail->produk->hpp_referensi ?? ($detail->produk->harga_beli ?? 0));
+            }
+            if ($refHpp <= 0 && $b2bPrice > 0) {
+                $refHpp = $b2bPrice;
+            }
+
+            $rawHppTotal = floatval($detail->hpp_total);
+            $rawUnitHpp = ($qtyVal > 0 && $rawHppTotal > 0) ? ($rawHppTotal / $qtyVal) : $refHpp;
+
+            $isSameHppItem = $isMengikutiHpp || $isCustomerKejingga || ($b2bPrice !== null && abs($b2bPrice - $rawUnitHpp) < 50);
+
+            if ($isSameHppItem && $b2bPrice !== null && $b2bPrice > 0) {
+                $hppUnitVal = $b2bPrice;
+                $hargaJualUnit = $b2bPrice;
+                $effectiveHppTotal = $b2bPrice * $qtyVal;
+                $totalHargaJual = $effectiveHppTotal;
+            } elseif ($b2bPrice !== null && $b2bPrice > 0 && $rawUnitHpp > ($b2bPrice * 2)) {
+                $hppUnitVal = ($refHpp > 0 && $refHpp <= $b2bPrice) ? $refHpp : $b2bPrice;
+                $effectiveHppTotal = $hppUnitVal * $qtyVal;
+                $hargaJualUnit = $b2bPrice;
+                $totalHargaJual = $b2bPrice * $qtyVal;
+            } else {
+                $hppUnitVal = ($rawUnitHpp > 0) ? $rawUnitHpp : $refHpp;
+                $effectiveHppTotal = $hppUnitVal * $qtyVal;
+                $hargaJualUnit = ($b2bPrice !== null) ? $b2bPrice : 0;
+                $totalHargaJual = ($b2bPrice !== null) ? ($hargaJualUnit * $qtyVal) : 0;
+            }
+
+            $isB2bSet = ($b2bPrice !== null);
+            $totalLaba = $isB2bSet ? ($totalHargaJual - $effectiveHppTotal) : 0;
+
+            if ($isB2bSet && abs($totalHargaJual - $effectiveHppTotal) > 100 && !$isSameHppItem) {
+                $isAllB2bSameAsHpp = false;
+            }
+
+            $totalQtyPdf += $qtyVal;
+            $totalHppPdf += $effectiveHppTotal;
+            if ($isB2bSet) {
+                $totalOmsetPdf += $totalHargaJual;
+                $totalLabaPdf += $totalLaba;
+            }
+
+            $itemsListPdf[] = [
+                'detail'            => $detail,
+                'qtyVal'            => $qtyVal,
+                'hppUnitVal'        => $hppUnitVal,
+                'effectiveHppTotal' => $effectiveHppTotal,
+                'isB2bSet'          => $isB2bSet,
+                'hargaJualUnit'     => $hargaJualUnit,
+                'totalHargaJual'    => $totalHargaJual,
+                'totalLaba'         => $totalLaba,
+            ];
+        }
+    @endphp
+
+    <h3 class="title">Item Hasil Produksi {{ !$isAllB2bSameAsHpp ? '& Analisis Laba' : '' }}</h3>
     <table class="main-table">
         <thead>
             <tr>
                 <th width="25" class="text-center">No</th>
                 <th>Nama Produk</th>
-                <th class="text-right" width="80">HPP / Unit</th>
-                <th class="text-right" width="85">Harga Jual</th>
-                <th class="text-center" width="65">Qty Hasil</th>
-                <th class="text-right" width="90">Total HPP</th>
-                <th class="text-right" width="95">Total Jual</th>
-                <th class="text-right" width="95">Total Laba</th>
+                <th class="text-right" width="85">HPP / Unit</th>
+                <th class="text-right" width="90">Harga Jual</th>
+                <th class="text-center" width="70">Qty Hasil</th>
+                <th class="text-right" width="100">Total HPP</th>
+                <th class="text-right" width="100">Total Jual</th>
+                @if(!$isAllB2bSameAsHpp)
+                    <th class="text-right" width="95">Total Laba</th>
+                @endif
             </tr>
         </thead>
         <tbody>
+            @forelse($itemsListPdf as $index => $item)
             @php
-                $customerId = $produksi->pesanan ? $produksi->pesanan->customer_id : null;
-                $totalQtyPdf = 0;
-                $totalHppPdf = 0;
-                $totalOmsetPdf = 0;
-                $totalLabaPdf = 0;
-            @endphp
-            @forelse($produksi->details as $index => $detail)
-            @php
-                $qtyVal = floatval($detail->qty);
-                $hppTotalVal = floatval($detail->hpp_total);
-                $hppUnitVal = ($qtyVal > 0 && $hppTotalVal > 0) ? ($hppTotalVal / $qtyVal) : floatval($detail->produk->hpp_referensi ?? ($detail->produk->harga_beli ?? 0));
-                
-                // Cek pengaturan harga jual B2B per customer/outlet
-                $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $detail->produk_id);
-                $isB2bSet = ($b2bPrice !== null);
-                $hargaJualUnit = $isB2bSet ? $b2bPrice : 0;
-                $totalHargaJual = $isB2bSet ? ($hargaJualUnit * $qtyVal) : 0;
-                $effectiveHppTotal = ($hppTotalVal > 0) ? $hppTotalVal : ($hppUnitVal * $qtyVal);
-                $totalLaba = $isB2bSet ? ($totalHargaJual - $effectiveHppTotal) : 0;
-
-                $totalQtyPdf += $qtyVal;
-                $totalHppPdf += $effectiveHppTotal;
-                if ($isB2bSet) {
-                    $totalOmsetPdf += $totalHargaJual;
-                    $totalLabaPdf += $totalLaba;
-                }
+                $detail = $item['detail'];
             @endphp
             <tr>
                 <td class="text-center">{{ $index + 1 }}</td>
                 <td class="fw-bold">{{ $detail->produk->nama ?? 'Produk Tidak Diketahui' }}</td>
-                <td class="text-right">Rp {{ number_format($hppUnitVal, 0, ',', '.') }}</td>
+                <td class="text-right">Rp {{ number_format($item['hppUnitVal'], 0, ',', '.') }}</td>
                 <td class="text-right fw-bold">
-                    @if($isB2bSet)
-                        Rp {{ number_format($hargaJualUnit, 0, ',', '.') }}
+                    @if($item['isB2bSet'])
+                        Rp {{ number_format($item['hargaJualUnit'], 0, ',', '.') }}
                     @else
                         <span style="color: #b45309; font-size: 8px;">Harap mengatur harga jual B2B lebih dulu</span>
                     @endif
                 </td>
-                <td class="text-center fw-bold">{{ number_format($detail->qty, 0, ',', '.') }} Unit</td>
-                <td class="text-right">Rp {{ number_format($effectiveHppTotal, 0, ',', '.') }}</td>
+                <td class="text-center fw-bold">{{ number_format($item['qtyVal'], 0, ',', '.') }} Unit</td>
+                <td class="text-right">Rp {{ number_format($item['effectiveHppTotal'], 0, ',', '.') }}</td>
                 <td class="text-right fw-bold">
-                    @if($isB2bSet)
-                        Rp {{ number_format($totalHargaJual, 0, ',', '.') }}
+                    @if($item['isB2bSet'])
+                        Rp {{ number_format($item['totalHargaJual'], 0, ',', '.') }}
                     @else
                         <span style="color: #64748b; font-size: 9px; font-style: italic;">Belum diatur</span>
                     @endif
                 </td>
-                <td class="text-right fw-bold {{ $totalLaba >= 0 ? 'text-success' : 'text-danger' }}" style="padding-right: 10px;">
-                    @if($isB2bSet)
-                        Rp {{ number_format($totalLaba, 0, ',', '.') }}
-                    @else
-                        -
-                    @endif
-                </td>
+                @if(!$isAllB2bSameAsHpp)
+                    <td class="text-right fw-bold {{ $item['totalLaba'] >= 0 ? 'text-success' : 'text-danger' }}" style="padding-right: 10px;">
+                        @if($item['isB2bSet'])
+                            Rp {{ number_format($item['totalLaba'], 0, ',', '.') }}
+                        @else
+                            -
+                        @endif
+                    </td>
+                @endif
             </tr>
             @empty
             <tr>
-                <td colspan="8" class="text-center text-muted">Tidak ada detail produk.</td>
+                <td colspan="{{ $isAllB2bSameAsHpp ? 7 : 8 }}" class="text-center text-muted">Tidak ada detail produk.</td>
             </tr>
             @endforelse
         </tbody>
@@ -157,13 +211,15 @@
                         -
                     @endif
                 </td>
-                <td class="text-right text-success" style="padding-right: 10px;">
-                    @if($totalOmsetPdf > 0)
-                        Rp {{ number_format($totalLabaPdf, 0, ',', '.') }}
-                    @else
-                        -
-                    @endif
-                </td>
+                @if(!$isAllB2bSameAsHpp)
+                    <td class="text-right text-success" style="padding-right: 10px;">
+                        @if($totalOmsetPdf > 0)
+                            Rp {{ number_format($totalLabaPdf, 0, ',', '.') }}
+                        @else
+                            -
+                        @endif
+                    </td>
+                @endif
             </tr>
         </tfoot>
     </table>

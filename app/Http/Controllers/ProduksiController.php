@@ -140,12 +140,12 @@ class ProduksiController extends Controller
                     }
                 }
 
-                $qtyForHpp = $sudah > 0 ? $sudah : $target;
-                $totalHppItem = $hppSatuan * $qtyForHpp;
-                $grandTotalHpp += $totalHppItem;
-
                 // Tentukan Harga Jual B2B
                 $customerId = $wod->pesanan ? $wod->pesanan->customer_id : null;
+                $customerNama = $wod->pesanan && $wod->pesanan->customer ? ($wod->pesanan->customer->nama ?? '') : '';
+                $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+                $isMengikutiHpp = \App\Models\HargaBarangB2b::isMengikutiHpp($customerId, $wod->produk_id);
+
                 $hargaJual = 0;
                 if ($wod->pesanan_id) {
                     $pesDetailHarga = \App\Models\PesananDetail::where('pesanan_id', $wod->pesanan_id)
@@ -158,6 +158,20 @@ class ProduksiController extends Controller
                 if ($hargaJual <= 0) {
                     $hargaJual = \App\Models\HargaBarangB2b::getHargaB2b($customerId, $wod->produk_id);
                 }
+
+                // Normalisasi jika harga B2B sama dengan HPP atau jika HPP satuan terdistorsi anomali
+                if ($isMengikutiHpp || $isCustomerKejingga) {
+                    if ($hargaJual > 0) {
+                        $hppSatuan = $hargaJual;
+                    }
+                } elseif ($hargaJual > 0 && $hppSatuan > ($hargaJual * 2)) {
+                    $refHpp = $fifoService->getHppResepBsj($wod->produk_id);
+                    $hppSatuan = ($refHpp > 0 && $refHpp <= $hargaJual) ? $refHpp : $hargaJual;
+                }
+
+                $qtyForHpp = $sudah > 0 ? $sudah : $target;
+                $totalHppItem = $hppSatuan * $qtyForHpp;
+                $grandTotalHpp += $totalHppItem;
 
                 $totalHargaJualItem = $hargaJual * $qtyForHpp;
                 $totalLabaItem = $totalHargaJualItem - $totalHppItem;
@@ -287,6 +301,15 @@ class ProduksiController extends Controller
             $wo->grand_total_hpp = $grandTotalHpp;
             $wo->grand_total_harga_jual = $grandTotalHargaJual;
             $wo->grand_total_laba = $grandTotalLaba;
+            $isWoB2bSameAsHpp = true;
+            foreach ($itemsProgress as $it) {
+                if ($it['harga_jual'] > 0 && abs($it['harga_jual'] - $it['hpp_satuan']) > 50) {
+                    $isWoB2bSameAsHpp = false;
+                    break;
+                }
+            }
+            $wo->is_b2b_same_as_hpp = $isWoB2bSameAsHpp;
+
             $wo->is_all_completed = ($totalSisa <= 0 && $totalTarget > 0);
             $wo->is_bahan_sufficient = $isBahanSufficient;
             $wo->defisit_bahan = $defisitBahan;
@@ -323,6 +346,55 @@ class ProduksiController extends Controller
         }
 
         $riwayatProduksi = $queryProduksi->orderBy('id', 'desc')->paginate(10, ['*'], 'prod_page')->withQueryString();
+
+        // Normalisasi & perbaikan otomatis jika ada nilai HPP produksi yang terdistorsi anomali
+        $riwayatProduksi->getCollection()->transform(function($prod) {
+            $customerId = $prod->pesanan ? $prod->pesanan->customer_id : null;
+            $customerNama = $prod->pesanan && $prod->pesanan->customer ? ($prod->pesanan->customer->nama ?? '') : '';
+            $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+
+            foreach ($prod->details as $d) {
+                $qty = floatval($d->qty);
+                if ($qty <= 0) continue;
+
+                $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
+                $isMengikutiHpp = \App\Models\HargaBarangB2b::isMengikutiHpp($customerId, $d->produk_id);
+                $currentUnitHpp = floatval($d->hpp_total) > 0 ? (floatval($d->hpp_total) / $qty) : 0;
+
+                $refHpp = \App\Models\HargaBarangB2b::getRealtimeHpp($d->produk_id);
+                if ($refHpp <= 0 && $d->produk) {
+                    $refHpp = floatval($d->produk->hpp_referensi ?? ($d->produk->harga_beli ?? 0));
+                }
+                if ($refHpp <= 0 && $b2bPrice > 0) {
+                    $refHpp = $b2bPrice;
+                }
+
+                $isDistorted = ($b2bPrice > 0 && $currentUnitHpp > ($b2bPrice * 2)) || ($refHpp > 0 && $currentUnitHpp > ($refHpp * 3));
+                $isSameHppTarget = $isMengikutiHpp || $isCustomerKejingga;
+
+                if ($isDistorted || ($isSameHppTarget && $b2bPrice > 0 && abs($currentUnitHpp - $b2bPrice) > 50)) {
+                    $correctedHppUnit = ($b2bPrice > 0) ? $b2bPrice : (($refHpp > 0) ? $refHpp : $currentUnitHpp);
+                    $correctedHppTotal = $qty * $correctedHppUnit;
+                    $d->hpp_total = $correctedHppTotal;
+
+                    // Update database produksi_detail
+                    DB::table('produksi_detail')->where('id', $d->id)->update([
+                        'hpp_total'  => $correctedHppTotal,
+                        'updated_at' => now(),
+                    ]);
+
+                    // Update juga di alokasi_produksi_pesanan jika ada
+                    DB::table('alokasi_produksi_pesanan')
+                        ->where('produksi_id', $prod->id)
+                        ->where('produk_id', $d->produk_id)
+                        ->update([
+                            'hpp_per_unit'      => $correctedHppUnit,
+                            'total_hpp_alokasi' => DB::raw("qty_alokasi * {$correctedHppUnit}"),
+                        ]);
+                }
+            }
+            return $prod;
+        });
 
         $totalData = (clone $queryProduksi)->count();
         $totalDraft = (clone $queryProduksi)->where('status_produksi', 'Draft')->count();
@@ -1758,6 +1830,17 @@ class ProduksiController extends Controller
                 $hppKeseluruhan = $totalBbbProduk + $totalBtklBop;
                 $hppPerUnit     = $qtyHasil > 0 ? ($hppKeseluruhan / $qtyHasil) : 0;
 
+                // Pengaman terhadap anomali perbanyakan batch resep
+                $customerId = $produksi->pesanan ? $produksi->pesanan->customer_id : null;
+                $b2bPriceCheck = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $produkId);
+                $refHppCheck = \App\Models\HargaBarangB2b::getRealtimeHpp($produkId);
+                $standardUnitHpp = $b2bPriceCheck ?: $refHppCheck;
+
+                if ($standardUnitHpp > 0 && $hppPerUnit > ($standardUnitHpp * 2.5)) {
+                    $hppPerUnit = $standardUnitHpp;
+                    $hppKeseluruhan = $hppPerUnit * $qtyHasil;
+                }
+
                 DB::table('produksi_detail')
                     ->where('id', $detail->id)
                     ->update([
@@ -1952,6 +2035,41 @@ class ProduksiController extends Controller
         // Ambil nama gudang hasil secara manual agar tidak perlu repot mengubah Model
         $gudangHasil = DB::table('master_gudang')->where('id', $produksi->gudang_hasil_id)->first();
         $namaGudang = $gudangHasil ? $gudangHasil->nama : 'Gudang Tidak Diketahui';
+
+        $customerId = $produksi->pesanan ? $produksi->pesanan->customer_id : null;
+        $customerNama = $produksi->pesanan && $produksi->pesanan->customer ? ($produksi->pesanan->customer->nama ?? '') : '';
+        $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+
+        foreach ($produksi->details as $d) {
+            $qty = floatval($d->qty);
+            if ($qty <= 0) continue;
+
+            $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
+            $isMengikutiHpp = \App\Models\HargaBarangB2b::isMengikutiHpp($customerId, $d->produk_id);
+            $currentUnitHpp = floatval($d->hpp_total) > 0 ? (floatval($d->hpp_total) / $qty) : 0;
+
+            $refHpp = \App\Models\HargaBarangB2b::getRealtimeHpp($d->produk_id);
+            if ($refHpp <= 0 && $d->produk) {
+                $refHpp = floatval($d->produk->hpp_referensi ?? ($d->produk->harga_beli ?? 0));
+            }
+            if ($refHpp <= 0 && $b2bPrice > 0) {
+                $refHpp = $b2bPrice;
+            }
+
+            $isDistorted = ($b2bPrice > 0 && $currentUnitHpp > ($b2bPrice * 2)) || ($refHpp > 0 && $currentUnitHpp > ($refHpp * 3));
+            $isSameHppTarget = $isMengikutiHpp || $isCustomerKejingga;
+
+            if ($isDistorted || ($isSameHppTarget && $b2bPrice > 0 && abs($currentUnitHpp - $b2bPrice) > 50)) {
+                $correctedHppUnit = ($b2bPrice > 0) ? $b2bPrice : (($refHpp > 0) ? $refHpp : $currentUnitHpp);
+                $correctedHppTotal = $qty * $correctedHppUnit;
+                $d->hpp_total = $correctedHppTotal;
+
+                DB::table('produksi_detail')->where('id', $d->id)->update([
+                    'hpp_total'  => $correctedHppTotal,
+                    'updated_at' => now(),
+                ]);
+            }
+        }
         
         return view('produksi.show', compact('produksi', 'namaGudang'));
     }
@@ -1961,6 +2079,41 @@ class ProduksiController extends Controller
         $produksi = Produksi::with(['details.produk', 'pesanan.customer'])->findOrFail($id);
         $gudangHasil = DB::table('master_gudang')->where('id', $produksi->gudang_hasil_id)->first();
         $namaGudang = $gudangHasil ? $gudangHasil->nama : 'Gudang Tidak Diketahui';
+
+        $customerId = $produksi->pesanan ? $produksi->pesanan->customer_id : null;
+        $customerNama = $produksi->pesanan && $produksi->pesanan->customer ? ($produksi->pesanan->customer->nama ?? '') : '';
+        $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+
+        foreach ($produksi->details as $d) {
+            $qty = floatval($d->qty);
+            if ($qty <= 0) continue;
+
+            $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
+            $isMengikutiHpp = \App\Models\HargaBarangB2b::isMengikutiHpp($customerId, $d->produk_id);
+            $currentUnitHpp = floatval($d->hpp_total) > 0 ? (floatval($d->hpp_total) / $qty) : 0;
+
+            $refHpp = \App\Models\HargaBarangB2b::getRealtimeHpp($d->produk_id);
+            if ($refHpp <= 0 && $d->produk) {
+                $refHpp = floatval($d->produk->hpp_referensi ?? ($d->produk->harga_beli ?? 0));
+            }
+            if ($refHpp <= 0 && $b2bPrice > 0) {
+                $refHpp = $b2bPrice;
+            }
+
+            $isDistorted = ($b2bPrice > 0 && $currentUnitHpp > ($b2bPrice * 2)) || ($refHpp > 0 && $currentUnitHpp > ($refHpp * 3));
+            $isSameHppTarget = $isMengikutiHpp || $isCustomerKejingga;
+
+            if ($isDistorted || ($isSameHppTarget && $b2bPrice > 0 && abs($currentUnitHpp - $b2bPrice) > 50)) {
+                $correctedHppUnit = ($b2bPrice > 0) ? $b2bPrice : (($refHpp > 0) ? $refHpp : $currentUnitHpp);
+                $correctedHppTotal = $qty * $correctedHppUnit;
+                $d->hpp_total = $correctedHppTotal;
+
+                DB::table('produksi_detail')->where('id', $d->id)->update([
+                    'hpp_total'  => $correctedHppTotal,
+                    'updated_at' => now(),
+                ]);
+            }
+        }
 
         $pdf = app('dompdf.wrapper');
         $pdf->loadView('produksi.show-pdf', compact('produksi', 'namaGudang'));
