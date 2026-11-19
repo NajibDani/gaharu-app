@@ -1,19 +1,50 @@
 <x-app-layout>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        .ts-dropdown {
-            z-index: 999999 !important;
-            max-height: 250px !important;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18) !important;
+        /* Select2 Bootstrap-5 adjustments inside Modal */
+        .select2-container {
+            width: 100% !important;
         }
-        .ts-dropdown .ts-dropdown-content {
-            max-height: 230px !important;
-            overflow-y: auto !important;
+        .select2-container--bootstrap-5 {
+            width: 100% !important;
+        }
+        .select2-container--bootstrap-5 .select2-selection {
+            font-size: 0.84rem !important;
+            min-height: 36px !important;
+            height: 36px !important;
+            padding: 0.25rem 0.65rem !important;
+            border-radius: 0.375rem !important;
+            border-color: #dee2e6 !important;
+            display: flex !important;
+            align-items: center !important;
+        }
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+            padding-left: 0 !important;
+            line-height: 1.5 !important;
+            color: #212529 !important;
+        }
+        .select2-container--bootstrap-5.select2-container--focus .select2-selection,
+        .select2-container--bootstrap-5.select2-container--open .select2-selection {
+            border-color: #db7946 !important;
+            box-shadow: 0 0 0 0.2rem rgba(219, 121, 70, 0.25) !important;
+        }
+        .select2-dropdown {
+            border-color: #db7946 !important;
+            z-index: 1065 !important;
+            font-size: 0.84rem !important;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+        }
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted {
+            background-color: #db7946 !important;
+            color: #ffffff !important;
+        }
+        .select2-search--dropdown .select2-search__field {
+            border-radius: 6px !important;
+            padding: 6px 10px !important;
+            border: 1px solid #ced4da !important;
         }
         #modalCreateColdOrder .table-responsive {
             overflow: visible !important;
@@ -971,7 +1002,7 @@
                         <div class="row g-3 mb-4">
                             <div class="col-md-12" id="modal-cold-customer-col">
                                 <label class="form-label fw-bold small text-secondary">Outlet / Konsumen Pemesan <span class="text-danger">*</span></label>
-                                <select name="customer_id" id="modal-select-customer-cold" class="form-select rounded-3" required>
+                                <select name="customer_id" id="modal-select-customer-cold" class="form-select rounded-3" required style="width: 100%;">
                                     <option value="">-- Pilih Outlet / Konsumen Pemesan --</option>
                                     @if(isset($customers))
                                         @foreach($customers as $c)
@@ -1028,7 +1059,7 @@
 
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h6 class="fw-bold text-dark mb-0 small text-uppercase">Daftar Barang / Item Pesanan Cold Kitchen</h6>
-                            <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="modal-btn-add-cold-item">
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="modal-btn-add-cold-item" onclick="if(window.addColdItemRow) window.addColdItemRow();">
                                 <i class="bi bi-plus-circle me-1"></i> Tambah Baris
                             </button>
                         </div>
@@ -1037,17 +1068,17 @@
                             <table class="table table-bordered align-middle text-center mb-0" id="modal-table-cold-items">
                                 <thead class="bg-light font-weight-bold">
                                     <tr>
-                                        <th class="text-start" style="width: 32%;">Nama Bahan / Barang</th>
-                                        <th style="width: 15%;">Qty</th>
-                                        <th style="width: 20%;">Satuan / Mode</th>
-                                        <th style="width: 28%;">Total Qty (Konversi)</th>
+                                        <th class="text-start" style="width: 38%;">Nama Bahan / Barang</th>
+                                        <th style="width: 14%;">Qty</th>
+                                        <th style="width: 18%;">Satuan / Mode</th>
+                                        <th style="width: 25%;">Total Qty (Konversi)</th>
                                         <th style="width: 5%;">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="modal-cold-item-rows">
                                     <tr>
                                         <td class="text-start">
-                                            <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required>
+                                            <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;">
                                                 <option value="">-- Cari / Pilih BSJ / Barang Jadi --</option>
                                                 @if(isset($produk))
                                                     @foreach($produk as $item)
@@ -1408,6 +1439,7 @@
         // ==========================================
         // SCRIPT MODAL CREATE COLD KITCHEN ORDER
         // ==========================================
+        document.addEventListener('DOMContentLoaded', function() {
             const tableBodyCold = document.getElementById('modal-cold-item-rows');
             let cleanColdRowTemplate = null;
             if (tableBodyCold && tableBodyCold.querySelector('tr')) {
@@ -1421,8 +1453,14 @@
             const btnApplyAllCold = document.getElementById('modal-cold-btn-apply-all-suggestions');
 
             let currentSuggestionsCold = [];
-            const tomSelectColdInstances = new Map();
-            let tomSelectCustomerCold = null;
+
+            function ensureSelect2(fn) {
+                if (typeof $ !== 'undefined' && $.fn && $.fn.select2) {
+                    fn();
+                } else {
+                    window.addEventListener('load', fn);
+                }
+            }
 
             function updateModalDivisiOptions(divisiList) {
                 const divisiWrapper = document.getElementById('modal-cold-divisi-wrapper');
@@ -1452,66 +1490,66 @@
                 }
             }
 
-            function initTomSelectColdCustomer() {
-                if (customerSelectCold && !tomSelectCustomerCold && typeof TomSelect !== 'undefined') {
-                    tomSelectCustomerCold = new TomSelect(customerSelectCold, {
-                        create: false,
-                        placeholder: '-- Cari / Pilih Outlet / Konsumen --',
-                        allowEmptyOption: true,
-                        dropdownParent: 'body',
-                        onChange: function(val) {
-                            if (!val) {
-                                updateModalDivisiOptions([]);
-                                fetchColdSuggestions('');
-                                return;
-                            }
-                            const opt = customerSelectCold.querySelector(`option[value="${val}"]`);
-                            if (opt && opt.getAttribute('data-divisis')) {
-                                try {
-                                    const divisis = JSON.parse(opt.getAttribute('data-divisis'));
-                                    updateModalDivisiOptions(divisis);
-                                } catch (e) {
-                                    updateModalDivisiOptions([]);
-                                }
-                            }
-                            fetchColdSuggestions(val);
-                        }
-                    });
+            function initSelect2CustomerCold() {
+                if (!customerSelectCold || typeof $ === 'undefined' || !$.fn.select2) return;
+                const $cust = $(customerSelectCold);
+                if ($cust.data('select2')) {
+                    $cust.select2('destroy');
                 }
+                $cust.select2({
+                    theme: 'bootstrap-5',
+                    dropdownParent: $('#modalCreateColdOrder'),
+                    width: '100%',
+                    placeholder: '-- Cari / Pilih Outlet / Konsumen --',
+                    allowClear: true
+                }).off('change.cold').on('change.cold', function() {
+                    const val = $(this).val();
+                    if (!val) {
+                        updateModalDivisiOptions([]);
+                        fetchColdSuggestions('');
+                        return;
+                    }
+                    const opt = customerSelectCold.querySelector(`option[value="${val}"]`);
+                    if (opt && opt.getAttribute('data-divisis')) {
+                        try {
+                            const divisis = JSON.parse(opt.getAttribute('data-divisis'));
+                            updateModalDivisiOptions(divisis);
+                        } catch (e) {
+                            updateModalDivisiOptions([]);
+                        }
+                    }
+                    fetchColdSuggestions(val);
+                });
             }
 
-            function initTomSelectColdOnSelect(selectEl) {
-                if (!selectEl) return null;
-                if (tomSelectColdInstances.has(selectEl)) {
-                    return tomSelectColdInstances.get(selectEl);
+            function initSelect2Cold(selectEl) {
+                if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return null;
+                const $el = $(selectEl);
+                if ($el.data('select2')) {
+                    $el.select2('destroy');
                 }
-                if (typeof TomSelect === 'undefined') return null;
+                $el.select2({
+                    theme: 'bootstrap-5',
+                    dropdownParent: $('#modalCreateColdOrder'),
+                    width: '100%',
+                    placeholder: '-- Cari / Pilih BSJ / Barang Jadi --',
+                    allowClear: true
+                }).off('change.cold').on('change.cold', function() {
+                    const row = selectEl.closest('tr');
+                    updateColdModeOptions(row);
+                    updateColdKonversi(row);
+                });
+                return $el;
+            }
 
-                try { delete selectEl.tomselect; } catch(e) {}
-                selectEl.classList.remove('tomselected', 'ts-hidden-accessible');
-                selectEl.removeAttribute('id');
-                selectEl.removeAttribute('tabindex');
-                selectEl.removeAttribute('aria-hidden');
-                selectEl.style.display = '';
-
-                try {
-                    const ts = new TomSelect(selectEl, {
-                        create: false,
-                        placeholder: '-- Cari BSJ / Barang Jadi --',
-                        allowEmptyOption: true,
-                        dropdownParent: 'body',
-                        onChange: function() {
-                            const row = selectEl.closest('tr');
-                            updateColdModeOptions(row);
-                            updateColdKonversi(row);
-                        }
-                    });
-                    tomSelectColdInstances.set(selectEl, ts);
-                    return ts;
-                } catch(err) {
-                    console.error('Error init TomSelect:', err);
-                    return null;
-                }
+            // Auto focus search input saat dropdown Select2 dibuka
+            if (typeof $ !== 'undefined') {
+                $(document).on('select2:open', () => {
+                    const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                    if (searchField) {
+                        searchField.focus();
+                    }
+                });
             }
 
             function updateColdModeOptions(row) {
@@ -1616,9 +1654,8 @@
                         const row = btnRemove.closest('tr');
                         if (row) {
                             const selectEl = row.querySelector('.modal-select-produk-cold');
-                            if (selectEl && tomSelectColdInstances.has(selectEl)) {
-                                tomSelectColdInstances.get(selectEl).destroy();
-                                tomSelectColdInstances.delete(selectEl);
+                            if (selectEl && typeof $ !== 'undefined' && $(selectEl).data('select2')) {
+                                $(selectEl).select2('destroy');
                             }
                             row.remove();
                             checkColdRows();
@@ -1627,7 +1664,7 @@
                 });
 
                 tableBodyCold.addEventListener('change', function(e) {
-                    if (e.target.classList.contains('modal-select-produk-cold') || e.target.classList.contains('modal-select-cold-mode')) {
+                    if (e.target.classList.contains('modal-select-cold-mode')) {
                         updateColdKonversi(e.target.closest('tr'));
                     }
                 });
@@ -1672,21 +1709,28 @@
                         targetRow = cleanColdRowTemplate.cloneNode(true);
                     } else if (rows.length > 0) {
                         targetRow = rows[0].cloneNode(true);
-                        const tsWrapper = targetRow.querySelector('.ts-wrapper');
-                        if (tsWrapper) tsWrapper.remove();
-                        const oldSelect = targetRow.querySelector('select.modal-select-produk-cold');
-                        if (oldSelect) {
-                            try { delete oldSelect.tomselect; } catch(e) {}
-                            oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
-                            oldSelect.removeAttribute('id');
-                            oldSelect.removeAttribute('tabindex');
-                            oldSelect.removeAttribute('aria-hidden');
-                            oldSelect.style.display = '';
-                            oldSelect.value = '';
-                        }
                     }
 
                     if (targetRow) {
+                        // Pastikan wrapper select2 lama (jika ada) dibersihkan
+                        const s2Wrapper = targetRow.querySelector('.select2-container');
+                        if (s2Wrapper) s2Wrapper.remove();
+
+                        const oldSelect = targetRow.querySelector('select.modal-select-produk-cold');
+                        if (oldSelect) {
+                            if (typeof $ !== 'undefined' && $(oldSelect).data('select2')) {
+                                try { $(oldSelect).select2('destroy'); } catch(e) {}
+                            }
+                            oldSelect.classList.remove('select2-hidden-accessible');
+                            oldSelect.removeAttribute('id');
+                            oldSelect.removeAttribute('tabindex');
+                            oldSelect.removeAttribute('aria-hidden');
+                            oldSelect.removeAttribute('data-select2-id');
+                            oldSelect.style.display = '';
+                            oldSelect.value = '';
+                            oldSelect.querySelectorAll('option').forEach(opt => opt.removeAttribute('data-select2-id'));
+                        }
+
                         const btnRemove = targetRow.querySelector('.modal-btn-remove-cold-row');
                         if (btnRemove) btnRemove.removeAttribute('disabled');
                         
@@ -1710,15 +1754,14 @@
                     inputQty.value = qty;
                 }
 
-                const ts = initTomSelectColdOnSelect(select);
-                if (ts) {
+                initSelect2Cold(select);
+
+                if (select) {
                     if (produkId) {
-                        ts.setValue(produkId);
+                        $(select).val(String(produkId)).trigger('change');
                     } else {
-                        ts.setValue('', true);
+                        $(select).val('').trigger('change');
                     }
-                } else if (select) {
-                    select.value = produkId || '';
                 }
                 updateColdModeOptions(targetRow);
                 updateColdKonversi(targetRow);
@@ -1726,14 +1769,17 @@
                 checkColdRows();
                 return targetRow;
             }
+            window.addColdItemRow = addColdItemRow;
 
-            // Init TomSelect di modal customer dan produk saat modal dibuka
+            // Init Select2 di modal customer dan produk saat modal dibuka
             var modalCreateCold = document.getElementById('modalCreateColdOrder');
             if (modalCreateCold) {
                 modalCreateCold.addEventListener('shown.bs.modal', function() {
-                    initTomSelectColdCustomer();
-                    document.querySelectorAll('.modal-select-produk-cold').forEach(select => {
-                        initTomSelectColdOnSelect(select);
+                    ensureSelect2(function() {
+                        initSelect2CustomerCold();
+                        document.querySelectorAll('#modal-cold-item-rows .modal-select-produk-cold').forEach(select => {
+                            initSelect2Cold(select);
+                        });
                     });
                 });
             }
@@ -1805,16 +1851,25 @@
                 
                 const rows = tableBodyCold.querySelectorAll('tr');
                 rows.forEach((r, idx) => {
-                    if (idx > 0) r.remove();
+                    if (idx > 0) {
+                        const sel = r.querySelector('.modal-select-produk-cold');
+                        if (sel && typeof $ !== 'undefined' && $(sel).data('select2')) {
+                            $(sel).select2('destroy');
+                        }
+                        r.remove();
+                    }
                 });
                 const firstRow = tableBodyCold.querySelector('tr');
                 const firstSelect = firstRow.querySelector('.modal-select-produk-cold');
-                if (tomSelectColdInstances.has(firstSelect)) {
-                    tomSelectColdInstances.get(firstSelect).setValue('');
-                } else {
-                    firstSelect.value = '';
+                if (firstSelect) {
+                    if (typeof $ !== 'undefined' && $(firstSelect).data('select2')) {
+                        $(firstSelect).val('').trigger('change');
+                    } else {
+                        firstSelect.value = '';
+                    }
                 }
-                firstRow.querySelector('.modal-input-cold-qty').value = '';
+                const firstQty = firstRow.querySelector('.modal-input-cold-qty');
+                if (firstQty) firstQty.value = '';
 
                 currentSuggestionsCold.forEach(item => {
                     addColdItemRow(item.barang_id, item.suggested_qty, item.satuan);
@@ -1850,8 +1905,11 @@
                 btn.addEventListener('click', function() {
                     const custId = this.getAttribute('data-customer-id');
                     if (customerSelectCold) {
-                        customerSelectCold.value = custId;
-                        if (tomSelectCustomerCold) tomSelectCustomerCold.setValue(custId);
+                        if (typeof $ !== 'undefined' && $(customerSelectCold).data('select2')) {
+                            $(customerSelectCold).val(custId).trigger('change');
+                        } else {
+                            customerSelectCold.value = custId;
+                        }
                     }
                     const modalEl = document.getElementById('modalCreateColdOrder');
                     if (modalEl) {
