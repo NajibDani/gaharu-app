@@ -13,9 +13,9 @@
         }
         .select2-container--bootstrap-5 .select2-selection {
             font-size: 0.84rem !important;
-            min-height: 36px !important;
-            height: 36px !important;
-            padding: 0.25rem 0.65rem !important;
+            min-height: 38px !important;
+            height: 38px !important;
+            padding: 0.35rem 0.65rem !important;
             border-radius: 0.375rem !important;
             border-color: #dee2e6 !important;
             display: flex !important;
@@ -25,6 +25,7 @@
             padding-left: 0 !important;
             line-height: 1.5 !important;
             color: #212529 !important;
+            font-weight: 500;
         }
         .select2-container--bootstrap-5.select2-container--focus .select2-selection,
         .select2-container--bootstrap-5.select2-container--open .select2-selection {
@@ -35,23 +36,60 @@
             border-color: #db7946 !important;
             z-index: 1065 !important;
             font-size: 0.84rem !important;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15) !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+            min-width: 480px !important;
+        }
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options {
+            max-height: 280px !important;
+        }
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option {
+            padding: 7px 12px !important;
+            border-bottom: 1px solid #f3f4f6;
+            transition: background-color 0.1s ease;
+        }
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option:last-child {
+            border-bottom: none;
         }
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted {
             background-color: #db7946 !important;
             color: #ffffff !important;
         }
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted .badge {
+            background-color: rgba(255, 255, 255, 0.25) !important;
+            color: #ffffff !important;
+            border-color: rgba(255, 255, 255, 0.4) !important;
+        }
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted .text-dark,
+        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted .text-muted {
+            color: #ffffff !important;
+        }
+        .select2-search--dropdown {
+            padding: 8px 10px !important;
+            background-color: #fbf9f7;
+            border-bottom: 1px solid #ede8e3;
+        }
         .select2-search--dropdown .select2-search__field {
             border-radius: 6px !important;
-            padding: 6px 10px !important;
+            padding: 7px 32px 7px 12px !important;
             border: 1px solid #ced4da !important;
+            font-size: 0.84rem !important;
+            background-color: #ffffff;
+        }
+        .select2-search--dropdown .select2-search__field:focus {
+            border-color: #db7946 !important;
+            outline: none !important;
+            box-shadow: 0 0 0 2px rgba(219, 121, 70, 0.2) !important;
         }
         #modalCreateColdOrder .table-responsive {
             overflow: visible !important;
+            padding-bottom: 80px !important;
         }
         #modalCreateColdOrder .modal-body {
             overflow-y: visible !important;
-            min-height: 380px;
+            min-height: 520px;
+            padding-bottom: 100px !important;
         }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
 
@@ -987,7 +1025,7 @@
 
     {{-- MODAL BUAT PESANAN COLD KITCHEN BARU --}}
     <div class="modal fade text-start" id="modalCreateColdOrder" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg rounded-4">
                 <div class="modal-header bg-custom-orange text-white" style="background-color: #db7946;">
                     <h5 class="modal-title fw-bold">
@@ -1059,7 +1097,7 @@
 
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <h6 class="fw-bold text-dark mb-0 small text-uppercase">Daftar Barang / Item Pesanan Cold Kitchen</h6>
-                            <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="modal-btn-add-cold-item" onclick="if(window.addColdItemRow) window.addColdItemRow();">
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="modal-btn-add-cold-item">
                                 <i class="bi bi-plus-circle me-1"></i> Tambah Baris
                             </button>
                         </div>
@@ -1068,10 +1106,10 @@
                             <table class="table table-bordered align-middle text-center mb-0" id="modal-table-cold-items">
                                 <thead class="bg-light font-weight-bold">
                                     <tr>
-                                        <th class="text-start" style="width: 38%;">Nama Bahan / Barang</th>
-                                        <th style="width: 14%;">Qty</th>
-                                        <th style="width: 18%;">Satuan / Mode</th>
-                                        <th style="width: 25%;">Total Qty (Konversi)</th>
+                                        <th class="text-start" style="width: 44%;">Nama Bahan / Barang</th>
+                                        <th style="width: 13%;">Qty</th>
+                                        <th style="width: 17%;">Satuan / Mode</th>
+                                        <th style="width: 21%;">Total Qty (Konversi)</th>
                                         <th style="width: 5%;">Aksi</th>
                                     </tr>
                                 </thead>
@@ -1079,7 +1117,7 @@
                                     <tr>
                                         <td class="text-start">
                                             <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;">
-                                                <option value="">-- Cari / Pilih BSJ / Barang Jadi --</option>
+                                                <option value="">-- Cari / Ketik Kode atau Nama Barang --</option>
                                                 @if(isset($produk))
                                                     @foreach($produk as $item)
                                                         @php
@@ -1087,20 +1125,22 @@
                                                             $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
                                                             $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
                                                             $konversiVal = floatval($item->konversi_pembelian ?? 1);
+                                                            $infoText = '';
+                                                            if ($satuanKonversi && $konversiVal > 1) {
+                                                                $infoText = '1 ' . $satuanKonversi . ' = ' . number_format($konversiVal, 0, ',', '.') . ' ' . $item->satuan;
+                                                            } elseif ($outQty > 0) {
+                                                                $infoText = '1 Resep = ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan;
+                                                            }
                                                         @endphp
                                                         <option value="{{ $item->id }}" 
+                                                                data-kode="{{ $item->kode_barang }}"
+                                                                data-nama="{{ $item->nama }}"
+                                                                data-info="{{ $infoText }}"
                                                                 data-satuan="{{ $item->satuan }}"
                                                                 data-output-qty="{{ $outQty }}"
                                                                 data-satuan-output="{{ $outSatuan }}"
                                                                 data-satuan-konversi="{{ $satuanKonversi }}"
-                                                                data-konversi="{{ $konversiVal }}">
-                                                            {{ $item->kode_barang }} - {{ $item->nama }}
-                                                            @if($satuanKonversi && $konversiVal > 1)
-                                                                (1 {{ $satuanKonversi }} = {{ number_format($konversiVal, 0, ',', '.') }} {{ $item->satuan }})
-                                                            @elseif($outQty > 0)
-                                                                (1 Resep = {{ number_format($outQty, 0, ',', '.') }} {{ $outSatuan }})
-                                                            @endif
-                                                        </option>
+                                                                data-konversi="{{ $konversiVal }}">{{ $item->kode_barang }} - {{ $item->nama }}{{ $infoText ? ' (' . $infoText . ')' : '' }}</option>
                                                     @endforeach
                                                 @endif
                                             </select>
@@ -1522,6 +1562,39 @@
                 });
             }
 
+            function formatColdProductOption(data) {
+                if (!data.id) return data.text;
+                const el = data.element;
+                if (!el) return data.text;
+
+                const kode = el.getAttribute('data-kode') || '';
+                const nama = el.getAttribute('data-nama') || data.text;
+                const info = el.getAttribute('data-info') || '';
+
+                const $wrapper = $(`
+                    <div class="d-flex justify-content-between align-items-center py-1 gap-2" style="font-size: 0.84rem;">
+                        <div class="d-flex align-items-center text-truncate">
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border me-2 font-monospace px-2 py-1" style="font-size: 0.72rem; min-width: 58px; text-align: center;">${kode}</span>
+                            <span class="fw-semibold text-dark text-truncate">${nama}</span>
+                        </div>
+                        ${info ? `<span class="badge bg-light text-muted border px-2 py-1 flex-shrink-0" style="font-size: 0.7rem; font-weight: 500;">${info}</span>` : ''}
+                    </div>
+                `);
+                return $wrapper;
+            }
+
+            function formatColdProductSelection(data) {
+                if (!data.id) return data.text;
+                const el = data.element;
+                if (!el) return data.text;
+                const kode = el.getAttribute('data-kode');
+                const nama = el.getAttribute('data-nama');
+                if (kode && nama) {
+                    return `${kode} - ${nama}`;
+                }
+                return data.text;
+            }
+
             function initSelect2Cold(selectEl) {
                 if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return null;
                 const $el = $(selectEl);
@@ -1532,8 +1605,10 @@
                     theme: 'bootstrap-5',
                     dropdownParent: $('#modalCreateColdOrder'),
                     width: '100%',
-                    placeholder: '-- Cari / Pilih BSJ / Barang Jadi --',
-                    allowClear: true
+                    placeholder: '-- Cari / Ketik Kode atau Nama Barang --',
+                    allowClear: true,
+                    templateResult: formatColdProductOption,
+                    templateSelection: formatColdProductSelection
                 }).off('change.cold').on('change.cold', function() {
                     const row = selectEl.closest('tr');
                     updateColdModeOptions(row);
@@ -1894,10 +1969,10 @@
             }
 
             if (btnAddCold) {
-                btnAddCold.addEventListener('click', function(e) {
+                btnAddCold.onclick = function(e) {
                     if (e) e.preventDefault();
                     addColdItemRow();
-                });
+                };
             }
 
             // Handler tombol quick suggestion di banner atas
