@@ -1115,13 +1115,18 @@ class LaporanCustomController extends Controller
         $data = collect();
 
         foreach ($prodList as $p) {
+            $customerId = $p->pesanan ? $p->pesanan->customer_id : null;
             $p->row_type = 'produksi';
             $p->row_date = $p->pesanan->tanggal ?? ($p->alokasiPesanan->first()->pesanan->tanggal ?? $p->tanggal_mulai);
             $p->details = $p->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
             
-            // Pastikan hpp_total terhitung jika belum ada
+            // Pastikan hpp_total terhitung dan sinkron dengan harga B2B/HPP
             foreach ($p->details as $d) {
-                if (!$d->hpp_total || floatval($d->hpp_total) <= 0) {
+                $qtyD = floatval($d->qty ?? ($d->jumlah ?? 0));
+                $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $d->produk_id);
+                if ($b2bPrice !== null && $b2bPrice > 0) {
+                    $d->hpp_total = $qtyD * $b2bPrice;
+                } elseif (!$d->hpp_total || floatval($d->hpp_total) <= 0) {
                     $alokasiHpp = DB::table('alokasi_produksi_pesanan')
                         ->where('produksi_id', $p->id)
                         ->where('produk_id', $d->produk_id)
@@ -1131,7 +1136,7 @@ class LaporanCustomController extends Controller
                     } else {
                         $h = $fifoService->getHppResepBsj($d->produk_id);
                         if ($h <= 0 && $d->produk) $h = (float)($d->produk->hpp_referensi ?? 0);
-                        $d->hpp_total = floatval($d->qty ?? ($d->jumlah ?? 0)) * $h;
+                        $d->hpp_total = $qtyD * $h;
                     }
                 }
             }
@@ -1152,22 +1157,28 @@ class LaporanCustomController extends Controller
             })->values();
 
             foreach ($activeDetails as $d) {
-                $needsHppCalc = (!$d->hpp_total || $d->hpp_total <= 0);
-                if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
-                    $needsHppCalc = true;
-                }
-
-                if ($needsHppCalc) {
-                    $harga = 0;
-                    if ($d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
-                        $harga = $d->subtotal / $d->qty;
-                    } elseif ($d->produk_id) {
-                        $harga = $fifoService->getHppResepBsj($d->produk_id);
-                        if ($harga <= 0 && $d->produk) {
-                            $harga = (float)($d->produk->hpp_referensi ?? 0);
-                        }
+                $qtyD = floatval($d->qty ?? 0);
+                $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($pes->customer_id, $d->produk_id);
+                if ($b2bPrice !== null && $b2bPrice > 0) {
+                    $d->hpp_total = $qtyD * $b2bPrice;
+                } else {
+                    $needsHppCalc = (!$d->hpp_total || $d->hpp_total <= 0);
+                    if (!$needsHppCalc && $qtyD > 0 && (floatval($d->hpp_total) / $qtyD) < 1.0) {
+                        $needsHppCalc = true;
                     }
-                    $d->hpp_total = ($d->subtotal && $d->subtotal > 0 && ($d->subtotal / $d->qty) >= 1.0) ? $d->subtotal : ($d->qty * $harga);
+
+                    if ($needsHppCalc) {
+                        $harga = 0;
+                        if ($d->subtotal && $d->subtotal > 0 && $qtyD > 0 && ($d->subtotal / $qtyD) >= 1.0) {
+                            $harga = $d->subtotal / $qtyD;
+                        } elseif ($d->produk_id) {
+                            $harga = $fifoService->getHppResepBsj($d->produk_id);
+                            if ($harga <= 0 && $d->produk) {
+                                $harga = (float)($d->produk->hpp_referensi ?? 0);
+                            }
+                        }
+                        $d->hpp_total = ($d->subtotal && $d->subtotal > 0 && ($d->subtotal / $qtyD) >= 1.0) ? $d->subtotal : ($qtyD * $harga);
+                    }
                 }
                 $d->barang = $d->produk;
             }
@@ -1301,7 +1312,10 @@ class LaporanCustomController extends Controller
                 if (!$hasPayment) {
                     $calcNominal = 0;
                     foreach ($p->details as $d) {
-                        if ($d->subtotal && $d->subtotal > 0) {
+                        $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($p->customer_id, $d->produk_id);
+                        if ($b2bPrice !== null && $b2bPrice > 0) {
+                            $calcNominal += ($d->qty * $b2bPrice);
+                        } elseif ($d->subtotal && $d->subtotal > 0) {
                             $calcNominal += (float)$d->subtotal;
                         } else {
                             $h = $fifoService->getHppResepBsj($d->produk_id);
@@ -1381,20 +1395,27 @@ class LaporanCustomController extends Controller
             ])->whereIn('id', $prodIds)->get();
 
             foreach ($prodTx as $pt) {
+                $customerId = $pt->pesanan ? $pt->pesanan->customer_id : null;
                 $pt->details = $pt->details->filter(fn($d) => floatval($d->qty ?? ($d->jumlah ?? 0)) > 0)->values();
                 foreach ($pt->details as $d) {
                     $qtyD = floatval($d->qty ?? ($d->jumlah ?? 0));
-                    $unitPriceD = $qtyD > 0 ? (floatval($d->hpp_total) / $qtyD) : 0;
-                    if ($qtyD > 0 && ($hppRecalculated || !$d->hpp_total || $unitPriceD < 1.0)) {
-                        $pId = $d->produk_id ?? ($d->barang_id ?? null);
-                        if ($pId) {
-                            $harga = $fifoService->getHppResepBsj($pId);
-                            if ($harga <= 0) {
-                                $pObj = $d->produk ?? $d->barang;
-                                $harga = (float)($pObj->hpp_referensi ?? 0);
-                            }
-                            if ($harga > 0) {
-                                $d->hpp_total = $qtyD * $harga;
+                    $pId = $d->produk_id ?? ($d->barang_id ?? null);
+                    $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($customerId, $pId);
+
+                    if ($b2bPrice !== null && $b2bPrice > 0) {
+                        $d->hpp_total = $qtyD * $b2bPrice;
+                    } else {
+                        $unitPriceD = $qtyD > 0 ? (floatval($d->hpp_total) / $qtyD) : 0;
+                        if ($qtyD > 0 && ($hppRecalculated || !$d->hpp_total || $unitPriceD < 1.0)) {
+                            if ($pId) {
+                                $harga = $fifoService->getHppResepBsj($pId);
+                                if ($harga <= 0) {
+                                    $pObj = $d->produk ?? $d->barang;
+                                    $harga = (float)($pObj->hpp_referensi ?? 0);
+                                }
+                                if ($harga > 0) {
+                                    $d->hpp_total = $qtyD * $harga;
+                                }
                             }
                         }
                     }
@@ -1426,22 +1447,29 @@ class LaporanCustomController extends Controller
                 })->values();
 
                 foreach ($activeDetails as $d) {
-                    $needsHppCalc = $hppRecalculated || (!$d->hpp_total || $d->hpp_total <= 0);
-                    if (!$needsHppCalc && floatval($d->qty ?? 0) > 0 && (floatval($d->hpp_total) / floatval($d->qty)) < 1.0) {
-                        $needsHppCalc = true;
-                    }
+                    $qtyD = floatval($d->qty ?? 0);
+                    $b2bPrice = \App\Models\HargaBarangB2b::getHargaB2bKhusus($pes->customer_id, $d->produk_id);
 
-                    if ($needsHppCalc) {
-                        $harga = 0;
-                        if (!$hppRecalculated && $d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
-                            $harga = $d->subtotal / $d->qty;
-                        } elseif ($d->produk_id) {
-                            $harga = $fifoService->getHppResepBsj($d->produk_id);
-                            if ($harga <= 0 && $d->produk) {
-                                $harga = (float)($d->produk->hpp_referensi ?? 0);
-                            }
+                    if ($b2bPrice !== null && $b2bPrice > 0) {
+                        $d->hpp_total = $qtyD * $b2bPrice;
+                    } else {
+                        $needsHppCalc = $hppRecalculated || (!$d->hpp_total || $d->hpp_total <= 0);
+                        if (!$needsHppCalc && $qtyD > 0 && (floatval($d->hpp_total) / $qtyD) < 1.0) {
+                            $needsHppCalc = true;
                         }
-                        $d->hpp_total = ($d->qty * $harga);
+
+                        if ($needsHppCalc) {
+                            $harga = 0;
+                            if (!$hppRecalculated && $d->subtotal && $d->subtotal > 0 && $d->qty > 0 && ($d->subtotal / $d->qty) >= 1.0) {
+                                $harga = $d->subtotal / $d->qty;
+                            } elseif ($d->produk_id) {
+                                $harga = $fifoService->getHppResepBsj($d->produk_id);
+                                if ($harga <= 0 && $d->produk) {
+                                    $harga = (float)($d->produk->hpp_referensi ?? 0);
+                                }
+                            }
+                            $d->hpp_total = ($d->qty * $harga);
+                        }
                     }
                     $d->barang = $d->produk;
                 }
