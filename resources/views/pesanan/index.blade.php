@@ -1408,8 +1408,11 @@
         // ==========================================
         // SCRIPT MODAL CREATE COLD KITCHEN ORDER
         // ==========================================
-        document.addEventListener('DOMContentLoaded', function() {
             const tableBodyCold = document.getElementById('modal-cold-item-rows');
+            let cleanColdRowTemplate = null;
+            if (tableBodyCold && tableBodyCold.querySelector('tr')) {
+                cleanColdRowTemplate = tableBodyCold.querySelector('tr').cloneNode(true);
+            }
             const btnAddCold = document.getElementById('modal-btn-add-cold-item');
             const customerSelectCold = document.getElementById('modal-select-customer-cold');
             const suggestionBoxCold = document.getElementById('modal-cold-suggestion-box');
@@ -1484,26 +1487,31 @@
                 }
                 if (typeof TomSelect === 'undefined') return null;
 
-                delete selectEl.tomselect;
+                try { delete selectEl.tomselect; } catch(e) {}
                 selectEl.classList.remove('tomselected', 'ts-hidden-accessible');
                 selectEl.removeAttribute('id');
                 selectEl.removeAttribute('tabindex');
                 selectEl.removeAttribute('aria-hidden');
                 selectEl.style.display = '';
 
-                const ts = new TomSelect(selectEl, {
-                    create: false,
-                    placeholder: '-- Cari BSJ / Barang Jadi --',
-                    allowEmptyOption: true,
-                    dropdownParent: 'body',
-                    onChange: function() {
-                        const row = selectEl.closest('tr');
-                        updateColdModeOptions(row);
-                        updateColdKonversi(row);
-                    }
-                });
-                tomSelectColdInstances.set(selectEl, ts);
-                return ts;
+                try {
+                    const ts = new TomSelect(selectEl, {
+                        create: false,
+                        placeholder: '-- Cari BSJ / Barang Jadi --',
+                        allowEmptyOption: true,
+                        dropdownParent: 'body',
+                        onChange: function() {
+                            const row = selectEl.closest('tr');
+                            updateColdModeOptions(row);
+                            updateColdKonversi(row);
+                        }
+                    });
+                    tomSelectColdInstances.set(selectEl, ts);
+                    return ts;
+                } catch(err) {
+                    console.error('Error init TomSelect:', err);
+                    return null;
+                }
             }
 
             function updateColdModeOptions(row) {
@@ -1644,46 +1652,56 @@
 
             // Tambah baris item baru
             function addColdItemRow(produkId = '', qty = '', satuan = '') {
-                if (!tableBodyCold) return;
+                if (!tableBodyCold) return null;
                 const rows = tableBodyCold.querySelectorAll('tr');
                 let targetRow = null;
 
-                if (rows.length === 1) {
+                // Hanya gunakan baris pertama jika dipanggil dari auto-suggestion (memiliki produkId)
+                // DAN baris pertama tersebut belum dipilih produknya sama sekali
+                if (produkId && rows.length === 1) {
                     const firstSelect = rows[0].querySelector('.modal-select-produk-cold');
                     const firstQty = rows[0].querySelector('.modal-input-cold-qty');
-                    if (!firstSelect.value && !firstQty.value) {
+                    if (!firstSelect.value && (!firstQty.value || parseFloat(firstQty.value) === 0)) {
                         targetRow = rows[0];
                     }
                 }
 
+                // Jika bukan reuse baris pertama, buat dan pasang baris baru dari clean template
                 if (!targetRow) {
-                    const firstRow = rows[0];
-                    targetRow = firstRow.cloneNode(true);
-                    
-                    const tsWrapper = targetRow.querySelector('.ts-wrapper');
-                    if (tsWrapper) tsWrapper.remove();
-                    const oldSelect = targetRow.querySelector('select.modal-select-produk-cold');
-                    if (oldSelect) {
-                        delete oldSelect.tomselect;
-                        oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
-                        oldSelect.removeAttribute('id');
-                        oldSelect.removeAttribute('tabindex');
-                        oldSelect.removeAttribute('aria-hidden');
-                        oldSelect.style.display = '';
-                        oldSelect.value = '';
+                    if (cleanColdRowTemplate) {
+                        targetRow = cleanColdRowTemplate.cloneNode(true);
+                    } else if (rows.length > 0) {
+                        targetRow = rows[0].cloneNode(true);
+                        const tsWrapper = targetRow.querySelector('.ts-wrapper');
+                        if (tsWrapper) tsWrapper.remove();
+                        const oldSelect = targetRow.querySelector('select.modal-select-produk-cold');
+                        if (oldSelect) {
+                            try { delete oldSelect.tomselect; } catch(e) {}
+                            oldSelect.classList.remove('tomselected', 'ts-hidden-accessible');
+                            oldSelect.removeAttribute('id');
+                            oldSelect.removeAttribute('tabindex');
+                            oldSelect.removeAttribute('aria-hidden');
+                            oldSelect.style.display = '';
+                            oldSelect.value = '';
+                        }
                     }
 
-                    targetRow.querySelector('.modal-btn-remove-cold-row').removeAttribute('disabled');
-                    
-                    const modeSelect = targetRow.querySelector('.modal-select-cold-mode');
-                    if (modeSelect) modeSelect.value = 'resep';
-                    const qtyInput = targetRow.querySelector('.modal-input-cold-qty');
-                    if (qtyInput) qtyInput.value = '';
-                    const infoBox = targetRow.querySelector('.modal-cold-konversi-info');
-                    if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
+                    if (targetRow) {
+                        const btnRemove = targetRow.querySelector('.modal-btn-remove-cold-row');
+                        if (btnRemove) btnRemove.removeAttribute('disabled');
+                        
+                        const modeSelect = targetRow.querySelector('.modal-select-cold-mode');
+                        if (modeSelect) modeSelect.value = 'resep';
+                        const qtyInput = targetRow.querySelector('.modal-input-cold-qty');
+                        if (qtyInput) qtyInput.value = '';
+                        const infoBox = targetRow.querySelector('.modal-cold-konversi-info');
+                        if (infoBox) infoBox.innerHTML = '<span class="text-muted">-</span>';
 
-                    tableBodyCold.appendChild(targetRow);
+                        tableBodyCold.appendChild(targetRow);
+                    }
                 }
+
+                if (!targetRow) return null;
 
                 const select = targetRow.querySelector('.modal-select-produk-cold');
                 const inputQty = targetRow.querySelector('.modal-input-cold-qty');
@@ -1821,7 +1839,8 @@
             }
 
             if (btnAddCold) {
-                btnAddCold.addEventListener('click', function() {
+                btnAddCold.addEventListener('click', function(e) {
+                    if (e) e.preventDefault();
                     addColdItemRow();
                 });
             }
