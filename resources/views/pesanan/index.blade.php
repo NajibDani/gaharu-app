@@ -995,11 +995,11 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-secondary">Tanggal Order <span class="text-danger">*</span></label>
-                                <input type="date" name="tanggal" class="form-control rounded-3" value="{{ date('Y-m-d') }}" required>
+                                <input type="date" name="tanggal" class="form-control rounded-3" value="{{ old('tanggal', date('Y-m-d')) }}" required>
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold small text-secondary">Estimasi Kirim <span class="text-danger">*</span></label>
-                                <input type="date" name="estimasi_kirim" class="form-control rounded-3" value="{{ date('Y-m-d', strtotime('+1 day')) }}" required>
+                                <input type="date" name="estimasi_kirim" class="form-control rounded-3" value="{{ old('estimasi_kirim', date('Y-m-d', strtotime('+1 day'))) }}" required>
                             </div>
                             <div class="col-md-12">
                                 <label class="form-label fw-bold small text-secondary">Catatan Permintaan (Opsional)</label>
@@ -1842,6 +1842,17 @@
                     fetchColdSuggestions(custId, true);
                 });
             });
+
+            // Sinkronisasi tanggal order ke estimasi kirim agar tidak lebih lampau
+            const inputTanggalModal = document.querySelector('#modalCreateColdOrder input[name="tanggal"]');
+            const inputEstimasiModal = document.querySelector('#modalCreateColdOrder input[name="estimasi_kirim"]');
+            if (inputTanggalModal && inputEstimasiModal) {
+                inputTanggalModal.addEventListener('change', function() {
+                    if (!inputEstimasiModal.value || inputEstimasiModal.value < this.value) {
+                        inputEstimasiModal.value = this.value;
+                    }
+                });
+            }
         });
     </script>
 </x-app-layout>

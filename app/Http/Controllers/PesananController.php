@@ -286,11 +286,10 @@ class PesananController extends Controller
             return redirect()->back()->withErrors(['tanggal' => 'Periode akuntansi tanggal ' . date('d/m/Y', strtotime($request->tanggal)) . ' sudah ditutup buku. Tidak dapat membuat Permintaan Cold Kitchen pada periode yang sudah ditutup.'])->withInput();
         }
 
-        if (date('Y-m-d', strtotime($request->tanggal)) < date('Y-m-d')) {
-            return redirect()->back()->withErrors(['tanggal' => 'Tanggal transaksi tidak boleh sebelum hari ini.'])->withInput();
-        }
-
         $estimasiKirim = $request->estimasi_kirim ? $request->estimasi_kirim : $request->tanggal;
+        if (date('Y-m-d', strtotime($estimasiKirim)) < date('Y-m-d', strtotime($request->tanggal))) {
+            $estimasiKirim = $request->tanggal;
+        }
 
         foreach ($request->produk_id as $key => $produkId) {
             if (!$produkId) continue;
