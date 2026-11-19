@@ -106,7 +106,7 @@
                             <i class="bi bi-credit-card-fill me-1"></i> Bayar Produksi Terpilih
                         </button>
 
-                        <button type="button" class="btn btn-sm text-white fw-bold px-3 shadow-sm" style="background-color: #2563eb;" id="btnCetakInvoiceSelected" disabled>
+                        <button type="button" class="btn btn-sm text-white fw-bold px-3 shadow-sm" style="background-color: #ec4899;" id="btnCetakInvoiceSelected" disabled>
                             <i class="bi bi-printer-fill me-1"></i> Cetak Invoice Terpilih
                         </button>
                     </div>
@@ -166,7 +166,7 @@
                                     </td>
                                     <td>
                                         <span class="badge bg-light text-dark border">
-                                            <i class="bi bi-calendar-event me-1 text-primary"></i>{{ $tglPermintaan }}
+                                             <i class="bi bi-calendar-event me-1 text-primary"></i>{{ $tglPermintaan }}
                                         </span>
                                     </td>
                                     <td>
@@ -205,7 +205,7 @@
                                                 </button>
                                             @endif
 
-                                            <a href="{{ route('laporan.laporan-custom.produksi-cold-kejingga.cetak-invoice', ['ids' => $row->id]) }}" class="btn btn-sm text-white px-2 py-1" style="background-color:#2563eb; font-size: 12px;" target="_blank">
+                                            <a href="{{ route('laporan.laporan-custom.produksi-cold-kejingga.cetak-invoice', ['ids' => $row->id]) }}" class="btn btn-sm text-white px-2 py-1" style="background-color:#ec4899; font-size: 12px;" target="_blank">
                                                 <i class="bi bi-file-earmark-text me-1"></i> Invoice
                                             </a>
 

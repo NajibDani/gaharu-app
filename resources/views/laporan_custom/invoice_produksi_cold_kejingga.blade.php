@@ -145,7 +145,7 @@
             transition: all 0.2s;
         }
         .btn-back { background-color: #64748b; color: #ffffff; }
-        .btn-print { background-color: #2563eb; color: #ffffff; }
+        .btn-print { background-color: #ec4899; color: #ffffff; }
         .btn-pdf { background-color: #dc2626; color: #ffffff; }
         .btn-jpg { background-color: #059669; color: #ffffff; }
 
@@ -156,7 +156,7 @@
             padding: {{ $isPdf ? '10px 15px' : '22px 28px' }};
             border-radius: {{ $isPdf ? '0' : '8px' }};
             box-shadow: {{ $isPdf ? 'none' : '0 3px 12px rgba(0,0,0,0.04)' }};
-            border: {{ $isPdf ? 'none' : '1px solid #e2e8f0' }};
+            border: {{ $isPdf ? 'none' : '1px solid #fbcfe8' }};
         }
 
         /* Layout Tables */
@@ -167,7 +167,7 @@
         }
 
         .header-border {
-            border-bottom: 2px solid #2563eb;
+            border-bottom: 2px solid #f472b6;
             padding-bottom: 8px;
             margin-bottom: 14px;
         }
@@ -175,7 +175,7 @@
         .brand-logo {
             font-size: 20px;
             font-weight: 800;
-            color: #2563eb;
+            color: #ec4899;
             letter-spacing: 0.5px;
         }
 
@@ -197,15 +197,15 @@
         .invoice-no {
             font-size: 12px;
             font-weight: 700;
-            color: #2563eb;
+            color: #db2777;
             text-align: right;
             font-family: monospace;
             margin-top: 2px;
         }
 
         .info-box {
-            background-color: #f0f6ff;
-            border: 1px solid #bfdbfe;
+            background-color: #fdf2f8;
+            border: 1px solid #fbcfe8;
             border-radius: 6px;
             padding: 8px 12px;
             vertical-align: top;
@@ -215,9 +215,9 @@
             font-size: 10.5px;
             font-weight: 700;
             text-transform: uppercase;
-            color: #1e40af;
+            color: #be185d;
             margin-bottom: 6px;
-            border-bottom: 1px dashed #93c5fd;
+            border-bottom: 1px dashed #f9a8d4;
             padding-bottom: 3px;
         }
 
@@ -255,7 +255,7 @@
 
         .badge-pending {
             display: inline-block;
-            background-color: #2563eb;
+            background-color: #ec4899;
             color: #ffffff;
             font-size: 10.5px;
             font-weight: 700;
@@ -280,29 +280,29 @@
         }
 
         .table-items th {
-            background-color: #2563eb;
+            background-color: #f472b6;
             color: #ffffff;
             font-weight: 700;
             font-size: 10.5px;
             text-transform: uppercase;
             padding: 6px 8px;
             text-align: left;
-            border: 1px solid #2563eb;
+            border: 1px solid #f472b6;
         }
 
         .table-items td {
             padding: 5px 8px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid #fbcfe8;
             font-size: 11px;
         }
 
         .table-items tr:nth-child(even) td {
-            background-color: #f8fafc;
+            background-color: #fdf2f8;
         }
 
         .table-items tfoot td {
-            background-color: #eff6ff;
-            border: 1px solid #bfdbfe;
+            background-color: #fdf2f8;
+            border: 1px solid #fbcfe8;
             padding: 7px 8px;
         }
 
@@ -475,7 +475,7 @@
                                 </td>
                             </tr>
                         </table>
-                        <div style="border-bottom: 1px dashed #93c5fd; margin-bottom: 6px; margin-top: 3px;"></div>
+                        <div style="border-bottom: 1px dashed #f9a8d4; margin-bottom: 6px; margin-top: 3px;"></div>
                         <table class="info-table">
                             <tr>
                                 <td class="info-label">Tgl Pembayaran</td>
@@ -492,7 +492,7 @@
                             @if(!empty($catatanBayar) && $catatanBayar !== '-')
                                 <tr>
                                     <td class="info-label">Catatan</td>
-                                    <td class="info-val" style="color: #2563eb;">: {{ $catatanBayar }}</td>
+                                    <td class="info-val" style="color: #be185d;">: {{ $catatanBayar }}</td>
                                 </tr>
                             @endif
                         </table>
@@ -537,7 +537,7 @@
             <tfoot>
                 <tr>
                     <td colspan="4" class="text-right fw-bold" style="color: #475569; font-size: 11px;">GRAND TOTAL TAGIHAN PRODUKSI</td>
-                    <td class="text-right fw-bold" style="color: #2563eb; font-size: 13.5px;">Rp {{ number_format($grandTotal, 0, ',', '.') }}</td>
+                    <td class="text-right fw-bold" style="color: #db2777; font-size: 13.5px;">Rp {{ number_format($grandTotal, 0, ',', '.') }}</td>
                 </tr>
             </tfoot>
         </table>
