@@ -45,7 +45,7 @@ class ProduksiController extends Controller
         }
 
         $pesananB2BPending = $pesananQuery
-            ->orderBy('estimasi_kirim', 'asc')
+            ->orderBy('id', 'desc')
             ->paginate(10, ['*'], 'pesanan_page')
             ->withQueryString();
 
@@ -335,14 +335,43 @@ class ProduksiController extends Controller
                 })->orWhereDoesntHave('pesanan');
             });
 
-        if ($customerId) {
-            $queryProduksi->whereHas('pesanan', function($pq) use ($customerId) {
-                $pq->where('customer_id', $customerId);
+        $prodCustomerId = $request->query('prod_customer_id') ?: ($request->query('tab') === 'prod' ? $customerId : null);
+        if ($prodCustomerId) {
+            $queryProduksi->whereHas('pesanan', function($pq) use ($prodCustomerId) {
+                $pq->where('customer_id', $prodCustomerId);
             });
         }
 
-        if ($search) {
-            $queryProduksi->where('kode_produksi', 'like', '%' . $search . '%');
+        $prodSearch = $request->query('prod_search') ?: ($request->query('tab') === 'prod' ? $search : null);
+        if ($prodSearch) {
+            $queryProduksi->where(function($q) use ($prodSearch) {
+                $q->where('kode_produksi', 'like', '%' . $prodSearch . '%')
+                  ->orWhereHas('pesanan', function($pq) use ($prodSearch) {
+                      $pq->where('kode_pesanan', 'like', '%' . $prodSearch . '%')
+                        ->orWhereHas('customer', function($cq) use ($prodSearch) {
+                            $cq->where('nama', 'like', '%' . $prodSearch . '%');
+                        });
+                  })
+                  ->orWhereHas('details.produk', function($dq) use ($prodSearch) {
+                      $dq->where('nama', 'like', '%' . $prodSearch . '%')
+                        ->orWhere('kode_barang', 'like', '%' . $prodSearch . '%');
+                  });
+            });
+        }
+
+        $prodDateStart = $request->query('prod_date_start');
+        $prodDateEnd   = $request->query('prod_date_end');
+        if ($prodDateStart && $prodDateEnd) {
+            $queryProduksi->whereBetween('tanggal_mulai', [$prodDateStart . ' 00:00:00', $prodDateEnd . ' 23:59:59']);
+        } elseif ($prodDateStart) {
+            $queryProduksi->whereDate('tanggal_mulai', '>=', $prodDateStart);
+        } elseif ($prodDateEnd) {
+            $queryProduksi->whereDate('tanggal_mulai', '<=', $prodDateEnd);
+        }
+
+        $prodStatus = $request->query('prod_status');
+        if ($prodStatus) {
+            $queryProduksi->where('status_produksi', $prodStatus);
         }
 
         $riwayatProduksi = $queryProduksi->orderBy('id', 'desc')->paginate(10, ['*'], 'prod_page')->withQueryString();
@@ -352,6 +381,7 @@ class ProduksiController extends Controller
             $customerId = $prod->pesanan ? $prod->pesanan->customer_id : null;
             $customerNama = $prod->pesanan && $prod->pesanan->customer ? ($prod->pesanan->customer->nama ?? '') : '';
             $isCustomerKejingga = stripos($customerNama, 'kejingga') !== false;
+            $prodTotalHpp = 0;
 
             foreach ($prod->details as $d) {
                 $qty = floatval($d->qty);
@@ -393,6 +423,8 @@ class ProduksiController extends Controller
                         ]);
                 }
             }
+            $prod->total_hpp = $prod->details->sum('hpp_total');
+            $prod->total_items = $prod->details->count();
             return $prod;
         });
 
@@ -2306,6 +2338,26 @@ class ProduksiController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal memproses permintaan bahan ke Gudang Utama: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hapus seluruh data transaksi Cold Kitchen (Permintaan B2B, Work Order, dan Hasil Produksi)
+     */
+    public function resetColdKitchen(Request $request)
+    {
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+        if (!$isSuperAdmin) {
+            return redirect()->back()->with('error', 'Akses ditolak: Hanya Super Admin yang memiliki kewenangan mereset seluruh transaksi.');
+        }
+
+        try {
+            $result = \App\Services\ColdKitchenResetService::resetAll();
+
+            return redirect()->route('produksi.index')->with('success', "Seluruh transaksi Cold Kitchen berhasil dibersihkan ({$result['pesanan_deleted']} pesanan, {$result['wo_deleted']} WO, {$result['produksi_deleted']} produksi). Kini Anda dapat memulai WO pertama kali dengan bersih.");
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal mereset transaksi Cold Kitchen: ' . $e->getMessage());
         }
     }
 }

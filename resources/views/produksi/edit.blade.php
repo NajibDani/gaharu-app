@@ -64,7 +64,7 @@
                                                 <input type="number" step="any" name="qty_hasil[]" 
                                                        class="form-control text-center fw-bold text-dark form-control-lg" 
                                                        value="{{ (int) $detail->qty }}" min="1" required>
-                                                <span class="input-group-text bg-light">Unit</span>
+                                                <span class="input-group-text bg-light">{{ strtoupper($detail->produk->satuan ?? 'PCS') }}</span>
                                             </div>
                                         </td>
                                     </tr>

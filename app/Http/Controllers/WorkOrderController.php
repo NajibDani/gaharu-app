@@ -34,7 +34,7 @@ class WorkOrderController extends Controller
         $pesanan = Pesanan::with(['details.produk', 'customer'])
                     ->where('status_pesanan', 'pending')
                     ->whereIn('status_pembayaran', ['DP', 'Lunas']) 
-                    ->orderBy('estimasi_kirim', 'asc')
+                    ->orderBy('id', 'desc')
                     ->paginate(10, ['*'], 'pesanan_page')
                     ->withQueryString();
 

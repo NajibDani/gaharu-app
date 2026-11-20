@@ -135,18 +135,18 @@
                                                             {{ $item->produk?->nama ?? 'Produk Tidak Terdefinisi' }}
                                                         </strong>
                                                         <small class="text-muted" style="font-size: 0.78rem;">
-                                                            Target Awal: <span class="fw-semibold">{{ (int) $item->total_target }} Pcs</span> | Sudah Jadi: <span class="fw-semibold text-indigo">{{ (int) $item->sudah_diproduksi }} Pcs</span>
+                                                            Target Awal: <span class="fw-semibold">{{ (fmod($item->total_target, 1) == 0 ? (int)$item->total_target : number_format($item->total_target, 2, ',', '.')) }} {{ strtoupper($item->produk?->satuan ?? 'PCS') }}</span> | Sudah Jadi: <span class="fw-semibold text-indigo">{{ (fmod($item->sudah_diproduksi, 1) == 0 ? (int)$item->sudah_diproduksi : number_format($item->sudah_diproduksi, 2, ',', '.')) }} {{ strtoupper($item->produk?->satuan ?? 'PCS') }}</span>
                                                         </small>
                                                     </td>
                                                     <td class="text-center">
                                                         <span class="badge bg-warning-subtle text-warning-dark border border-warning-subtle fs-6 px-3">
-                                                            Sisa: {{ (int) $item->sisa_target }} Pcs
+                                                            Sisa: {{ (fmod($item->sisa_target, 1) == 0 ? (int)$item->sisa_target : number_format($item->sisa_target, 2, ',', '.')) }} {{ strtoupper($item->produk?->satuan ?? 'PCS') }}
                                                         </span>
                                                     </td>
                                                     <td>
                                                         <div class="input-group mx-auto shadow-sm rounded-3" style="max-width: 170px;">
-                                                            <input type="number" step="any" name="qty_hasil[]" value="{{ (int) $item->sisa_target }}" class="form-control text-center fw-bold qty-hasil border-primary-subtle shadow-none" min="0" data-target="{{ (int) $item->sisa_target }}" data-index="{{ $index }}" required>
-                                                            <span class="input-group-text bg-white text-muted small">Pcs</span>
+                                                            <input type="number" step="any" name="qty_hasil[]" value="{{ (fmod($item->sisa_target, 1) == 0 ? (int)$item->sisa_target : $item->sisa_target) }}" class="form-control text-center fw-bold qty-hasil border-primary-subtle shadow-none" min="0" data-target="{{ (float)$item->sisa_target }}" data-satuan="{{ strtoupper($item->produk?->satuan ?? 'PCS') }}" data-index="{{ $index }}" required>
+                                                            <span class="input-group-text bg-white text-muted small">{{ strtoupper($item->produk?->satuan ?? 'PCS') }}</span>
                                                         </div>
                                                     </td>
                                                     <td class="text-center pe-3">
@@ -191,7 +191,8 @@
 
             // Fungsi inti kalkulator selisih berdasarkan sisa target baru
             function hitungSelisih(input) {
-                const targetSisa = parseFloat(input.dataset.target);
+                const targetSisa = parseFloat(input.dataset.target) || 0;
+                const satuan = input.dataset.satuan || '';
                 const hasilInput = parseFloat(input.value) || 0;
                 const index = input.dataset.index;
 
@@ -212,10 +213,10 @@
                     badge.innerText = 'Sesuai Sisa Target';
                 } else if (selisih < 0) {
                     badge.classList.add('bg-warning-subtle', 'text-warning-dark', 'border-warning-subtle');
-                    badge.innerText = 'Kurang ' + Math.abs(selisih) + ' Pcs';
+                    badge.innerText = 'Kurang ' + Math.abs(selisih) + ' ' + satuan;
                 } else {
                     badge.classList.add('bg-danger-subtle', 'text-danger', 'border-danger-subtle');
-                    badge.innerText = 'Lebih ' + selisih + ' Pcs';
+                    badge.innerText = 'Lebih ' + selisih + ' ' + satuan;
                 }
             }
 

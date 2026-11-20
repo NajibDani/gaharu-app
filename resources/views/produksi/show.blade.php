@@ -190,7 +190,7 @@
                                             </span>
                                         @endif
                                     </td>
-                                    <td class="text-center fw-bold text-primary">{{ number_format($item['qtyVal'], 0, ',', '.') }} {{ $detail->produk->satuan ?? 'Unit' }}</td>
+                                    <td class="text-center fw-bold text-primary">{{ (fmod($item['qtyVal'], 1) == 0 ? number_format($item['qtyVal'], 0, ',', '.') : number_format($item['qtyVal'], 2, ',', '.')) }} {{ strtoupper($detail->produk->satuan ?? 'PCS') }}</td>
                                     <td class="text-end pe-2 text-secondary fw-bold">
                                         Rp {{ number_format($item['effectiveHppTotal'], 0, ',', '.') }}
                                     </td>
@@ -224,7 +224,13 @@
                             <tr>
                                 <td colspan="2" class="text-center">Total Keseluruhan</td>
                                 <td colspan="2"></td>
-                                <td class="text-center text-primary fs-6">{{ number_format($totalQtyShow, 0, ',', '.') }} Unit</td>
+                                <td class="text-center text-primary fs-6">
+                                    @if(count($produksi->details) === 1 && $produksi->details->first()?->produk)
+                                        {{ (fmod($totalQtyShow, 1) == 0 ? number_format($totalQtyShow, 0, ',', '.') : number_format($totalQtyShow, 2, ',', '.')) }} {{ strtoupper($produksi->details->first()->produk->satuan ?? 'PCS') }}
+                                    @else
+                                        {{ count($produksi->details) }} Item
+                                    @endif
+                                </td>
                                 <td class="text-end pe-2 text-secondary fs-6">Rp {{ number_format($totalHppShow, 0, ',', '.') }}</td>
                                 <td class="text-end pe-2 text-primary fs-6">
                                     @if($totalOmsetShow > 0)

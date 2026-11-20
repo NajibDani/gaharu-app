@@ -5,6 +5,13 @@
 
     <style>
         /* Select2 Bootstrap-5 adjustments inside Modal */
+        #modalCreateColdOrder span.select2.select2-container {
+            width: 100% !important;
+            position: relative !important;
+            top: auto !important;
+            left: auto !important;
+            display: block !important;
+        }
         .select2-container {
             width: 100% !important;
         }
@@ -20,6 +27,7 @@
             border-color: #dee2e6 !important;
             display: flex !important;
             align-items: center !important;
+            background-color: #ffffff !important;
         }
         .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
             padding-left: 0 !important;
@@ -39,7 +47,15 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
             border-radius: 8px !important;
             overflow: hidden;
-            min-width: 480px !important;
+            max-width: 95vw !important;
+        }
+        /* Custom dropdown width untuk Customer & Produk */
+        .select2-dropdown-customer-cold .select2-dropdown {
+            width: 100% !important;
+            min-width: 100% !important;
+        }
+        .select2-dropdown-produk-cold .select2-dropdown {
+            min-width: min(500px, 92vw) !important;
         }
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options {
             max-height: 280px !important;
@@ -1057,7 +1073,7 @@
                                 <label class="form-label fw-bold small text-secondary">
                                     Divisi Pemesan <span class="text-danger">*</span>
                                 </label>
-                                <select name="divisi_id" id="modal-select-divisi-cold" class="form-select rounded-3">
+                                <select name="divisi_id" id="modal-select-divisi-cold" class="form-select rounded-3" style="min-height: 38px; height: 38px; font-size: 0.84rem;">
                                     <option value="">-- Pilih Divisi Outlet --</option>
                                 </select>
                                 <small class="text-muted" style="font-size: 0.72rem;">Divisi internal pemesan di outlet ini</small>
@@ -1530,49 +1546,26 @@
                 }
             }
 
-            function repositionSelect2Dropdown($select) {
-                const $container = $select.next('.select2-container');
-                const $openContainer = $('.select2-container--open');
-                if (!$openContainer.length || !$container.length) return;
-
-                const $dropdown = $openContainer.find('.select2-dropdown');
-                $dropdown.removeClass('select2-dropdown--above').addClass('select2-dropdown--below');
-                $openContainer.removeClass('select2-container--above').addClass('select2-container--below');
-
-                const $parent = $select.closest('.modal-content');
-                if ($parent.length && $container.is(':visible')) {
-                    const parentOffset = $parent.offset();
-                    const containerOffset = $container.offset();
-                    
-                    const top = (containerOffset.top - parentOffset.top) + $container.outerHeight();
-                    const left = containerOffset.left - parentOffset.left;
-                    const width = Math.max($container.outerWidth(), 460);
-
-                    $openContainer.css({
-                        position: 'absolute',
-                        top: top + 'px',
-                        left: left + 'px',
-                        width: width + 'px',
-                        zIndex: 1065
-                    });
-                }
-
-                const searchField = document.querySelector('.select2-container--open .select2-search__field');
-                if (searchField) {
-                    searchField.focus();
-                }
+            // Auto focus search field saat Select2 dibuka
+            if (typeof $ !== 'undefined') {
+                $(document).on('select2:open', function() {
+                    const searchField = document.querySelector('.select2-container--open .select2-search__field');
+                    if (searchField) {
+                        searchField.focus();
+                    }
+                });
             }
 
             function initSelect2CustomerCold() {
                 if (!customerSelectCold || typeof $ === 'undefined' || !$.fn.select2) return;
                 const $cust = $(customerSelectCold);
-                const $modalContent = $cust.closest('.modal-content');
                 if ($cust.data('select2')) {
                     $cust.select2('destroy');
                 }
                 $cust.select2({
                     theme: 'bootstrap-5',
-                    dropdownParent: $modalContent.length ? $modalContent : $('#modalCreateColdOrder'),
+                    dropdownParent: $('#modalCreateColdOrder'),
+                    dropdownCssClass: 'select2-dropdown-customer-cold',
                     width: '100%',
                     placeholder: '-- Cari / Pilih Outlet / Konsumen --',
                     allowClear: true
@@ -1591,14 +1584,24 @@
                         } catch (e) {
                             updateModalDivisiOptions([]);
                         }
+                    } else {
+                        updateModalDivisiOptions([]);
                     }
                     fetchColdSuggestions(val);
-                }).off('select2:open.cust').on('select2:open.cust', function() {
-                    const $select = $(this);
-                    setTimeout(function() {
-                        repositionSelect2Dropdown($select);
-                    }, 0);
                 });
+
+                // Jika sudah ada nilai terpilih saat init (misal dari tombol quick suggestion), sinkronkan opsi divisi
+                if ($cust.val()) {
+                    const opt = customerSelectCold.querySelector(`option[value="${$cust.val()}"]`);
+                    if (opt && opt.getAttribute('data-divisis')) {
+                        try {
+                            const divisis = JSON.parse(opt.getAttribute('data-divisis'));
+                            updateModalDivisiOptions(divisis);
+                        } catch (e) {
+                            updateModalDivisiOptions([]);
+                        }
+                    }
+                }
             }
 
             function formatColdProductOption(data) {
@@ -1637,13 +1640,13 @@
             function initSelect2Cold(selectEl) {
                 if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return null;
                 const $el = $(selectEl);
-                const $modalContent = $el.closest('.modal-content');
                 if ($el.data('select2')) {
                     $el.select2('destroy');
                 }
                 $el.select2({
                     theme: 'bootstrap-5',
-                    dropdownParent: $modalContent.length ? $modalContent : $('#modalCreateColdOrder'),
+                    dropdownParent: $('#modalCreateColdOrder'),
+                    dropdownCssClass: 'select2-dropdown-produk-cold',
                     width: '100%',
                     placeholder: '-- Cari / Ketik Kode atau Nama Barang --',
                     allowClear: true,
@@ -1653,11 +1656,6 @@
                     const row = selectEl.closest('tr');
                     updateColdModeOptions(row);
                     updateColdKonversi(row);
-                }).off('select2:open.row').on('select2:open.row', function() {
-                    const $select = $(this);
-                    setTimeout(function() {
-                        repositionSelect2Dropdown($select);
-                    }, 0);
                 });
                 return $el;
             }
@@ -1901,6 +1899,46 @@
                         });
                     });
                 });
+
+                modalCreateCold.addEventListener('hidden.bs.modal', function() {
+                    // 1. Tutup dropdown Select2 aktif
+                    if (typeof $ !== 'undefined' && $.fn.select2) {
+                        $('.modal-select-produk-cold, #modal-select-customer-cold').select2('close');
+                    }
+
+                    // 2. Reset form
+                    const form = document.getElementById('modal-form-cold-order');
+                    if (form) {
+                        form.reset();
+                    }
+
+                    // 3. Reset nilai Select2 Customer
+                    if (customerSelectCold && typeof $ !== 'undefined' && $(customerSelectCold).data('select2')) {
+                        $(customerSelectCold).val('').trigger('change.select2');
+                    }
+
+                    // 4. Sembunyikan divisi dan kembalikan kolom customer ke col-md-12
+                    updateModalDivisiOptions([]);
+
+                    // 5. Sembunyikan dan kosongkan suggestion box
+                    if (suggestionBoxCold) suggestionBoxCold.style.display = 'none';
+                    if (suggestionListCold) suggestionListCold.innerHTML = '';
+                    currentSuggestionsCold = [];
+
+                    // 6. Kembalikan tabel ke 1 baris awal bersih
+                    if (tableBodyCold && cleanColdRowTemplate) {
+                        tableBodyCold.querySelectorAll('.modal-select-produk-cold').forEach(sel => {
+                            if (typeof $ !== 'undefined' && $(sel).data('select2')) {
+                                try { $(sel).select2('destroy'); } catch(e) {}
+                            }
+                        });
+                        tableBodyCold.innerHTML = '';
+                        const initialRow = cleanColdRowTemplate.cloneNode(true);
+                        tableBodyCold.appendChild(initialRow);
+                        initSelect2Cold(initialRow.querySelector('.modal-select-produk-cold'));
+                        checkColdRows();
+                    }
+                });
             }
 
             // Fetch suggestions saat customer dipilih
@@ -2000,12 +2038,6 @@
                         btn.disabled = true;
                     });
                 }
-            }
-
-            if (customerSelectCold) {
-                customerSelectCold.addEventListener('change', function() {
-                    fetchColdSuggestions(this.value);
-                });
             }
 
             if (btnApplyAllCold) {

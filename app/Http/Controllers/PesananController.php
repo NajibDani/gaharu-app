@@ -62,7 +62,7 @@ class PesananController extends Controller
             });
         }
 
-        $pesanan = $query->orderBy('created_at', 'desc')->paginate(10)->withQueryString();
+        $pesanan = $query->orderBy('id', 'desc')->paginate(10)->withQueryString();
 
         // Ambil status WO secara realtime untuk dilempar ke sistem UI Blade
         foreach ($pesanan as $p) {

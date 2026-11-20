@@ -1022,102 +1022,290 @@
 
             {{-- TAB 3: RIWAYAT PRODUKSI --}}
             <div class="tab-pane fade {{ $activeTab === 'prod' ? 'show active' : '' }}" id="prod-history" role="tabpanel">
-                <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-3">
-                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center">
-                        <h6 class="fw-bold mb-0 text-dark">Riwayat Hasil Produksi B2B</h6>
-                        <a href="{{ route('produksi.create') }}" class="btn btn-sm btn-custom-orange shadow-sm">
-                            <i class="bi bi-plus-circle me-1"></i> Input Manual (Custom)
-                        </a>
+                {{-- TOOLBAR FILTER & PENCARIAN RINGKAS --}}
+                <div class="card border-0 shadow-sm rounded-4 mb-3 bg-white">
+                    <div class="card-body p-3">
+                        <form method="GET" action="{{ route('produksi.index') }}" id="formFilterRiwayatProduksi">
+                            <input type="hidden" name="tab" value="prod">
+                            <div class="row g-2 align-items-center">
+                                {{-- Cari Kode / Customer / Item --}}
+                                <div class="col-12 col-md-4 col-lg-3">
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                                        <input type="text" name="prod_search" value="{{ request('prod_search') }}" class="form-control border-start-0 ps-0" placeholder="Cari kode, item, customer..." style="height: 36px; font-size: 0.82rem;">
+                                    </div>
+                                </div>
+
+                                {{-- Filter Tanggal Mulai & Selesai --}}
+                                <div class="col-6 col-md-2">
+                                    <input type="date" name="prod_date_start" value="{{ request('prod_date_start') }}" class="form-control form-control-sm text-muted" style="height: 36px; font-size: 0.8rem;" title="Tanggal Dari">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <input type="date" name="prod_date_end" value="{{ request('prod_date_end') }}" class="form-control form-control-sm text-muted" style="height: 36px; font-size: 0.8rem;" title="Tanggal Sampai">
+                                </div>
+
+                                {{-- Filter Status --}}
+                                <div class="col-6 col-md-2 col-lg-2">
+                                    <select name="prod_status" class="form-select form-select-sm" style="height: 36px; font-size: 0.82rem;">
+                                        <option value="">-- Status Produksi --</option>
+                                        <option value="Selesai" {{ request('prod_status') === 'Selesai' ? 'selected' : '' }}>Selesai</option>
+                                        <option value="Draft" {{ request('prod_status') === 'Draft' ? 'selected' : '' }}>Draft</option>
+                                    </select>
+                                </div>
+
+                                {{-- Filter Customer --}}
+                                <div class="col-6 col-md-2 col-lg-2">
+                                    <select name="prod_customer_id" class="form-select form-select-sm" style="height: 36px; font-size: 0.82rem;">
+                                        <option value="">-- Semua Customer --</option>
+                                        @foreach($customers as $c)
+                                            <option value="{{ $c->id }}" {{ (request('prod_customer_id') == $c->id || (request('tab') === 'prod' && request('customer_id') == $c->id)) ? 'selected' : '' }}>
+                                                {{ $c->nama }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                {{-- Tombol Aksi Filter & Reset --}}
+                                <div class="col-12 col-md-auto ms-auto d-flex gap-1 justify-content-end">
+                                    <button type="submit" class="btn btn-sm btn-primary px-3 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="height: 36px; border-radius: 8px;">
+                                        <i class="bi bi-funnel"></i> Filter
+                                    </button>
+                                    @if(request('prod_search') || request('prod_date_start') || request('prod_date_end') || request('prod_status') || request('prod_customer_id'))
+                                        <a href="{{ route('produksi.index', ['tab' => 'prod']) }}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="height: 36px; width: 36px; border-radius: 8px;" title="Reset Filter">
+                                            <i class="bi bi-x-lg"></i>
+                                        </a>
+                                    @endif
+                                </div>
+                            </div>
+                        </form>
                     </div>
+                </div>
+
+                {{-- CARD UTAMA TABEL HASIL PRODUKSI --}}
+                <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-3">
+                    <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h6 class="fw-bold mb-0 text-dark">Riwayat Hasil Produksi Cold Kitchen</h6>
+                            <small class="text-muted">Rincian batch hasil pengerjaan dapur cold kitchen dengan verifikasi satuan dan HPP resmi.</small>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <a href="{{ route('produksi.create') }}" class="btn btn-sm btn-custom-orange shadow-sm px-3 fw-semibold d-inline-flex align-items-center gap-1">
+                                <i class="bi bi-plus-circle"></i> Input Manual (Custom)
+                            </a>
+                        </div>
+                    </div>
+
                     <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0 table-custom-body">
-                            <thead class="table-custom-header text-center">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-custom-header">
                                 <tr>
-                                    <th width="5%" class="py-3 text-nowrap">No</th>
-                                    <th width="15%" class="text-start text-nowrap">Kode Produksi</th>
-                                    <th width="14%" class="text-start text-nowrap">Customer / Ref</th>
-                                    <th width="10%" class="text-nowrap">Tanggal</th>
-                                    <th class="text-start text-nowrap">Nama Produk</th>
-                                    <th width="10%" class="text-nowrap">Qty Hasil</th>
-                                    <th width="12%" class="text-end text-nowrap">HPP Total</th>
-                                    <th width="10%" class="text-nowrap">Status</th>
-                                    <th width="14%" class="text-nowrap">Aksi</th>
+                                    <th width="4%" class="text-center py-3 text-nowrap">NO</th>
+                                    <th width="22%" class="text-start text-nowrap">KODE &amp; TANGGAL</th>
+                                    <th width="32%" class="text-start text-nowrap">ITEM HASIL PRODUKSI</th>
+                                    <th width="15%" class="text-end text-nowrap">TOTAL HPP</th>
+                                    <th width="12%" class="text-center text-nowrap">STATUS</th>
+                                    <th width="15%" class="text-center text-nowrap">AKSI</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white">
                                 @php $no = $riwayatProduksi->firstItem() ?? 1; @endphp
                                 @forelse($riwayatProduksi as $p)
                                     @php
-                                        $rowCount = $p->details->count() ?: 1;
+                                        $itemCount = $p->details->count();
+                                        $firstDetail = $p->details->first();
+                                        $custNama = $p->pesanan->customer->nama ?? ($p->pesanan->customer->name ?? 'B2B Customer');
+                                        $tglProd = $p->tanggal_mulai ? \Carbon\Carbon::parse($p->tanggal_mulai)->format('d M Y') : '-';
                                     @endphp
-                                    @foreach($p->details as $index => $detail)
-                                        <tr>
-                                            @if($index === 0)
-                                                <td rowspan="{{ $rowCount }}" class="text-center text-secondary text-nowrap">{{ $no++ }}</td>
-                                                <td rowspan="{{ $rowCount }}" class="text-start fw-bold text-dark text-nowrap">{{ $p->kode_produksi }}</td>
-                                                <td rowspan="{{ $rowCount }}" class="text-start text-dark fw-medium text-nowrap">
-                                                    {{ $p->pesanan->customer->nama ?? ($p->pesanan->customer->name ?? 'B2B Customer') }}
-                                                    <div class="text-muted small">{{ $p->pesanan->kode_pesanan ?? '-' }}</div>
-                                                </td>
-                                                <td rowspan="{{ $rowCount }}" class="text-center text-secondary text-nowrap">
-                                                    {{ $p->tanggal_mulai ? \Carbon\Carbon::parse($p->tanggal_mulai)->format('d/m/Y') : '-' }}
-                                                </td>
-                                            @endif
+                                    <tr class="align-middle border-bottom border-light">
+                                        {{-- NO --}}
+                                        <td class="text-center text-muted small">{{ $no++ }}</td>
 
-                                            <td class="text-start text-dark fw-semibold">{{ $detail->produk->nama ?? 'Produk' }}</td>
-                                            <td class="text-center text-nowrap"><span class="badge bg-info-subtle text-info border px-2 py-1">{{ (int) $detail->qty }} Unit</span></td>
-                                            <td class="text-end fw-medium text-success text-nowrap">
-                                                @if($p->status_produksi === 'Draft')
-                                                    <span class="text-muted fst-italic">Menunggu</span>
-                                                @else
-                                                    Rp {{ number_format($detail->hpp_total ?? 0, 0, ',', '.') }}
+                                        {{-- KODE & TANGGAL PRODUKSI --}}
+                                        <td class="text-start">
+                                            <div class="fw-bold text-dark" style="font-size: 0.88rem;">
+                                                <i class="bi bi-calendar3 me-1 text-primary" style="font-size: 0.82rem;"></i> {{ $tglProd }}
+                                            </div>
+                                            <div class="font-monospace text-secondary small fw-medium mt-0.5" style="font-size: 0.78rem;">
+                                                {{ $p->kode_produksi }}
+                                            </div>
+                                            <div class="text-muted small mt-0.5" style="font-size: 0.76rem;">
+                                                <i class="bi bi-shop me-0.5 text-muted"></i> {{ $custNama }}
+                                                @if(!empty($p->pesanan->kode_pesanan))
+                                                    <span class="text-secondary">• #{{ $p->pesanan->kode_pesanan }}</span>
                                                 @endif
-                                            </td>
+                                            </div>
+                                        </td>
 
-                                            @if($index === 0)
-                                                <td rowspan="{{ $rowCount }}" class="text-center text-nowrap">
-                                                    @if($p->status_produksi === 'Draft')
-                                                        <span class="badge bg-warning-subtle text-warning border px-2 py-1"><i class="bi bi-file-earmark-text"></i> Draft</span>
-                                                    @else
-                                                        <span class="badge bg-success-subtle text-success border px-2 py-1"><i class="bi bi-check-all"></i> Selesai</span>
-                                                    @endif
-                                                </td>
-                                                <td rowspan="{{ $rowCount }}" class="text-center text-nowrap">
-                                                    <div class="action-box d-flex justify-content-center">
-                                                        <div class="btn-group btn-group-sm w-100 shadow-sm" role="group">
-                                                            <button type="button" class="btn btn-outline-secondary fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" data-bs-toggle="modal" data-bs-target="#modalDetailProduksi{{ $p->id }}" title="Lihat Detail Pop-up">
-                                                                <i class="bi bi-eye"></i>
-                                                            </button>
-
-                                                            @if($p->status_produksi === 'Draft')
-                                                                <a href="{{ route('produksi.edit', $p->id) }}" class="btn btn-outline-warning text-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Edit">
-                                                                    <i class="bi bi-pencil"></i>
-                                                                </a>
-                                                                <button type="button" class="btn btn-success fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('Approve produksi ini?')) document.getElementById('formApproveB2bProd{{ $p->id }}').submit();" title="Approve">
-                                                                    <i class="bi bi-check-lg"></i>
-                                                                </button>
-                                                                <button type="button" class="btn btn-outline-danger fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" onclick="if(confirm('Hapus draft produksi ini?')) document.getElementById('formHapusB2bProd{{ $p->id }}').submit();" title="Hapus">
-                                                                    <i class="bi bi-trash"></i>
-                                                                </button>
-                                                            @else
-                                                                <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-outline-dark fw-semibold d-flex align-items-center justify-content-center gap-1 py-1" style="height: 32px; font-size: 0.8rem;" title="Cetak PDF" target="_blank">
-                                                                    <i class="bi bi-printer"></i>
-                                                                </a>
-                                                                <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $p->pesanan->kode_pesanan ?? $p->kode_produksi]) }}" class="btn btn-custom-orange fw-semibold d-flex align-items-center justify-content-center gap-1 py-1 text-white" style="height: 32px; font-size: 0.8rem;" title="Kirim ke Logistik Outlet">
-                                                                    <i class="bi bi-truck"></i> Kirim
-                                                                </a>
-                                                            @endif
-                                                        </div>
-
-                                                        @if($p->status_produksi === 'Draft')
-                                                            <form id="formApproveB2bProd{{ $p->id }}" action="{{ route('produksi.approve', $p->id) }}" method="POST" class="d-none">
-                                                                @csrf
-                                                            </form>
-                                                            <form id="formHapusB2bProd{{ $p->id }}" action="{{ route('produksi.destroy', $p->id) }}" method="POST" class="d-none">
-                                                                @csrf @method('DELETE')
-                                                            </form>
-                                                        @endif
+                                        {{-- DATA UTAMA: ITEM HASIL PRODUKSI & SATUAN RESMI --}}
+                                        <td class="text-start">
+                                            @if($itemCount === 1 && $firstDetail)
+                                                @php
+                                                    $satuanItem = strtoupper($firstDetail->produk->satuan ?? 'PCS');
+                                                    $qtyVal = floatval($firstDetail->qty);
+                                                    $qtyFmt = (fmod($qtyVal, 1) == 0) ? number_format($qtyVal, 0, ',', '.') : number_format($qtyVal, 2, ',', '.');
+                                                @endphp
+                                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                    <span class="fw-bold text-dark" style="font-size: 0.88rem;">{{ $firstDetail->produk->nama ?? 'Produk' }}</span>
+                                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-0.5 fw-bold" style="font-size: 0.75rem;">
+                                                        {{ $qtyFmt }} {{ $satuanItem }}
+                                                    </span>
+                                                </div>
+                                            @elseif($itemCount > 1 && $firstDetail)
+                                                @php
+                                                    $satuanFirst = strtoupper($firstDetail->produk->satuan ?? 'PCS');
+                                                    $qtyFirstVal = floatval($firstDetail->qty);
+                                                    $qtyFirstFmt = (fmod($qtyFirstVal, 1) == 0) ? number_format($qtyFirstVal, 0, ',', '.') : number_format($qtyFirstVal, 2, ',', '.');
+                                                @endphp
+                                                <div class="d-flex flex-column gap-1">
+                                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                        <span class="fw-bold text-dark" style="font-size: 0.88rem;">{{ $firstDetail->produk->nama ?? 'Produk' }}</span>
+                                                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-0.5 fw-bold" style="font-size: 0.75rem;">
+                                                            {{ $qtyFirstFmt }} {{ $satuanFirst }}
+                                                        </span>
                                                     </div>
+                                                    <div>
+                                                        <button class="btn btn-sm btn-link p-0 text-decoration-none text-primary fw-semibold d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="collapse" data-bs-target="#drawerProd{{ $p->id }}" aria-expanded="false" style="font-size: 0.76rem;">
+                                                            <i class="bi bi-stack"></i> +{{ $itemCount - 1 }} Item Lainnya
+                                                            <i class="bi bi-chevron-down" style="font-size: 0.68rem;"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            @else
+                                                <span class="text-muted fst-italic small">Tidak ada detail item</span>
+                                            @endif
+                                        </td>
+
+                                        {{-- TOTAL HPP --}}
+                                        <td class="text-end">
+                                            @if($p->status_produksi === 'Draft')
+                                                <span class="badge bg-light text-secondary border px-2 py-1 small">Draft / Menunggu</span>
+                                            @else
+                                                <div class="fw-bold text-success font-monospace" style="font-size: 0.92rem;">
+                                                    Rp {{ number_format($p->total_hpp ?? $p->details->sum('hpp_total'), 0, ',', '.') }}
+                                                </div>
+                                                <small class="text-muted" style="font-size: 0.74rem;">{{ $itemCount }} Jenis Produk</small>
+                                            @endif
+                                        </td>
+
+                                        {{-- STATUS --}}
+                                        <td class="text-center">
+                                            @if($p->status_produksi === 'Draft')
+                                                <span class="badge rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2.5 py-1 fw-semibold" style="font-size: 0.76rem;">
+                                                    <i class="bi bi-clock-history me-1"></i> Draft
+                                                </span>
+                                            @else
+                                                <span class="badge rounded-pill bg-success-subtle text-success border border-success-subtle px-2.5 py-1 fw-semibold" style="font-size: 0.76rem;">
+                                                    <i class="bi bi-check2-circle me-1"></i> Selesai
+                                                </span>
+                                            @endif
+                                        </td>
+
+                                        {{-- AKSI --}}
+                                        <td class="text-center">
+                                            <div class="d-inline-flex align-items-center gap-1">
+                                                {{-- Tombol Toggle Rincian Drawer --}}
+                                                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 d-flex align-items-center justify-content-center" data-bs-toggle="collapse" data-bs-target="#drawerProd{{ $p->id }}" title="Lihat Rincian Item" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                    <i class="bi bi-chevron-down"></i>
+                                                </button>
+
+                                                {{-- Tombol Modal Rincian Lengkap --}}
+                                                <button type="button" class="btn btn-sm btn-outline-primary py-1 px-2 d-flex align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#modalDetailProduksi{{ $p->id }}" title="Lihat Modal Detail" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+
+                                                @if($p->status_produksi === 'Draft')
+                                                    <a href="{{ route('produksi.edit', $p->id) }}" class="btn btn-sm btn-outline-warning text-dark py-1 px-2 d-flex align-items-center justify-content-center" title="Edit Draft" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-success py-1 px-2 d-flex align-items-center justify-content-center text-white" onclick="if(confirm('Approve produksi ini?')) document.getElementById('formApproveB2bProd{{ $p->id }}').submit();" title="Approve" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                        <i class="bi bi-check-lg"></i>
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger py-1 px-2 d-flex align-items-center justify-content-center" onclick="if(confirm('Hapus draft produksi ini?')) document.getElementById('formHapusB2bProd{{ $p->id }}').submit();" title="Hapus Draft" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                @else
+                                                    <a href="{{ route('produksi.cetak-pdf', $p->id) }}" class="btn btn-sm btn-outline-dark py-1 px-2 d-flex align-items-center justify-content-center" title="Cetak PDF" target="_blank" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                        <i class="bi bi-printer"></i>
+                                                    </a>
+                                                    <a href="{{ route('pengiriman.index', ['tipe' => 'b2b', 'search' => $p->pesanan->kode_pesanan ?? $p->kode_produksi]) }}" class="btn btn-sm btn-custom-orange text-white py-1 px-2.5 d-flex align-items-center justify-content-center gap-1 fw-semibold" title="Kirim ke Logistik Outlet" style="height: 32px; border-radius: 7px; font-size: 0.78rem;">
+                                                        <i class="bi bi-truck"></i> Kirim
+                                                    </a>
+                                                @endif
+                                            </div>
+
+                                            @if($p->status_produksi === 'Draft')
+                                                <form id="formApproveB2bProd{{ $p->id }}" action="{{ route('produksi.approve', $p->id) }}" method="POST" class="d-none">
+                                                    @csrf
+                                                </form>
+                                                <form id="formHapusB2bProd{{ $p->id }}" action="{{ route('produksi.destroy', $p->id) }}" method="POST" class="d-none">
+                                                    @csrf @method('DELETE')
+                                                </form>
+                                            @endif
+                                        </td>
+                                    </tr>
+
+                                    {{-- EXPANDABLE INLINE DRAWER (RINCIAN SELURUH ITEM) --}}
+                                    <tr class="collapse border-bottom" id="drawerProd{{ $p->id }}">
+                                        <td colspan="6" class="p-0 bg-light-subtle">
+                                            <div class="p-3 border-start border-3 border-primary ms-3 my-2 bg-white rounded-3 shadow-sm me-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <span class="fw-bold text-dark small">
+                                                        <i class="bi bi-box-seam me-1 text-primary"></i> Rincian Item Hasil Produksi (Kode: {{ $p->kode_produksi }})
+                                                    </span>
+                                                    <span class="badge bg-secondary-subtle text-secondary border small">
+                                                        {{ $itemCount }} Item Terdaftar
+                                                    </span>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-bordered align-middle mb-0 small">
+                                                        <thead class="table-light text-secondary">
+                                                            <tr>
+                                                                <th width="4%" class="text-center">No</th>
+                                                                <th width="14%">Kode Barang</th>
+                                                                <th>Nama Produk</th>
+                                                                <th width="16%" class="text-center">Qty Hasil</th>
+                                                                <th width="18%" class="text-end">HPP Satuan</th>
+                                                                <th width="18%" class="text-end">Subtotal HPP</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach($p->details as $dIdx => $detail)
+                                                                @php
+                                                                    $dSatuan = strtoupper($detail->produk->satuan ?? 'PCS');
+                                                                    $dQtyVal = floatval($detail->qty);
+                                                                    $dQtyFmt = (fmod($dQtyVal, 1) == 0) ? number_format($dQtyVal, 0, ',', '.') : number_format($dQtyVal, 2, ',', '.');
+                                                                    $dHppTotal = floatval($detail->hpp_total ?? 0);
+                                                                    $dHppSatuan = ($dQtyVal > 0 && $dHppTotal > 0) ? ($dHppTotal / $dQtyVal) : 0;
+                                                                @endphp
+                                                                <tr>
+                                                                    <td class="text-center text-muted">{{ $dIdx + 1 }}</td>
+                                                                    <td class="font-monospace text-secondary">{{ $detail->produk->kode_barang ?? '-' }}</td>
+                                                                    <td class="fw-semibold text-dark">{{ $detail->produk->nama ?? 'Produk #' . $detail->produk_id }}</td>
+                                                                    <td class="text-center font-monospace fw-bold text-primary">
+                                                                        {{ $dQtyFmt }} {{ $dSatuan }}
+                                                                    </td>
+                                                                    <td class="text-end font-monospace text-muted">
+                                                                        Rp {{ number_format($dHppSatuan, 0, ',', '.') }} / {{ $dSatuan }}
+                                                                    </td>
+                                                                    <td class="text-end font-monospace fw-bold text-success">
+                                                                        Rp {{ number_format($dHppTotal, 0, ',', '.') }}
+                                                                    </td>
+                                                                </tr>
+                                                            @endforeach
+                                                        </tbody>
+                                                        <tfoot class="table-light fw-bold">
+                                                            <tr>
+                                                                <td colspan="5" class="text-end">Total HPP Keseluruhan:</td>
+                                                                <td class="text-end font-monospace text-success">
+                                                                    Rp {{ number_format($p->total_hpp ?? $p->details->sum('hpp_total'), 0, ',', '.') }}
+                                                                </td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
 
                                                     {{-- MODAL DETAIL PRODUKSI (POP-UP) --}}
                                                     <div class="modal fade text-start" id="modalDetailProduksi{{ $p->id }}" tabindex="-1" aria-hidden="true" style="white-space: normal !important;">
@@ -1300,7 +1488,7 @@
                                                                                                 </span>
                                                                                             @endif
                                                                                         </td>
-                                                                                        <td class="fw-bold text-primary">{{ number_format($item['qtyVal'], 0, ',', '.') }} {{ $d->produk->satuan ?? 'Unit' }}</td>
+                                                                                         <td class="fw-bold text-primary">{{ (fmod($item['qtyVal'], 1) == 0 ? number_format($item['qtyVal'], 0, ',', '.') : number_format($item['qtyVal'], 2, ',', '.')) }} {{ strtoupper($d->produk->satuan ?? 'PCS') }}</td>
                                                                                         <td class="text-end pe-2 fw-bold text-secondary">
                                                                                             Rp {{ number_format($item['effectiveHppTotal'], 0, ',', '.') }}
                                                                                         </td>
@@ -1334,7 +1522,13 @@
                                                                                 <tr>
                                                                                     <td colspan="2" class="text-center">Total Keseluruhan</td>
                                                                                     <td colspan="2"></td>
-                                                                                    <td class="text-primary">{{ number_format($totalQtyModal, 0, ',', '.') }} Unit</td>
+                                                                                    <td class="text-primary">
+                                                                                        @if(count($itemsList) === 1 && isset($d))
+                                                                                            {{ (fmod($totalQtyModal, 1) == 0 ? number_format($totalQtyModal, 0, ',', '.') : number_format($totalQtyModal, 2, ',', '.')) }} {{ strtoupper($d->produk->satuan ?? 'PCS') }}
+                                                                                        @else
+                                                                                            {{ count($itemsList) }} Item
+                                                                                        @endif
+                                                                                    </td>
                                                                                     <td class="text-end pe-2 text-secondary">Rp {{ number_format($grandHppModal, 0, ',', '.') }}</td>
                                                                                     <td class="text-end pe-2 text-primary">
                                                                                         @if($grandOmsetModal > 0)
@@ -1381,15 +1575,18 @@
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </td>
-                                            @endif
-                                        </tr>
-                                    @endforeach
                                 @empty
                                     <tr>
-                                        <td colspan="9" class="text-center py-5 text-muted">
-                                            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
-                                            Belum ada riwayat hasil produksi.
+                                        <td colspan="6" class="text-center py-5">
+                                            <div class="d-flex flex-column align-items-center justify-content-center text-muted">
+                                                <div class="rounded-circle bg-light d-flex align-items-center justify-content-center mb-3" style="width: 56px; height: 56px;">
+                                                    <i class="bi bi-box-seam text-secondary fs-3"></i>
+                                                </div>
+                                                <h6 class="fw-bold text-secondary mb-1">Belum Ada Riwayat Hasil Produksi</h6>
+                                                <p class="small text-muted mb-0" style="max-width: 420px;">
+                                                    Belum ada hasil produksi yang tersimpan atau tidak ada data yang cocok dengan kriteria filter pencarian.
+                                                </p>
+                                            </div>
                                         </td>
                                     </tr>
                                 @endforelse

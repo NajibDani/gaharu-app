@@ -173,7 +173,7 @@
                         <span style="color: #b45309; font-size: 8px;">Harap mengatur harga jual B2B lebih dulu</span>
                     @endif
                 </td>
-                <td class="text-center fw-bold">{{ number_format($item['qtyVal'], 0, ',', '.') }} Unit</td>
+                <td class="text-center fw-bold">{{ (fmod($item['qtyVal'], 1) == 0 ? number_format($item['qtyVal'], 0, ',', '.') : number_format($item['qtyVal'], 2, ',', '.')) }} {{ strtoupper($detail->produk->satuan ?? 'PCS') }}</td>
                 <td class="text-right">Rp {{ number_format($item['effectiveHppTotal'], 0, ',', '.') }}</td>
                 <td class="text-right fw-bold">
                     @if($item['isB2bSet'])
@@ -202,7 +202,13 @@
             <tr style="background-color: #f1f5f9; font-weight: bold;">
                 <td colspan="2" class="text-center">Total Keseluruhan</td>
                 <td colspan="2"></td>
-                <td class="text-center">{{ number_format($totalQtyPdf, 0, ',', '.') }} Unit</td>
+                <td class="text-center">
+                    @if(count($itemsListPdf) === 1 && isset($detail))
+                        {{ (fmod($totalQtyPdf, 1) == 0 ? number_format($totalQtyPdf, 0, ',', '.') : number_format($totalQtyPdf, 2, ',', '.')) }} {{ strtoupper($detail->produk->satuan ?? 'PCS') }}
+                    @else
+                        {{ count($itemsListPdf) }} Item
+                    @endif
+                </td>
                 <td class="text-right">Rp {{ number_format($totalHppPdf, 0, ',', '.') }}</td>
                 <td class="text-right">
                     @if($totalOmsetPdf > 0)

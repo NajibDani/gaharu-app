@@ -321,6 +321,7 @@ Route::get('/resep/import/template', [ResepBtklBopController::class, 'importTemp
     });
 
     Route::get('/produksi', [ProduksiController::class, 'index'])->name('produksi.index');
+    Route::post('/produksi/reset-cold-kitchen', [ProduksiController::class, 'resetColdKitchen'])->name('produksi.reset-cold-kitchen');
     Route::post('/produksi/wo', [ProduksiController::class, 'storeWo'])->name('produksi.store-wo');
     Route::post('/produksi/store-and-approve', [ProduksiController::class, 'storeAndApprove'])->name('produksi.store-and-approve');
     Route::get('/produksi/create', [ProduksiController::class, 'create'])->name('produksi.create');
