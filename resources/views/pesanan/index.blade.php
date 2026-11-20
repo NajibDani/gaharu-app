@@ -44,29 +44,80 @@
             border-color: #db7946 !important;
             z-index: 1065 !important;
             font-size: 0.84rem !important;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
-            border-radius: 8px !important;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16) !important;
+            border-radius: 6px !important;
             overflow: hidden;
-            max-width: 95vw !important;
+            background-color: #ffffff !important;
         }
-        /* Custom dropdown width untuk Customer & Produk */
+
+        /* Dropdown Customer di Modal Cold */
+        .select2-dropdown-customer-cold.select2-container--open {
+            z-index: 1065 !important;
+        }
         .select2-dropdown-customer-cold .select2-dropdown {
             width: 100% !important;
             min-width: 100% !important;
+            max-width: 100% !important;
+            margin-top: 2px !important;
+            border-radius: 6px !important;
         }
-        .select2-dropdown-produk-cold .select2-dropdown {
-            min-width: min(500px, 92vw) !important;
+
+        /* Wrapper dan Dropdown Produk Cold di Tabel Modal */
+        .cold-select-wrapper {
+            position: relative !important;
+            width: 100% !important;
         }
-        .select2-container--bootstrap-5 .select2-dropdown .select2-results__options {
-            max-height: 280px !important;
+        #modal-table-cold-items tbody tr.select2-row-active,
+        #modal-table-cold-items tbody tr:has(.select2-container--open) {
+            position: relative !important;
+            z-index: 1060 !important;
+        }
+        #modal-table-cold-items tbody td.select2-cell-active,
+        #modal-table-cold-items tbody td:has(.select2-container--open) {
+            position: relative !important;
+            z-index: 1060 !important;
+        }
+
+        /* Memastikan dropdown produk menempel tepat 2px di bawah field dan selebar kolom */
+        .cold-select-wrapper > .select2-container--open {
+            position: absolute !important;
+            top: 100% !important;
+            left: 0 !important;
+            right: 0 !important;
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            margin-top: 2px !important;
+            z-index: 1065 !important;
+        }
+        .cold-select-wrapper > .select2-container--open .select2-dropdown {
+            position: static !important;
+            top: auto !important;
+            left: auto !important;
+            width: 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16) !important;
+            border-radius: 6px !important;
+            border: 1px solid #db7946 !important;
+            background-color: #ffffff !important;
+        }
+
+        /* Daftar hasil pencarian minimalis (tinggi 5-6 item, scroll internal) */
+        .select2-dropdown-produk-cold .select2-results__options {
+            max-height: 195px !important;
+            overflow-y: auto !important;
+            padding: 2px 0 !important;
         }
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option {
-            padding: 7px 12px !important;
+            padding: 6px 10px !important;
             border-bottom: 1px solid #f3f4f6;
             transition: background-color 0.1s ease;
+            font-size: 0.82rem !important;
+            line-height: 1.3 !important;
         }
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option:last-child {
-            border-bottom: none;
+            border-bottom: none !important;
         }
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted {
             background-color: #db7946 !important;
@@ -81,31 +132,35 @@
         .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option--highlighted .text-muted {
             color: #ffffff !important;
         }
-        .select2-search--dropdown {
-            padding: 8px 10px !important;
+
+        /* Compact search input */
+        .select2-dropdown-produk-cold .select2-search--dropdown {
+            padding: 6px 8px !important;
             background-color: #fbf9f7;
             border-bottom: 1px solid #ede8e3;
         }
-        .select2-search--dropdown .select2-search__field {
-            border-radius: 6px !important;
-            padding: 7px 32px 7px 12px !important;
+        .select2-dropdown-produk-cold .select2-search--dropdown .select2-search__field {
+            height: 32px !important;
+            min-height: 32px !important;
+            padding: 4px 10px !important;
+            border-radius: 5px !important;
             border: 1px solid #ced4da !important;
-            font-size: 0.84rem !important;
+            font-size: 0.82rem !important;
             background-color: #ffffff;
         }
-        .select2-search--dropdown .select2-search__field:focus {
+        .select2-dropdown-produk-cold .select2-search--dropdown .select2-search__field:focus {
             border-color: #db7946 !important;
             outline: none !important;
             box-shadow: 0 0 0 2px rgba(219, 121, 70, 0.2) !important;
         }
+
         #modalCreateColdOrder .table-responsive {
             overflow: visible !important;
-            padding-bottom: 80px !important;
         }
         #modalCreateColdOrder .modal-body {
-            overflow-y: visible !important;
-            min-height: 520px;
-            padding-bottom: 100px !important;
+            overflow-y: auto !important;
+            min-height: 480px;
+            padding-bottom: 140px !important;
         }
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
 
@@ -1131,35 +1186,37 @@
                                 </thead>
                                 <tbody id="modal-cold-item-rows">
                                     <tr>
-                                        <td class="text-start">
-                                            <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;">
-                                                <option value="">-- Cari / Ketik Kode atau Nama Barang --</option>
-                                                @if(isset($produk))
-                                                    @foreach($produk as $item)
-                                                        @php
-                                                            $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
-                                                            $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
-                                                            $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
-                                                            $konversiVal = floatval($item->konversi_pembelian ?? 1);
-                                                            $infoText = '';
-                                                            if ($satuanKonversi && $konversiVal > 1) {
-                                                                $infoText = '1 ' . $satuanKonversi . ' = ' . number_format($konversiVal, 0, ',', '.') . ' ' . $item->satuan;
-                                                            } elseif ($outQty > 0) {
-                                                                $infoText = '1 Resep = ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan;
-                                                            }
-                                                        @endphp
-                                                        <option value="{{ $item->id }}" 
-                                                                data-kode="{{ $item->kode_barang }}"
-                                                                data-nama="{{ $item->nama }}"
-                                                                data-info="{{ $infoText }}"
-                                                                data-satuan="{{ $item->satuan }}"
-                                                                data-output-qty="{{ $outQty }}"
-                                                                data-satuan-output="{{ $outSatuan }}"
-                                                                data-satuan-konversi="{{ $satuanKonversi }}"
-                                                                data-konversi="{{ $konversiVal }}">{{ $item->kode_barang }} - {{ $item->nama }}{{ $infoText ? ' (' . $infoText . ')' : '' }}</option>
-                                                    @endforeach
-                                                @endif
-                                            </select>
+                                        <td class="text-start position-relative">
+                                            <div class="cold-select-wrapper position-relative w-100">
+                                                <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;">
+                                                    <option value="">-- Cari / Ketik Kode atau Nama Barang --</option>
+                                                    @if(isset($produk))
+                                                        @foreach($produk as $item)
+                                                            @php
+                                                                $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
+                                                                $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+                                                                $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
+                                                                $konversiVal = floatval($item->konversi_pembelian ?? 1);
+                                                                $infoText = '';
+                                                                if ($satuanKonversi && $konversiVal > 1) {
+                                                                    $infoText = '1 ' . $satuanKonversi . ' = ' . number_format($konversiVal, 0, ',', '.') . ' ' . $item->satuan;
+                                                                } elseif ($outQty > 0) {
+                                                                    $infoText = '1 Resep = ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan;
+                                                                }
+                                                            @endphp
+                                                            <option value="{{ $item->id }}" 
+                                                                    data-kode="{{ $item->kode_barang }}"
+                                                                    data-nama="{{ $item->nama }}"
+                                                                    data-info="{{ $infoText }}"
+                                                                    data-satuan="{{ $item->satuan }}"
+                                                                    data-output-qty="{{ $outQty }}"
+                                                                    data-satuan-output="{{ $outSatuan }}"
+                                                                    data-satuan-konversi="{{ $satuanKonversi }}"
+                                                                    data-konversi="{{ $konversiVal }}">{{ $item->kode_barang }} - {{ $item->nama }}{{ $infoText ? ' (' . $infoText . ')' : '' }}</option>
+                                                        @endforeach
+                                                    @endif
+                                                </select>
+                                            </div>
                                         </td>
                                         <td>
                                             <input type="number" step="any" min="0.01" name="qty[]" class="form-control form-control-sm text-end modal-input-cold-qty fw-bold" placeholder="0" required>
@@ -1562,9 +1619,14 @@
                 if ($cust.data('select2')) {
                     $cust.select2('destroy');
                 }
+                const $parentCol = $('#modal-cold-customer-col');
+                if ($parentCol.length) {
+                    $parentCol.addClass('position-relative');
+                }
+
                 $cust.select2({
                     theme: 'bootstrap-5',
-                    dropdownParent: $('#modalCreateColdOrder'),
+                    dropdownParent: $parentCol.length ? $parentCol : $('#modalCreateColdOrder'),
                     dropdownCssClass: 'select2-dropdown-customer-cold',
                     width: '100%',
                     placeholder: '-- Cari / Pilih Outlet / Konsumen --',
@@ -1614,12 +1676,12 @@
                 const info = el.getAttribute('data-info') || '';
 
                 const $wrapper = $(`
-                    <div class="d-flex justify-content-between align-items-center py-1 gap-2" style="font-size: 0.84rem;">
-                        <div class="d-flex align-items-center text-truncate">
-                            <span class="badge bg-secondary-subtle text-secondary-emphasis border me-2 font-monospace px-2 py-1" style="font-size: 0.72rem; min-width: 58px; text-align: center;">${kode}</span>
+                    <div class="d-flex justify-content-between align-items-center gap-2" style="font-size: 0.82rem;">
+                        <div class="d-flex align-items-center text-truncate me-1">
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis border me-2 font-monospace px-1.5 py-0.5" style="font-size: 0.70rem; min-width: 52px; text-align: center;">${kode}</span>
                             <span class="fw-semibold text-dark text-truncate">${nama}</span>
                         </div>
-                        ${info ? `<span class="badge bg-light text-muted border px-2 py-1 flex-shrink-0" style="font-size: 0.7rem; font-weight: 500;">${info}</span>` : ''}
+                        ${info ? `<span class="badge bg-light text-muted border px-1.5 py-0.5 flex-shrink-0" style="font-size: 0.68rem; font-weight: 500;">${info}</span>` : ''}
                     </div>
                 `);
                 return $wrapper;
@@ -1643,9 +1705,12 @@
                 if ($el.data('select2')) {
                     $el.select2('destroy');
                 }
+                const $wrapper = $el.closest('.cold-select-wrapper');
+                const dropdownParent = $wrapper.length ? $wrapper : $el.closest('td');
+
                 $el.select2({
                     theme: 'bootstrap-5',
-                    dropdownParent: $('#modalCreateColdOrder'),
+                    dropdownParent: dropdownParent,
                     dropdownCssClass: 'select2-dropdown-produk-cold',
                     width: '100%',
                     placeholder: '-- Cari / Ketik Kode atau Nama Barang --',
@@ -1656,6 +1721,14 @@
                     const row = selectEl.closest('tr');
                     updateColdModeOptions(row);
                     updateColdKonversi(row);
+                }).off('select2:open.cold').on('select2:open.cold', function() {
+                    const row = selectEl.closest('tr');
+                    if (row) row.classList.add('select2-row-active');
+                    if ($wrapper.length) $wrapper.addClass('select2-active');
+                }).off('select2:close.cold').on('select2:close.cold', function() {
+                    const row = selectEl.closest('tr');
+                    if (row) row.classList.remove('select2-row-active');
+                    if ($wrapper.length) $wrapper.removeClass('select2-active');
                 });
                 return $el;
             }
@@ -1829,9 +1902,10 @@
                     }
 
                     if (targetRow) {
-                        // Pastikan wrapper select2 lama (jika ada) dibersihkan
-                        const s2Wrapper = targetRow.querySelector('.select2-container');
-                        if (s2Wrapper) s2Wrapper.remove();
+                        // Pastikan wrapper select2 lama dan status aktif dibersihkan
+                        targetRow.querySelectorAll('.select2-container').forEach(w => w.remove());
+                        targetRow.classList.remove('select2-row-active');
+                        targetRow.querySelectorAll('.cold-select-wrapper').forEach(w => w.classList.remove('select2-active'));
 
                         const oldSelect = targetRow.querySelector('select.modal-select-produk-cold');
                         if (oldSelect) {
@@ -1934,6 +2008,9 @@
                         });
                         tableBodyCold.innerHTML = '';
                         const initialRow = cleanColdRowTemplate.cloneNode(true);
+                        initialRow.classList.remove('select2-row-active');
+                        initialRow.querySelectorAll('.cold-select-wrapper').forEach(w => w.classList.remove('select2-active'));
+                        initialRow.querySelectorAll('.select2-container').forEach(w => w.remove());
                         tableBodyCold.appendChild(initialRow);
                         initSelect2Cold(initialRow.querySelector('.modal-select-produk-cold'));
                         checkColdRows();
