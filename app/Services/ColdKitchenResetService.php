@@ -48,11 +48,15 @@ class ColdKitchenResetService
 
             if (!empty($cutoffDate)) {
                 $pesananQuery->where(function ($q) use ($cutoffDate) {
-                    $q->whereDate('tanggal', '<', $cutoffDate)
-                      ->orWhere(function ($sq) use ($cutoffDate) {
-                          $sq->whereNull('tanggal')
-                             ->whereDate('created_at', '<', $cutoffDate);
-                      });
+                    if (Schema::hasColumn('pesanan', 'tanggal')) {
+                        $q->whereDate('tanggal', '<', $cutoffDate)
+                          ->orWhere(function ($sq) use ($cutoffDate) {
+                              $sq->whereNull('tanggal')
+                                 ->whereDate('created_at', '<', $cutoffDate);
+                          });
+                    } else {
+                        $q->whereDate('created_at', '<', $cutoffDate);
+                    }
                 });
             }
 
@@ -95,8 +99,15 @@ class ColdKitchenResetService
                         $q->orWhere(function ($sq) use ($ckPesananIds, $cutoffDate) {
                             $sq->where('kode_produksi', 'not like', 'PRD-CK-%')
                                ->where(function ($dateQ) use ($cutoffDate) {
-                                   $dateQ->whereDate('tanggal_mulai', '<', $cutoffDate)
-                                         ->orWhereDate('created_at', '<', $cutoffDate);
+                                   if (Schema::hasColumn('produksi', 'tanggal_mulai')) {
+                                       $dateQ->whereDate('tanggal_mulai', '<', $cutoffDate)
+                                             ->orWhere(function ($subQ) use ($cutoffDate) {
+                                                 $subQ->whereNull('tanggal_mulai')
+                                                      ->whereDate('created_at', '<', $cutoffDate);
+                                             });
+                                   } else {
+                                       $dateQ->whereDate('created_at', '<', $cutoffDate);
+                                   }
                                })
                                ->where(function ($notCkQ) use ($ckPesananIds) {
                                    $notCkQ->whereNull('pesanan_id')
@@ -197,8 +208,21 @@ class ColdKitchenResetService
 
             if (!empty($cutoffDate)) {
                 $manualWoQuery->where(function ($q) use ($cutoffDate) {
-                    $q->whereDate('tanggal', '<', $cutoffDate)
-                      ->orWhereDate('created_at', '<', $cutoffDate);
+                    if (Schema::hasColumn('work_order', 'tanggal_wo')) {
+                        $q->whereDate('tanggal_wo', '<', $cutoffDate)
+                          ->orWhere(function ($sq) use ($cutoffDate) {
+                              $sq->whereNull('tanggal_wo')
+                                 ->whereDate('created_at', '<', $cutoffDate);
+                          });
+                    } elseif (Schema::hasColumn('work_order', 'tanggal')) {
+                        $q->whereDate('tanggal', '<', $cutoffDate)
+                          ->orWhere(function ($sq) use ($cutoffDate) {
+                              $sq->whereNull('tanggal')
+                                 ->whereDate('created_at', '<', $cutoffDate);
+                          });
+                    } else {
+                        $q->whereDate('created_at', '<', $cutoffDate);
+                    }
                 });
             }
 

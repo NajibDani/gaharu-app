@@ -36,12 +36,10 @@
         }
 
         /* Pastikan drawer collapse table row dan tab-pane tidak terdistorsi */
-        tr.drawer-prod-row:not(.show),
-        tr.collapse:not(.show) {
+        tr.drawer-prod-row:not(.show) {
             display: none !important;
         }
-        tr.drawer-prod-row.show,
-        tr.collapse.show {
+        tr.drawer-prod-row.show {
             display: table-row !important;
         }
         .tab-content > .tab-pane:not(.active) {
@@ -1184,16 +1182,24 @@
                                                             {{ $qtyFirstFmt }} {{ $satuanFirst }}
                                                         </span>
                                                     </div>
-                                                    <div>
-                                                        <button class="btn btn-sm btn-light border border-primary-subtle text-primary fw-semibold d-inline-flex align-items-center gap-1 py-0.5 px-2 rounded-pill shadow-none" 
+                                                    <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                                                        <button class="btn btn-sm btn-light border border-primary-subtle text-primary fw-semibold d-inline-flex align-items-center gap-1.5 py-0.5 px-2.5 rounded-pill shadow-none" 
+                                                                type="button" 
+                                                                data-bs-toggle="modal" 
+                                                                data-bs-target="#modalDetailProduksi{{ $p->id }}" 
+                                                                style="font-size: 0.75rem; background-color: #f0f7ff;" 
+                                                                title="Klik untuk melihat {{ $itemCount - 1 }} item lainnya pada modal rincian">
+                                                            <i class="bi bi-stack"></i> +{{ $itemCount - 1 }} Item Lainnya
+                                                            <i class="bi bi-eye text-primary ms-0.5" style="font-size: 0.72rem;"></i>
+                                                        </button>
+                                                        <button class="btn btn-sm btn-outline-secondary py-0.5 px-1.5 rounded-pill shadow-none d-inline-flex align-items-center justify-content-center" 
                                                                 type="button" 
                                                                 onclick="toggleDrawerProduksi('drawerProd{{ $p->id }}', this)" 
                                                                 data-target-drawer="drawerProd{{ $p->id }}" 
                                                                 aria-expanded="false" 
-                                                                style="font-size: 0.75rem; background-color: #f0f7ff;" 
-                                                                title="Klik untuk melihat {{ $itemCount - 1 }} item lainnya">
-                                                            <i class="bi bi-stack"></i> +{{ $itemCount - 1 }} Item Lainnya
-                                                            <i class="bi bi-chevron-down" style="font-size: 0.68rem;"></i>
+                                                                style="font-size: 0.68rem; height: 24px; min-width: 24px;" 
+                                                                title="Buka / tutup rincian cepat pada baris tabel">
+                                                            <i class="bi bi-chevron-down"></i>
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1546,7 +1552,7 @@
                                     </tr>
 
                                     {{-- EXPANDABLE INLINE DRAWER (RINCIAN SELURUH ITEM) --}}
-                                    <tr class="drawer-prod-row collapse border-bottom" id="drawerProd{{ $p->id }}" style="display: none;">
+                                    <tr class="drawer-prod-row border-bottom" id="drawerProd{{ $p->id }}" style="display: none;">
                                         <td colspan="6" class="p-0 bg-light-subtle">
                                             <div class="p-3 border-start border-3 border-primary ms-3 my-2 bg-white rounded-3 shadow-sm me-3">
                                                 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
@@ -1860,11 +1866,11 @@
             const el = document.getElementById(targetId);
             if (!el) return;
             
-            const isShowing = el.classList.contains('show') || (el.style.display === 'table-row');
+            const isShowing = el.classList.contains('show') && (el.style.display !== 'none');
             
             if (!isShowing) {
                 el.classList.add('show');
-                el.style.display = 'table-row';
+                el.style.setProperty('display', 'table-row', 'important');
                 document.querySelectorAll(`[data-target-drawer="${targetId}"]`).forEach(btn => {
                     btn.setAttribute('aria-expanded', 'true');
                     const icon = btn.querySelector('.bi-chevron-down, .bi-chevron-up');
@@ -1875,7 +1881,7 @@
                 });
             } else {
                 el.classList.remove('show');
-                el.style.display = 'none';
+                el.style.setProperty('display', 'none', 'important');
                 document.querySelectorAll(`[data-target-drawer="${targetId}"]`).forEach(btn => {
                     btn.setAttribute('aria-expanded', 'false');
                     const icon = btn.querySelector('.bi-chevron-down, .bi-chevron-up');
