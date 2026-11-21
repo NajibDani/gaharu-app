@@ -102,7 +102,7 @@ class PesananController extends Controller
         $totalSelesai = Pesanan::b2b()->where('status_pesanan', 'Selesai')->count();
 
         // Barang yang bisa dipilih: Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
-        $produk = MasterBarang::with('resepBtklBop')
+        $produk = MasterBarang::with(['resepBtklBop', 'minimumStocks'])
             ->where('is_active', true)
             ->where(function($q) {
                 $q->where('is_bahan_setengah_jadi', true)
@@ -110,6 +110,44 @@ class PesananController extends Controller
             })
             ->orderBy('nama', 'asc')
             ->get();
+
+        // Data barang Cold Kitchen beserta tagging alokasi divisi untuk filtering dinamis
+        $coldProductsData = [];
+        foreach ($produk as $item) {
+            $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
+            $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+            $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
+            $konversiVal = floatval($item->konversi_pembelian ?? 1);
+            $infoText = '';
+            if ($satuanKonversi && $konversiVal > 1) {
+                $infoText = '1 ' . $satuanKonversi . ' = ' . number_format($konversiVal, 0, ',', '.') . ' ' . $item->satuan;
+            } elseif ($outQty > 0) {
+                $infoText = '1 Resep = ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan;
+            }
+
+            $tags = [];
+            foreach ($item->minimumStocks as $ms) {
+                if ($ms->is_active) {
+                    $tags[] = [
+                        'gudang_id' => (int) $ms->gudang_id,
+                        'divisi_id' => $ms->divisi_id !== null ? (int) $ms->divisi_id : null,
+                    ];
+                }
+            }
+
+            $coldProductsData[] = [
+                'id'              => $item->id,
+                'kode'            => $item->kode_barang,
+                'nama'            => $item->nama,
+                'satuan'          => $item->satuan,
+                'output_qty'      => $outQty,
+                'satuan_output'   => $outSatuan,
+                'satuan_konversi' => $satuanKonversi,
+                'konversi'        => $konversiVal,
+                'info'            => $infoText,
+                'tags'            => $tags,
+            ];
+        }
 
         // Hitung ringkasan saran restock Bahan Setengah Jadi / Barang Jadi per outlet (di bawah minimum stock)
         $outletSuggestionsSummary = [];
@@ -161,7 +199,7 @@ class PesananController extends Controller
             }
         }
 
-        return view('pesanan.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'customerId', 'produk', 'outletSuggestionsSummary'));
+        return view('pesanan.index', compact('pesanan', 'totalPesanan', 'totalProses', 'totalSelesai', 'customers', 'customerId', 'produk', 'outletSuggestionsSummary', 'coldProductsData'));
     }
 
     /**
@@ -243,6 +281,74 @@ class PesananController extends Controller
             'divisi_list' => $divisis,
             'has_divisi'  => $divisis->isNotEmpty(),
         ]);
+    }
+
+    /**
+     * API JSON: Mengambil barang Cold Kitchen yang dialokasikan ke Outlet / Divisi tertentu
+     */
+    public function getProductsByAllocation(Request $request)
+    {
+        $customerId = $request->query('customer_id');
+        $divisiId = $request->query('divisi_id') ? (int) $request->query('divisi_id') : null;
+
+        $customer = $customerId ? Customer::find($customerId) : null;
+        if (!$customer) {
+            return response()->json(['success' => false, 'data' => []]);
+        }
+
+        [$gudang, $divisis] = $this->getCustomerGudangAndDivisi($customer);
+        if (!$gudang) {
+            return response()->json(['success' => false, 'data' => []]);
+        }
+
+        $query = MasterBarang::with(['resepBtklBop', 'minimumStocks'])
+            ->where('is_active', true)
+            ->where(function($q) {
+                $q->where('is_bahan_setengah_jadi', true)
+                  ->orWhere('is_barang_jadi', true);
+            });
+
+        // Filter berdasarkan alokasi di barang_minimum_stock
+        $hasDivisi = $divisis->isNotEmpty();
+        $query->whereHas('minimumStocks', function($q) use ($gudang, $divisiId, $hasDivisi) {
+            $q->where('is_active', true)
+              ->where('gudang_id', $gudang->id);
+            if ($hasDivisi && $divisiId) {
+                $q->where(function($sub) use ($divisiId) {
+                    $sub->where('divisi_id', $divisiId)
+                        ->orWhereNull('divisi_id');
+                });
+            }
+        });
+
+        $products = $query->orderBy('nama', 'asc')->get();
+
+        $result = $products->map(function($item) {
+            $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
+            $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+            $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
+            $konversiVal = floatval($item->konversi_pembelian ?? 1);
+            $infoText = '';
+            if ($satuanKonversi && $konversiVal > 1) {
+                $infoText = '1 ' . $satuanKonversi . ' = ' . number_format($konversiVal, 0, ',', '.') . ' ' . $item->satuan;
+            } elseif ($outQty > 0) {
+                $infoText = '1 Resep = ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan;
+            }
+
+            return [
+                'id'              => $item->id,
+                'kode'            => $item->kode_barang,
+                'nama'            => $item->nama,
+                'satuan'          => $item->satuan,
+                'output_qty'      => $outQty,
+                'satuan_output'   => $outSatuan,
+                'satuan_konversi' => $satuanKonversi,
+                'konversi'        => $konversiVal,
+                'info'            => $infoText,
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $result]);
     }
 
     /**
@@ -724,18 +830,16 @@ class PesananController extends Controller
     }
 
     /**
-     * Remove the specified resource from storage.
-     * Superadmin dapat menghapus PO/Permintaan yang belum terkirim (masa uji coba)
+    /**
+     * Hapus satu pesanan Cold Kitchen beserta seluruh relasi terkait
      */
-    public function destroy($id)
+    protected function deleteSingleOrder(Pesanan $pesanan, bool $isSuperAdmin): array
     {
-        $user = auth()->user();
-        $isSuperAdmin = $user && $user->isSuperAdmin();
-
-        $pesanan = Pesanan::findOrFail($id);
-
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
-            return redirect()->route('pesanan.index')->with('error', 'Gagal menghapus: Permintaan berada pada periode akuntansi yang sudah ditutup buku.');
+            return [
+                'success' => false,
+                'message' => 'Permintaan #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.'
+            ];
         }
 
         // Cek apakah sudah ada pengiriman yang statusnya Selesai (sudah terkirim)
@@ -744,16 +848,20 @@ class PesananController extends Controller
             ->exists();
 
         if ($sudahKirim || ($pesanan->total_qty_terkirim ?? 0) > 0) {
-            return redirect()->route('pesanan.index')
-                ->with('error', 'Data tidak bisa dihapus karena sudah ada riwayat pengiriman logistik yang selesai (sudah terkirim).');
+            return [
+                'success' => false,
+                'message' => 'Data #' . $pesanan->kode_pesanan . ' tidak bisa dihapus karena sudah ada riwayat pengiriman logistik yang selesai (sudah terkirim).'
+            ];
         }
 
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
 
         // Jika sudah masuk WO dan BUKAN Super Admin, tolak
         if ($sudahWO && !$isSuperAdmin) {
-            return redirect()->route('pesanan.index')
-                ->with('error', 'Data tidak bisa dihapus karena relasi logistik Work Order (WO) sudah terbentuk. Hanya Superadmin yang dapat menghapus Purchase Order yang belum terkirim.');
+            return [
+                'success' => false,
+                'message' => 'Data #' . $pesanan->kode_pesanan . ' tidak bisa dihapus karena relasi logistik Work Order (WO) sudah terbentuk. Hanya Superadmin yang dapat menghapus.'
+            ];
         }
 
         DB::beginTransaction();
@@ -831,10 +939,73 @@ class PesananController extends Controller
             $pesanan->delete();
 
             DB::commit();
-            return redirect()->route('pesanan.index')->with('success', 'Permintaan Cold Kitchen #' . $pesanan->kode_pesanan . ' dan seluruh data terkait berhasil dihapus.');
+            return ['success' => true, 'message' => 'OK'];
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->route('pesanan.index')->with('error', 'Gagal menghapus data: ' . $e->getMessage());
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     * Superadmin dapat menghapus PO/Permintaan yang belum terkirim (masa uji coba)
+     */
+    public function destroy($id)
+    {
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        $pesanan = Pesanan::findOrFail($id);
+
+        $res = $this->deleteSingleOrder($pesanan, $isSuperAdmin);
+
+        if (!$res['success']) {
+            return redirect()->back()->with('error', 'Gagal menghapus: ' . $res['message']);
+        }
+
+        return redirect()->back()->with('success', 'Permintaan Cold Kitchen #' . $pesanan->kode_pesanan . ' dan seluruh data terkait berhasil dihapus.');
+    }
+
+    /**
+     * Hapus Massal Pesanan Cold Kitchen yang dipilih
+     */
+    public function hapusMassal(Request $request)
+    {
+        $pesananIds = $request->input('pesanan_ids', []);
+        if (empty($pesananIds)) {
+            return redirect()->back()->with('error', 'Pilih minimal satu pesanan Cold Kitchen untuk dihapus.');
+        }
+
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        $pesanans = Pesanan::whereIn('id', $pesananIds)->get();
+        if ($pesanans->isEmpty()) {
+            return redirect()->back()->with('error', 'Data pesanan yang dipilih tidak ditemukan.');
+        }
+
+        $successCount = 0;
+        $failedCount = 0;
+        $failedMessages = [];
+
+        foreach ($pesanans as $p) {
+            $res = $this->deleteSingleOrder($p, $isSuperAdmin);
+            if ($res['success']) {
+                $successCount++;
+            } else {
+                $failedCount++;
+                $failedMessages[] = $res['message'];
+            }
+        }
+
+        if ($failedCount === 0) {
+            return redirect()->back()->with('success', "Berhasil menghapus {$successCount} Permintaan Cold Kitchen terpilih beserta relasi terkait.");
+        } elseif ($successCount > 0) {
+            $msg = "Sebanyak {$successCount} pesanan berhasil dihapus, namun {$failedCount} pesanan gagal: " . implode('; ', array_slice($failedMessages, 0, 3));
+            return redirect()->back()->with('warning', $msg);
+        } else {
+            $msg = "Gagal menghapus pesanan terpilih: " . implode('; ', array_slice($failedMessages, 0, 3));
+            return redirect()->back()->with('error', $msg);
         }
     }
     

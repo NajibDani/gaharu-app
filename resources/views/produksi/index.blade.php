@@ -36,9 +36,11 @@
         }
 
         /* Pastikan drawer collapse table row dan tab-pane tidak terdistorsi */
+        tr.drawer-prod-row:not(.show),
         tr.collapse:not(.show) {
             display: none !important;
         }
+        tr.drawer-prod-row.show,
         tr.collapse.show {
             display: table-row !important;
         }
@@ -180,11 +182,9 @@
                     <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="fw-bold mb-0 text-dark">Daftar Permintaan Cold Kitchen yang Siap Diproduksi</h6>
                         <div class="d-flex align-items-center gap-2">
-                            @if(auth()->user() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin'))
-                                <a href="{{ route('pesanan.index') }}" class="btn btn-sm btn-outline-danger fw-semibold shadow-sm d-inline-flex align-items-center" title="Buka Halaman Pesanan untuk Bersihkan Data Cold Kitchen Lama">
-                                    <i class="bi bi-trash3 me-1"></i> Bersihkan Data Lama (&lt; 20 Nov)
-                                </a>
-                            @endif
+                            <button type="button" class="btn btn-sm btn-outline-danger fw-semibold shadow-sm d-none align-items-center gap-1" id="btnBulkHapusProduksi" data-bs-toggle="modal" data-bs-target="#modalBulkHapusProduksi" style="border-radius: 8px; padding: 6px 14px; font-size: 0.8rem;">
+                                <i class="bi bi-trash3"></i> Hapus Terpilih (<span id="countSelectedHapusProd">0</span>)
+                            </button>
                             <button type="button" class="btn btn-sm btn-outline-primary fw-semibold shadow-sm" id="btnMassal" disabled onclick="openReviewMassalModal()">
                                 <i class="bi bi-ui-checks me-1"></i> Buat WO Gabungan Terpilih
                             </button>
@@ -224,7 +224,7 @@
                                                             data-sisa-qty="{{ $d->sisa_wo_qty ?? $d->qty }}">
                                                     @endif
                                                 @endforeach
-                                                <input class="form-check-input border-secondary parentCheck" type="checkbox" data-target="{{ $p->id }}">
+                                                <input class="form-check-input border-secondary parentCheck" type="checkbox" data-target="{{ $p->id }}" value="{{ $p->id }}" data-kode="{{ $p->kode_pesanan }}" data-customer="{{ $p->customer->nama ?? ($p->customer->name ?? '-') }}" data-tanggal="{{ date('d M Y', strtotime($p->tanggal)) }}">
                                             @else
                                                 <i class="bi bi-check2-circle text-success" title="Semua item sudah dibuatkan WO"></i>
                                             @endif
@@ -1185,7 +1185,13 @@
                                                         </span>
                                                     </div>
                                                     <div>
-                                                        <button class="btn btn-sm btn-link p-0 text-decoration-none text-primary fw-semibold d-inline-flex align-items-center gap-1" type="button" data-bs-toggle="collapse" data-bs-target="#drawerProd{{ $p->id }}" aria-expanded="false" style="font-size: 0.76rem;">
+                                                        <button class="btn btn-sm btn-light border border-primary-subtle text-primary fw-semibold d-inline-flex align-items-center gap-1 py-0.5 px-2 rounded-pill shadow-none" 
+                                                                type="button" 
+                                                                onclick="toggleDrawerProduksi('drawerProd{{ $p->id }}', this)" 
+                                                                data-target-drawer="drawerProd{{ $p->id }}" 
+                                                                aria-expanded="false" 
+                                                                style="font-size: 0.75rem; background-color: #f0f7ff;" 
+                                                                title="Klik untuk melihat {{ $itemCount - 1 }} item lainnya">
                                                             <i class="bi bi-stack"></i> +{{ $itemCount - 1 }} Item Lainnya
                                                             <i class="bi bi-chevron-down" style="font-size: 0.68rem;"></i>
                                                         </button>
@@ -1225,7 +1231,12 @@
                                         <td class="text-center">
                                             <div class="d-inline-flex align-items-center gap-1">
                                                 {{-- Tombol Toggle Rincian Drawer --}}
-                                                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 d-flex align-items-center justify-content-center" data-bs-toggle="collapse" data-bs-target="#drawerProd{{ $p->id }}" title="Lihat Rincian Item" style="height: 32px; width: 32px; border-radius: 7px;">
+                                                <button type="button" 
+                                                        class="btn btn-sm btn-outline-secondary py-1 px-2 d-flex align-items-center justify-content-center" 
+                                                        onclick="toggleDrawerProduksi('drawerProd{{ $p->id }}', this)" 
+                                                        data-target-drawer="drawerProd{{ $p->id }}" 
+                                                        title="Lihat Rincian Item" 
+                                                        style="height: 32px; width: 32px; border-radius: 7px;">
                                                     <i class="bi bi-chevron-down"></i>
                                                 </button>
 
@@ -1535,16 +1546,21 @@
                                     </tr>
 
                                     {{-- EXPANDABLE INLINE DRAWER (RINCIAN SELURUH ITEM) --}}
-                                    <tr class="collapse border-bottom" id="drawerProd{{ $p->id }}">
+                                    <tr class="drawer-prod-row collapse border-bottom" id="drawerProd{{ $p->id }}" style="display: none;">
                                         <td colspan="6" class="p-0 bg-light-subtle">
                                             <div class="p-3 border-start border-3 border-primary ms-3 my-2 bg-white rounded-3 shadow-sm me-3">
-                                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                                    <span class="fw-bold text-dark small">
-                                                        <i class="bi bi-box-seam me-1 text-primary"></i> Rincian Item Hasil Produksi (Kode: {{ $p->kode_produksi }})
-                                                    </span>
-                                                    <span class="badge bg-secondary-subtle text-secondary border small">
-                                                        {{ $itemCount }} Item Terdaftar
-                                                    </span>
+                                                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <span class="fw-bold text-dark small">
+                                                            <i class="bi bi-box-seam me-1 text-primary"></i> Rincian Item Hasil Produksi (Kode: {{ $p->kode_produksi }})
+                                                        </span>
+                                                        <span class="badge bg-secondary-subtle text-secondary border small">
+                                                            {{ $itemCount }} Item Terdaftar
+                                                        </span>
+                                                    </div>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary py-0.5 px-2.5 rounded-pill fw-semibold shadow-sm d-inline-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#modalDetailProduksi{{ $p->id }}" style="font-size: 0.74rem;">
+                                                        <i class="bi bi-eye"></i> Buka Modal Detail Produksi
+                                                    </button>
                                                 </div>
                                                 <div class="table-responsive">
                                                     <table class="table table-sm table-bordered align-middle mb-0 small">
@@ -1754,6 +1770,55 @@
             </div>
         </div>
     </div>
+    {{-- MODAL HAPUS MASSAL PERMINTAAN COLD KITCHEN (TAB PRODUKSI) --}}
+    <div class="modal fade text-start" id="modalBulkHapusProduksi" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <form action="{{ route('pesanan.hapus-massal') }}" method="POST" id="formBulkHapusProduksi" class="w-100">
+                @csrf
+                <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                    <div class="modal-header bg-danger text-white border-0 p-3 px-4">
+                        <h5 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
+                            <i class="bi bi-trash3-fill"></i> Hapus Permintaan Terpilih
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-white">
+                        <div class="alert alert-warning border-0 d-flex gap-2 align-items-start mb-3">
+                            <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0 mt-1"></i>
+                            <div class="small">
+                                Apakah Anda yakin ingin menghapus <strong id="bulkHapusProdCountText">0</strong> Permintaan Cold Kitchen yang dipilih?
+                                <br><small class="text-muted">Data permintaan, detail item, dan relasi yang belum selesai akan dibersihkan secara aman.</small>
+                            </div>
+                        </div>
+
+                        {{-- Container hidden inputs pesanan_ids --}}
+                        <div id="bulkHapusProdHiddenInputs"></div>
+
+                        {{-- Daftar Kode Order Terpilih --}}
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-secondary mb-1">Daftar Order yang akan dihapus:</label>
+                            <div id="bulkHapusProdOrdersList" class="p-2 border rounded-3 bg-light font-monospace small" style="max-height: 160px; overflow-y: auto;">
+                                <!-- Diisi via Javascript -->
+                            </div>
+                        </div>
+
+                        <div class="form-check p-3 bg-light rounded-3 border">
+                            <input class="form-check-input ms-0 me-2" type="checkbox" id="confirmBulkHapusProdCheck" required>
+                            <label class="form-check-label small fw-semibold text-dark" for="confirmBulkHapusProdCheck">
+                                Saya yakin dan mengonfirmasi penghapusan seluruh permintaan Cold Kitchen yang dipilih di atas.
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-3 px-4 bg-light d-flex justify-content-between align-items-center">
+                        <button type="button" class="btn btn-secondary px-4 rounded-3 fw-semibold" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-danger px-4 rounded-3 fw-bold d-inline-flex align-items-center gap-1 shadow-sm">
+                            <i class="bi bi-trash3-fill me-1"></i> Ya, Hapus Sekarang
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
 
     {{-- SCRIPT UNTUK CHECKBOX MASSAL, BATCH PRODUKSI & TAB HANDLING --}}
     <script>
@@ -1790,6 +1855,38 @@
             }
         }
         window.toggleCustomCollapse = toggleCustomCollapse;
+
+        function toggleDrawerProduksi(targetId, btnEl) {
+            const el = document.getElementById(targetId);
+            if (!el) return;
+            
+            const isShowing = el.classList.contains('show') || (el.style.display === 'table-row');
+            
+            if (!isShowing) {
+                el.classList.add('show');
+                el.style.display = 'table-row';
+                document.querySelectorAll(`[data-target-drawer="${targetId}"]`).forEach(btn => {
+                    btn.setAttribute('aria-expanded', 'true');
+                    const icon = btn.querySelector('.bi-chevron-down, .bi-chevron-up');
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-up');
+                    }
+                });
+            } else {
+                el.classList.remove('show');
+                el.style.display = 'none';
+                document.querySelectorAll(`[data-target-drawer="${targetId}"]`).forEach(btn => {
+                    btn.setAttribute('aria-expanded', 'false');
+                    const icon = btn.querySelector('.bi-chevron-down, .bi-chevron-up');
+                    if (icon) {
+                        icon.classList.remove('bi-chevron-up');
+                        icon.classList.add('bi-chevron-down');
+                    }
+                });
+            }
+        }
+        window.toggleDrawerProduksi = toggleDrawerProduksi;
 
         function openReviewMassalModal() {
             const checkedDetails = document.querySelectorAll('.checkItem:checked');
@@ -2058,14 +2155,27 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            // Checkbox Massal WO
+            // Checkbox Massal WO & Bulk Delete
             const checkAll = document.getElementById("checkAll");
             const parentChecks = document.querySelectorAll(".parentCheck");
             const btnMassal = document.getElementById("btnMassal");
+            const btnBulkHapusProduksi = document.getElementById("btnBulkHapusProduksi");
+            const countSelectedHapusProd = document.getElementById("countSelectedHapusProd");
 
-            function toggleBtnMassal() {
-                const anyChecked = Array.from(parentChecks).some(c => c.checked);
-                if (btnMassal) btnMassal.disabled = !anyChecked;
+            function toggleBulkActions() {
+                const checkedList = Array.from(parentChecks).filter(c => c.checked);
+                const count = checkedList.length;
+                if (btnMassal) btnMassal.disabled = (count === 0);
+                if (btnBulkHapusProduksi) {
+                    if (count > 0) {
+                        btnBulkHapusProduksi.classList.remove('d-none');
+                        btnBulkHapusProduksi.classList.add('d-inline-flex');
+                        if (countSelectedHapusProd) countSelectedHapusProd.textContent = count;
+                    } else {
+                        btnBulkHapusProduksi.classList.add('d-none');
+                        btnBulkHapusProduksi.classList.remove('d-inline-flex');
+                    }
+                }
             }
 
             if (checkAll) {
@@ -2075,7 +2185,7 @@
                         const hiddenChecks = pc.closest('td').querySelectorAll('.checkItem');
                         hiddenChecks.forEach(hc => hc.checked = checkAll.checked);
                     });
-                    toggleBtnMassal();
+                    toggleBulkActions();
                 });
             }
 
@@ -2083,9 +2193,51 @@
                 pc.addEventListener("change", function () {
                     const hiddenChecks = pc.closest('td').querySelectorAll('.checkItem');
                     hiddenChecks.forEach(hc => hc.checked = pc.checked);
-                    toggleBtnMassal();
+                    toggleBulkActions();
                 });
             });
+
+            // Handler Modal Hapus Massal di Tab Produksi
+            const modalBulkHapusProd = document.getElementById('modalBulkHapusProduksi');
+            if (modalBulkHapusProd) {
+                modalBulkHapusProd.addEventListener('show.bs.modal', function() {
+                    const checkedList = Array.from(parentChecks).filter(c => c.checked);
+                    const containerInputs = document.getElementById('bulkHapusProdHiddenInputs');
+                    const listContainer = document.getElementById('bulkHapusProdOrdersList');
+                    const countText = document.getElementById('bulkHapusProdCountText');
+                    const confirmCheck = document.getElementById('confirmBulkHapusProdCheck');
+
+                    if (confirmCheck) confirmCheck.checked = false;
+                    if (containerInputs) containerInputs.innerHTML = '';
+                    if (listContainer) listContainer.innerHTML = '';
+                    if (countText) countText.textContent = checkedList.length;
+
+                    checkedList.forEach((cb, idx) => {
+                        const id = cb.value;
+                        const kode = cb.getAttribute('data-kode') || '';
+                        const customer = cb.getAttribute('data-customer') || '-';
+                        const tanggal = cb.getAttribute('data-tanggal') || '-';
+
+                        if (containerInputs) {
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'pesanan_ids[]';
+                            input.value = id;
+                            containerInputs.appendChild(input);
+                        }
+
+                        if (listContainer) {
+                            const itemDiv = document.createElement('div');
+                            itemDiv.className = 'py-1 border-bottom border-light d-flex justify-content-between align-items-center';
+                            itemDiv.innerHTML = `
+                                <span><strong>${idx + 1}. #${kode}</strong> <span class="text-muted">(${customer})</span></span>
+                                <span class="badge bg-secondary-subtle text-dark">${tanggal}</span>
+                            `;
+                            listContainer.appendChild(itemDiv);
+                        }
+                    });
+                });
+            }
 
             // Master checkbox batch WO B2B
             const checkAllWoB2B = document.getElementById('checkAllWoB2B');
