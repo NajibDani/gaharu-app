@@ -77,6 +77,7 @@ class KeterlambatanController extends Controller
         $lastRowPerKaryawanPeriode   = [];
         $totalKejadian               = $listKeterlambatan->count();
         $totalPotonganBulanIni       = $listKeterlambatan->sum('potongan');
+        $carbonPeriodeEnd            = $periode ? Carbon::parse($periode . '-01')->endOfMonth()->format('Y-m-d') : date('Y-m-t');
 
         foreach ($listKeterlambatan as $item) {
             $karyawan = $item->karyawan;
@@ -95,10 +96,20 @@ class KeterlambatanController extends Controller
             if (!isset($akumulasiPerKaryawanPeriode[$kId])) {
                 $akumulasiPerKaryawanPeriode[$kId] = [];
             }
-            if (!isset($akumulasiPerKaryawanPeriode[$kId][$pKey])) {
-                $akumulasiPerKaryawanPeriode[$kId][$pKey] = 0;
+
+            // Jika periode memiliki rentang tanggal spesifik (misal Periode A lintas bulan 21/10 - 21/11),
+            // akumulasi subtotal periode harus mencakup seluruh keterlambatan dalam rentang periode aktual s.d. bulan aktif
+            if (!empty($pInfo['mulai']) && !empty($pInfo['selesai']) && $pKey !== 'REG') {
+                $akumulasiPerKaryawanPeriode[$kId][$pKey] = (float) Keterlambatan::where('karyawan_id', $kId)
+                    ->whereBetween('tanggal', [$pInfo['mulai'], $pInfo['selesai']])
+                    ->where('tanggal', '<=', $carbonPeriodeEnd)
+                    ->sum('potongan');
+            } else {
+                if (!isset($akumulasiPerKaryawanPeriode[$kId][$pKey])) {
+                    $akumulasiPerKaryawanPeriode[$kId][$pKey] = 0;
+                }
+                $akumulasiPerKaryawanPeriode[$kId][$pKey] += $item->potongan;
             }
-            $akumulasiPerKaryawanPeriode[$kId][$pKey] += $item->potongan;
 
             $lastRowPerKaryawanPeriode[$kId][$pKey] = $item->id;
         }
@@ -297,41 +308,44 @@ class KeterlambatanController extends Controller
     private function syncKePenggajian($karyawanId, $tanggal): void
     {
         $carbonTgl = Carbon::parse($tanggal);
+        $tglStr = $carbonTgl->format('Y-m-d');
         $periodeStr = $carbonTgl->format('Y-m');
 
-        // Cari semua record penggajian karyawan ini di bulan terkait
+        // Cari semua record penggajian karyawan ini yang BELUM dijurnal
         $payrolls = Penggajian::where('karyawan_id', $karyawanId)
-            ->where('periode_bulan_tahun', $periodeStr)
+            ->where('status_jurnal', false)
             ->get();
 
         foreach ($payrolls as $payroll) {
-            // Hanya lewati jika sudah dijurnal / dibayar ke bank
-            if ($payroll->status_jurnal) continue;
-
             $kw = $payroll->karyawan;
             $pNum = (int)($payroll->pilihan_periode ?? 1);
 
-            // Hitung total potongan keterlambatan akurat dari tabel Keterlambatan
-            $potonganPeriode = Penggajian::hitungPotonganTerlambat($kw ?: $karyawanId, $periodeStr, $pNum);
+            $range = Penggajian::getDateRangeForPayroll($kw ?: $karyawanId, $payroll->periode_bulan_tahun, $pNum, $payroll);
 
-            $totalDeductions = floatval($potonganPeriode) +
-                               floatval($payroll->potongan_inventaris ?? 0) +
-                               floatval($payroll->potongan_kasbon ?? 0) +
-                               floatval($payroll->potongan_deposit ?? 0) +
-                               floatval($payroll->potongan_dll ?? 0);
+            // Jika tanggal presensi berada dalam rentang aktual slip gaji ini, atau bulan sama
+            if (($tglStr >= $range['start'] && $tglStr <= $range['end']) || $payroll->periode_bulan_tahun === $periodeStr) {
+                // Hitung total potongan keterlambatan akurat dari tabel Keterlambatan secara dinamis
+                $potonganPeriode = Penggajian::hitungPotonganTerlambat($kw ?: $karyawanId, $payroll->periode_bulan_tahun, $pNum);
 
-            $totalEarnings = floatval($payroll->total_earnings ?? (
-                ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
-                ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
-            ));
+                $totalDeductions = floatval($potonganPeriode) +
+                                   floatval($payroll->potongan_inventaris ?? 0) +
+                                   floatval($payroll->potongan_kasbon ?? 0) +
+                                   floatval($payroll->potongan_deposit ?? 0) +
+                                   floatval($payroll->potongan_dll ?? 0);
 
-            $totalGajiBersih = $totalEarnings - $totalDeductions;
+                $totalEarnings = floatval($payroll->total_earnings ?? (
+                    ($payroll->gaji_utama ?? 0) + ($payroll->lembur ?? 0) + ($payroll->bonus_target ?? 0) +
+                    ($payroll->bonus_tanggal_merah ?? 0) + ($payroll->bonus_birthday ?? 0) + ($payroll->pengembalian_deposit ?? 0) + ($payroll->bonus_dll ?? 0)
+                ));
 
-            $payroll->update([
-                'potongan_terlambat' => $potonganPeriode,
-                'total_deductions'   => $totalDeductions,
-                'total_gaji_bersih'  => $totalGajiBersih,
-            ]);
+                $totalGajiBersih = $totalEarnings - $totalDeductions;
+
+                $payroll->update([
+                    'potongan_terlambat' => $potonganPeriode,
+                    'total_deductions'   => $totalDeductions,
+                    'total_gaji_bersih'  => $totalGajiBersih,
+                ]);
+            }
         }
     }
 

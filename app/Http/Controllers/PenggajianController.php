@@ -114,18 +114,28 @@ class PenggajianController extends Controller
             $karyawans->push($lockedKaryawan);
         }
 
-        // Ambil data akumulasi Keterlambatan bulan ini per karyawan
-        $akumulasiTerlambatMap = Keterlambatan::whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$target_periode])
-            ->groupBy('karyawan_id')
-            ->selectRaw('karyawan_id, sum(potongan) as total_potongan, count(*) as total_kali')
-            ->get()
-            ->keyBy('karyawan_id');
+        $prevPeriode = \Carbon\Carbon::parse($target_periode . '-01')->subMonth()->format('Y-m');
 
-        // Ambil data mentah keterlambatan untuk filter live di JavaScript sesuai tanggal slip
-        $keterlambatanRawMap = Keterlambatan::whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$target_periode])
+        // Ambil data mentah keterlambatan untuk filter live di JavaScript sesuai tanggal slip (mencakup lintas bulan)
+        $keterlambatanRawMap = Keterlambatan::where(function ($q) use ($target_periode, $prevPeriode) {
+                $q->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$target_periode])
+                  ->orWhereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$prevPeriode]);
+            })
             ->select('id', 'karyawan_id', 'tanggal', 'potongan', 'durasi_menit')
             ->get()
             ->groupBy('karyawan_id');
+
+        // Ambil data akumulasi Keterlambatan aktual per karyawan secara dinamis sesuai periode
+        $akumulasiTerlambatMap = collect();
+        foreach ($karyawans as $kwItem) {
+            $potTerlambatKw = Penggajian::hitungPotonganTerlambat($kwItem, $target_periode, 1);
+            $totalKali = isset($keterlambatanRawMap[$kwItem->id]) ? $keterlambatanRawMap[$kwItem->id]->count() : 0;
+            $akumulasiTerlambatMap[$kwItem->id] = (object) [
+                'karyawan_id'    => $kwItem->id,
+                'total_potongan' => $potTerlambatKw,
+                'total_kali'     => $totalKali,
+            ];
+        }
 
         return view('penggajian.create', compact('karyawans', 'target_periode', 'akumulasiTerlambatMap', 'keterlambatanRawMap', 'selectedOutlet', 'lockedKaryawan'));
     }
@@ -234,28 +244,10 @@ class PenggajianController extends Controller
         $totalEarnings = $gajiUtama + $lembur + $bonusTarget + $bonusTanggalMerah + $bonusBirthdayService + $pengembalianDeposit + $bonusDll;
 
         // 4. Kalkulasi Deductions (Pengurangan) - Otomatis sinkronkan potongan terlambat dari tabel Keterlambatan jika tidak diset
-        if ($request->has('potongan_terlambat')) {
+        if ($request->has('potongan_terlambat') && $request->potongan_terlambat !== null && $request->potongan_terlambat !== '') {
             $potonganTerlambat = $cleanRupiah($request->potongan_terlambat);
         } else {
-            $pMulai = $request->tanggal_mulai ?: (($pilihanPeriode === 2) ? ($karyawan->tanggal_mulai_2 ?? $karyawan->tanggal_mulai) : $karyawan->tanggal_mulai);
-            $pSelesai = $request->tanggal_selesai ?: (($pilihanPeriode === 2) ? ($karyawan->tanggal_selesai_2 ?? $karyawan->tanggal_selesai) : $karyawan->tanggal_selesai);
-            
-            $qLate = Keterlambatan::where('karyawan_id', $karyawan->id);
-            if ($pMulai && $pSelesai) {
-                $qLate->whereBetween('tanggal', [
-                    \Carbon\Carbon::parse($pMulai)->format('Y-m-d'),
-                    \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
-                ]);
-            } elseif ($pMulai) {
-                $qLate->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
-                      ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
-            } elseif ($pSelesai) {
-                $qLate->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
-                      ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
-            } else {
-                $qLate->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$request->periode]);
-            }
-            $potonganTerlambat = floatval($qLate->sum('potongan'));
+            $potonganTerlambat = Penggajian::hitungPotonganTerlambat($karyawan, $request->periode, $pilihanPeriode);
         }
 
         $potonganInventaris = $request->has('potongan_inventaris') ? $cleanRupiah($request->potongan_inventaris) : 0;
@@ -1303,15 +1295,10 @@ class PenggajianController extends Controller
         // Ambil rincian keterlambatan karyawan pada rentang slip atau bulan periode ini
         $pMulai = $payroll->tanggal_mulai;
         $pSelesai = $payroll->tanggal_selesai;
-        if (!$pMulai && !$pSelesai && $payroll->karyawan && !$payroll->is_combined) {
-            $pNum = (int)($payroll->pilihan_periode ?? 1);
-            if ($pNum === 2) {
-                $pMulai = $payroll->karyawan->tanggal_mulai_2 ?? $payroll->karyawan->tanggal_mulai;
-                $pSelesai = $payroll->karyawan->tanggal_selesai_2 ?? $payroll->karyawan->tanggal_selesai;
-            } else {
-                $pMulai = $payroll->karyawan->tanggal_mulai;
-                $pSelesai = $payroll->karyawan->tanggal_selesai;
-            }
+        if (!$payroll->is_combined) {
+            $range = Penggajian::getDateRangeForPayroll($payroll->karyawan, $payroll->periode_bulan_tahun, $payroll->pilihan_periode, $payroll);
+            $pMulai = $pMulai ?: $range['start'];
+            $pSelesai = $pSelesai ?: $range['end'];
         }
 
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
@@ -1321,15 +1308,21 @@ class PenggajianController extends Controller
                 \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
             ]);
         } elseif ($pMulai) {
-            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
-                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'));
         } elseif ($pSelesai) {
-            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
-                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'));
         } else {
             $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         }
         $listKeterlambatan = $queryKeterlambatan->orderBy('tanggal', 'asc')->get();
+
+        if (!$payroll->is_combined && $payroll->karyawan && $payroll->karyawan->gaji_pokok_2 !== null && $payroll->karyawan->tarif_harian_total_2 > 0) {
+            $targetKey = ((int)($payroll->pilihan_periode ?? 1) === 2) ? 'P2' : 'P1';
+            $listKeterlambatan = $listKeterlambatan->filter(function ($t) use ($payroll, $targetKey) {
+                $pInfo = $payroll->karyawan->getPeriodeGajiLabelForDate($t->tanggal);
+                return ($targetKey === 'P2') ? (($pInfo['key'] ?? '') === 'P2') : (($pInfo['key'] ?? '') !== 'P2');
+            })->values();
+        }
 
         return view('penggajian.show', compact('payroll', 'allEntries', 'listKeterlambatan', 'selectedP'));
     }
@@ -1401,15 +1394,10 @@ class PenggajianController extends Controller
 
         $pMulai = $payroll->tanggal_mulai;
         $pSelesai = $payroll->tanggal_selesai;
-        if (!$pMulai && !$pSelesai && $payroll->karyawan && !$payroll->is_combined) {
-            $pNum = (int)($payroll->pilihan_periode ?? 1);
-            if ($pNum === 2) {
-                $pMulai = $payroll->karyawan->tanggal_mulai_2 ?? $payroll->karyawan->tanggal_mulai;
-                $pSelesai = $payroll->karyawan->tanggal_selesai_2 ?? $payroll->karyawan->tanggal_selesai;
-            } else {
-                $pMulai = $payroll->karyawan->tanggal_mulai;
-                $pSelesai = $payroll->karyawan->tanggal_selesai;
-            }
+        if (!$payroll->is_combined) {
+            $range = Penggajian::getDateRangeForPayroll($payroll->karyawan, $payroll->periode_bulan_tahun, $payroll->pilihan_periode, $payroll);
+            $pMulai = $pMulai ?: $range['start'];
+            $pSelesai = $pSelesai ?: $range['end'];
         }
 
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
@@ -1419,15 +1407,21 @@ class PenggajianController extends Controller
                 \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
             ]);
         } elseif ($pMulai) {
-            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
-                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'));
         } elseif ($pSelesai) {
-            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
-                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'));
         } else {
             $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         }
         $listKeterlambatan = $queryKeterlambatan->orderBy('tanggal', 'asc')->get();
+
+        if (!$payroll->is_combined && $payroll->karyawan && $payroll->karyawan->gaji_pokok_2 !== null && $payroll->karyawan->tarif_harian_total_2 > 0) {
+            $targetKey = ((int)($payroll->pilihan_periode ?? 1) === 2) ? 'P2' : 'P1';
+            $listKeterlambatan = $listKeterlambatan->filter(function ($t) use ($payroll, $targetKey) {
+                $pInfo = $payroll->karyawan->getPeriodeGajiLabelForDate($t->tanggal);
+                return ($targetKey === 'P2') ? (($pInfo['key'] ?? '') === 'P2') : (($pInfo['key'] ?? '') !== 'P2');
+            })->values();
+        }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('penggajian.slip-pdf', compact('payroll', 'allEntries', 'listKeterlambatan', 'selectedP'))
             ->setPaper('a4', 'portrait');
@@ -1517,15 +1511,10 @@ class PenggajianController extends Controller
 
         $pMulai = $payroll->tanggal_mulai;
         $pSelesai = $payroll->tanggal_selesai;
-        if (!$pMulai && !$pSelesai && $payroll->karyawan && !$payroll->is_combined) {
-            $pNum = (int)($payroll->pilihan_periode ?? 1);
-            if ($pNum === 2) {
-                $pMulai = $payroll->karyawan->tanggal_mulai_2 ?? $payroll->karyawan->tanggal_mulai;
-                $pSelesai = $payroll->karyawan->tanggal_selesai_2 ?? $payroll->karyawan->tanggal_selesai;
-            } else {
-                $pMulai = $payroll->karyawan->tanggal_mulai;
-                $pSelesai = $payroll->karyawan->tanggal_selesai;
-            }
+        if (!$payroll->is_combined) {
+            $range = Penggajian::getDateRangeForPayroll($payroll->karyawan, $payroll->periode_bulan_tahun, $payroll->pilihan_periode, $payroll);
+            $pMulai = $pMulai ?: $range['start'];
+            $pSelesai = $pSelesai ?: $range['end'];
         }
 
         $queryKeterlambatan = Keterlambatan::where('karyawan_id', $payroll->karyawan_id);
@@ -1535,15 +1524,21 @@ class PenggajianController extends Controller
                 \Carbon\Carbon::parse($pSelesai)->format('Y-m-d')
             ]);
         } elseif ($pMulai) {
-            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'))
-                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+            $queryKeterlambatan->where('tanggal', '>=', \Carbon\Carbon::parse($pMulai)->format('Y-m-d'));
         } elseif ($pSelesai) {
-            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'))
-                              ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
+            $queryKeterlambatan->where('tanggal', '<=', \Carbon\Carbon::parse($pSelesai)->format('Y-m-d'));
         } else {
             $queryKeterlambatan->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$payroll->periode_bulan_tahun]);
         }
         $listKeterlambatan = $queryKeterlambatan->orderBy('tanggal', 'asc')->get();
+
+        if (!$payroll->is_combined && $payroll->karyawan && $payroll->karyawan->gaji_pokok_2 !== null && $payroll->karyawan->tarif_harian_total_2 > 0) {
+            $targetKey = ((int)($payroll->pilihan_periode ?? 1) === 2) ? 'P2' : 'P1';
+            $listKeterlambatan = $listKeterlambatan->filter(function ($t) use ($payroll, $targetKey) {
+                $pInfo = $payroll->karyawan->getPeriodeGajiLabelForDate($t->tanggal);
+                return ($targetKey === 'P2') ? (($pInfo['key'] ?? '') === 'P2') : (($pInfo['key'] ?? '') !== 'P2');
+            })->values();
+        }
 
         return view('penggajian.public-slip', compact('payroll', 'allEntries', 'listKeterlambatan', 'selectedP', 'token'));
     }

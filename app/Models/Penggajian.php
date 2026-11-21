@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Carbon\Carbon;
 
 class Penggajian extends Model
 {
@@ -273,7 +274,121 @@ class Penggajian extends Model
     }
 
     /**
-     * Hitung akumulasi denda keterlambatan karyawan pada bulan dan periode pilihan tertentu
+     * Tentukan rentang tanggal aktual (lintas bulan jika berlaku) untuk suatu periode slip gaji karyawan.
+     * Mengakomodasi:
+     * 1. Karyawan baru yang masa training-nya (P1) lintas bulan (misal: 21 Okt – 21 Nov)
+     * 2. Karyawan yang belum pernah menerima gaji sebelumnya, sehingga seluruh data sejak tanggal masuk hingga cut-off ditarik
+     * 3. Karyawan dengan 2 struktur periode (P1 dan P2)
+     * 4. Karyawan reguler bulanan (1 s.d. akhir bulan)
+     *
+     * @param mixed $karyawan
+     * @param string $periodeBulanTahun (Format 'Y-m', misal '2026-11')
+     * @param int|string $pilihanPeriode (1 atau 2 atau 'all')
+     * @param Penggajian|null $payroll
+     * @return array ['start' => string, 'end' => string]
+     */
+    public static function getDateRangeForPayroll($karyawan, string $periodeBulanTahun, $pilihanPeriode = 1, ?self $payroll = null): array
+    {
+        if (is_numeric($karyawan)) {
+            $karyawan = Karyawan::find($karyawan);
+        }
+
+        $carbonPeriode = Carbon::parse($periodeBulanTahun . '-01');
+        $monthStart    = $carbonPeriode->copy()->startOfMonth()->format('Y-m-d');
+        $monthEnd      = $carbonPeriode->copy()->endOfMonth()->format('Y-m-d');
+
+        if (!$karyawan) {
+            return ['start' => $monthStart, 'end' => $monthEnd];
+        }
+
+        $pNum = (int)$pilihanPeriode;
+
+        $p2Total = floatval($karyawan->gaji_pokok_2 ?? 0) + floatval($karyawan->uang_makan_2 ?? 0) + floatval($karyawan->uang_transport_2 ?? 0);
+        $hasP2 = ($karyawan->gaji_pokok_2 !== null && $p2Total > 0);
+
+        // Cek apakah karyawan ini sudah pernah memiliki slip gaji yang dibayar/disetujui sebelum periode ini
+        $hasPriorPaidPayroll = self::where('karyawan_id', $karyawan->id)
+            ->where('periode_bulan_tahun', '<', $periodeBulanTahun)
+            ->where(function ($q) {
+                $q->where('status_jurnal', true)
+                  ->orWhere('status', 'approved')
+                  ->orWhere('hari_kerja', '>', 0);
+            })
+            ->exists();
+
+        // Tanggal master dari karyawan atau slip payroll yang ada
+        $p1M = $payroll?->tanggal_mulai
+            ? Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d')
+            : ($karyawan->tanggal_mulai ? Carbon::parse($karyawan->tanggal_mulai)->format('Y-m-d') : null);
+
+        $p1S = $payroll?->tanggal_selesai
+            ? Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d')
+            : ($karyawan->tanggal_selesai ? Carbon::parse($karyawan->tanggal_selesai)->format('Y-m-d') : null);
+
+        $p2M = ($hasP2 && $payroll && $pNum === 2 && $payroll->tanggal_mulai)
+            ? Carbon::parse($payroll->tanggal_mulai)->format('Y-m-d')
+            : ($hasP2 && $karyawan->tanggal_mulai_2 ? Carbon::parse($karyawan->tanggal_mulai_2)->format('Y-m-d') : null);
+
+        $p2S = ($hasP2 && $payroll && $pNum === 2 && $payroll->tanggal_selesai)
+            ? Carbon::parse($payroll->tanggal_selesai)->format('Y-m-d')
+            : ($hasP2 && $karyawan->tanggal_selesai_2 ? Carbon::parse($karyawan->tanggal_selesai_2)->format('Y-m-d') : null);
+
+        if ($pNum === 2 && $hasP2) {
+            // PERIODE 2
+            // Start P2: jika tanggal_mulai_2 jatuh di bulan ini, gunakan tanggal_mulai_2; jika sebelumnya, gunakan awal bulan
+            if ($p2M && $p2M >= $monthStart && $p2M <= $monthEnd) {
+                $startDate = $p2M;
+            } else {
+                $startDate = $monthStart;
+            }
+
+            // End P2: jika tanggal_selesai_2 jatuh di bulan ini, gunakan tanggal_selesai_2; jika melebihi, gunakan akhir bulan
+            if ($p2S && $p2S >= $monthStart && $p2S <= $monthEnd) {
+                $endDate = $p2S;
+            } else {
+                $endDate = $monthEnd;
+            }
+
+            return ['start' => $startDate, 'end' => $endDate];
+        }
+
+        // PERIODE 1
+        // Tentukan End Date untuk P1:
+        if ($hasP2 && $p2M && $p2M >= $monthStart && $p2M <= $monthEnd) {
+            // Jika ada P2 yang mulai di bulan ini (misal 22 Nov), maka P1 berakhir sehari sebelumnya atau sesuai p1S (misal 21 Nov)
+            $p1CutOff = $p1S ?: Carbon::parse($p2M)->subDay()->format('Y-m-d');
+            $endDate = $p1CutOff;
+        } elseif ($p1S && $p1S >= $monthStart && $p1S <= $monthEnd) {
+            $endDate = $p1S;
+        } else {
+            $endDate = ($p1S && $p1S < $monthEnd) ? $p1S : $monthEnd;
+        }
+
+        // Tentukan Start Date untuk P1:
+        // Kasus 1: Karyawan baru (belum pernah menerima gaji sebelumnya)
+        //          Semua keterlambatan sejak awal masuk ($p1M) harus ditarik penuh hingga cut-off
+        if (!$hasPriorPaidPayroll && $p1M && $p1M < $monthStart) {
+            $startDate = $p1M;
+        }
+        // Kasus 2: P1 memiliki tanggal selesai spesifik di bulan ini dan tanggal mulai di bulan sebelumnya (lintas bulan training)
+        elseif ($p1M && $p1S && $p1M < $monthStart && $p1S >= $monthStart && $p1S <= $monthEnd) {
+            $startDate = $p1M;
+        }
+        // Kasus 3: Karyawan reguler yang masuk di pertengahan bulan ini
+        elseif ($p1M && $p1M >= $monthStart && $p1M <= $monthEnd) {
+            $startDate = $p1M;
+        }
+        // Kasus 4: Karyawan reguler yang sudah ada (kontrak lama)
+        else {
+            $startDate = $monthStart;
+        }
+
+        return ['start' => $startDate, 'end' => $endDate];
+    }
+
+    /**
+     * Hitung akumulasi denda keterlambatan karyawan pada bulan dan periode pilihan tertentu.
+     * Secara dinamis menarik data keterlambatan sesuai rentang tanggal periode aktual karyawan (lintas bulan).
      */
     public static function hitungPotonganTerlambat($karyawan, $periodeBulanTahun, $pilihanPeriode = 1): float
     {
@@ -284,16 +399,32 @@ class Penggajian extends Model
             return 0.0;
         }
 
-        $allMonthLate = Keterlambatan::where('karyawan_id', $karyawan->id)
-            ->whereRaw("DATE_FORMAT(tanggal, '%Y-%m') = ?", [$periodeBulanTahun])
-            ->get();
+        $p2Total = floatval($karyawan->gaji_pokok_2 ?? 0) + floatval($karyawan->uang_makan_2 ?? 0) + floatval($karyawan->uang_transport_2 ?? 0);
+        $hasMultipleP = ($karyawan->gaji_pokok_2 !== null && $p2Total > 0);
 
-        if ($allMonthLate->isEmpty()) {
+        if ($pilihanPeriode === 'all') {
+            if ($hasMultipleP) {
+                return self::hitungPotonganTerlambat($karyawan, $periodeBulanTahun, 1) +
+                       self::hitungPotonganTerlambat($karyawan, $periodeBulanTahun, 2);
+            }
+            $pilihanPeriode = 1;
+        }
+
+        $dateRange = self::getDateRangeForPayroll($karyawan, $periodeBulanTahun, $pilihanPeriode);
+        $startDate = $dateRange['start'];
+        $endDate   = $dateRange['end'];
+
+        $lateQuery = Keterlambatan::where('karyawan_id', $karyawan->id)
+            ->whereBetween('tanggal', [$startDate, $endDate]);
+
+        $allLate = $lateQuery->get();
+
+        if ($allLate->isEmpty()) {
             return 0.0;
         }
 
         // Self-heal jika ada potongan lama yang terpotong hanya sebesar gaji pokok
-        foreach ($allMonthLate as $t) {
+        foreach ($allLate as $t) {
             if ($t->jam_shift && $t->jam_datang) {
                 $kalkulasi = Keterlambatan::hitungPotongan($t->jam_shift, $t->jam_datang);
                 $gajiHarian = $karyawan->getGajiHarianForDate($t->tanggal);
@@ -305,23 +436,20 @@ class Penggajian extends Model
             }
         }
 
-        $p2Total = floatval($karyawan->gaji_pokok_2 ?? 0) + floatval($karyawan->uang_makan_2 ?? 0) + floatval($karyawan->uang_transport_2 ?? 0);
-        $hasMultipleP = ($karyawan->gaji_pokok_2 !== null && $p2Total > 0);
-
         if ($hasMultipleP) {
             if ((int)$pilihanPeriode === 2) {
-                return (float) $allMonthLate->filter(function ($t) use ($karyawan) {
+                return (float) $allLate->filter(function ($t) use ($karyawan) {
                     $pInfo = $karyawan->getPeriodeGajiLabelForDate($t->tanggal);
                     return ($pInfo['key'] ?? '') === 'P2';
                 })->sum('potongan');
             } else {
-                return (float) $allMonthLate->filter(function ($t) use ($karyawan) {
+                return (float) $allLate->filter(function ($t) use ($karyawan) {
                     $pInfo = $karyawan->getPeriodeGajiLabelForDate($t->tanggal);
                     return ($pInfo['key'] ?? '') !== 'P2';
                 })->sum('potongan');
             }
         }
 
-        return (float) $allMonthLate->sum('potongan');
+        return (float) $allLate->sum('potongan');
     }
 }
