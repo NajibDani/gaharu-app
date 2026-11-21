@@ -12,32 +12,40 @@ class ResetColdKitchenCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'coldkitchen:reset-all {--force : Lewati konfirmasi}';
+    protected $signature = 'coldkitchen:reset-all {--before= : Hanya hapus transaksi sebelum tanggal YYYY-MM-DD (cth: 2026-11-20)} {--force : Lewati konfirmasi}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Hapus semua transaksi Cold Kitchen (Permintaan/Pesanan B2B, Work Order, dan Hasil Produksi) agar bersih total 0 transaksi';
+    protected $description = 'Hapus transaksi Cold Kitchen (Permintaan/Pesanan B2B, Work Order, dan Hasil Produksi) seluruhnya atau sebelum tanggal cut-off';
 
     /**
      * Execute the console command.
      */
     public function handle()
     {
+        $cutoffDate = $this->option('before');
+
         if (!$this->option('force')) {
-            if (!$this->confirm('PERINGATAN: Perintah ini akan menghapus seluruh data Permintaan Pesanan, Work Order, dan Hasil Produksi Cold Kitchen. Lanjutkan?')) {
+            $msg = $cutoffDate
+                ? "PERINGATAN: Perintah ini akan menghapus seluruh data Permintaan Cold Kitchen, Work Order, dan Hasil Produksi yang dibuat SEBELUM tanggal {$cutoffDate}. Lanjutkan?"
+                : 'PERINGATAN: Perintah ini akan menghapus SELURUH data Permintaan Pesanan, Work Order, dan Hasil Produksi Cold Kitchen. Lanjutkan?';
+
+            if (!$this->confirm($msg)) {
                 $this->info('Operasi dibatalkan.');
                 return 0;
             }
         }
 
-        $this->info('Menjalankan reset transaksi Cold Kitchen...');
+        $this->info($cutoffDate ? "Menjalankan pembersihan transaksi Cold Kitchen sebelum {$cutoffDate}..." : 'Menjalankan reset seluruh transaksi Cold Kitchen...');
 
-        $result = ColdKitchenResetService::resetAll();
+        $result = $cutoffDate
+            ? ColdKitchenResetService::resetBeforeDate($cutoffDate)
+            : ColdKitchenResetService::resetAll();
 
-        $this->info('Reset Cold Kitchen Berhasil:');
+        $this->info('Pembersihan Cold Kitchen Berhasil:');
         $this->line("- Pesanan Cold Kitchen terhapus: {$result['pesanan_deleted']}");
         $this->line("- Work Order Cold Kitchen terhapus: {$result['wo_deleted']}");
         $this->line("- Produksi Cold Kitchen terhapus: {$result['produksi_deleted']}");

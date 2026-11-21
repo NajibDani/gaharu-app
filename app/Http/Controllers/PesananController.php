@@ -52,6 +52,15 @@ class PesananController extends Controller
             $query->where('customer_id', $customerId);
         }
 
+        $dateStart = $request->query('date_start');
+        $dateEnd = $request->query('date_end');
+        if ($dateStart) {
+            $query->whereDate('tanggal', '>=', $dateStart);
+        }
+        if ($dateEnd) {
+            $query->whereDate('tanggal', '<=', $dateEnd);
+        }
+
         if ($search) {
             $query->where(function($q) use ($search) {
                 $q->where('kode_pesanan', 'like', '%' . $search . '%')
@@ -989,6 +998,29 @@ class PesananController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal memproses pembayaran massal: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Bersihkan Permintaan Cold Kitchen sebelum tanggal cut-off (Khusus Super Admin)
+     */
+    public function cleanBeforeDate(Request $request)
+    {
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+        if (!$isSuperAdmin) {
+            return redirect()->back()->with('error', 'Akses ditolak: Hanya Super Admin yang memiliki kewenangan membersihkan data.');
+        }
+
+        $cutoffDate = $request->input('cutoff_date', '2026-11-20');
+
+        try {
+            $result = \App\Services\ColdKitchenResetService::resetBeforeDate($cutoffDate);
+
+            $formattedDate = \Carbon\Carbon::parse($cutoffDate)->format('d M Y');
+            return redirect()->route('pesanan.index')->with('success', "Pembersihan berhasil! Sebanyak {$result['pesanan_deleted']} Permintaan Cold Kitchen sebelum tanggal {$formattedDate} telah dibersihkan.");
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Gagal membersihkan transaksi Cold Kitchen: ' . $e->getMessage());
         }
     }
 }

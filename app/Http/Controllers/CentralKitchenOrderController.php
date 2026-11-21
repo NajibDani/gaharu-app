@@ -647,18 +647,15 @@ class CentralKitchenOrderController extends Controller
 
     /**
      * Hapus Central Kitchen Order (Purchase Order CK)
-     * Superadmin dapat menghapus PO yang belum terkirim (masa uji coba)
+     * Hapus satu pesanan Central Kitchen beserta seluruh relasi terkait
      */
-    public function destroy($id)
+    protected function deleteSingleOrder(Pesanan $pesanan, bool $isSuperAdmin): array
     {
-        $user = auth()->user();
-        $isSuperAdmin = $user && $user->isSuperAdmin();
-
-        $pesanan = Pesanan::centralKitchen()->findOrFail($id);
-
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
-            return redirect()->route('ck-orders.index')
-                ->with('error', 'Gagal menghapus: Order berada pada periode akuntansi yang sudah ditutup buku.');
+            return [
+                'success' => false,
+                'message' => 'Order #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.'
+            ];
         }
 
         // Cek apakah sudah ada pengiriman yang statusnya Selesai (sudah terkirim)
@@ -667,16 +664,20 @@ class CentralKitchenOrderController extends Controller
             ->exists();
 
         if ($sudahKirim || ($pesanan->total_qty_terkirim ?? 0) > 0) {
-            return redirect()->route('ck-orders.index')
-                ->with('error', 'Gagal menghapus: Purchase Order #' . $pesanan->kode_pesanan . ' sudah terkirim / memiliki riwayat pengiriman logistik yang selesai.');
+            return [
+                'success' => false,
+                'message' => 'Order #' . $pesanan->kode_pesanan . ' sudah terkirim / memiliki riwayat pengiriman logistik yang selesai.'
+            ];
         }
 
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
 
         // Jika sudah masuk WO dan BUKAN Super Admin, tolak
         if ($sudahWO && !$isSuperAdmin) {
-            return redirect()->route('ck-orders.index')
-                ->with('error', 'Gagal menghapus: Order #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi. Hanya Superadmin yang dapat menghapus Purchase Order yang belum terkirim.');
+            return [
+                'success' => false,
+                'message' => 'Order #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi. Hanya Superadmin yang dapat menghapus.'
+            ];
         }
 
         DB::beginTransaction();
@@ -757,10 +758,72 @@ class CentralKitchenOrderController extends Controller
             $pesanan->delete();
 
             DB::commit();
-            return redirect()->route('ck-orders.index')->with('success', 'Purchase Order Central Kitchen #' . $pesanan->kode_pesanan . ' dan seluruh data terkait berhasil dihapus.');
+            return ['success' => true, 'message' => 'OK'];
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->route('ck-orders.index')->with('error', 'Gagal menghapus Purchase Order: ' . $e->getMessage());
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Superadmin dapat menghapus PO yang belum terkirim (masa uji coba)
+     */
+    public function destroy($id)
+    {
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        $pesanan = Pesanan::centralKitchen()->findOrFail($id);
+
+        $res = $this->deleteSingleOrder($pesanan, $isSuperAdmin);
+
+        if (!$res['success']) {
+            return redirect()->route('ck-orders.index')->with('error', 'Gagal menghapus: ' . $res['message']);
+        }
+
+        return redirect()->route('ck-orders.index')->with('success', 'Purchase Order Central Kitchen #' . $pesanan->kode_pesanan . ' dan seluruh data terkait berhasil dihapus.');
+    }
+
+    /**
+     * Hapus Massal CKO yang dipilih
+     */
+    public function hapusMassal(Request $request)
+    {
+        $pesananIds = $request->input('pesanan_ids', []);
+        if (empty($pesananIds)) {
+            return redirect()->route('ck-orders.index')->with('error', 'Pilih minimal satu CKO untuk dihapus.');
+        }
+
+        $user = auth()->user();
+        $isSuperAdmin = $user && ($user->isSuperAdmin() || $user->username === 'superadmin');
+
+        $pesanans = Pesanan::centralKitchen()->whereIn('id', $pesananIds)->get();
+        if ($pesanans->isEmpty()) {
+            return redirect()->route('ck-orders.index')->with('error', 'Data pesanan yang dipilih tidak ditemukan.');
+        }
+
+        $successCount = 0;
+        $failedCount = 0;
+        $failedMessages = [];
+
+        foreach ($pesanans as $p) {
+            $res = $this->deleteSingleOrder($p, $isSuperAdmin);
+            if ($res['success']) {
+                $successCount++;
+            } else {
+                $failedCount++;
+                $failedMessages[] = $res['message'];
+            }
+        }
+
+        if ($failedCount === 0) {
+            return redirect()->route('ck-orders.index')->with('success', "Berhasil menghapus {$successCount} Central Kitchen Order (CKO) terpilih beserta relasi terkait.");
+        } elseif ($successCount > 0) {
+            $msg = "Sebanyak {$successCount} CKO berhasil dihapus, namun {$failedCount} CKO gagal: " . implode('; ', array_slice($failedMessages, 0, 3));
+            return redirect()->route('ck-orders.index')->with('warning', $msg);
+        } else {
+            $msg = "Gagal menghapus CKO terpilih: " . implode('; ', array_slice($failedMessages, 0, 3));
+            return redirect()->route('ck-orders.index')->with('error', $msg);
         }
     }
 

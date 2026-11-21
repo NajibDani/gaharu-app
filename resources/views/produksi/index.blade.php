@@ -34,6 +34,20 @@
         .modal-body .table th, .modal-body .badge, .modal-body .text-nowrap {
             white-space: nowrap !important;
         }
+
+        /* Pastikan drawer collapse table row dan tab-pane tidak terdistorsi */
+        tr.collapse:not(.show) {
+            display: none !important;
+        }
+        tr.collapse.show {
+            display: table-row !important;
+        }
+        .tab-content > .tab-pane:not(.active) {
+            display: none !important;
+        }
+        .tab-content > .tab-pane.active {
+            display: block !important;
+        }
     </style>
 
     <div class="container-fluid px-2 px-md-4 py-3 mb-5">
@@ -165,9 +179,16 @@
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-3">
                     <div class="card-header bg-white py-3 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h6 class="fw-bold mb-0 text-dark">Daftar Permintaan Cold Kitchen yang Siap Diproduksi</h6>
-                        <button type="button" class="btn btn-sm btn-outline-primary fw-semibold shadow-sm" id="btnMassal" disabled onclick="openReviewMassalModal()">
-                            <i class="bi bi-ui-checks me-1"></i> Buat WO Gabungan Terpilih
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            @if(auth()->user() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin'))
+                                <a href="{{ route('pesanan.index') }}" class="btn btn-sm btn-outline-danger fw-semibold shadow-sm d-inline-flex align-items-center" title="Buka Halaman Pesanan untuk Bersihkan Data Cold Kitchen Lama">
+                                    <i class="bi bi-trash3 me-1"></i> Bersihkan Data Lama (&lt; 20 Nov)
+                                </a>
+                            @endif
+                            <button type="button" class="btn btn-sm btn-outline-primary fw-semibold shadow-sm" id="btnMassal" disabled onclick="openReviewMassalModal()">
+                                <i class="bi bi-ui-checks me-1"></i> Buat WO Gabungan Terpilih
+                            </button>
+                        </div>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
@@ -1241,71 +1262,6 @@
                                                     @csrf @method('DELETE')
                                                 </form>
                                             @endif
-                                        </td>
-                                    </tr>
-
-                                    {{-- EXPANDABLE INLINE DRAWER (RINCIAN SELURUH ITEM) --}}
-                                    <tr class="collapse border-bottom" id="drawerProd{{ $p->id }}">
-                                        <td colspan="6" class="p-0 bg-light-subtle">
-                                            <div class="p-3 border-start border-3 border-primary ms-3 my-2 bg-white rounded-3 shadow-sm me-3">
-                                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                                    <span class="fw-bold text-dark small">
-                                                        <i class="bi bi-box-seam me-1 text-primary"></i> Rincian Item Hasil Produksi (Kode: {{ $p->kode_produksi }})
-                                                    </span>
-                                                    <span class="badge bg-secondary-subtle text-secondary border small">
-                                                        {{ $itemCount }} Item Terdaftar
-                                                    </span>
-                                                </div>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm table-bordered align-middle mb-0 small">
-                                                        <thead class="table-light text-secondary">
-                                                            <tr>
-                                                                <th width="4%" class="text-center">No</th>
-                                                                <th width="14%">Kode Barang</th>
-                                                                <th>Nama Produk</th>
-                                                                <th width="16%" class="text-center">Qty Hasil</th>
-                                                                <th width="18%" class="text-end">HPP Satuan</th>
-                                                                <th width="18%" class="text-end">Subtotal HPP</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            @foreach($p->details as $dIdx => $detail)
-                                                                @php
-                                                                    $dSatuan = strtoupper($detail->produk->satuan ?? 'PCS');
-                                                                    $dQtyVal = floatval($detail->qty);
-                                                                    $dQtyFmt = (fmod($dQtyVal, 1) == 0) ? number_format($dQtyVal, 0, ',', '.') : number_format($dQtyVal, 2, ',', '.');
-                                                                    $dHppTotal = floatval($detail->hpp_total ?? 0);
-                                                                    $dHppSatuan = ($dQtyVal > 0 && $dHppTotal > 0) ? ($dHppTotal / $dQtyVal) : 0;
-                                                                @endphp
-                                                                <tr>
-                                                                    <td class="text-center text-muted">{{ $dIdx + 1 }}</td>
-                                                                    <td class="font-monospace text-secondary">{{ $detail->produk->kode_barang ?? '-' }}</td>
-                                                                    <td class="fw-semibold text-dark">{{ $detail->produk->nama ?? 'Produk #' . $detail->produk_id }}</td>
-                                                                    <td class="text-center font-monospace fw-bold text-primary">
-                                                                        {{ $dQtyFmt }} {{ $dSatuan }}
-                                                                    </td>
-                                                                    <td class="text-end font-monospace text-muted">
-                                                                        Rp {{ number_format($dHppSatuan, 0, ',', '.') }} / {{ $dSatuan }}
-                                                                    </td>
-                                                                    <td class="text-end font-monospace fw-bold text-success">
-                                                                        Rp {{ number_format($dHppTotal, 0, ',', '.') }}
-                                                                    </td>
-                                                                </tr>
-                                                            @endforeach
-                                                        </tbody>
-                                                        <tfoot class="table-light fw-bold">
-                                                            <tr>
-                                                                <td colspan="5" class="text-end">Total HPP Keseluruhan:</td>
-                                                                <td class="text-end font-monospace text-success">
-                                                                    Rp {{ number_format($p->total_hpp ?? $p->details->sum('hpp_total'), 0, ',', '.') }}
-                                                                </td>
-                                                            </tr>
-                                                        </tfoot>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
 
                                                     {{-- MODAL DETAIL PRODUKSI (POP-UP) --}}
                                                     <div class="modal fade text-start" id="modalDetailProduksi{{ $p->id }}" tabindex="-1" aria-hidden="true" style="white-space: normal !important;">
@@ -1575,6 +1531,72 @@
                                                             </div>
                                                         </div>
                                                     </div>
+                                        </td>
+                                    </tr>
+
+                                    {{-- EXPANDABLE INLINE DRAWER (RINCIAN SELURUH ITEM) --}}
+                                    <tr class="collapse border-bottom" id="drawerProd{{ $p->id }}">
+                                        <td colspan="6" class="p-0 bg-light-subtle">
+                                            <div class="p-3 border-start border-3 border-primary ms-3 my-2 bg-white rounded-3 shadow-sm me-3">
+                                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                                    <span class="fw-bold text-dark small">
+                                                        <i class="bi bi-box-seam me-1 text-primary"></i> Rincian Item Hasil Produksi (Kode: {{ $p->kode_produksi }})
+                                                    </span>
+                                                    <span class="badge bg-secondary-subtle text-secondary border small">
+                                                        {{ $itemCount }} Item Terdaftar
+                                                    </span>
+                                                </div>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm table-bordered align-middle mb-0 small">
+                                                        <thead class="table-light text-secondary">
+                                                            <tr>
+                                                                <th width="4%" class="text-center">No</th>
+                                                                <th width="14%">Kode Barang</th>
+                                                                <th>Nama Produk</th>
+                                                                <th width="16%" class="text-center">Qty Hasil</th>
+                                                                <th width="18%" class="text-end">HPP Satuan</th>
+                                                                <th width="18%" class="text-end">Subtotal HPP</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach($p->details as $dIdx => $detail)
+                                                                @php
+                                                                    $dSatuan = strtoupper($detail->produk->satuan ?? 'PCS');
+                                                                    $dQtyVal = floatval($detail->qty);
+                                                                    $dQtyFmt = (fmod($dQtyVal, 1) == 0) ? number_format($dQtyVal, 0, ',', '.') : number_format($dQtyVal, 2, ',', '.');
+                                                                    $dHppTotal = floatval($detail->hpp_total ?? 0);
+                                                                    $dHppSatuan = ($dQtyVal > 0 && $dHppTotal > 0) ? ($dHppTotal / $dQtyVal) : 0;
+                                                                @endphp
+                                                                <tr>
+                                                                    <td class="text-center text-muted">{{ $dIdx + 1 }}</td>
+                                                                    <td class="font-monospace text-secondary">{{ $detail->produk->kode_barang ?? '-' }}</td>
+                                                                    <td class="fw-semibold text-dark">{{ $detail->produk->nama ?? 'Produk #' . $detail->produk_id }}</td>
+                                                                    <td class="text-center font-monospace fw-bold text-primary">
+                                                                        {{ $dQtyFmt }} {{ $dSatuan }}
+                                                                    </td>
+                                                                    <td class="text-end font-monospace text-muted">
+                                                                        Rp {{ number_format($dHppSatuan, 0, ',', '.') }} / {{ $dSatuan }}
+                                                                    </td>
+                                                                    <td class="text-end font-monospace fw-bold text-success">
+                                                                        Rp {{ number_format($dHppTotal, 0, ',', '.') }}
+                                                                    </td>
+                                                                </tr>
+                                                            @endforeach
+                                                        </tbody>
+                                                        <tfoot class="table-light fw-bold">
+                                                            <tr>
+                                                                <td colspan="5" class="text-end">Total HPP Keseluruhan:</td>
+                                                                <td class="text-end font-monospace text-success">
+                                                                    Rp {{ number_format($p->total_hpp ?? $p->details->sum('hpp_total'), 0, ',', '.') }}
+                                                                </td>
+                                                            </tr>
+                                                        </tfoot>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+
                                 @empty
                                     <tr>
                                         <td colspan="6" class="text-center py-5">

@@ -281,7 +281,12 @@
                 <h4 class="fw-bold text-dark mb-1">Cold Kitchen Orders</h4>
                 <p class="text-muted small mb-0">Kelola permintaan barang &amp; bahan setengah jadi dari Outlet &amp; Konsumen Cold Kitchen</p>
             </div>
-            <div class="w-100 w-sm-auto">
+            <div class="w-100 w-sm-auto d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                @if(auth()->user() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin'))
+                    <button type="button" class="btn btn-outline-danger shadow-sm d-inline-flex align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#modalCleanColdBeforeDate" style="border-radius: 8px; font-weight: 600;">
+                        <i class="bi bi-trash3 me-1"></i> Bersihkan Data &lt; 20 Nov
+                    </button>
+                @endif
                 <button type="button" class="btn btn-custom-orange shadow-sm d-inline-flex align-items-center justify-content-center w-100 w-sm-auto" data-bs-toggle="modal" data-bs-target="#modalCreateColdOrder">
                     <i class="bi bi-plus-circle me-2"></i> Buat Pesanan Cold Kitchen
                 </button>
@@ -346,40 +351,68 @@
 
         {{-- TABLE CARD --}}
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-5">
-            <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom border-light d-flex justify-content-between align-items-center flex-column flex-md-row gap-2">
-                <div class="d-flex align-items-center justify-content-between w-100 w-md-auto gap-2">
-                    <h6 class="fw-bold mb-0 text-dark text-nowrap">Daftar Permintaan Cold Kitchen</h6>
-                    <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarPesanan" data-bs-toggle="modal" data-bs-target="#modalBulkBayarPesanan" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
-                        <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedPesanan">0</span>)
-                    </button>
-                </div>
-
-                <form method="GET" action="{{ route('pesanan.index') }}" class="d-flex align-items-center gap-2 w-100 w-md-auto flex-wrap">
-                    {{-- Dropdown Outlet / Konsumen --}}
-                    <div style="min-width: 160px;">
-                        <select name="customer_id" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px;" onchange="this.form.submit()">
-                            <option value="">-- Semua Konsumen / Outlet --</option>
-                            @if(isset($customers))
-                                @foreach($customers as $c)
-                                    <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
-                                @endforeach
-                            @endif
-                        </select>
+            <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom border-light">
+                {{-- HEADER TITLE & ACTION BUTTONS --}}
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <h6 class="fw-bold mb-0 text-dark">Daftar Permintaan Cold Kitchen</h6>
+                        <span class="badge bg-secondary-subtle text-secondary small fw-normal">{{ number_format($pesanan->total()) }} Order</span>
                     </div>
-
-                    {{-- Search Input Group --}}
-                    <div class="input-group input-group-sm" style="max-width: 250px;">
-                        <input type="text" name="search" class="form-control border-end-0" placeholder="Cari Kode / Pemesan..." value="{{ request('search') }}" style="height: 36px;">
-                        <button class="btn btn-outline-secondary border-start-0" type="submit" style="height: 36px;">
-                            <i class="bi bi-search"></i>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarPesanan" data-bs-toggle="modal" data-bs-target="#modalBulkBayarPesanan" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
+                            <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedPesanan">0</span>)
                         </button>
                     </div>
+                </div>
 
-                    @if(request('search') || request('customer_id'))
-                        <a href="{{ route('pesanan.index') }}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center justify-content-center" style="border-radius: 8px; height: 36px; width: 36px;" title="Reset Filter">
-                            <i class="bi bi-x-lg"></i>
-                        </a>
-                    @endif
+                {{-- FILTER TOOLBAR ROW (RAPI & TIDAK BERTUMPUK) --}}
+                <form method="GET" action="{{ route('pesanan.index') }}" class="p-2.5 p-md-3 rounded-3 bg-light border border-light-subtle">
+                    <div class="row g-2 align-items-end">
+                        {{-- 1. Konsumen / Outlet --}}
+                        <div class="col-12 col-md-3">
+                            <label class="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style="font-size: 0.75rem;">
+                                <i class="bi bi-shop text-primary"></i> Konsumen / Outlet
+                            </label>
+                            <select name="customer_id" class="form-select form-select-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px;" onchange="this.form.submit()">
+                                <option value="">-- Semua Konsumen / Outlet --</option>
+                                @if(isset($customers))
+                                    @foreach($customers as $c)
+                                        <option value="{{ $c->id }}" {{ request('customer_id') == $c->id ? 'selected' : '' }}>{{ $c->nama }}</option>
+                                    @endforeach
+                                @endif
+                            </select>
+                        </div>
+
+                        {{-- 2. Filter Rentang Tanggal --}}
+                        <div class="col-12 col-md-5">
+                            <label class="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style="font-size: 0.75rem;">
+                                <i class="bi bi-calendar-range text-primary"></i> Rentang Tanggal Permintaan
+                            </label>
+                            <div class="d-flex align-items-center gap-1">
+                                <input type="date" name="date_start" class="form-control form-control-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px; font-size: 0.82rem;" value="{{ request('date_start') }}" title="Dari Tanggal" onchange="this.form.submit()">
+                                <span class="text-muted small px-1">s/d</span>
+                                <input type="date" name="date_end" class="form-control form-control-sm" style="border-radius: 8px; border: 1px solid #DCD3CB; height: 36px; font-size: 0.82rem;" value="{{ request('date_end') }}" title="Sampai Tanggal" onchange="this.form.submit()">
+                            </div>
+                        </div>
+
+                        {{-- 3. Search Input Group --}}
+                        <div class="col-12 col-md-4">
+                            <label class="form-label small fw-bold text-secondary mb-1 d-flex align-items-center gap-1" style="font-size: 0.75rem;">
+                                <i class="bi bi-search text-primary"></i> Cari Data
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" name="search" class="form-control border-end-0" placeholder="Cari Kode / Pemesan..." value="{{ request('search') }}" style="border-radius: 8px 0 0 8px; border: 1px solid #DCD3CB; height: 36px;">
+                                <button class="btn btn-outline-secondary border-start-0 bg-white" type="submit" style="border-radius: 0 8px 8px 0; border: 1px solid #DCD3CB; height: 36px;">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                                @if(request('search') || request('customer_id') || request('date_start') || request('date_end'))
+                                    <a href="{{ route('pesanan.index') }}" class="btn btn-outline-danger ms-1 d-inline-flex align-items-center justify-content-center" style="border-radius: 8px; height: 36px; width: 36px;" title="Reset Filter">
+                                        <i class="bi bi-x-lg"></i>
+                                    </a>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
 
@@ -1093,6 +1126,52 @@
             </div>
         </div>
     </div>
+
+    {{-- MODAL BERSIHKAN DATA SEBELUM TANGGAL TERTENTU (SUPER ADMIN ONLY) --}}
+    @if(auth()->user() && (auth()->user()->isSuperAdmin() || auth()->user()->username === 'superadmin'))
+    <div class="modal fade text-start" id="modalCleanColdBeforeDate" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i> Bersihkan Permintaan Cold Kitchen
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form action="{{ route('pesanan.clean-before-date') }}" method="POST">
+                    @csrf
+                    <div class="modal-body p-4">
+                        <div class="alert alert-warning border-0 d-flex gap-2 align-items-start mb-3">
+                            <i class="bi bi-shield-exclamation fs-4 flex-shrink-0 text-warning"></i>
+                            <div class="small">
+                                <strong>Perhatian:</strong> Aksi ini akan menghapus permanen data permintaan Cold Kitchen (kode <code>CK-</code>), detail pesanan, Work Order terkait Cold Kitchen, dan alokasi yang dibuat <strong>sebelum tanggal batas yang ditentukan</strong>. Data Central Kitchen aman dan tidak akan terhapus.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-secondary">Hapus Data Sebelum Tanggal:</label>
+                            <input type="date" name="cutoff_date" class="form-control" value="2026-11-20" required>
+                            <small class="text-muted d-block mt-1">Default: <code>2026-11-20</code> (Data sebelum tanggal 20 November 2026 akan dibersihkan, data tanggal 20 Nov ke atas tetap dipertahankan).</small>
+                        </div>
+
+                        <div class="form-check p-3 bg-light rounded-3 border">
+                            <input class="form-check-input ms-0 me-2" type="checkbox" id="confirmCleanBefore" required>
+                            <label class="form-check-label small fw-semibold text-dark" for="confirmCleanBefore">
+                                Saya mengerti dan yakin ingin membersihkan data lama Cold Kitchen sebelum tanggal tersebut.
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-3 px-4 bg-light d-flex justify-content-between align-items-center">
+                        <button type="button" class="btn btn-secondary px-4 rounded-3 fw-semibold" data-bs-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-danger px-4 rounded-3 fw-bold d-inline-flex align-items-center gap-1 shadow-sm">
+                            <i class="bi bi-trash3-fill me-1"></i> Ya, Bersihkan Sekarang
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    @endif
 
     {{-- MODAL BUAT PESANAN COLD KITCHEN BARU --}}
     <div class="modal fade text-start" id="modalCreateColdOrder" tabindex="-1" aria-hidden="true">

@@ -302,11 +302,16 @@
         {{-- TABLE CARD --}}
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
             <div class="card-header bg-white py-3 px-3 px-md-4 border-bottom border-light d-flex justify-content-between align-items-center flex-row gap-2">
-                <div class="d-flex align-items-center justify-content-between w-100 gap-2">
+                <div class="d-flex align-items-center justify-content-between w-100 gap-2 flex-wrap">
                     <h6 class="fw-bold mb-0 text-dark text-nowrap">Daftar Central Kitchen Orders</h6>
-                    <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarCk" data-bs-toggle="modal" data-bs-target="#modalBulkBayarCk" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
-                        <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedCk">0</span>)
-                    </button>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-danger btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkHapusCk" data-bs-toggle="modal" data-bs-target="#modalBulkHapusCk" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
+                            <i class="bi bi-trash3"></i> Hapus Terpilih (<span id="countSelectedHapusCk">0</span>)
+                        </button>
+                        <button type="button" class="btn btn-outline-success btn-sm d-none align-items-center gap-1 shadow-sm" id="btnBulkBayarCk" data-bs-toggle="modal" data-bs-target="#modalBulkBayarCk" style="border-radius: 8px; font-weight: 600; padding: 6px 14px; font-size: 0.8rem;">
+                            <i class="bi bi-wallet2"></i> Bayar Terpilih (<span id="countSelectedCk">0</span>)
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -361,7 +366,7 @@
                                            data-total="{{ $totalNilaiItem }}" 
                                            data-sisa="{{ $sisaTagihanItem }}"
                                            data-items="{{ json_encode($orderItemsList) }}"
-                                           {{ $isLunasOrBatal ? 'disabled' : '' }}>
+                                           data-lunas="{{ $isLunasOrBatal ? '1' : '0' }}">
                                 </td>
                                 <td class="text-center fw-semibold text-muted">{{ $pesanan->firstItem() + $index }}</td>
                                 <td class="fw-bold text-dark text-nowrap" style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.82rem; letter-spacing: -0.2px;">{{ $p->kode_pesanan }}</td>
@@ -756,6 +761,56 @@
                     {{ $pesanan->links() }}
                 </div>
             @endif
+        </div>
+
+        {{-- MODAL HAPUS MASSAL CKO --}}
+        <div class="modal fade text-start" id="modalBulkHapusCk" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <form action="{{ route('ck-orders.hapus-massal') }}" method="POST" id="formBulkHapusCk" class="w-100">
+                    @csrf
+                    <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                        <div class="modal-header bg-danger text-white border-0 p-3 px-4">
+                            <h5 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
+                                <i class="bi bi-trash3-fill"></i> Hapus CKO Terpilih
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white shadow-none" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4 bg-white">
+                            <div class="alert alert-warning border-0 d-flex gap-2 align-items-start mb-3">
+                                <i class="bi bi-exclamation-triangle-fill fs-5 text-warning flex-shrink-0 mt-1"></i>
+                                <div class="small">
+                                    Apakah Anda yakin ingin menghapus <strong id="bulkHapusCountText">0</strong> pesanan Central Kitchen (CKO) yang dipilih?
+                                    <br><small class="text-muted">Relasi Work Order, alokasi produksi, dan data pembayaran yang belum selesai akan dibersihkan secara aman.</small>
+                                </div>
+                            </div>
+
+                            {{-- Container hidden inputs pesanan_ids --}}
+                            <div id="bulkHapusHiddenInputs"></div>
+
+                            {{-- Daftar Kode Order Terpilih --}}
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-secondary mb-1">Daftar CKO yang akan dihapus:</label>
+                                <div id="bulkHapusOrdersList" class="p-2 border rounded-3 bg-light font-monospace small" style="max-height: 160px; overflow-y: auto;">
+                                    <!-- Diisi via Javascript -->
+                                </div>
+                            </div>
+
+                            <div class="form-check p-3 bg-light rounded-3 border">
+                                <input class="form-check-input ms-0 me-2" type="checkbox" id="confirmBulkHapusCheck" required>
+                                <label class="form-check-label small fw-semibold text-dark" for="confirmBulkHapusCheck">
+                                    Saya yakin dan mengonfirmasi penghapusan seluruh CKO yang dipilih di atas.
+                                </label>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 p-3 px-4 bg-light d-flex justify-content-between align-items-center">
+                            <button type="button" class="btn btn-secondary px-4 rounded-3 fw-semibold" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-danger px-4 rounded-3 fw-bold d-inline-flex align-items-center gap-1 shadow-sm">
+                                <i class="bi bi-trash3-fill me-1"></i> Ya, Hapus Sekarang
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
         </div>
 
         {{-- MODAL BAYAR MASSAL CK --}}
@@ -1431,23 +1486,38 @@
                 });
             });
 
-            // Bulk Selection & Payment Logic for Central Kitchen
+            // Bulk Selection, Delete & Payment Logic for Central Kitchen
             var checkAllCk = document.getElementById('checkAllCk');
             var checkboxesCk = document.querySelectorAll('.check-ck-order');
             var btnBulkCk = document.getElementById('btnBulkBayarCk');
+            var btnBulkHapusCk = document.getElementById('btnBulkHapusCk');
             var countBadgeCk = document.getElementById('countSelectedCk');
+            var countBadgeHapusCk = document.getElementById('countSelectedHapusCk');
 
             function updateBulkCkState() {
                 var selected = document.querySelectorAll('.check-ck-order:checked');
                 var count = selected.length;
+                if (countBadgeHapusCk) countBadgeHapusCk.textContent = count;
                 if (countBadgeCk) countBadgeCk.textContent = count;
 
                 if (count > 0) {
-                    btnBulkCk.classList.remove('d-none');
-                    btnBulkCk.classList.add('d-inline-flex');
+                    if (btnBulkHapusCk) {
+                        btnBulkHapusCk.classList.remove('d-none');
+                        btnBulkHapusCk.classList.add('d-inline-flex');
+                    }
+                    if (btnBulkCk) {
+                        btnBulkCk.classList.remove('d-none');
+                        btnBulkCk.classList.add('d-inline-flex');
+                    }
                 } else {
-                    btnBulkCk.classList.add('d-none');
-                    btnBulkCk.classList.remove('d-inline-flex');
+                    if (btnBulkHapusCk) {
+                        btnBulkHapusCk.classList.add('d-none');
+                        btnBulkHapusCk.classList.remove('d-inline-flex');
+                    }
+                    if (btnBulkCk) {
+                        btnBulkCk.classList.add('d-none');
+                        btnBulkCk.classList.remove('d-inline-flex');
+                    }
                 }
 
                 if (checkAllCk) {
@@ -1471,6 +1541,48 @@
             checkboxesCk.forEach(function(cb) {
                 cb.addEventListener('change', updateBulkCkState);
             });
+
+            // Handler Modal Hapus Massal CKO
+            var modalBulkHapusCk = document.getElementById('modalBulkHapusCk');
+            if (modalBulkHapusCk) {
+                modalBulkHapusCk.addEventListener('show.bs.modal', function() {
+                    var selected = document.querySelectorAll('.check-ck-order:checked');
+                    var containerInputs = document.getElementById('bulkHapusHiddenInputs');
+                    var listContainer = document.getElementById('bulkHapusOrdersList');
+                    var countText = document.getElementById('bulkHapusCountText');
+                    var confirmCheck = document.getElementById('confirmBulkHapusCheck');
+
+                    if (confirmCheck) confirmCheck.checked = false;
+                    if (containerInputs) containerInputs.innerHTML = '';
+                    if (listContainer) listContainer.innerHTML = '';
+                    if (countText) countText.textContent = selected.length;
+
+                    selected.forEach(function(cb, idx) {
+                        var id = cb.value;
+                        var kode = cb.getAttribute('data-kode');
+                        var customer = cb.getAttribute('data-customer') || '-';
+                        var tanggal = cb.getAttribute('data-tanggal') || '-';
+
+                        if (containerInputs) {
+                            var input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'pesanan_ids[]';
+                            input.value = id;
+                            containerInputs.appendChild(input);
+                        }
+
+                        if (listContainer) {
+                            var itemDiv = document.createElement('div');
+                            itemDiv.className = 'py-1 border-bottom border-light d-flex justify-content-between align-items-center';
+                            itemDiv.innerHTML = `
+                                <span><strong>${idx + 1}. #${kode}</strong> <span class="text-muted">(${customer})</span></span>
+                                <span class="badge bg-secondary-subtle text-dark">${tanggal}</span>
+                            `;
+                            listContainer.appendChild(itemDiv);
+                        }
+                    });
+                });
+            }
 
             var modalBulkCk = document.getElementById('modalBulkBayarCk');
             if (modalBulkCk) {

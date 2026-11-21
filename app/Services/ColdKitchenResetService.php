@@ -20,15 +20,43 @@ class ColdKitchenResetService
      */
     public static function resetAll(): array
     {
-        return DB::transaction(function () {
+        return self::executeReset(null);
+    }
+
+    /**
+     * Hapus transaksi Cold Kitchen sebelum tanggal tertentu ($cutoffDate, default '2026-11-20'):
+     * Hanya menghapus transaksi yang dibuat / bertanggal < $cutoffDate.
+     * Transaksi pada tanggal $cutoffDate dan setelahnya tetap aman tersimpan.
+     */
+    public static function resetBeforeDate(string $cutoffDate = '2026-11-20'): array
+    {
+        return self::executeReset($cutoffDate);
+    }
+
+    /**
+     * Eksekutor pembersihan data Cold Kitchen dengan filter tanggal cut-off opsional.
+     */
+    protected static function executeReset(?string $cutoffDate = null): array
+    {
+        return DB::transaction(function () use ($cutoffDate) {
             // 1. Ambil seluruh ID Pesanan Cold Kitchen (B2B / tipe null)
-            $coldPesananIds = DB::table('pesanan')
+            $pesananQuery = DB::table('pesanan')
                 ->where(function ($q) {
                     $q->where('tipe_pesanan', 'b2b')
                       ->orWhereNull('tipe_pesanan');
-                })
-                ->pluck('id')
-                ->toArray();
+                });
+
+            if (!empty($cutoffDate)) {
+                $pesananQuery->where(function ($q) use ($cutoffDate) {
+                    $q->whereDate('tanggal', '<', $cutoffDate)
+                      ->orWhere(function ($sq) use ($cutoffDate) {
+                          $sq->whereNull('tanggal')
+                             ->whereDate('created_at', '<', $cutoffDate);
+                      });
+                });
+            }
+
+            $coldPesananIds = $pesananQuery->pluck('id')->toArray();
 
             // Ambil ID yang milik Central Kitchen agar TIDAK tersentuh sama sekali
             $ckPesananIds = DB::table('pesanan')
@@ -51,17 +79,34 @@ class ColdKitchenResetService
                 ->toArray();
 
             // 2. Identifikasi Produksi Cold Kitchen
-            $coldProdIds = DB::table('produksi')
+            $prodQuery = DB::table('produksi')
                 ->whereNotIn('id', $ckProdIds)
-                ->where(function ($q) use ($coldPesananIds, $ckPesananIds) {
-                    $q->whereIn('pesanan_id', $coldPesananIds)
-                      ->orWhere('kode_produksi', 'not like', 'PRD-CK-%')
-                      ->orWhere(function ($sq) use ($ckPesananIds) {
-                          $sq->whereNull('pesanan_id')->whereNotIn('pesanan_id', $ckPesananIds);
-                      });
-                })
-                ->pluck('id')
-                ->toArray();
+                ->where(function ($q) use ($coldPesananIds, $ckPesananIds, $cutoffDate) {
+                    if (!empty($coldPesananIds)) {
+                        $q->whereIn('pesanan_id', $coldPesananIds);
+                    }
+                    if (empty($cutoffDate)) {
+                        $q->orWhere('kode_produksi', 'not like', 'PRD-CK-%')
+                          ->orWhere(function ($sq) use ($ckPesananIds) {
+                              $sq->whereNull('pesanan_id')->whereNotIn('pesanan_id', $ckPesananIds);
+                          });
+                    } else {
+                        // Jika ada cutoff date, hanya ambil produksi cold kitchen yang sebelum cutoff date
+                        $q->orWhere(function ($sq) use ($ckPesananIds, $cutoffDate) {
+                            $sq->where('kode_produksi', 'not like', 'PRD-CK-%')
+                               ->where(function ($dateQ) use ($cutoffDate) {
+                                   $dateQ->whereDate('tanggal_mulai', '<', $cutoffDate)
+                                         ->orWhereDate('created_at', '<', $cutoffDate);
+                               })
+                               ->where(function ($notCkQ) use ($ckPesananIds) {
+                                   $notCkQ->whereNull('pesanan_id')
+                                          ->orWhereNotIn('pesanan_id', $ckPesananIds);
+                               });
+                        });
+                    }
+                });
+
+            $coldProdIds = $prodQuery->pluck('id')->toArray();
 
             // 3. Rollback & Bersihkan Stok dari Hasil Produksi Cold Kitchen
             $prodCount = count($coldProdIds);
@@ -126,8 +171,10 @@ class ColdKitchenResetService
                 // Hapus alokasi produksi pesanan
                 if (Schema::hasTable('alokasi_produksi_pesanan')) {
                     DB::table('alokasi_produksi_pesanan')
-                        ->whereIn('produksi_id', $coldProdIds)
-                        ->orWhereIn('pesanan_id', $coldPesananIds)
+                        ->where(function ($q) use ($coldProdIds, $coldPesananIds) {
+                            if (!empty($coldProdIds)) $q->whereIn('produksi_id', $coldProdIds);
+                            if (!empty($coldPesananIds)) $q->orWhereIn('pesanan_id', $coldPesananIds);
+                        })
                         ->delete();
                 }
 
@@ -137,10 +184,26 @@ class ColdKitchenResetService
             }
 
             // 4. Identifikasi & Hapus Work Orders Cold Kitchen
-            $coldWoIds = DB::table('work_order_detail')
-                ->whereIn('pesanan_id', $coldPesananIds)
-                ->pluck('work_order_id')
-                ->merge(DB::table('work_order')->where('kode_wo', 'like', 'WO-B2B-%')->pluck('id'))
+            $woQuery = DB::table('work_order_detail')
+                ->where(function ($q) use ($coldPesananIds) {
+                    if (!empty($coldPesananIds)) {
+                        $q->whereIn('pesanan_id', $coldPesananIds);
+                    }
+                })
+                ->pluck('work_order_id');
+
+            $manualWoQuery = DB::table('work_order')
+                ->where('kode_wo', 'like', 'WO-B2B-%');
+
+            if (!empty($cutoffDate)) {
+                $manualWoQuery->where(function ($q) use ($cutoffDate) {
+                    $q->whereDate('tanggal', '<', $cutoffDate)
+                      ->orWhereDate('created_at', '<', $cutoffDate);
+                });
+            }
+
+            $coldWoIds = $woQuery
+                ->merge($manualWoQuery->pluck('id'))
                 ->diff($ckWoIds)
                 ->unique()
                 ->toArray();
