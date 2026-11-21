@@ -4,8 +4,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <style>
-        /* Select2 Bootstrap-5 adjustments inside Modal */
-        #modalCreateColdOrder span.select2.select2-container {
+        /* Select2 Bootstrap-5 adjustments inside Modal Create & Edit */
+        #modalCreateColdOrder span.select2.select2-container,
+        #modalEditColdOrder span.select2.select2-container {
             width: 100% !important;
             position: relative !important;
             top: auto !important;
@@ -67,8 +68,8 @@
 
         .select2-dropdown-produk-cold {
             z-index: 99999 !important;
-            min-width: 360px !important;
-            max-width: 540px !important;
+            min-width: 320px !important;
+            max-width: 92vw !important;
             box-shadow: 0 14px 36px rgba(0, 0, 0, 0.25) !important;
             border-radius: 8px !important;
             border: 1.5px solid #db7946 !important;
@@ -107,34 +108,82 @@
         }
 
         /* Compact search input */
-        .select2-dropdown-produk-cold .select2-search--dropdown {
+        .select2-dropdown-produk-cold .select2-search--dropdown,
+        .select2-dropdown-customer-cold .select2-search--dropdown {
             padding: 6px 8px !important;
             background-color: #fbf9f7;
             border-bottom: 1px solid #ede8e3;
         }
-        .select2-dropdown-produk-cold .select2-search--dropdown .select2-search__field {
-            height: 32px !important;
-            min-height: 32px !important;
+        .select2-dropdown-produk-cold .select2-search--dropdown .select2-search__field,
+        .select2-dropdown-customer-cold .select2-search--dropdown .select2-search__field {
+            height: 34px !important;
+            min-height: 34px !important;
             padding: 4px 10px !important;
             border-radius: 5px !important;
             border: 1px solid #ced4da !important;
-            font-size: 0.82rem !important;
-            background-color: #ffffff;
+            font-size: 0.84rem !important;
+            background-color: #ffffff !important;
+            pointer-events: auto !important;
+            user-select: text !important;
+            -webkit-user-select: text !important;
         }
-        .select2-dropdown-produk-cold .select2-search--dropdown .select2-search__field:focus {
+        .select2-dropdown-produk-cold .select2-search--dropdown .select2-search__field:focus,
+        .select2-dropdown-customer-cold .select2-search--dropdown .select2-search__field:focus {
             border-color: #db7946 !important;
             outline: none !important;
             box-shadow: 0 0 0 2px rgba(219, 121, 70, 0.2) !important;
         }
+        .select2-container--open {
+            z-index: 99999 !important;
+        }
+        .select2-dropdown-produk-cold,
+        .select2-dropdown-customer-cold {
+            z-index: 99999 !important;
+        }
 
-        #modalCreateColdOrder .table-responsive {
+        #modalCreateColdOrder .table-responsive,
+        #modalEditColdOrder .table-responsive {
             overflow: visible !important;
         }
-        #modalCreateColdOrder .modal-body {
+        #modalCreateColdOrder .modal-body,
+        #modalEditColdOrder .modal-body {
             overflow-y: auto !important;
             min-height: 480px;
             padding-bottom: 140px !important;
         }
+
+        /* Responsive Styles untuk Mobile (layar < 768px) */
+        @media (max-width: 767.98px) {
+            #modalCreateColdOrder .table-responsive,
+            #modalEditColdOrder .table-responsive {
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            #modalCreateColdOrder .modal-body,
+            #modalEditColdOrder .modal-body {
+                min-height: auto;
+                padding-bottom: 25px !important;
+            }
+            #modalCreateColdOrder table,
+            #modalEditColdOrder table {
+                min-width: 620px;
+            }
+            .form-control, .form-select {
+                min-height: 40px;
+            }
+            .select2-container--bootstrap-5 .select2-selection {
+                min-height: 40px !important;
+                height: 40px !important;
+            }
+            .cold-order-card {
+                border: 1px solid #e2e8f0;
+                transition: box-shadow 0.2s ease;
+            }
+            .cold-order-card:active {
+                box-shadow: 0 6px 16px rgba(0,0,0,0.08) !important;
+            }
+        }
+
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #F9F7F5; }
 
         /* ===== TABLE ===== */
@@ -392,7 +441,8 @@
                 </form>
             </div>
 
-            <div class="table-responsive">
+            {{-- DESKTOP TABLE VIEW (Tampil di Tablet & PC >= 768px) --}}
+            <div class="table-responsive d-none d-md-block">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-custom-header">
                         <tr>
@@ -530,9 +580,9 @@
 
                                                 @if(!isset($item->wo_status) || $item->wo_status === null)
                                                     <li>
-                                                        <a class="dropdown-item text-dark" href="{{ route('pesanan.edit', $item->id) }}">
+                                                        <button type="button" class="dropdown-item text-dark btn-open-edit-cold" data-pesanan-id="{{ $item->id }}">
                                                             <i class="bi bi-pencil-square text-warning"></i> Edit Pesanan
-                                                        </a>
+                                                        </button>
                                                     </li>
                                                 @else
                                                     <li>
@@ -759,9 +809,9 @@
                                                             <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
                                                         </a>
                                                         @if(!isset($item->wo_status) || $item->wo_status === null)
-                                                            <a href="{{ route('pesanan.edit', $item->id) }}" class="btn btn-warning btn-sm px-3 fw-bold text-dark">
+                                                            <button type="button" class="btn btn-warning btn-sm px-3 fw-bold text-dark btn-open-edit-cold" data-pesanan-id="{{ $item->id }}" data-bs-dismiss="modal">
                                                                 <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
-                                                            </a>
+                                                            </button>
                                                         @endif
                                                     </div>
                                                     <div class="d-flex gap-2">
@@ -932,6 +982,199 @@
                         @endforelse
                     </tbody>
                 </table>
+            </div>
+
+            {{-- MOBILE CARD VIEW (Tampil di Layar Kecil & HP < 768px) --}}
+            <div class="d-block d-md-none bg-light p-2.5 p-sm-3">
+                {{-- Header Bar Kartu Mobile: Pilih Semua & Info Total --}}
+                <div class="card border-0 shadow-sm rounded-3 p-3 mb-3 bg-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="form-check mb-0 d-flex align-items-center">
+                            <input type="checkbox" id="checkAllPesananMobile" class="form-check-input me-2" style="transform: scale(1.15);">
+                            <label class="form-check-label fw-bold small text-dark" for="checkAllPesananMobile" style="font-size: 0.82rem;">Pilih Semua</label>
+                        </div>
+                        <span class="badge bg-secondary-subtle text-secondary small fw-normal">{{ number_format($pesanan->total()) }} Order</span>
+                    </div>
+                </div>
+
+                @forelse($pesanan as $index => $item)
+                    @php
+                        $totalNilaiItem = $item->total_pesanan > 0 ? (float)$item->total_pesanan : (float)$item->details->sum('subtotal');
+                        $sudahBayarItem = isset($item->pembayaran) ? $item->pembayaran->sum('jumlah_bayar') : 0;
+                        $sisaTagihanItem = max(0, $totalNilaiItem - $sudahBayarItem);
+                        $isLunasOrBatal = ($item->status_pembayaran == 'Lunas' || in_array(strtolower($item->status_pesanan ?? ''), ['batal', 'dibatalkan']));
+                        $isSent = $item->is_sent ?? false;
+                        $sudahMasukWO = isset($item->wo_status) && $item->wo_status !== null;
+
+                        $orderItemsList = $item->details->map(function($d) {
+                            return [
+                                'barang_id'   => $d->produk_id,
+                                'kode_barang' => $d->produk->kode_barang ?? '-',
+                                'nama_barang' => $d->produk->nama ?? 'N/A',
+                                'qty'         => (float)$d->qty,
+                                'satuan'      => $d->produk->satuan ?? '',
+                                'harga'       => (float)($d->harga ?? 0),
+                                'subtotal'    => (float)($d->subtotal ?? 0),
+                            ];
+                        })->values();
+
+                        $statusClass = 'badge-status-pending';
+                        if (in_array(strtolower($item->status_pesanan), ['proses', 'diproses', 'ready', 'siap kirim'])) {
+                            $statusClass = 'badge-status-proses';
+                        } elseif (strtolower($item->status_pesanan) == 'selesai') {
+                            $statusClass = 'badge-status-selesai';
+                        } elseif (in_array(strtolower($item->status_pesanan), ['batal', 'dibatalkan'])) {
+                            $statusClass = 'badge-status-batal';
+                        }
+                    @endphp
+                    <div class="card border-0 shadow-sm rounded-4 mb-3 bg-white overflow-hidden cold-order-card">
+                        <div class="card-body p-3">
+                            {{-- Header Kartu: Checkbox, Kode Order, Status Badges --}}
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="d-flex align-items-center gap-2">
+                                    <input type="checkbox" class="form-check-input check-pesanan check-pesanan-mobile"
+                                           value="{{ $item->id }}"
+                                           data-kode="{{ $item->kode_pesanan }}"
+                                           data-customer="{{ $item->customer->nama ?? '-' }}"
+                                           data-tanggal="{{ date('d M Y', strtotime($item->tanggal ?? $item->created_at)) }}"
+                                           data-status-produksi="{{ ucfirst($item->status_pesanan) }}"
+                                           data-total="{{ $totalNilaiItem }}"
+                                           data-sisa="{{ $sisaTagihanItem }}"
+                                           data-items="{{ json_encode($orderItemsList) }}"
+                                           data-lunas="{{ ($isLunasOrBatal || $sisaTagihanItem <= 0) ? '1' : '0' }}"
+                                           style="transform: scale(1.15);">
+                                    <div>
+                                        <span class="badge bg-light text-muted border font-monospace" style="font-size: 0.7rem;">#{{ $pesanan->firstItem() + $index }}</span>
+                                        <span class="fw-bold text-dark font-monospace ms-1" style="font-size: 0.88rem;">#{{ $item->kode_pesanan }}</span>
+                                    </div>
+                                </div>
+                                <div class="d-flex flex-column align-items-end gap-1">
+                                    <span class="badge-subtle {{ $statusClass }}" style="font-size: 0.7rem;">
+                                        {{ ucfirst($item->status_pesanan) }}
+                                    </span>
+                                    @if($item->status_pembayaran == 'Lunas')
+                                        <span class="badge-subtle badge-status-selesai" style="font-size: 0.7rem;">Lunas</span>
+                                    @elseif($item->status_pembayaran == 'DP')
+                                        <span class="badge-subtle badge-status-pending" style="font-size: 0.7rem;">DP</span>
+                                    @else
+                                        <span class="badge-subtle badge-status-batal" style="font-size: 0.7rem;">Belum Bayar</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            {{-- Detail Outlet & Divisi --}}
+                            <div class="mb-2">
+                                <div class="fw-bold text-dark d-flex align-items-center gap-1" style="font-size: 0.92rem;">
+                                    <i class="bi bi-shop text-primary"></i>
+                                    <span>{{ $item->customer->nama ?? '-' }}</span>
+                                </div>
+                                @if($item->divisi)
+                                    <div class="mt-1">
+                                        <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size: 0.72rem; font-weight: 500;">
+                                            <i class="bi bi-diagram-3 me-1"></i>{{ $item->divisi->nama }}
+                                        </span>
+                                    </div>
+                                @endif
+                            </div>
+
+                            {{-- Metadata Tanggal & Estimasi Kirim --}}
+                            <div class="bg-light rounded-3 p-2 mb-2" style="font-size: 0.78rem;">
+                                <div class="d-flex justify-content-between mb-1">
+                                    <span class="text-muted"><i class="bi bi-calendar3 me-1"></i> Tanggal Order:</span>
+                                    <span class="fw-semibold text-dark">{{ date('d M Y', strtotime($item->tanggal)) }}</span>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-muted"><i class="bi bi-truck me-1"></i> Estimasi Kirim:</span>
+                                    <span class="fw-semibold {{ $item->estimasi_kirim && strtotime($item->estimasi_kirim) < strtotime(date('Y-m-d')) ? 'text-danger' : 'text-dark' }}">
+                                        {{ $item->estimasi_kirim ? date('d M Y', strtotime($item->estimasi_kirim)) : '-' }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {{-- Ringkasan Item Barang --}}
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <span class="text-muted small fw-semibold" style="font-size: 0.75rem;">Item Pesanan ({{ count($item->details) }} item):</span>
+                                    <span class="fw-bold text-dark" style="font-size: 0.88rem;">Rp {{ number_format($totalNilaiItem, 0, ',', '.') }}</span>
+                                </div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    @foreach($item->details->take(3) as $d)
+                                        <span class="badge bg-white border text-dark font-monospace" style="font-size: 0.7rem; font-weight: normal;">
+                                            {{ $d->produk->nama ?? 'Item' }} ({{ number_format($d->qty, 0, ',', '.') }} {{ $d->produk->satuan ?? '' }})
+                                        </span>
+                                    @endforeach
+                                    @if(count($item->details) > 3)
+                                        <span class="badge bg-secondary-subtle text-secondary" style="font-size: 0.7rem;">+{{ count($item->details) - 3 }} lainnya</span>
+                                    @endif
+                                </div>
+                            </div>
+
+                            {{-- Action Buttons Row untuk Mobile --}}
+                            <div class="d-flex gap-2 align-items-center pt-2 border-top">
+                                {{-- Tombol Detail --}}
+                                <button type="button" class="btn btn-outline-info btn-sm flex-fill fw-semibold d-inline-flex align-items-center justify-content-center" data-bs-toggle="modal" data-bs-target="#modalDetailCold{{ $item->id }}" style="height: 38px; border-radius: 8px; font-size: 0.8rem;">
+                                    <i class="bi bi-eye me-1"></i> Detail
+                                </button>
+
+                                {{-- Tombol Cetak PDF --}}
+                                <a href="{{ route('pesanan.cetak-pdf', $item->id) }}" target="_blank" class="btn btn-outline-danger btn-sm flex-fill fw-semibold d-inline-flex align-items-center justify-content-center" style="height: 38px; border-radius: 8px; font-size: 0.8rem;">
+                                    <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+                                </a>
+
+                                {{-- Tombol Edit Permintaan (Modal Pop-up) --}}
+                                @if(!$sudahMasukWO)
+                                    <button type="button" class="btn btn-warning btn-sm flex-fill fw-bold text-dark d-inline-flex align-items-center justify-content-center btn-open-edit-cold" data-pesanan-id="{{ $item->id }}" style="height: 38px; border-radius: 8px; font-size: 0.8rem;">
+                                        <i class="bi bi-pencil-square me-1"></i> Edit
+                                    </button>
+                                @endif
+
+                                {{-- Dropdown More Options --}}
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center justify-content-center" type="button" data-bs-toggle="dropdown" aria-expanded="false" style="height: 38px; width: 38px; border-radius: 8px;">
+                                        <i class="bi bi-three-dots-vertical"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                        <li>
+                                            <a class="dropdown-item py-2" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalSetHarga{{ $item->id }}">
+                                                <i class="bi bi-tag-fill text-success me-2"></i> Input / Ubah Harga
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item py-2" href="{{ route('pesanan.kwitansi', $item->id) }}" target="_blank">
+                                                <i class="bi bi-printer-fill text-primary me-2"></i> Cetak Kwitansi
+                                            </a>
+                                        </li>
+                                        @if(isset($item->status_pembayaran) && $item->status_pembayaran != 'Lunas' && strtolower($item->status_pesanan ?? '') != 'dibatalkan' && strtolower($item->status_pesanan ?? '') != 'batal')
+                                            <li>
+                                                <a class="dropdown-item py-2" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalPelunasan{{ $item->id }}">
+                                                    <i class="bi bi-cash-stack text-success me-2"></i> Pelunasan Nota
+                                                </a>
+                                            </li>
+                                        @endif
+                                        @if(!$sudahMasukWO && !$isSent)
+                                            <li><hr class="dropdown-divider my-1"></li>
+                                            <li>
+                                                <form action="{{ route('pesanan.destroy', $item->id) }}" method="POST" onsubmit="return confirm('Apakah Anda yakin ingin menghapus pesanan #{{ $item->kode_pesanan }}?')">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="dropdown-item py-2 text-danger">
+                                                        <i class="bi bi-trash me-2"></i> Hapus Permintaan
+                                                    </button>
+                                                </form>
+                                            </li>
+                                        @endif
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @empty
+                    <div class="card border-0 shadow-sm rounded-4 p-4 text-center bg-white">
+                        <i class="bi bi-inbox text-muted fs-1 mb-2"></i>
+                        <h6 class="fw-bold text-secondary mb-1">Belum Ada Permintaan Cold Kitchen</h6>
+                        <p class="text-muted small mb-0">Klik tombol "Buat Pesanan Cold Kitchen" untuk membuat permintaan baru.</p>
+                    </div>
+                @endforelse
             </div>
 
             @if($pesanan->hasPages())
@@ -1335,6 +1578,131 @@
         </div>
     </div>
 
+    {{-- MODAL EDIT PERMINTAAN COLD KITCHEN (POP-UP SERAGAM SECARA STRUKTUR & DESAIN) --}}
+    <div class="modal fade text-start" id="modalEditColdOrder" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4">
+                <div class="modal-header bg-custom-orange text-white" style="background-color: #db7946;">
+                    <h5 class="modal-title fw-bold">
+                        <i class="bi bi-pencil-square me-2"></i> Edit Permintaan Cold Kitchen: <span id="modal-edit-cold-badge-kode" class="font-monospace"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+
+                <form action="" method="POST" id="modal-form-edit-cold-order">
+                    @csrf
+                    @method('PUT')
+                    <div class="modal-body p-3 p-md-4">
+                        <div class="row g-3 mb-4">
+                            <div class="col-12 col-md-4">
+                                <label class="form-label fw-bold small text-secondary">Kode Permintaan</label>
+                                <input type="text" id="modal-edit-cold-kode-input" class="form-control rounded-3 bg-light fw-bold text-dark" readonly style="min-height: 40px;">
+                            </div>
+
+                            <div class="col-12 col-md-4" id="modal-edit-cold-customer-col">
+                                <label class="form-label fw-bold small text-secondary">Outlet / Pemesan <span class="text-danger">*</span></label>
+                                <select name="customer_id" id="modal-select-customer-edit-cold" class="form-select rounded-3" required style="width: 100%;">
+                                    <option value="">-- Pilih Outlet / Pemesan --</option>
+                                    @if(isset($customers))
+                                        @foreach($customers as $c)
+                                            <option value="{{ $c->id }}"
+                                                    data-gudang-id="{{ $c->gudang_id }}"
+                                                    data-has-divisi="{{ isset($c->has_divisi) && $c->has_divisi ? '1' : '0' }}"
+                                                    data-divisis='@json($c->divisis ?? [])'>
+                                                {{ $c->nama }} @if(isset($c->jenis_customer) && $c->jenis_customer) ({{ $c->jenis_customer }}) @endif
+                                            </option>
+                                        @endforeach
+                                    @endif
+                                </select>
+                            </div>
+
+                            <div class="col-12 col-md-4" id="modal-edit-cold-divisi-wrapper" style="display: none;">
+                                <label class="form-label fw-bold small text-secondary">
+                                    Divisi Pemesan <span class="text-danger">*</span>
+                                </label>
+                                <select name="divisi_id" id="modal-select-divisi-edit-cold" class="form-select rounded-3" style="min-height: 40px; height: 40px; font-size: 0.84rem;">
+                                    <option value="">-- Pilih Divisi Outlet --</option>
+                                </select>
+                                <small class="text-muted" style="font-size: 0.72rem;">Divisi internal pemesan di outlet ini</small>
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-secondary">Tanggal Permintaan <span class="text-danger">*</span></label>
+                                <input type="date" name="tanggal" id="modal-edit-cold-tanggal" class="form-control rounded-3" required style="min-height: 40px;">
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label class="form-label fw-bold small text-secondary">Estimasi Kirim <span class="text-danger">*</span></label>
+                                <input type="date" name="estimasi_kirim" id="modal-edit-cold-estimasi" class="form-control rounded-3" required style="min-height: 40px;">
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label fw-bold small text-secondary">Catatan Permintaan (Opsional)</label>
+                                <textarea name="catatan" id="modal-edit-cold-catatan" class="form-control rounded-3" rows="2" placeholder="Catatan khusus untuk tim produksi (cth: jangan terlalu manis, request batch baru, kirim pagi, dsb)..."></textarea>
+                            </div>
+                        </div>
+
+                        {{-- SUGGESTION RESTOCK BOX DI DALAM MODAL EDIT --}}
+                        <div id="modal-edit-cold-suggestion-box" class="card p-3 mb-3 bg-light border-warning" style="display: none; border-left: 4px solid #f59e0b !important; border-radius: 10px;">
+                            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                                <div>
+                                    <strong class="text-dark small d-flex align-items-center">
+                                        <i class="bi bi-lightbulb-fill text-warning fs-6 me-1"></i>
+                                        Saran Restock Cold Kitchen (<span id="modal-edit-cold-suggest-outlet-name"></span>)
+                                    </strong>
+                                    <span class="text-muted" style="font-size: 0.72rem;">Item di bawah batas minimum stock gudang outlet</span>
+                                </div>
+                                <button type="button" class="btn btn-xs btn-warning text-dark fw-bold shadow-sm py-1 px-2" id="modal-edit-cold-btn-apply-all-suggestions" style="font-size: 0.75rem; border-radius: 6px;">
+                                    <i class="bi bi-plus-circle-fill me-1"></i> Gunakan Semua Saran Restock
+                                </button>
+                            </div>
+                            <div id="modal-edit-cold-suggestion-list" class="d-flex flex-wrap gap-2 pt-1">
+                                <!-- Dynamic suggestion pills -->
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                            <div>
+                                <h6 class="fw-bold text-dark mb-0 small text-uppercase">Daftar Barang / Item Pesanan Cold Kitchen</h6>
+                                <small class="text-muted" style="font-size: 0.75rem;">Pilih produk dan masukkan kuantitas dalam satuan Resep, Konversi Box/Pack/Ember, atau Satuan standar</small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-3" id="modal-btn-add-edit-cold-item" style="min-height: 36px;">
+                                <i class="bi bi-plus-circle me-1"></i> Tambah Baris
+                            </button>
+                        </div>
+
+                        <div class="d-block d-md-none text-muted small mb-2" style="font-size: 0.72rem;">
+                            <i class="bi bi-arrows-expand me-1"></i> Geser tabel ke samping untuk melihat seluruh kolom
+                        </div>
+
+                        <div class="table-responsive mb-3">
+                            <table class="table table-bordered align-middle text-center mb-0 modal-table-cold" id="modal-table-edit-cold-items">
+                                <thead class="bg-light font-weight-bold">
+                                    <tr>
+                                        <th class="text-start" style="width: 44%;">Nama Bahan / Barang</th>
+                                        <th style="width: 13%;">Qty</th>
+                                        <th style="width: 17%;">Satuan / Mode</th>
+                                        <th style="width: 21%;">Total Qty (Konversi)</th>
+                                        <th style="width: 5%;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-edit-cold-item-rows">
+                                    <!-- Populated dynamically via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light py-3 d-flex justify-content-between flex-wrap gap-2">
+                        <button type="button" class="btn btn-secondary px-4 fw-semibold" data-bs-dismiss="modal" style="min-height: 40px;">Batal</button>
+                        <button type="submit" class="btn btn-custom-orange px-4 fw-bold shadow-sm" style="min-height: 40px;">
+                            <i class="bi bi-check-circle-fill me-1"></i> Simpan Perubahan Permintaan
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function () {
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -1460,14 +1828,27 @@
         // Bulk Selection, Delete & Dual-Tab Payment Logic
         document.addEventListener('DOMContentLoaded', function() {
             var checkAll = document.getElementById('checkAllPesanan');
-            var checkboxes = document.querySelectorAll('.check-pesanan');
+            var checkAllMobile = document.getElementById('checkAllPesananMobile');
             var btnBulk = document.getElementById('btnBulkBayarPesanan');
             var btnBulkHapus = document.getElementById('btnBulkHapusPesanan');
             var countBadge = document.getElementById('countSelectedPesanan');
             var countBadgeHapus = document.getElementById('countSelectedHapusPesanan');
 
+            function getUniqueSelectedCheckboxes() {
+                var checkedCbs = document.querySelectorAll('.check-pesanan:checked');
+                var seen = new Set();
+                var result = [];
+                checkedCbs.forEach(function(cb) {
+                    if (!seen.has(cb.value)) {
+                        seen.add(cb.value);
+                        result.push(cb);
+                    }
+                });
+                return result;
+            }
+
             function updateBulkState() {
-                var selected = document.querySelectorAll('.check-pesanan:checked');
+                var selected = getUniqueSelectedCheckboxes();
                 var count = selected.length;
                 if (countBadgeHapus) countBadgeHapus.textContent = count;
                 if (countBadge) countBadge.textContent = count;
@@ -1492,33 +1873,54 @@
                     }
                 }
 
-                if (checkAll) {
-                    var enabledCount = document.querySelectorAll('.check-pesanan:not([disabled])').length;
-                    checkAll.checked = (enabledCount > 0 && count === enabledCount);
-                }
+                var allEnabled = new Set();
+                document.querySelectorAll('.check-pesanan:not([disabled])').forEach(function(cb) {
+                    allEnabled.add(cb.value);
+                });
+                var isAllChecked = (allEnabled.size > 0 && count === allEnabled.size);
+                if (checkAll) checkAll.checked = isAllChecked;
+                if (checkAllMobile) checkAllMobile.checked = isAllChecked;
             }
+
+            // Delegated change listener for checkboxes, syncing desktop & mobile instances
+            document.addEventListener('change', function(e) {
+                if (e.target && e.target.classList.contains('check-pesanan')) {
+                    var val = e.target.value;
+                    var isChecked = e.target.checked;
+                    document.querySelectorAll('.check-pesanan[value="' + val + '"]').forEach(function(cb) {
+                        cb.checked = isChecked;
+                    });
+                    updateBulkState();
+                }
+            });
 
             if (checkAll) {
                 checkAll.addEventListener('change', function() {
                     var isChecked = this.checked;
-                    checkboxes.forEach(function(cb) {
-                        if (!cb.disabled) {
-                            cb.checked = isChecked;
-                        }
+                    if (checkAllMobile) checkAllMobile.checked = isChecked;
+                    document.querySelectorAll('.check-pesanan').forEach(function(cb) {
+                        if (!cb.disabled) cb.checked = isChecked;
                     });
                     updateBulkState();
                 });
             }
 
-            checkboxes.forEach(function(cb) {
-                cb.addEventListener('change', updateBulkState);
-            });
+            if (checkAllMobile) {
+                checkAllMobile.addEventListener('change', function() {
+                    var isChecked = this.checked;
+                    if (checkAll) checkAll.checked = isChecked;
+                    document.querySelectorAll('.check-pesanan').forEach(function(cb) {
+                        if (!cb.disabled) cb.checked = isChecked;
+                    });
+                    updateBulkState();
+                });
+            }
 
             // Handler Modal Hapus Massal di Halaman Pesanan
             var modalBulkHapus = document.getElementById('modalBulkHapusPesanan');
             if (modalBulkHapus) {
                 modalBulkHapus.addEventListener('show.bs.modal', function() {
-                    var selected = document.querySelectorAll('.check-pesanan:checked');
+                    var selected = getUniqueSelectedCheckboxes();
                     var containerInputs = document.getElementById('bulkHapusPesananHiddenInputs');
                     var listContainer = document.getElementById('bulkHapusPesananOrdersList');
                     var countText = document.getElementById('bulkHapusPesananCountText');
@@ -1560,7 +1962,7 @@
             var modalBulk = document.getElementById('modalBulkBayarPesanan');
             if (modalBulk) {
                 modalBulk.addEventListener('show.bs.modal', function() {
-                    var selected = document.querySelectorAll('.check-pesanan:checked');
+                    var selected = getUniqueSelectedCheckboxes();
                     var containerInputs = document.getElementById('bulkColdHiddenInputs');
                     var ordersTbody = document.getElementById('bulkColdOrdersTableBody');
                     var itemsTbody = document.getElementById('bulkColdItemsTableBody');
@@ -1688,8 +2090,60 @@
         });
 
         // ==========================================
-        // SCRIPT MODAL CREATE COLD KITCHEN ORDER
         // ==========================================
+        // SCRIPT MODAL CREATE & EDIT COLD KITCHEN ORDER
+        // ==========================================
+        @php
+            $coldOrdersEditArray = [];
+            foreach ($pesanan as $pItem) {
+                $pDetails = [];
+                foreach ($pItem->details as $d) {
+                    $itemObj = $d->produk;
+                    $outQty = floatval($itemObj->resepBtklBop->output_qty ?? 0);
+                    $outSatuan = $itemObj->resepBtklBop->satuan_output ?? ($itemObj->satuan ?? '');
+                    $pSatuanKonversi = $itemObj->satuan_pembelian ? strtoupper($itemObj->satuan_pembelian) : '';
+                    $pKonversiVal = floatval($itemObj->konversi_pembelian ?? 1);
+
+                    $initMode = 'satuan';
+                    $initQty = (float)$d->qty;
+                    if ($pSatuanKonversi && $pKonversiVal > 1 && fmod($d->qty, $pKonversiVal) == 0 && $d->qty >= $pKonversiVal) {
+                        $initMode = 'konversi';
+                        $initQty = $d->qty / $pKonversiVal;
+                    } elseif ($outQty > 0 && fmod($d->qty, $outQty) == 0 && $d->qty >= $outQty) {
+                        $initMode = 'resep';
+                        $initQty = $d->qty / $outQty;
+                    }
+
+                    $pDetails[] = [
+                        'id'              => $d->id,
+                        'produk_id'       => $d->produk_id,
+                        'qty'             => $initQty,
+                        'order_mode'      => $initMode,
+                        'harga'           => (float)($d->harga ?? 0),
+                        'subtotal'        => (float)($d->subtotal ?? 0),
+                        'satuan'          => $itemObj->satuan ?? '',
+                        'output_qty'      => $outQty,
+                        'satuan_output'   => $outSatuan,
+                        'satuan_konversi' => $pSatuanKonversi,
+                        'konversi'        => $pKonversiVal,
+                        'kode_barang'     => $itemObj->kode_barang ?? '',
+                        'nama_barang'     => $itemObj->nama ?? '',
+                    ];
+                }
+                $coldOrdersEditArray[$pItem->id] = [
+                    'id'             => $pItem->id,
+                    'kode_pesanan'   => $pItem->kode_pesanan,
+                    'customer_id'    => $pItem->customer_id,
+                    'divisi_id'      => $pItem->divisi_id,
+                    'tanggal'        => date('Y-m-d', strtotime($pItem->tanggal)),
+                    'estimasi_kirim' => $pItem->estimasi_kirim ? date('Y-m-d', strtotime($pItem->estimasi_kirim)) : '',
+                    'catatan'        => $pItem->catatan ?? '',
+                    'details'        => $pDetails,
+                ];
+            }
+        @endphp
+        window.coldOrdersEditData = @json($coldOrdersEditArray);
+
         document.addEventListener('DOMContentLoaded', function() {
             const tableBodyCold = document.getElementById('modal-cold-item-rows');
             // Data master produk Cold Kitchen beserta relasi alokasi divisi
@@ -1713,11 +2167,42 @@
                 }
             }
 
+            // ==========================================
+            // FIX BOOTSTRAP 5 FOCUS TRAP UNTUK SELECT2 SEARCH INPUT
+            // ==========================================
+            // Menangkap event focusin di phase capturing agar modal Bootstrap tidak mencuri fokus dari input pencarian Select2
+            document.addEventListener('focusin', function(e) {
+                if (e.target && (
+                    e.target.classList.contains('select2-search__field') ||
+                    (e.target.closest && (e.target.closest('.select2-container') || e.target.closest('.select2-dropdown') || e.target.closest('.select2-search')))
+                )) {
+                    e.stopImmediatePropagation();
+                }
+            }, true);
+
+            if (typeof $ !== 'undefined') {
+                $(document).on('select2:open', function() {
+                    setTimeout(function() {
+                        const searchInput = document.querySelector('.select2-container--open .select2-search__field');
+                        if (searchInput) {
+                            searchInput.focus();
+                        }
+                    }, 60);
+                });
+
+                if (typeof $.fn.modal !== 'undefined' && $.fn.modal.Constructor) {
+                    $.fn.modal.Constructor.prototype.enforceFocus = function() {};
+                    if ($.fn.modal.Constructor.prototype._enforceFocus) {
+                        $.fn.modal.Constructor.prototype._enforceFocus = function() {};
+                    }
+                }
+            }
+
             // Fungsi filter produk sesuai tagging divisi dan outlet pemesan
             function getFilteredColdProducts(customerId, divisiId) {
                 if (!customerId) return [];
                 
-                const custOption = document.querySelector(`#modal-select-customer-cold option[value="${customerId}"]`);
+                const custOption = document.querySelector(`#modal-select-customer-cold option[value="${customerId}"], #modal-select-customer-edit-cold option[value="${customerId}"]`);
                 if (!custOption) return [];
                 
                 const gudangId = parseInt(custOption.getAttribute('data-gudang-id'));
@@ -1915,7 +2400,7 @@
                 });
             }
 
-            function updateSelectOptions(selectEl, products, placeholderText) {
+            function updateSelectOptions(selectEl, products, placeholderText, isDisabled = false) {
                 if (!selectEl) return;
                 const $sel = $(selectEl);
                 if ($sel.data('select2')) {
@@ -1947,6 +2432,7 @@
                     });
                 }
 
+                selectEl.disabled = isDisabled;
                 initSelect2Cold(selectEl, placeholderText);
             }
 
@@ -1961,15 +2447,23 @@
                 const hasDivisi = custOption ? (custOption.getAttribute('data-has-divisi') === '1') : false;
 
                 let placeholder = '-- Pilih Outlet / Konsumen Pemesan terlebih dahulu --';
-                if (customerId && hasDivisi && !divisiId) {
+                let isSelectDisabled = true;
+
+                if (!customerId) {
+                    placeholder = '-- Pilih Outlet / Konsumen Pemesan terlebih dahulu --';
+                    isSelectDisabled = true;
+                } else if (hasDivisi && !divisiId) {
                     placeholder = '-- Pilih Divisi Pemesan terlebih dahulu --';
-                } else if (customerId && (!hasDivisi || divisiId)) {
+                    isSelectDisabled = true;
+                } else {
                     placeholder = '-- Cari / Ketik Kode atau Nama Barang --';
+                    isSelectDisabled = false;
                 }
 
                 const filteredProducts = getFilteredColdProducts(customerId, divisiId);
                 if (customerId && (!hasDivisi || divisiId) && filteredProducts.length === 0) {
                     placeholder = '-- Tidak ada barang yang dialokasikan untuk divisi ini --';
+                    isSelectDisabled = true;
                 }
 
                 // Bersihkan baris lama
@@ -1984,16 +2478,16 @@
                     <tr>
                         <td class="text-start position-relative">
                             <div class="cold-select-wrapper position-relative w-100">
-                                <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;">
+                                <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;" ${isSelectDisabled ? 'disabled' : ''}>
                                     <option value="">${placeholder}</option>
                                 </select>
                             </div>
                         </td>
                         <td>
-                            <input type="number" step="any" min="0.01" name="qty[]" class="form-control form-control-sm text-end modal-input-cold-qty fw-bold" placeholder="0" required>
+                            <input type="number" step="any" min="0.01" name="qty[]" class="form-control form-control-sm text-end modal-input-cold-qty fw-bold" placeholder="0" required ${isSelectDisabled ? 'disabled' : ''}>
                         </td>
                         <td>
-                            <select name="order_mode[]" class="form-select form-select-sm modal-select-cold-mode text-center fw-bold">
+                            <select name="order_mode[]" class="form-select form-select-sm modal-select-cold-mode text-center fw-bold" ${isSelectDisabled ? 'disabled' : ''}>
                                 <option value="resep">Resep</option>
                                 <option value="satuan">Satuan</option>
                                 <option value="konversi">Konversi</option>
@@ -2013,7 +2507,7 @@
                 `;
 
                 const firstSelect = tableBodyCold.querySelector('.modal-select-produk-cold');
-                updateSelectOptions(firstSelect, filteredProducts, placeholder);
+                updateSelectOptions(firstSelect, filteredProducts, placeholder, isSelectDisabled);
                 checkColdRows();
             }
 
@@ -2249,6 +2743,14 @@
             // Tombol Tambah Baris manual
             if (btnAddCold) {
                 btnAddCold.addEventListener('click', function() {
+                    const custId = customerSelectCold ? customerSelectCold.value : '';
+                    if (!custId) {
+                        alert('Silakan pilih Outlet / Konsumen Pemesan terlebih dahulu.');
+                        if (typeof $ !== 'undefined' && $(customerSelectCold).data('select2')) {
+                            $(customerSelectCold).select2('open');
+                        }
+                        return;
+                    }
                     addColdItemRow();
                 });
             }
@@ -2257,8 +2759,14 @@
             var modalCreateCold = document.getElementById('modalCreateColdOrder');
             if (modalCreateCold) {
                 modalCreateCold.addEventListener('shown.bs.modal', function() {
-                    // Hapus tabindex saat modal dibuka agar focus trap Bootstrap tidak mengunci typing Select2 yang di-portal ke body
+                    // Hapus tabindex dan matikan focus trap agar Select2 input pencarian dapat diketik normal
                     modalCreateCold.removeAttribute('tabindex');
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        const bsModal = bootstrap.Modal.getInstance(modalCreateCold);
+                        if (bsModal && bsModal._focustrap && typeof bsModal._focustrap.deactivate === 'function') {
+                            bsModal._focustrap.deactivate();
+                        }
+                    }
                     ensureSelect2(function() {
                         initSelect2CustomerCold();
                         resetAndReloadColdItems();
@@ -2437,6 +2945,510 @@
                         inputEstimasiModal.value = this.value;
                     }
                 });
+            }
+
+            // ==========================================
+            // LOGIKA KOMPONEN MODAL EDIT COLD ORDER
+            // ==========================================
+            const modalEditCold = document.getElementById('modalEditColdOrder');
+            const formEditCold = document.getElementById('modal-form-edit-cold-order');
+            const badgeKodeEditCold = document.getElementById('modal-edit-cold-badge-kode');
+            const inputKodeEditCold = document.getElementById('modal-edit-cold-kode-input');
+            const customerSelectEditCold = document.getElementById('modal-select-customer-edit-cold');
+            const divisiSelectEditCold = document.getElementById('modal-select-divisi-edit-cold');
+            const inputTanggalEditCold = document.getElementById('modal-edit-cold-tanggal');
+            const inputEstimasiEditCold = document.getElementById('modal-edit-cold-estimasi');
+            const inputCatatanEditCold = document.getElementById('modal-edit-cold-catatan');
+            const tableBodyEditCold = document.getElementById('modal-edit-cold-item-rows');
+            const btnAddEditCold = document.getElementById('modal-btn-add-edit-cold-item');
+
+            function updateModalEditDivisiOptions(divisiList) {
+                const divisiWrapper = document.getElementById('modal-edit-cold-divisi-wrapper');
+                const customerCol = document.getElementById('modal-edit-cold-customer-col');
+                if (!divisiSelectEditCold) return;
+
+                divisiSelectEditCold.innerHTML = '<option value="">-- Pilih Divisi Outlet --</option>';
+
+                if (divisiList && divisiList.length > 0) {
+                    divisiList.forEach(div => {
+                        const opt = document.createElement('option');
+                        opt.value = div.id;
+                        opt.textContent = div.nama + (div.keterangan ? ' (' + div.keterangan + ')' : '');
+                        divisiSelectEditCold.appendChild(opt);
+                    });
+                    if (divisiWrapper) divisiWrapper.style.display = 'block';
+                    if (customerCol) customerCol.className = 'col-12 col-md-4';
+                } else {
+                    if (divisiWrapper) divisiWrapper.style.display = 'none';
+                    if (customerCol) customerCol.className = 'col-12 col-md-8';
+                    divisiSelectEditCold.value = '';
+                }
+            }
+
+            function initSelect2CustomerEditCold() {
+                if (!customerSelectEditCold || typeof $ === 'undefined' || !$.fn.select2) return;
+                const $cust = $(customerSelectEditCold);
+                if ($cust.data('select2')) {
+                    $cust.select2('destroy');
+                }
+
+                $cust.select2({
+                    theme: 'bootstrap-5',
+                    dropdownParent: $(document.body),
+                    dropdownCssClass: 'select2-dropdown-customer-cold',
+                    width: '100%',
+                    placeholder: '-- Pilih Outlet / Pemesan --',
+                    allowClear: false
+                }).off('change.edit_cold').on('change.edit_cold', function() {
+                    const val = $(this).val();
+                    if (!val) {
+                        updateModalEditDivisiOptions([]);
+                        resetAndReloadEditColdItems();
+                        return;
+                    }
+                    const opt = customerSelectEditCold.querySelector(`option[value="${val}"]`);
+                    if (opt && opt.getAttribute('data-divisis')) {
+                        try {
+                            const divisis = JSON.parse(opt.getAttribute('data-divisis'));
+                            updateModalEditDivisiOptions(divisis);
+                        } catch (e) {
+                            updateModalEditDivisiOptions([]);
+                        }
+                    } else {
+                        updateModalEditDivisiOptions([]);
+                    }
+                    resetAndReloadEditColdItems();
+                });
+            }
+
+            if (divisiSelectEditCold) {
+                divisiSelectEditCold.addEventListener('change', function() {
+                    resetAndReloadEditColdItems();
+                });
+            }
+
+            function initSelect2EditCold(selectEl, placeholderText) {
+                if (!selectEl || typeof $ === 'undefined' || !$.fn.select2) return null;
+                const $el = $(selectEl);
+                if ($el.data('select2')) {
+                    $el.select2('destroy');
+                }
+
+                $el.select2({
+                    theme: 'bootstrap-5',
+                    dropdownParent: $(document.body),
+                    dropdownCssClass: 'select2-dropdown-produk-cold',
+                    width: '100%',
+                    placeholder: placeholderText || '-- Cari / Ketik Kode atau Nama Barang --',
+                    allowClear: true,
+                    templateResult: formatColdProductOption,
+                    templateSelection: formatColdProductSelection
+                }).off('change.cold_edit').on('change.cold_edit', function() {
+                    const row = selectEl.closest('tr');
+                    updateEditColdModeOptions(row);
+                    updateEditColdKonversi(row);
+                });
+                return $el;
+            }
+
+            function updateEditColdModeOptions(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.modal-select-produk-cold');
+                const modeEl = row.querySelector('.modal-select-cold-mode');
+                if (!selectEl || !modeEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                const satuanUtama = (selected && selectEl.value) ? (selected.getAttribute('data-satuan') || 'Satuan') : 'Satuan';
+                const outputQty = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-output-qty') || 0) : 0;
+                const satuanKonversi = (selected && selectEl.value) ? (selected.getAttribute('data-satuan-konversi') || '') : '';
+                const konversiVal = (selected && selectEl.value) ? parseFloat(selected.getAttribute('data-konversi') || 1) : 1;
+
+                const currentVal = modeEl.value;
+                modeEl.innerHTML = '';
+
+                if (satuanKonversi && konversiVal > 1) {
+                    const optKonversi = new Option(satuanKonversi + ' (' + konversiVal.toLocaleString('id-ID') + ' ' + satuanUtama + ')', 'konversi');
+                    modeEl.add(optKonversi);
+                }
+
+                if (outputQty > 0) {
+                    const optResep = new Option('Resep', 'resep');
+                    modeEl.add(optResep);
+                }
+
+                const optSatuan = new Option(satuanUtama, 'satuan');
+                modeEl.add(optSatuan);
+
+                if (currentVal === 'konversi' && satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (currentVal === 'resep' && outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else if (satuanKonversi && konversiVal > 1) {
+                    modeEl.value = 'konversi';
+                } else if (outputQty > 0) {
+                    modeEl.value = 'resep';
+                } else {
+                    modeEl.value = 'satuan';
+                }
+            }
+
+            function updateEditColdKonversi(row) {
+                if (!row) return;
+                const selectEl = row.querySelector('.modal-select-produk-cold');
+                const modeEl = row.querySelector('.modal-select-cold-mode');
+                const qtyEl = row.querySelector('.modal-input-cold-qty');
+                const infoEl = row.querySelector('.modal-cold-konversi-info');
+
+                if (!selectEl || !modeEl || !qtyEl || !infoEl) return;
+
+                const selected = selectEl.options[selectEl.selectedIndex];
+                if (!selected || !selectEl.value) {
+                    infoEl.innerHTML = '<span class="text-muted">-</span>';
+                    return;
+                }
+
+                const outputQty = parseFloat(selected.getAttribute('data-output-qty') || 0);
+                const outputSatuan = selected.getAttribute('data-satuan-output') || '';
+                const satuanUtama = selected.getAttribute('data-satuan') || '';
+                const satuanKonversi = selected.getAttribute('data-satuan-konversi') || '';
+                const konversiVal = parseFloat(selected.getAttribute('data-konversi') || 1);
+                const mode = modeEl.value;
+                const qtyInput = parseFloat(qtyEl.value || 0);
+
+                if (mode === 'konversi' && konversiVal > 1) {
+                    const totalGramasi = qtyInput > 0 ? (qtyInput * konversiVal) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-primary" style="font-size: 0.85rem;">${totalGramasi.toLocaleString('id-ID')} ${satuanUtama}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 ${satuanKonversi} = ${konversiVal.toLocaleString('id-ID')} ${satuanUtama})</div>
+                    `;
+                } else if (mode === 'resep' && outputQty > 0) {
+                    const totalTarget = qtyInput > 0 ? (qtyInput * outputQty) : 0;
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-success" style="font-size: 0.85rem;">${totalTarget.toLocaleString('id-ID')} ${outputSatuan}</div>
+                        <div class="text-muted" style="font-size: 0.72rem;">(1 Resep = ${outputQty.toLocaleString('id-ID')} ${outputSatuan})</div>
+                    `;
+                } else {
+                    let helperText = '';
+                    if (satuanKonversi && konversiVal > 1 && qtyInput > 0) {
+                        const packEquivalent = qtyInput / konversiVal;
+                        const packFmt = (packEquivalent % 1 === 0) ? packEquivalent.toFixed(0) : packEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${packFmt} ${satuanKonversi})</div>`;
+                    } else if (outputQty > 0 && qtyInput > 0) {
+                        const resepEquivalent = qtyInput / outputQty;
+                        const resepFmt = (resepEquivalent % 1 === 0) ? resepEquivalent.toFixed(0) : resepEquivalent.toFixed(2);
+                        helperText = `<div class="text-primary" style="font-size: 0.72rem;">(= ${resepFmt} Resep)</div>`;
+                    }
+                    infoEl.innerHTML = `
+                        <div class="fw-bold text-dark" style="font-size: 0.85rem;">${qtyInput.toLocaleString('id-ID')} ${satuanUtama || '-'}</div>
+                        ${helperText}
+                    `;
+                }
+            }
+
+            function checkEditColdRows() {
+                if (!tableBodyEditCold) return;
+                const rows = tableBodyEditCold.querySelectorAll('tr');
+                rows.forEach(r => {
+                    const btnRemove = r.querySelector('.modal-btn-remove-cold-row');
+                    if (btnRemove) {
+                        btnRemove.disabled = (rows.length === 1);
+                    }
+                });
+            }
+
+            if (tableBodyEditCold) {
+                tableBodyEditCold.addEventListener('click', function(e) {
+                    const btnRemove = e.target.closest('.modal-btn-remove-cold-row');
+                    if (btnRemove && !btnRemove.disabled) {
+                        const row = btnRemove.closest('tr');
+                        if (row) {
+                            const selectEl = row.querySelector('.modal-select-produk-cold');
+                            if (selectEl && typeof $ !== 'undefined' && $(selectEl).data('select2')) {
+                                $(selectEl).select2('destroy');
+                            }
+                            row.remove();
+                            checkEditColdRows();
+                        }
+                    }
+                });
+
+                tableBodyEditCold.addEventListener('change', function(e) {
+                    if (e.target.classList.contains('modal-select-cold-mode')) {
+                        updateEditColdKonversi(e.target.closest('tr'));
+                    }
+                });
+
+                tableBodyEditCold.addEventListener('input', function(e) {
+                    if (e.target.classList.contains('modal-input-cold-qty')) {
+                        updateEditColdKonversi(e.target.closest('tr'));
+                    }
+                });
+            }
+
+            let isPopulatingEditCold = false;
+
+            function resetAndReloadEditColdItems() {
+                if (!tableBodyEditCold || isPopulatingEditCold) return;
+                const customerId = customerSelectEditCold ? customerSelectEditCold.value : '';
+                const divisiId = divisiSelectEditCold ? divisiSelectEditCold.value : '';
+
+                tableBodyEditCold.querySelectorAll('.modal-select-produk-cold').forEach(sel => {
+                    if (typeof $ !== 'undefined' && $(sel).data('select2')) {
+                        try { $(sel).select2('destroy'); } catch(e) {}
+                    }
+                });
+                tableBodyEditCold.innerHTML = '';
+                addEditColdItemRow();
+            }
+
+            function addEditColdItemRow(produkId = '', qty = '', mode = 'resep', harga = 0, subtotal = 0) {
+                if (!tableBodyEditCold) return null;
+
+                const customerId = customerSelectEditCold ? customerSelectEditCold.value : '';
+                const divisiId = divisiSelectEditCold ? divisiSelectEditCold.value : '';
+                const filteredProducts = getFilteredColdProducts(customerId, divisiId);
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-start position-relative">
+                        <div class="cold-select-wrapper position-relative w-100">
+                            <select name="produk_id[]" class="form-select form-select-sm modal-select-produk-cold" required style="width: 100%;">
+                            </select>
+                        </div>
+                    </td>
+                    <td>
+                        <input type="number" step="any" min="0.01" name="qty[]" class="form-control form-control-sm text-end modal-input-cold-qty fw-bold" placeholder="0" required value="${qty}">
+                        <input type="hidden" name="harga[]" value="${harga}">
+                        <input type="hidden" name="subtotal[]" value="${subtotal}">
+                    </td>
+                    <td>
+                        <select name="order_mode[]" class="form-select form-select-sm modal-select-cold-mode text-center fw-bold">
+                            <option value="resep">Resep</option>
+                            <option value="satuan">Satuan</option>
+                            <option value="konversi">Konversi</option>
+                        </select>
+                    </td>
+                    <td>
+                        <div class="modal-cold-konversi-info small text-start p-1 px-2 bg-light rounded border">
+                            <span class="text-muted">-</span>
+                        </div>
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-danger modal-btn-remove-cold-row">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tableBodyEditCold.appendChild(tr);
+
+                const select = tr.querySelector('.modal-select-produk-cold');
+                const selectMode = tr.querySelector('.modal-select-cold-mode');
+
+                select.innerHTML = '<option value="">-- Cari / Ketik Kode atau Nama Barang --</option>';
+                let foundCurrent = false;
+                if (filteredProducts && filteredProducts.length > 0) {
+                    filteredProducts.forEach(item => {
+                        const opt = document.createElement('option');
+                        opt.value = item.id;
+                        opt.setAttribute('data-kode', item.kode);
+                        opt.setAttribute('data-nama', item.nama);
+                        opt.setAttribute('data-info', item.info || '');
+                        opt.setAttribute('data-satuan', item.satuan || '');
+                        opt.setAttribute('data-output-qty', item.output_qty || 0);
+                        opt.setAttribute('data-satuan-output', item.satuan_output || '');
+                        opt.setAttribute('data-satuan-konversi', item.satuan_konversi || '');
+                        opt.setAttribute('data-konversi', item.konversi || 1);
+                        opt.textContent = `${item.kode} - ${item.nama}` + (item.info ? ` (${item.info})` : '');
+                        if (produkId && String(produkId) === String(item.id)) {
+                            opt.selected = true;
+                            foundCurrent = true;
+                        }
+                        select.appendChild(opt);
+                    });
+                }
+
+                // Jika produkId sedang diedit namun tidak ada di filtered list (misal alokasi lama), pertahankan item
+                if (produkId && !foundCurrent && window.allColdProductsData) {
+                    const fallbackItem = window.allColdProductsData.find(it => String(it.id) === String(produkId));
+                    if (fallbackItem) {
+                        const opt = document.createElement('option');
+                        opt.value = fallbackItem.id;
+                        opt.setAttribute('data-kode', fallbackItem.kode);
+                        opt.setAttribute('data-nama', fallbackItem.nama);
+                        opt.setAttribute('data-info', fallbackItem.info || '');
+                        opt.setAttribute('data-satuan', fallbackItem.satuan || '');
+                        opt.setAttribute('data-output-qty', fallbackItem.output_qty || 0);
+                        opt.setAttribute('data-satuan-output', fallbackItem.satuan_output || '');
+                        opt.setAttribute('data-satuan-konversi', fallbackItem.satuan_konversi || '');
+                        opt.setAttribute('data-konversi', fallbackItem.konversi || 1);
+                        opt.textContent = `${fallbackItem.kode} - ${fallbackItem.nama}` + (fallbackItem.info ? ` (${fallbackItem.info})` : '');
+                        opt.selected = true;
+                        select.appendChild(opt);
+                    }
+                }
+
+                initSelect2EditCold(select);
+
+                if (mode && selectMode) {
+                    selectMode.value = mode;
+                }
+
+                updateEditColdModeOptions(tr);
+                if (mode && selectMode) {
+                    selectMode.value = mode;
+                }
+                updateEditColdKonversi(tr);
+                checkEditColdRows();
+
+                return tr;
+            }
+
+            if (btnAddEditCold) {
+                btnAddEditCold.addEventListener('click', function(e) {
+                    if (e) e.preventDefault();
+                    addEditColdItemRow();
+                });
+            }
+
+            function populateAndShowEditCold(data) {
+                if (!data) return;
+                isPopulatingEditCold = true;
+
+                if (formEditCold) {
+                    formEditCold.action = "{{ url('pesanan') }}/" + data.id;
+                }
+                if (badgeKodeEditCold) {
+                    badgeKodeEditCold.textContent = '#' + data.kode_pesanan;
+                }
+                if (inputKodeEditCold) {
+                    inputKodeEditCold.value = data.kode_pesanan;
+                }
+                if (inputTanggalEditCold) {
+                    inputTanggalEditCold.value = data.tanggal;
+                }
+                if (inputEstimasiEditCold) {
+                    inputEstimasiEditCold.value = data.estimasi_kirim || data.tanggal;
+                }
+                if (inputCatatanEditCold) {
+                    inputCatatanEditCold.value = data.catatan || '';
+                }
+
+                if (customerSelectEditCold) {
+                    $(customerSelectEditCold).val(String(data.customer_id));
+                    const opt = customerSelectEditCold.querySelector(`option[value="${data.customer_id}"]`);
+                    if (opt && opt.getAttribute('data-divisis')) {
+                        try {
+                            const divisis = JSON.parse(opt.getAttribute('data-divisis'));
+                            updateModalEditDivisiOptions(divisis);
+                        } catch(e) {
+                            updateModalEditDivisiOptions([]);
+                        }
+                    } else {
+                        updateModalEditDivisiOptions([]);
+                    }
+                    if (divisiSelectEditCold && data.divisi_id) {
+                        divisiSelectEditCold.value = String(data.divisi_id);
+                    }
+                }
+
+                if (tableBodyEditCold) {
+                    tableBodyEditCold.querySelectorAll('.modal-select-produk-cold').forEach(sel => {
+                        if (typeof $ !== 'undefined' && $(sel).data('select2')) {
+                            try { $(sel).select2('destroy'); } catch(e) {}
+                        }
+                    });
+                    tableBodyEditCold.innerHTML = '';
+
+                    if (data.details && data.details.length > 0) {
+                        data.details.forEach(det => {
+                            addEditColdItemRow(det.produk_id, det.qty, det.order_mode, det.harga, det.subtotal);
+                        });
+                    } else {
+                        addEditColdItemRow();
+                    }
+                }
+
+                isPopulatingEditCold = false;
+
+                if (modalEditCold) {
+                    const modalInst = bootstrap.Modal.getOrCreateInstance(modalEditCold);
+                    modalInst.show();
+                }
+            }
+
+            function openEditColdModal(pesananId) {
+                if (window.coldOrdersEditData && window.coldOrdersEditData[pesananId]) {
+                    populateAndShowEditCold(window.coldOrdersEditData[pesananId]);
+                } else {
+                    fetch("{{ url('pesanan') }}/" + pesananId + "/edit?json=1", {
+                        headers: { 'Accept': 'application/json' }
+                    })
+                    .then(res => res.json())
+                    .then(resData => {
+                        if (resData.success && resData.pesanan) {
+                            if (resData.cold_products && Array.isArray(resData.cold_products)) {
+                                window.allColdProductsData = resData.cold_products;
+                            }
+                            window.coldOrdersEditData = window.coldOrdersEditData || {};
+                            window.coldOrdersEditData[pesananId] = resData.pesanan;
+                            populateAndShowEditCold(resData.pesanan);
+                        } else {
+                            alert(resData.message || 'Gagal memuat data pesanan untuk diedit.');
+                        }
+                    })
+                    .catch(err => {
+                        alert('Terjadi kesalahan saat memuat data pesanan.');
+                    });
+                }
+            }
+            window.openEditColdModal = openEditColdModal;
+
+            // Focus trap bypass saat modal edit dibuka
+            if (modalEditCold) {
+                modalEditCold.addEventListener('shown.bs.modal', function() {
+                    modalEditCold.removeAttribute('tabindex');
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        const bsModal = bootstrap.Modal.getInstance(modalEditCold);
+                        if (bsModal && bsModal._focustrap && typeof bsModal._focustrap.deactivate === 'function') {
+                            bsModal._focustrap.deactivate();
+                        }
+                    }
+                    ensureSelect2(function() {
+                        initSelect2CustomerEditCold();
+                    });
+                });
+
+                modalEditCold.addEventListener('hidden.bs.modal', function() {
+                    modalEditCold.setAttribute('tabindex', '-1');
+                    if (typeof $ !== 'undefined' && $.fn.select2) {
+                        $('.modal-select-produk-cold, #modal-select-customer-edit-cold').select2('close');
+                    }
+                });
+            }
+
+            // Click listener for .btn-open-edit-cold
+            $(document).on('click', '.btn-open-edit-cold', function(e) {
+                e.preventDefault();
+                const pId = $(this).data('pesanan-id');
+                if (pId) {
+                    openEditColdModal(pId);
+                }
+            });
+
+            // Sync edit date inputs
+            if (inputTanggalEditCold && inputEstimasiEditCold) {
+                inputTanggalEditCold.addEventListener('change', function() {
+                    if (!inputEstimasiEditCold.value || inputEstimasiEditCold.value < this.value) {
+                        inputEstimasiEditCold.value = this.value;
+                    }
+                });
+            }
+
+            // Auto-open modal jika URL berisi query edit_id
+            const urlParamsCold = new URLSearchParams(window.location.search);
+            const editIdCold = urlParamsCold.get('edit_id');
+            if (editIdCold) {
+                openEditColdModal(editIdCold);
             }
         });
     </script>

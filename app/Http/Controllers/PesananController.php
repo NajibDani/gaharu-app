@@ -559,6 +559,7 @@ class PesananController extends Controller
 
     /**
      * Show the form for editing the specified resource.
+     * Mengembalikan JSON untuk modal pop-up edit, atau redirect ke index modal jika diakses manual
      */
     public function edit(string $id)
     {
@@ -566,11 +567,23 @@ class PesananController extends Controller
 
         $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
         if ($sudahWO) {
+            if (request()->wantsJson() || request()->ajax() || request()->has('json')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.'
+                ], 422);
+            }
             return redirect()->route('pesanan.index')
                 ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
         }
 
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
+            if (request()->wantsJson() || request()->ajax() || request()->has('json')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.'
+                ], 422);
+            }
             return redirect()->route('pesanan.index')
                 ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' berada pada periode akuntansi yang sudah ditutup buku.');
         }
@@ -585,8 +598,8 @@ class PesananController extends Controller
             $c->has_divisi = $divisis->isNotEmpty();
         }
 
-        // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) DAN Bahan Jadi
-        $produk = MasterBarang::with('resepBtklBop')
+        // Ambil barang aktif khusus Bahan Setengah Jadi (BSJ) DAN Bahan Jadi beserta tagging divisi
+        $produk = MasterBarang::with(['resepBtklBop', 'minimumStocks'])
             ->where('is_active', true)
             ->where(function($q) {
                 $q->where('is_bahan_setengah_jadi', true)
@@ -595,7 +608,103 @@ class PesananController extends Controller
             ->orderBy('nama', 'asc')
             ->get();
 
-        return view('pesanan.edit', compact('pesanan', 'customers', 'produk'));
+        $coldProductsData = [];
+        foreach ($produk as $item) {
+            $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
+            $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
+            $satuanKonversi = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
+            $konversiVal = floatval($item->konversi_pembelian ?? 1);
+            $infoText = '';
+            if ($satuanKonversi && $konversiVal > 1) {
+                $infoText = '1 ' . $satuanKonversi . ' = ' . number_format($konversiVal, 0, ',', '.') . ' ' . $item->satuan;
+            } elseif ($outQty > 0) {
+                $infoText = '1 Resep = ' . number_format($outQty, 0, ',', '.') . ' ' . $outSatuan;
+            }
+
+            $tags = [];
+            foreach ($item->minimumStocks as $ms) {
+                if ($ms->is_active) {
+                    $tags[] = [
+                        'gudang_id' => (int) $ms->gudang_id,
+                        'divisi_id' => $ms->divisi_id !== null ? (int) $ms->divisi_id : null,
+                    ];
+                }
+            }
+
+            $coldProductsData[] = [
+                'id'              => $item->id,
+                'kode'            => $item->kode_barang,
+                'nama'            => $item->nama,
+                'satuan'          => $item->satuan,
+                'output_qty'      => $outQty,
+                'satuan_output'   => $outSatuan,
+                'satuan_konversi' => $satuanKonversi,
+                'konversi'        => $konversiVal,
+                'info'            => $infoText,
+                'tags'            => $tags,
+            ];
+        }
+
+        // Jika dipanggil via AJAX atau minta JSON untuk modal pop-up
+        if (request()->wantsJson() || request()->ajax() || request()->has('json')) {
+            $formattedDetails = $pesanan->details->map(function($detail) {
+                $itemObj = $detail->produk;
+                $outQty = floatval($itemObj->resepBtklBop->output_qty ?? 0);
+                $outSatuan = $itemObj->resepBtklBop->satuan_output ?? ($itemObj->satuan ?? '');
+                $pSatuanKonversi = $itemObj->satuan_pembelian ? strtoupper($itemObj->satuan_pembelian) : '';
+                $pKonversiVal = floatval($itemObj->konversi_pembelian ?? 1);
+
+                $initMode = 'satuan';
+                $initQty = (float)$detail->qty;
+                if ($pSatuanKonversi && $pKonversiVal > 1 && fmod($detail->qty, $pKonversiVal) == 0 && $detail->qty >= $pKonversiVal) {
+                    $initMode = 'konversi';
+                    $initQty = $detail->qty / $pKonversiVal;
+                } elseif ($outQty > 0 && fmod($detail->qty, $outQty) == 0 && $detail->qty >= $outQty) {
+                    $initMode = 'resep';
+                    $initQty = $detail->qty / $outQty;
+                }
+
+                return [
+                    'id'               => $detail->id,
+                    'produk_id'        => $detail->produk_id,
+                    'qty'              => $initQty,
+                    'order_mode'       => $initMode,
+                    'harga'            => (float)($detail->harga ?? 0),
+                    'subtotal'         => (float)($detail->subtotal ?? 0),
+                    'satuan'           => $itemObj->satuan ?? '',
+                    'output_qty'       => $outQty,
+                    'satuan_output'    => $outSatuan,
+                    'satuan_konversi'  => $pSatuanKonversi,
+                    'konversi'         => $pKonversiVal,
+                    'kode_barang'      => $itemObj->kode_barang ?? '',
+                    'nama_barang'      => $itemObj->nama ?? '',
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'pesanan' => [
+                    'id'             => $pesanan->id,
+                    'kode_pesanan'   => $pesanan->kode_pesanan,
+                    'customer_id'    => $pesanan->customer_id,
+                    'divisi_id'      => $pesanan->divisi_id,
+                    'tanggal'        => date('Y-m-d', strtotime($pesanan->tanggal)),
+                    'estimasi_kirim' => $pesanan->estimasi_kirim ? date('Y-m-d', strtotime($pesanan->estimasi_kirim)) : '',
+                    'catatan'        => $pesanan->catatan ?? '',
+                    'tax_percentage' => (float)($pesanan->tax_percentage ?? 0),
+                    'details'        => $formattedDetails,
+                ],
+                'cold_products' => $coldProductsData,
+            ]);
+        }
+
+        // Jika user mengakses dengan query standalone=1 atau fallback, tampilkan halaman view
+        if (request()->query('standalone') === '1') {
+            return view('pesanan.edit', compact('pesanan', 'customers', 'produk', 'coldProductsData'));
+        }
+
+        // Secara default alihkan ke halaman index dengan query edit_id agar modal pop-up edit seragam langsung terbuka
+        return redirect()->route('pesanan.index', ['edit_id' => $id]);
     }
 
     /**

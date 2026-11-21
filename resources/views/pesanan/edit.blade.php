@@ -1,4 +1,7 @@
 <x-app-layout>
+    <script>
+        window.location.replace("{{ route('pesanan.index', ['edit_id' => $pesanan->id]) }}");
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
@@ -60,6 +63,7 @@
                             <option value="">-- Pilih Outlet / Pemesan --</option>
                             @foreach($customers as $c)
                                 <option value="{{ $c->id }}"
+                                        data-gudang-id="{{ $c->gudang_id }}"
                                         data-has-divisi="{{ isset($c->has_divisi) && $c->has_divisi ? '1' : '0' }}"
                                         data-divisis='@json($c->divisis ?? [])'
                                         {{ (old('customer_id', $pesanan->customer_id) == $c->id) ? 'selected' : '' }}>
@@ -154,6 +158,24 @@
                             </tr>
                         </thead>
                         <tbody id="item-rows">
+                            @php
+                                $selectedCust = $customers->firstWhere('id', old('customer_id', $pesanan->customer_id));
+                                $initGudangId = $selectedCust?->gudang_id;
+                                $initDivisiId = old('divisi_id', $pesanan->divisi_id);
+                                $initHasDivisi = $selectedCust?->has_divisi;
+
+                                $initFilteredProduk = $produk->filter(function($p) use ($initGudangId, $initDivisiId, $initHasDivisi) {
+                                    if (!$initGudangId) return true;
+                                    if (!$p->relationLoaded('minimumStocks')) return true;
+                                    return $p->minimumStocks->where('is_active', true)->contains(function($ms) use ($initGudangId, $initDivisiId, $initHasDivisi) {
+                                        if ($ms->gudang_id != $initGudangId) return false;
+                                        if ($initHasDivisi && $initDivisiId) {
+                                            return $ms->divisi_id == $initDivisiId || is_null($ms->divisi_id);
+                                        }
+                                        return true;
+                                    });
+                                });
+                            @endphp
                             @forelse($pesanan->details as $index => $detail)
                                 @php
                                     $itemObj = $detail->produk;
@@ -171,18 +193,22 @@
                                         $initMode = 'resep';
                                         $initQty = $detail->qty / $outQty;
                                     }
+
+                                    $foundCurrent = false;
                                 @endphp
                                 <tr>
                                     <td>
                                         <select name="produk_id[]" class="form-select text-sm select-produk" required>
                                             <option value="">-- Cari / Pilih Barang Cold Kitchen --</option>
-                                            @foreach($produk as $item)
+                                            @foreach($initFilteredProduk as $item)
                                                 @php
                                                     $pOutQty = floatval($item->resepBtklBop->output_qty ?? 0);
                                                     $pOutSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
                                                     $satuanKonv = $item->satuan_pembelian ? strtoupper($item->satuan_pembelian) : '';
                                                     $konvVal = floatval($item->konversi_pembelian ?? 1);
                                                     $tipeBadge = $item->is_bahan_setengah_jadi ? 'BSJ' : 'Barang Jadi';
+                                                    $isSel = ($detail->produk_id == $item->id);
+                                                    if ($isSel) $foundCurrent = true;
                                                 @endphp
                                                 <option value="{{ $item->id }}" 
                                                         data-satuan="{{ $item->satuan }}"
@@ -190,7 +216,7 @@
                                                         data-satuan-output="{{ $pOutSatuan }}"
                                                         data-satuan-konversi="{{ $satuanKonv }}"
                                                         data-konversi="{{ $konvVal }}"
-                                                        {{ $detail->produk_id == $item->id ? 'selected' : '' }}>
+                                                        {{ $isSel ? 'selected' : '' }}>
                                                     [{{ $tipeBadge }}] {{ $item->kode_barang }} - {{ $item->nama }}
                                                     @if($satuanKonv && $konvVal > 1)
                                                         (1 {{ $satuanKonv }} = {{ number_format($konvVal, 0, ',', '.') }} {{ $item->satuan }})
@@ -199,6 +225,24 @@
                                                     @endif
                                                 </option>
                                             @endforeach
+                                            @if(!$foundCurrent && $itemObj)
+                                                @php
+                                                    $curOutQty = floatval($itemObj->resepBtklBop->output_qty ?? 0);
+                                                    $curOutSatuan = $itemObj->resepBtklBop->satuan_output ?? ($itemObj->satuan ?? '');
+                                                    $curSatuanKonv = $itemObj->satuan_pembelian ? strtoupper($itemObj->satuan_pembelian) : '';
+                                                    $curKonvVal = floatval($itemObj->konversi_pembelian ?? 1);
+                                                    $curTipeBadge = $itemObj->is_bahan_setengah_jadi ? 'BSJ' : 'Barang Jadi';
+                                                @endphp
+                                                <option value="{{ $itemObj->id }}" 
+                                                        data-satuan="{{ $itemObj->satuan }}"
+                                                        data-output-qty="{{ $curOutQty }}"
+                                                        data-satuan-output="{{ $curOutSatuan }}"
+                                                        data-satuan-konversi="{{ $curSatuanKonv }}"
+                                                        data-konversi="{{ $curKonvVal }}"
+                                                        selected>
+                                                    [{{ $curTipeBadge }}] {{ $itemObj->kode_barang }} - {{ $itemObj->nama }}
+                                                </option>
+                                            @endif
                                         </select>
                                     </td>
                                     <td>
@@ -233,7 +277,7 @@
                                     <td>
                                         <select name="produk_id[]" class="form-select text-sm select-produk" required>
                                             <option value="">-- Cari / Pilih Barang Cold Kitchen --</option>
-                                            @foreach($produk as $item)
+                                            @foreach($initFilteredProduk as $item)
                                                 @php
                                                     $outQty = floatval($item->resepBtklBop->output_qty ?? 0);
                                                     $outSatuan = $item->resepBtklBop->satuan_output ?? ($item->satuan ?? '');
@@ -291,9 +335,12 @@
     @push('scripts')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            window.allColdProductsData = @json($coldProductsData ?? []);
+
             const tableBody = document.getElementById('item-rows');
             const btnAdd = document.getElementById('btn-add-item');
             const customerSelect = document.getElementById('select-customer');
+            const divisiSelect = document.getElementById('select-divisi');
             const suggestionBox = document.getElementById('suggestion-box');
             const suggestionList = document.getElementById('suggestion-list');
             const suggestionOutletName = document.getElementById('suggest-outlet-name');
@@ -302,11 +349,27 @@
             let currentSuggestions = [];
             const tomSelectInstances = new Map();
 
-            if (customerSelect) {
-                new TomSelect('#select-customer', {
-                    create: false,
-                    placeholder: '-- Pilih Outlet / Pemesan --',
-                    allowEmptyOption: true
+            function getFilteredColdProducts(customerId, divisiId) {
+                if (!customerId) return [];
+                const custOption = document.querySelector(`#select-customer option[value="${customerId}"]`);
+                if (!custOption) return [];
+                const gudangId = parseInt(custOption.getAttribute('data-gudang-id'));
+                const hasDivisi = custOption.getAttribute('data-has-divisi') === '1';
+                const targetDivisiId = divisiId ? parseInt(divisiId) : null;
+
+                if (!gudangId) return [];
+                if (hasDivisi && !targetDivisiId) return [];
+                if (!window.allColdProductsData || !Array.isArray(window.allColdProductsData)) return [];
+
+                return window.allColdProductsData.filter(item => {
+                    if (!item.tags || !Array.isArray(item.tags)) return false;
+                    return item.tags.some(tag => {
+                        if (tag.gudang_id !== gudangId) return false;
+                        if (hasDivisi && targetDivisiId) {
+                            return tag.divisi_id === targetDivisiId || tag.divisi_id === null;
+                        }
+                        return true;
+                    });
                 });
             }
 
@@ -337,6 +400,109 @@
                 });
                 tomSelectInstances.set(selectEl, ts);
                 return ts;
+            }
+
+            function syncRowProductOptions(row, filteredProducts, keepCurrentVal = true) {
+                const selectEl = row.querySelector('.select-produk');
+                if (!selectEl) return;
+                const ts = tomSelectInstances.get(selectEl);
+                const currentVal = ts ? ts.getValue() : selectEl.value;
+
+                selectEl.innerHTML = '<option value="">-- Cari / Pilih Barang Cold Kitchen --</option>';
+                let currentItemFound = false;
+
+                if (filteredProducts && filteredProducts.length > 0) {
+                    filteredProducts.forEach(item => {
+                        const opt = document.createElement('option');
+                        opt.value = item.id;
+                        opt.setAttribute('data-satuan', item.satuan || '');
+                        opt.setAttribute('data-output-qty', item.output_qty || 0);
+                        opt.setAttribute('data-satuan-output', item.satuan_output || '');
+                        opt.setAttribute('data-satuan-konversi', item.satuan_konversi || '');
+                        opt.setAttribute('data-konversi', item.konversi || 1);
+                        opt.textContent = `${item.kode} - ${item.nama}` + (item.info ? ` (${item.info})` : '');
+                        if (currentVal && String(item.id) === String(currentVal)) {
+                            opt.selected = true;
+                            currentItemFound = true;
+                        }
+                        selectEl.appendChild(opt);
+                    });
+                }
+
+                if (keepCurrentVal && currentVal && !currentItemFound && window.allColdProductsData) {
+                    const fallback = window.allColdProductsData.find(it => String(it.id) === String(currentVal));
+                    if (fallback) {
+                        const opt = document.createElement('option');
+                        opt.value = fallback.id;
+                        opt.setAttribute('data-satuan', fallback.satuan || '');
+                        opt.setAttribute('data-output-qty', fallback.output_qty || 0);
+                        opt.setAttribute('data-satuan-output', fallback.satuan_output || '');
+                        opt.setAttribute('data-satuan-konversi', fallback.satuan_konversi || '');
+                        opt.setAttribute('data-konversi', fallback.konversi || 1);
+                        opt.textContent = `${fallback.kode} - ${fallback.nama}` + (fallback.info ? ` (${fallback.info})` : '');
+                        opt.selected = true;
+                        selectEl.appendChild(opt);
+                        currentItemFound = true;
+                    }
+                }
+
+                if (ts) {
+                    ts.clearOptions();
+                    if (filteredProducts && filteredProducts.length > 0) {
+                        filteredProducts.forEach(item => {
+                            ts.addOption({
+                                value: String(item.id),
+                                text: `${item.kode} - ${item.nama}` + (item.info ? ` (${item.info})` : '')
+                            });
+                        });
+                    }
+                    if (keepCurrentVal && currentItemFound && currentVal) {
+                        if (!ts.options[String(currentVal)]) {
+                            const fallback = window.allColdProductsData ? window.allColdProductsData.find(it => String(it.id) === String(currentVal)) : null;
+                            if (fallback) {
+                                ts.addOption({
+                                    value: String(fallback.id),
+                                    text: `${fallback.kode} - ${fallback.nama}` + (fallback.info ? ` (${fallback.info})` : '')
+                                });
+                            }
+                        }
+                        ts.setValue(String(currentVal), true);
+                    } else {
+                        ts.setValue('', true);
+                    }
+                }
+
+                updateModeOptions(row);
+                updateKonversi(row);
+            }
+
+            function onCustomerOrDivisiChanged(isInitial = false) {
+                const customerId = customerSelect ? customerSelect.value : '';
+                const divId = divisiSelect ? divisiSelect.value : '';
+                const filtered = getFilteredColdProducts(customerId, divId);
+
+                const rows = tableBody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    syncRowProductOptions(row, filtered, isInitial);
+                });
+            }
+
+            if (customerSelect) {
+                new TomSelect('#select-customer', {
+                    create: false,
+                    placeholder: '-- Pilih Outlet / Pemesan --',
+                    allowEmptyOption: true,
+                    onChange: function(val) {
+                        fetchSuggestions(val);
+                        onCustomerOrDivisiChanged(false);
+                    }
+                });
+            }
+
+            if (divisiSelect) {
+                divisiSelect.addEventListener('change', function() {
+                    onCustomerOrDivisiChanged(false);
+                });
             }
 
             function updateModeOptions(row, preserveSelection = false) {
@@ -530,6 +696,11 @@
                     tableBody.appendChild(targetRow);
                 }
 
+                const customerId = customerSelect ? customerSelect.value : '';
+                const divId = divisiSelect ? divisiSelect.value : '';
+                const filtered = getFilteredColdProducts(customerId, divId);
+                syncRowProductOptions(targetRow, filtered, false);
+
                 const select = targetRow.querySelector('.select-produk');
                 const inputQty = targetRow.querySelector('.input-qty');
 
@@ -540,7 +711,7 @@
                 const ts = initTomSelectOnSelect(select);
                 if (ts) {
                     if (produkId) {
-                        ts.setValue(produkId);
+                        ts.setValue(String(produkId));
                     } else {
                         ts.setValue('', true);
                     }
@@ -565,7 +736,6 @@
 
             function updateDivisiOptions(divisiList, preserveSelected = null) {
                 const divisiWrapper = document.getElementById('divisi-wrapper');
-                const divisiSelect = document.getElementById('select-divisi');
                 if (!divisiWrapper || !divisiSelect) return;
 
                 const currentVal = preserveSelected !== null ? preserveSelected : divisiSelect.value;
@@ -703,12 +873,6 @@
                 suggestionList.querySelectorAll('.btn-add-single-suggest').forEach(btn => {
                     btn.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Ditambahkan';
                     btn.disabled = true;
-                });
-            }
-
-            if (customerSelect) {
-                customerSelect.addEventListener('change', function() {
-                    fetchSuggestions(this.value);
                 });
             }
 
