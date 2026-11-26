@@ -33,12 +33,13 @@ class ProduksiController extends Controller
         $search = $request->query('search');
         $customerId = $request->query('customer_id');
 
-        // 1. Pesanan Cold Kitchen yang Pending / Siap dibuatkan WO
+        // 1. Pesanan Cold Kitchen yang Pending / Siap dibuatkan WO (belum pernah dibuatkan WO)
         $pesananQuery = \App\Models\Pesanan::where(function($q) {
                 $q->where('tipe_pesanan', 'b2b')->orWhereNull('tipe_pesanan');
             })
             ->with(['details.produk', 'customer'])
-            ->whereIn('status_pesanan', ['pending', 'Draft', 'Siap diproduksi']);
+            ->whereIn('status_pesanan', ['pending', 'Draft', 'Siap diproduksi'])
+            ->whereDoesntHave('workOrderDetails');
 
         if ($customerId) {
             $pesananQuery->where('customer_id', $customerId);
