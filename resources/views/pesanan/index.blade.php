@@ -567,6 +567,28 @@
                                                 <i class="bi bi-three-dots-vertical"></i>
                                             </button>
                                             <ul class="dropdown-menu dropdown-menu-end dropdown-menu-actions">
+                                                @php
+                                                    $isWoApproved = isset($item->wo_status) && in_array(strtolower($item->wo_status), ['selesai', 'approved', 'disetujui']);
+                                                @endphp
+
+                                                @if(!$isWoApproved)
+                                                    <li>
+                                                        <a class="dropdown-item text-dark" href="{{ route('pesanan.edit', $item->id) }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}">
+                                                            <i class="bi bi-pencil-square text-warning"></i> Edit Pesanan
+                                                        </a>
+                                                    </li>
+                                                @else
+                                                    <li>
+                                                        <span class="dropdown-item disabled text-muted py-2" title="Terkunci: sudah masuk Work Order yang di-approve">
+                                                            <i class="bi bi-lock text-secondary"></i>
+                                                            <span>
+                                                                Edit Terkunci
+                                                                <small class="d-block text-muted" style="font-size: 0.68rem;">WO: {{ ucfirst($item->wo_status) }}</small>
+                                                            </span>
+                                                        </span>
+                                                    </li>
+                                                @endif
+
                                                 <li>
                                                     <a class="dropdown-item" href="javascript:void(0)" data-bs-toggle="modal" data-bs-target="#modalSetHarga{{ $item->id }}">
                                                         <i class="bi bi-tag-fill text-success"></i> Input / Ubah Harga
@@ -577,24 +599,6 @@
                                                         <i class="bi bi-printer-fill text-primary"></i> Cetak Kwitansi
                                                     </a>
                                                 </li>
-
-                                                @if(!isset($item->wo_status) || $item->wo_status === null)
-                                                    <li>
-                                                        <button type="button" class="dropdown-item text-dark btn-open-edit-cold" data-pesanan-id="{{ $item->id }}">
-                                                            <i class="bi bi-pencil-square text-warning"></i> Edit Pesanan
-                                                        </button>
-                                                    </li>
-                                                @else
-                                                    <li>
-                                                        <span class="dropdown-item disabled text-muted py-2" title="Terkunci: sudah masuk Work Order">
-                                                            <i class="bi bi-lock text-secondary"></i>
-                                                            <span>
-                                                                Edit Terkunci
-                                                                <small class="d-block text-muted" style="font-size: 0.68rem;">WO: {{ ucfirst($item->wo_status) }}</small>
-                                                            </span>
-                                                        </span>
-                                                    </li>
-                                                @endif
 
                                                 @if(isset($item->status_pembayaran) && $item->status_pembayaran != 'Lunas' && strtolower($item->status_pesanan ?? '') != 'dibatalkan' && strtolower($item->status_pesanan ?? '') != 'batal')
                                                     <li>
@@ -808,10 +812,10 @@
                                                         <a href="{{ route('pesanan.cetak-pdf', $item->id) }}" target="_blank" class="btn btn-outline-danger btn-sm px-3 fw-bold">
                                                             <i class="bi bi-file-earmark-pdf me-1"></i> Cetak PDF
                                                         </a>
-                                                        @if(!isset($item->wo_status) || $item->wo_status === null)
-                                                            <button type="button" class="btn btn-warning btn-sm px-3 fw-bold text-dark btn-open-edit-cold" data-pesanan-id="{{ $item->id }}" data-bs-dismiss="modal">
+                                                        @if(!$isWoApproved)
+                                                            <a href="{{ route('pesanan.edit', $item->id) }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}" class="btn btn-warning btn-sm px-3 fw-bold text-dark">
                                                                 <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
-                                                            </button>
+                                                            </a>
                                                         @endif
                                                     </div>
                                                     <div class="d-flex gap-2">
@@ -1004,7 +1008,8 @@
                         $sisaTagihanItem = max(0, $totalNilaiItem - $sudahBayarItem);
                         $isLunasOrBatal = ($item->status_pembayaran == 'Lunas' || in_array(strtolower($item->status_pesanan ?? ''), ['batal', 'dibatalkan']));
                         $isSent = $item->is_sent ?? false;
-                        $sudahMasukWO = isset($item->wo_status) && $item->wo_status !== null;
+                        $isWoApprovedMobile = isset($item->wo_status) && in_array(strtolower($item->wo_status), ['selesai', 'approved', 'disetujui']);
+                        $sudahMasukWO = $isWoApprovedMobile;
 
                         $orderItemsList = $item->details->map(function($d) {
                             return [
@@ -1121,11 +1126,11 @@
                                     <i class="bi bi-file-earmark-pdf me-1"></i> PDF
                                 </a>
 
-                                {{-- Tombol Edit Permintaan (Modal Pop-up) --}}
-                                @if(!$sudahMasukWO)
-                                    <button type="button" class="btn btn-warning btn-sm flex-fill fw-bold text-dark d-inline-flex align-items-center justify-content-center btn-open-edit-cold" data-pesanan-id="{{ $item->id }}" style="height: 38px; border-radius: 8px; font-size: 0.8rem;">
+                                {{-- Tombol Edit Permintaan --}}
+                                @if(!$isWoApprovedMobile)
+                                    <a href="{{ route('pesanan.edit', $item->id) }}{{ request()->getQueryString() ? '?' . request()->getQueryString() : '' }}" class="btn btn-warning btn-sm flex-fill fw-bold text-dark d-inline-flex align-items-center justify-content-center" style="height: 38px; border-radius: 8px; font-size: 0.8rem;">
                                         <i class="bi bi-pencil-square me-1"></i> Edit
-                                    </button>
+                                    </a>
                                 @endif
 
                                 {{-- Dropdown More Options --}}

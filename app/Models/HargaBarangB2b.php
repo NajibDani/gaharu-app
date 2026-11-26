@@ -26,11 +26,23 @@ class HargaBarangB2b extends Model
         'harga_b2b'     => 'float',
     ];
 
+    protected static bool $schemaEnsured = false;
+
     /**
      * Auto-create table harga_barang_b2b if not exists, and ensure column mengikuti_hpp exists
      */
     public static function ensureTableExists(): void
     {
+        if (static::$schemaEnsured) {
+            return;
+        }
+
+        // Jangan jalankan DDL (CREATE/ALTER TABLE) saat transaksi DB aktif
+        // karena MySQL melakukan implicit commit yang membatalkan transaksi aktif.
+        if (\Illuminate\Support\Facades\DB::transactionLevel() > 0) {
+            return;
+        }
+
         if (!Schema::hasTable('harga_barang_b2b')) {
             Schema::create('harga_barang_b2b', function (Blueprint $table) {
                 $table->id();
@@ -52,6 +64,8 @@ class HargaBarangB2b extends Model
                 });
             }
         }
+
+        static::$schemaEnsured = true;
     }
 
     /**

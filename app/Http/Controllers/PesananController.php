@@ -422,6 +422,10 @@ class PesananController extends Controller
             }
         }
 
+        // Pastikan tabel harga_barang_b2b dan kolom mengikuti_hpp sudah ada sebelum transaksi dimulai.
+        // DDL (CREATE TABLE / ALTER TABLE) di MySQL melakukan implicit commit yang membatalkan transaksi aktif.
+        \App\Models\HargaBarangB2b::ensureTableExists();
+
         DB::beginTransaction();
         try {
             $customer = Customer::findOrFail($request->customer_id);
@@ -565,16 +569,19 @@ class PesananController extends Controller
     {
         $pesanan = Pesanan::with(['details.produk.resepBtklBop', 'customer', 'divisi'])->findOrFail($id);
 
-        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
-        if ($sudahWO) {
+        $woDetail = WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
+        $workOrder = $woDetail ? WorkOrder::find($woDetail->work_order_id) : null;
+        $isWoApproved = $workOrder && in_array(strtolower($workOrder->status_wo), ['selesai', 'approved', 'disetujui']);
+
+        if ($isWoApproved) {
             if (request()->wantsJson() || request()->ajax() || request()->has('json')) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.'
+                    'message' => 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah di-approve dalam Work Order Produksi.'
                 ], 422);
             }
             return redirect()->route('pesanan.index')
-                ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+                ->with('error', 'Gagal mengedit: Permintaan #' . $pesanan->kode_pesanan . ' sudah di-approve dalam Work Order Produksi.');
         }
 
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
@@ -698,13 +705,7 @@ class PesananController extends Controller
             ]);
         }
 
-        // Jika user mengakses dengan query standalone=1 atau fallback, tampilkan halaman view
-        if (request()->query('standalone') === '1') {
-            return view('pesanan.edit', compact('pesanan', 'customers', 'produk', 'coldProductsData'));
-        }
-
-        // Secara default alihkan ke halaman index dengan query edit_id agar modal pop-up edit seragam langsung terbuka
-        return redirect()->route('pesanan.index', ['edit_id' => $id]);
+        return view('pesanan.edit', compact('pesanan', 'customers', 'produk', 'coldProductsData'));
     }
 
     /**
@@ -714,10 +715,13 @@ class PesananController extends Controller
     {
         $pesanan = Pesanan::findOrFail($id);
 
-        $sudahWO = WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
-        if ($sudahWO) {
+        $woDetail = WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
+        $workOrder = $woDetail ? WorkOrder::find($woDetail->work_order_id) : null;
+        $isWoApproved = $workOrder && in_array(strtolower($workOrder->status_wo), ['selesai', 'approved', 'disetujui']);
+
+        if ($isWoApproved) {
             return redirect()->route('pesanan.index')
-                ->with('error', 'Gagal memperbarui: Permintaan #' . $pesanan->kode_pesanan . ' sudah diproses dalam Work Order Produksi.');
+                ->with('error', 'Gagal memperbarui: Permintaan #' . $pesanan->kode_pesanan . ' sudah di-approve dalam Work Order Produksi.');
         }
 
         if (\App\Models\Journal::isPeriodClosed($pesanan->tanggal)) {
@@ -760,6 +764,8 @@ class PesananController extends Controller
                 ])->withInput();
             }
         }
+
+        \App\Models\HargaBarangB2b::ensureTableExists();
 
         DB::beginTransaction();
         try {
@@ -853,6 +859,19 @@ class PesananController extends Controller
                     'harga'      => $item['harga'],
                     'subtotal'   => $item['subtotal'],
                 ]);
+            }
+
+            // Sinkronkan WorkOrderDetail jika pesanan ini sudah memiliki WO yang belum di-approve
+            if ($workOrder && !$isWoApproved) {
+                WorkOrderDetail::where('pesanan_id', $pesanan->id)->delete();
+                foreach ($itemsData as $item) {
+                    WorkOrderDetail::create([
+                        'work_order_id' => $workOrder->id,
+                        'pesanan_id'    => $pesanan->id,
+                        'produk_id'     => $item['produk_id'],
+                        'qty_rencana'   => $item['qty'],
+                    ]);
+                }
             }
 
             // Hitung ulang status pembayaran

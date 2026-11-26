@@ -1,6 +1,9 @@
 <x-app-layout>
     @php
-        $sudahWO = \App\Models\WorkOrderDetail::where('pesanan_id', $pesanan->id)->exists();
+        $woDetail = \App\Models\WorkOrderDetail::where('pesanan_id', $pesanan->id)->first();
+        $woObj = $woDetail ? \App\Models\WorkOrder::find($woDetail->work_order_id) : null;
+        $isWoApproved = $woObj && in_array(strtolower($woObj->status_wo), ['selesai', 'approved', 'disetujui']);
+        $sudahWO = (bool)$woDetail;
         $isSuperAdmin = auth()->user() && auth()->user()->isSuperAdmin();
         $isSent = \App\Models\Pengiriman::where('pesanan_id', $pesanan->id)->where('status_pengiriman', 'Selesai')->exists() || ($pesanan->total_qty_terkirim ?? 0) > 0;
     @endphp
@@ -23,10 +26,12 @@
                 <a href="{{ route('pesanan.kwitansi', $pesanan->id) }}" class="btn btn-outline-primary btn-sm shadow-sm px-3" target="_blank">
                     <i class="bi bi-printer me-1"></i> Cetak Kwitansi
                 </a>
-                @if(!$sudahWO)
+                @if(!$isWoApproved)
                     <a href="{{ route('pesanan.edit', $pesanan->id) }}" class="btn btn-warning btn-sm shadow-sm text-dark fw-bold px-3">
-                        <i class="bi bi-pencil-square me-1"></i> Edit
+                        <i class="bi bi-pencil-square me-1"></i> Edit Pesanan
                     </a>
+                @endif
+                @if(!$sudahWO)
                     <form action="{{ route('pesanan.destroy', $pesanan->id) }}" method="POST" class="d-inline" onsubmit="return confirm('Apakah Anda yakin ingin menghapus permintaan #{{ $pesanan->kode_pesanan }}?')">
                         @csrf
                         @method('DELETE')
