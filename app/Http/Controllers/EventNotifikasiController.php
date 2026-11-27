@@ -40,16 +40,7 @@ class EventNotifikasiController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'judul'           => 'required|string|max:255',
-            'pesan'           => 'required|string',
-            'menu_target'     => 'required|string',
-            'tanggal_mulai'   => 'required|date',
-            'tanggal_selesai' => 'required|date|after_or_equal:tanggal_mulai',
-            'tipe_icon'       => 'required|in:warning,info,success,question,error',
-            'is_active'       => 'nullable|boolean',
-        ]);
-
+        $validated = $this->validateEvent($request);
         $validated['is_active'] = $request->has('is_active');
         $validated['created_by'] = auth()->id();
 
@@ -74,21 +65,35 @@ class EventNotifikasiController extends Controller
     {
         $event = EventNotifikasi::findOrFail($id);
 
+        $validated = $this->validateEvent($request);
+        $validated['is_active'] = $request->has('is_active');
+
+        $event->update($validated);
+
+        return redirect()->route('event-notifikasi.index')->with('success', 'Event notifikasi berhasil diperbarui.');
+    }
+
+    private function validateEvent(Request $request): array
+    {
+        $allowedMenus = implode(',', array_keys(EventNotifikasi::MENU_OPTIONS));
+
         $validated = $request->validate([
             'judul'           => 'required|string|max:255',
             'pesan'           => 'required|string',
-            'menu_target'     => 'required|string',
+            'menu_target'     => 'required|array|min:1',
+            'menu_target.*'   => "required|string|in:{$allowedMenus}",
             'tanggal_mulai'   => 'required|date',
             'tanggal_selesai' => 'required|date|after_or_equal:tanggal_mulai',
             'tipe_icon'       => 'required|in:warning,info,success,question,error',
             'is_active'       => 'nullable|boolean',
         ]);
 
-        $validated['is_active'] = $request->has('is_active');
+        $menuTargets = $validated['menu_target'];
+        $validated['menu_target'] = in_array('semua', $menuTargets, true)
+            ? 'semua'
+            : implode(',', array_unique($menuTargets));
 
-        $event->update($validated);
-
-        return redirect()->route('event-notifikasi.index')->with('success', 'Event notifikasi berhasil diperbarui.');
+        return $validated;
     }
 
     /**

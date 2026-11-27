@@ -887,13 +887,19 @@
                 .catch(err => console.error('Error fetching event notifications:', err));
         }
 
+        function escapeEventHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text ?? '';
+            return div.innerHTML;
+        }
+
         function displaySequentialSweetAlert(events, index) {
             if (index >= events.length) return;
 
             let ev = events[index];
             Swal.fire({
                 title: ev.judul,
-                html: `<p style="font-size: 15px; margin-bottom: 12px; color: #374151; line-height: 1.6;">${ev.pesan}</p>`,
+                html: `<p style="font-size: 15px; margin-bottom: 12px; color: #374151; line-height: 1.6; white-space: pre-line;">${escapeEventHtml(ev.pesan)}</p>`,
                 icon: ev.tipe_icon || 'warning',
                 showCancelButton: true,
                 confirmButtonText: '<i class="bi bi-check2 me-1"></i> Mengerti',

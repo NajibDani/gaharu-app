@@ -25,9 +25,29 @@ class EventNotifikasi extends Model
         'is_active'       => 'boolean',
     ];
 
+    public const MENU_OPTIONS = [
+        'pembelian'     => 'Pembelian Bahan Baku',
+        'permintaan'    => 'Permintaan / Transfer Bahan',
+        'produksi'      => 'Produksi Central Kitchen',
+        'penjualan_pos' => 'Penjualan POS',
+        'semua'         => 'Semua Menu',
+    ];
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Mengembalikan daftar menu target sebagai array
+     */
+    public function getMenuTargetsAttribute(): array
+    {
+        if (empty($this->menu_target)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $this->menu_target))));
     }
 
     /**
@@ -41,7 +61,13 @@ class EventNotifikasi extends Model
             ->whereDate('tanggal_selesai', '>=', $today)
             ->where(function ($q) use ($menu) {
                 $q->where('menu_target', $menu)
-                  ->orWhere('menu_target', 'semua');
+                  ->orWhere('menu_target', 'semua')
+                  ->orWhere('menu_target', 'like', "{$menu},%")
+                  ->orWhere('menu_target', 'like', "%,{$menu},%")
+                  ->orWhere('menu_target', 'like', "%,{$menu}")
+                  ->orWhere('menu_target', 'like', 'semua,%')
+                  ->orWhere('menu_target', 'like', '%,semua,%')
+                  ->orWhere('menu_target', 'like', '%,semua');
             });
     }
 }

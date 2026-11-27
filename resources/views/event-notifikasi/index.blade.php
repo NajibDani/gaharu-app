@@ -78,9 +78,13 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="badge bg-secondary-subtle text-secondary border px-2 py-1 text-uppercase">
-                                        {{ $event->menu_target }}
-                                    </span>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        @foreach($event->menu_targets as $target)
+                                            <span class="badge bg-secondary-subtle text-secondary border px-2 py-1 text-uppercase">
+                                                {{ $target }}
+                                            </span>
+                                        @endforeach
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="small">
@@ -104,7 +108,11 @@
                                         <button type="button" 
                                                 class="btn btn-sm btn-info text-white" 
                                                 style="font-size: 11px; padding: 2px 8px; border-radius: 5px;"
-                                                onclick="previewSweetAlert('{{ addslashes($event->judul) }}', '{{ addslashes($event->pesan) }}', '{{ $event->tipe_icon }}', '{{ $event->id }}')"
+                                                data-judul="{{ $event->judul }}"
+                                                data-pesan="{{ $event->pesan }}"
+                                                data-icon="{{ $event->tipe_icon }}"
+                                                data-id="{{ $event->id }}"
+                                                onclick="previewSweetAlert(this)"
                                                 title="Preview Pop-up SweetAlert">
                                             <i class="bi bi-eye"></i> Test
                                         </button>
@@ -149,27 +157,30 @@
                                                     <label class="form-label small fw-bold">Isi Pesan Notifikasi <span class="text-danger">*</span></label>
                                                     <textarea name="pesan" rows="3" class="form-control form-control-sm" required>{{ $event->pesan }}</textarea>
                                                 </div>
-                                                <div class="row g-2 mb-3">
-                                                    <div class="col-6">
-                                                        <label class="form-label small fw-bold">Menu Target <span class="text-danger">*</span></label>
-                                                        <select name="menu_target" class="form-select form-select-sm" required>
-                                                            <option value="pembelian" {{ $event->menu_target === 'pembelian' ? 'selected' : '' }}>Pembelian Bahan Baku</option>
-                                                            <option value="permintaan" {{ $event->menu_target === 'permintaan' ? 'selected' : '' }}>Permintaan / Transfer Bahan</option>
-                                                            <option value="produksi" {{ $event->menu_target === 'produksi' ? 'selected' : '' }}>Produksi Central Kitchen</option>
-                                                            <option value="penjualan_pos" {{ $event->menu_target === 'penjualan_pos' ? 'selected' : '' }}>Penjualan POS</option>
-                                                            <option value="semua" {{ $event->menu_target === 'semua' ? 'selected' : '' }}>Semua Menu</option>
-                                                        </select>
+                                                <div class="mb-3">
+                                                    <label class="form-label small fw-bold">Menu Target <span class="text-danger">*</span> <small class="text-muted fw-normal">(bisa pilih lebih dari 1)</small></label>
+                                                    <div class="border rounded p-2 bg-light-subtle">
+                                                        <div class="row g-1">
+                                                            @foreach(\App\Models\EventNotifikasi::MENU_OPTIONS as $key => $label)
+                                                                <div class="col-6">
+                                                                    <div class="form-check">
+                                                                        <input class="form-check-input menu-target-checkbox" type="checkbox" name="menu_target[]" value="{{ $key }}" id="edit_menu_{{ $event->id }}_{{ $key }}" {{ in_array($key, $event->menu_targets) ? 'checked' : '' }}>
+                                                                        <label class="form-check-label small" for="edit_menu_{{ $event->id }}_{{ $key }}">{{ $label }}</label>
+                                                                    </div>
+                                                                </div>
+                                                            @endforeach
+                                                        </div>
                                                     </div>
-                                                    <div class="col-6">
-                                                        <label class="form-label small fw-bold">Tipe Icon <span class="text-danger">*</span></label>
-                                                        <select name="tipe_icon" class="form-select form-select-sm" required>
-                                                            <option value="warning" {{ $event->tipe_icon === 'warning' ? 'selected' : '' }}>Peringatan (Warning)</option>
-                                                            <option value="info" {{ $event->tipe_icon === 'info' ? 'selected' : '' }}>Informasi (Info)</option>
-                                                            <option value="success" {{ $event->tipe_icon === 'success' ? 'selected' : '' }}>Sukses (Success)</option>
-                                                            <option value="question" {{ $event->tipe_icon === 'question' ? 'selected' : '' }}>Pertanyaan (Question)</option>
-                                                            <option value="error" {{ $event->tipe_icon === 'error' ? 'selected' : '' }}>Bahaya (Error)</option>
-                                                        </select>
-                                                    </div>
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label small fw-bold">Tipe Icon <span class="text-danger">*</span></label>
+                                                    <select name="tipe_icon" class="form-select form-select-sm" required>
+                                                        <option value="warning" {{ $event->tipe_icon === 'warning' ? 'selected' : '' }}>Peringatan (Warning)</option>
+                                                        <option value="info" {{ $event->tipe_icon === 'info' ? 'selected' : '' }}>Informasi (Info)</option>
+                                                        <option value="success" {{ $event->tipe_icon === 'success' ? 'selected' : '' }}>Sukses (Success)</option>
+                                                        <option value="question" {{ $event->tipe_icon === 'question' ? 'selected' : '' }}>Pertanyaan (Question)</option>
+                                                        <option value="error" {{ $event->tipe_icon === 'error' ? 'selected' : '' }}>Bahaya (Error)</option>
+                                                    </select>
                                                 </div>
                                                 <div class="row g-2 mb-3">
                                                     <div class="col-6">
@@ -228,27 +239,30 @@
                             <label class="form-label small fw-bold">Isi Pesan Notifikasi <span class="text-danger">*</span></label>
                             <textarea name="pesan" rows="3" class="form-control form-control-sm" placeholder="Contoh: Perhatian! Menjelang High Season, harap lakukan double purchase pada bahan baku utama agar tidak kehabisan stok." required></textarea>
                         </div>
-                        <div class="row g-2 mb-3">
-                            <div class="col-6">
-                                <label class="form-label small fw-bold">Menu Target <span class="text-danger">*</span></label>
-                                <select name="menu_target" class="form-select form-select-sm" required>
-                                    <option value="pembelian">Pembelian Bahan Baku</option>
-                                    <option value="permintaan">Permintaan / Transfer Bahan</option>
-                                    <option value="produksi">Produksi Central Kitchen</option>
-                                    <option value="penjualan_pos">Penjualan POS</option>
-                                    <option value="semua">Semua Menu</option>
-                                </select>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Menu Target <span class="text-danger">*</span> <small class="text-muted fw-normal">(bisa pilih lebih dari 1)</small></label>
+                            <div class="border rounded p-2 bg-light-subtle">
+                                <div class="row g-1">
+                                    @foreach(\App\Models\EventNotifikasi::MENU_OPTIONS as $key => $label)
+                                        <div class="col-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input menu-target-checkbox" type="checkbox" name="menu_target[]" value="{{ $key }}" id="add_menu_{{ $key }}" {{ $key === 'pembelian' ? 'checked' : '' }}>
+                                                <label class="form-check-label small" for="add_menu_{{ $key }}">{{ $label }}</label>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
                             </div>
-                            <div class="col-6">
-                                <label class="form-label small fw-bold">Tipe Icon <span class="text-danger">*</span></label>
-                                <select name="tipe_icon" class="form-select form-select-sm" required>
-                                    <option value="warning">Peringatan (Warning)</option>
-                                    <option value="info">Informasi (Info)</option>
-                                    <option value="success">Sukses (Success)</option>
-                                    <option value="question">Pertanyaan (Question)</option>
-                                    <option value="error">Bahaya (Error)</option>
-                                </select>
-                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Tipe Icon <span class="text-danger">*</span></label>
+                            <select name="tipe_icon" class="form-select form-select-sm" required>
+                                <option value="warning">Peringatan (Warning)</option>
+                                <option value="info">Informasi (Info)</option>
+                                <option value="success">Sukses (Success)</option>
+                                <option value="question">Pertanyaan (Question)</option>
+                                <option value="error">Bahaya (Error)</option>
+                            </select>
                         </div>
                         <div class="row g-2 mb-3">
                             <div class="col-6">
@@ -276,14 +290,24 @@
 
     @push('scripts')
     <script>
-        function previewSweetAlert(judul, pesan, icon, id) {
+        function escapePreviewHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text ?? '';
+            return div.innerHTML;
+        }
+
+        function previewSweetAlert(btn) {
+            const judul = btn.dataset.judul || '';
+            const pesan = btn.dataset.pesan || '';
+            const icon = btn.dataset.icon || 'warning';
+
             Swal.fire({
                 title: judul,
-                html: '<p style="font-size: 15px; margin-bottom: 12px; color: #374151; line-height: 1.6;">' + pesan + '</p>',
+                html: '<p style="font-size: 15px; margin-bottom: 12px; color: #374151; line-height: 1.6; white-space: pre-line;">' + escapePreviewHtml(pesan) + '</p>',
                 icon: icon,
                 showCancelButton: true,
-                confirmButtonText: '<i class="bi bi-check2"></i> Mengerti',
-                cancelButtonText: '<i class="bi bi-eye-slash"></i> Jangan tampilkan lagi',
+                confirmButtonText: '<i class="bi bi-check2 me-1"></i> Mengerti',
+                cancelButtonText: '<i class="bi bi-eye-slash me-1"></i> Jangan tampilkan lagi',
                 confirmButtonColor: '#7A4517',
                 cancelButtonColor: '#6c757d',
                 reverseButtons: true,
@@ -300,6 +324,41 @@
                 }
             });
         }
+
+        document.addEventListener('change', function (e) {
+            if (!e.target.classList.contains('menu-target-checkbox')) return;
+
+            const form = e.target.closest('form');
+            if (!form) return;
+
+            const checkboxes = form.querySelectorAll('.menu-target-checkbox');
+            if (e.target.value === 'semua' && e.target.checked) {
+                checkboxes.forEach(cb => {
+                    if (cb.value !== 'semua') cb.checked = false;
+                });
+            } else if (e.target.value !== 'semua' && e.target.checked) {
+                checkboxes.forEach(cb => {
+                    if (cb.value === 'semua') cb.checked = false;
+                });
+            }
+        });
+
+        document.addEventListener('submit', function (e) {
+            const form = e.target;
+            const checkboxes = form.querySelectorAll('.menu-target-checkbox');
+            if (checkboxes.length === 0) return;
+
+            const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+            if (!anyChecked) {
+                e.preventDefault();
+                Swal.fire({
+                    title: 'Menu Target Wajib Dipilih',
+                    text: 'Pilih minimal 1 menu target untuk event notifikasi ini.',
+                    icon: 'warning',
+                    confirmButtonColor: '#7A4517'
+                });
+            }
+        });
     </script>
     @endpush
 </x-app-layout>
